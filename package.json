@@ -1,0 +1,233 @@
+{
+  "name": "impact-tree",
+  "publisher": "SalahMo24",
+  "displayName": "Impact Tree",
+  "description": "Review a diff as an inverted call graph \u2014 see what each change affects and which callers weren't updated.",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "vscode": "^1.84.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "main": "./src/extension.js",
+  "scripts": {
+    "analyze": "node --max-old-space-size=8192 src/cli.js",
+    "test": "node --max-old-space-size=8192 test/languages.test.js && node --max-old-space-size=8192 test/textpos.test.js && node --max-old-space-size=8192 test/callsites.test.js && node --max-old-space-size=8192 test/run-fixtures.js && node --max-old-space-size=8192 test/tree-smoke.js",
+    "record": "node --max-old-space-size=8192 test/record-fixture.js",
+    "test:fixtures": "node --max-old-space-size=8192 test/run-fixtures.js",
+    "test:tree": "node --max-old-space-size=8192 test/tree-smoke.js",
+    "test:textpos": "node test/textpos.test.js",
+    "test:callsites": "node --max-old-space-size=8192 test/callsites.test.js",
+    "test:languages": "node --max-old-space-size=8192 test/languages.test.js"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "impactTree",
+          "title": "Impact Tree",
+          "icon": "$(type-hierarchy)"
+        }
+      ]
+    },
+    "views": {
+      "impactTree": [
+        {
+          "id": "impactTree.changes",
+          "name": "Changes by blast radius",
+          "contextualTitle": "Impact Tree"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "impactTree.refresh",
+        "title": "Impact Tree: Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "impactTree.selectMode",
+        "title": "Impact Tree: Select diff mode",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "impactTree.setCheckpoint",
+        "title": "Impact Tree: Set review checkpoint here",
+        "icon": "$(bookmark)"
+      },
+      {
+        "command": "impactTree.openChange",
+        "title": "Open change"
+      },
+      {
+        "command": "impactTree.openCaller",
+        "title": "Open caller"
+      },
+      {
+        "command": "impactTree.showLegend",
+        "title": "Impact Tree: Show legend",
+        "icon": "$(question)"
+      },
+      {
+        "command": "impactTree.showLog",
+        "title": "Impact Tree: Show log",
+        "icon": "$(output)"
+      },
+      {
+        "command": "impactTree.openFile",
+        "title": "Open file diff"
+      },
+      {
+        "command": "impactTree.computeTestReach",
+        "title": "Impact Tree: Compute test reachability"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "impactTree.refresh",
+          "when": "view == impactTree.changes",
+          "group": "navigation@1"
+        },
+        {
+          "command": "impactTree.selectMode",
+          "when": "view == impactTree.changes",
+          "group": "navigation@2"
+        },
+        {
+          "command": "impactTree.setCheckpoint",
+          "when": "view == impactTree.changes",
+          "group": "navigation@3"
+        },
+        {
+          "command": "impactTree.showLegend",
+          "when": "view == impactTree.changes",
+          "group": "navigation@4"
+        },
+        {
+          "command": "impactTree.showLog",
+          "when": "view == impactTree.changes",
+          "group": "navigation@5"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Impact Tree",
+      "properties": {
+        "impactTree.mode": {
+          "type": "string",
+          "enum": [
+            "pr",
+            "branch",
+            "working",
+            "checkpoint"
+          ],
+          "default": "pr",
+          "description": "pr = committed branch vs base; branch = includes uncommitted; working = uncommitted only (agent review); checkpoint = since a recorded SHA"
+        },
+        "impactTree.baseBranch": {
+          "type": "string",
+          "default": "main",
+          "description": "Base branch. Always resolved to origin/<branch>; a stale local ref silently inflates the diff."
+        },
+        "impactTree.fetchBase": {
+          "type": "boolean",
+          "default": true,
+          "description": "git fetch the base before resolving it"
+        },
+        "impactTree.reachDepth": {
+          "type": "number",
+          "default": 2,
+          "description": "Upward closure depth for test reachability"
+        },
+        "impactTree.analyseOnStartup": {
+          "type": "boolean",
+          "default": false,
+          "description": "Analyse as soon as the window opens"
+        },
+        "impactTree.alwaysDiffCallers": {
+          "type": "boolean",
+          "default": false,
+          "description": "Open every caller as a diff against the base, even when the file is identical to base (which shows two panes of the same content). Default: diff only when the file actually differs."
+        },
+        "impactTree.concurrency": {
+          "type": "number",
+          "default": 8,
+          "description": "How many symbols to resolve callers for in parallel."
+        },
+        "impactTree.iconMode": {
+          "type": "string",
+          "enum": [
+            "file",
+            "symbol"
+          ],
+          "default": "file",
+          "enumDescriptions": [
+            "File-type glyph from your icon theme (matches the Explorer and other review extensions)",
+            "Symbol-kind icon: method / function / constructor (matches Outline)"
+          ],
+          "description": "Which icon code rows use."
+        },
+        "impactTree.rowDetail": {
+          "type": "string",
+          "enum": [
+            "hover",
+            "inline"
+          ],
+          "default": "hover",
+          "enumDescriptions": [
+            "Rows show icon + name + git badge only; all detail in the hover tooltip",
+            "Rows also show state, kinds and file inline (denser, truncates in narrow sidebars)"
+          ],
+          "description": "Where row detail is shown."
+        },
+        "impactTree.fileListLayout": {
+          "type": "string",
+          "enum": [
+            "tree",
+            "flat"
+          ],
+          "default": "tree",
+          "enumDescriptions": [
+            "Nest files under collapsible folders, with single-child chains compacted",
+            "One row per file, directory shown in the description"
+          ],
+          "description": "How the file list is grouped (mirrors githubPullRequests.fileListLayout)."
+        },
+        "impactTree.prewarm": {
+          "type": "boolean",
+          "default": true,
+          "description": "After the window opens, quietly ask the language server to index the changed files so the first analysis is fast. The index is built either way; this just pays for it before you ask."
+        }
+      }
+    }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SalahMo24/impact-tree.git"
+  },
+  "bugs": {
+    "url": "https://github.com/SalahMo24/impact-tree/issues"
+  },
+  "keywords": [
+    "pull request",
+    "code review",
+    "pr review",
+    "diff",
+    "call hierarchy",
+    "call graph",
+    "impact analysis",
+    "blast radius",
+    "dependency graph",
+    "refactoring",
+    "typescript",
+    "github"
+  ]
+}

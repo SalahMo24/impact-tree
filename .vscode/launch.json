@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "${input:targetRepo}"
+      ],
+      "outFiles": ["${workspaceFolder}/src/**/*.js"]
+    }
+  ],
+  "inputs": [
+    {
+      "id": "targetRepo",
+      "type": "promptString",
+      "description": "Path to a git repository to review",
+      "default": "${userHome}/code/some-repo"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+node_modules/
+out/
+dist/
+*.vsix
+.DS_Store
+.vscode-test/
+spike/
+ACCEPTANCE.md
+# Recorded fixtures embed real paths, symbol names and signatures from whatever repo
+# they were captured against. Regenerate locally; never commit.
+test/fixtures/
+
+# Internal working docs: build plan and acceptance checklist, written against a private
+# codebase and full of its measurements. Kept locally, not published.
+PLAN.md
+ACCEPTANCE.md
