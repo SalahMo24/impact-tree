@@ -14,3 +14,4 @@ test/fixtures/
 # codebase and full of its measurements. Kept locally, not published.
 PLAN.md
 ACCEPTANCE.md
+.env

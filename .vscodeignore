@@ -1,3 +1,21 @@
 .vscode/**
 test/**
+spike/**
+.github/**
+.git/**
+.gitignore
+.eslintrc*
 PLAN.md
+ACCEPTANCE.md
+*.vsix
+**/*.map
+# Never package secrets. .env holds a GitHub token during development and would
+# otherwise be shipped inside the .vsix, which is a plain zip anyone can open.
+.env
+.env.*
+# typescript IS required at runtime -- the extension ships its own copy so a first
+# run works on a repo that has no local install. Do not exclude node_modules.
+node_modules/.bin/**
+node_modules/typescript/lib/tsserver*.js
+node_modules/typescript/lib/typingsInstaller.js
+node_modules/typescript/lib/tsc.js

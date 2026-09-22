@@ -28,7 +28,9 @@ for (const [p, src, tst] of [
 check('SOURCE_EXT is exported for reuse', SOURCE_EXT instanceof RegExp);
 
 console.log('▸ JSX parsing hazard');
-const ts = require(require.resolve('typescript', { paths: [path.join(repo, 'components/consumer'), repo] }));
+const { findTypeScript, findSampleFile } = require('./find-typescript');
+const ts = findTypeScript();
+if (!ts) { console.log('  SKIP no typescript resolvable — language checks did NOT run'); process.exit(0); }
 const jsx = 'export const Card = ({ title }) => <div className="c">{title}</div>;\nexport function Badge() { return <span/>; }\n';
 const countJsx = (sf) => { let n = 0; const v = (x) => { if (ts.isJsxElement(x) || ts.isJsxSelfClosingElement(x)) n++; ts.forEachChild(x, v); }; ts.forEachChild(sf, v); return n; };
 const asTsx = ts.createSourceFile('C.tsx', jsx, ts.ScriptTarget.ES2021, true);
@@ -44,8 +46,10 @@ check('arrow component collected', syms.some((s) => s.label === 'Card'), syms.ma
 check('function component collected', syms.some((s) => s.label === 'Badge'));
 
 console.log('▸ real .tsx from this repo');
-const sample = path.join(repo, 'components/consumer-management/src/components/consumers/ConsumerProfileDisplay.tsx');
-if (fs.existsSync(sample)) {
+// Any real .tsx in the target repo, found by search -- naming a path would hardcode
+// one codebase's layout into a test that is meant to be about the parser.
+const sample = findSampleFile(/\.tsx$/);
+if (sample) {
   const sf = ts.createSourceFile(sample, fs.readFileSync(sample, 'utf8'), ts.ScriptTarget.ES2021, true);
   check('real component file parses without errors', sf.parseDiagnostics.length === 0, `${sf.parseDiagnostics.length} errors`);
   check('real component file yields symbols', S.collect(sf).length > 0, `${S.collect(sf).length} symbols`);

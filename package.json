@@ -15,13 +15,21 @@
   "main": "./src/extension.js",
   "scripts": {
     "analyze": "node --max-old-space-size=8192 src/cli.js",
-    "test": "node --max-old-space-size=8192 test/languages.test.js && node --max-old-space-size=8192 test/textpos.test.js && node --max-old-space-size=8192 test/callsites.test.js && node --max-old-space-size=8192 test/run-fixtures.js && node --max-old-space-size=8192 test/tree-smoke.js",
+    "test": "node test/scope.test.js && node test/load-typescript.test.js && node test/base-ref.test.js && node test/sources.test.js && node test/tier-a-view.test.js && node test/syntactic-index.test.js && node test/inheritance.test.js && node test/tier-a.test.js && node --max-old-space-size=8192 test/languages.test.js && node --max-old-space-size=8192 test/textpos.test.js && node --max-old-space-size=8192 test/callsites.test.js && node --max-old-space-size=8192 test/run-fixtures.js && node --max-old-space-size=8192 test/tree-smoke.js",
     "record": "node --max-old-space-size=8192 test/record-fixture.js",
     "test:fixtures": "node --max-old-space-size=8192 test/run-fixtures.js",
     "test:tree": "node --max-old-space-size=8192 test/tree-smoke.js",
     "test:textpos": "node test/textpos.test.js",
     "test:callsites": "node --max-old-space-size=8192 test/callsites.test.js",
-    "test:languages": "node --max-old-space-size=8192 test/languages.test.js"
+    "test:languages": "node --max-old-space-size=8192 test/languages.test.js",
+    "test:scope": "node test/scope.test.js",
+    "test:sources": "node test/sources.test.js",
+    "test:syntactic": "node test/syntactic-index.test.js",
+    "test:inheritance": "node test/inheritance.test.js",
+    "test:tier-a": "node test/tier-a.test.js",
+    "test:tier-a-view": "node test/tier-a-view.test.js",
+    "test:loadts": "node test/load-typescript.test.js",
+    "test:baseref": "node test/base-ref.test.js"
   },
   "activationEvents": [
     "onStartupFinished"
@@ -38,6 +46,11 @@
     },
     "views": {
       "impactTree": [
+        {
+          "id": "impactTree.sources",
+          "name": "Review",
+          "contextualTitle": "Impact Tree"
+        },
         {
           "id": "impactTree.changes",
           "name": "Changes by blast radius",
@@ -86,6 +99,33 @@
       {
         "command": "impactTree.computeTestReach",
         "title": "Impact Tree: Compute test reachability"
+      },
+      {
+        "command": "impactTree.clearReviewed",
+        "title": "Impact Tree: Clear review progress",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "impactTree.analyseMode",
+        "title": "Analyse with this mode",
+        "category": "Impact Tree"
+      },
+      {
+        "command": "impactTree.githubSignIn",
+        "title": "Sign in to GitHub",
+        "category": "Impact Tree",
+        "icon": "$(sign-in)"
+      },
+      {
+        "command": "impactTree.refreshPullRequests",
+        "title": "Refresh pull requests",
+        "category": "Impact Tree",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "impactTree.openPullRequest",
+        "title": "Open pull request",
+        "category": "Impact Tree"
       }
     ],
     "menus": {
@@ -114,6 +154,26 @@
           "command": "impactTree.showLog",
           "when": "view == impactTree.changes",
           "group": "navigation@5"
+        },
+        {
+          "command": "impactTree.clearReviewed",
+          "when": "view == impactTree.changes",
+          "group": "navigation@6"
+        },
+        {
+          "command": "impactTree.refreshPullRequests",
+          "when": "view == impactTree.sources",
+          "group": "navigation@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "impactTree.analyseMode",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.openPullRequest",
+          "when": "false"
         }
       ]
     },
@@ -204,6 +264,16 @@
           "type": "boolean",
           "default": true,
           "description": "After the window opens, quietly ask the language server to index the changed files so the first analysis is fast. The index is built either way; this just pays for it before you ask."
+        },
+        "impactTree.filterInheritedOverReports": {
+          "type": "boolean",
+          "default": true,
+          "description": "Drop callers the TypeScript call hierarchy attributes to an override but which actually dispatch on a sibling subclass. Turn off to see the unfiltered call-hierarchy result."
+        },
+        "impactTree.tierA.maxFiles": {
+          "type": "number",
+          "default": 300,
+          "description": "Maximum files to fetch for a no-checkout PR preview. Each file costs two GitHub API requests (head and base)."
         }
       }
     }
@@ -229,5 +299,8 @@
     "refactoring",
     "typescript",
     "github"
-  ]
+  ],
+  "dependencies": {
+    "typescript": "^5.9.0"
+  }
 }

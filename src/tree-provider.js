@@ -1,5 +1,6 @@
 'use strict';
 const path = require('path');
+const { nodeId } = require('./review-state');
 
 // Tree nodes resolve their callers on expand. That laziness is the whole reason the
 // extension is cheap where the CLI is not: the CLI pre-walked 152 positions (123s);
@@ -31,12 +32,39 @@ const CALL_STATE = {
   unchanged:           { token: '○', severity: 'muted', text: 'not changed' },
 };
 
-function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, decorate = null, getPhase = () => 'ready' }) {
+function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, decorate = null, getPhase = () => 'ready', review = null }) {
+  // A finding's direct callers are already resolved, so checking it can clear them too
+  // and report real progress. Deeper levels are lazy and are not counted.
+  const childIdsOf = (n) => {
+    if (!n) return [];
+    if (n.type === 'finding' && n.finding) return (n.finding.callers || []).map((c) => `${c.file}#${c.pos}`);
+    if (n.type === 'callerFile') return (n.callers || []).map((c) => `${c.file}#${c.pos}`);
+    return [];
+  };
+  const applyCheckbox = (item, n) => {
+    if (!review) return;
+    const id = nodeId(n);
+    if (!id) return;
+    item.checkboxState = review.isReviewed(id)
+      ? vscode.TreeItemCheckboxState.Checked
+      : vscode.TreeItemCheckboxState.Unchecked;
+  };
   // file:///path#offset — unique per symbol so decorations do not collide, while the
-  // icon theme still matches on the extension
+  // icon theme still matches on the extension.
+  // Tier A must NOT use a file:// URI. The editor's git decoration provider keys on
+  // those and paints the worktree status (U for untracked, M for a local edit) on
+  // top of the PR status. A non-file scheme is invisible to git, so the only badge
+  // is the one we register from the pull request.
   const uriFor = (file, pos) => {
     if (!file) return null;
-    const u = vscode.Uri.file(file);
+    const st = getState();
+    let u;
+    if (st && st.result && st.result.tierA && st.rel) {
+      const rel = String(st.rel(file) || file).replace(/\\/g, '/').replace(/^\/+/, '');
+      u = vscode.Uri.from({ scheme: 'impacttree-pr', path: `/${rel}`, query: 'side=head' });
+    } else {
+      u = vscode.Uri.file(file);
+    }
     return pos == null ? u : u.with({ fragment: String(pos) });
   };
   // The GitHub PR extension groups with a real folder hierarchy rather than spacing
@@ -90,7 +118,13 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
     out.sort((a, b) => a.label.localeCompare(b.label));
     return out.concat(node.files.sort((a, b) => a.label.localeCompare(b.label)));
   };
-  const statusOfPath = (st, relPath) => (st && st.result && st.result.fileStatus ? st.result.fileStatus[relPath] : undefined);
+  const statusOfPath = (st, relPath) => {
+    const table = st && st.result && st.result.fileStatus;
+    if (!table || relPath == null) return undefined;
+    if (table[relPath]) return table[relPath];
+    const slash = String(relPath).replace(/\\/g, '/');
+    return table[slash];
+  };
   const mark = (uri, status, _severity, tooltip) => {
     if (decorate && uri) decorate.register(uri, { status, tooltip });
     return uri;
@@ -139,14 +173,23 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
 
   function toItem(n) {
     if (n.type === 'file') {
-      const item = n.absPath
-        ? new vscode.TreeItem(vscode.Uri.file(n.absPath), vscode.TreeItemCollapsibleState.None)
+      const uri = n.decorationUri || (n.absPath ? vscode.Uri.file(n.absPath) : null);
+      const item = uri
+        ? new vscode.TreeItem(uri, vscode.TreeItemCollapsibleState.None)
         : new vscode.TreeItem(n.label, vscode.TreeItemCollapsibleState.None);
+      // A file:// row takes its icon from the resource URI. A Tier A row is not a
+      // file:// URI (so git cannot badge it); ThemeIcon.File still resolves the
+      // extension against the icon theme.
+      if (uri && uri.scheme && uri.scheme !== 'file') {
+        item.label = n.label || path.basename(n.relPath);
+        item.iconPath = vscode.ThemeIcon.File;
+      }
       item.description = layout() === 'flat'
         ? `${path.dirname(n.relPath)}`
         : inline(`${n.status}  ·  ${path.dirname(n.relPath)}`);
       item.tooltip = new vscode.MarkdownString([`**${path.basename(n.relPath)}**`, '', `_${n.status}_`, '', `\`${n.relPath}\``].join('\n'));
-      item.command = { command: 'impactTree.openFile', title: 'Open diff', arguments: [n] };
+      applyCheckbox(item, n);
+    item.command = { command: 'impactTree.openFile', title: 'Open diff', arguments: [n] };
       return item;
     }
     const collapsible = n.type === 'message' || n.type === 'legendItem' || n.cycle
@@ -194,7 +237,8 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
       item.description = inline(path.basename(n.relPath));
       item.iconPath = new vscode.ThemeIcon('trash');  // semantics beat decoration here
       item.tooltip = new vscode.MarkdownString([`✕ **${n.label}**`, '', '_deleted in this change_', '', `\`${n.relPath}\``].join('\n'));
-      item.command = { command: 'impactTree.openFile', title: 'Open diff', arguments: [n] };
+      applyCheckbox(item, n);
+    item.command = { command: 'impactTree.openFile', title: 'Open diff', arguments: [n] };
       return item;
     }
     if (n.type === 'legend') {
@@ -235,10 +279,43 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
             ...(f.staleChangedElsewhere
               ? ['', `${f.staleChangedElsewhere} of them were edited — just not on the call line`] : [])]
           : []),
+        ...(n._reviewNote ? ['', `_${n._reviewNote}_`] : []),
         '', `_score ${f.score}_`,
       ].join('\n'));
       item.contextValue = 'finding';
+      applyCheckbox(item, n);
+      // Review progress goes inline only in 'inline' mode; hover mode keeps the row to a
+      // single state glyph, so the count lives in the tooltip instead.
+      if (review) {
+        const kids = childIdsOf(n);
+        if (kids.length) {
+          const left = review.remaining(kids);
+          const text = left ? `${left}/${kids.length} callers left to review` : 'all callers reviewed';
+          if (detailMode() === 'inline') {
+            item.description = `${item.description || ''}${item.description ? '  ·  ' : ''}${text}`;
+          }
+          n._reviewNote = text;
+        }
+      }
       item.command = { command: 'impactTree.openChange', title: 'Open change', arguments: [n] };
+      return item;
+    }
+    if (n.type === 'callerFile') {
+      const cs2 = CALL_STATE[n.callState] || CALL_STATE.unchanged;
+      const tok2 = n.test ? '🧪' : cs2.token;
+      const fns = n.callers.length;
+      item.description = rowDesc(tok2,
+        `${tok2}  ${fns} caller${fns === 1 ? '' : 's'}  ·  ${n.sites} call site${n.sites === 1 ? '' : 's'}`);
+      item.iconPath = rowIcon(n.label, null);
+      item.tooltip = new vscode.MarkdownString([
+        `**${n.relPath}**`, '',
+        `${fns} function${fns === 1 ? '' : 's'} in this file call the change, across ${n.sites} call site${n.sites === 1 ? '' : 's'}:`,
+        '', ...n.callers.slice(0, 12).map((c) => `- ${(CALL_STATE[c.callState] || CALL_STATE.unchanged).token} ${c.label}`),
+        ...(n.callers.length > 12 ? [`- …and ${n.callers.length - 12} more`] : []),
+      ].join('\n'));
+      item.contextValue = 'callerFile';
+      applyCheckbox(item, n);
+      item.command = { command: 'impactTree.openFile', title: 'Open file', arguments: [n] };
       return item;
     }
     // caller
@@ -262,6 +339,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
         : []),
     ].join('\n'));
     item.contextValue = n.changed ? 'changedCaller' : 'caller';
+    applyCheckbox(item, n);
     item.command = { command: 'impactTree.openCaller', title: 'Open caller', arguments: [n] };
     return item;
   }
@@ -297,12 +375,29 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
         const other = rootsOf((r.allChanged || []).filter((c) => !r.findings.includes(c)));
         const nestedFindings = r.findings.length - findingRoots.length;
         const nestedOther = (r.allChanged || []).filter((c) => !r.findings.includes(c)).length - other.length;
+        const topIds = rootsOf(r.allChanged || []).map((c) => `${c.file}#${c.namePos}`);
+        const left = review ? review.remaining(topIds) : null;
         out.push(N({
           type: 'summary',
-          label: `${(r.allChanged || []).length} changed symbol${(r.allChanged || []).length === 1 ? '' : 's'}`,
+          label: `${(r.allChanged || []).length} changed symbol${(r.allChanged || []).length === 1 ? '' : 's'}`
+            + (left === null ? '' : left === 0 ? '  ·  all reviewed' : `  ·  ${left} left to review`),
           desc: `${r.findings.length} finding(s)  ·  ${stale} call site(s) not updated  ·  ${r.mode}  ·  ${r.base.ref}`,
           tooltip: `mode '${r.mode}'${r.requestedMode && r.requestedMode !== r.mode ? ` (requested '${r.requestedMode}')` : ''}\nbase ${r.base.ref} @ ${String(r.base.sha).slice(0, 10)}\n${r.changedFileCount} analysed file(s), ${(r.otherFiles || []).length} not analysed`,
         }));
+        // Tier A cannot see a caller in a file the PR does not touch. Presenting a
+        // truncated tree as if it were complete is the one failure mode that would
+        // make this feature worse than useless, so it is stated on the face of it.
+        if (r.tierA) {
+          out.push(N({
+            type: 'message', icon: 'eye',
+            label: `Preview — PR files only (${r.changedFileCount} file(s))`,
+            desc: 'callers outside this PR are NOT shown  ·  check out for full impact',
+            tooltip: 'Built from the pull request\'s own files via the GitHub API.\n'
+              + 'Your worktree was not touched.\n\n'
+              + 'Any caller living in a file this PR does not change is invisible here.\n'
+              + 'Use "Check out and analyse" on the PR for the complete tree.',
+          }));
+        }
         for (const w of r.warnings) out.push(N({ type: 'message', label: w, icon: 'warning' }));
         for (const u of r.unanalysable) {
           out.push(N({ type: 'message', icon: 'circle-slash',
@@ -316,10 +411,12 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
           icon: 'edit',
           desc: `body-only edits${nestedOther ? `  ·  ${nestedOther} nested under their callee` : ''}` }));
         out.push(N({ type: 'section', key: 'deleted', label: 'Deleted', count: r.deleted.length, icon: 'trash', desc: '' }));
-        out.push(N({ type: 'section', key: 'untested', label: 'No test reaches',
-          count: r.testReachComputed ? r.untested.length : 0, icon: 'beaker',
-          computed: r.testReachComputed,
-          desc: r.testReachComputed ? '' : 'not computed — expand to run' }));
+        if (!r.tierA) {
+          out.push(N({ type: 'section', key: 'untested', label: 'No test reaches',
+            count: r.testReachComputed ? r.untested.length : 0, icon: 'beaker',
+            computed: r.testReachComputed,
+            desc: r.testReachComputed ? '' : 'not computed — expand to run' }));
+        }
         out.push(N({ type: 'section', key: 'files', label: 'Files without a call graph', count: (r.otherFiles || []).length,
           icon: 'files', desc: 'migrations, config, docs' }));
         out.push(N({ type: 'legend', label: 'Legend' }));
@@ -378,6 +475,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
         return LEGEND.map(([icon, label, desc]) => N({ type: 'legendItem', icon, label, desc }));
       }
       if (node.type === 'dir') return childrenOfDir(node.node);
+      if (node.type === 'callerFile') return node.callers;
       if (node.type === 'message' || node.type === 'summary' || node.type === 'legendItem'
         || node.type === 'deleted' || node.type === 'file' || node.cycle) return [];
       const state2 = getState();
@@ -402,8 +500,41 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
           path: [...seenPath],
         });
       });
-      return built.sort((a, b) => (a.relPath || '').localeCompare(b.relPath || '')
+      built.sort((a, b) => (a.relPath || '').localeCompare(b.relPath || '')
         || a.label.localeCompare(b.label));
+
+      // One row per FILE, not per calling function. A file with three methods that
+      // each call the change read as the same file repeated three times; the callers
+      // are still distinct impacts, so they become children rather than disappearing.
+      // A file with a single caller stays flat -- a one-child group is pure noise,
+      // the same rule the directory hierarchy already uses.
+      const byFile = new Map();
+      for (const c of built) {
+        const key = c.relPath || c.file;
+        if (!byFile.has(key)) byFile.set(key, []);
+        byFile.get(key).push(c);
+      }
+      const grouped = [];
+      for (const [rel, rows] of byFile) {
+        if (rows.length === 1) { grouped.push(rows[0]); continue; }
+        // worst state wins, so a group never looks calmer than its contents
+        const rank = (x) => (x.callState === 'unchanged' ? 2 : x.callState === 'changed-elsewhere' ? 1 : 0);
+        const worst = rows.slice().sort((a, b) => rank(b) - rank(a))[0];
+        grouped.push(N({
+          type: 'callerFile',
+          label: path.basename(rel),
+          relPath: rel,
+          file: rows[0].file,
+          callers: rows,
+          test: rows.every((x) => x.test),
+          changed: rows.some((x) => x.changed),
+          callState: worst.callState,
+          sites: rows.reduce((n2, x) => n2 + (x.sites || 0), 0),
+          decorationUri: uriFor(rows[0].file, null),
+          path: [...seenPath],
+        }));
+      }
+      return grouped;
     },
   };
 }

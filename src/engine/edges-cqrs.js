@@ -3,8 +3,9 @@ const fs = require('fs');
 
 // A NestJS CQRS dispatch severs the static call graph: `bus.execute(new FooCommand())`
 // resolves to CommandBus.execute, never to the @CommandHandler(FooCommand) that runs.
-// In components/consumer alone that is 333 dispatch sites against 224 handlers, so
-// without this every handler looks unreachable and its blast radius reads as zero.
+// In a large CQRS service that is hundreds of dispatch sites against hundreds of
+// handlers, so without this every handler looks unreachable and reads as zero blast
+// radius.
 //
 // Deps are injected so the same logic serves both resolvers: the CLI supplies the
 // TypeScript LanguageService, the extension supplies VS Code's definition/reference
@@ -65,7 +66,7 @@ function makeCqrsEdges(ts, { definitionAt, referencesTo, isTestPath, trace = () 
   }
 
   // Innermost *named* callable. An arrow inside a method must report the method:
-  // "CreateConsumerProfileOrchestrator.(anonymous)" tells a reviewer nothing.
+  // "SomeOrchestrator.(anonymous)" tells a reviewer nothing.
   function enclosingCallable(file, offset) {
     const sf = sourceOf(file);
     if (!sf) return null;

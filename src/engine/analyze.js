@@ -4,7 +4,8 @@ const path = require('path');
 const { makeGit, resolveBase } = require('./git');
 const { changedFiles, hunks, isTestPath, isSourcePath, projectRootOf, projectLabel } = require('./diff');
 const { makeSymbols } = require('./symbols');
-const { diffSignature, newThrows, score, KIND } = require('./signature');
+const { score } = require('./signature');
+const { changedSymbolsIn } = require('./changed-symbols');
 const { createTsResolver } = require('./resolver-ts');
 const { seedRoots, blastRadius, buildTree } = require('./forest');
 const { offsetToPosition } = require('./textpos');
@@ -25,13 +26,54 @@ async function mapLimit(items, limit, fn) {
 
 // Prefer the project's own TypeScript so analysis matches what the editor sees; fall
 // back to the repo root, then to whatever this extension was installed with.
+// Prefer the repo's OWN TypeScript so we parse with the version the project compiles
+// with, and fall back to the copy shipped with the extension. A monorepo commonly has
+// no install at its root -- every package has its own -- so the repo root alone is not
+// a sufficient place to look.
 function loadTypeScript(repo, projectDir) {
-  for (const base of [projectDir, repo, __dirname]) {
-    if (!base) continue;
-    try { return require(require.resolve('typescript', { paths: [base] })); } catch { /* next */ }
+  // TypeScript 7 is the native rewrite: its package exports only `unstable/*` plus a
+  // version stub, with no createSourceFile and no createLanguageService. Loading it
+  // and discovering that three call frames later produces a baffling error, so any
+  // candidate that does not expose the compiler API is rejected and we keep looking.
+  const usable = (m) => !!m && typeof m.createSourceFile === 'function'
+    && typeof m.createLanguageService === 'function';
+  const rejected = [];
+  const tryAt = (base) => {
+    if (!base) return null;
+    let m = null;
+    try { m = require(require.resolve('typescript', { paths: [base] })); } catch { return null; }
+    if (usable(m)) return m;
+    if (m && m.version) rejected.push(`${m.version} at ${base}`);
+    return null;
+  };
+  for (const base of [projectDir, repo]) {
+    const hit = tryAt(base);
+    if (hit) return hit;
   }
+  // Two levels of subdirectory: `packages/foo`, `components/bar`, `apps/web`.
+  if (repo) {
+    const kids = (d) => {
+      try {
+        return fs.readdirSync(d, { withFileTypes: true })
+          .filter((e) => e.isDirectory() && e.name !== 'node_modules' && !e.name.startsWith('.'))
+          .map((e) => path.join(d, e.name));
+      } catch { return []; }
+    };
+    for (const a of kids(repo)) {
+      if (fs.existsSync(path.join(a, 'node_modules'))) { const hit = tryAt(a); if (hit) return hit; }
+      for (const b of kids(a)) {
+        if (!fs.existsSync(path.join(b, 'node_modules'))) continue;
+        const hit = tryAt(b);
+        if (hit) return hit;
+      }
+    }
+  }
+  const own = tryAt(__dirname);
+  if (own) return own;
   try { return require('typescript'); } catch { /* not bundled */ }
-  throw new Error('typescript not resolvable — install it in the project, the repo, or alongside this extension');
+  throw new Error('typescript not resolvable — install it in the project or the repo, '
+    + 'or reinstall the extension (it ships its own copy)'
+    + (rejected.length ? `. Rejected: ${rejected.join(', ')} (no classic compiler API)` : ''));
 }
 
 const MODES = {
@@ -125,46 +167,34 @@ async function analyze(repo, opts = {}) {
     const compFiles = entry.files;
     (opts.onProgress || (() => {}))({ phase: 'component', component: comp, done: compIndex++, total: byComponent.size });
     const dir = path.join(repo, entry.root);
-    const ts = loadTypeScript(repo, dir);
+    // A project can have node_modules without typescript in it. Aborting the whole run
+    // for one such project blanks the view; report it and analyse the rest.
+    let ts;
+    try { ts = loadTypeScript(repo, dir); }
+    catch (e) {
+      unanalysable.set(comp, (unanalysable.get(comp) || 0) + compFiles.length);
+      warnings.push(`${compFiles.length} changed file(s) in '${comp}' NOT analysed — ${e.message}`);
+      continue;
+    }
     const S = makeSymbols(ts);
     const resolver = opts.makeResolver ? opts.makeResolver({ ts, componentDir: dir, component: comp }) : createTsResolver(ts, dir);
     if (!resolver) { warnings.push(`'${comp}' has no tsconfig.json — skipped`); continue; }
-    const parseHead = (abs) => {
-      try { return ts.createSourceFile(abs, fs.readFileSync(abs, 'utf8'), ts.ScriptTarget.ES2021, true); }
-      catch { return null; }
-    };
-
     const changed = [], deleted = [];
     for (const f of compFiles) {
       const abs = path.join(repo, f.path);
-      const headSf = f.status === 'deleted' ? null : parseHead(abs);
-      const baseText = f.status === 'added' ? null : git.show(base.sha, f.oldPath || f.path);
-      const baseSf = baseText == null ? null : ts.createSourceFile(abs, baseText, ts.ScriptTarget.ES2021, true);
-      const headCallables = headSf ? S.collect(headSf) : [];
-      const baseCallables = baseSf ? S.collect(baseSf) : [];
-      const baseByLabel = new Map(baseCallables.map((c) => [c.label, c]));
-      const headLabels = new Set(headCallables.map((c) => c.label));
-
-      for (const b of baseCallables) {
-        if (!headLabels.has(b.label)) deleted.push({ ...b, file: abs, relPath: f.path, component: comp, projectRoot: entry.root });
+      let headText = null;
+      if (f.status !== 'deleted') {
+        try { headText = fs.readFileSync(abs, 'utf8'); } catch { headText = null; }
       }
-      if (!headSf) continue;
-
-      const picked = new Set();
-      for (const [lo, hi] of hunks(git, base.sha, headRev, f.path)) {
-        const hit = S.mapHunk(headCallables, lo, hi);
-        if (!hit || picked.has(hit.label)) continue;
-        picked.add(hit.label);
-        const b = baseByLabel.get(hit.label);
-        const kinds = diffSignature(b, hit);
-        const throwsAdded = newThrows(b, hit);
-        if (throwsAdded.length) kinds.push(KIND.NEW_THROW);
-        changed.push({
-          ...hit, file: abs, relPath: f.path, component: comp, projectRoot: entry.root, fileStatus: f.status,
-          added: !b, baseSig: b ? S.renderSig(b.sig) : null, headSig: S.renderSig(hit.sig),
-          kinds: kinds.length ? kinds : [KIND.BODY], throwsAdded,
-        });
-      }
+      const r = changedSymbolsIn(ts, S, {
+        absPath: abs, relPath: f.path, status: f.status,
+        headText,
+        baseText: f.status === 'added' ? null : git.show(base.sha, f.oldPath || f.path),
+        hunkRanges: changedRanges[f.path] || hunks(git, base.sha, headRev, f.path),
+        component: comp, projectRoot: entry.root,
+      });
+      changed.push(...r.changed);
+      deleted.push(...r.deleted);
     }
 
     const changedKeys = new Set(changed.map((c) => `${c.file}#${c.namePos}`));
@@ -265,10 +295,16 @@ async function analyze(repo, opts = {}) {
     nested.delete(`${top.file}#${top.namePos}`);
   }
   for (const c of all) c.isRoot = !nested.has(`${c.file}#${c.namePos}`);
-  const analysedPaths = new Set(files.map((f) => f.path));
+  // Same rule as the Tier A path: a source file we analysed but which produced no
+  // changed callable still changed, and must stay visible somewhere in the view.
+  const withSymbols = new Set([
+    ...all.map((c) => c.relPath),
+    ...components.flatMap((c) => c.deleted).map((d) => d.relPath),
+  ]);
+  const analysedPaths = new Set(files.map((f) => f.path).filter((p2) => withSymbols.has(p2)));
   const otherFiles = everything
     .filter((f) => !analysedPaths.has(f.path))
-    .map((f) => ({ path: f.path, status: f.status }));
+    .map((f) => ({ path: f.path, status: f.status, noCallable: withSymbols.has(f.path) ? undefined : true }));
   return {
     allChanged: all.slice().sort((a, b) => b.score - a.score || a.label.localeCompare(b.label)),
     nestedCount: nested.size,

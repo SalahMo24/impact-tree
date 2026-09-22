@@ -24,6 +24,7 @@ const vscodeStub = {
   },
   EventEmitter: class { constructor() { this.event = () => ({ dispose() {} }); } fire() {} },
   TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
+  TreeItemCheckboxState: { Unchecked: 0, Checked: 1 },
   ThemeIcon: Object.assign(
     class { constructor(id) { this.id = id; } },
     { File: { id: '__file__' }, Folder: { id: '__folder__' } }),
@@ -53,9 +54,21 @@ const check = (name, cond, extra = '') => {
 
   // one resolver over the component owning the top finding
   const top = result.findings[0];
+  if (!top) {
+    // An empty diff is a legitimate state of the target repo, not a failing assertion.
+    // Crashing here once hid a real regression behind a TypeError.
+    console.log(`  skip  target repo has no findings against '${process.env.IMPACT_TREE_BASE || 'main'}'`);
+    console.log('        (check out a branch with changes, or set IMPACT_TREE_BASE)');
+    console.log('\ntree checks did NOT run');
+    process.exit(0);
+  }
   // locate the project from the analysis result, not from an assumed folder layout
   const projectDir = path.join(repo, top.projectRoot || '');
-  const ts = require(require.resolve('typescript', { paths: [projectDir, repo] }));
+  // Use the engine's own loader rather than a second, weaker copy of the lookup: a
+  // monorepo root has no typescript, and this resolved to nothing the moment the top
+  // finding landed in a project without its own install.
+  const { loadTypeScript } = require('../src/engine/analyze');
+  const ts = loadTypeScript(repo, projectDir);
   const resolver = createTsResolver(ts, projectDir);
 
   const { offsetToPosition } = require('../src/engine/textpos');
@@ -73,8 +86,12 @@ const check = (name, cond, extra = '') => {
   let phase = 'ready';
   const { createDecorationProvider } = require('../src/decorations');
   const decorate = createDecorationProvider(vscodeStub);
+  const { createReviewState, nodeId } = require('../src/review-state');
+  const mem = { m: new Map(), get(k) { return this.m.get(k); }, update(k, v) { this.m.set(k, v); } };
+  const review = createReviewState(mem);
+  review.useBase(result.base && result.base.sha);
   const provider = createTreeProvider(vscodeStub, {
-    getState: () => state, resolver, isBusy: () => busy, decorate, getPhase: () => phase });
+    getState: () => state, resolver, isBusy: () => busy, decorate, getPhase: () => phase, review });
 
   console.log('▸ readiness states');
   for (const [ph, label, hint] of [
@@ -252,7 +269,7 @@ const check = (name, cond, extra = '') => {
     const di = provider.getTreeItem(dirs[0]);
     check('directory rows use the folder icon', di.iconPath === vscodeStub.ThemeIcon.Folder, String(di.label));
     // compaction shows up below the root: `components` has two children here, but
-    // e.g. `consumer/docs` collapses into one row
+    // e.g. `pkg/docs` collapses into one row
     const allDirLabels = [];
     const collect = async (nodes) => {
       for (const n2 of nodes) {
@@ -279,6 +296,35 @@ const check = (name, cond, extra = '') => {
     check('flat layout returns one row per file', flat.length === (result.otherFiles || []).length
       && flat.every((f) => f.type === 'file'), `${flat.length}`);
     state.fileListLayout = 'tree';
+  }
+
+  console.log('▸ review state');
+  {
+    const f0 = findingNodes[0];
+    const id = nodeId(f0);
+    check('finding has a stable id', !!id, id);
+    let it = provider.getTreeItem(f0);
+    check('starts unchecked', it.checkboxState === vscodeStub.TreeItemCheckboxState.Unchecked);
+    const kids = (f0.finding.callers || []).map((c) => `${c.file}#${c.pos}`);
+    review.setWithChildren(id, kids, true);
+    it = provider.getTreeItem(f0);
+    check('checking a finding marks it', it.checkboxState === vscodeStub.TreeItemCheckboxState.Checked);
+    check('and clears its known callers', review.remaining(kids) === 0, `${kids.length} caller(s)`);
+    check('hover mode keeps the row glyph-only', /^[⛔✓△○?]$/.test(String(it.description)), String(it.description));
+    check('progress moved into the tooltip', /callers reviewed|callers left/.test(it.tooltip.value));
+    state.rowDetail = 'inline';
+    check('inline mode shows progress on the row',
+      /callers reviewed|callers left/.test(String(provider.getTreeItem(f0).description)));
+    state.rowDetail = 'hover';
+    const rows = await provider.getChildren();
+    check('summary reports remaining work', /left to review|all reviewed/.test(String(rows[0].label)), String(rows[0].label));
+    // a different base must not inherit judgements
+    review.useBase('some-other-sha');
+    check('progress does not carry across bases', review.remaining([id]) === 1);
+    review.useBase(result.base && result.base.sha);
+    check('and is restored when the base comes back', review.remaining([id]) === 0);
+    review.clear();
+    check('clear resets', review.size() === 0);
   }
 
   console.log('▸ cycle cut');

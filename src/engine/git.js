@@ -20,10 +20,21 @@ function makeGit(repo) {
 
 // The stale-local-base bug: `main` 6 commits behind `origin/main` turned a 37-file
 // PR into a 130-file diff. Always prefer the fetched remote ref.
+// `origin/<name>` is the right base for a BRANCH -- the stale-local-main bug turned a
+// 37-file PR into a 130-file one. It is wrong for a revision expression: `HEAD~40`
+// silently became `origin/HEAD~40`, which resolves (origin/HEAD is the remote's
+// default branch) and pointed 421 commits away, yielding an empty diff and a tree
+// that looked like "nothing changed".
+const isRevExpression = (spec) => /[~^@:]/.test(spec)
+  || /^[0-9a-f]{7,40}$/i.test(spec)
+  || spec === 'HEAD';
+
 function resolveBase(git, spec, { fetch = false, allowLocal = false } = {}) {
   const notes = [];
-  if (spec && /^[0-9a-f]{7,40}$/i.test(spec) && git.revParse(spec)) {
-    return { ref: spec, sha: git.revParse(spec), notes };
+  if (spec && isRevExpression(spec)) {
+    const sha = git.revParse(spec);
+    if (sha) return { ref: spec, sha, notes };
+    throw new Error(`cannot resolve base revision '${spec}'`);
   }
   const name = spec || 'main';
   const remote = `origin/${name.replace(/^origin\//, '')}`;

@@ -3,6 +3,7 @@ const vscode = require('vscode');
 const { isTestPath } = require('./engine/diff');
 const { offsetToPosition, positionToOffset } = require('./engine/textpos');
 const { makeCqrsEdges } = require('./engine/edges-cqrs');
+const { createInheritanceFilter } = require('./engine/inheritance');
 
 // Reuses the editor's already-running language server: no second program, incremental
 // for free, and any language with a call-hierarchy provider works, not just TypeScript.
@@ -11,7 +12,7 @@ const { makeCqrsEdges } = require('./engine/edges-cqrs');
 // editor to sync the document to the extension host, which Cursor rejects for many
 // files ("Documents above the size limit cannot be synchronized with extensions") and
 // which costs a round trip per caller. Offsets are converted from disk instead.
-function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trace = () => {} } = {}) {
+function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trace = () => {}, filterInherited = true } = {}) {
   // Retrying is only meaningful until the language server has proven it is up. Once ANY
   // query has succeeded, an empty result means "no callers", not "not ready" -- and the
   // backoff was costing 6s per unresolvable symbol (24s of a 50s run on 4 symbols).
@@ -22,7 +23,12 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
   const stats = {
     incomingCalls: 0, incomingMs: 0, cacheHits: 0, warmupRetries: 0,
     skipped: 0, resolvedEmpty: 0, cqrsEdges: 0, cqrsSuppressed: 0, durations: [], emptyAt: [],
+    inheritedDropped: 0,
   };
+
+  // The call hierarchy reports sibling-subclass dispatch as an incoming call to an
+  // override. Filtering needs only syntax, so it costs a parse of the caller file.
+  const inherited = filterInherited ? createInheritanceFilter(ts, { trace }) : null;
 
   // Same CQRS logic as the CLI, but definition/reference come from the editor's server
   // instead of our own program.
@@ -105,8 +111,8 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
     return { ready: false, calls: [], reason: 'language server not ready' };
   }
 
-  // The first query pays for the language server loading the whole project (~19s on
-  // components/consumer). Concurrent queries all block behind it and each reports the
+  // The first query pays for the language server loading the whole project (tens of
+  // seconds on a large one). Concurrent queries all block behind it and each reports the
   // full wait. Warming up explicitly means that cost is paid once, ideally before the
   // user asks for anything.
   async function warmUp(file, pos, { timeoutMs = 120000 } = {}) {
@@ -170,6 +176,14 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
         label: c.from.detail ? `${c.from.detail}.${c.from.name}` : c.from.name,
         file: f, pos: offset, test, sites: callSites.length, callSites,
       });
+    }
+    if (inherited && out.length) {
+      const { kept, dropped } = inherited.filterAt(file, pos, out);
+      if (dropped) {
+        stats.inheritedDropped += dropped;
+        out.length = 0;
+        out.push(...kept);
+      }
     }
     if (cqrs) {
       let extra = [];

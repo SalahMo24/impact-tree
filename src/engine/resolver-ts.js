@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { createInheritanceFilter } = require('./inheritance');
 const { isTestPath } = require('./diff');
 const { makeCqrsEdges } = require('./edges-cqrs');
 
@@ -13,7 +14,7 @@ function labelOf(item) {
 
 // Own-LanguageService resolver. Used by the CLI and by the deferred no-checkout PR mode.
 // The extension uses resolver-vscode.js instead, which reuses the editor's TS server.
-function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTsconfig = 'tsconfig.test.json' } = {}) {
+function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTsconfig = 'tsconfig.test.json', filterInherited = true } = {}) {
   const services = [];
   const byKind = {};
   for (const cfg of [tsconfig, testTsconfig]) {
@@ -74,7 +75,9 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
   });
 
   const cache = new Map();
-  const stats = { incomingCalls: 0, incomingMs: 0, refCalls: 0, refMs: 0, cacheHits: 0, cqrsEdges: 0 };
+  const stats = { incomingCalls: 0, incomingMs: 0, refCalls: 0, refMs: 0, cacheHits: 0, cqrsEdges: 0, inheritedDropped: 0 };
+  // Same over-report the extension sees: both ask the TypeScript call hierarchy.
+  const inherited = filterInherited ? createInheritanceFilter(ts) : null;
   // Each query is a project-wide findReferences, so cost scales with program size and
   // with how common the symbol name is (`execute`, `write`). Skipping the test program
   // on deep walks roughly halves it; the extension avoids this entirely by being lazy.
@@ -97,7 +100,12 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
         });
       }
     }
-    const out = [...seen.values()];
+    let out = [...seen.values()];
+    if (inherited && out.length) {
+      const { kept, dropped } = inherited.filterAt(file, pos, out);
+      stats.inheritedDropped += dropped;
+      out = kept;
+    }
     stats.incomingMs += Date.now() - t;
     cache.set(key, out);
     return out;
