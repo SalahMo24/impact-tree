@@ -35,15 +35,11 @@ const CALL_STATE = {
 function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, decorate = null, getPhase = () => 'ready', review = null }) {
   // A finding's direct callers are already resolved, so checking it can clear them too
   // and report real progress. Deeper levels are lazy and are not counted.
-  const childIdsOf = (n) => {
-    if (!n) return [];
-    if (n.type === 'finding' && n.finding) return (n.finding.callers || []).map((c) => `${c.file}#${c.pos}`);
-    if (n.type === 'callerFile') return (n.callers || []).map((c) => `${c.file}#${c.pos}`);
-    return [];
-  };
+  const idOf = (n) => review?.id ? review.id(n) : nodeId(n);
+  const childIdsOf = (n) => review?.childIds ? review.childIds(n) : [];
   const applyCheckbox = (item, n) => {
     if (!review) return;
-    const id = nodeId(n);
+    const id = idOf(n);
     if (!id) return;
     item.checkboxState = review.isReviewed(id)
       ? vscode.TreeItemCheckboxState.Checked
@@ -61,7 +57,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
     let u;
     if (st && st.result && st.result.tierA && st.rel) {
       const rel = String(st.rel(file) || file).replace(/\\/g, '/').replace(/^\/+/, '');
-      u = vscode.Uri.from({ scheme: 'impacttree-pr', path: `/${rel}`, query: 'side=head' });
+      u = vscode.Uri.from({ scheme: 'impacttree-pr', path: `/${rel}`, query: require('./pr-documents').prQuery(st.result, 'head') });
     } else {
       u = vscode.Uri.file(file);
     }
@@ -252,6 +248,9 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
       return item;
     }
     if (n.type === 'finding') {
+      const kids = childIdsOf(n);
+      const left = review ? review.remaining(kids) : 0;
+      n._reviewNote = review && kids.length ? (left ? `${left}/${kids.length} callers left to review` : 'all callers reviewed') : null;
       const f = n.finding;
       const st = statusOf(f);
       const kinds = f.kinds.filter((k) => k.id !== 'body').map((k) => k.short || k.label);
@@ -286,16 +285,8 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
       applyCheckbox(item, n);
       // Review progress goes inline only in 'inline' mode; hover mode keeps the row to a
       // single state glyph, so the count lives in the tooltip instead.
-      if (review) {
-        const kids = childIdsOf(n);
-        if (kids.length) {
-          const left = review.remaining(kids);
-          const text = left ? `${left}/${kids.length} callers left to review` : 'all callers reviewed';
-          if (detailMode() === 'inline') {
-            item.description = `${item.description || ''}${item.description ? '  ·  ' : ''}${text}`;
-          }
-          n._reviewNote = text;
-        }
+      if (n._reviewNote && detailMode() === 'inline') {
+        item.description = `${item.description || ''}${item.description ? '  ·  ' : ''}${n._reviewNote}`;
       }
       item.command = { command: 'impactTree.openChange', title: 'Open change', arguments: [n] };
       return item;
@@ -375,7 +366,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
         const other = rootsOf((r.allChanged || []).filter((c) => !r.findings.includes(c)));
         const nestedFindings = r.findings.length - findingRoots.length;
         const nestedOther = (r.allChanged || []).filter((c) => !r.findings.includes(c)).length - other.length;
-        const topIds = rootsOf(r.allChanged || []).map((c) => `${c.file}#${c.namePos}`);
+        const topIds = rootsOf(r.allChanged || []).map((c) => idOf({ type: 'finding', file: c.file, pos: c.namePos }));
         const left = review ? review.remaining(topIds) : null;
         out.push(N({
           type: 'summary',
@@ -401,7 +392,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
         for (const w of r.warnings) out.push(N({ type: 'message', label: w, icon: 'warning' }));
         for (const u of r.unanalysable) {
           out.push(N({ type: 'message', icon: 'circle-slash',
-            label: `${u.count} file(s) in '${u.component}' not analysed`, desc: 'no node_modules installed' }));
+            label: `${u.count} file(s) in '${u.component}' not analysed`, desc: 'see analysis warning' }));
         }
         // Sections, so a body-only change is visible without competing with findings
         out.push(N({ type: 'section', key: 'findings', label: 'Findings', count: findingRoots.length,
@@ -483,6 +474,8 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
       seenPath.add(`${node.file}#${node.pos}`);
       let callers = [];
       try { callers = await resolver.incoming(node.file, node.pos, true); } catch { callers = []; }
+      const excluded = new Set(state2?.result?.excludedCallerPaths || []);
+      if (excluded.size && state2?.rel) callers = callers.filter((c) => !excluded.has(state2.rel(c.file)));
       const changedKeys = (state2 && state2.changedKeys) || new Set();
       if (decorate) setTimeout(() => decorate.flush(), 0);
       const built = callers.map((c) => {
@@ -493,7 +486,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
         const uri = uriFor(c.file, c.pos);
         mark(uri, statusOfPath(state2, rel), c.test ? 'muted' : (CALL_STATE[callState] || {}).severity, rel);
         return N({
-          type: 'caller', label: c.label, file: c.file, pos: c.pos, test: c.test,
+          type: 'caller', reviewParent: idOf(node), label: c.label, file: c.file, pos: c.pos, test: c.test,
           callSites: c.callSites || [], sites: c.sites,
           relPath: rel, changed: symChanged, callState, decorationUri: uri,
           cycle: seenPath.has(`${c.file}#${c.pos}`),
@@ -521,7 +514,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
         const rank = (x) => (x.callState === 'unchanged' ? 2 : x.callState === 'changed-elsewhere' ? 1 : 0);
         const worst = rows.slice().sort((a, b) => rank(b) - rank(a))[0];
         grouped.push(N({
-          type: 'callerFile',
+          type: 'callerFile', reviewParent: idOf(node),
           label: path.basename(rel),
           relPath: rel,
           file: rows[0].file,

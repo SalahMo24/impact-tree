@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createInheritanceFilter } = require('./inheritance');
-const { isTestPath } = require('./diff');
+const { isTestFile } = require('./diff');
 const { makeCqrsEdges } = require('./edges-cqrs');
 
 // TS reports top-level/global-scope callers (a bare `it(...)` body) with the file path
@@ -14,40 +14,66 @@ function labelOf(item) {
 
 // Own-LanguageService resolver. Used by the CLI and by the deferred no-checkout PR mode.
 // The extension uses resolver-vscode.js instead, which reuses the editor's TS server.
-function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTsconfig = 'tsconfig.test.json', filterInherited = true } = {}) {
+function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTsconfig = 'tsconfig.test.json', filterInherited = true, repoRoot = null } = {}) {
+  // Classified relative to the repo: an absolute path put every caller of a repo that
+  // happens to live under some `.../tests/...` directory into the test bucket.
+  const isTest = (f) => isTestFile(repoRoot || componentDir, f);
   const services = [];
-  const byKind = {};
+  const prodServices = [];
+  // A solution-style tsconfig (`"files": []` plus `references`, the Vite and Nx
+  // default) compiles nothing itself; the code lives in the projects it references.
+  const configsFrom = (full) => {
+    const out = [];
+    const seen = new Set();
+    const walk = (cfgPath) => {
+      if (seen.has(cfgPath) || !fs.existsSync(cfgPath)) return;
+      seen.add(cfgPath);
+      const raw = ts.readConfigFile(cfgPath, ts.sys.readFile);
+      if (!raw.config) return;
+      const parsed = ts.parseJsonConfigFileContent(raw.config, ts.sys, path.dirname(cfgPath), undefined, cfgPath);
+      if (parsed.fileNames.length || !(parsed.projectReferences || []).length) out.push(parsed);
+      for (const ref of parsed.projectReferences || []) {
+        const target = ts.resolveProjectReferencePath ? ts.resolveProjectReferencePath(ref) : ref.path;
+        walk(fs.existsSync(target) && fs.statSync(target).isDirectory() ? path.join(target, 'tsconfig.json') : target);
+      }
+    };
+    walk(full);
+    return out;
+  };
   for (const cfg of [tsconfig, testTsconfig]) {
     const full = path.join(componentDir, cfg);
     if (!fs.existsSync(full)) continue;
-    const raw = ts.readConfigFile(full, ts.sys.readFile);
-    const parsed = ts.parseJsonConfigFileContent(raw.config, ts.sys, componentDir);
-    const files = parsed.fileNames;
-    // Defect fix: a constant version made the service cache file contents forever —
-    // correct for a batch run, wrong the moment anything edits a file.
-    const versions = new Map();
-    const versionOf = (f) => {
-      try { const m = fs.statSync(f).mtimeMs; versions.set(f, String(m)); return String(m); }
-      catch { return versions.get(f) || '0'; }
-    };
-    const svc = ts.createLanguageService({
-      getScriptFileNames: () => files,
-      getScriptVersion: versionOf,
-      getScriptSnapshot: (f) => (fs.existsSync(f) ? ts.ScriptSnapshot.fromString(fs.readFileSync(f, 'utf8')) : undefined),
-      getCurrentDirectory: () => componentDir,
-      getCompilationSettings: () => parsed.options,
-      getDefaultLibFileName: (o) => ts.getDefaultLibFilePath(o),
-      fileExists: ts.sys.fileExists, readFile: ts.sys.readFile, readDirectory: ts.sys.readDirectory,
-      directoryExists: ts.sys.directoryExists, getDirectories: ts.sys.getDirectories,
-    }, ts.createDocumentRegistry());
-    services.push(svc);
-    byKind[cfg === tsconfig ? 'head' : 'test'] = svc;
+    for (const parsed of configsFrom(full)) {
+      const files = parsed.fileNames;
+      // Defect fix: a constant version made the service cache file contents forever —
+      // correct for a batch run, wrong the moment anything edits a file.
+      const versions = new Map();
+      const versionOf = (f) => {
+        try { const m = fs.statSync(f).mtimeMs; versions.set(f, String(m)); return String(m); }
+        catch { return versions.get(f) || '0'; }
+      };
+      const svc = ts.createLanguageService({
+        getScriptFileNames: () => files,
+        getScriptVersion: versionOf,
+        getScriptSnapshot: (f) => (fs.existsSync(f) ? ts.ScriptSnapshot.fromString(fs.readFileSync(f, 'utf8')) : undefined),
+        getCurrentDirectory: () => componentDir,
+        getCompilationSettings: () => parsed.options,
+        getDefaultLibFileName: (o) => ts.getDefaultLibFilePath(o),
+        fileExists: ts.sys.fileExists, readFile: ts.sys.readFile, readDirectory: ts.sys.readDirectory,
+        directoryExists: ts.sys.directoryExists, getDirectories: ts.sys.getDirectories,
+      }, ts.createDocumentRegistry());
+      services.push(svc);
+      if (cfg === tsconfig) prodServices.push(svc);
+    }
   }
   if (!services.length) return null;
+  const inProgram = (file) => services.some((ls) => {
+    try { return !!ls.getProgram().getSourceFile(file); } catch { return false; }
+  });
 
   // definition/reference primitives the CQRS provider needs, backed by the same services
   const cqrs = makeCqrsEdges(ts, {
-    isTestPath,
+    isTestPath: isTest,
     async definitionAt(file, offset) {
       for (const ls of services) {
         let defs = [];
@@ -87,7 +113,7 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
     const t = Date.now();
     stats.incomingCalls++;
     const seen = new Map();
-    const use = withTests ? services : [byKind.head].filter(Boolean);
+    const use = withTests ? services : prodServices;
     for (const ls of use) {
       let calls = [];
       try { calls = ls.provideCallHierarchyIncomingCalls(file, pos) || []; } catch { calls = []; }
@@ -95,7 +121,7 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
         const id = `${c.from.file}#${c.from.selectionSpan.start}`;
         if (!seen.has(id)) seen.set(id, {
           label: labelOf(c.from), file: c.from.file, pos: c.from.selectionSpan.start,
-          test: isTestPath(c.from.file), sites: c.fromSpans.length,
+          test: isTest(c.from.file), sites: c.fromSpans.length,
           callSites: c.fromSpans.map((sp) => ({ start: sp.start, end: sp.start + sp.length })),
         });
       }
@@ -155,6 +181,9 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
     async callerState(file, pos, { isConstructor = false } = {}) {
       const callers = await withCqrs(file, pos, true);
       if (callers.length) return { state: 'resolved', callers };
+      // No tsconfig includes this file, so no query could have found a caller. "none"
+      // there claimed a function nobody calls; the truth is we did not look.
+      if (!inProgram(file)) return { state: 'unknown', reason: 'not-in-program', callers: [] };
       // A constructor with no `new X()` site is instantiated by the DI container.
       if (isConstructor) return { state: 'di', callers: [] };
       return { state: referenceCount(file, pos) > 0 ? 'unknown' : 'none', callers: [] };

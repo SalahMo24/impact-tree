@@ -1,14 +1,17 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { makeGit, resolveBase } = require('./git');
-const { changedFiles, hunks, isTestPath, isSourcePath, projectRootOf, projectLabel } = require('./diff');
+const { makeGit, resolveBaseAsync } = require('./git');
+const {
+  changedFiles, untrackedFiles, allHunks, wholeFileRange, isTestPath, isSourcePath,
+  projectRootOf, clearProjectCache, projectLabel,
+} = require('./diff');
 const { makeSymbols } = require('./symbols');
 const { score } = require('./signature');
-const { changedSymbolsIn } = require('./changed-symbols');
+const { changedSymbolsIn, changedSymbolKeys } = require('./changed-symbols');
 const { createTsResolver } = require('./resolver-ts');
-const { seedRoots, blastRadius, buildTree } = require('./forest');
-const { offsetToPosition } = require('./textpos');
+const { seedRoots, nestedIds, blastRadius, buildTree } = require('./forest');
+const { offsetToPosition, clearVirtualText } = require('./textpos');
 
 async function mapLimit(items, limit, fn) {
   const out = new Array(items.length);
@@ -76,6 +79,27 @@ function loadTypeScript(repo, projectDir) {
     + (rejected.length ? `. Rejected: ${rejected.join(', ')} (no classic compiler API)` : ''));
 }
 
+// One `git diff` for every file, split only so a huge PR stays under the OS argument
+// limit. A rename's two paths always travel in the same chunk: git can only pair them
+// when both are in the pathspec.
+function rangesFor(git, baseSha, headRev, files, { maxChars = 60000 } = {}) {
+  const groups = files.map((f) => (f.oldPath && f.oldPath !== f.path ? [f.oldPath, f.path] : [f.path]));
+  const out = {};
+  let chunk = [], size = 0;
+  const flush = () => {
+    if (!chunk.length) return;
+    Object.assign(out, allHunks(git, baseSha, headRev, chunk));
+    chunk = []; size = 0;
+  };
+  for (const g of groups) {
+    const len = g.reduce((n, p) => n + p.length + 1, 0);
+    if (chunk.length && size + len > maxChars) flush();
+    chunk.push(...g); size += len;
+  }
+  flush();
+  return out;
+}
+
 const MODES = {
   working:    { desc: 'uncommitted changes only (agent review)', headRev: null,   requireClean: false },
   checkpoint: { desc: 'since a recorded checkpoint',            headRev: null,   requireClean: false },
@@ -90,16 +114,43 @@ async function analyze(repo, opts = {}) {
   const depth = opts.depth ?? 2;
   const git = makeGit(repo);
   const warnings = [];
+  // Per-run caches. The extension host lives for hours: a tsconfig added since the last
+  // run must be seen, and text a Tier A preview registered for a PR must not stand in
+  // for the file on disk (it moved every call-site line of a local run).
+  clearProjectCache();
+  clearVirtualText();
 
+  // `rev-parse <40 hex>` echoes any well-formed sha back, existing or not, so a stale
+  // checkpoint surfaced as a raw `git diff` failure. Ask for a commit specifically.
+  const commitOf = (ref) => git.revParse(`${ref}^{commit}`);
   let base;
   if (mode === 'working') base = { ref: 'HEAD', sha: git.revParse('HEAD'), notes: [] };
   else if (mode === 'checkpoint') {
     if (!opts.checkpoint) throw new Error('checkpoint mode requires opts.checkpoint');
-    base = { ref: opts.checkpoint, sha: git.revParse(opts.checkpoint), notes: [] };
+    const sha = commitOf(opts.checkpoint);
+    if (!sha) {
+      const err = new Error(`checkpoint ${String(opts.checkpoint).slice(0, 12)} is not a commit in this repository — record a new checkpoint`);
+      err.code = 'NO_CHECKPOINT';
+      throw err;
+    }
+    base = { ref: opts.checkpoint, sha, notes: [] };
   } else {
-    const resolved = resolveBase(git, opts.base || 'main', { fetch: !!opts.fetch, allowLocal: !!opts.allowLocalBase });
-    base = { ...resolved, sha: git.mergeBase(resolved.sha, 'HEAD') || resolved.sha };
+    const resolved = await resolveBaseAsync(git, opts.base || 'main', {
+      fetch: !!opts.fetch, allowLocal: !!opts.allowLocalBase, timeoutMs: opts.fetchTimeoutMs,
+    });
     warnings.push(...resolved.notes);
+    const mb = git.mergeBase(resolved.sha, 'HEAD');
+    if (!mb) {
+      // Falling back to the base TIP diffed every commit the base gained since the
+      // branch point, in reverse -- other people's work shown as this branch deleting it.
+      const shallow = git.isShallow();
+      const err = new Error(shallow
+        ? `no common ancestor of ${resolved.ref} and HEAD in this clone — it is shallow, so the branch point was never fetched. Run 'git fetch --unshallow' (or fetch with more depth) and refresh.`
+        : `${resolved.ref} and HEAD share no history — a branch diff against it is meaningless. Choose another base branch.`);
+      err.code = 'NO_MERGE_BASE';
+      throw err;
+    }
+    base = { ...resolved, sha: mb };
   }
 
   const dirty = git.isDirty(null);
@@ -121,6 +172,14 @@ async function analyze(repo, opts = {}) {
 
   const headRev = opts.headRev !== undefined ? opts.headRev : effectiveCfg.headRev;
   const everything = changedFiles(git, base.sha, headRev, null);
+  // A new file nobody has `git add`ed yet is invisible to `git diff`. When the head is
+  // the working tree it is part of the change; when the head is a commit it is not,
+  // and neither are the callers the language service finds inside it.
+  const untracked = new Set(untrackedFiles(git));
+  if (headRev === null) {
+    const listed = new Set(everything.map((f) => f.path));
+    for (const p of untracked) if (!listed.has(p)) everything.push({ status: 'added', oldPath: null, path: p, untracked: true });
+  }
   const files = everything.filter((f) => isSourcePath(f.path) && !isTestPath(f.path)
     && projectRootOf(repo, f.path) !== null);
 
@@ -130,18 +189,19 @@ async function analyze(repo, opts = {}) {
     const root = projectRootOf(repo, f.path);
     if (root === null) continue;
     const label = projectLabel(root);
-    if (!fs.existsSync(path.join(repo, root, 'node_modules'))) {
-      unanalysable.set(label, (unanalysable.get(label) || 0) + 1);
-      continue;
-    }
     if (!byComponent.has(label)) byComponent.set(label, { root, files: [] });
     byComponent.get(label).files.push(f);
   }
-  for (const [label, n] of unanalysable) warnings.push(`${n} changed file(s) in '${label}' NOT analysed — no node_modules installed`);
 
   // relPath -> [[startLine, endLine], ...] of the new-side changed ranges
   const changedRanges = {};
-  for (const f of files) changedRanges[f.path] = hunks(git, base.sha, headRev, f.path);
+  const tracked = files.filter((f) => !f.untracked);
+  const ranges = tracked.length ? rangesFor(git, base.sha, headRev, tracked) : {};
+  for (const f of files) {
+    changedRanges[f.path] = f.untracked ? wholeFileRange(path.join(repo, f.path)) : (ranges[f.path] || []);
+  }
+  // every base-side blob in one process, not a `git show` per file
+  const baseTexts = git.showMany(base.sha, files.filter((f) => f.status !== 'added').map((f) => f.oldPath || f.path));
 
   // A call site counts as updated only if a hunk actually covers it. A caller edited
   // elsewhere in its body has NOT been updated for this change, even though its symbol
@@ -150,8 +210,9 @@ async function analyze(repo, opts = {}) {
     const p2 = offsetToPosition(file, offset);
     return p2 ? p2.line + 1 : null;
   };
+  const relOf = (abs) => path.relative(repo, abs).split(path.sep).join('/');
   const callSiteUpdated = (callerFile, callSites) => {
-    const rel2 = path.relative(repo, callerFile);
+    const rel2 = relOf(callerFile);
     const ranges = changedRanges[rel2];
     if (!ranges || !ranges.length || !callSites || !callSites.length) return false;
     return callSites.some((cs) => {
@@ -162,6 +223,8 @@ async function analyze(repo, opts = {}) {
   };
 
   const components = [];
+  let droppedUntracked = 0;
+  const outsideProgram = new Set();
   let compIndex = 0;
   for (const [comp, entry] of byComponent) {
     const compFiles = entry.files;
@@ -177,7 +240,7 @@ async function analyze(repo, opts = {}) {
       continue;
     }
     const S = makeSymbols(ts);
-    const resolver = opts.makeResolver ? opts.makeResolver({ ts, componentDir: dir, component: comp }) : createTsResolver(ts, dir);
+    const resolver = opts.makeResolver ? opts.makeResolver({ ts, componentDir: dir, component: comp, repoRoot: repo }) : createTsResolver(ts, dir, { repoRoot: repo });
     if (!resolver) { warnings.push(`'${comp}' has no tsconfig.json — skipped`); continue; }
     const changed = [], deleted = [];
     for (const f of compFiles) {
@@ -186,18 +249,23 @@ async function analyze(repo, opts = {}) {
       if (f.status !== 'deleted') {
         try { headText = fs.readFileSync(abs, 'utf8'); } catch { headText = null; }
       }
-      const r = changedSymbolsIn(ts, S, {
-        absPath: abs, relPath: f.path, status: f.status,
-        headText,
-        baseText: f.status === 'added' ? null : git.show(base.sha, f.oldPath || f.path),
-        hunkRanges: changedRanges[f.path] || hunks(git, base.sha, headRev, f.path),
-        component: comp, projectRoot: entry.root,
-      });
-      changed.push(...r.changed);
-      deleted.push(...r.deleted);
+      // One file the parser or symbol walk chokes on must not blank the whole view.
+      try {
+        const r = changedSymbolsIn(ts, S, {
+          absPath: abs, relPath: f.path, oldPath: f.oldPath, status: f.status,
+          headText,
+          baseText: f.status === 'added' ? null : baseTexts.get(f.oldPath || f.path) ?? null,
+          hunkRanges: changedRanges[f.path] || [],
+          component: comp, projectRoot: entry.root,
+        });
+        changed.push(...r.changed);
+        deleted.push(...r.deleted);
+      } catch (e) {
+        warnings.push(`${f.path}: could not be analysed — ${e && e.message}`);
+      }
     }
 
-    const changedKeys = new Set(changed.map((c) => `${c.file}#${c.namePos}`));
+    const changedKeys = changedSymbolKeys(changed);
     const concurrency = opts.concurrency ?? 8;
     const deferReach = opts.deferTestReach === true;
     const report = opts.onProgress || (() => {});
@@ -211,6 +279,14 @@ async function analyze(repo, opts = {}) {
         cs = { state: 'unknown', callers: [] };
         warnings.push(`caller resolution failed for ${c.label} (${c.relPath}): ${e && e.message}`);
       }
+      if (headRev !== null && untracked.size && cs.callers.length) {
+        const kept = cs.callers.filter((x) => !untracked.has(relOf(x.file)));
+        if (kept.length !== cs.callers.length) {
+          droppedUntracked += cs.callers.length - kept.length;
+          cs = { ...cs, callers: kept, state: kept.length || cs.state !== 'resolved' ? cs.state : 'none' };
+        }
+      }
+      if (cs.reason === 'not-in-program') outsideProgram.add(`${comp}\u0000${c.relPath}`);
       c.callerState = cs.state;
       c.callers = cs.callers;
       for (const x of cs.callers) {
@@ -253,7 +329,7 @@ async function analyze(repo, opts = {}) {
 
     // Blast radius is only computed for roots we will actually show: at depth 4 with
     // 90-node closures it was the single largest cost in the run (234s -> see README).
-    const ranked = seedRoots(changed, changedKeys).sort((a, b) => b.score - a.score);
+    const ranked = seedRoots(changed).sort((a, b) => b.score - a.score);
     const roots = [];
     if (opts.skipForest) {
       components.push({ component: comp, changed, deleted, roots: ranked, forest: [], stats: resolver.stats ? resolver.stats() : {} });
@@ -279,21 +355,13 @@ async function analyze(repo, opts = {}) {
     if (resolver.dispose) resolver.dispose();
   }
 
+  for (const k of outsideProgram) {
+    const [comp, rel] = k.split('\u0000');
+    warnings.push(`${rel} is not included by any tsconfig in '${comp}' — its callers are unknown`);
+  }
+  if (droppedUntracked) warnings.push(`${droppedUntracked} caller(s) in untracked files ignored — they are not part of the committed change`);
   const all = components.flatMap((c) => c.changed);
-  const allKeys = new Set(all.map((c) => `${c.file}#${c.namePos}`));
-  const nested = new Set();
-  for (const c of all) {
-    for (const x of c.callers || []) {
-      const k = `${x.file}#${x.pos}`;
-      if (allKeys.has(k) && k !== `${c.file}#${c.namePos}`) nested.add(k);
-    }
-  }
-  // A cycle among changed symbols would nest every member and leave no root; promote
-  // the highest-scoring one so the group stays reachable.
-  if (all.length && nested.size === all.length) {
-    const top = all.slice().sort((a, b) => b.score - a.score)[0];
-    nested.delete(`${top.file}#${top.namePos}`);
-  }
+  const nested = nestedIds(all);
   for (const c of all) c.isRoot = !nested.has(`${c.file}#${c.namePos}`);
   // Same rule as the Tier A path: a source file we analysed but which produced no
   // changed callable still changed, and must stay visible somewhere in the view.
@@ -313,7 +381,9 @@ async function analyze(repo, opts = {}) {
     changedFileCount: files.length,
     changedPaths: files.map((f) => f.path),
     fileStatus: Object.fromEntries(everything.map((f) => [f.path, f.status])),
+    basePaths: Object.fromEntries(everything.filter(f => f.oldPath).map(f => [f.path, f.oldPath])),
     changedRanges,
+    excludedCallerPaths: headRev !== null ? [...untracked] : [],
     unanalysable: [...unanalysable].map(([component, count]) => ({ component, count })),
     components,
     findings: all.filter((c) => c.kinds.some((k) => k.id !== 'body')).sort((a, b) => b.score - a.score),
@@ -323,4 +393,4 @@ async function analyze(repo, opts = {}) {
     unknownCallers: all.filter((c) => c.callerState === 'unknown'),
   };
 }
-module.exports = { analyze, MODES, loadTypeScript };
+module.exports = { analyze, MODES, loadTypeScript, rangesFor };

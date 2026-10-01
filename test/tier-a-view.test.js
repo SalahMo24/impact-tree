@@ -65,19 +65,19 @@ console.log('▸ opening a caller');
 {
   const changed = callerOpen({
     tierA: true, rel: 'src/service.ts', absPath: '/repo/src/service.ts',
-    fileChanged: true, always: false, baseSha: 'basesha', prNumber: 7,
+    fileChanged: true, always: false, baseSha: 'basesha', headSha: 'headsha', prNumber: 7,
   });
   check('a file changed away from the call opens as a diff', changed.kind === 'diff');
   check('the right side is the PR head, not the worktree',
-    changed.right && changed.right.scheme === 'impacttree-pr' && changed.right.query === 'side=head',
+    changed.right && changed.right.scheme === 'impacttree-pr' && new URLSearchParams(changed.right.query).get('side') === 'head' && new URLSearchParams(changed.right.query).get('revision') === '7:headsha:basesha',
     JSON.stringify(changed.right));
   check('the left side is the PR base',
-    changed.left && changed.left.query === 'side=base');
+    changed.left && new URLSearchParams(changed.left.query).get('side') === 'base');
   check('the title names the PR', changed.rhsName === 'PR #7', changed.rhsName);
 
   const outside = callerOpen({
     tierA: true, rel: 'src/other.ts', absPath: '/repo/src/other.ts',
-    fileChanged: false, always: true, baseSha: 'basesha', prNumber: 7,
+    fileChanged: false, always: true, baseSha: 'basesha', headSha: 'headsha', prNumber: 7,
   });
   check('a file the PR does not touch stays a plain editor even if always-diff is on',
     outside.kind === 'editor' && outside.uri.scheme === 'file');

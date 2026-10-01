@@ -62,7 +62,7 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
       if ((ts.isClassDeclaration(n) || ts.isInterfaceDeclaration(n)) && n.name) {
         const heritage = [];
         for (const h of n.heritageClauses || []) {
-          for (const t of h.types) if (ts.isIdentifier(t.expression)) heritage.push(t.expression.text);
+          for (const t of h.types) heritage.push(t.expression.getText(sf));
         }
         const methods = new Set();
         for (const m of n.members || []) {
@@ -109,8 +109,8 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
         let out = null;
         try {
           const cfg = ts.parseConfigFileTextToJson(cfgPath, fs.readFileSync(cfgPath, 'utf8')).config;
-          const co = (cfg && cfg.compilerOptions) || {};
-          out = { baseUrl: path.resolve(dir, co.baseUrl || '.'), paths: co.paths || null };
+          const co = ts.parseJsonConfigFileContent(cfg || {}, ts.sys, dir, undefined, cfgPath).options;
+          out = { baseUrl: co.baseUrl || co.pathsBasePath || dir, paths: co.paths || null };
         } catch { out = null; }
         chain.forEach((d) => cfgCache.set(d, out));
         return out;
@@ -199,6 +199,18 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
     return out;
   }
 
+  function heritageKnown(file, name, seen = new Set()) {
+    const key = `${file}#${name}`;
+    if (seen.has(key)) return true;
+    seen.add(key);
+    const entry = parse(file)?.classes.get(name);
+    if (!entry) return false;
+    return entry.heritage.every((parent) => {
+      const f = fileDeclaring(file, parent);
+      return f && heritageKnown(f, parent, seen);
+    });
+  }
+
   function ancestorDeclares(file, className, method) {
     for (const a of ancestorsOf(file, className)) {
       const af = fileDeclaring(file, a);
@@ -249,20 +261,10 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
     // `obj.foo()` where obj is a typed local or parameter
     if (ts.isIdentifier(recv)) {
       const wanted = recv.text;
-      let found = null;
-      const scan = (n) => {
-        if (found) return;
-        if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === wanted && n.type) {
-          found = typeName(n.type);
-        } else if (ts.isParameter(n) && ts.isIdentifier(n.name) && n.name.text === wanted && n.type) {
-          found = typeName(n.type);
-        } else if (ts.isPropertyDeclaration(n) && n.name && n.name.getText(sf) === wanted && n.type) {
-          found = typeName(n.type);
-        }
-        ts.forEachChild(n, scan);
-      };
-      ts.forEachChild(sf, scan);
-      return found;
+      // Resolve the nearest lexical binding, including an untyped shadow. Never
+      // infer a parameter from an unrelated method elsewhere in the file.
+      const binding = require('./lexical').bindingAt(ts, recv, wanted);
+      return binding ? typeName(binding.type) : null;
     }
     return null;
 
@@ -330,6 +332,7 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
       const tf = fileDeclaring(caller.file, t);
       if (!tf) return false;                                 // cannot judge -> keep
       if (ancestorsOf(tf, t).has(target.className)) return false;   // a subclass
+      if (!heritageKnown(tf, t) || !heritageKnown(target.file, target.className)) return false;
       unrelated++;
     }
     return unrelated > 0;
@@ -355,7 +358,7 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
     return filterCallers(target, callers);
   }
 
-  return { filterCallers, filterAt, targetAt, isSiblingDispatch, ancestorsOf, ancestorDeclares, receiverTypeAt };
+  return { clear() { parsed.clear(); cfgCache.clear(); declCache.clear(); ancestorCache.clear(); targetCache.clear(); }, filterCallers, filterAt, targetAt, isSiblingDispatch, ancestorsOf, ancestorDeclares, receiverTypeAt };
 }
 
 module.exports = { createInheritanceFilter };

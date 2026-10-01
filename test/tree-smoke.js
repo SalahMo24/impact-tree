@@ -62,14 +62,21 @@ const check = (name, cond, extra = '') => {
     console.log('\ntree checks did NOT run');
     process.exit(0);
   }
-  // locate the project from the analysis result, not from an assumed folder layout
-  const projectDir = path.join(repo, top.projectRoot || '');
-  // Use the engine's own loader rather than a second, weaker copy of the lookup: a
-  // monorepo root has no typescript, and this resolved to nothing the moment the top
-  // finding landed in a project without its own install.
+  // Visible roots may belong to a different project from the highest-scored
+  // (possibly nested) finding. Route each lazy query to its own TS project.
   const { loadTypeScript } = require('../src/engine/analyze');
-  const ts = loadTypeScript(repo, projectDir);
-  const resolver = createTsResolver(ts, projectDir);
+  const { projectRootOf } = require('../src/engine/diff');
+  const resolvers = new Map();
+  const resolver = {
+    async incoming(file, pos, withTests) {
+      const project = projectRootOf(repo, path.relative(repo, file));
+      const dir = path.join(repo, project || '');
+      if (!resolvers.has(dir)) resolvers.set(dir, createTsResolver(loadTypeScript(repo, dir), dir, { repoRoot: repo }));
+      return resolvers.get(dir)?.incoming(file, pos, withTests) || [];
+    },
+    stats: () => ({ incomingCalls: [...resolvers.values()].reduce((n,r) => n + (r?.stats().incomingCalls || 0), 0) }),
+    dispose() { for (const r of resolvers.values()) r?.dispose(); },
+  };
 
   const { offsetToPosition } = require('../src/engine/textpos');
   const callSiteUpdated = (file, sites) => {
@@ -86,10 +93,12 @@ const check = (name, cond, extra = '') => {
   let phase = 'ready';
   const { createDecorationProvider } = require('../src/decorations');
   const decorate = createDecorationProvider(vscodeStub);
-  const { createReviewState, nodeId } = require('../src/review-state');
+  const { createReviewState } = require('../src/review-state');
   const mem = { m: new Map(), get(k) { return this.m.get(k); }, update(k, v) { this.m.set(k, v); } };
   const review = createReviewState(mem);
-  review.useBase(result.base && result.base.sha);
+  const identify = require('../src/review-identity').createReviewIdentity(loadTypeScript(repo,repo), repo, result,
+    (rel) => require('../src/engine/git').makeGit(repo).show(result.base.sha, rel));
+  review.configure('smoke-review', identify);
   const provider = createTreeProvider(vscodeStub, {
     getState: () => state, resolver, isBusy: () => busy, decorate, getPhase: () => phase, review });
 
@@ -175,7 +184,7 @@ const check = (name, cond, extra = '') => {
     findingNodes.length === result.findings.filter((f) => f.isRoot !== false).length,
     `${findingNodes.length} of ${result.findings.length} findings are roots`);
   check('ranked descending', findingNodes.every((n, i) => i === 0 || findingNodes[i - 1].score >= n.score));
-  check('warnings surfaced as messages', roots.some((n) => n.type === 'message'));
+  check('every warning surfaced as a message', result.warnings.every((w) => roots.some((n) => n.type === 'message' && n.label === w)));
   // Only asserted when the diff actually touches a component without node_modules.
   // With the corrected origin/main base this PR touches none, so it is informational.
   const unanalysableMsgs = roots.filter((n) => n.type === 'message' && /not analysed/.test(n.label));
@@ -243,7 +252,7 @@ const check = (name, cond, extra = '') => {
   check('children returned', callerKids.length > 0, `${callerKids.length} caller(s)`);
   check('changed callers flagged', callerKids.every((k) => typeof k.changed === 'boolean'));
   const ci = provider.getTreeItem(callerKids[0]);
-  check('hover mode: caller row keeps the state glyph only', /^[✓△○↑🧪]$/.test(String(ci.description)), String(ci.description));
+  check('hover mode: caller row keeps the state glyph only', /^[✓△○↑🧪]$/u.test(String(ci.description)), String(ci.description));
   check('hover mode: caller tooltip has state and path',
     /call updated|not changed|changed, but not at the call|test/.test(ci.tooltip.value) && /\.ts/.test(ci.tooltip.value));
   check('every caller has a three-state callState',
@@ -254,7 +263,8 @@ const check = (name, cond, extra = '') => {
     ci.iconPath === vscodeStub.ThemeIcon.File || /^(beaker|issue-reopened)$/.test(ci.iconPath.id),
     ci.iconPath && ci.iconPath.id);
   state.iconMode = 'symbol';
-  const ci2 = provider.getTreeItem(callerKids[0]);
+  const symbolRow = callerKids.find((c) => !c.test && !c.cycle) || findingNodes[0];
+  const ci2 = provider.getTreeItem(symbolRow);
   check('iconMode="symbol" switches code rows back to symbol icons',
     !!ci2.iconPath && /^symbol-/.test(ci2.iconPath.id), ci2.iconPath && ci2.iconPath.id);
   state.iconMode = 'file';
@@ -301,11 +311,11 @@ const check = (name, cond, extra = '') => {
   console.log('▸ review state');
   {
     const f0 = findingNodes[0];
-    const id = nodeId(f0);
+    const id = review.id(f0);
     check('finding has a stable id', !!id, id);
     let it = provider.getTreeItem(f0);
     check('starts unchecked', it.checkboxState === vscodeStub.TreeItemCheckboxState.Unchecked);
-    const kids = (f0.finding.callers || []).map((c) => `${c.file}#${c.pos}`);
+    const kids = review.childIds(f0);
     review.setWithChildren(id, kids, true);
     it = provider.getTreeItem(f0);
     check('checking a finding marks it', it.checkboxState === vscodeStub.TreeItemCheckboxState.Checked);
@@ -319,10 +329,10 @@ const check = (name, cond, extra = '') => {
     const rows = await provider.getChildren();
     check('summary reports remaining work', /left to review|all reviewed/.test(String(rows[0].label)), String(rows[0].label));
     // a different base must not inherit judgements
-    review.useBase('some-other-sha');
-    check('progress does not carry across bases', review.remaining([id]) === 1);
-    review.useBase(result.base && result.base.sha);
-    check('and is restored when the base comes back', review.remaining([id]) === 0);
+    review.configure('another-review', identify);
+    check('progress does not carry across reviews', review.remaining([id]) === 1);
+    review.configure('smoke-review', identify);
+    check('and is restored when the review comes back', review.remaining([id]) === 0);
     review.clear();
     check('clear resets', review.size() === 0);
   }

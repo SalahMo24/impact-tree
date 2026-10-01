@@ -20,7 +20,7 @@ if (!ts) {
 const AMBIENT = new Set([
   'require', 'module', 'exports', '__dirname', '__filename', 'process', 'console',
   'Buffer', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'URL',
-  'TextEncoder', 'TextDecoder', 'global', 'globalThis', 'structuredClone', 'AbortController',
+  'URLSearchParams', 'TextEncoder', 'TextDecoder', 'global', 'globalThis', 'structuredClone', 'AbortController',
 ]);
 
 const srcDir = path.join(__dirname, '..', 'src');

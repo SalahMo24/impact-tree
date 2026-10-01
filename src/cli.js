@@ -6,6 +6,8 @@ const { analyze, MODES } = require('./engine/analyze');
 const argv = process.argv.slice(2);
 const arg = (n, d) => { const i = argv.indexOf(`--${n}`); return i === -1 ? d : argv[i + 1]; };
 const flag = (n) => argv.includes(`--${n}`);
+// One source for the defaults, so the help text cannot drift from what runs.
+const DEFAULTS = { depth: 2, treeDepth: 2 };
 if (flag('help')) {
   console.log(`impact-tree — inverted call-graph review\n\nUsage: node src/cli.js [options]\n
   --repo <path>        repo root (default: cwd)
@@ -15,8 +17,8 @@ ${Object.entries(MODES).map(([k, v]) => `                         ${k.padEnd(11)
   --checkpoint <sha>   base for checkpoint mode
   --fetch              git fetch the base before resolving
   --allow-local-base   permit a local base ref when origin/<ref> is missing (unsafe)
-  --depth <n>          upward closure depth for blast radius / test reach (default 4)
-  --tree-depth <n>     rendered tree depth (default 3)
+  --depth <n>          upward closure depth for blast radius / test reach (default ${DEFAULTS.depth})
+  --tree-depth <n>     rendered tree depth (default ${DEFAULTS.treeDepth})
   --json               emit JSON instead of text`);
   process.exit(0);
 }
@@ -30,7 +32,7 @@ try {
   result = await analyze(repo, {
     mode: arg('mode', 'pr'), base: arg('base', 'main'), checkpoint: arg('checkpoint'),
     fetch: flag('fetch'), allowLocalBase: flag('allow-local-base'),
-    depth: Number(arg('depth', 2)), treeDepth: Number(arg('tree-depth', 2)),
+    depth: Number(arg('depth', DEFAULTS.depth)), treeDepth: Number(arg('tree-depth', DEFAULTS.treeDepth)),
     blastDepth: Number(arg('blast-depth', 1)), rankedRoots: Number(arg('roots', 6)),
     maxChildren: Number(arg('max-children', 8)),
   });

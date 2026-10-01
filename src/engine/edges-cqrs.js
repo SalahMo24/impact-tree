@@ -31,16 +31,19 @@ function makeCqrsEdges(ts, { definitionAt, referencesTo, isTestPath, trace = () 
   // The handler method -> the command class it handles, and where that class is named.
   function handledCommand(file, offset) {
     const sf = sourceOf(file);
-    if (!sf) return null;
-    let found = null;
+    if (!sf) return [];
+    const found = [];
     const visit = (node) => {
       if (ts.isClassDeclaration(node) && node.getStart(sf) <= offset && offset <= node.getEnd()) {
-        for (const d of ts.getDecorators(node) || []) {
+        for (const d of (ts.getDecorators ? ts.getDecorators(node) : node.decorators) || []) {
           const e = d.expression;
           if (!ts.isCallExpression(e)) continue;
           if (!HANDLER_DECORATORS.test(`@${e.expression.getText(sf)}`)) continue;
-          const arg = e.arguments[0];
-          if (arg && ts.isIdentifier(arg)) found = { name: arg.text, pos: arg.getStart(sf) };
+          const method = e.expression.getText(sf) === 'EventsHandler' ? 'handle' : 'execute';
+          const member = node.members.find((m) => ts.isMethodDeclaration(m) && m.name?.getText(sf) === method
+            && m.name.getStart(sf) <= offset && offset <= m.name.getEnd());
+          if (!member) continue;
+          for (const arg of e.arguments) if (ts.isIdentifier(arg)) found.push({ name: arg.text, pos: arg.getStart(sf) });
         }
       }
       ts.forEachChild(node, visit);
@@ -57,7 +60,7 @@ function makeCqrsEdges(ts, { definitionAt, referencesTo, isTestPath, trace = () 
     let hit = null;
     const visit = (node) => {
       if (node.getStart(sf) <= offset && offset < node.getEnd()) {
-        if (ts.isNewExpression(node)) hit = node;
+        if (ts.isNewExpression(node) && node.expression.getStart(sf) <= offset && offset < node.expression.getEnd()) hit = node;
         ts.forEachChild(node, visit);
       }
     };
@@ -80,7 +83,7 @@ function makeCqrsEdges(ts, { definitionAt, referencesTo, isTestPath, trace = () 
         let nameNode = ts.isConstructorDeclaration(node) ? node.getFirstToken(sf) : node.name;
         if (!nameNode && (ts.isArrowFunction(node) || ts.isFunctionExpression(node))) {
           const vd = ts.findAncestor(node, (a) => ts.isVariableDeclaration(a) || ts.isPropertyDeclaration(a) || ts.isPropertyAssignment(a));
-          if (vd && vd.name) nameNode = vd.name;
+          if (vd && vd.name && vd.initializer === node) nameNode = vd.name;
         }
         candidates.push({
           named: !!nameNode,
@@ -95,54 +98,50 @@ function makeCqrsEdges(ts, { definitionAt, referencesTo, isTestPath, trace = () 
     const named = candidates.filter((x) => x.named).sort((a, b) => a.span - b.span);
     if (named.length) return named[0];
     const any = candidates.sort((a, b) => a.span - b.span)[0];
-    return any ? { ...any, label: `(top level) ${require('path').basename(file)}` } : null;
+    return any ? { ...any, label: `(top level) ${require('path').basename(file)}` } : { label: require('path').basename(file), pos: 0 };
   }
 
   return {
     name: 'cqrs',
     // extra incoming edges for a handler's execute(): the dispatch sites of its command
     async extraCallers(file, offset) {
-      const cmd = handledCommand(file, offset);
-      if (!cmd) return [];
-      const def = await definitionAt(file, cmd.pos);
-      if (!def) { trace(`cqrs ${cmd.name}: definitionAt returned nothing`); return []; }
-      const refs = await referencesTo(def.file, def.offset);
-      trace(`cqrs ${cmd.name}: def ${require('path').basename(def.file)}@${def.offset}, ${refs.length} reference(s)`);
-      const out = new Map();
-      let notCtor = 0;
-      for (const ref of refs) {
-        const ctor = constructionAt(ref.file, ref.offset);
-        if (!ctor) { notCtor++; continue; }
-        const owner = enclosingCallable(ref.file, ref.offset);
-        if (!owner) continue;
-        const id = `${ref.file}#${owner.pos}`;
-        const entry = out.get(id) || {
-          label: owner.label, file: ref.file, pos: owner.pos,
-          test: isTestPath(ref.file), sites: 0, callSites: [], via: 'cqrs', command: cmd.name,
-        };
-        entry.callSites.push({ start: ctor.getStart(), end: ctor.getEnd() });
-        entry.sites = entry.callSites.length;
-        out.set(id, entry);
+      const commands = handledCommand(file, offset);
+      const combined = new Map();
+      for (const cmd of commands) {
+        const def = await definitionAt(file, cmd.pos);
+        if (!def) { trace(`cqrs ${cmd.name}: definitionAt returned nothing`); continue; }
+        const refs = await referencesTo(def.file, def.offset);
+        trace(`cqrs ${cmd.name}: def ${require('path').basename(def.file)}@${def.offset}, ${refs.length} reference(s)`);
+        const out = new Map();
+        let notCtor = 0;
+        for (const ref of refs) {
+          const ctor = constructionAt(ref.file, ref.offset);
+          if (!ctor) { notCtor++; continue; }
+          const owner = enclosingCallable(ref.file, ref.offset);
+          if (!owner) continue;
+          const id = `${ref.file}#${owner.pos}`;
+          const entry = out.get(id) || {
+            label: owner.label, file: ref.file, pos: owner.pos,
+            test: isTestPath(ref.file), sites: 0, callSites: [], via: 'cqrs', command: cmd.name,
+          };
+          entry.callSites.push({ start: ctor.getStart(), end: ctor.getEnd() });
+          entry.sites = entry.callSites.length;
+          out.set(id, entry);
+        }
+        trace(`cqrs ${cmd.name}: ${out.size} dispatch site(s), ${notCtor} reference(s) were not constructions`);
+        for (const [id, row] of out) {
+          const prev = combined.get(id);
+          if (prev) { prev.callSites.push(...row.callSites); prev.sites = prev.callSites.length; }
+          else combined.set(id, row);
+        }
       }
-      trace(`cqrs ${cmd.name}: ${out.size} dispatch site(s), ${notCtor} reference(s) were not constructions`);
-      return [...out.values()];
+      return [...combined.values()];
     },
     // `execute` on a handler resolves through ICommandHandler.execute, so the call
     // hierarchy hands back every bus.execute() site in the codebase -- 82 of them here.
     // None of them reach THIS handler. The dispatch sites are the only real callers.
     isHandlerExecute(file, offset) {
-      const sf = sourceOf(file);
-      if (!sf || !handledCommand(file, offset)) return false;
-      let hit = false;
-      const visit = (node) => {
-        if (ts.isMethodDeclaration(node) && node.name && node.name.getText(sf) === 'execute') {
-          const n = node.name;
-          if (n.getStart(sf) <= offset && offset <= n.getEnd()) hit = true;
-        }
-        ts.forEachChild(node, visit);
-      };
-      ts.forEachChild(sf, visit);
-      return hit;
+      return handledCommand(file, offset).length > 0;
     },
     _handledCommand: handledCommand,
   };

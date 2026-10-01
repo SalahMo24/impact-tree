@@ -23,7 +23,7 @@ function createSyntacticResolver(idx, { isTestPath = () => false, hints = new Ma
     const sym = hints.get(`${file}#${pos}`) || idx.symbolAt(file, pos);
     if (!sym) { stats.unknownTarget++; return []; }      // not cached: may resolve later
 
-    const rows = idx.callersOf({ file, className: sym.className, name: sym.name })
+    const rows = idx.callersOf({ file, className: sym.className, name: sym.name, pos })
       .map((c) => ({
         label: c.label,
         file: c.file,

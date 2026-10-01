@@ -1,13 +1,13 @@
 'use strict';
-// What has the reviewer already cleared? Persisted per base SHA, because "reviewed"
-// means "reviewed against this diff" -- if the base moves, the judgement is stale and
-// the slate should be clean rather than silently carried forward.
+// Progress is scoped to the review (repository/branch or PR). Row identities
+// include both revisions of the symbol and its parent review context.
 
 const KEY = 'impactTree.reviewed';
 
 function createReviewState(memento) {
   let baseKey = null;
   let reviewed = new Set();
+  let identity = null;
 
   const load = (base) => {
     baseKey = base || 'none';
@@ -18,7 +18,20 @@ function createReviewState(memento) {
     if (memento) memento.update(`${KEY}.${baseKey}`, [...reviewed]);
   };
 
+  const id = (n) => {
+    if (!identity) return nodeId(n);
+    if (n.type === 'callerFile') return `group:${n.reviewParent}:${n.relPath}:${childIds(n).join('|')}`;
+    const own = identity(n);
+    return own ? `${n.type}:${n.reviewParent || 'root'}>${own}` : null;
+  };
+  const childIds = (n) => {
+    if (n.type === 'callerFile') return (n.callers || []).map(id).filter(Boolean);
+    if (n.type === 'finding') return (n.finding?.callers || []).map((c) => id({ ...c, type: 'caller', reviewParent: id(n) })).filter(Boolean);
+    return [];
+  };
   return {
+    configure(context, identify) { identity = identify; if (context !== baseKey) load(context); },
+    id, childIds,
     /** Rebind to a base SHA. Judgements do not carry across bases. */
     useBase(base) { if (base !== baseKey) load(base); },
     isReviewed: (id) => reviewed.has(id),
@@ -36,7 +49,8 @@ function createReviewState(memento) {
   };
 }
 
-// Stable identity for a row. Symbols are (file, declaration offset); files are paths.
+// Legacy fallback for consumers without a configured review identity. The extension
+// always configures content-based identities before displaying results.
 const nodeId = (n) => {
   if (!n) return null;
   if (n.type === 'file') return `file:${n.relPath}`;

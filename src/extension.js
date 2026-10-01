@@ -5,13 +5,16 @@ const { analyze, MODES, loadTypeScript } = require('./engine/analyze');
 const { createVscodeResolver } = require('./resolver-vscode');
 const { createTreeProvider } = require('./tree-provider');
 const { createDecorationProvider } = require('./decorations');
-const { createReviewState, nodeId } = require('./review-state');
+const { createReviewState } = require('./review-state');
 const { createGitHub, parseRemote } = require('./github');
+const { changedSymbolKeys } = require('./engine/changed-symbols');
 const { createSourcesProvider } = require('./sources-provider');
 
 // Bumped whenever extension-side behaviour changes, so the exthost log proves which
 // build is actually loaded instead of us inferring it from timestamps.
-const BUILD = '0.1.0+tier-a-caller-diff';
+const BUILD = '0.1.0+correctness-and-perf';
+const { prQuery, createPrDocuments } = require('./pr-documents');
+const prDocuments = createPrDocuments();
 
 let state = null;
 let resolver = null;
@@ -79,15 +82,15 @@ const isTierA = () => !!(state && state.result && state.result.tierA);
 function baseUriFor(relPath) {
   // In a Tier A preview the base revision is not in the local object database, so it
   // has to come from the API-fetched text rather than `git show`.
-  if (isTierA()) return vscode.Uri.parse(`impacttree-pr:${relPath}?side=base`);
-  return vscode.Uri.parse(`impacttree-base:${relPath}?${state.result.base.sha}`);
+  if (isTierA()) return vscode.Uri.from({ scheme: 'impacttree-pr', path: relPath, query: prQuery(state.result, 'base') });
+  return vscode.Uri.from({ scheme: 'impacttree-base', path: state.result.basePaths?.[relPath] || relPath, query: state.result.base.sha });
 }
 
 // The right-hand side of a diff. Locally that is the file on disk; in a Tier A
 // preview the worktree is on some unrelated branch, so showing it would be actively
 // misleading -- serve the PR's own text instead.
 function headUriFor(relPath, absPath) {
-  if (isTierA()) return vscode.Uri.parse(`impacttree-pr:${relPath}?side=head`);
+  if (isTierA()) return vscode.Uri.from({ scheme: 'impacttree-pr', path: relPath, query: prQuery(state.result, 'head') });
   return vscode.Uri.file(absPath || path.join(repoRoot(), relPath));
 }
 
@@ -110,7 +113,6 @@ async function warmTarget(repo) {
   for (const f of files) {
     const abs = path.join(repo, f.path);
     const root = projectRootOf(repo, f.path);
-    if (!fs.existsSync(path.join(repo, root, 'node_modules'))) continue;
     try {
       const ts = loadTypeScript(repo, path.join(repo, root));
       const sf = ts.createSourceFile(abs, fs.readFileSync(abs, 'utf8'), ts.ScriptTarget.ES2021, true);
@@ -147,7 +149,7 @@ function ensureReady(progress) {
       let ts = null;
       try { ts = loadTypeScript(repo, repo); }
       catch (e) { log(`typescript not resolvable — CQRS edges disabled: ${e.message}`); }
-      resolver = createVscodeResolver({ ts, trace: (m) => log(`  · ${m}`),
+      resolver = createVscodeResolver({ ts, repoRoot: repo, trace: (m) => log(`  · ${m}`),
         filterInherited: vscode.workspace.getConfiguration('impactTree').get('filterInheritedOverReports', true) });
       log(`resolver created  cqrs=${ts ? 'on' : 'off'}`);
     }
@@ -215,12 +217,18 @@ async function run(mode, progress, opts = {}) {
       }
       log('    If one is in a component whose TS project the editor has not loaded, that is under-reporting, not an answer.');
     }
-    if (review) review.useBase(result.base && result.base.sha);
-    const changedKeys = new Set(result.components.flatMap((c) => c.changed.map((x) => `${x.file}#${x.namePos}`)));
+    if (review) {
+      const { makeGit } = require('./engine/git');
+      const git = makeGit(repo);
+      const identity = require('./review-identity').createReviewIdentity(loadTypeScript(repo, repo), repo, result,
+        (rel) => git.show(result.base.sha, rel));
+      review.configure(`v2:${repo}:${git.currentBranch()}:${result.mode}:${opts.base || cfg.get('baseBranch', 'main')}`, identity);
+    }
+    const changedKeys = changedSymbolKeys(result.allChanged);
     const changedPaths = new Set(result.changedPaths || []);
     const { offsetToPosition } = require('./engine/textpos');
     const callSiteUpdated = (file, sites) => {
-      const ranges = (result.changedRanges || {})[path.relative(repo, file)];
+      const ranges = (result.changedRanges || {})[path.relative(repo, file).split(path.sep).join('/')];
       if (!ranges || !ranges.length || !sites || !sites.length) return false;
       return sites.some((cs) => {
         const a = offsetToPosition(file, cs.start), b = offsetToPosition(file, cs.end);
@@ -228,7 +236,7 @@ async function run(mode, progress, opts = {}) {
       });
     };
     state = { ...state, result, changedKeys, changedPaths, callSiteUpdated,
-      rel: (f) => path.relative(repo, f), absPath: (p2) => path.join(repo, p2),
+      rel: (f) => path.relative(repo, f).split(path.sep).join('/'), absPath: (p2) => path.join(repo, p2),
       iconMode: cfg.get('iconMode', 'file'), rowDetail: cfg.get('rowDetail', 'hover'),
       fileListLayout: cfg.get('fileListLayout', 'tree'), error: null };
     const stale = result.findings.reduce((n, f) => n + f.staleCallers, 0);
@@ -245,6 +253,8 @@ async function run(mode, progress, opts = {}) {
 
 function activate(context) {
   review = createReviewState(context.workspaceState);
+  state = { checkpoint: context.workspaceState.get('impactTree.checkpoint') };
+  context.subscriptions.push({ dispose: () => prDocuments.clear() });
   out = vscode.window.createOutputChannel('Impact Tree');
   context.subscriptions.push(out);
   log(`activated  build=${BUILD}  resolver=vscode-callhierarchy  openTextDocument=never`);
@@ -268,13 +278,10 @@ function activate(context) {
   context.subscriptions.push(view);
   context.subscriptions.push(view.onDidChangeCheckboxState((e) => {
     for (const [node, state] of e.items) {
-      const id = nodeId(node);
+      const id = review.id(node);
       if (!id) continue;
       const on = state === vscode.TreeItemCheckboxState.Checked;
-      const kids = node.type === 'finding' && node.finding
-        ? (node.finding.callers || []).map((c) => `${c.file}#${c.pos}`)
-        : node.type === 'callerFile'
-          ? (node.callers || []).map((c) => `${c.file}#${c.pos}`) : [];
+      const kids = review.childIds(node);
       review.setWithChildren(id, kids, on);
     }
     provider.refresh();
@@ -374,6 +381,9 @@ function activate(context) {
               trace: (m) => log(`  tierA · ${m}`),
             });
 
+            pr = result.pr || pr;
+            prDocuments.add(result);
+
             // Text for the diff views, keyed the way the content provider looks it up.
             const prText = new Map();
             for (const [rel, t] of result.texts) prText.set(rel, t);
@@ -390,13 +400,13 @@ function activate(context) {
             resolverOverride = result.resolver;
             state = {
               ...state, result, prText,
-              changedKeys: new Set(result.allChanged.map((x) => `${x.file}#${x.namePos}`)),
+              changedKeys: changedSymbolKeys(result.allChanged),
               changedPaths: new Set(result.changedPaths),
               // Lazily expanded callers recompute this, and Tier A CAN answer it:
               // offsetToPosition resolves through the registered PR text. Stubbing it
               // to false would silently downgrade every updated call site to "stale".
               callSiteUpdated: (file, sites) => {
-                const ranges = (result.changedRanges || {})[path.relative(repo, file)];
+                const ranges = (result.changedRanges || {})[path.relative(repo, file).split(path.sep).join('/')];
                 if (!ranges || !ranges.length || !sites || !sites.length) return false;
                 const { offsetToPosition } = require('./engine/textpos');
                 return sites.some((cs) => {
@@ -404,14 +414,15 @@ function activate(context) {
                   return a && b && ranges.some(([lo, hi]) => a.line + 1 <= hi && b.line + 1 >= lo);
                 });
               },
-              rel: (f) => path.relative(repo, f),
+              rel: (f) => path.relative(repo, f).split(path.sep).join('/'),
               absPath: (p2) => path.join(repo, p2),
               iconMode: cfg.get('iconMode', 'file'),
               rowDetail: cfg.get('rowDetail', 'hover'),
               fileListLayout: cfg.get('fileListLayout', 'tree'),
               error: null,
             };
-            review.useBase(`pr-${pr.number}-${pr.headSha}`);
+            review.configure(`v2:${repo}:pr:${pr.number}`,
+              require('./review-identity').createReviewIdentity(ts, repo, result, (rel) => result.texts.get(rel)?.base ?? null));
             vscode.window.setStatusBarMessage(
               `Impact Tree: PR #${pr.number} preview — ${result.findings.length} finding(s), PR files only`, 8000);
           });
@@ -448,8 +459,9 @@ function activate(context) {
       await vscode.window.withProgress(
         { location: { viewId: 'impactTree.sources' }, title: `Fetching PR #${pr.number}` },
         async () => {
-          git.raw(['fetch', 'origin', `pull/${pr.number}/head`, '--quiet']);
-          git.raw(['checkout', '--detach', 'FETCH_HEAD', '--quiet']);
+          await git.rawAsync(['fetch', 'origin', `pull/${pr.number}/head`, '--quiet'],
+            { timeoutMs: 60000, env: require('./engine/git').FETCH_ENV });
+          await git.rawAsync(['checkout', '--detach', 'FETCH_HEAD', '--quiet']);
         });
     } catch (e) {
       vscode.window.showErrorMessage(`Impact Tree: checkout failed — ${e.message}`);
@@ -467,13 +479,14 @@ function activate(context) {
   gh.signIn().then((sess) => { if (sess) loadPrs(); else sources.refresh(); });
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('impactTree.refresh', () => refresh()),
+    vscode.commands.registerCommand('impactTree.refresh', () => isTierA()
+      ? previewPullRequest(state.result.pr || { number: state.result.prNumber }) : refresh()),
     vscode.commands.registerCommand('impactTree.selectMode', async () => {
       const pick = await vscode.window.showQuickPick(
         Object.entries(MODES).map(([id, m]) => ({ label: id, description: m.desc })),
         { title: 'Impact Tree: diff mode' });
       if (!pick) return;
-      await vscode.workspace.getConfiguration('impactTree').update('mode', pick.label, true);
+      await vscode.workspace.getConfiguration('impactTree').update('mode', pick.label, vscode.ConfigurationTarget.Workspace);
       await refresh(pick.label);
     }),
     vscode.commands.registerCommand('impactTree.showLegend', async () => {
@@ -484,7 +497,7 @@ function activate(context) {
     }),
     vscode.commands.registerCommand('impactTree.showLog', () => { if (out) out.show(true); }),
     vscode.commands.registerCommand('impactTree.analyseMode', async (mode) => {
-      await vscode.workspace.getConfiguration('impactTree').update('mode', mode, true);
+      await vscode.workspace.getConfiguration('impactTree').update('mode', mode, vscode.ConfigurationTarget.Workspace);
       sources.refresh();
       await refresh(mode);
     }),
@@ -512,12 +525,16 @@ function activate(context) {
     }),
     vscode.commands.registerCommand('impactTree.clearReviewed', async () => {
       const yes = await vscode.window.showWarningMessage(
-        `Clear review progress for this base? (${review.size()} item(s) marked)`, { modal: true }, 'Clear');
+        `Clear progress for this review? (${review.size()} item(s) marked)`, { modal: true }, 'Clear');
       if (yes !== 'Clear') return;
       review.clear();
       provider.refresh();
     }),
     vscode.commands.registerCommand('impactTree.computeTestReach', async () => {
+      if (isTierA()) {
+        vscode.window.showInformationMessage('Test reachability requires local analysis. The PR preview is unchanged.');
+        return;
+      }
       state = { ...state, wantTestReach: true };
       await refresh();
     }),
@@ -525,6 +542,7 @@ function activate(context) {
       const { makeGit } = require('./engine/git');
       const sha = makeGit(repoRoot()).revParse('HEAD');
       state = { ...state, checkpoint: sha };
+      await context.workspaceState.update('impactTree.checkpoint', sha);
       vscode.window.showInformationMessage(`Impact Tree: checkpoint set at ${String(sha).slice(0, 10)}`);
     }),
     // A changed symbol opens as a diff at its hunk; an unchanged affected caller opens
@@ -573,14 +591,15 @@ function activate(context) {
       const always = vscode.workspace.getConfiguration('impactTree').get('alwaysDiffCallers', false);
       const fileChanged = !!(rel && state.changedPaths && state.changedPaths.has(rel));
       const plan = callerOpen({
-        tierA: isTierA(), rel, absPath: node.file, fileChanged, always,
+        tierA: isTierA(), rel, baseRel: state?.result?.basePaths?.[rel], absPath: node.file, fileChanged, always,
         baseSha: state && state.result && state.result.base && state.result.base.sha,
         prNumber: state && state.result && state.result.prNumber,
+        headSha: state?.result?.headSha,
       });
       const toUri = (spec) => {
         if (spec.scheme === 'file') return vscode.Uri.file(spec.path);
-        if (spec.scheme === 'impacttree-pr') return vscode.Uri.parse(`impacttree-pr:${spec.path}?${spec.query}`);
-        return vscode.Uri.parse(`impacttree-base:${spec.path}?${spec.query}`);
+        if (spec.scheme === 'impacttree-pr') return vscode.Uri.from({ scheme: 'impacttree-pr', path: spec.path, query: spec.query });
+        return vscode.Uri.from({ scheme: 'impacttree-base', path: spec.path, query: spec.query });
       };
       let opened;
       if (plan.kind === 'diff') {
@@ -597,23 +616,7 @@ function activate(context) {
     }),
     // Tier A text: head and base come from what we fetched, never from the worktree.
     vscode.workspace.registerTextDocumentContentProvider('impacttree-pr', {
-      provideTextDocumentContent(uri) {
-        const store = state && state.prText;
-        if (!store) return '';
-        const side = /side=base/.test(uri.query) ? 'base' : 'head';
-        // Uri.parse('scheme:a/b.ts') leaves .path WITHOUT a leading slash, so keying
-        // the store on '/rel' silently missed every lookup and every diff opened blank.
-        const key = uri.path.replace(/^\/+/, '');
-        const hit = store.get(key);
-        if (!hit) { log(`pr text: no entry for '${key}' (${store.size} file(s) held)`); return ''; }
-        const text = hit[side];
-        if (text == null) {
-          return side === 'base'
-            ? '(file did not exist at the base revision)\n'
-            : '(file was deleted in this pull request)\n';
-        }
-        return text;
-      },
+      provideTextDocumentContent: (uri) => prDocuments.read(uri),
     }),
     // base-revision contents for the left-hand side of the diff
     vscode.workspace.registerTextDocumentContentProvider('impacttree-base', {
@@ -633,5 +636,8 @@ function activate(context) {
   if (vscode.workspace.getConfiguration('impactTree').get('analyseOnStartup', false)) refresh();
 }
 
-function deactivate() { resolver = null; state = null; }
+function deactivate() {
+  resolver = null; state = null; readyPromise = null; resolverOverride = null;
+  busy = false; phase = 'starting'; prDocuments.clear();
+}
 module.exports = { activate, deactivate };

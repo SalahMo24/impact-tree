@@ -1,6 +1,6 @@
 'use strict';
 const vscode = require('vscode');
-const { isTestPath } = require('./engine/diff');
+const { isTestFile } = require('./engine/diff');
 const { offsetToPosition, positionToOffset } = require('./engine/textpos');
 const { makeCqrsEdges } = require('./engine/edges-cqrs');
 const { createInheritanceFilter } = require('./engine/inheritance');
@@ -12,19 +12,22 @@ const { createInheritanceFilter } = require('./engine/inheritance');
 // editor to sync the document to the extension host, which Cursor rejects for many
 // files ("Documents above the size limit cannot be synchronized with extensions") and
 // which costs a round trip per caller. Offsets are converted from disk instead.
-function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trace = () => {}, filterInherited = true } = {}) {
+function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trace = () => {}, filterInherited = true, repoRoot = null } = {}) {
   // Retrying is only meaningful until the language server has proven it is up. Once ANY
-  // query has succeeded, an empty result means "no callers", not "not ready" -- and the
-  // backoff was costing 6s per unresolvable symbol (24s of a 50s run on 4 symbols).
+  // query has succeeded, retrying unsupported symbols no longer helps. Preserve
+  // their unknown state without paying the startup backoff on every query.
   let serverWarm = false;
   const cache = new Map();
+  const queryStates = new Map();
+  const isTestPath = (f) => isTestFile(repoRoot, f);
   // incomingMs sums concurrent durations, so it exceeds wall time once queries overlap.
   // Keep it for cost, but record the distribution and let the caller time the phase.
-  const stats = {
+  const initialStats = () => ({
     incomingCalls: 0, incomingMs: 0, cacheHits: 0, warmupRetries: 0,
     skipped: 0, resolvedEmpty: 0, cqrsEdges: 0, cqrsSuppressed: 0, durations: [], emptyAt: [],
     inheritedDropped: 0,
-  };
+  });
+  const stats = initialStats();
 
   // The call hierarchy reports sibling-subclass dispatch as an incoming call to an
   // override. Filtering needs only syntax, so it costs a parse of the caller file.
@@ -96,18 +99,18 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
         serverWarm = true;
         try {
           const calls = await vscode.commands.executeCommand('vscode.provideIncomingCalls', items[0]);
-          return { ready: true, calls: calls || [] };
+          if (!Array.isArray(calls)) return { ready: false, calls: [], reason: 'no incoming-call result' };
+          return { ready: true, calls, empty: calls.length === 0 };
         } catch (e) {
           return { ready: false, calls: [], reason: e && e.message };
         }
       }
-      if (serverWarm) break;           // genuinely has no callers
+      if (serverWarm) break;           // no hierarchy item for this symbol
       stats.warmupRetries++;
       if (attempt < maxAttempts - 1) await sleep(retryDelayMs * (attempt + 1));
     }
-    // once warm, an empty answer is a real answer -- but flag it so "genuinely no
-    // callers" stays distinguishable from "the server told us nothing"
-    if (serverWarm) return { ready: true, calls: [], empty: true };
+    // Without a hierarchy item, provider support for this symbol is unproven.
+    if (serverWarm) return { ready: false, calls: [], reason: 'no call hierarchy item' };
     return { ready: false, calls: [], reason: 'language server not ready' };
   }
 
@@ -149,6 +152,7 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
     const isHandler = !!(cqrs && cqrs.isHandlerExecute(file, pos));
     if (isHandler) stats.cqrsSuppressed++;
     const { ready, calls, reason, empty } = isHandler ? { ready: true, calls: [] } : await query(file, pos);
+    queryStates.set(key, { ready, reason, isHandler });
     if (ready && empty) { stats.resolvedEmpty++; stats.emptyAt.push({ file, pos }); }
     const dt = Date.now() - t;
     stats.incomingMs += dt;
@@ -208,7 +212,27 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
     async callerState(file, pos, { isConstructor = false } = {}) {
       const callers = await incoming(file, pos);
       if (callers.length) return { state: 'resolved', callers };
-      return { state: isConstructor ? 'di' : 'unknown', callers: [] };
+      const status = queryStates.get(`A${file}#${pos}`);
+      if (!status?.ready) return { state: 'unknown', reason: status?.reason, callers: [] };
+      if (isConstructor) return { state: 'di', callers: [] };
+      if (status.isHandler) return { state: 'unknown', callers: [] };
+      // Empty call hierarchies also occur for value-passed callbacks. Only report
+      // none after a successful reference query with no use outside the declaration.
+      const p = offsetToPosition(file, pos);
+      try {
+        const refs = await vscode.commands.executeCommand('vscode.executeReferenceProvider',
+          vscode.Uri.file(file), new vscode.Position(p.line, p.character));
+        if (!Array.isArray(refs)) return { state: 'unknown', callers: [] };
+        const used = refs.some(r => {
+          if (r.uri.fsPath !== file) return true;
+          const start = positionToOffset(file, r.range.start.line, r.range.start.character);
+          const end = positionToOffset(file, r.range.end.line, r.range.end.character);
+          return start == null || end == null || !(start <= pos && pos < end);
+        });
+        return { state: used ? 'unknown' : 'none', callers: [] };
+      } catch (e) {
+        return { state: 'unknown', reason: e && e.message, callers: [] };
+      }
     },
     stats: () => {
       const d = stats.durations.slice().sort((a, b) => a - b);
@@ -219,8 +243,17 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
         maxMs: d[d.length - 1] || 0,
       };
     },
-    invalidate(file) { for (const k of [...cache.keys()]) if (k.includes(file)) cache.delete(k); },
-    clear() { cache.clear(); },
+    invalidate(file) {
+      for (const k of [...cache.keys()]) if (k.includes(file)) cache.delete(k);
+      for (const k of [...queryStates.keys()]) if (k.slice(1).startsWith(`${file}#`)) queryStates.delete(k);
+    },
+    clear() {
+      cache.clear();
+      queryStates.clear();
+      inherited?.clear();
+      for (const key of Object.keys(stats)) delete stats[key];
+      Object.assign(stats, initialStats());
+    },
   };
 }
 module.exports = { createVscodeResolver };

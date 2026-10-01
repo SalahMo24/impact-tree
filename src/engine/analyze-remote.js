@@ -12,12 +12,12 @@
 const path = require('path');
 const { makeSymbols } = require('./symbols');
 const { score } = require('./signature');
-const { changedSymbolsIn } = require('./changed-symbols');
+const { changedSymbolsIn, changedSymbolKeys } = require('./changed-symbols');
 const { createSyntacticIndex } = require('./syntactic-index');
 const { createSyntacticResolver } = require('./resolver-syntactic');
 const { hunkRangesFromPatch } = require('./patch');
-const { isSourcePath, isTestPath } = require('./diff');
-const { seedRoots } = require('./forest');
+const { isSourcePath, isTestPath, isTestFile } = require('./diff');
+const { seedRoots, nestedIds } = require('./forest');
 const { registerVirtualText, offsetToPosition } = require('./textpos');
 
 async function mapLimit(items, limit, fn) {
@@ -49,12 +49,23 @@ async function analyzeRemote({
 }) {
   if (!ts) throw new Error('Tier A needs TypeScript to parse the PR files');
   const warnings = [];
+  if (gh.getPullRequest) pr = await gh.getPullRequest(slug, pr.number);
+  const mergeBaseSha = pr.mergeBaseSha || (gh.mergeBase && await gh.mergeBase(slug, pr.baseSha, pr.headSha));
+  if (!mergeBaseSha) throw new Error('Cannot preview this PR without its merge base');
+  pr = { ...pr, mergeBaseSha };
+
 
   trace(`PR #${pr.number}  head=${String(pr.headSha).slice(0, 8)}  base=${pr.baseRef}@${String(pr.baseSha || '?').slice(0, 8)}`);
   onProgress({ phase: 'files', message: `listing files in #${pr.number}` });
   const listed = await gh.listPullRequestFiles(slug, pr.number, { max: maxFiles });
-  if (listed.truncated) {
-    warnings.push(`PR has ${listed.total} files; analysing the first ${maxFiles} (impactTree.tierA.maxFiles)`);
+  if (gh.getPullRequest) {
+    const after = await gh.getPullRequest(slug, pr.number);
+    if (after.headSha !== pr.headSha || after.baseSha !== pr.baseSha) {
+      throw new Error('The PR changed while its files were loading. Refresh to analyse the new revision.');
+    }
+  }
+  if (listed.truncated || pr.changedFiles > listed.files.length) {
+    warnings.push(`PR has ${pr.changedFiles ?? `${listed.totalIsLowerBound ? "at least " : ""}${listed.total}`} files; analysing the first ${maxFiles} (impactTree.tierA.maxFiles)`);
   }
 
   trace(`${listed.files.length} file(s) listed${listed.truncated ? ' (truncated)' : ''}`);
@@ -93,7 +104,7 @@ async function analyzeRemote({
     const status = normaliseStatus(f.status);
     const [headText, baseText] = await Promise.all([
       status === 'deleted' ? null : grab('head', f.path, pr.headSha),
-      status === 'added' ? null : grab('base', f.oldPath, pr.baseSha || pr.baseRef),
+      status === 'added' ? null : grab('base', f.oldPath || f.path, mergeBaseSha),
     ]);
     onProgress({ phase: 'fetch', message: 'fetching files', done: ++fetched, total: sourceFiles.length });
     return { ...f, status, headText, baseText };
@@ -127,7 +138,7 @@ async function analyzeRemote({
   for (const f of usable) {
     const ranges = hunkRangesFromPatch(f.patch);
     changedRanges[f.path] = ranges;
-    if (!ranges.length && f.status !== 'deleted' && !f.patch) {
+    if (!ranges.length && f.status !== 'deleted' && !f.patch && f.headText !== f.baseText) {
       warnings.push(`${f.path}: GitHub returned no patch (binary or too large) — symbols not mapped`);
     }
     const r = changedSymbolsIn(ts, S, {
@@ -146,21 +157,23 @@ async function analyzeRemote({
   // ---- callers, from the PR's own files only --------------------------------------
   trace(`total ${changed.length} changed symbol(s), ${deleted.length} deleted`);
   onProgress({ phase: 'index', message: `indexing ${usable.length} file(s)` });
+  const moduleOptions = await require('./remote-config').remoteOptions(
+    ts, gh, slug, pr.headSha, repoRoot, usable.map((f) => f.path), warnings);
   const idx = createSyntacticIndex(ts,
     usable.filter((f) => f.headText != null).map((f) => ({ path: abs(f.path), text: f.headText })),
-    { baseDirs: [repoRoot] });
+    { baseDirs: [repoRoot], moduleOptions });
   const hints = new Map();
   for (const c of changed) {
     hints.set(`${c.file}#${c.namePos}`, {
-      className: c.className || null,
+      className: c.nested ? null : c.className || null,
       name: c.isConstructor ? 'constructor' : c.simpleName,
     });
   }
-  const resolver = createSyntacticResolver(idx, { isTestPath, hints });
+  const resolver = createSyntacticResolver(idx, { isTestPath: (file) => isTestFile(repoRoot, file), hints });
 
-  const changedKeys = new Set(changed.map((c) => `${c.file}#${c.namePos}`));
+  const changedKeys = changedSymbolKeys(changed);
   const callSiteUpdated = (callerFile, callSites) => {
-    const rel = path.relative(repoRoot, callerFile);
+    const rel = path.relative(repoRoot, callerFile).split(path.sep).join('/');
     const ranges = changedRanges[rel];
     if (!ranges || !ranges.length || !callSites || !callSites.length) return false;
     return callSites.some((cs) => {
@@ -193,18 +206,7 @@ async function analyzeRemote({
 
   // ---- roots and nesting, same rules as the local path ----------------------------
   const ranked = seedRoots(changed, changedKeys).sort((a, b) => b.score - a.score);
-  const allKeys = new Set(changed.map((c) => `${c.file}#${c.namePos}`));
-  const nested = new Set();
-  for (const c of changed) {
-    for (const x of c.callers || []) {
-      const k = `${x.file}#${x.pos}`;
-      if (allKeys.has(k) && k !== `${c.file}#${c.namePos}`) nested.add(k);
-    }
-  }
-  if (changed.length && nested.size === changed.length) {
-    const top = changed.slice().sort((a, b) => b.score - a.score)[0];
-    nested.delete(`${top.file}#${top.namePos}`);
-  }
+  const nested = nestedIds(changed);
   for (const c of changed) c.isRoot = !nested.has(`${c.file}#${c.namePos}`);
 
   // A module file, a barrel, a const map of error codes: real changes with no changed
@@ -229,6 +231,7 @@ async function analyzeRemote({
     coverage: 'pr-files-only',
     prNumber: pr.number,
     headSha: pr.headSha,
+    pr,
     allChanged: changed.slice().sort((a, b) => b.score - a.score || a.label.localeCompare(b.label)),
     nestedCount: nested.size,
     otherFiles,
@@ -236,7 +239,7 @@ async function analyzeRemote({
     requestedMode: 'pr-preview',
     modeDesc: `PR #${pr.number} without a checkout`,
     dirtyCount: 0,
-    base: { ref: pr.baseRef, sha: pr.baseSha || pr.baseRef },
+    base: { ref: pr.baseRef, sha: pr.mergeBaseSha },
     warnings,
     changedFileCount: usable.length,
     changedPaths: usable.map((f) => f.path),
@@ -255,10 +258,10 @@ async function analyzeRemote({
 
 function emptyResult(pr, listed, otherFiles, warnings) {
   return {
-    tierA: true, texts: new Map(), coverage: 'pr-files-only', prNumber: pr.number, headSha: pr.headSha,
+    tierA: true, pr, texts: new Map(), coverage: 'pr-files-only', prNumber: pr.number, headSha: pr.headSha,
     allChanged: [], nestedCount: 0, otherFiles,
     mode: 'pr-preview', requestedMode: 'pr-preview', modeDesc: `PR #${pr.number} without a checkout`,
-    dirtyCount: 0, base: { ref: pr.baseRef, sha: pr.baseSha || pr.baseRef },
+    dirtyCount: 0, base: { ref: pr.baseRef, sha: pr.mergeBaseSha },
     warnings: warnings.concat('no analysable source files in this pull request'),
     changedFileCount: 0, changedPaths: [],
     fileStatus: Object.fromEntries(listed.files.map((f) => [f.path, normaliseStatus(f.status)])),
