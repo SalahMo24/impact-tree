@@ -220,8 +220,8 @@ async function run(mode, progress, opts = {}) {
     if (review) {
       const { makeGit } = require('./engine/git');
       const git = makeGit(repo);
-      const identity = require('./review-identity').createReviewIdentity(loadTypeScript(repo, repo), repo, result,
-        (rel) => git.show(result.base.sha, rel));
+      const { createReviewIdentity, localRevisions } = require('./review-identity');
+      const identity = createReviewIdentity(loadTypeScript(repo, repo), repo, localRevisions(repo, result, git));
       review.configure(`v2:${repo}:${git.currentBranch()}:${result.mode}:${opts.base || cfg.get('baseBranch', 'main')}`, identity);
     }
     const changedKeys = changedSymbolKeys(result.allChanged);
@@ -271,6 +271,14 @@ function activate(context) {
         const r = resolverOverride || resolver;
         return r ? r.incoming(...a) : Promise.resolve([]);
       },
+      // Lets an expanded row say its caller query failed rather than show no callers.
+      incomingWithStatus: async (...a) => {
+        const r = resolverOverride || resolver;
+        if (!r) return { callers: [], complete: false, reason: 'no analysis has run in this window' };
+        if (r.incomingWithStatus) return r.incomingWithStatus(...a);
+        // A resolver that cannot say whether its search finished is not evidence that it did.
+        return { callers: await r.incoming(...a), complete: false, reason: 'this resolver does not report whether its caller search finished' };
+      },
     },
   });
   const view = vscode.window.createTreeView('impactTree.changes',
@@ -288,9 +296,19 @@ function activate(context) {
   }));
 
   let inFlight = null;
+  // A checkout moves the worktree under any analysis and shares FETCH_HEAD with any
+  // other fetch, so while one runs nothing else may start.
+  let checkingOut = null;
+  const refuseDuringCheckout = () => {
+    if (checkingOut == null) return false;
+    vscode.window.showWarningMessage(`Impact Tree: PR #${checkingOut} is being checked out — try again when it finishes`);
+    return true;
+  };
   const refresh = async (mode, opts = {}) => {
+    if (refuseDuringCheckout()) return;
     if (inFlight) return inFlight;          // clicking twice must not start two runs
     resolverOverride = null;                // leaving a PR preview
+    state = { ...state, source: { kind: 'local' } };
     busy = true; decorate.clear(); provider.refresh();
     inFlight = (async () => {
       try {
@@ -352,7 +370,10 @@ function activate(context) {
   // Tier A: analyse the PR from the API alone. Never touches the worktree, so it is
   // safe to run on any branch, mid-edit, with no confirmation.
   const previewPullRequest = async (pr) => {
+    if (refuseDuringCheckout()) return;
     if (inFlight) { vscode.window.showWarningMessage('Impact Tree: an analysis is already running'); return; }
+    // Recorded before the run so that Refresh retries this PR even when the run fails.
+    state = { ...state, source: { kind: 'pr', pr } };
     busy = true; decorate.clear(); provider.refresh();
     inFlight = (async () => {
       try {
@@ -382,6 +403,7 @@ function activate(context) {
             });
 
             pr = result.pr || pr;
+            state = { ...state, source: { kind: 'pr', pr } };
             prDocuments.add(result);
 
             // Text for the diff views, keyed the way the content provider looks it up.
@@ -422,7 +444,7 @@ function activate(context) {
               error: null,
             };
             review.configure(`v2:${repo}:pr:${pr.number}`,
-              require('./review-identity').createReviewIdentity(ts, repo, result, (rel) => result.texts.get(rel)?.base ?? null));
+              require('./review-identity').createReviewIdentity(ts, repo, require('./review-identity').previewRevisions(result)));
             vscode.window.setStatusBarMessage(
               `Impact Tree: PR #${pr.number} preview — ${result.findings.length} finding(s), PR files only`, 8000);
           });
@@ -441,6 +463,14 @@ function activate(context) {
   // it is leaving before doing anything. `pull/N/head` works for forks too, which a
   // plain `fetch origin <headRef>` would not.
   const checkoutAndAnalyse = async (pr) => {
+    const busyWith = () => (checkingOut != null ? `PR #${checkingOut} is being checked out`
+      : inFlight ? 'an analysis is running' : null);
+    const refuse = () => {
+      const why = busyWith();
+      if (why) vscode.window.showWarningMessage(`Impact Tree: ${why} — try checking out PR #${pr.number} when it finishes`);
+      return !!why;
+    };
+    if (refuse()) return;
     const { makeGit } = require('./engine/git');
     const git = makeGit(repoRoot());
     const dirty = git.isDirty();
@@ -455,19 +485,26 @@ function activate(context) {
       { modal: true, detail: `This leaves '${was}' and moves the worktree to a detached HEAD.` },
       'Check out');
     if (yes !== 'Check out') return;
+    if (refuse()) return;                   // something started while the dialog was open
+    checkingOut = pr.number;
+    let sha;
     try {
       await vscode.window.withProgress(
         { location: { viewId: 'impactTree.sources' }, title: `Fetching PR #${pr.number}` },
         async () => {
           await git.rawAsync(['fetch', 'origin', `pull/${pr.number}/head`, '--quiet'],
             { timeoutMs: 60000, env: require('./engine/git').FETCH_ENV });
-          await git.rawAsync(['checkout', '--detach', 'FETCH_HEAD', '--quiet']);
+          // Pin the fetched commit at once: FETCH_HEAD is rewritten by any later fetch.
+          sha = (await git.rawAsync(['rev-parse', '--verify', 'FETCH_HEAD^{commit}'])).trim();
+          await git.rawAsync(['checkout', '--detach', sha, '--quiet']);
         });
     } catch (e) {
       vscode.window.showErrorMessage(`Impact Tree: checkout failed — ${e.message}`);
       return;
+    } finally {
+      checkingOut = null;
     }
-    log(`checked out PR #${pr.number} (${pr.headRef}) from '${was}'`);
+    log(`checked out PR #${pr.number} (${pr.headRef}) at ${sha.slice(0, 10)} from '${was}'`);
     vscode.window.showInformationMessage(
       `Impact Tree: on PR #${pr.number}. Return with: git checkout ${was}`);
     sources.refresh();
@@ -479,8 +516,9 @@ function activate(context) {
   gh.signIn().then((sess) => { if (sess) loadPrs(); else sources.refresh(); });
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('impactTree.refresh', () => isTierA()
-      ? previewPullRequest(state.result.pr || { number: state.result.prNumber }) : refresh()),
+    // Refresh repeats what is being viewed, including a PR preview whose last run failed.
+    vscode.commands.registerCommand('impactTree.refresh', () => (state.source?.kind === 'pr'
+      ? previewPullRequest(state.source.pr) : refresh())),
     vscode.commands.registerCommand('impactTree.selectMode', async () => {
       const pick = await vscode.window.showQuickPick(
         Object.entries(MODES).map(([id, m]) => ({ label: id, description: m.desc })),

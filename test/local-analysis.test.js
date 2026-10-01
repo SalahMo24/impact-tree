@@ -357,6 +357,23 @@ const parse = (text, name = 'x.ts') => ts.createSourceFile(name, text, ts.Script
     check('pr mode ignores callers in files outside the commit', c.callers.length === 0, J(callStates(c)));
     check('and says so', r2.warnings.some((w) => w.includes('untracked')), J(r2.warnings));
   }
+  {
+    // The same exclusion must reach the test-reach walk and the tree, not only the caller list.
+    const tsconfig = J({ compilerOptions: { target: 'es2020', module: 'commonjs' }, include: ['src', 'test'] });
+    const repo = mkRepo({ 'tsconfig.json': tsconfig, 'src/t.ts': TARGET_V1 });
+    write(repo, { 'src/t.ts': TARGET_V2 });
+    commit(repo);
+    write(repo, {
+      'src/scratch.ts': "import { target } from './t';\nexport function scratch() {\n  return target(1);\n}\n",
+      'test/t.test.ts': "import { target } from '../src/t';\nexport function probe() {\n  return target(2);\n}\n",
+    });
+    const r = await analyze(repo, { mode: 'pr', base: 'HEAD~1' });
+    const c = byLabel(r, 'target');
+    check('an untracked test does not cover a symbol with no committed callers',
+      c.callerState === 'none' && c.testState === 'uncovered' && c.tests.length === 0, J({ state: c.callerState, test: c.testState, tests: c.tests }));
+    const tree = r.components[0].forest.find((t) => t.label === 'target');
+    check('and untracked callers stay out of the tree', !!tree && (tree.children || []).length === 0, J(tree && (tree.children || []).map((k) => k.label)));
+  }
 
   // ================================================================ bases =====
   console.log('▸ base resolution');
@@ -436,6 +453,27 @@ const parse = (text, name = 'x.ts') => ts.createSourceFile(name, text, ts.Script
     check('hoisted package is analysed',r.allChanged.some(c=>c.label==='f'),J(r.warnings));
     check('renamed finding retains base path',r.allChanged[0]?.oldPath==='packages/pkg/src/old.ts');
     check('rename mapping covers file and caller navigation',r.basePaths?.['packages/pkg/src/new.ts']==='packages/pkg/src/old.ts');
+  }
+
+  {
+    const dir = mkRepo({
+      'lib/tsconfig.json': '{"include":["*.ts"]}',
+      'app/tsconfig.json': '{"include":["*.ts"]}',
+      'lib/api.ts': 'export function target(){return 1;}\n',
+      'app/use.ts': "import {target} from '../lib/api'; export function caller(){return target();}\n",
+      'app/unrelated.ts': 'function target(){return 0;} export function unrelated(){return target();}\n',
+    });
+    const base=headOf(dir);
+    write(dir,{'lib/api.ts':'export function target(value?:number){return value || 1;}\n'});
+    const r=await analyze(dir,since(base));
+    check('unchanged consuming project contributes callers',J(byLabel(r,'target')?.callers.map(c=>c.label))===J(['caller']));
+    write(dir,{'app/use.ts': "import {target} from '../lib/api'; export function caller(){\n console.log('edited');\n return target();\n}\n"});
+    const updated=await analyze(dir,since(base));
+    check('cross-project callers are deduplicated',byLabel(updated,'target')?.callers.length===1);
+    const { createTsResolver } = require('../src/engine/resolver-ts');
+    const resolver=createTsResolver(ts,path.join(dir,'lib'),{repoRoot:dir});
+    check('lazy queries also search consumers',(await resolver.incoming(path.join(dir,'lib/api.ts'),16)).some(c=>c.label==='caller'));
+    resolver.dispose();
   }
 
   fs.rmSync(TMP, { recursive: true, force: true });

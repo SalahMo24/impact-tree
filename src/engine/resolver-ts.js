@@ -14,7 +14,7 @@ function labelOf(item) {
 
 // Own-LanguageService resolver. Used by the CLI and by the deferred no-checkout PR mode.
 // The extension uses resolver-vscode.js instead, which reuses the editor's TS server.
-function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTsconfig = 'tsconfig.test.json', filterInherited = true, repoRoot = null } = {}) {
+function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTsconfig = 'tsconfig.test.json', filterInherited = true, repoRoot = null, workspaceGraph = null, servicePool = null } = {}) {
   // Classified relative to the repo: an absolute path put every caller of a repo that
   // happens to live under some `.../tests/...` directory into the test bucket.
   const isTest = (f) => isTestFile(repoRoot || componentDir, f);
@@ -40,10 +40,23 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
     walk(full);
     return out;
   };
-  for (const cfg of [tsconfig, testTsconfig]) {
-    const full = path.join(componentDir, cfg);
+  const consumers = repoRoot ? (workspaceGraph || require('./workspace-projects').workspaceProjects(ts, repoRoot)).consumers(componentDir) : [];
+  const configPaths = [path.join(componentDir, tsconfig), path.join(componentDir, testTsconfig),
+    ...consumers.flatMap(c => [c, path.join(path.dirname(c), testTsconfig)])];
+  const loaded = new Set();
+  for (const full of configPaths) {
     if (!fs.existsSync(full)) continue;
     for (const parsed of configsFrom(full)) {
+      const configPath = parsed.options.configFilePath || full;
+      if (loaded.has(configPath)) continue;
+      loaded.add(configPath);
+      const poolKey = `${ts.version}:${configPath}`;
+      if (servicePool?.services.has(poolKey)) {
+        const svc = servicePool.services.get(poolKey);
+        services.push(svc);
+        if (path.basename(full) !== testTsconfig) prodServices.push(svc);
+        continue;
+      }
       const files = parsed.fileNames;
       // Defect fix: a constant version made the service cache file contents forever —
       // correct for a batch run, wrong the moment anything edits a file.
@@ -52,18 +65,20 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
         try { const m = fs.statSync(f).mtimeMs; versions.set(f, String(m)); return String(m); }
         catch { return versions.get(f) || '0'; }
       };
+      if (servicePool && !servicePool.registries.has(ts)) servicePool.registries.set(ts, ts.createDocumentRegistry());
       const svc = ts.createLanguageService({
         getScriptFileNames: () => files,
         getScriptVersion: versionOf,
         getScriptSnapshot: (f) => (fs.existsSync(f) ? ts.ScriptSnapshot.fromString(fs.readFileSync(f, 'utf8')) : undefined),
-        getCurrentDirectory: () => componentDir,
+        getCurrentDirectory: () => path.dirname(configPath),
         getCompilationSettings: () => parsed.options,
         getDefaultLibFileName: (o) => ts.getDefaultLibFilePath(o),
-        fileExists: ts.sys.fileExists, readFile: ts.sys.readFile, readDirectory: ts.sys.readDirectory,
+        realpath: ts.sys.realpath, fileExists: ts.sys.fileExists, readFile: ts.sys.readFile, readDirectory: ts.sys.readDirectory,
         directoryExists: ts.sys.directoryExists, getDirectories: ts.sys.getDirectories,
-      }, ts.createDocumentRegistry());
+      }, servicePool ? servicePool.registries.get(ts) : ts.createDocumentRegistry());
+      servicePool?.services.set(poolKey, svc);
       services.push(svc);
-      if (cfg === tsconfig) prodServices.push(svc);
+      if (path.basename(full) !== testTsconfig) prodServices.push(svc);
     }
   }
   if (!services.length) return null;
@@ -122,8 +137,13 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
         if (!seen.has(id)) seen.set(id, {
           label: labelOf(c.from), file: c.from.file, pos: c.from.selectionSpan.start,
           test: isTest(c.from.file), sites: c.fromSpans.length,
-          callSites: c.fromSpans.map((sp) => ({ start: sp.start, end: sp.start + sp.length })),
+          callSites: [],
         });
+        const row = seen.get(id);
+        for (const sp of c.fromSpans) if (!row.callSites.some(s => s.start === sp.start && s.end === sp.start + sp.length)) {
+          row.callSites.push({ start: sp.start, end: sp.start + sp.length });
+        }
+        row.sites = row.callSites.length;
       }
     }
     let out = [...seen.values()];
@@ -190,7 +210,7 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
     },
     stats: () => stats,
     program: () => services[0].getProgram(),
-    dispose() { services.forEach((s) => s.dispose && s.dispose()); },
+    dispose() { if (servicePool) return; services.forEach((s) => s.dispose && s.dispose()); },
   };
 }
 module.exports = { createTsResolver };

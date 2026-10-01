@@ -115,6 +115,7 @@ function createGitHub(vscode, { log = () => {} } = {}) {
         oldPath: f.previous_filename || f.filename,
         status: f.status === 'renamed' ? 'renamed' : f.status,   // added|modified|removed|renamed
         patch: f.patch || null,
+        sha: typeof f.sha === 'string' ? f.sha : null,
         additions: f.additions,
         deletions: f.deletions,
       })),

@@ -151,7 +151,7 @@ test('review ticks survive offset/base movement, invalidate edited symbols, and 
   const file = '/review/a.ts';
   const configure = (baseText = base) => {
     registerVirtualText(file, head);
-    review.configure('branch-review', createReviewIdentity(ts, root, {}, () => baseText));
+    review.configure('branch-review', createReviewIdentity(ts, root, { headText: () => head, baseText: () => baseText, fileRevision: () => null }));
   };
   const node = (name, type = 'finding', reviewParent) => ({ type, file, label: name, pos: head.indexOf(name+'('), reviewParent });
   configure();
@@ -362,7 +362,7 @@ test('constructor aliases nest consistently and lazy expansion keeps untracked c
   assert.equal(require('../src/engine/changed-symbols').changedSymbolKeys([a,b]).has('/review/b.ts#5'),true);
   const provider = createTreeProvider(require('./vscode-stub'), {
     getState: () => ({ result: { excludedCallerPaths: ['scratch.ts'] }, rel: (f) => path.relative(root,f) }),
-    resolver: { incoming: async () => [{file:'/review/scratch.ts',pos:1,label:'scratch'},{file:'/review/committed.ts',pos:1,label:'kept'}] },
+    resolver: { incomingWithStatus: async () => ({ callers: [{file:'/review/scratch.ts',pos:1,label:'scratch'},{file:'/review/committed.ts',pos:1,label:'kept'}], complete: true }) },
   });
   const rows = await provider.getChildren({ type:'finding', file:a.file, pos:10 });
   assert.deepEqual(rows.map((r) => r.label),['kept']);
@@ -418,4 +418,372 @@ test('editor distinguishes no references, callbacks, failed queries, and unsuppo
       assert.equal((await resolver.callerState(file,9)).state,expected,m);
     }
   } finally { Module._load=original; delete require.cache[require.resolve('../src/resolver-vscode')]; fs.rmSync(dir,{recursive:true,force:true}); }
+});
+
+test('workspace package exports connect preview callers without guessing unrelated names', () => {
+  const files = [
+    {path:'/repo/packages/shared/src/api.ts', text:'export function target(){}'},
+    {path:'/repo/apps/web/use.ts', text:"import { target as run } from '@demo/shared/api'; export function caller(){run();}"},
+    {path:'/repo/apps/web/other.ts', text:"import { target } from '@other/shared/api'; export function unrelated(){target();}"},
+  ];
+  for (const exports of [ {'./api': './src/api.ts'}, {'./*': {types:'./src/*.ts',import:'./src/*.ts'} } ]) {
+    const idx=createSyntacticIndex(ts,files,{packages:[{dir:'/repo/packages/shared',data:{name:'@demo/shared',exports}}]});
+    assert.deepEqual(idx.callersOf({file:files[0].path,name:'target'}).map(c=>c.label),['caller']);
+  }
+  const hidden=createSyntacticIndex(ts,files,{packages:[{dir:'/repo/packages/shared',data:{name:'@demo/shared',exports:{'./different':'./src/api.ts'}}}]});
+  assert.deepEqual(hidden.callersOf({file:files[0].path,name:'target'}),[]);
+});
+
+test('static class calls follow class bindings, not instances or shadowed names', () => {
+  const idx=build({
+    'store.ts':'export class Store { static save() {} load() {} }',
+    'other.ts':'export class Store { static save() {} }',
+    'use.ts':`import { Store as DB } from './store'; import { Store } from './other';
+      export function caller(){ DB.save(); }
+      export function unrelated(){ Store.save(); }
+      export function shadowed(DB: {save():void}){ DB.save(); }
+      export function instance(){const db=new DB(); db.save();}
+      export function invalid(){DB.load();}`,
+  });
+  assert.deepEqual(idx.callersOf({file:root+'/store.ts',className:'Store',name:'save'}).map(c=>c.label),['caller']);
+  assert.deepEqual(idx.callersOf({file:root+'/store.ts',className:'Store',name:'load'}),[]);
+});
+
+test('static namespace and inherited calls keep static and instance this separate', () => {
+  const idx=build({
+    'store.ts':`export class Store { static save() {} static own(){this.save();} wrong(){this.save();} }
+      export class Child extends Store { static parent(){super.save();} }`,
+    'use.ts':`import * as api from './store'; import {Child} from './store';
+      export function namespace(){api.Store.save();}
+      export function inherited(){Child.save();}
+      export function shadowed(api:any){api.Store.save();}`,
+  });
+  assert.deepEqual(idx.callersOf({file:root+'/store.ts',className:'Store',name:'save'}).map(c=>c.label).sort(),
+    ['Store.own','Child.parent','namespace','inherited'].sort());
+});
+
+test('remote workspace metadata is loaded from the pinned head', async () => {
+  const metadata=[];
+  const files=[{path:'packages/lib/src/api.ts',status:'modified',patch:'@@ -1 +1 @@\n-old\n+new'},
+    {path:'apps/web/use.ts',status:'modified',patch:'@@ -1 +1 @@\n-old\n+new'}];
+  const r=await analyzeRemote({ts,repoRoot:'/remote',slug:'demo/repo',pr:{number:1,headSha:'head',baseSha:'base',mergeBaseSha:'base'},gh:{
+    listPullRequestFiles:async()=>({files}),
+    fileAtRef:async(_,file,ref)=>{
+      if(file.endsWith('package.json')) { metadata.push([file,ref]); return file==='packages/lib/package.json'?JSON.stringify({name:'@demo/lib',exports:{'./api':'./src/api.ts'}}):null; }
+      if(file==='packages/lib/src/api.ts') return ref==='head'?'export function target(x?:string){}':'export function target(){}';
+      if(file==='apps/web/use.ts') return "import {target} from '@demo/lib/api'; export function caller(){target();}";
+      return null;
+    },
+  }});
+  assert(metadata.some(([file])=>file==='packages/lib/package.json'));
+  assert(metadata.every(([,ref])=>ref==='head'));
+  assert.deepEqual(r.allChanged.find(c=>c.label==='target').callers.map(c=>c.label),['caller']);
+});
+
+test('workspace conditional exports use the module format TypeScript gives the importer', () => {
+  // Real TypeScript on disk is the oracle: a `.ts` importer is CommonJS unless its nearest
+  // package.json says `"type": "module"`, and a CommonJS import takes the `require` condition.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-exports-mode-'));
+  const K = ts.ModuleKind, R = ts.ModuleResolutionKind;
+  const lib = path.join(dir, 'node_modules', '@demo', 'lib');
+  const libData = { name: '@demo/lib', exports: { import: './esm.ts', require: './cjs.ts' } };
+  const app = path.join(dir, 'app');
+  const seen = new Set();
+  try {
+    fs.mkdirSync(lib, { recursive: true });
+    fs.writeFileSync(path.join(lib, 'package.json'), JSON.stringify(libData));
+    for (const f of ['esm.ts', 'cjs.ts']) fs.writeFileSync(path.join(lib, f), 'export function target(){}');
+    for (const [label, options] of [
+      ['nodenext', { module: K.NodeNext, moduleResolution: R.NodeNext }],
+      ['node16', { module: K.Node16, moduleResolution: R.Node16 }],
+      ['bundler', { module: K.ESNext, moduleResolution: R.Bundler }],
+    ]) for (const type of ['module', 'commonjs', null]) for (const ext of ['.ts', '.mts', '.cts']) {
+      fs.rmSync(app, { recursive: true, force: true });
+      fs.mkdirSync(app);
+      const appData = type ? { type } : null;
+      if (appData) fs.writeFileSync(path.join(app, 'package.json'), JSON.stringify(appData));
+      const importer = path.join(app, 'use' + ext);
+      const text = "import { target } from '@demo/lib'; export function caller(){ target(); }";
+      fs.writeFileSync(importer, text);
+      const opts = { ...options, noLib: true, types: [], noEmit: true };
+      const sf = ts.createProgram([importer], opts).getSourceFile(importer);
+      const mode = ts.getModeForUsageLocation(sf, sf.statements[0].moduleSpecifier, opts);
+      const real = ts.resolveModuleName('@demo/lib', importer, opts, ts.sys, undefined, undefined, mode).resolvedModule;
+      const where = `${label} ${type} ${ext}`;
+      assert(real, `oracle resolved nothing for ${where}`);
+      const expected = path.basename(real.resolvedFileName);
+      seen.add(expected);
+      const files = ['esm.ts', 'cjs.ts'].map((f) => ({ path: path.join(lib, f), text: 'export function target(){}' }))
+        .concat({ path: importer, text });
+      const packages = [{ dir: lib, data: libData }].concat(appData ? [{ dir: app, data: appData }] : []);
+      const idx = createSyntacticIndex(ts, files, { packages, moduleOptions: new Map([[importer, opts]]) });
+      const hits = files.slice(0, 2).filter((f) => idx.callersOf({ file: f.path, name: 'target' }).length).map((f) => path.basename(f.path));
+      assert.deepEqual(hits, [expected], where);
+    }
+    // The matrix must exercise both conditions, or it cannot tell them apart.
+    assert.deepEqual([...seen].sort(), ['cjs.ts', 'esm.ts']);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('an explicit require takes the require condition in any importer', () => {
+  const files=[
+    {path:'/repo/lib/esm.ts',text:'export function target(){}'},
+    {path:'/repo/lib/cjs.ts',text:'export function target(){}'},
+    {path:'/repo/app/use.ts',text:"import {target} from '@demo/lib'; const {target: other}=require('@demo/lib'); export function esm(){target();} export function cjs(){other();}"},
+  ];
+  const idx=createSyntacticIndex(ts,files,{packages:[{dir:'/repo/lib',data:{name:'@demo/lib',exports:{import:'./esm.ts',require:'./cjs.ts'}}},{dir:'/repo/app',data:{type:'module'}}]});
+  assert.deepEqual(idx.callersOf({file:files[0].path,name:'target'}).map(c=>c.label),['esm']);
+  assert.deepEqual(idx.callersOf({file:files[1].path,name:'target'}).map(c=>c.label),['cjs']);
+});
+
+test('every local that shadows an import hides it from static and bare calls', () => {
+  const idx=build({
+    'store.ts':'export class Store { static save() {} } export function target() {}',
+    'use.ts':`import { Store, target } from './store';
+      export function ok(){ Store.save(); target(); }
+      export function param({ Store, target }: any){ Store.save(); target(); }
+      export function nested([, { Store, target }]: any){ Store.save(); target(); }
+      export function loop(xs: any[]){ for (const { Store, target } of xs) { Store.save(); target(); } }
+      export function caught(){ try {} catch ({ Store, target }) { Store.save(); target(); } }
+      export function clause(x: number){ switch (x) { case 1: const Store = make(), target = make(); break; default: Store.save(); target(); } }
+      export function hoisted(x: boolean){ if (x) { var Store = make(), target = make(); } Store.save(); target(); }
+      export function local(){ class Store { static save() {} } function target() {} Store.save(); target(); }
+      export const named = function Store(){ Store.save(); };`,
+  });
+  assert.deepEqual(idx.callersOf({file:root+'/store.ts',className:'Store',name:'save'}).map(c=>c.label),['ok']);
+  assert.deepEqual(idx.callersOf({file:root+'/store.ts',name:'target'}).map(c=>c.label),['ok']);
+});
+
+test('typed locals in switch clauses and hoisted vars keep their receiver type', () => {
+  const idx=build({
+    'svc.ts':'export class Svc { run() {} }',
+    'use.ts':`import { Svc } from './svc';
+      export function inCase(x: number){ switch (x) { case 1: const s: Svc = get(); s.run(); } }
+      export function inDefault(x: number){ switch (x) { default: const s = new Svc(); s.run(); } }
+      export function otherClause(x: number){ switch (x) { case 1: const s: Svc = get(); break; case 2: s.run(); } }
+      export function hoistedVar(x: boolean){ if (x) { var s: Svc = get(); } s.run(); }`,
+  });
+  assert.deepEqual(idx.callersOf({file:root+'/svc.ts',className:'Svc',name:'run'}).map(c=>c.label).sort(),
+    ['hoistedVar','inCase','inDefault','otherClause']);
+});
+
+test('a finding with no callers found is not shown as updated', () => {
+  const provider = createTreeProvider(require('./vscode-stub'), { getState: () => ({ rowDetail: 'hover' }), resolver: {} });
+  const finding = (callerState) => ({ type: 'finding', label: 'target', file: '/review/t.ts', pos: 1,
+    finding: { label: 'target', relPath: 't.ts', startLine: 1, component: '(root)', kinds: [{ id: 'optional-param', short: '+optional param' }],
+      callerState, staleCallers: 0, stale: [], throwsAdded: [], score: 1 } });
+  const none = provider.getTreeItem(finding('none'));
+  assert.equal(none.description, '∅');
+  assert.match(none.tooltip.value, /no callers found/);
+  assert.doesNotMatch(none.tooltip.value, /all call sites updated/);
+  assert.match(provider.getTreeItem(finding('resolved')).tooltip.value, /all call sites updated/);
+  assert.match(provider.getTreeItem(finding(undefined)).tooltip.value, /callers unknown/);
+});
+
+test('an expansion whose caller query failed or did not finish says so', async () => {
+  const expand = (resolver) => createTreeProvider(require('./vscode-stub'), { getState: () => ({ rel: (f) => path.relative(root, f) }), resolver })
+    .getChildren({ type: 'finding', file: '/review/t.ts', pos: 1 });
+  const caller = { file: '/review/c.ts', pos: 1, label: 'caller' };
+  const failed = await expand({ incoming: async () => { throw new Error('tsserver crashed'); } });
+  assert.deepEqual(failed.map((r) => [r.type, r.label, r.tooltip]), [['message', 'Callers could not be loaded', 'tsserver crashed']]);
+  const notReady = await expand({ incomingWithStatus: async () => ({ callers: [], complete: false, reason: 'language server not ready' }) });
+  assert.deepEqual(notReady.map((r) => [r.type, r.label]), [['message', 'Callers could not be loaded']]);
+  const partial = await expand({ incomingWithStatus: async () => ({ callers: [caller], complete: false, reason: 'command-bus callers unavailable' }) });
+  assert.deepEqual(partial.map((r) => [r.type, r.label]), [['caller', 'caller'], ['message', 'More callers may be missing']]);
+  const complete = await expand({ incomingWithStatus: async () => ({ callers: [], complete: true }) });
+  assert.deepEqual(complete, []);
+  // A resolver that cannot report completion does not get to look complete.
+  const silent = await expand({ incoming: async () => [caller] });
+  assert.deepEqual(silent.map((r) => [r.type, r.label]), [['caller', 'caller'], ['message', 'More callers may be missing']]);
+});
+
+test('hiding untracked callers applies to the status query too', async () => {
+  const { withoutUntrackedCallers } = require('../src/engine/analyze');
+  const callers = [{ file: '/r/scratch.ts', pos: 1 }, { file: '/r/kept.ts', pos: 1 }];
+  const resolver = withoutUntrackedCallers({
+    incoming: async () => callers,
+    incomingWithStatus: async () => ({ callers, complete: false, reason: 'partial' }),
+    callerState: async () => ({ state: 'resolved', callers }),
+  }, (c) => c.file === '/r/scratch.ts', () => {});
+  assert.deepEqual(await resolver.incomingWithStatus('/r/t.ts', 1), { callers: [callers[1]], complete: false, reason: 'partial' });
+  assert.equal('incomingWithStatus' in withoutUntrackedCallers({ incoming: async () => [], callerState: async () => ({}) }, () => false, () => {}), false);
+});
+
+test('editor caller queries report whether they completed, and retry incomplete ones', async () => {
+  const Module = require('module'), original = Module._load;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-status-'));
+  const file = path.join(dir, 'a.ts'); fs.writeFileSync(file, 'function target() {}');
+  const cqrsId = require.resolve('../src/engine/edges-cqrs');
+  const realCqrs = require.cache[cqrsId];
+  let mode = 'failed', cqrsFails = false;
+  const stub = { ...require('./vscode-stub'), Position: class { constructor(line, character) { Object.assign(this, { line, character }); } },
+    commands: { executeCommand: async (name) => {
+      if (mode === 'failed') throw Error('server down');
+      if (name === 'vscode.prepareCallHierarchy') return [{}];
+      if (name === 'vscode.provideIncomingCalls') return [];
+      if (name === 'vscode.executeReferenceProvider') return [{ uri: { fsPath: file }, range: { start: { line: 0, character: 9 }, end: { line: 0, character: 15 } } }];
+    } } };
+  const fakeCqrs = new Module(cqrsId); fakeCqrs.loaded = true;
+  fakeCqrs.exports = { makeCqrsEdges: () => ({ isHandlerExecute: () => false,
+    extraCallers: async () => { if (cqrsFails) throw new Error('index unavailable'); return []; } }) };
+  try {
+    Module._load = function (name, ...args) { return name === 'vscode' ? stub : original.call(this, name, ...args); };
+    require.cache[cqrsId] = fakeCqrs;
+    delete require.cache[require.resolve('../src/resolver-vscode')];
+    const { createVscodeResolver } = require('../src/resolver-vscode');
+    const resolver = createVscodeResolver({ repoRoot: dir, retries: 0, ts, filterInherited: false });
+    const first = await resolver.incomingWithStatus(file, 9);
+    assert.equal(first.complete, false);
+    assert.equal((await resolver.callerState(file, 9)).state, 'unknown');
+    mode = 'ok';
+    assert.deepEqual(await resolver.incomingWithStatus(file, 9), { callers: [], complete: true }, 'an incomplete answer is not cached');
+    const cqrsResolver = createVscodeResolver({ repoRoot: dir, retries: 0, ts, filterInherited: false });
+    cqrsFails = true;
+    const partial = await cqrsResolver.incomingWithStatus(file, 9);
+    assert.equal(partial.complete, false);
+    assert.match(partial.reason, /command-bus callers unavailable — index unavailable/);
+    assert.equal((await cqrsResolver.callerState(file, 9)).state, 'unknown', 'a failed command-bus lookup is not "no callers"');
+    cqrsFails = false;
+    assert.equal((await cqrsResolver.callerState(file, 9)).state, 'none');
+  } finally {
+    Module._load = original;
+    if (realCqrs) require.cache[cqrsId] = realCqrs; else delete require.cache[cqrsId];
+    delete require.cache[require.resolve('../src/resolver-vscode')];
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('deleted rows and unrecorded callers in one file have their own review identities', async () => {
+  const file = path.join(root, 'a.ts');
+  const base = 'export class A { run() { return 1; } }\nexport class B { run() { return 2; } }\nexport function gone() {}\n';
+  let head = 'export const f = function first() { target(); };\nexport const g = function second() { target(); };\nexport function target() {}\n';
+  const identity = (baseText = base) => createReviewIdentity(ts, root, { headText: () => head, baseText: () => baseText, fileRevision: () => null });
+  // The rows come from the provider, as the editor builds them.
+  const deletedRows = async (baseText) => {
+    const S = require('../src/engine/symbols').makeSymbols(ts);
+    const deleted = S.collect(ts.createSourceFile(file, baseText, ts.ScriptTarget.ES2021, true))
+      .filter((s) => s.label !== 'A' && s.label !== 'B').map((s) => ({ ...s, file, relPath: 'a.ts' }));
+    const provider = createTreeProvider(require('./vscode-stub'), { getState: () => ({ result: { deleted }, rel: (f) => path.relative(root, f) }), resolver: {} });
+    return provider.getChildren({ type: 'section', key: 'deleted' });
+  };
+  const rows = await deletedRows(base);
+  assert.ok(rows.length >= 3, `expected the two run() methods and gone(), got ${rows.map((r) => r.label)}`);
+  const ids = rows.map(identity());
+  assert.equal(new Set(ids).size, ids.length, 'every deleted row needs its own identity');
+  // Editing one deleted method's base changes its identity and no other row's.
+  const edited = base.replace('return 2', 'return 3');
+  const after = (await deletedRows(edited)).map(identity(edited));
+  assert.deepEqual(rows.filter((r, i) => after[i] !== ids[i]).map((r) => r.label), ['B.run']);
+
+  // The call hierarchy anchors a named function expression at its own name, which the
+  // symbol collector does not record (it records `f` and `g`).
+  const caller = (name) => ({ type: 'caller', file, label: name, pos: head.indexOf(`${name}()`) });
+  const before = [identity()(caller('first')), identity()(caller('second'))];
+  assert.notEqual(before[0], before[1]);
+  head = head.replace('second() { target(); }', 'second() { target(); target(); }');
+  assert.equal(identity()(caller('first')), before[0], 'an edit to a sibling must not unreview this caller');
+  assert.notEqual(identity()(caller('second')), before[1]);
+});
+
+test('preview identities come from the PR, never from the local checkout', async () => {
+  const { previewRevisions } = require('../src/review-identity');
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'it-preview-id-'));
+  try {
+    const base = 'export function kept() { return 1; }\nexport function gone() {}\n';
+    const head = 'export function kept() { return 2; }\n';
+    const patchOf = (b, h) => `@@ -1,${b.trimEnd().split('\n').length} +1,${h.trimEnd().split('\n').length} @@\n`
+      + b.trimEnd().split('\n').map((l) => `-${l}`).join('\n') + '\n' + h.trimEnd().split('\n').map((l) => `+${l}`).join('\n');
+    const preview = async (lockPatch) => {
+      const gh = {
+        listPullRequestFiles: async () => ({ files: [
+          { path: 'a.ts', status: 'modified', patch: patchOf(base, head), sha: 'aaa' },
+          { path: 'package-lock.json', status: 'modified', patch: lockPatch, sha: 'bbb' },
+          { path: 'logo.png', status: 'modified', patch: null, sha: null },
+        ] }),
+        fileAtRef: async (_, p, ref) => (p === 'a.ts' ? (ref === 'head' ? head : base) : null),
+      };
+      return analyzeRemote({ ts, gh, slug: {}, pr: { number: 7, headSha: 'head', mergeBaseSha: 'base' }, repoRoot: repo });
+    };
+    const rowsOf = (result) => {
+      const provider = createTreeProvider(require('./vscode-stub'), {
+        getState: () => ({ result, rel: (f) => path.relative(repo, f), absPath: (p) => path.join(repo, p) }), resolver: {},
+      });
+      return Promise.all(['deleted', 'files'].map((key) => provider.getChildren({ type: 'section', key }))).then((r) => r.flat());
+    };
+    const idsOf = async (result) => {
+      const identity = createReviewIdentity(ts, repo, previewRevisions(result));
+      return Object.fromEntries((await rowsOf(result)).filter((r) => r.type === 'deleted' || r.type === 'file')
+        .map((r) => [`${r.type}:${r.relPath || r.label}:${r.label}`, identity(r)]));
+    };
+    const result = await preview('@@ -1 +1 @@\n-1\n+2');
+    // Local files at the same paths, in any state, must not matter.
+    fs.writeFileSync(path.join(repo, 'a.ts'), 'export function gone() { local(); }\n');
+    fs.writeFileSync(path.join(repo, 'package-lock.json'), '{"local":1}');
+    const first = await idsOf(result);
+    fs.writeFileSync(path.join(repo, 'a.ts'), 'something else entirely\n');
+    fs.writeFileSync(path.join(repo, 'package-lock.json'), '{"local":2}');
+    assert.deepEqual(await idsOf(result), first);
+    assert.ok(Object.keys(first).some((k) => k.startsWith('deleted:') && first[k]), `a deleted row was expected: ${Object.keys(first)}`);
+    const lockKey = Object.keys(first).find((k) => k.includes('package-lock.json'));
+    assert.ok(first[lockKey], 'a listed file with a blob id keeps a persisted identity');
+    assert.equal(first[Object.keys(first).find((k) => k.includes('logo.png'))], null, 'nothing identifies this file, so it is not persisted');
+    // The PR changing that file again does change its identity.
+    const second = await idsOf(await preview('@@ -1 +1 @@\n-1\n+3'));
+    assert.notEqual(second[lockKey], first[lockKey]);
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+    clearVirtualText();
+  }
+});
+
+test('local review identities reuse the base texts the analysis loaded', async () => {
+  const { analyze } = require('../src/engine/analyze');
+  const { makeGit } = require('../src/engine/git');
+  const { localRevisions } = require('../src/review-identity');
+  const { execFileSync } = require('child_process');
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-base-texts-')));
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+  try {
+    const write = (rel, text) => { fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true }); fs.writeFileSync(path.join(repo, rel), text); };
+    git('init', '-q', '--initial-branch=main'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.com');
+    write('tsconfig.json', JSON.stringify({ include: ['src'] }));
+    write('.gitignore', 'node_modules\n');
+    write('src/a.ts', 'export function target(n: number) { return n; }\nexport function old() {}\n');
+    write('src/b.ts', 'import { target } from "./a";\nexport function caller() { return target(1); }\n');
+    write('src/a.test.ts', 'import { target } from "./a";\ntarget(1);\n');
+    write('notes.txt', 'one\n');
+    git('add', '-A'); git('commit', '-qm', 'base');
+    fs.mkdirSync(path.join(repo, 'node_modules'));
+    fs.symlinkSync(path.dirname(require.resolve('typescript/package.json')), path.join(repo, 'node_modules', 'typescript'));
+    write('src/a.ts', 'export function target(n: number, m = 0) { return n + m; }\n');
+    write('src/b.ts', 'import { target } from "./a";\nexport function caller() { return target(2); }\n');
+    write('src/a.test.ts', 'import { target } from "./a";\ntarget(2);\n');
+    write('notes.txt', 'two\n');
+    const result = await analyze(repo, { mode: 'working' });
+    assert.equal(result.baseTexts.get('src/a.ts'), 'export function target(n: number) { return n; }\nexport function old() {}\n');
+    assert.equal(result.baseTexts.get('src/a.test.ts'), 'import { target } from "./a";\ntarget(1);\n', 'changed tests are loaded too');
+
+    const real = makeGit(repo);
+    const calls = { show: 0, blobIds: 0 };
+    const counted = { ...real, show: (...a) => { calls.show++; return real.show(...a); }, blobIds: (...a) => { calls.blobIds++; return real.blobIds(...a); } };
+    const identity = createReviewIdentity(ts, repo, localRevisions(repo, result, counted));
+    const rows = [
+      ...result.allChanged.map((c) => ({ type: 'finding', file: c.file, pos: c.namePos, label: c.label })),
+      ...result.allChanged.flatMap((c) => (c.callers || []).map((k) => ({ type: 'caller', file: k.file, pos: k.pos, label: k.label }))),
+      ...result.deleted.map((d) => ({ type: 'deleted', file: d.file, relPath: d.relPath, label: d.label, key: d.key })),
+      ...result.otherFiles.map((f) => ({ type: 'file', relPath: f.path })),
+    ];
+    assert.ok(rows.some((r) => r.type === 'deleted') && rows.some((r) => r.type === 'file') && rows.some((r) => r.type === 'caller'));
+    const ids = rows.map(identity);
+    assert.ok(ids.every((id) => typeof id === 'string'), JSON.stringify(rows.filter((r, i) => !ids[i])));
+    assert.equal(calls.show, 0, 'no `git show` per file');
+    assert.ok(calls.blobIds <= 1, 'whole-file rows share one batch');
+    // The base blob still decides a file row's identity.
+    const fileRow = rows.find((r) => r.type === 'file');
+    git('add', 'notes.txt'); git('commit', '-qm', 'notes moved on');
+    const later = createReviewIdentity(ts, repo, localRevisions(repo, { ...result, base: { ...result.base, sha: git('rev-parse', 'HEAD') } }, real));
+    assert.notEqual(later(fileRow), identity(fileRow));
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
 });

@@ -3,7 +3,7 @@ const fs = require('fs'), path = require('path'), assert = require('assert/stric
 // External checks use pinned real PR snapshots, independent of synthetic fixtures.
 // Requires an existing T3 Code clone with these commits and installed dependencies.
 const home = path.resolve(__dirname, '..'), source = require('./target-repo')();
-const repo = fs.mkdtempSync(path.join(require('os').tmpdir(), 'impact-t3-prs-'));
+const repo = fs.realpathSync(fs.mkdtempSync(path.join(require('os').tmpdir(), 'impact-t3-prs-')));
 let missing = 0;
 const { analyze } = require(home + '/src/engine/analyze'), { analyzeRemote } = require(home + '/src/engine/analyze-remote'), { makeGit } = require(home + '/src/engine/git'), { changedFiles } = require(home + '/src/engine/diff');
 const ts = require(home + '/node_modules/typescript');
@@ -17,8 +17,24 @@ const run = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8'
                 const dirs = parent ? fs.readdirSync(path.join(source, parent), { withFileTypes: true }).filter(x => x.isDirectory()).map(x => path.join(parent, x.name)) : [''];
                 for (const d of dirs) {
                     const dest = path.join(repo, d, 'node_modules'), src = path.join(source, d, 'node_modules');
-                    if (fs.existsSync(src) && fs.existsSync(path.dirname(dest)) && !fs.existsSync(dest))
-                        fs.symlinkSync(src, dest);
+                    if (fs.existsSync(src) && fs.existsSync(path.dirname(dest)) && !fs.existsSync(dest)) {
+                        // Preserve workspace links into this historical checkout. A symlink
+                        // to the original node_modules sends imports into today's source tree.
+                        fs.mkdirSync(dest, { recursive: true });
+                        const link = (from, to) => {
+                            let real;
+                            try { real = fs.realpathSync(from); } catch { return; }
+                            const rel = path.relative(source, real);
+                            const workspace = /^(packages|apps)[/\\]/.test(rel) && !rel.includes('node_modules');
+                            fs.symlinkSync(workspace ? path.join(repo, rel) : from, to);
+                        };
+                        for (const entry of fs.readdirSync(src)) {
+                            if (entry.startsWith('@')) {
+                                fs.mkdirSync(path.join(dest, entry));
+                                for (const child of fs.readdirSync(path.join(src, entry))) link(path.join(src, entry, child), path.join(dest, entry, child));
+                            } else link(path.join(src, entry), path.join(dest, entry));
+                        }
+                    }
                 }
             }
             const git = makeGit(repo), base = run('rev-parse', 'HEAD^').trim(), head = run('rev-parse', 'HEAD').trim();
@@ -41,6 +57,9 @@ const run = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8'
                         if (!target.callers.some(c => c.label.includes(expected))) {
                             missing++;
                             console.error('MISSING cross-project caller', name, expected);
+                        } else {
+                            const caller = target.callers.find(c => c.label.includes(expected));
+                            assert.equal(caller.callState, expected === 'resolveScopedSettingsTargets' ? 'updated-at-call' : 'changed-elsewhere');
                         }
                     }
                 }

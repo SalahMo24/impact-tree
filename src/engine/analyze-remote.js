@@ -10,6 +10,7 @@
 // `tierA: true` and `coverage`, which the view uses to say out loud that callers
 // outside the PR are invisible here.
 const path = require('path');
+const { createHash } = require('crypto');
 const { makeSymbols } = require('./symbols');
 const { score } = require('./signature');
 const { changedSymbolsIn, changedSymbolKeys } = require('./changed-symbols');
@@ -71,9 +72,11 @@ async function analyzeRemote({
   trace(`${listed.files.length} file(s) listed${listed.truncated ? ' (truncated)' : ''}`);
   const sourceFiles = listed.files.filter((f) => isSourcePath(f.path) && !isTestPath(f.path));
   trace(`${sourceFiles.length} analysable source file(s); ${listed.files.length - sourceFiles.length} other`);
+  // Nothing of these files is fetched, so their review identity comes from what GitHub
+  // listed: the blob id and the patch. `contentId` is null when it gave neither.
   const otherFiles = listed.files
     .filter((f) => !sourceFiles.includes(f))
-    .map((f) => ({ path: f.path, status: normaliseStatus(f.status) }));
+    .map((f) => ({ path: f.path, status: normaliseStatus(f.status), contentId: listedContentId(f) }));
 
   if (!sourceFiles.length) {
     return emptyResult(pr, listed, otherFiles, warnings);
@@ -159,9 +162,10 @@ async function analyzeRemote({
   onProgress({ phase: 'index', message: `indexing ${usable.length} file(s)` });
   const moduleOptions = await require('./remote-config').remoteOptions(
     ts, gh, slug, pr.headSha, repoRoot, usable.map((f) => f.path), warnings);
+  const packages = await require('./remote-config').remotePackages(gh, slug, pr.headSha, repoRoot, usable.map(f => f.path), warnings);
   const idx = createSyntacticIndex(ts,
     usable.filter((f) => f.headText != null).map((f) => ({ path: abs(f.path), text: f.headText })),
-    { baseDirs: [repoRoot], moduleOptions });
+    { baseDirs: [repoRoot], moduleOptions, packages });
   const hints = new Map();
   for (const c of changed) {
     hints.set(`${c.file}#${c.namePos}`, {
@@ -254,6 +258,13 @@ async function analyzeRemote({
     unknownCallers: changed.filter((c) => c.callerState === 'unknown'),
     resolver,
   };
+}
+
+function listedContentId(f) {
+  const parts = [];
+  if (f.sha) parts.push(`blob:${f.sha}`);
+  if (f.patch != null) parts.push(`patch:${createHash('sha256').update(f.patch).digest('hex')}`);
+  return parts.length ? parts.join('|') : null;
 }
 
 function emptyResult(pr, listed, otherFiles, warnings) {

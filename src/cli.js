@@ -71,6 +71,8 @@ for (const f of result.findings) {
     if (f.stale.length > 8) console.log(`         +${f.stale.length - 8} more`);
   } else if (f.callerState === 'unknown') {
     console.log(`      ? callers unknown (referenced as a value, never called directly)`);
+  } else if (f.callerState === 'none') {
+    console.log(`      ∅ no callers found in the analysed projects`);
   } else {
     console.log(`      🟢 no un-updated callers`);
   }

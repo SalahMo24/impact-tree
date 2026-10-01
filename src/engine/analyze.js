@@ -100,13 +100,265 @@ function rangesFor(git, baseSha, headRev, files, { maxChars = 60000 } = {}) {
   return out;
 }
 
+// Each mode pins the diff base through the same call: (git, opts, warnings) -> { ref, sha, notes }.
+// `branch` and `pr` share one strategy. A new mode has to name its own; it cannot inherit this one by falling through.
+function headBase(git) {
+  return { ref: 'HEAD', sha: git.revParse('HEAD'), notes: [] };
+}
+
+function checkpointBase(git, opts) {
+  if (!opts.checkpoint) throw new Error('checkpoint mode requires opts.checkpoint');
+  // `rev-parse <40 hex>` echoes any well-formed sha back, existing or not, so a stale
+  // checkpoint surfaced as a raw `git diff` failure. Ask for a commit specifically.
+  const sha = git.revParse(`${opts.checkpoint}^{commit}`);
+  if (!sha) {
+    const err = new Error(`checkpoint ${String(opts.checkpoint).slice(0, 12)} is not a commit in this repository — record a new checkpoint`);
+    err.code = 'NO_CHECKPOINT';
+    throw err;
+  }
+  return { ref: opts.checkpoint, sha, notes: [] };
+}
+
+function missingMergeBase(git, ref) {
+  // Falling back to the base TIP diffed every commit the base gained since the
+  // branch point, in reverse -- other people's work shown as this branch deleting it.
+  const shallow = git.isShallow();
+  const err = new Error(shallow
+    ? `no common ancestor of ${ref} and HEAD in this clone — it is shallow, so the branch point was never fetched. Run 'git fetch --unshallow' (or fetch with more depth) and refresh.`
+    : `${ref} and HEAD share no history — a branch diff against it is meaningless. Choose another base branch.`);
+  err.code = 'NO_MERGE_BASE';
+  return err;
+}
+
+async function branchMergeBase(git, opts, warnings) {
+  const resolved = await resolveBaseAsync(git, opts.base || 'main', {
+    fetch: !!opts.fetch, allowLocal: !!opts.allowLocalBase, timeoutMs: opts.fetchTimeoutMs,
+  });
+  warnings.push(...resolved.notes);
+  const mergeBase = git.mergeBase(resolved.sha, 'HEAD');
+  if (!mergeBase) throw missingMergeBase(git, resolved.ref);
+  return { ...resolved, sha: mergeBase };
+}
+
 const MODES = {
-  working:    { desc: 'uncommitted changes only (agent review)', headRev: null,   requireClean: false },
-  checkpoint: { desc: 'since a recorded checkpoint',            headRev: null,   requireClean: false },
-  branch:     { desc: 'whole branch vs base (includes uncommitted)', headRev: null, requireClean: false },
-  pr:         { desc: 'committed branch state vs base (PR semantics)', headRev: 'HEAD', requireClean: true },
+  working:    { desc: 'uncommitted changes only (agent review)', headRev: null,   requireClean: false, resolveBase: headBase },
+  checkpoint: { desc: 'since a recorded checkpoint',            headRev: null,   requireClean: false, resolveBase: checkpointBase },
+  branch:     { desc: 'whole branch vs base (includes uncommitted)', headRev: null, requireClean: false, resolveBase: branchMergeBase },
+  pr:         { desc: 'committed branch state vs base (PR semantics)', headRev: 'HEAD', requireClean: true, resolveBase: branchMergeBase },
 };
 
+function resolveEffectiveMode(mode, cfg, dirty, onDirty, warnings) {
+  if(!(cfg.requireClean && dirty.length)) return { effectiveMode: mode, effectiveCfg: cfg };
+    // Erroring to a blank view the moment someone edits a file is hostile. Fall back
+    // to 'branch' (which includes uncommitted work) and say loudly that we did.
+    if(onDirty !== 'fallback') {
+      const err = new Error(`working tree is dirty — a PR diff would be contaminated by ${dirty.length} uncommitted change(s). Commit, stash, or use mode 'branch'.`);
+      err.dirty = dirty;
+      throw err;
+    }
+    warnings.push(`${dirty.length} uncommitted change(s) — showing 'branch' (includes your edits) instead of 'pr'. Commit or stash for a true PR diff.`);
+   
+
+  return { effectiveMode: 'branch', effectiveCfg: MODES.branch };
+}
+
+function tryLoadTypeScript(repo, dir, warnings, unanalysable, comp, compFiles) {
+  try { return { ts: loadTypeScript(repo, dir), ok: true }; }
+  catch (e) {
+    unanalysable.set(comp, (unanalysable.get(comp) || 0) + compFiles.length);
+    warnings.push(`${compFiles.length} changed file(s) in '${comp}' NOT analysed — ${e.message}`);
+    return { ts: null, ok: false };
+  }
+}
+
+/**
+ * One path from `git diff --name-status`, or an untracked file appended for a worktree diff.
+ * `path` and `oldPath` are repository-relative.
+ * @typedef {object} ChangedPath
+ * @property {'added'|'deleted'|'modified'|'renamed'} status
+ * @property {string} path Path on the new side. For a deletion this is the removed path.
+ * @property {string|null} oldPath Previous path of a rename. The same as `path` for a modification or deletion, and `null` for an add.
+ * @property {number|null} [similarity] Rename similarity reported by Git, present when `status` is `'renamed'`.
+ * @property {true} [untracked] Set when the path was never `git add`ed and was appended for a worktree diff.
+ */
+
+/**
+ * Append untracked paths to a diff. `git diff` never lists a file nobody has `git add`ed.
+ * Those files are part of the change only when `headRev` is `null` (the worktree). Against a
+ * commit they are omitted, and so are callers the language service finds inside them.
+ * @param {ChangedPath[]} changes
+ * @param {Set<string>} untracked Repository-relative paths from `git ls-files --others`.
+ * @param {string|null} headRev A commit to diff, such as `'HEAD'`. `null` means the worktree.
+ * @returns {ChangedPath[]} `changes` when `headRev` is a commit or every untracked path is already
+ *   listed. Otherwise a new array with each missing path appended as
+ *   `{ status: 'added', oldPath: null, untracked: true }`.
+ */
+function includeUntrackedFiles(changes, untracked, headRev) {
+  if (headRev !== null) return changes;
+  const listed = new Set(changes.map((file) => file.path));
+  const added = [];
+  for (const filePath of untracked) {
+    if (listed.has(filePath)) continue;
+    added.push({ status: 'added', oldPath: null, path: filePath, untracked: true });
+  }
+  return added.length ? changes.concat(added) : changes;
+}
+
+/**
+ * Hide callers in untracked files from every query a resolver answers. Against a commit
+ * those files are not part of the change, so the caller list, the test-reach walk and the
+ * tree must all see the same callers; filtering only one of them reported "no callers"
+ * next to "covered by a test".
+ * @param {object} resolver
+ * @param {(caller: {file: string}) => boolean} isUntracked
+ * @param {(count: number) => void} onDropped Called with the number of direct callers removed
+ *   from one `callerState` answer.
+ * @returns {object} `resolver` with `incoming`, `incomingWithStatus` (when present) and
+ *   `callerState` filtered.
+ */
+function withoutUntrackedCallers(resolver, isUntracked, onDropped) {
+  const keep = (caller) => !isUntracked(caller);
+  const wrapped = {
+    ...resolver,
+    incoming: async (...args) => (await resolver.incoming(...args)).filter(keep),
+    callerState: async (...args) => {
+      const cs = await resolver.callerState(...args);
+      const kept = cs.callers.filter(keep);
+      if (kept.length === cs.callers.length) return cs;
+      onDropped(cs.callers.length - kept.length);
+      // Every caller the query found was untracked: nothing calls it within the commit.
+      return { ...cs, callers: kept, state: kept.length || cs.state !== 'resolved' ? cs.state : 'none' };
+    },
+  };
+  if (resolver.incomingWithStatus) {
+    wrapped.incomingWithStatus = async (...args) => {
+      const answer = await resolver.incomingWithStatus(...args);
+      return { ...answer, callers: answer.callers.filter(keep) };
+    };
+  }
+  return wrapped;
+}
+
+/**
+ * Source files in `changes` that belong to a tsconfig project, grouped by that project.
+ * Tests and paths with no `tsconfig.json` ancestor are left out of both results.
+ * @param {string} repo Absolute filesystem path of the repository root.
+ * @param {ChangedPath[]} changes
+ * @returns {{
+ *   files: ChangedPath[],
+ *   byComponent: Map<string, {root: string, files: ChangedPath[]}>
+ * }} `byComponent` is keyed by `'(root)'` or the repository-relative project directory.
+ *   `root` is `''` for the repository root and that directory otherwise.
+ */
+function changedSourceByProject(repo, changes) {
+  const files = changes.filter((file) => isSourcePath(file.path) && !isTestPath(file.path)
+    && projectRootOf(repo, file.path) !== null);
+  const byComponent = new Map();
+  for (const file of files) {
+    const root = projectRootOf(repo, file.path);
+    if (root === null) continue;
+    const label = projectLabel(root);
+    let entry = byComponent.get(label);
+    if (!entry) {
+      entry = { root, files: [] };
+      byComponent.set(label, entry);
+    }
+    entry.files.push(file);
+  }
+  return { files, byComponent };
+}
+
+/**
+ * Analyse one repository from disk: diff it, find the changed callables, and
+ * resolve their callers. PR preview without a checkout is `analyzeRemote`, which
+ * returns this same top-level shape.
+ *
+ * `mode` selects the diff. `pr` compares committed `HEAD` with the merge base and
+ * throws on a dirty tree unless `onDirty` is `'fallback'`, in which case the run
+ * continues as `branch`: `mode` in the result is `'branch'` and `requestedMode`
+ * stays `'pr'`. `working` and `checkpoint` diff the worktree. `headRev` overrides
+ * the mode: `null` includes untracked files, `'HEAD'` does not. `base.sha` is the
+ * pinned commit the diff was taken against; `base.ref` is the name that was asked for.
+ *
+ * Each changed symbol then carries:
+ *
+ * - `callerState` `'resolved'` when at least one caller came back, `'none'` when
+ *   the query finished and found none, `'unknown'` when the query failed, the file
+ *   is outside the program, or the symbol is only referenced as a value, and
+ *   `'di'` for a constructor with no direct call.
+ * - `testState` `'covered'` when a test was reached, `'not-computed'` when
+ *   `deferTestReach` skipped the walk, `'unknown'` when no test was reached and
+ *   `callerState` is `'unknown'` or `'di'`, and `'uncovered'` otherwise.
+ *   A thrown `incoming` query during that walk is discarded, so `'uncovered'`
+ *   does not prove the walk finished.
+ * - `callState` on each caller: `'updated-at-call'` when a hunk covers the call
+ *   site, `'changed-elsewhere'` when that caller symbol also changed, and
+ *   `'unchanged'` otherwise. `staleCallers` counts non-test callers that are not
+ *   `'updated-at-call'`.
+ *
+ * `depth` bounds only the test-reach walk, with the changed symbol at depth 0.
+ * Blast radius uses `blastDepth`. The rendered forest uses `treeDepth` and
+ * `maxChildren`, and is omitted when `skipForest` is set. `changedRanges` values
+ * are 1-based inclusive `[startLine, endLine]` pairs on the new side of the diff,
+ * keyed by repository-relative path. `baseTexts` holds the base-side text of every changed
+ * source path that existed at the base, keyed by its base path (`basePaths` maps a rename).
+ *
+ * @param {string} repo Absolute filesystem path of the repository root.
+ * @param {object} [opts]
+ * @param {'working'|'checkpoint'|'branch'|'pr'} [opts.mode='pr']
+ * @param {string} [opts.base='main'] Base branch or revision for `pr` and `branch`.
+ * @param {string} [opts.checkpoint] Required for `checkpoint`. Must resolve to a commit.
+ * @param {boolean} [opts.fetch] Fetch the base before resolving it.
+ * @param {boolean} [opts.allowLocalBase] Allow a local base ref when the remote-tracking ref is missing.
+ * @param {number} [opts.fetchTimeoutMs] Deadline for that fetch, in milliseconds.
+ * @param {string|null} [opts.headRev] `'HEAD'` for the commit, `null` for the worktree. Defaults from the mode.
+ * @param {'fallback'} [opts.onDirty] In `pr` mode, continue as `branch` instead of throwing.
+ * @param {number} [opts.depth=2] How far the test-reach walk may go. The changed symbol is depth 0.
+ * @param {number} [opts.reachBudget=120] Stop the test-reach walk after more than this many distinct callers.
+ * @param {boolean} [opts.deferTestReach] Leave every `testState` as `'not-computed'`.
+ * @param {number} [opts.concurrency=8] Parallel caller queries per project.
+ * @param {boolean} [opts.skipForest] Skip blast radius and the caller tree. Roots are still chosen.
+ * @param {number} [opts.rankedRoots=6] How many roots receive a blast radius and a tree.
+ * @param {number} [opts.blastDepth=1] Depth of the blast-radius walk.
+ * @param {number} [opts.treeDepth=2] Depth of each rendered tree.
+ * @param {number} [opts.maxChildren=8] Callers shown under one tree node. Further callers are counted as truncated.
+ * @param {(event: {phase: string, component?: string, done?: number, total?: number, label?: string}) => void} [opts.onProgress]
+ * @param {(ctx: {ts: object, componentDir: string, component: string, repoRoot: string}) => object|null} [opts.makeResolver]
+ *   Editor resolver for this project. When omitted, a language service is created per project.
+ *   Returning null skips the project.
+ * @returns {Promise<{
+ *   mode: string,
+ *   requestedMode: string,
+ *   modeDesc: string,
+ *   base: {ref: string, sha: string, notes?: string[]},
+ *   warnings: string[],
+ *   dirtyCount: number,
+ *   changedFileCount: number,
+ *   changedPaths: string[],
+ *   fileStatus: Record<string, string>,
+ *   basePaths: Record<string, string>,
+ *   changedRanges: Record<string, Array<[number, number]>>,
+ *   baseTexts: Map<string, string|null>,
+ *   excludedCallerPaths: string[],
+ *   otherFiles: Array<{path: string, status: string, noCallable?: true}>,
+ *   unanalysable: Array<{component: string, count: number}>,
+ *   components: object[],
+ *   allChanged: object[],
+ *   findings: object[],
+ *   deleted: object[],
+ *   nestedCount: number,
+ *   untested: object[],
+ *   unknownCallers: object[],
+ *   testReachComputed: boolean
+ * }>} `findings` are changed symbols whose diff is more than a body edit.
+ *   `untested` is the `'uncovered'` subset. `unknownCallers` is the `'unknown'` subset.
+ *   `testReachComputed` is false only when every symbol was left `'not-computed'`.
+ * @throws {Error} Unknown `mode`.
+ * @throws {Error} `checkpoint` mode without `opts.checkpoint`, or a checkpoint that is
+ *   not a commit (`code === 'NO_CHECKPOINT'`).
+ * @throws {Error} `pr` or `branch` with no merge base (`code === 'NO_MERGE_BASE'`).
+ * @throws {Error} Dirty tree in `pr` mode when `onDirty` is not `'fallback'`. `err.dirty` lists the entries.
+ */
 async function analyze(repo, opts = {}) {
   const mode = opts.mode || 'pr';
   const cfg = MODES[mode];
@@ -120,78 +372,18 @@ async function analyze(repo, opts = {}) {
   clearProjectCache();
   clearVirtualText();
 
-  // `rev-parse <40 hex>` echoes any well-formed sha back, existing or not, so a stale
-  // checkpoint surfaced as a raw `git diff` failure. Ask for a commit specifically.
-  const commitOf = (ref) => git.revParse(`${ref}^{commit}`);
-  let base;
-  if (mode === 'working') base = { ref: 'HEAD', sha: git.revParse('HEAD'), notes: [] };
-  else if (mode === 'checkpoint') {
-    if (!opts.checkpoint) throw new Error('checkpoint mode requires opts.checkpoint');
-    const sha = commitOf(opts.checkpoint);
-    if (!sha) {
-      const err = new Error(`checkpoint ${String(opts.checkpoint).slice(0, 12)} is not a commit in this repository — record a new checkpoint`);
-      err.code = 'NO_CHECKPOINT';
-      throw err;
-    }
-    base = { ref: opts.checkpoint, sha, notes: [] };
-  } else {
-    const resolved = await resolveBaseAsync(git, opts.base || 'main', {
-      fetch: !!opts.fetch, allowLocal: !!opts.allowLocalBase, timeoutMs: opts.fetchTimeoutMs,
-    });
-    warnings.push(...resolved.notes);
-    const mb = git.mergeBase(resolved.sha, 'HEAD');
-    if (!mb) {
-      // Falling back to the base TIP diffed every commit the base gained since the
-      // branch point, in reverse -- other people's work shown as this branch deleting it.
-      const shallow = git.isShallow();
-      const err = new Error(shallow
-        ? `no common ancestor of ${resolved.ref} and HEAD in this clone — it is shallow, so the branch point was never fetched. Run 'git fetch --unshallow' (or fetch with more depth) and refresh.`
-        : `${resolved.ref} and HEAD share no history — a branch diff against it is meaningless. Choose another base branch.`);
-      err.code = 'NO_MERGE_BASE';
-      throw err;
-    }
-    base = { ...resolved, sha: mb };
-  }
+  const base = await cfg.resolveBase(git, opts, warnings);
 
   const dirty = git.isDirty(null);
-  let effectiveMode = mode;
-  let effectiveCfg = cfg;
-  if (cfg.requireClean && dirty.length) {
-    // Erroring to a blank view the moment someone edits a file is hostile. Fall back
-    // to 'branch' (which includes uncommitted work) and say loudly that we did.
-    if (opts.onDirty === 'fallback') {
-      effectiveMode = 'branch';
-      effectiveCfg = MODES.branch;
-      warnings.push(`${dirty.length} uncommitted change(s) — showing 'branch' (includes your edits) instead of 'pr'. Commit or stash for a true PR diff.`);
-    } else {
-      const err = new Error(`working tree is dirty — a PR diff would be contaminated by ${dirty.length} uncommitted change(s). Commit, stash, or use mode 'branch'.`);
-      err.dirty = dirty;
-      throw err;
-    }
-  }
+
+  const { effectiveMode, effectiveCfg } = resolveEffectiveMode(mode, cfg, dirty, opts.onDirty, warnings);
+
 
   const headRev = opts.headRev !== undefined ? opts.headRev : effectiveCfg.headRev;
-  const everything = changedFiles(git, base.sha, headRev, null);
-  // A new file nobody has `git add`ed yet is invisible to `git diff`. When the head is
-  // the working tree it is part of the change; when the head is a commit it is not,
-  // and neither are the callers the language service finds inside it.
   const untracked = new Set(untrackedFiles(git));
-  if (headRev === null) {
-    const listed = new Set(everything.map((f) => f.path));
-    for (const p of untracked) if (!listed.has(p)) everything.push({ status: 'added', oldPath: null, path: p, untracked: true });
-  }
-  const files = everything.filter((f) => isSourcePath(f.path) && !isTestPath(f.path)
-    && projectRootOf(repo, f.path) !== null);
-
-  const byComponent = new Map();
+  const everything = includeUntrackedFiles(changedFiles(git, base.sha, headRev, null), untracked, headRev);
+  const { files, byComponent } = changedSourceByProject(repo, everything);
   const unanalysable = new Map();
-  for (const f of files) {
-    const root = projectRootOf(repo, f.path);
-    if (root === null) continue;
-    const label = projectLabel(root);
-    if (!byComponent.has(label)) byComponent.set(label, { root, files: [] });
-    byComponent.get(label).files.push(f);
-  }
 
   // relPath -> [[startLine, endLine], ...] of the new-side changed ranges
   const changedRanges = {};
@@ -200,8 +392,10 @@ async function analyze(repo, opts = {}) {
   for (const f of files) {
     changedRanges[f.path] = f.untracked ? wholeFileRange(path.join(repo, f.path)) : (ranges[f.path] || []);
   }
-  // every base-side blob in one process, not a `git show` per file
-  const baseTexts = git.showMany(base.sha, files.filter((f) => f.status !== 'added').map((f) => f.oldPath || f.path));
+  // every base-side blob in one process, not a `git show` per file. Changed tests and
+  // sources outside a project are included: review identities need their base side too.
+  const baseTexts = git.showMany(base.sha, everything
+    .filter((f) => f.status !== 'added' && isSourcePath(f.path)).map((f) => f.oldPath || f.path));
 
   // A call site counts as updated only if a hunk actually covers it. A caller edited
   // elsewhere in its body has NOT been updated for this change, even though its symbol
@@ -225,134 +419,140 @@ async function analyze(repo, opts = {}) {
   const components = [];
   let droppedUntracked = 0;
   const outsideProgram = new Set();
+  const servicePool = { services: new Map(), registries: new Map() };
+  let workspaceGraph;
   let compIndex = 0;
-  for (const [comp, entry] of byComponent) {
-    const compFiles = entry.files;
-    (opts.onProgress || (() => {}))({ phase: 'component', component: comp, done: compIndex++, total: byComponent.size });
-    const dir = path.join(repo, entry.root);
-    // A project can have node_modules without typescript in it. Aborting the whole run
-    // for one such project blanks the view; report it and analyse the rest.
-    let ts;
-    try { ts = loadTypeScript(repo, dir); }
-    catch (e) {
-      unanalysable.set(comp, (unanalysable.get(comp) || 0) + compFiles.length);
-      warnings.push(`${compFiles.length} changed file(s) in '${comp}' NOT analysed — ${e.message}`);
-      continue;
-    }
-    const S = makeSymbols(ts);
-    const resolver = opts.makeResolver ? opts.makeResolver({ ts, componentDir: dir, component: comp, repoRoot: repo }) : createTsResolver(ts, dir, { repoRoot: repo });
-    if (!resolver) { warnings.push(`'${comp}' has no tsconfig.json — skipped`); continue; }
-    const changed = [], deleted = [];
-    for (const f of compFiles) {
-      const abs = path.join(repo, f.path);
-      let headText = null;
-      if (f.status !== 'deleted') {
-        try { headText = fs.readFileSync(abs, 'utf8'); } catch { headText = null; }
-      }
-      // One file the parser or symbol walk chokes on must not blank the whole view.
-      try {
-        const r = changedSymbolsIn(ts, S, {
-          absPath: abs, relPath: f.path, oldPath: f.oldPath, status: f.status,
-          headText,
-          baseText: f.status === 'added' ? null : baseTexts.get(f.oldPath || f.path) ?? null,
-          hunkRanges: changedRanges[f.path] || [],
-          component: comp, projectRoot: entry.root,
-        });
-        changed.push(...r.changed);
-        deleted.push(...r.deleted);
-      } catch (e) {
-        warnings.push(`${f.path}: could not be analysed — ${e && e.message}`);
-      }
-    }
+  const report = opts.onProgress || (() => {});
+  try {
+    for (const [comp, entry] of byComponent) {
+      const compFiles = entry.files;
+      report({
+        phase: 'component',
+        component: comp,
+        done: compIndex++,
+        total: byComponent.size,
+      });
+      const dir = path.join(repo, entry.root);
+      // A project can have node_modules without typescript in it. Aborting the whole run
+      // for one such project blanks the view; report it and analyse the rest.
+      const { ts, ok } = tryLoadTypeScript(repo, dir, warnings, unanalysable, comp, compFiles);
+      if (!ok) continue;
 
-    const changedKeys = changedSymbolKeys(changed);
-    const concurrency = opts.concurrency ?? 8;
-    const deferReach = opts.deferTestReach === true;
-    const report = opts.onProgress || (() => {});
-    let done = 0;
-    report({ phase: 'resolve', component: comp, done: 0, total: changed.length });
-    await mapLimit(changed, concurrency, async (c) => {
-      let cs;
-      try {
-        cs = await resolver.callerState(c.file, c.namePos, { isConstructor: c.isConstructor });
-      } catch (e) {
-        cs = { state: 'unknown', callers: [] };
-        warnings.push(`caller resolution failed for ${c.label} (${c.relPath}): ${e && e.message}`);
-      }
-      if (headRev !== null && untracked.size && cs.callers.length) {
-        const kept = cs.callers.filter((x) => !untracked.has(relOf(x.file)));
-        if (kept.length !== cs.callers.length) {
-          droppedUntracked += cs.callers.length - kept.length;
-          cs = { ...cs, callers: kept, state: kept.length || cs.state !== 'resolved' ? cs.state : 'none' };
+      const S = makeSymbols(ts);
+      if (!opts.makeResolver && !workspaceGraph) workspaceGraph = require('./workspace-projects').workspaceProjects(ts, repo);
+      const projectResolver = opts.makeResolver ? opts.makeResolver({ ts, componentDir: dir, component: comp, repoRoot: repo }) : createTsResolver(ts, dir, { repoRoot: repo, workspaceGraph, servicePool });
+      if (!projectResolver) { warnings.push(`'${comp}' has no tsconfig.json — skipped`); continue; }
+      const resolver = headRev !== null && untracked.size
+        ? withoutUntrackedCallers(projectResolver, (x) => untracked.has(relOf(x.file)), (n) => { droppedUntracked += n; })
+        : projectResolver;
+      const changed = [], deleted = [];
+      for (const f of compFiles) {
+        const abs = path.join(repo, f.path);
+        let headText = null;
+        if (f.status !== 'deleted') {
+          try { headText = fs.readFileSync(abs, 'utf8'); } catch { headText = null; }
+        }
+        // One file the parser or symbol walk chokes on must not blank the whole view.
+        try {
+          const r = changedSymbolsIn(ts, S, {
+            absPath: abs, relPath: f.path, oldPath: f.oldPath, status: f.status,
+            headText,
+            baseText: f.status === 'added' ? null : baseTexts.get(f.oldPath || f.path) ?? null,
+            hunkRanges: changedRanges[f.path] || [],
+            component: comp, 
+            projectRoot: entry.root,
+          });
+          changed.push(...r.changed);
+          deleted.push(...r.deleted);
+        } catch (e) {
+          warnings.push(`${f.path}: could not be analysed — ${e && e.message}`);
         }
       }
-      if (cs.reason === 'not-in-program') outsideProgram.add(`${comp}\u0000${c.relPath}`);
-      c.callerState = cs.state;
-      c.callers = cs.callers;
-      for (const x of cs.callers) {
-        const atCall = callSiteUpdated(x.file, x.callSites);
-        const symChanged = changedKeys.has(`${x.file}#${x.pos}`);
-        x.callState = atCall ? 'updated-at-call' : symChanged ? 'changed-elsewhere' : 'unchanged';
-      }
-      // stale = the call was not updated, whatever else happened in that caller
-      c.stale = cs.callers.filter((x) => !x.test && x.callState !== 'updated-at-call');
-      c.staleCallers = c.stale.length;
-      c.staleChangedElsewhere = c.stale.filter((x) => x.callState === 'changed-elsewhere').length;
-      c.score = score(c);
-      // Test reachability: does ANY test sit in the upward closure. Deferred by default
-      // -- it only feeds one section, and computing it for every symbol multiplies the
-      // query count for information the reviewer may never open.
-      let tests = [];
-      if (!deferReach) {
-        const seen = new Set(); const stack = [[c.file, c.namePos, 0]];
-        const budget = opts.reachBudget ?? 120;
-        outer: while (stack.length) {
-          const [f, p, d] = stack.pop();
-          if (d >= depth || seen.size > budget) continue;
-          let ups = [];
-          try { ups = await resolver.incoming(f, p, d <= 1); } catch { ups = []; }
-          for (const k of ups) {
-            const id = `${k.file}#${k.pos}`;
-            if (seen.has(id)) continue;
-            seen.add(id);
-            if (k.test) { tests.push(k.label); break outer; }
-            stack.push([k.file, k.pos, d + 1]);
+
+      const changedKeys = changedSymbolKeys(changed);
+      const concurrency = opts.concurrency ?? 8;
+      const deferReach = opts.deferTestReach === true;
+      let done = 0;
+      report({ phase: 'resolve', component: comp, done: 0, total: changed.length });
+      await mapLimit(changed, concurrency, async (c) => {
+        let cs;
+        try {
+          cs = await resolver.callerState(c.file, c.namePos, { isConstructor: c.isConstructor });
+        } catch (e) {
+          cs = { state: 'unknown', callers: [] };
+          warnings.push(`caller resolution failed for ${c.label} (${c.relPath}): ${e && e.message}`);
+        }
+        if (cs.reason === 'not-in-program') outsideProgram.add(`${comp}\u0000${c.relPath}`);
+        c.callerState = cs.state;
+        c.callers = cs.callers;
+        for (const x of cs.callers) {
+          const atCall = callSiteUpdated(x.file, x.callSites);
+          const symChanged = changedKeys.has(`${x.file}#${x.pos}`);
+          x.callState = atCall ? 'updated-at-call' : symChanged ? 'changed-elsewhere' : 'unchanged';
+        }
+        // stale = the call was not updated, whatever else happened in that caller
+        c.stale = cs.callers.filter((x) => !x.test && x.callState !== 'updated-at-call');
+        c.staleCallers = c.stale.length;
+        c.staleChangedElsewhere = c.stale.filter((x) => x.callState === 'changed-elsewhere').length;
+        c.score = score(c);
+        // Test reachability: does ANY test sit in the upward closure. Deferred by default
+        // -- it only feeds one section, and computing it for every symbol multiplies the
+        // query count for information the reviewer may never open.
+        let tests = [];
+        if (!deferReach) {
+          const seen = new Set(); const stack = [[c.file, c.namePos, 0]];
+          const budget = opts.reachBudget ?? 120;
+          outer: while (stack.length) {
+            const [f, p, d] = stack.pop();
+            if (d >= depth || seen.size > budget) continue;
+            let ups = [];
+            try { ups = await resolver.incoming(f, p, d <= 1); } catch { ups = []; }
+            for (const k of ups) {
+              const id = `${k.file}#${k.pos}`;
+              if (seen.has(id)) continue;
+              seen.add(id);
+              if (k.test) { tests.push(k.label); break outer; }
+              stack.push([k.file, k.pos, d + 1]);
+            }
           }
         }
+        c.tests = tests;
+        c.testState = !deferReach
+          ? (tests.length ? 'covered' : (c.callerState === 'unknown' || c.callerState === 'di') ? 'unknown' : 'uncovered')
+          : 'not-computed';
+        report({ phase: 'resolve', component: comp, done: ++done, total: changed.length, label: c.label });
+      });
+
+      // Blast radius is only computed for roots we will actually show: at depth 4 with
+      // 90-node closures it was the single largest cost in the run (234s -> see README).
+      const ranked = seedRoots(changed).sort((a, b) => b.score - a.score);
+      const roots = [];
+      if (opts.skipForest) {
+        components.push({ component: comp, changed, deleted, roots: ranked, forest: [], stats: resolver.stats ? resolver.stats() : {} });
+        if (resolver.dispose) resolver.dispose();
+        continue;
       }
-      c.tests = tests;
-      c.testState = !deferReach
-        ? (tests.length ? 'covered' : (c.callerState === 'unknown' || c.callerState === 'di') ? 'unknown' : 'uncovered')
-        : 'not-computed';
-      report({ phase: 'resolve', component: comp, done: ++done, total: changed.length, label: c.label });
-    });
+      for (let i = 0; i < ranked.length; i++) {
+        const r = ranked[i];
+        if (i >= (opts.rankedRoots ?? 6)) { roots.push({ ...r, blast: null, blastCapped: false }); continue; }
+        const b = await blastRadius(resolver, r.file, r.namePos, opts.blastDepth ?? 1);
+        roots.push({ ...r, blast: b.count, blastCapped: b.capped });
+      }
+      roots.sort((a, b) => b.score - a.score || (b.blast || 0) - (a.blast || 0));
+      const forest = [];
+      for (const r of roots.slice(0, opts.rankedRoots ?? 6)) {
+        forest.push(await buildTree(resolver, r, {
+          depth: opts.treeDepth ?? 2, maxChildren: opts.maxChildren ?? 8,
+          isChanged: (id) => changedKeys.has(id),
+        }));
+      }
 
-    // Blast radius is only computed for roots we will actually show: at depth 4 with
-    // 90-node closures it was the single largest cost in the run (234s -> see README).
-    const ranked = seedRoots(changed).sort((a, b) => b.score - a.score);
-    const roots = [];
-    if (opts.skipForest) {
-      components.push({ component: comp, changed, deleted, roots: ranked, forest: [], stats: resolver.stats ? resolver.stats() : {} });
+      components.push({ component: comp, changed, deleted, roots, forest, stats: resolver.stats ? resolver.stats() : {} });
       if (resolver.dispose) resolver.dispose();
-      continue;
-    }
-    for (let i = 0; i < ranked.length; i++) {
-      const r = ranked[i];
-      if (i >= (opts.rankedRoots ?? 6)) { roots.push({ ...r, blast: null, blastCapped: false }); continue; }
-      const b = await blastRadius(resolver, r.file, r.namePos, opts.blastDepth ?? 1);
-      roots.push({ ...r, blast: b.count, blastCapped: b.capped });
-    }
-    roots.sort((a, b) => b.score - a.score || (b.blast || 0) - (a.blast || 0));
-    const forest = [];
-    for (const r of roots.slice(0, opts.rankedRoots ?? 6)) {
-      forest.push(await buildTree(resolver, r, {
-        depth: opts.treeDepth ?? 2, maxChildren: opts.maxChildren ?? 8,
-        isChanged: (id) => changedKeys.has(id),
-      }));
     }
 
-    components.push({ component: comp, changed, deleted, roots, forest, stats: resolver.stats ? resolver.stats() : {} });
-    if (resolver.dispose) resolver.dispose();
+  } finally {
+    for (const svc of servicePool.services.values()) svc.dispose();
   }
 
   for (const k of outsideProgram) {
@@ -361,6 +561,19 @@ async function analyze(repo, opts = {}) {
   }
   if (droppedUntracked) warnings.push(`${droppedUntracked} caller(s) in untracked files ignored — they are not part of the committed change`);
   const all = components.flatMap((c) => c.changed);
+  const allChangedKeys = changedSymbolKeys(all);
+  // A caller may belong to a different component whose symbols were parsed later.
+  for (const c of all) {
+    for (const caller of c.callers) {
+      if (caller.callState !== 'updated-at-call') caller.callState = allChangedKeys.has(`${caller.file}#${caller.pos}`) ? 'changed-elsewhere' : 'unchanged';
+    }
+    c.staleChangedElsewhere = c.stale.filter(caller => caller.callState === 'changed-elsewhere').length;
+  }
+  const markTree = node => {
+    if (node.file != null && node.pos != null) node.changed = allChangedKeys.has(`${node.file}#${node.pos}`);
+    for (const child of node.children || []) markTree(child);
+  };
+  for (const component of components) for (const tree of component.forest) markTree(tree);
   const nested = nestedIds(all);
   for (const c of all) c.isRoot = !nested.has(`${c.file}#${c.namePos}`);
   // Same rule as the Tier A path: a source file we analysed but which produced no
@@ -383,6 +596,7 @@ async function analyze(repo, opts = {}) {
     fileStatus: Object.fromEntries(everything.map((f) => [f.path, f.status])),
     basePaths: Object.fromEntries(everything.filter(f => f.oldPath).map(f => [f.path, f.oldPath])),
     changedRanges,
+    baseTexts,
     excludedCallerPaths: headRev !== null ? [...untracked] : [],
     unanalysable: [...unanalysable].map(([component, count]) => ({ component, count })),
     components,
@@ -393,4 +607,4 @@ async function analyze(repo, opts = {}) {
     unknownCallers: all.filter((c) => c.callerState === 'unknown'),
   };
 }
-module.exports = { analyze, MODES, loadTypeScript, rangesFor };
+module.exports = { analyze, MODES, loadTypeScript, rangesFor, withoutUntrackedCallers };

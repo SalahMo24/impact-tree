@@ -15,10 +15,11 @@ const LEGEND = [
   ['symbol-method', 'impactTree.iconMode = "symbol"', 'switch code rows to method/function icons instead'],
   ['tag', 'Badge M / A / D / R', 'git status against the review base, not HEAD — hover for the word'],
   ['error', '⛔  call sites this change did NOT update', 'review these first'],
-  ['pass', '✓  all call sites updated', 'or the symbol has no callers'],
+  ['pass', '✓  all call sites updated', 'every caller found was changed on the call line'],
+  ['circle-slash', '∅  no callers found', 'in the code searched — dynamic calls and unloaded projects are not seen'],
   ['warning', '△  caller changed, but NOT on the call line', 'looks handled and is not'],
   ['circle-outline', '○  caller not changed at all', 'affected but untouched'],
-  ['question', '?  callers unknown', 'value-passed or DI-constructed, never called directly'],
+  ['question', '?  callers unknown', 'the search failed or could not tell — e.g. passed as a value or DI-constructed'],
   ['beaker', '🧪  test that reaches this code', ''],
   ['issue-reopened', '↑  cycle — already shown higher up', ''],
 ];
@@ -162,9 +163,13 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
       return { token: '⛔', severity: 'stale',
         marker: `${f.staleCallers} call site(s) not updated${e ? ` (${e} edited nearby)` : ''}` };
     }
-    if (f.callerState === 'unknown') return { token: '?', severity: 'warn', marker: 'callers unknown' };
-    if (f.callerState === 'di') return { token: '?', severity: 'muted', marker: 'DI-constructed' };
-    return { token: '✓', severity: 'ok', marker: 'all call sites updated' };
+    switch (f.callerState) {
+      case 'resolved': return { token: '✓', severity: 'ok', marker: 'all call sites updated' };
+      // A completed search that found nothing is not evidence that callers were updated.
+      case 'none': return { token: '∅', severity: 'muted', marker: 'no callers found' };
+      case 'di': return { token: '?', severity: 'muted', marker: 'DI-constructed' };
+      default: return { token: '?', severity: 'warn', marker: 'callers unknown' };
+    }
   }
 
   function toItem(n) {
@@ -445,7 +450,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
           return r.deleted.map((d) => {
             const uri = uriFor(d.file, d.namePos);
             mark(uri, statusOfPath(state, d.relPath) || 'deleted', 'stale', `${d.label} deleted`);
-            return N({ type: 'deleted', label: d.label, relPath: d.relPath, file: d.file, decorationUri: uri });
+            return N({ type: 'deleted', label: d.label, key: d.key, relPath: d.relPath, file: d.file, decorationUri: uri });
           });
         }
         if (node.key === 'files') {
@@ -472,8 +477,21 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
       const state2 = getState();
       const seenPath = new Set(node.path || []);
       seenPath.add(`${node.file}#${node.pos}`);
+      // A query that failed or did not finish must not look like a symbol nobody calls.
       let callers = [];
-      try { callers = await resolver.incoming(node.file, node.pos, true); } catch { callers = []; }
+      let incomplete = null;
+      try {
+        if (resolver.incomingWithStatus) {
+          const answer = await resolver.incomingWithStatus(node.file, node.pos, true);
+          callers = answer.callers;
+          if (!answer.complete) incomplete = answer.reason || 'the caller query did not complete';
+        } else {
+          callers = await resolver.incoming(node.file, node.pos, true);
+          incomplete = 'this resolver does not report whether its caller search finished';
+        }
+      } catch (e) {
+        incomplete = (e && e.message) || 'the caller query failed';
+      }
       const excluded = new Set(state2?.result?.excludedCallerPaths || []);
       if (excluded.size && state2?.rel) callers = callers.filter((c) => !excluded.has(state2.rel(c.file)));
       const changedKeys = (state2 && state2.changedKeys) || new Set();
@@ -525,6 +543,13 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
           sites: rows.reduce((n2, x) => n2 + (x.sites || 0), 0),
           decorationUri: uriFor(rows[0].file, null),
           path: [...seenPath],
+        }));
+      }
+      if (incomplete) {
+        grouped.push(N({
+          type: 'message', icon: 'warning',
+          label: grouped.length ? 'More callers may be missing' : 'Callers could not be loaded',
+          desc: 'refresh to retry', tooltip: incomplete,
         }));
       }
       return grouped;

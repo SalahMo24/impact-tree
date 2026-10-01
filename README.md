@@ -82,6 +82,9 @@ The extension reuses the editor's running server, so it never builds a second pr
 
 ## Tests
 
+See [the coding style guide](docs/CODING_STYLE.md) for implementation requirements,
+their rationale, examples, and verification expectations.
+
 The suite analyses a real repository; point it at one:
 
 ```bash
@@ -106,6 +109,10 @@ against, so they are gitignored. Regenerate locally with `npm run record`.
    usually excludes tests and the editor never loads them.
 
 ## Roadmap
+
+Required before the first public release: see
+[the distribution checklist](docs/distribution-checklist.md) (review loop, reviewing
+local agent changes, and UI/UX).
 
 - Browse and review open pull requests, with a no-checkout preview tier
 - Review state: checkboxes with subtree propagation

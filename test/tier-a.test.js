@@ -161,7 +161,7 @@ const pr = { number: 7, headSha: 'headsha', baseSha: 'basesha', mergeBaseSha: 'b
 
   console.log('\n▸ fetching');
   check('one file-list request', calls.files === 1);
-  check('head and base fetched per source file', calls.blobs.filter((c) => !c.includes('tsconfig.json')).length === 4, calls.blobs.join(' '));
+  check('head and base fetched per source file', calls.blobs.filter((c) => !c.includes('tsconfig.json') && !c.includes('package.json')).length === 4, calls.blobs.join(' '));
   check('README was never fetched', !calls.blobs.some((b) => b.startsWith('README')));
 
   console.log('\n▸ the change');

@@ -19,7 +19,9 @@ function scriptKindOf(ts, file) {
   return ts.ScriptKind.TS;
 }
 
-function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, pathsBase = null, moduleOptions = new Map() } = {}) {
+const slash = (p) => p.replace(/\\/g, '/');
+
+function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, pathsBase = null, moduleOptions = new Map(), packages = [] } = {}) {
   const byFile = new Map();
   const texts = new Map();
 
@@ -43,12 +45,33 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
     return name;
   };
 
+  // TypeScript picks the `import` or `require` export condition from the importing file's
+  // module format, and a `.ts` file's format comes from the nearest package.json `type`.
+  // Ask TypeScript for both instead of guessing from the file extension.
+  const manifests = new Map(packages.map((entry) => [slash(entry.dir), entry.data]));
+  const manifestFor = (file) => (path.posix.basename(slash(file)) === 'package.json'
+    ? manifests.get(path.posix.dirname(slash(file))) : undefined);
+  const formatHost = {
+    fileExists: (file) => manifestFor(file) !== undefined,
+    readFile: (file) => { const data = manifestFor(file); return data === undefined ? undefined : JSON.stringify(data); },
+  };
+  const defaultOptions = { moduleResolution: ts.ModuleResolutionKind.NodeNext, module: ts.ModuleKind.NodeNext };
+  const optionsFor = (file) => moduleOptions.get(file) || defaultOptions;
+  const knowsFormats = typeof ts.getImpliedNodeFormatForFile === 'function' && typeof ts.getModeForUsageLocation === 'function';
+  const parse = (file, text) => {
+    if (!knowsFormats) return ts.createSourceFile(file, text, ts.ScriptTarget.ES2021, true, scriptKindOf(ts, file));
+    const impliedNodeFormat = ts.getImpliedNodeFormatForFile(file, undefined, formatHost, optionsFor(file));
+    return ts.createSourceFile(file, text, { languageVersion: ts.ScriptTarget.ES2021, impliedNodeFormat }, true, scriptKindOf(ts, file));
+  };
+  // `undefined` is a real answer: resolutions that ignore conditions, such as node10, have no mode.
+  const modeAt = (sf, specifier) => (knowsFormats ? ts.getModeForUsageLocation(sf, specifier, optionsFor(sf.fileName)) : undefined);
+
   for (const src of sources) {
     const file = src.path;
     const text = src.text;
     if (typeof text !== 'string') continue;
     texts.set(file, text);
-    const sf = ts.createSourceFile(file, text, ts.ScriptTarget.ES2021, true, scriptKindOf(ts, file));
+    const sf = parse(file, text);
 
     const imports = new Map();     // localName -> { module, imported }
     const decls = new Map();       // declared top-level name -> { kind, pos }
@@ -65,11 +88,12 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
       const mod = node.moduleSpecifier && node.moduleSpecifier.text;
       if (!mod || !node.importClause) return;
       const c = node.importClause;
-      if (c.name) imports.set(c.name.text, { module: mod, imported: 'default' });
-      if (c.namedBindings && ts.isNamespaceImport(c.namedBindings)) imports.set(c.namedBindings.name.text, { module: mod, imported: '*' });
+      const mode = modeAt(sf, node.moduleSpecifier);
+      if (c.name) imports.set(c.name.text, { module: mod, imported: 'default', mode });
+      if (c.namedBindings && ts.isNamespaceImport(c.namedBindings)) imports.set(c.namedBindings.name.text, { module: mod, imported: '*', mode });
       if (c.namedBindings && ts.isNamedImports(c.namedBindings)) {
         for (const el of c.namedBindings.elements) {
-          imports.set(el.name.text, { module: mod, imported: (el.propertyName || el.name).text });
+          imports.set(el.name.text, { module: mod, imported: (el.propertyName || el.name).text, mode });
         }
       }
     };
@@ -80,6 +104,15 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
     // so a real dependency simply vanished. Attribute it to the module instead,
     // which is also what the TypeScript call hierarchy does.
     const moduleOwner = { label: path.basename(file), pos: 0, module: true };
+    const staticContext = node => {
+      for (let n = node.parent; n; n = n.parent) {
+        if (ts.isMethodDeclaration(n) || ts.isPropertyDeclaration(n) || ts.isGetAccessorDeclaration(n) || ts.isSetAccessorDeclaration(n)) {
+          return ((ts.getModifiers ? ts.getModifiers(n) : n.modifiers) || []).some(m => m.kind === ts.SyntaxKind.StaticKeyword);
+        }
+        if (ts.isFunctionDeclaration(n) || ts.isFunctionExpression(n) || ts.isConstructorDeclaration(n)) return false;
+      }
+      return false;
+    };
     const ownerLabel = () => (enclosing.length ? enclosing[enclosing.length - 1] : moduleOwner);
 
     const visit = (node, cls) => {
@@ -90,6 +123,7 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
         // that does not declare X. Following it is pure syntax.
         reExports.push({
           module: node.moduleSpecifier.text,
+          mode: modeAt(sf, node.moduleSpecifier),
           names: node.exportClause && ts.isNamedExports(node.exportClause)
             ? Object.fromEntries(node.exportClause.elements.map((el) => [el.name.text, (el.propertyName || el.name).text])) : null,   // null = export *
         });
@@ -114,7 +148,7 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
             handlerFor.set(node.name.text, { method, commands: de.arguments.filter(ts.isIdentifier).map((a) => a.text) });
           }
         }
-        const entry = classes.get(node.name.text) || { members: new Map(), methods: new Map() };
+        const entry = classes.get(node.name.text) || { members: new Map(), methods: new Map(), staticMethods: new Set() };
         classes.set(node.name.text, entry);
         decls.set(node.name.text, { kind: isClass ? 'class' : 'interface', pos: node.name.getStart(sf) });
         for (const m of node.members) {
@@ -134,6 +168,7 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
           }
           if ((ts.isMethodDeclaration(m) || ts.isMethodSignature(m) || ts.isGetAccessorDeclaration(m)) && m.name) {
             entry.methods.set(m.name.getText(sf), m.name.getStart(sf));
+            if (((ts.getModifiers ? ts.getModifiers(m) : m.modifiers) || []).some(x => x.kind === ts.SyntaxKind.StaticKeyword)) entry.staticMethods.add(m.name.getText(sf));
           }
         }
       }
@@ -153,9 +188,9 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
       if (ts.isVariableDeclaration(node) && node.initializer && ts.isCallExpression(node.initializer)
           && node.initializer.expression.getText(sf) === 'require' && ts.isStringLiteral(node.initializer.arguments[0])) {
         const mod = node.initializer.arguments[0].text;
-        if (ts.isIdentifier(node.name)) imports.set(node.name.text, { module: mod, imported: '*', binding: node });
+        if (ts.isIdentifier(node.name)) imports.set(node.name.text, { module: mod, imported: '*', binding: node, mode: ts.ModuleKind.CommonJS });
         else if (ts.isObjectBindingPattern(node.name)) for (const el of node.name.elements) {
-          if (ts.isIdentifier(el.name)) imports.set(el.name.text, { module: mod, imported: (el.propertyName || el.name).text, binding: el });
+          if (ts.isIdentifier(el.name)) imports.set(el.name.text, { module: mod, imported: (el.propertyName || el.name).text, binding: el, mode: ts.ModuleKind.CommonJS });
         }
       }
       if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isPropertyAccessExpression(node.left)) {
@@ -220,14 +255,16 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
           let receiver = null;
           if (ts.isPropertyAccessExpression(recv) && recv.expression.kind === ts.SyntaxKind.ThisKeyword) {
             receiver = { kind: 'thisMember', name: recv.name.text };
+          } else if (ts.isPropertyAccessExpression(recv) && ts.isIdentifier(recv.expression)) {
+            receiver = { kind: 'ident', name: recv.getText(sf), binding: require('./lexical').bindingAt(ts, recv, recv.expression.text) };
           } else if (ts.isIdentifier(recv)) {
             const binding = require('./lexical').bindingAt(ts, recv, recv.text);
             const typeName = binding && (typeNameOf(binding.type) || (binding.initializer && ts.isNewExpression(binding.initializer) ? binding.initializer.expression.getText(sf) : null));
             receiver = { kind: 'ident', name: recv.text, typeName, binding };
           } else if (recv.kind === ts.SyntaxKind.SuperKeyword) {
-            receiver = { kind: 'super' };
+            receiver = { kind: 'super', static: staticContext(node) };
           } else if (recv.kind === ts.SyntaxKind.ThisKeyword) {
-            receiver = { kind: 'this' };
+            receiver = { kind: 'this', static: staticContext(node) };
           } else {
             // A receiver we cannot classify -- `a.b().filter(...)`, an array literal,
             // an await. This MUST NOT stay null: null means "bare call, no receiver",
@@ -280,19 +317,51 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
     }
     return out;
   };
+  const packageNames = new Map();
+  for (const entry of packages) {
+    // A manifest without a name still sets its directory's module format, but no import can name it.
+    if (typeof entry.data?.name !== 'string') continue;
+    // An ambiguous name is not enough evidence to connect two files.
+    if (packageNames.has(entry.data.name)) packageNames.set(entry.data.name, null);
+    else packageNames.set(entry.data.name, entry);
+  }
+  const packageAt = file => {
+    const match = file.replace(/\\/g, '/').match(/\/node_modules\/((?:@[^/]+\/)?[^/]+)(?:\/(.*))?$/);
+    const entry = match && packageNames.get(match[1]);
+    return entry ? { entry, rest: match[2] || '' } : null;
+  };
+  const actual = file => { const p = packageAt(file); return p ? path.join(p.entry.dir, p.rest) : file; };
+  const directories = new Set();
+  for (const file of texts.keys()) {
+    let dir = path.dirname(file);
+    while (!directories.has(dir)) { directories.add(dir); const parent = path.dirname(dir); if (parent === dir) break; dir = parent; }
+  }
+  const virtualHost = {
+    fileExists: file => { const p = packageAt(file); return p?.rest === 'package.json' || has(actual(file)); },
+    readFile: file => { const p = packageAt(file); return p?.rest === 'package.json' ? JSON.stringify(p.entry.data) : texts.get(actual(file)); },
+    directoryExists: dir => /(?:^|[/\\])node_modules(?:[/\\]@[^/\\]+)?$/.test(dir) || directories.has(actual(dir)),
+    realpath: actual,
+  };
   const resolveCache = new Map();
-  const resolveModule = (fromFile, spec) => {
-    const ck = `${fromFile} ${spec}`;
+  // The mode an `import` declaration in `fromFile` would get, for callers with no usage site.
+  const importModeCache = new Map();
+  const importModeOf = (fromFile) => {
+    if (!importModeCache.has(fromFile)) {
+      const probe = parse(fromFile, "import '_';");
+      importModeCache.set(fromFile, modeAt(probe, probe.statements[0].moduleSpecifier));
+    }
+    return importModeCache.get(fromFile);
+  };
+  // `usage.mode` is the mode TypeScript gave the import site; `undefined` there is a real
+  // answer (node10 has no mode). Without `usage`, the import is treated as an `import` declaration.
+  const resolveModule = (fromFile, spec, usage = { mode: importModeOf(fromFile) }) => {
+    const { mode } = usage;
+    const ck = `${fromFile} ${spec} ${mode}`;
     if (resolveCache.has(ck)) return resolveCache.get(ck);
     let hit = null;
-    const options = moduleOptions.get(fromFile);
-    if (options) {
-      const r = ts.resolveModuleName(spec, fromFile, options, {
-        fileExists: has, readFile: (p) => texts.get(p),
-        directoryExists: (dir) => [...byFile.keys()].some((f) => f.startsWith(dir + path.sep)),
-      });
-      hit = r.resolvedModule?.resolvedFileName || null;
-    }
+    const options = optionsFor(fromFile);
+    const resolved = ts.resolveModuleName(spec, fromFile, options, virtualHost, undefined, undefined, mode).resolvedModule;
+    if (resolved && has(actual(resolved.resolvedFileName))) hit = actual(resolved.resolvedFileName);
     if (hit) { resolveCache.set(ck, hit); return hit; }
     if (spec.startsWith('.')) {
       hit = tryExt(path.resolve(path.dirname(fromFile), spec));
@@ -314,10 +383,10 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
     const local = rec.exports.get(name) || name;
     if (rec.decls.has(local)) return { file, name: local, pos: rec.decls.get(local).pos };
     const imp = rec.imports.get(local);
-    if (imp) return exportTarget(resolveModule(file, imp.module), imp.imported, seen);
+    if (imp) return exportTarget(resolveModule(file, imp.module, { mode: imp.mode }), imp.imported, seen);
     for (const re of rec.reExports) {
       if (re.names && !Object.hasOwn(re.names, name)) continue;
-      const hit = exportTarget(resolveModule(file, re.module), re.names ? re.names[name] : name, seen);
+      const hit = exportTarget(resolveModule(file, re.module, { mode: re.mode }), re.names ? re.names[name] : name, seen);
       if (hit) return hit;
     }
     return null;
@@ -326,10 +395,10 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
     if (name && name.includes('.')) {
       const [namespace, member] = name.split('.');
       const binding = rec.imports.get(namespace);
-      if (binding?.imported === '*') return exportTarget(resolveModule(rec.file, binding.module), member);
+      if (binding?.imported === '*') return exportTarget(resolveModule(rec.file, binding.module, { mode: binding.mode }), member);
     }
     const imp = rec.imports.get(name);
-    if (imp) return exportTarget(resolveModule(rec.file, imp.module), imp.imported);
+    if (imp) return exportTarget(resolveModule(rec.file, imp.module, { mode: imp.mode }), imp.imported);
     if (rec.decls.has(name)) return { file: rec.file, name, pos: rec.decls.get(name).pos };
     return null;
   };
@@ -369,6 +438,19 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
   const subtypesOf = (n) => closure(n, childrenOf, subCache);
   const supertypesOf = (n) => closure(n, parentsOf, superCache);
 
+  const staticOwner = (decl, method, seen = new Set()) => {
+    if (!decl || seen.has(`${decl.file}#${decl.name}`)) return null;
+    seen.add(`${decl.file}#${decl.name}`);
+    const rec = byFile.get(decl.file), cls = rec?.classes.get(decl.name);
+    if (!cls) return null;
+    if (cls.methods.has(method)) return cls.staticMethods.has(method) ? decl : null;
+    for (const edge of rec.extendsEdges.filter(e => e.child === decl.name)) {
+      const hit = staticOwner(declarationFor(rec, edge.parent), method, seen);
+      if (hit) return hit;
+    }
+    return null;
+  };
+
   // --- reverse lookup ---------------------------------------------------------
   // target: { file, className, name } -> [{ file, label, pos }]
   function callersOf(target) {
@@ -396,7 +478,7 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
           : declarationFor(rec, c.name));
         const imported = c.receiver?.kind === 'ident' && rec.imports.get(c.receiver.name);
         const ns = imported && (!c.receiver.binding || imported.binding === c.receiver.binding) ? imported : null;
-        const namespaceTarget = ns?.imported === '*' ? exportTarget(resolveModule(rec.file, ns.module), c.name) : null;
+        const namespaceTarget = ns?.imported === '*' ? exportTarget(resolveModule(rec.file, ns.module, { mode: ns.mode }), c.name) : null;
         if (c.name !== target.name && bareTarget?.name !== target.name && namespaceTarget?.name !== target.name) continue;
         let ok = false;
         if (c.receiver && c.receiver.kind === 'new') {
@@ -406,6 +488,16 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
           ok = !target.className && bareTarget?.file === target.file && bareTarget.name === target.name && (target.pos == null || bareTarget.pos === target.pos);
         } else if (namespaceTarget && !target.className) {
           ok = namespaceTarget.file === target.file && namespaceTarget.name === target.name;
+        } else if (c.receiver.kind === 'ident' && !c.receiver.typeName
+          && (!c.receiver.binding || ns || ts.isClassDeclaration(c.receiver.binding))) {
+          // A class declared in an enclosing scope shadows an import of the same name.
+          const local = !ns && c.receiver.binding && ts.isClassDeclaration(c.receiver.binding) && !c.receiver.name.includes('.');
+          const cls = staticOwner(local ? { file: rec.file, name: c.receiver.binding.name.text } : declarationFor(rec, c.receiver.name), target.name);
+          ok = !!cls && cls.file === target.file && cls.name === target.className;
+        } else if ((c.receiver.kind === 'this' || c.receiver.kind === 'super') && c.receiver.static) {
+          const owners = c.receiver.kind === 'this' ? [declarationFor(rec, c.ownerClass)]
+            : rec.extendsEdges.filter(e => e.child === c.ownerClass).map(e => declarationFor(rec, e.parent));
+          ok = owners.some(owner => { const cls = staticOwner(owner, target.name); return cls?.file === target.file && cls.name === target.className; });
         } else if (c.receiver.kind === 'super') {
           ok = !!target.className && supertypesOf(c.ownerClass || '').has(target.className);
         } else if (c.receiver.kind === 'this') {
@@ -427,6 +519,8 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
             ok = typeName !== target.className || !declFile || declFile === target.file;
           }
         }
+        if (ok && target.className && byFile.get(target.file)?.classes.get(target.className)?.staticMethods.has(target.name)
+          && (c.receiver?.typeName || c.receiver?.kind === 'thisMember' || ((c.receiver?.kind === 'this' || c.receiver?.kind === 'super') && !c.receiver.static))) ok = false;
         if (!ok || !c.owner) continue;
         const id = `${rec.file}#${c.owner.pos}`;
         if (!out.has(id)) out.set(id, { file: rec.file, label: c.owner.label, pos: c.owner.pos, callSites: [] });

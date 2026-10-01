@@ -73,3 +73,89 @@ In T3 Code PR #12954, `packages/shared/src/projectSettings.ts` exports `resolveP
 These are cross-project/cross-package resolution gaps, independent of whether a hoisted package is admitted to analysis. They do not block the six scoped fixes and were left unchanged. The external harness retains four failing expectations (two callers across two pipelines), rather than weakening its oracle to accept the omissions. PR preview also reports the unavailable package-based `expo/tsconfig.base` extension explicitly.
 
 The previously noted static-method preview gap remains outside scope. The report's stale README status and fork tooltip are also noted but unchanged in this bug-only pass. No live editor session, packaging, commit, or push was performed.
+
+## Workspace and static-call follow-up (2026-09-27)
+
+The preceding changes were staged at the user's request before this work began.
+The following changes are intentionally left unstaged; no commit was created.
+
+The three resolution gaps documented above are now addressed:
+
+- Local analysis builds a reverse project-import/reference graph, including test configurations, and queries consuming projects even when their files are unchanged. TypeScript resolves package imports and aliases; callers and individual call sites are deduplicated. Services and document registries are reused within an analysis and disposed afterward. Standalone/lazy resolvers use the same project discovery. Changed-state labels are finalized across all components.
+- PR preview reads ancestor package manifests at the pinned head and exposes workspace package exports to TypeScript's virtual module resolver. Explicit subpaths, wildcard exports, and import/require conditions are covered. Metadata alone never adds a source file to caller coverage; only available PR sources supply edges. Unavailable metadata is reported and ambiguous package names are not guessed.
+- Static calls resolve class bindings, including aliased and namespace imports and inherited static methods. Static `this`/`super` are distinguished from instance receivers. Shadowed variables, unrelated classes, and instance access to static methods do not invent edges.
+
+Validation includes unchanged consuming projects, lazy queries, duplicate callers,
+private/unexported package paths, pinned metadata reads, distinct import/require
+exports, and static receiver negatives. The focused suite now has 29 passing tests.
+The full default suite passed before the final conditional-export case; that case
+and the affected preview suite were then rerun successfully.
+
+The pinned T3 Code snapshots (#12745 and #12954) now pass with **zero missing caller
+expectations**. Both local and preview analysis find `resolveScopedSettingsTargets`
+and `planScopedSettingsPatch`, with `updated-at-call` and `changed-elsewhere` states
+respectively. Preview was rechecked after adding conditional export handling. The
+known unavailable `expo/tsconfig.base` warning remains explicit; support for external
+package-based configuration is not part of these fixes.
+
+The external harness now preserves workspace package symlinks inside its temporary
+historical checkout rather than directing them into the original clone. It also
+uses the canonical temporary path so TypeScript's realpath resolution matches file
+identities. Installed third-party dependencies are still reused from the existing
+clone; this is not a historical dependency reinstall.
+
+The explicit T3 Code `HEAD~20` caller-location check now verifies **422 locations,
+zero mismatches**, versus 288 before workspace caller discovery. These counts verify
+reported locations, not complete graph recall. The tree smoke test now selects a
+root with known callers for its expansion and review checks; the top-ranked root
+can legitimately be a React callback with no direct incoming calls.
+
+Final tree verification: `IMPACT_TREE_BASE=HEAD~20 node --max-old-space-size=8192
+test/tree-smoke.js` passed, including lazy expansion, file grouping, review state,
+and cycle handling. The test expands file groups and checks that all 22 known
+callers remain reachable. It defers test-reachability computation because this
+suite exercises tree rendering/navigation; test reach remains covered by the
+local engine suite. Workspace-wide local queries load more projects and can take
+longer; no before/after performance benchmark is claimed.
+
+## Invented and hidden callers (2026-09-29)
+
+Five review findings where the tree stated a wrong answer as fact:
+
+- **Shadowed imports.** `bindingAt` now sees every enclosing declaration form: destructured parameters, `for-of` and `catch` patterns, `switch` clauses (one scope per `switch`), hoisted `var`, nested class/function/enum declarations and a named function expression's own name. A static call on a class declared in scope resolves to that class, not an import of the same name.
+- **Typed locals in `switch` clauses** keep their receiver type in PR preview.
+- **Export conditions.** Preview asks TypeScript for each importer's module format (nearest `package.json` `type`) and each import's resolution mode, instead of guessing from the extension. A `.ts` importer in a CommonJS package now takes the `require` condition. Unnamed manifests are kept for format detection only.
+- **Untracked callers** in `pr` mode are filtered at the resolver, so the caller list, the test-reach walk and the tree agree.
+- **Editor labels.** `callerState: 'none'` shows `∅ no callers found`, not `✓ all call sites updated`. Editor resolvers expose `incomingWithStatus`. A caller query that failed or did not finish is not cached, and the expanded row says "Callers could not be loaded" or "More callers may be missing". A failed command-bus lookup no longer yields `none`.
+
+Verification:
+
+- The export-condition test uses real TypeScript on disk as its oracle across nodenext/node16/bundler × package type × `.ts`/`.mts`/`.cts`.
+- Each new test was checked to fail against the previous code.
+- `npm test` passes.
+- `IMPACT_TREE_BASE=HEAD~20` tree smoke and call-site checks against T3 Code pass (422 locations, 0 mismatches), as do both pinned PR snapshots (0 missing callers).
+- No live editor session was run.
+
+## Review ticks, first render and checkout ownership (2026-10-01)
+
+- **One tick, one row.** Deleted rows are identified by their own base slice (by symbol key), not the file. A caller the symbol collector does not record (a named function expression, module-level code) is identified by its own declaration text. Before, both fell back to the whole file, so ticking one ticked every such row in it.
+- **Preview identities come from the PR.** A preview builds identities from the fetched head/base texts only. Files it did not fetch are identified by GitHub's blob sha plus a hash of the listed patch, and get no persisted identity when GitHub gave neither. The local checkout is never read.
+- **First render.** Local identities reuse `result.baseTexts`, which now also holds changed tests and sources outside a project. Whole-file rows use one `git cat-file --batch-check`. Identity entries keep ids and hashes, not syntax trees.
+- **Checkout ownership.** A checkout refuses to start, or to continue after its confirmation dialog, while another checkout or an analysis runs. Refresh and preview are refused while a checkout runs. The checkout pins `FETCH_HEAD^{commit}` and checks out that sha.
+- **Refresh repeats what is being viewed.** The source (local, or a PR) is recorded before the run, so Refresh after a failed preview retries the preview.
+- **Completeness.** A resolver that cannot report whether its search finished is shown as incomplete ("More callers may be missing"), not complete. The untracked-caller filter also covers `incomingWithStatus`.
+
+Measured on T3 Code at `HEAD~20` (161 rows, 92 changed files, Apple Silicon, node 22, 5 cold runs each; the analysis itself is excluded):
+
+| | Before | After |
+| --- | --- | --- |
+| Identity build, median | 4.29 s | 1.45 s |
+| git processes | 92 (`git show` per file) | 1 |
+| Heap retained by identities | +6 MB | +4.8 MB |
+| Rows with an identity | 125 | 125 |
+
+Verification:
+
+- New tests for each bug in `test/bug-regressions.test.js` and `test/extension-commands.test.js`. The extension tests use hand-resolved promises for every interleaving. Each test was checked to fail against the previous code or a targeted mutation of the fix.
+- `npm test` passes. With `IMPACT_TREE_BASE=HEAD~20`, the tree smoke and call-site checks (422 exact, 0 wrong) pass against T3 Code, as do both pinned PR snapshots.
+- No live editor session was run.

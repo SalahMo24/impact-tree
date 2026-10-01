@@ -49,7 +49,7 @@ const check = (name, cond, extra = '') => {
 
 (async () => {
   console.log('▸ analyse (skipForest, lazy tree)');
-  const result = await analyze(repo, { mode: process.env.IMPACT_TREE_MODE || 'branch', base: process.env.IMPACT_TREE_BASE || 'main', skipForest: true, onDirty: 'fallback', allowLocalBase: true });
+  const result = await analyze(repo, { mode: process.env.IMPACT_TREE_MODE || 'branch', base: process.env.IMPACT_TREE_BASE || 'main', skipForest: true, deferTestReach: true, onDirty: 'fallback', allowLocalBase: true });
   const changedKeys = new Set(result.components.flatMap((c) => c.changed.map((x) => `${x.file}#${x.namePos}`)));
 
   // one resolver over the component owning the top finding
@@ -96,8 +96,8 @@ const check = (name, cond, extra = '') => {
   const { createReviewState } = require('../src/review-state');
   const mem = { m: new Map(), get(k) { return this.m.get(k); }, update(k, v) { this.m.set(k, v); } };
   const review = createReviewState(mem);
-  const identify = require('../src/review-identity').createReviewIdentity(loadTypeScript(repo,repo), repo, result,
-    (rel) => require('../src/engine/git').makeGit(repo).show(result.base.sha, rel));
+  const { createReviewIdentity, localRevisions } = require('../src/review-identity');
+  const identify = createReviewIdentity(loadTypeScript(repo,repo), repo, localRevisions(repo, result, require('../src/engine/git').makeGit(repo)));
   review.configure('smoke-review', identify);
   const provider = createTreeProvider(vscodeStub, {
     getState: () => state, resolver, isBusy: () => busy, decorate, getPhase: () => phase, review });
@@ -222,9 +222,9 @@ const check = (name, cond, extra = '') => {
   const item = provider.getTreeItem(findingNodes[0]);
   // an ambiguous row gets a  ‹component›  suffix, so match the symbol name as a prefix
   check('finding item labelled', String(item.label).startsWith(findingNodes[0].label), String(item.label));
-  check('hover mode: row keeps the state glyph only', /^[⛔✓△○?]$/.test(String(item.description)), String(item.description));
+  check('hover mode: row keeps the state glyph only', /^[⛔✓∅△○?]$/.test(String(item.description)), String(item.description));
   check('hover mode: tooltip carries state + marker',
-    /call site\(s\) not updated|all call sites updated|callers unknown/.test(item.tooltip.value));
+    /call site\(s\) not updated|all call sites updated|no callers found|DI-constructed|callers unknown/.test(item.tooltip.value));
   check('hover mode: tooltip lists the stale callers',
     !findingNodes[0].finding.staleCallers || /call site\(s\) not updated:/.test(item.tooltip.value));
   state.rowDetail = 'inline';
@@ -238,11 +238,24 @@ const check = (name, cond, extra = '') => {
   check('tooltip carries signatures', /base:|head:|\+ throw/.test((item.tooltip && item.tooltip.value) || ''));
 
   console.log('▸ lazy expansion');
+  // Ranking may put a callback/React component with no direct calls first.
+  // Exercise lazy expansion on a root with independently known incoming edges.
+  const expandable = findingNodes.concat(otherNodes).find(n => n.finding.callers?.length > 0);
+  if (!expandable) throw new Error('This fixture needs a finding with callers for the lazy expansion checks');
   const before = resolver.stats().incomingCalls;
-  const kids = await provider.getChildren(findingNodes[0]);
+  const expanded = await provider.getChildren(expandable);
   const after = resolver.stats().incomingCalls;
-  const callerKids = kids.filter((k) => k.type === 'caller');
-  check('caller list has no blank rows', kids.every((k) => k.type === 'caller'), `${kids.length} rows`);
+  // This resolver cannot say whether a search finished, so the tree must not let it look
+  // complete: one trailing row says so, and the caller rows come before it.
+  const notices = expanded.filter((k) => k.type === 'message');
+  check('a resolver without completion status gets a "may be missing" row',
+    notices.length === 1 && /may be missing|could not be loaded/.test(notices[0].label) && expanded[expanded.length - 1] === notices[0],
+    notices.map((k) => k.label).join(' | '));
+  const kids = expanded.filter((k) => k.type !== 'message');
+  const callerKids = (await Promise.all(kids.map(k => k.type === 'callerFile' ? provider.getChildren(k) : [k]))).flat();
+  check('caller list has no blank rows', kids.every(k => ['caller', 'callerFile'].includes(k.type) && k.label)
+    && callerKids.every(k => k.type === 'caller' && k.label), `${kids.length} rows, ${callerKids.length} callers`);
+  check('grouping retains every known caller', callerKids.length === expandable.finding.callers.length, `${callerKids.length}/${expandable.finding.callers.length}`);
   check('callers sorted so same-file rows are adjacent', (() => {
     const seenFiles = new Set(); let ok = true; let prev = null;
     for (const k of callerKids) { if (k.relPath !== prev) { if (seenFiles.has(k.relPath)) ok = false; seenFiles.add(k.relPath); prev = k.relPath; } }
@@ -310,7 +323,7 @@ const check = (name, cond, extra = '') => {
 
   console.log('▸ review state');
   {
-    const f0 = findingNodes[0];
+    const f0 = expandable;
     const id = review.id(f0);
     check('finding has a stable id', !!id, id);
     let it = provider.getTreeItem(f0);
@@ -320,7 +333,7 @@ const check = (name, cond, extra = '') => {
     it = provider.getTreeItem(f0);
     check('checking a finding marks it', it.checkboxState === vscodeStub.TreeItemCheckboxState.Checked);
     check('and clears its known callers', review.remaining(kids) === 0, `${kids.length} caller(s)`);
-    check('hover mode keeps the row glyph-only', /^[⛔✓△○?]$/.test(String(it.description)), String(it.description));
+    check('hover mode keeps the row glyph-only', /^[⛔✓∅△○?]$/.test(String(it.description)), String(it.description));
     check('progress moved into the tooltip', /callers reviewed|callers left/.test(it.tooltip.value));
     state.rowDetail = 'inline';
     check('inline mode shows progress on the row',
@@ -338,7 +351,7 @@ const check = (name, cond, extra = '') => {
   }
 
   console.log('▸ cycle cut');
-  let node = findingNodes[0], depth = 0, sawCycle = false;
+  let node = expandable, depth = 0, sawCycle = false;
   while (depth++ < 4) {
     const cs = (await provider.getChildren(node)).filter((c) => c.type === 'caller');
     if (!cs.length) break;

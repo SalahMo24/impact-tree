@@ -142,9 +142,11 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
     return false;
   }
 
-  async function incoming(file, pos, withTests = true) {
+  // `complete: false` means the query did not finish, so `callers` may be missing some or
+  // all of them. Only complete answers are cached, so asking again can still succeed.
+  async function incomingWithStatus(file, pos, withTests = true) {
     const key = `${withTests ? 'A' : 'P'}${file}#${pos}`;
-    if (cache.has(key)) { stats.cacheHits++; return cache.get(key); }
+    if (cache.has(key)) { stats.cacheHits++; return { callers: cache.get(key), complete: true }; }
     const t = Date.now();
     stats.incomingCalls++;
     // a handler's execute() resolves through ICommandHandler.execute, so the call
@@ -159,7 +161,11 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
     stats.durations.push(dt);
     if (!stats.slowest || dt > stats.slowest.ms) stats.slowest = { ms: dt, file, pos };
     if (dt > 3000) trace(`slow query ${dt}ms  ${file}@${pos}`);
-    if (!ready) { stats.skipped++; if (reason) stats.lastReason = reason; return []; } // not cached
+    if (!ready) {
+      stats.skipped++;
+      if (reason) stats.lastReason = reason;
+      return { callers: [], complete: false, reason: reason || 'caller query did not complete' };
+    }
     const out = [];
     const seen = new Set();
     for (const c of calls) {
@@ -189,9 +195,10 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
         out.push(...kept);
       }
     }
+    let cqrsFailure = null;
     if (cqrs) {
       let extra = [];
-      try { extra = await cqrs.extraCallers(file, pos); } catch { extra = []; }
+      try { extra = await cqrs.extraCallers(file, pos); } catch (e) { cqrsFailure = (e && e.message) || 'lookup failed'; }
       stats.cqrsEdges += extra.length;
       const have = new Set(out.map((c) => `${c.file}#${c.pos}`));
       for (const e of extra) {
@@ -200,18 +207,25 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
         out.push(e);
       }
     }
+    if (cqrsFailure) return { callers: out, complete: false, reason: `command-bus callers unavailable — ${cqrsFailure}` };
     cache.set(key, out);
-    return out;
+    return { callers: out, complete: true };
+  }
+
+  async function incoming(file, pos, withTests = true) {
+    return (await incomingWithStatus(file, pos, withTests)).callers;
   }
 
   return {
     kind: 'vscode-callhierarchy',
     incoming,
+    incomingWithStatus,
     warmUp,
     isWarm: () => serverWarm,
     async callerState(file, pos, { isConstructor = false } = {}) {
-      const callers = await incoming(file, pos);
+      const { callers, complete, reason } = await incomingWithStatus(file, pos);
       if (callers.length) return { state: 'resolved', callers };
+      if (!complete) return { state: 'unknown', reason, callers: [] };
       const status = queryStates.get(`A${file}#${pos}`);
       if (!status?.ready) return { state: 'unknown', reason: status?.reason, callers: [] };
       if (isConstructor) return { state: 'di', callers: [] };

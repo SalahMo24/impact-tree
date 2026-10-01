@@ -64,3 +64,33 @@ async function remoteOptions(ts, gh, slug, headSha, root, files, warnings) {
   return options;
 }
 module.exports = { remoteOptions };
+
+// Ancestors of available PR sources are enough to identify packages containing those
+// sources. Metadata is read at the same pinned head, never from the local checkout.
+async function remotePackages(gh, slug, headSha, root, files, warnings) {
+  const paths = new Set();
+  for (const file of files) {
+    let dir = path.posix.dirname(file);
+    for (;;) {
+      paths.add(path.posix.join(dir, 'package.json'));
+      if (dir === '.') break;
+      dir = path.posix.dirname(dir);
+    }
+  }
+  const entries = [...paths], packages = [];
+  let cursor = 0;
+  await Promise.all(Array.from({length: Math.min(8, entries.length)}, async () => {
+    while (cursor < entries.length) {
+      const file = entries[cursor++];
+      try {
+        const text = await gh.fileAtRef(slug, file, headSha);
+        if (text == null) continue;
+        const data = JSON.parse(text);
+        // An unnamed manifest still decides whether its `.ts` files are ES modules.
+        if (data !== null && typeof data === 'object' && !Array.isArray(data)) packages.push({ dir: path.join(root, path.posix.dirname(file)), data });
+      } catch (e) { warnings.push(`${file}: package metadata unavailable — ${e.message}`); }
+    }
+  }));
+  return packages;
+}
+module.exports.remotePackages = remotePackages;

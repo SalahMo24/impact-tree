@@ -59,6 +59,29 @@ function makeGit(repo) {
       }
       return out;
     },
+    // Map(relPath -> blob id | null) without reading contents, in one process: a row for a
+    // lockfile needs its identity, not its text.
+    blobIds(rev, relPaths) {
+      const out = new Map();
+      const batchable = [...new Set(relPaths)].filter((p) => !/[\n\r]/.test(p));
+      const one = (p) => this.revParse(`${rev}:${p}`);
+      for (const p of relPaths) if (!batchable.includes(p)) out.set(p, one(p));
+      if (!batchable.length) return out;
+      let lines;
+      try {
+        lines = execFileSync('git', ['cat-file', '--batch-check'], {
+          cwd: repo, input: batchable.map((p) => `${rev}:${p}\n`).join(''), stdio: ['pipe', 'pipe', 'ignore'],
+        }).toString('utf8').split('\n');
+      } catch {
+        for (const p of batchable) out.set(p, one(p));
+        return out;
+      }
+      batchable.forEach((p, i) => {
+        const m = /^([0-9a-f]+) (\w+) \d+$/.exec(lines[i] || '');   // "<spec> missing" otherwise
+        out.set(p, m && m[2] === 'blob' ? m[1] : null);
+      });
+      return out;
+    },
     isShallow() { try { return git(['rev-parse', '--is-shallow-repository'], { quiet: true }).trim() === 'true'; } catch { return false; } },
     isDirty(pathspec) {
       return git(['status', '--porcelain', ...(pathspec ? [pathspec] : [])])
