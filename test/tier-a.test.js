@@ -40,8 +40,8 @@ console.log('▸ patch -> changed lines');
 {
   const patch = ['@@ -10,6 +10,3 @@', ' keep', '-gone1', '-gone2', '-gone3', ' keep2', ' keep3'].join('\n');
   const r = hunkRangesFromPatch(patch);
-  check('a pure deletion is marked at the line it was removed from',
-    JSON.stringify(r) === '[[11,11]]', JSON.stringify(r));
+  check('a pure deletion is marked in the gap between surviving lines',
+    JSON.stringify(r) === '[[10.5,10.5]]', JSON.stringify(r));
 }
 {
   const patch = ['@@ -1,2 +1,2 @@', '-x', '+y', '@@ -50,2 +50,2 @@', '-p', '+q'].join('\n');
@@ -130,7 +130,7 @@ const gh = {
     return Object.prototype.hasOwnProperty.call(src, filePath) ? src[filePath] : null;
   },
 };
-const pr = { number: 7, headSha: 'headsha', baseSha: 'basesha', baseRef: 'main' };
+const pr = { number: 7, headSha: 'headsha', baseSha: 'basesha', mergeBaseSha: 'basesha', baseRef: 'main' };
 
 (async () => {
   _clear();
@@ -161,7 +161,7 @@ const pr = { number: 7, headSha: 'headsha', baseSha: 'basesha', baseRef: 'main' 
 
   console.log('\n▸ fetching');
   check('one file-list request', calls.files === 1);
-  check('head and base fetched per source file', calls.blobs.length === 4, calls.blobs.join(' '));
+  check('head and base fetched per source file', calls.blobs.filter((c) => !c.includes('tsconfig.json') && !c.includes('package.json')).length === 4, calls.blobs.join(' '));
   check('README was never fetched', !calls.blobs.some((b) => b.startsWith('README')));
 
   console.log('\n▸ the change');

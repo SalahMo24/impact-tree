@@ -42,7 +42,7 @@ function createGitHub(vscode, { log = () => {} } = {}) {
         'X-GitHub-Api-Version': '2022-11-28',
       },
     });
-    if (res.status === 401 || res.status === 403) {
+    if (res.status === 401) {
       // A revoked or under-scoped token looks identical to "no PRs" unless we say so.
       session = null;
       throw new Error(`GitHub rejected the token (${res.status}) — sign in again`);
@@ -52,8 +52,17 @@ function createGitHub(vscode, { log = () => {} } = {}) {
   }
 
   async function listOpenPullRequests({ owner, repo }) {
-    const raw = await api(`/repos/${owner}/${repo}/pulls?state=open&sort=updated&direction=desc&per_page=50`);
-    return raw.map((p) => ({
+    const raw = [];
+    for (let page = 1; ; page++) {
+      const batch = await api(`/repos/${owner}/${repo}/pulls?state=open&sort=updated&direction=desc&per_page=100&page=${page}`);
+      raw.push(...batch);
+      if (batch.length < 100) break;
+    }
+    return raw.map(normalisePr);
+  }
+
+  function normalisePr(p) {
+    return {
       number: p.number,
       title: p.title,
       author: p.user && p.user.login,
@@ -69,7 +78,18 @@ function createGitHub(vscode, { log = () => {} } = {}) {
       // so rather than fail at checkout time with a confusing git error.
       isFork: !!(p.head && p.head.repo && p.base && p.base.repo
         && p.head.repo.full_name !== p.base.repo.full_name),
-    }));
+      changedFiles: p.changed_files,
+    };
+  }
+
+  async function getPullRequest({ owner, repo }, number) {
+    return normalisePr(await api(`/repos/${owner}/${repo}/pulls/${number}`));
+  }
+
+  async function mergeBase({ owner, repo }, base, head) {
+    const r = await api(`/repos/${owner}/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}?per_page=1`);
+    if (!r.merge_base_commit?.sha) throw new Error('GitHub did not return a merge base');
+    return r.merge_base_commit.sha;
   }
 
   // The PR's file list, with the unified-diff patch GitHub already computed. `patch`
@@ -77,20 +97,25 @@ function createGitHub(vscode, { log = () => {} } = {}) {
   // treat a missing patch as "no hunk information", not as "no changes".
   async function listPullRequestFiles({ owner, repo }, number, { max = 300 } = {}) {
     const out = [];
-    for (let page = 1; page <= 10 && out.length < max; page++) {
+    const limit = Math.min(3000, Math.max(1, max));
+    let more = false;
+    for (let page = 1; page <= 30; page++) {
       const batch = await api(`/repos/${owner}/${repo}/pulls/${number}/files?per_page=100&page=${page}`);
       out.push(...batch);
-      if (batch.length < 100) break;
+      more = batch.length === 100;
+      if (!more || out.length > limit) break;
     }
-    const truncated = out.length > max;
+    const truncated = out.length > limit || more;
     return {
       truncated,
       total: out.length,
-      files: out.slice(0, max).map((f) => ({
+      totalIsLowerBound: more,
+      files: out.slice(0, limit).map((f) => ({
         path: f.filename,
         oldPath: f.previous_filename || f.filename,
         status: f.status === 'renamed' ? 'renamed' : f.status,   // added|modified|removed|renamed
         patch: f.patch || null,
+        sha: typeof f.sha === 'string' ? f.sha : null,
         additions: f.additions,
         deletions: f.deletions,
       })),
@@ -105,12 +130,12 @@ function createGitHub(vscode, { log = () => {} } = {}) {
     const res = await fetch(url, {
       headers: {
         Authorization: `Bearer ${session.accessToken}`,
-        Accept: 'application/vnd.github.raw',
+        Accept: 'application/vnd.github.raw+json',
         'X-GitHub-Api-Version': '2022-11-28',
       },
     });
     if (res.status === 404) return null;            // added on this branch, or deleted
-    if (res.status === 401 || res.status === 403) {
+    if (res.status === 401) {
       session = null;
       throw new Error(`GitHub rejected the token (${res.status}) — sign in again`);
     }
@@ -127,6 +152,7 @@ function createGitHub(vscode, { log = () => {} } = {}) {
           return Buffer.from(j.content, 'base64').toString('utf8');
         }
         if (j && Array.isArray(j)) throw new Error(`${filePath} is a directory, not a file`);
+        throw new Error(`unsupported file encoding for ${filePath}`);
       } catch (e) {
         if (/is a directory/.test(e.message)) throw e;
         throw new Error(`unexpected JSON response for ${filePath}`);
@@ -137,7 +163,7 @@ function createGitHub(vscode, { log = () => {} } = {}) {
 
   return {
     signIn, isSignedIn, account, signOutLocally, listOpenPullRequests,
-    listPullRequestFiles, fileAtRef, parseRemote,
+    listPullRequestFiles, fileAtRef, parseRemote, getPullRequest, mergeBase,
   };
 }
 

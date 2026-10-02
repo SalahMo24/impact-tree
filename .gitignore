@@ -15,3 +15,6 @@ test/fixtures/
 PLAN.md
 ACCEPTANCE.md
 .env
+
+docs/distribution-checklist.md
+docs/CODE_DESIGN_PROPOSAL.md

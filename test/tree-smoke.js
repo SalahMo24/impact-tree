@@ -49,7 +49,7 @@ const check = (name, cond, extra = '') => {
 
 (async () => {
   console.log('▸ analyse (skipForest, lazy tree)');
-  const result = await analyze(repo, { mode: process.env.IMPACT_TREE_MODE || 'branch', base: process.env.IMPACT_TREE_BASE || 'main', skipForest: true, onDirty: 'fallback', allowLocalBase: true });
+  const result = await analyze(repo, { mode: process.env.IMPACT_TREE_MODE || 'branch', base: process.env.IMPACT_TREE_BASE || 'main', skipForest: true, deferTestReach: true, onDirty: 'fallback', allowLocalBase: true });
   const changedKeys = new Set(result.components.flatMap((c) => c.changed.map((x) => `${x.file}#${x.namePos}`)));
 
   // one resolver over the component owning the top finding
@@ -62,14 +62,21 @@ const check = (name, cond, extra = '') => {
     console.log('\ntree checks did NOT run');
     process.exit(0);
   }
-  // locate the project from the analysis result, not from an assumed folder layout
-  const projectDir = path.join(repo, top.projectRoot || '');
-  // Use the engine's own loader rather than a second, weaker copy of the lookup: a
-  // monorepo root has no typescript, and this resolved to nothing the moment the top
-  // finding landed in a project without its own install.
+  // Visible roots may belong to a different project from the highest-scored
+  // (possibly nested) finding. Route each lazy query to its own TS project.
   const { loadTypeScript } = require('../src/engine/analyze');
-  const ts = loadTypeScript(repo, projectDir);
-  const resolver = createTsResolver(ts, projectDir);
+  const { projectRootOf } = require('../src/engine/diff');
+  const resolvers = new Map();
+  const resolver = {
+    async incoming(file, pos, withTests) {
+      const project = projectRootOf(repo, path.relative(repo, file));
+      const dir = path.join(repo, project || '');
+      if (!resolvers.has(dir)) resolvers.set(dir, createTsResolver(loadTypeScript(repo, dir), dir, { repoRoot: repo }));
+      return resolvers.get(dir)?.incoming(file, pos, withTests) || [];
+    },
+    stats: () => ({ incomingCalls: [...resolvers.values()].reduce((n,r) => n + (r?.stats().incomingCalls || 0), 0) }),
+    dispose() { for (const r of resolvers.values()) r?.dispose(); },
+  };
 
   const { offsetToPosition } = require('../src/engine/textpos');
   const callSiteUpdated = (file, sites) => {
@@ -86,10 +93,12 @@ const check = (name, cond, extra = '') => {
   let phase = 'ready';
   const { createDecorationProvider } = require('../src/decorations');
   const decorate = createDecorationProvider(vscodeStub);
-  const { createReviewState, nodeId } = require('../src/review-state');
+  const { createReviewState } = require('../src/review-state');
   const mem = { m: new Map(), get(k) { return this.m.get(k); }, update(k, v) { this.m.set(k, v); } };
   const review = createReviewState(mem);
-  review.useBase(result.base && result.base.sha);
+  const { createReviewIdentity, localRevisions } = require('../src/review-identity');
+  const identify = createReviewIdentity(loadTypeScript(repo,repo), repo, localRevisions(repo, result, require('../src/engine/git').makeGit(repo)));
+  review.configure('smoke-review', identify);
   const provider = createTreeProvider(vscodeStub, {
     getState: () => state, resolver, isBusy: () => busy, decorate, getPhase: () => phase, review });
 
@@ -121,8 +130,25 @@ const check = (name, cond, extra = '') => {
   const findingsSection = sections.find((s2) => s2.key === 'findings');
   const otherSection = sections.find((s2) => s2.key === 'other');
   const findingNodes = await provider.getChildren(findingsSection);
-  const otherNodes = await provider.getChildren(otherSection);
-  check('body-only changes are visible', otherNodes.length > 0, `${otherNodes.length} under 'Other changes'`);
+  const otherRows = await provider.getChildren(otherSection);
+  // Other changes are grouped by file and by the change that contains them; every change
+  // must still be a finding row somewhere under the section.
+  const otherNodes = [];
+  const flatten = (rows) => {
+    for (const n of rows) {
+      if (n.type === 'changeFile') flatten(n.rows);
+      else if (n.type === 'finding') { otherNodes.push(n); flatten(n.inside || []); }
+    }
+  };
+  flatten(otherRows);
+  check('body-only changes are visible', otherNodes.length > 0, `${otherNodes.length} under 'Other changes' in ${otherRows.length} row(s)`);
+  check('other changes reachable exactly once', new Set(otherNodes.map((n) => `${n.file}#${n.pos}`)).size === otherNodes.length
+    && otherNodes.length === (result.allChanged || []).filter((c) => c.isRoot !== false && !result.findings.includes(c)).length,
+    `${otherNodes.length} rows`);
+  for (const g of otherRows.filter((n) => n.type === 'changeFile')) {
+    const it = provider.getTreeItem(g);
+    if (!/^[⛔✓∅?]  \d+ changes?$/.test(String(it.description))) { check('file group row leads with its worst state', false, String(it.description)); break; }
+  }
   const topLevel = findingNodes.length + otherNodes.length;
   const rootCount = (result.allChanged || []).filter((c) => c.isRoot !== false).length;
   check('top level shows only roots', topLevel === rootCount, `${topLevel} rows, ${rootCount} roots of ${(result.allChanged || []).length} changed`);
@@ -175,7 +201,7 @@ const check = (name, cond, extra = '') => {
     findingNodes.length === result.findings.filter((f) => f.isRoot !== false).length,
     `${findingNodes.length} of ${result.findings.length} findings are roots`);
   check('ranked descending', findingNodes.every((n, i) => i === 0 || findingNodes[i - 1].score >= n.score));
-  check('warnings surfaced as messages', roots.some((n) => n.type === 'message'));
+  check('every warning surfaced as a message', result.warnings.every((w) => roots.some((n) => n.type === 'message' && n.label === w)));
   // Only asserted when the diff actually touches a component without node_modules.
   // With the corrected origin/main base this PR touches none, so it is informational.
   const unanalysableMsgs = roots.filter((n) => n.type === 'message' && /not analysed/.test(n.label));
@@ -213,9 +239,9 @@ const check = (name, cond, extra = '') => {
   const item = provider.getTreeItem(findingNodes[0]);
   // an ambiguous row gets a  ‹component›  suffix, so match the symbol name as a prefix
   check('finding item labelled', String(item.label).startsWith(findingNodes[0].label), String(item.label));
-  check('hover mode: row keeps the state glyph only', /^[⛔✓△○?]$/.test(String(item.description)), String(item.description));
+  check('hover mode: row keeps the state glyph only', /^[⛔✓∅△○?]$/.test(String(item.description)), String(item.description));
   check('hover mode: tooltip carries state + marker',
-    /call site\(s\) not updated|all call sites updated|callers unknown/.test(item.tooltip.value));
+    /call site\(s\) not updated|all call sites updated|no callers found|DI-constructed|callers unknown/.test(item.tooltip.value));
   check('hover mode: tooltip lists the stale callers',
     !findingNodes[0].finding.staleCallers || /call site\(s\) not updated:/.test(item.tooltip.value));
   state.rowDetail = 'inline';
@@ -229,11 +255,24 @@ const check = (name, cond, extra = '') => {
   check('tooltip carries signatures', /base:|head:|\+ throw/.test((item.tooltip && item.tooltip.value) || ''));
 
   console.log('▸ lazy expansion');
+  // Ranking may put a callback/React component with no direct calls first.
+  // Exercise lazy expansion on a root with independently known incoming edges.
+  const expandable = findingNodes.concat(otherNodes).find(n => n.finding.callers?.length > 0);
+  if (!expandable) throw new Error('This fixture needs a finding with callers for the lazy expansion checks');
   const before = resolver.stats().incomingCalls;
-  const kids = await provider.getChildren(findingNodes[0]);
+  const expanded = await provider.getChildren(expandable);
   const after = resolver.stats().incomingCalls;
-  const callerKids = kids.filter((k) => k.type === 'caller');
-  check('caller list has no blank rows', kids.every((k) => k.type === 'caller'), `${kids.length} rows`);
+  // This resolver cannot say whether a search finished, so the tree must not let it look
+  // complete: one trailing row says so, and the caller rows come before it.
+  const notices = expanded.filter((k) => k.type === 'message');
+  check('a resolver without completion status gets a "may be missing" row',
+    notices.length === 1 && /may be missing|could not be loaded/.test(notices[0].label) && expanded[expanded.length - 1] === notices[0],
+    notices.map((k) => k.label).join(' | '));
+  const kids = expanded.filter((k) => k.type !== 'message' && k.type !== 'insideGroup');
+  const callerKids = (await Promise.all(kids.map(k => k.type === 'callerFile' ? provider.getChildren(k) : [k]))).flat();
+  check('caller list has no blank rows', kids.every(k => ['caller', 'callerFile'].includes(k.type) && k.label)
+    && callerKids.every(k => k.type === 'caller' && k.label), `${kids.length} rows, ${callerKids.length} callers`);
+  check('grouping retains every known caller', callerKids.length === expandable.finding.callers.length, `${callerKids.length}/${expandable.finding.callers.length}`);
   check('callers sorted so same-file rows are adjacent', (() => {
     const seenFiles = new Set(); let ok = true; let prev = null;
     for (const k of callerKids) { if (k.relPath !== prev) { if (seenFiles.has(k.relPath)) ok = false; seenFiles.add(k.relPath); prev = k.relPath; } }
@@ -243,7 +282,7 @@ const check = (name, cond, extra = '') => {
   check('children returned', callerKids.length > 0, `${callerKids.length} caller(s)`);
   check('changed callers flagged', callerKids.every((k) => typeof k.changed === 'boolean'));
   const ci = provider.getTreeItem(callerKids[0]);
-  check('hover mode: caller row keeps the state glyph only', /^[✓△○↑🧪]$/.test(String(ci.description)), String(ci.description));
+  check('hover mode: caller row keeps the state glyph only', /^[✓△○↑🧪]$/u.test(String(ci.description)), String(ci.description));
   check('hover mode: caller tooltip has state and path',
     /call updated|not changed|changed, but not at the call|test/.test(ci.tooltip.value) && /\.ts/.test(ci.tooltip.value));
   check('every caller has a three-state callState',
@@ -254,7 +293,8 @@ const check = (name, cond, extra = '') => {
     ci.iconPath === vscodeStub.ThemeIcon.File || /^(beaker|issue-reopened)$/.test(ci.iconPath.id),
     ci.iconPath && ci.iconPath.id);
   state.iconMode = 'symbol';
-  const ci2 = provider.getTreeItem(callerKids[0]);
+  const symbolRow = callerKids.find((c) => !c.test && !c.cycle) || findingNodes[0];
+  const ci2 = provider.getTreeItem(symbolRow);
   check('iconMode="symbol" switches code rows back to symbol icons',
     !!ci2.iconPath && /^symbol-/.test(ci2.iconPath.id), ci2.iconPath && ci2.iconPath.id);
   state.iconMode = 'file';
@@ -300,17 +340,17 @@ const check = (name, cond, extra = '') => {
 
   console.log('▸ review state');
   {
-    const f0 = findingNodes[0];
-    const id = nodeId(f0);
+    const f0 = expandable;
+    const id = review.id(f0);
     check('finding has a stable id', !!id, id);
     let it = provider.getTreeItem(f0);
     check('starts unchecked', it.checkboxState === vscodeStub.TreeItemCheckboxState.Unchecked);
-    const kids = (f0.finding.callers || []).map((c) => `${c.file}#${c.pos}`);
+    const kids = review.childIds(f0);
     review.setWithChildren(id, kids, true);
     it = provider.getTreeItem(f0);
     check('checking a finding marks it', it.checkboxState === vscodeStub.TreeItemCheckboxState.Checked);
     check('and clears its known callers', review.remaining(kids) === 0, `${kids.length} caller(s)`);
-    check('hover mode keeps the row glyph-only', /^[⛔✓△○?]$/.test(String(it.description)), String(it.description));
+    check('hover mode keeps the row glyph-only', /^[⛔✓∅△○?]$/.test(String(it.description)), String(it.description));
     check('progress moved into the tooltip', /callers reviewed|callers left/.test(it.tooltip.value));
     state.rowDetail = 'inline';
     check('inline mode shows progress on the row',
@@ -319,16 +359,16 @@ const check = (name, cond, extra = '') => {
     const rows = await provider.getChildren();
     check('summary reports remaining work', /left to review|all reviewed/.test(String(rows[0].label)), String(rows[0].label));
     // a different base must not inherit judgements
-    review.useBase('some-other-sha');
-    check('progress does not carry across bases', review.remaining([id]) === 1);
-    review.useBase(result.base && result.base.sha);
-    check('and is restored when the base comes back', review.remaining([id]) === 0);
+    review.configure('another-review', identify);
+    check('progress does not carry across reviews', review.remaining([id]) === 1);
+    review.configure('smoke-review', identify);
+    check('and is restored when the review comes back', review.remaining([id]) === 0);
     review.clear();
     check('clear resets', review.size() === 0);
   }
 
   console.log('▸ cycle cut');
-  let node = findingNodes[0], depth = 0, sawCycle = false;
+  let node = expandable, depth = 0, sawCycle = false;
   while (depth++ < 4) {
     const cs = (await provider.getChildren(node)).filter((c) => c.type === 'caller');
     if (!cs.length) break;

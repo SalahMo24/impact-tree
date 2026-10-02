@@ -12,18 +12,20 @@ function createSyntacticResolver(idx, { isTestPath = () => false, hints = new Ma
   const cache = new Map();
   const stats = { incomingCalls: 0, cacheHits: 0, resolvedEmpty: 0, unknownTarget: 0 };
 
-  async function incoming(file, pos, withTests = true) {
+  // `complete: false` means the symbol could not be located in the index, so no caller
+  // search ran for it. That is not the same answer as a search that found nothing.
+  async function incomingWithStatus(file, pos, withTests = true) {
     const key = `${withTests ? 'A' : 'P'}${file}#${pos}`;
-    if (cache.has(key)) { stats.cacheHits++; return cache.get(key); }
+    if (cache.has(key)) { stats.cacheHits++; return { callers: cache.get(key), complete: true }; }
     stats.incomingCalls++;
 
     // Changed-symbol positions come from the symbol collector, whose anchor for a
     // constructor (and some arrow forms) is not the one the index records. Trusting
     // the index alone silently skipped caller resolution for those symbols entirely.
     const sym = hints.get(`${file}#${pos}`) || idx.symbolAt(file, pos);
-    if (!sym) { stats.unknownTarget++; return []; }      // not cached: may resolve later
+    if (!sym) { stats.unknownTarget++; return { callers: [], complete: false, reason: 'symbol not found in the PR index' }; } // not cached: may resolve later
 
-    const rows = idx.callersOf({ file, className: sym.className, name: sym.name })
+    const rows = idx.callersOf({ file, className: sym.className, name: sym.name, pos })
       .map((c) => ({
         label: c.label,
         file: c.file,
@@ -37,12 +39,17 @@ function createSyntacticResolver(idx, { isTestPath = () => false, hints = new Ma
 
     if (!rows.length) stats.resolvedEmpty++;
     cache.set(key, rows);
-    return rows;
+    return { callers: rows, complete: true };
+  }
+
+  async function incoming(file, pos, withTests = true) {
+    return (await incomingWithStatus(file, pos, withTests)).callers;
   }
 
   return {
     kind: 'syntactic-pr-files',
     incoming,
+    incomingWithStatus,
     async callerState(file, pos, { isConstructor = false } = {}) {
       const callers = await incoming(file, pos);
       if (callers.length) return { state: 'resolved', callers };

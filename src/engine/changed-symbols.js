@@ -7,11 +7,11 @@
 // it never reads a file or shells out — so the caller decides where text comes from.
 const { diffSignature, newThrows, KIND } = require('./signature');
 
-// file: { absPath, relPath, status, headText, baseText, hunkRanges, component, projectRoot }
+// file: { absPath, relPath, oldPath, status, headText, baseText, hunkRanges, component, projectRoot }
 // hunkRanges: [[startLine, endLine], ...] 1-based, on the NEW side.
 function changedSymbolsIn(ts, S, file) {
   const {
-    absPath, relPath, status, headText, baseText, hunkRanges = [], component, projectRoot,
+    absPath, relPath, oldPath, status, headText, baseText, hunkRanges = [], component, projectRoot,
   } = file;
 
   const parse = (text) => {
@@ -27,30 +27,37 @@ function changedSymbolsIn(ts, S, file) {
 
   const headCallables = headSf ? S.collect(headSf) : [];
   const baseCallables = baseSf ? S.collect(baseSf) : [];
-  const baseByLabel = new Map(baseCallables.map((c) => [c.label, c]));
-  const headLabels = new Set(headCallables.map((c) => c.label));
+  // Matched on `key`, not `label`: a label repeats for a get/set pair, overloads, or
+  // same-named helpers in two methods, and matching on it diffed against the wrong one.
+  const baseByKey = new Map(baseCallables.map((c) => [c.key, c]));
+  const headKeys = new Set(headCallables.map((c) => c.key));
 
   const deleted = [];
   for (const b of baseCallables) {
-    if (!headLabels.has(b.label)) {
-      deleted.push({ ...b, file: absPath, relPath, component, projectRoot });
+    if (!headKeys.has(b.key)) {
+      deleted.push({ ...b, file: absPath, relPath, oldPath, component, projectRoot });
     }
   }
 
   const changed = [];
   if (headSf) {
     const picked = new Set();
+    const hits = [];
     for (const [lo, hi] of hunkRanges) {
-      const hit = S.mapHunk(headCallables, lo, hi);
-      if (!hit || picked.has(hit.label)) continue;
-      picked.add(hit.label);
-      const b = baseByLabel.get(hit.label);
+      for (const hit of S.mapRange(headCallables, lo, hi)) {
+        if (picked.has(hit.key)) continue;
+        picked.add(hit.key);
+        hits.push(hit);
+      }
+    }
+    for (const hit of hits) {
+      const b = baseByKey.get(hit.key);
       const kinds = diffSignature(b, hit);
       const throwsAdded = newThrows(b, hit);
       if (throwsAdded.length) kinds.push(KIND.NEW_THROW);
       changed.push({
         ...hit,
-        file: absPath, relPath, component, projectRoot, fileStatus: status,
+        file: absPath, relPath, oldPath, component, projectRoot, fileStatus: status,
         added: !b,
         baseSig: b ? S.renderSig(b.sig) : null,
         headSig: S.renderSig(hit.sig),
@@ -63,4 +70,10 @@ function changedSymbolsIn(ts, S, file) {
   return { changed, deleted };
 }
 
-module.exports = { changedSymbolsIn };
+function changedSymbolKeys(symbols) {
+  return new Set(symbols.flatMap((c) => [
+    `${c.file}#${c.namePos}`,
+    ...(c.isConstructor && c.classNamePos != null ? [`${c.file}#${c.classNamePos}`] : []),
+  ]));
+}
+module.exports = { changedSymbolsIn, changedSymbolKeys };
