@@ -424,12 +424,22 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
     if (rec.decls.has(name)) return { file: rec.file, name, pos: rec.decls.get(name).pos };
     return null;
   };
-  const declaringFileFor = (rec, name) => declarationFor(rec, name)?.file;
-
 
   // --- type lattice ----------------------------------------------------------
   // A member declared as the PORT must match the ADAPTER that implements it, and a
   // method declared on a BASE class must match a call made through a SUBCLASS.
+  // A class is identified by its declaration. JSON-encoding [file, name] is unambiguous
+  // for any path (a `#` or space in a path cannot shift the boundary), unlike joining them.
+  const classKey = (file, name) => JSON.stringify([file, name]);
+  // A heritage name or receiver type with no declaration in the source set (an interface
+  // from node_modules) keys by its bare name. The one-element encoding can never equal a
+  // classKey, so resolved and unresolved never collide. Two references to the same
+  // unresolved name still meet, which is a deliberate residual limitation.
+  const unresolvedKey = (name) => JSON.stringify([name]);
+  const classKeyFor = (rec, name) => {
+    const decl = declarationFor(rec, name);
+    return decl ? classKey(decl.file, decl.name) : unresolvedKey(name);
+  };
   const childrenOf = new Map();
   const parentsOf = new Map();
   const link = (parent, child) => {
@@ -440,9 +450,9 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
   };
   const handlerCommand = new Map();
   for (const rec of byFile.values()) {
-    for (const e of rec.implementsEdges) link(declarationFor(rec, e.iface)?.name || e.iface, e.cls);
-    for (const e of rec.extendsEdges) link(declarationFor(rec, e.parent)?.name || e.parent, e.child);
-    for (const [cls, cmd] of rec.handlerFor) handlerCommand.set(cls, cmd);
+    for (const e of rec.implementsEdges) link(classKeyFor(rec, e.iface), classKey(rec.file, e.cls));
+    for (const e of rec.extendsEdges) link(classKeyFor(rec, e.parent), classKey(rec.file, e.child));
+    for (const [cls, cmd] of rec.handlerFor) handlerCommand.set(classKey(rec.file, cls), cmd);
   }
   const closure = (start, table, cache) => {
     if (cache.has(start)) return cache.get(start);
@@ -457,8 +467,8 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
   };
   const subCache = new Map();
   const superCache = new Map();
-  const subtypesOf = (n) => closure(n, childrenOf, subCache);
-  const supertypesOf = (n) => closure(n, parentsOf, superCache);
+  const subtypesOf = (key) => closure(key, childrenOf, subCache);
+  const supertypesOf = (key) => closure(key, parentsOf, superCache);
 
   const staticOwner = (decl, method, seen = new Set()) => {
     if (!decl || seen.has(`${decl.file}#${decl.name}`)) return null;
@@ -477,12 +487,14 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
   // target: { file, className, name } -> [{ file, label, pos }]
   function callersOf(target) {
     const out = new Map();
-    const subs = target.className ? subtypesOf(target.className) : new Set();
-    const supers = target.className ? supertypesOf(target.className) : new Set();
+    const targetKey = target.className ? classKey(target.file, target.className) : null;
+    const subs = targetKey ? subtypesOf(targetKey) : new Set();
+    const supers = targetKey ? supertypesOf(targetKey) : new Set();
     // A receiver typed as the port, as a supertype, or as any subtype can reach this.
-    const typeMatches = (typeName) => typeName === target.className
-      || subs.has(typeName) || supers.has(typeName);
-    const handler = target.className && handlerCommand.get(target.className);
+    const typeMatches = (key) => key === targetKey || subs.has(key) || supers.has(key);
+    // `this`/`super` in a class declared in `file` reach the target through that class's supertypes.
+    const inheritsTarget = (file, ownerClass) => !!targetKey && !!ownerClass && supertypesOf(classKey(file, ownerClass)).has(targetKey);
+    const handler = targetKey && handlerCommand.get(targetKey);
     const commands = handler && target.name === handler.method ? handler.commands : [];
 
     for (const rec of byFile.values()) {
@@ -527,25 +539,19 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
             : rec.extendsEdges.filter(e => e.child === c.ownerClass).map(e => declarationFor(rec, e.parent));
           ok = owners.some(owner => { const cls = staticOwner(owner, target.name); return cls?.file === target.file && cls.name === target.className; });
         } else if (c.receiver.kind === 'super') {
-          ok = !!target.className && supertypesOf(c.ownerClass || '').has(target.className);
+          ok = inheritsTarget(rec.file, c.ownerClass);
         } else if (c.receiver.kind === 'this') {
-          if (c.ownerClass === target.className) ok = rec.file === target.file;
           // `this.foo()` in a subclass reaches a method declared on the base class
-          else ok = !!target.className && supertypesOf(c.ownerClass || '').has(target.className);
+          ok = !!targetKey && !!c.ownerClass && (classKey(rec.file, c.ownerClass) === targetKey || inheritsTarget(rec.file, c.ownerClass));
         } else {
           const rawType = c.receiver.kind === 'thisMember'
             ? (rec.classes.get(c.ownerClass) || { members: new Map() }).members.get(c.receiver.name)
             : c.receiver.typeName;
-          const resolvedType = rawType && declarationFor(rec, rawType);
-          const typeName = resolvedType?.name || rawType;
-          const overrides = typeName && typeName !== target.className && subs.has(typeName)
-            && [...byFile.values()].some((r) => r.classes.get(typeName)?.methods.has(target.name));
-          if (typeName && typeMatches(typeName) && !overrides) {
-            const declFile = resolvedType?.file || declaringFileFor(rec, typeName);
-            // A port and its adapter live in different files by design, so a file
-            // mismatch only disqualifies a match on the target's OWN class name.
-            ok = typeName !== target.className || !declFile || declFile === target.file;
-          }
+          const typeKey = rawType && classKeyFor(rec, rawType);
+          // Subtypes are always declared in the source set, so a subtype key is never unresolved.
+          const receiverDecl = typeKey && typeKey !== targetKey && subs.has(typeKey) && declarationFor(rec, rawType);
+          const overrides = !!receiverDecl && byFile.get(receiverDecl.file)?.classes.get(receiverDecl.name)?.methods.has(target.name);
+          ok = !!typeKey && typeMatches(typeKey) && !overrides;
         }
         if (ok && target.className && byFile.get(target.file)?.classes.get(target.className)?.staticMethods.has(target.name)
           && (c.receiver?.typeName || c.receiver?.kind === 'thisMember' || ((c.receiver?.kind === 'this' || c.receiver?.kind === 'super') && !c.receiver.static))) ok = false;
@@ -575,7 +581,7 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
 
   return {
     byFile, texts, callersOf, symbolAt, resolveModule,
-    subtypesOf, supertypesOf, handlerCommand, size: byFile.size,
+    classKey, subtypesOf, supertypesOf, handlerCommand, size: byFile.size,
   };
 }
 

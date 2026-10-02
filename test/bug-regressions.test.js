@@ -970,3 +970,89 @@ test('ensureReady retries after a failed prepare, shares a running one, and keep
     if (realResolver) require.cache[resolverPath] = realResolver; else delete require.cache[resolverPath];
   }
 });
+
+// A class's identity is its declaration (file + name); a same-named class elsewhere is a different class.
+const saveCallers = (idx, file, className) => idx.callersOf({ file: path.join(root, file), className, name: 'save' }).map((c) => c.label);
+const holder = (importLine, type, owner = 'Svc') => `${importLine} export class ${owner} { constructor(private repo: ${type}) {} run() { this.repo.save(); } }`;
+
+test('a same-named unrelated class does not hide a real caller through inheritance', () => {
+  const idx = build({
+    'a/base.ts': 'export class Base { save() {} }',
+    'a/user-repo.ts': "import { Base } from './base'; export class UserRepo extends Base {}",
+    'z/user-repo.ts': 'export class UserRepo { save() {} }',
+    'c/svc.ts': holder("import { UserRepo } from '../a/user-repo';", 'UserRepo'),
+  });
+  assert.deepEqual(saveCallers(idx, 'a/base.ts', 'Base'), ['Svc.run']);
+});
+
+test('a same-named class elsewhere does not invent a caller of an unrelated class', () => {
+  const idx = build({
+    'a/repo.ts': 'export class Repo { save() {} }',
+    'b/base.ts': 'export class Base { save() {} }',
+    'b/repo.ts': "import { Base } from './base'; export class Repo extends Base {}",
+    'c/u.ts': holder("import { Base } from '../b/base';", 'Base'),
+  });
+  assert.deepEqual(saveCallers(idx, 'a/repo.ts', 'Repo'), []);
+  assert.deepEqual(saveCallers(idx, 'b/base.ts', 'Base'), ['Svc.run']);
+});
+
+test('two same-named hierarchies each reach only their own callers', () => {
+  const idx = build({
+    'a/base.ts': 'export class Base { save() {} }',
+    'a/repo.ts': "import { Base } from './base'; export class Repo extends Base {}",
+    'b/base.ts': 'export class Base { save() {} }',
+    'b/repo.ts': "import { Base } from './base'; export class Repo extends Base {}",
+    'c/ua.ts': holder("import { Repo } from '../a/repo';", 'Repo', 'UserA'),
+    'c/ub.ts': holder("import { Repo } from '../b/repo';", 'Repo', 'UserB'),
+  });
+  assert.deepEqual(saveCallers(idx, 'a/base.ts', 'Base'), ['UserA.run']);
+  assert.deepEqual(saveCallers(idx, 'b/base.ts', 'Base'), ['UserB.run']);
+});
+
+test('a caller typed as the port still finds the adapter, not a same-named adapter elsewhere', () => {
+  const idx = build({
+    'a/port.ts': 'export interface Port { save(): void; }',
+    'a/adapter.ts': "import { Port } from './port'; export class Adapter implements Port { save() {} }",
+    'b/adapter.ts': 'export class Adapter { save() {} }',
+    'c/svc.ts': holder("import { Port } from '../a/port';", 'Port'),
+  });
+  assert.deepEqual(saveCallers(idx, 'a/adapter.ts', 'Adapter'), ['Svc.run']);
+  assert.deepEqual(saveCallers(idx, 'b/adapter.ts', 'Adapter'), []);
+});
+
+const externalImpl = { 'a/impl.ts': "import { Port } from 'external-lib'; export class Impl implements Port { save() {} }", 'c/svc.ts': holder("import { Port } from 'external-lib';", 'Port') };
+
+test('a heritage parent outside the source set still links by its name', () => {
+  assert.deepEqual(saveCallers(build(externalImpl), 'a/impl.ts', 'Impl'), ['Svc.run']);
+});
+
+test('an unresolved name never meets a same-named class that is in the source set', () => {
+  const idx = build({
+    ...externalImpl,
+    'b/port.ts': 'export interface Port { save(): void; }',
+    'c/other.ts': holder("import { Port } from '../b/port';", 'Port', 'Other'),
+  });
+  assert.deepEqual(saveCallers(idx, 'a/impl.ts', 'Impl'), ['Svc.run']);
+});
+
+test('this and super calls reach only the base class the subclass actually extends', () => {
+  const idx = build({
+    'a/base.ts': 'export class Base { save() {} }',
+    'b/base.ts': 'export class Base { save() {} }',
+    'c/child.ts': "import { Base } from '../a/base'; export class Child extends Base { run() { this.save(); } again() { super.save(); } }",
+  });
+  assert.deepEqual(saveCallers(idx, 'a/base.ts', 'Base').sort(), ['Child.again', 'Child.run']);
+  assert.deepEqual(saveCallers(idx, 'b/base.ts', 'Base'), []);
+});
+
+test('a CQRS handler is not confused with a same-named class elsewhere', () => {
+  const idx = build({
+    'a/cmd.ts': 'export class DoThing {}',
+    'a/handler.ts': "import { CommandHandler } from '@nestjs/cqrs'; import { DoThing } from './cmd'; @CommandHandler(DoThing) export class Handler { execute() {} }",
+    'b/handler.ts': 'export class Handler { execute() {} }',
+    'c/api.ts': "import { DoThing } from '../a/cmd'; export class Api { post() { this.bus.execute(new DoThing()); } }",
+  });
+  const executeCallers = (file) => idx.callersOf({ file: path.join(root, file), className: 'Handler', name: 'execute' }).map((c) => c.label);
+  assert.deepEqual(executeCallers('a/handler.ts'), ['Api.post']);
+  assert.deepEqual(executeCallers('b/handler.ts'), []);
+});
