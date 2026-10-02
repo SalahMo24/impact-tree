@@ -96,8 +96,8 @@ console.log('\n▸ extends chain');
   const got = idx.callersOf({ file: f('src/leaf.ts'), className: 'Leaf', name: 'save' });
   check('a call through the subclass reaches its own override',
     labels(got).join(',') === 'Caller.go', JSON.stringify(labels(got)));
-  check('Leaf is a transitive subtype of Base', idx.subtypesOf('Base').has('Leaf'));
-  check('Base is a transitive supertype of Leaf', idx.supertypesOf('Leaf').has('Base'));
+  check('Leaf is a transitive subtype of Base', idx.subtypesOf(idx.classKey(f('src/base.ts'), 'Base')).has(idx.classKey(f('src/leaf.ts'), 'Leaf')));
+  check('Base is a transitive supertype of Leaf', idx.supertypesOf(idx.classKey(f('src/leaf.ts'), 'Leaf')).has(idx.classKey(f('src/base.ts'), 'Base')));
 }
 
 console.log('\n▸ sibling dispatch must NOT be reported');
