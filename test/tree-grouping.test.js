@@ -127,7 +127,9 @@ test('a caller-file group shows the worst state of its callers', async () => {
       getState: () => ({
         result: { ...result, allChanged: [target], findings: [target] }, rowDetail: 'hover', rel: (f) => f.replace('/repo/', ''),
         changedKeys: new Set(callers.filter((c) => c.state === 'changed-elsewhere').map((c) => `${c.file}#${c.pos}`)),
-        callSiteUpdated: (_, sites) => sites.some((s) => s.updated),
+        classifyCallSiteUpdates: (_, sites) => ({
+          updated: sites.filter((s) => s.updated), untouched: sites.filter((s) => !s.updated), unknown: [],
+        }),
       }),
       resolver: { incomingWithStatus: async () => ({ callers, complete: true }) },
     });

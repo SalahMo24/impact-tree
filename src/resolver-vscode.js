@@ -144,6 +144,7 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
 
   // `complete: false` means the query did not finish, so `callers` may be missing some or
   // all of them. Only complete answers are cached, so asking again can still succeed.
+  /** @returns {Promise<import('./engine/caller-contract').CallerAnswer>} */
   async function incomingWithStatus(file, pos, withTests = true) {
     const key = `${withTests ? 'A' : 'P'}${file}#${pos}`;
     if (cache.has(key)) { stats.cacheHits++; return { callers: cache.get(key), complete: true }; }
@@ -222,30 +223,33 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
     incomingWithStatus,
     warmUp,
     isWarm: () => serverWarm,
+    /** @returns {Promise<import('./engine/caller-contract').CallerState>} */
     async callerState(file, pos, { isConstructor = false } = {}) {
-      const { callers, complete, reason } = await incomingWithStatus(file, pos);
-      if (callers.length) return { state: 'resolved', callers };
-      if (!complete) return { state: 'unknown', reason, callers: [] };
+      const { callers, ...coverage } = await incomingWithStatus(file, pos);
+      if (callers.length) return { state: 'resolved', callers, ...coverage };
+      if (!coverage.complete) return { state: 'unknown', callers: [], ...coverage };
       const status = queryStates.get(`A${file}#${pos}`);
-      if (!status?.ready) return { state: 'unknown', reason: status?.reason, callers: [] };
-      if (isConstructor) return { state: 'di', callers: [] };
-      if (status.isHandler) return { state: 'unknown', callers: [] };
+      if (!status?.ready) return { state: 'unknown', reason: status?.reason || 'caller query did not complete', callers: [], complete: false };
+      if (isConstructor) return { state: 'di', callers: [], complete: true };
+      if (status.isHandler) return { state: 'unknown', reason: 'command-bus handler', callers: [], complete: false };
       // Empty call hierarchies also occur for value-passed callbacks. Only report
       // none after a successful reference query with no use outside the declaration.
       const p = offsetToPosition(file, pos);
       try {
         const refs = await vscode.commands.executeCommand('vscode.executeReferenceProvider',
           vscode.Uri.file(file), new vscode.Position(p.line, p.character));
-        if (!Array.isArray(refs)) return { state: 'unknown', callers: [] };
+        if (!Array.isArray(refs)) return { state: 'unknown', reason: 'no reference result', callers: [], complete: false };
         const used = refs.some(r => {
           if (r.uri.fsPath !== file) return true;
           const start = positionToOffset(file, r.range.start.line, r.range.start.character);
           const end = positionToOffset(file, r.range.end.line, r.range.end.character);
           return start == null || end == null || !(start <= pos && pos < end);
         });
-        return { state: used ? 'unknown' : 'none', callers: [] };
+        return used
+          ? { state: 'unknown', reason: 'referenced-as-value', callers: [], complete: false }
+          : { state: 'none', callers: [], complete: true };
       } catch (e) {
-        return { state: 'unknown', reason: e && e.message, callers: [] };
+        return { state: 'unknown', reason: (e && e.message) || 'reference query failed', callers: [], complete: false };
       }
     },
     stats: () => {

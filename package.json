@@ -15,7 +15,7 @@
   "main": "./src/extension.js",
   "scripts": {
     "analyze": "node --max-old-space-size=8192 src/cli.js",
-    "test": "node test/scope.test.js && node test/local-analysis.test.js && node test/bug-regressions.test.js && node test/extension-commands.test.js && node test/load-typescript.test.js && node test/base-ref.test.js && node test/sources.test.js && node test/tier-a-view.test.js && node test/tree-grouping.test.js && node test/syntactic-index.test.js && node test/inheritance.test.js && node test/tier-a.test.js && node --max-old-space-size=8192 test/languages.test.js && node --max-old-space-size=8192 test/textpos.test.js && node --max-old-space-size=8192 test/callsites.test.js && node --max-old-space-size=8192 test/run-fixtures.js && node --max-old-space-size=8192 test/tree-smoke.js",
+    "test": "node test/scope.test.js && node test/local-analysis.test.js && node test/bug-regressions.test.js && node test/call-site-classifier.test.js && node test/caller-evidence.test.js && node test/extension-commands.test.js && node test/load-typescript.test.js && node test/base-ref.test.js && node test/sources.test.js && node test/tier-a-view.test.js && node test/tree-grouping.test.js && node test/syntactic-index.test.js && node test/inheritance.test.js && node test/tier-a.test.js && node --max-old-space-size=8192 test/languages.test.js && node --max-old-space-size=8192 test/textpos.test.js && node --max-old-space-size=8192 test/callsites.test.js && node --max-old-space-size=8192 test/run-fixtures.js && node --max-old-space-size=8192 test/tree-smoke.js",
     "record": "node --max-old-space-size=8192 test/record-fixture.js",
     "test:fixtures": "node --max-old-space-size=8192 test/run-fixtures.js",
     "test:tree": "node --max-old-space-size=8192 test/tree-smoke.js",
@@ -221,7 +221,7 @@
           "default": 8,
           "minimum": 1,
           "maximum": 32,
-          "description": "How many symbols to resolve callers for in parallel."
+          "description": "How many symbols to resolve callers for in parallel, from 1 to 32. A value above 32 is capped at 32; a value that is not a number of at least 1 is replaced by the default, 8. Either correction is reported as an analysis warning."
         },
         "impactTree.iconMode": {
           "type": "string",

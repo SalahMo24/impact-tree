@@ -252,19 +252,27 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
   return {
     kind: 'typescript-languageservice',
     async incoming(file, pos, withTests = true) { return (await withCqrs(file, pos, withTests)).callers; },
+    /** @returns {Promise<import('./caller-contract').CallerState>} */
     async callerState(file, pos, { isConstructor = false } = {}) {
       const { callers, failed } = await withCqrs(file, pos, true);
-      if (callers.length) return { state: 'resolved', callers };
+      // A service that threw may have hidden callers, so even a found list is incomplete.
+      if (callers.length) {
+        return failed
+          ? { state: 'resolved', callers, complete: false, reason: 'query-failed' }
+          : { state: 'resolved', callers, complete: true };
+      }
       // No tsconfig includes this file, so no query could have found a caller. "none"
       // there claimed a function nobody calls; the truth is we did not look.
-      if (!inProgram(file)) return { state: 'unknown', reason: 'not-in-program', callers: [] };
+      if (!inProgram(file)) return { state: 'unknown', reason: 'not-in-program', callers: [], complete: false };
       // A query that threw saw nothing; "no callers" would be a claim we cannot back.
-      if (failed) return { state: 'unknown', reason: 'query-failed', callers: [] };
+      if (failed) return { state: 'unknown', reason: 'query-failed', callers: [], complete: false };
       // A constructor with no `new X()` site is instantiated by the DI container.
-      if (isConstructor) return { state: 'di', callers: [] };
+      if (isConstructor) return { state: 'di', callers: [], complete: true };
       const refs = referenceCount(file, pos);
-      if (refs.failed && refs.count === 0) return { state: 'unknown', reason: 'query-failed', callers: [] };
-      return { state: refs.count > 0 ? 'unknown' : 'none', callers: [] };
+      if (refs.failed && refs.count === 0) return { state: 'unknown', reason: 'query-failed', callers: [], complete: false };
+      // References that are not calls (a function passed as a value) are a use we cannot follow.
+      if (refs.count > 0) return { state: 'unknown', reason: 'referenced-as-value', callers: [], complete: false };
+      return { state: 'none', callers: [], complete: true };
     },
     stats: () => stats,
     program: () => services[0].getProgram(),

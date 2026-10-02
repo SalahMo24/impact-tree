@@ -133,7 +133,7 @@ const state = {
   rowDetail: 'hover',
   iconMode: 'file',
   changedKeys: new Set([`${REPO}/src/caller.ts#40`]),
-  callSiteUpdated: () => false,
+  classifyCallSiteUpdates: (_, sites) => ({ updated: [], untouched: sites, unknown: [] }),
 };
 
 const decorate = createDecorationProvider(vscodeStub);

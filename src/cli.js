@@ -54,6 +54,8 @@ console.log(`impact-tree — mode '${result.mode}' (${result.modeDesc})`);
 console.log(`base ${result.base.ref} @ ${String(result.base.sha).slice(0, 10)}   ${result.changedFileCount} changed src file(s)`);
 result.warnings.forEach((w) => console.log(`⚠ ${w}`));
 
+const missingNote = (f) => `more callers may be missing${f.callersIncompleteReason ? ` (${f.callersIncompleteReason})` : ''}`;
+
 H('① RANKED FINDINGS');
 if (!result.findings.length) console.log('  (none)');
 for (const f of result.findings) {
@@ -69,10 +71,13 @@ for (const f of result.findings) {
     console.log(`      🔴 ${f.stale.length} caller(s) NOT updated in this change:`);
     f.stale.slice(0, 8).forEach((s) => console.log(`         ⚠ ${s.label}   ${rel(s.file)}`));
     if (f.stale.length > 8) console.log(`         +${f.stale.length - 8} more`);
+    if (f.callersComplete === false) console.log(`      ? ${missingNote(f)}`);
   } else if (f.callerState === 'unknown') {
     console.log(`      ? callers unknown (referenced as a value, never called directly)`);
   } else if (f.callerState === 'none') {
     console.log(`      ∅ no callers found in the analysed projects`);
+  } else if (f.callersComplete === false) {
+    console.log(`      ? callers found so far are updated, but ${missingNote(f)}`);
   } else {
     console.log(`      🟢 no un-updated callers`);
   }

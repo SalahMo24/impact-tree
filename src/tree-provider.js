@@ -1,6 +1,7 @@
 'use strict';
 const path = require('path');
 const { nodeId } = require('./review-state');
+const { classifyCallerUpdateState } = require('./engine/call-sites');
 
 // Tree nodes resolve their callers on expand. That laziness is the whole reason the
 // extension is cheap where the CLI is not: the CLI pre-walked 152 positions (123s);
@@ -32,6 +33,9 @@ const CALL_STATE = {
   'changed-elsewhere': { token: '△', severity: 'warn',  text: 'changed, but not at the call' },
   unchanged:           { token: '○', severity: 'muted', text: 'not changed' },
 };
+
+// What a caller row knows about its call sites when the view state cannot classify them.
+const NO_SITE_EVIDENCE = { updated: [], untouched: [], unknown: [] };
 
 // Rows that only group changes; their review state is derived from their members.
 const GROUP_TYPES = new Set(['changeFile', 'insideGroup']);
@@ -156,13 +160,17 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
   // token + severity, not an icon: the icon slot belongs to the file glyph now, and
   // severity is carried by the decoration colour
   function statusOf(f) {
+    // Results from before `callersComplete` existed have no such field and read as complete.
+    const mayBeMissing = f.callersComplete === false;
     if (f.staleCallers > 0) {
       const e = f.staleChangedElsewhere || 0;
       return { token: '⛔', severity: 'stale',
-        marker: `${f.staleCallers} call site(s) not updated${e ? ` (${e} edited nearby)` : ''}` };
+        marker: `${f.staleCallers} call site(s) not updated${e ? ` (${e} edited nearby)` : ''}${mayBeMissing ? ' — more callers may be missing' : ''}` };
     }
     switch (f.callerState) {
-      case 'resolved': return { token: '✓', severity: 'ok', marker: 'all call sites updated' };
+      case 'resolved': return mayBeMissing
+        ? { token: '?', severity: 'warn', marker: 'callers found so far are updated, but more may be missing' }
+        : { token: '✓', severity: 'ok', marker: 'all call sites updated' };
       // A completed search that found nothing is not evidence that callers were updated.
       case 'none': return { token: '∅', severity: 'muted', marker: 'no callers found' };
       case 'di': return { token: '?', severity: 'muted', marker: 'DI-constructed' };
@@ -354,6 +362,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
         `${st.token} **${f.label}**`,
         '',
         `${st.marker}`,
+        ...(f.callersComplete === false && f.callersIncompleteReason ? ['', `_caller search incomplete: ${f.callersIncompleteReason}_`] : []),
         ...(kinds.length ? ['', `**${kinds.join(', ')}**`] : []),
         '',
         `\`${f.relPath}:${f.startLine}\`  ·  component \`${f.component}\``,
@@ -402,6 +411,10 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
     const cs = CALL_STATE[n.callState] || CALL_STATE.unchanged;
     const base = path.basename(n.relPath || n.file);
     const tok = n.cycle ? '↑' : n.test ? '🧪' : cs.token;
+    // Some calls were edited and others not: the row cannot read as handled, and the count says why.
+    const { updated, untouched, unknown } = n.callSiteUpdates;
+    const notUpdated = untouched.length + unknown.length;
+    const partlyUpdated = updated.length > 0 && notUpdated > 0;
     item.description = n.cycle ? rowDesc('↑', '↑  already shown above')
       : rowDesc(tok, `${tok}  ${cs.text}  ·  ${base}${n.sites > 1 ? `  ·  ${n.sites} call sites` : ''}`);
     item.iconPath = n.cycle ? new vscode.ThemeIcon('issue-reopened')
@@ -414,6 +427,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
       '',
       `\`${n.relPath || n.file}\``,
       ...(n.sites ? ['', `${n.sites} call site${n.sites === 1 ? '' : 's'} to the changed symbol`] : []),
+      ...(partlyUpdated ? ['', `${updated.length} of ${updated.length + notUpdated} call sites updated`] : []),
       ...(n.callState === 'changed-elsewhere'
         ? ['', '---', '', 'This caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating.']
         : []),
@@ -583,15 +597,16 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
       if (decorate) setTimeout(() => decorate.flush(), 0);
       const built = callers.map((c) => {
         const symChanged = changedKeys.has(`${c.file}#${c.pos}`);
-        const atCall = state2 && state2.callSiteUpdated ? state2.callSiteUpdated(c.file, c.callSites) : false;
-        const callState = atCall ? 'updated-at-call' : symChanged ? 'changed-elsewhere' : 'unchanged';
+        const callSiteUpdates = state2 && state2.classifyCallSiteUpdates
+          ? state2.classifyCallSiteUpdates(c.file, c.callSites) : NO_SITE_EVIDENCE;
+        const callState = classifyCallerUpdateState({ callSiteUpdates, callerChanged: symChanged });
         const rel = state2 ? state2.rel(c.file) : c.file;
         const uri = uriFor(c.file, c.pos);
         mark(uri, statusOfPath(state2, rel), c.test ? 'muted' : (CALL_STATE[callState] || {}).severity, rel);
         return N({
           type: 'caller', reviewParent: idOf(node), label: c.label, file: c.file, pos: c.pos, test: c.test,
           callSites: c.callSites || [], sites: c.sites,
-          relPath: rel, changed: symChanged, callState, decorationUri: uri,
+          relPath: rel, changed: symChanged, callState, callSiteUpdates, decorationUri: uri,
           cycle: seenPath.has(`${c.file}#${c.pos}`),
           path: [...seenPath],
         });

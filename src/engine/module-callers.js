@@ -106,7 +106,7 @@ function createModuleCallers(ts, repo, git) {
   }
 
   /**
-   * @returns {Promise<{callers: object[], complete: boolean, reason?: string}>}
+   * @returns {Promise<import('./caller-contract').CallerAnswer>}
    */
   async function incomingWithStatus(file, pos, withTests = true) {
     const { resolver, incomplete } = build();
@@ -145,11 +145,17 @@ function mergeCallers(a, b) {
   return a.concat(b.filter((c) => !seen.has(callerId(c))));
 }
 
+// Coverage of two merged answers: complete only if both are, otherwise the first reason given.
+const mergeCoverage = (own, extra) => (own.complete && extra.complete
+  ? { complete: true }
+  : { complete: false, reason: own.complete ? extra.reason : own.reason });
+
 /**
  * Add `moduleCallers` answers to every query `resolver` answers for a file it applies
  * to. Callers both report are kept once, with the language service's row.
  * @returns {object} `resolver` with `incoming`, `incomingWithStatus` (when present) and
- *   `callerState` merged.
+ *   `callerState` merged, still answering `CallerAnswer` and `CallerState` from
+ *   `./caller-contract`; their `complete` is true only when the module answer is too.
  */
 function withModuleCallers(resolver, moduleCallers) {
   if (!moduleCallers) return resolver;
@@ -166,9 +172,10 @@ function withModuleCallers(resolver, moduleCallers) {
       if (!applies(file)) return cs;
       const extra = await moduleCallers.incomingWithStatus(file, pos, true);
       const callers = mergeCallers(cs.callers, extra.callers);
-      if (callers.length) return { ...cs, state: 'resolved', callers };
+      const coverage = mergeCoverage(cs, extra);
+      if (callers.length) return { ...cs, state: 'resolved', callers, ...coverage };
       // An empty answer from an unfinished search is not evidence that nothing calls it.
-      if (!extra.complete) return { state: 'unknown', reason: extra.reason, callers: [] };
+      if (!extra.complete) return { state: 'unknown', callers: [], ...coverage };
       return cs;
     },
   };
@@ -178,8 +185,7 @@ function withModuleCallers(resolver, moduleCallers) {
       if (!applies(file)) return own;
       const extra = await moduleCallers.incomingWithStatus(file, pos, withTests);
       const callers = mergeCallers(own.callers, extra.callers);
-      if (own.complete && extra.complete) return { callers, complete: true };
-      return { callers, complete: false, reason: own.complete ? extra.reason : own.reason };
+      return { callers, ...mergeCoverage(own, extra) };
     };
   }
   return wrapped;
