@@ -3,7 +3,8 @@ const path = require('path');
 
 /**
  * Language-server warmup shared across local analysis runs. Concurrent callers share
- * one promise; a failed prepare still marks the session ready so the user can retry.
+ * one promise; a failed prepare still marks the session ready and is forgotten, so the
+ * next call prepares again.
  *
  * @param {*} vscode
  * @param {object} session
@@ -51,7 +52,7 @@ function createReadiness(vscode, session, { log }) {
   // server. Concurrent callers share the same promise instead of racing.
   function ensureReady(progress) {
     if (session.readyPromise) return session.readyPromise;
-    session.readyPromise = (async () => {
+    const prepare = (async () => {
       const say = (m) => { if (progress) progress.report({ message: m }); log(`  · ${m}`); };
       session.phase = 'preparing';
       const repo = session.repoRoot();
@@ -80,10 +81,13 @@ function createReadiness(vscode, session, { log }) {
       return true;
     })().catch((e) => {
       session.phase = 'ready';          // let the user try anyway rather than dead-ending
+      // Forget the failure so the next call prepares again; a success stays cached.
+      if (session.readyPromise === prepare) session.readyPromise = null;
       log(`prepare failed: ${e.message}`);
       return false;
     });
-    return session.readyPromise;
+    session.readyPromise = prepare;
+    return prepare;
   }
 
   return { ensureReady, warmTarget };

@@ -112,3 +112,73 @@ test('a group is ticked exactly when every change in it is', async () => {
   review.set(kids[0], false);
   assert.equal(provider.getTreeItem(sessionFile).checkboxState, vscode.TreeItemCheckboxState.Unchecked, 'unticking a member unticks the group');
 });
+
+// A caller-file group takes its worst member's state: △ (changed elsewhere) needs more
+// attention than ○ (not changed), which needs more than ✓ (call updated).
+test('a caller-file group shows the worst state of its callers', async () => {
+  const target = change('src/target.js', 'target', 0, 100, { kinds: [{ id: 'sig', label: 'signature' }] });
+  const callerOf = (pos, state) => ({
+    file: '/repo/src/user.js', pos, label: `user${pos}`, test: false, sites: 1,
+    callSites: [{ start: pos, end: pos + 1, updated: state === 'updated-at-call' }], state,
+  });
+  const groupState = async (...states) => {
+    const callers = states.map((s, i) => callerOf(10 + i, s));
+    const provider = createTreeProvider(vscode, {
+      getState: () => ({
+        result: { ...result, allChanged: [target], findings: [target] }, rowDetail: 'hover', rel: (f) => f.replace('/repo/', ''),
+        changedKeys: new Set(callers.filter((c) => c.state === 'changed-elsewhere').map((c) => `${c.file}#${c.pos}`)),
+        callSiteUpdated: (_, sites) => sites.some((s) => s.updated),
+      }),
+      resolver: { incomingWithStatus: async () => ({ callers, complete: true }) },
+    });
+    const sections = await provider.getChildren();
+    const [row] = await provider.getChildren(sections.find((s) => s.key === 'findings'));
+    const kids = await provider.getChildren(row);
+    assert.deepEqual(kids.map((k) => k.type), ['callerFile'], states.join(','));
+    assert.deepEqual(kids[0].callers.map((k) => k.callState), states, 'members keep their own state');
+    return kids[0].callState;
+  };
+  assert.equal(await groupState('unchanged', 'changed-elsewhere'), 'changed-elsewhere');
+  assert.equal(await groupState('changed-elsewhere', 'unchanged', 'updated-at-call'), 'changed-elsewhere');
+  assert.equal(await groupState('updated-at-call', 'changed-elsewhere'), 'changed-elsewhere');
+  assert.equal(await groupState('updated-at-call', 'unchanged'), 'unchanged');
+  assert.equal(await groupState('unchanged', 'updated-at-call', 'unchanged'), 'unchanged');
+  assert.equal(await groupState('updated-at-call', 'updated-at-call'), 'updated-at-call');
+});
+
+// Folders compact like the explorer's: a chain of directories that each hold nothing
+// but one directory is one row, at every depth, and every folder row knows its full path.
+test('expanding a folder compacts whole single-child chains and records every folder path', async () => {
+  const filesView = async (paths) => {
+    const provider = createTreeProvider(vscode, {
+      getState: () => ({
+        result: { ...result, allChanged: [], findings: [], otherFiles: paths.map((p) => ({ path: p, status: 'modified' })) },
+        rowDetail: 'hover', rel: (f) => f,
+      }),
+      resolver: { incomingWithStatus: async () => ({ callers: [], complete: true }) },
+    });
+    const sections = await provider.getChildren();
+    return { provider, top: await provider.getChildren(sections.find((s) => s.key === 'files')) };
+  };
+  const shape = (rows) => rows.map((n) => (n.type === 'dir' ? `dir:${n.label}@${n.dirPath}` : n.label));
+
+  const deep = await filesView(['src/x.ts', 'src/a/b/c/d/y.ts', 'src/a/b/c/d/z.ts']);
+  assert.deepEqual(shape(deep.top), ['dir:src@src']);
+  const src = await deep.provider.getChildren(deep.top[0]);
+  assert.deepEqual(shape(src), ['dir:a/b/c/d@src/a/b/c/d', 'x.ts']);
+  assert.equal(deep.provider.getTreeItem(src[0]).tooltip, 'src/a/b/c/d');
+  assert.deepEqual(shape(await deep.provider.getChildren(src[0])), ['y.ts', 'z.ts']);
+
+  // the top level compacts the same way, and is unchanged
+  const chain = await filesView(['p/q/r/s/t.ts', 'p/q/r/s/u.ts']);
+  assert.deepEqual(shape(chain.top), ['dir:p/q/r/s@p/q/r/s']);
+
+  // a branch stops the compaction, and a directory that holds a file is never merged
+  const branchy = await filesView(['m/n/o/one.ts', 'm/n/o/p/two.ts', 'm/n/o/q/r/three.ts', 'm/n/o/q/r/s/four.ts', 'm/n/file.ts']);
+  assert.deepEqual(shape(branchy.top), ['dir:m/n@m/n']);
+  const n = await branchy.provider.getChildren(branchy.top[0]);
+  assert.deepEqual(shape(n), ['dir:o@m/n/o', 'file.ts']);
+  const o = await branchy.provider.getChildren(n[0]);
+  assert.deepEqual(shape(o), ['dir:p@m/n/o/p', 'dir:q/r@m/n/o/q/r', 'one.ts']);
+  assert.deepEqual(shape(await branchy.provider.getChildren(o[1])), ['dir:s@m/n/o/q/r/s', 'three.ts']);
+});

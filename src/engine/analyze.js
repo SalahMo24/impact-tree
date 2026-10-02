@@ -13,20 +13,7 @@ const { createTsResolver } = require('./resolver-ts');
 const { createModuleCallers, withModuleCallers } = require('./module-callers');
 const { seedRoots, nestedIds, blastRadius, buildTree } = require('./forest');
 const { offsetToPosition, clearVirtualText } = require('./textpos');
-
-async function mapLimit(items, limit, fn) {
-  const out = new Array(items.length);
-  let i = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (true) {
-      const idx = i++;
-      if (idx >= items.length) return;
-      out[idx] = await fn(items[idx], idx);
-    }
-  });
-  await Promise.all(workers);
-  return out;
-}
+const { mapLimit, validateConcurrency } = require('./concurrency');
 
 // Prefer the project's own TypeScript so analysis matches what the editor sees; fall
 // back to the repo root, then to whatever this extension was installed with.
@@ -330,7 +317,7 @@ function inferredProjectFiles(repo, git) {
  * @param {number} [opts.depth=2] How far the test-reach walk may go. The changed symbol is depth 0.
  * @param {number} [opts.reachBudget=120] Stop the test-reach walk after more than this many distinct callers.
  * @param {boolean} [opts.deferTestReach] Leave every `testState` as `'not-computed'`.
- * @param {number} [opts.concurrency=8] Parallel caller queries per project.
+ * @param {number} [opts.concurrency=8] Parallel caller queries per project, 1..32; an invalid value warns and uses 8.
  * @param {boolean} [opts.skipForest] Skip blast radius and the caller tree. Roots are still chosen.
  * @param {number} [opts.rankedRoots=6] How many roots receive a blast radius and a tree.
  * @param {number} [opts.blastDepth=1] Depth of the blast-radius walk.
@@ -380,6 +367,7 @@ async function analyze(repo, opts = {}) {
   const depth = opts.depth ?? 2;
   const git = makeGit(repo);
   const warnings = [];
+  const concurrency = validateConcurrency(opts.concurrency, warnings);
   // Per-run caches. The extension host lives for hours: a tsconfig added since the last
   // run must be seen, and text a Tier A preview registered for a PR must not stand in
   // for the file on disk (it moved every call-site line of a local run).
@@ -500,7 +488,6 @@ async function analyze(repo, opts = {}) {
 
       for (const c of changed) moduleCallers.hint(c);
       const changedKeys = changedSymbolKeys(changed);
-      const concurrency = opts.concurrency ?? 8;
       const deferReach = opts.deferTestReach === true;
       let done = 0;
       report({ phase: 'resolve', component: comp, done: 0, total: changed.length });
