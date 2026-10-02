@@ -105,7 +105,10 @@ against, so they are gitignored. Regenerate locally with `npm run record`.
 4. **Value-passed functions report `unknown`, not zero** — a function handed to
    `transaction(fn)` is referenced without being called, so call hierarchy sees nothing.
 5. **Deleted symbols have no current AST**, so their surviving callers are approximate.
-6. **Framework edges from test files may be missing**, since a project's `tsconfig.json`
+6. **CommonJS and config-less projects use a syntactic index for cross-file callers.**
+   It follows static `import` and string-literal `require()` only; tsconfig `paths` and
+   bundler aliases are not applied there. See `docs/correctness-and-perf.md`.
+7. **Framework edges from test files may be missing**, since a project's `tsconfig.json`
    usually excludes tests and the editor never loads them.
 
 ## Roadmap

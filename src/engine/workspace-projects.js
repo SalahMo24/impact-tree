@@ -1,15 +1,20 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { projectConfigIn } = require('./diff');
+const { JSCONFIG_DEFAULTS } = require('./resolver-ts');
 
 // Reverse import edges let a query include consumers whose files did not change.
 // This is rebuilt per analysis, so edits to imports/configuration cannot go stale.
 function workspaceProjects(ts, repo) {
-  const configs = ts.sys.readDirectory(repo, ['.json'],
-    ['**/node_modules/**', '**/.git/**', '**/dist/**', '**/build/**', '**/.next/**'], ['**/tsconfig.json']);
+  const found = ts.sys.readDirectory(repo, ['.json'],
+    ['**/node_modules/**', '**/.git/**', '**/dist/**', '**/build/**', '**/.next/**'], ['**/tsconfig.json', '**/jsconfig.json']);
+  // One project per directory, chosen the way the TypeScript server chooses it.
+  const configs = found.filter(config => projectConfigIn(path.dirname(config)) === path.basename(config));
   const projects = configs.map(config => {
     const raw = ts.readConfigFile(config, ts.sys.readFile);
-    const parsed = ts.parseJsonConfigFileContent(raw.config || {}, ts.sys, path.dirname(config), undefined, config);
+    const existing = path.basename(config) === 'jsconfig.json' ? JSCONFIG_DEFAULTS : undefined;
+    const parsed = ts.parseJsonConfigFileContent(raw.config || {}, ts.sys, path.dirname(config), existing, config);
     return { config, dir: path.dirname(config), parsed };
   }).sort((a,b) => b.dir.length - a.dir.length);
   const owner = file => projects.find(p => file.startsWith(p.dir + path.sep));
@@ -43,8 +48,8 @@ function workspaceProjects(ts, repo) {
     }
   }
   return {
-    consumers(componentDir) {
-      const start = path.join(componentDir, 'tsconfig.json');
+    /** @param {string} start Absolute path of the project's config file. */
+    consumers(start) {
       const seen = new Set([start]), queue = [start];
       for (let i = 0; i < queue.length; i++) for (const next of reverse.get(queue[i]) || []) {
         if (!seen.has(next)) { seen.add(next); queue.push(next); }

@@ -3,13 +3,14 @@ const fs = require('fs');
 const path = require('path');
 const { makeGit, resolveBaseAsync } = require('./git');
 const {
-  changedFiles, untrackedFiles, allHunks, wholeFileRange, isTestPath, isSourcePath,
-  projectRootOf, clearProjectCache, projectLabel,
+  changedFiles, untrackedFiles, worktreeFiles, allHunks, wholeFileRange, isTestPath, isSourcePath,
+  projectRootOf, projectConfigIn, clearProjectCache, projectLabel, INFERRED_PROJECT,
 } = require('./diff');
 const { makeSymbols } = require('./symbols');
 const { score } = require('./signature');
 const { changedSymbolsIn, changedSymbolKeys } = require('./changed-symbols');
 const { createTsResolver } = require('./resolver-ts');
+const { createModuleCallers, withModuleCallers } = require('./module-callers');
 const { seedRoots, nestedIds, blastRadius, buildTree } = require('./forest');
 const { offsetToPosition, clearVirtualText } = require('./textpos');
 
@@ -240,32 +241,45 @@ function withoutUntrackedCallers(resolver, isUntracked, onDropped) {
 }
 
 /**
- * Source files in `changes` that belong to a tsconfig project, grouped by that project.
- * Tests and paths with no `tsconfig.json` ancestor are left out of both results.
+ * Changed source files grouped by the project the TypeScript server would put them in.
+ * Tests are left out of both results.
  * @param {string} repo Absolute filesystem path of the repository root.
  * @param {ChangedPath[]} changes
  * @returns {{
  *   files: ChangedPath[],
- *   byComponent: Map<string, {root: string, files: ChangedPath[]}>
- * }} `byComponent` is keyed by `'(root)'` or the repository-relative project directory.
- *   `root` is `''` for the repository root and that directory otherwise.
+ *   byComponent: Map<string, {root: string, config: string|null, files: ChangedPath[]}>
+ * }} `byComponent` is keyed by `'(root)'`, the repository-relative project directory, or
+ *   `INFERRED_PROJECT` for files no tsconfig.json or jsconfig.json claims. `root` is `''`
+ *   for the repository root and that directory otherwise; `config` is the config file
+ *   name, `null` for the inferred project.
  */
 function changedSourceByProject(repo, changes) {
-  const files = changes.filter((file) => isSourcePath(file.path) && !isTestPath(file.path)
-    && projectRootOf(repo, file.path) !== null);
+  const files = changes.filter((file) => isSourcePath(file.path) && !isTestPath(file.path));
   const byComponent = new Map();
   for (const file of files) {
     const root = projectRootOf(repo, file.path);
-    if (root === null) continue;
-    const label = projectLabel(root);
+    const label = root === null ? INFERRED_PROJECT : projectLabel(root);
     let entry = byComponent.get(label);
     if (!entry) {
-      entry = { root, files: [] };
+      entry = root === null
+        ? { root: '', config: null, files: [] }
+        : { root, config: projectConfigIn(path.join(repo, root)), files: [] };
       byComponent.set(label, entry);
     }
     entry.files.push(file);
   }
   return { files, byComponent };
+}
+
+/**
+ * Absolute paths of the worktree's source files that no config claims: the members of
+ * the inferred project. `null` when git could not list the files.
+ */
+function inferredProjectFiles(repo, git) {
+  const listed = worktreeFiles(git);
+  if (listed == null) return null;
+  return listed.filter((rel) => isSourcePath(rel) && projectRootOf(repo, rel) === null
+    && fs.existsSync(path.join(repo, rel))).map((rel) => path.join(repo, rel));
 }
 
 /**
@@ -421,6 +435,8 @@ async function analyze(repo, opts = {}) {
   const outsideProgram = new Set();
   const servicePool = { services: new Map(), registries: new Map() };
   let workspaceGraph;
+  // Shared by every project: the index it builds on first use covers the whole worktree.
+  let moduleCallers = null;
   let compIndex = 0;
   const report = opts.onProgress || (() => {});
   try {
@@ -439,12 +455,25 @@ async function analyze(repo, opts = {}) {
       if (!ok) continue;
 
       const S = makeSymbols(ts);
-      if (!opts.makeResolver && !workspaceGraph) workspaceGraph = require('./workspace-projects').workspaceProjects(ts, repo);
-      const projectResolver = opts.makeResolver ? opts.makeResolver({ ts, componentDir: dir, component: comp, repoRoot: repo }) : createTsResolver(ts, dir, { repoRoot: repo, workspaceGraph, servicePool });
-      if (!projectResolver) { warnings.push(`'${comp}' has no tsconfig.json — skipped`); continue; }
+      if (!moduleCallers) moduleCallers = createModuleCallers(ts, repo, git);
+      if (entry.config === null) {
+        warnings.push(`${compFiles.length} changed file(s) have no tsconfig.json or jsconfig.json — analysed as one inferred JavaScript project, as the editor does; callers in other files come from static import and require() statements`);
+      }
+      let projectResolver;
+      if (opts.makeResolver) {
+        projectResolver = opts.makeResolver({ ts, componentDir: dir, component: comp, repoRoot: repo });
+      } else if (entry.config === null) {
+        const members = inferredProjectFiles(repo, git);
+        projectResolver = members && createTsResolver(ts, dir, { repoRoot: repo, servicePool, inferredFiles: members });
+      } else {
+        if (!workspaceGraph) workspaceGraph = require('./workspace-projects').workspaceProjects(ts, repo);
+        projectResolver = createTsResolver(ts, dir, { tsconfig: entry.config, repoRoot: repo, workspaceGraph, servicePool });
+      }
+      if (!projectResolver) { warnings.push(`'${comp}': no TypeScript project could be loaded — skipped`); continue; }
+      const withModules = withModuleCallers(projectResolver, moduleCallers);
       const resolver = headRev !== null && untracked.size
-        ? withoutUntrackedCallers(projectResolver, (x) => untracked.has(relOf(x.file)), (n) => { droppedUntracked += n; })
-        : projectResolver;
+        ? withoutUntrackedCallers(withModules, (x) => untracked.has(relOf(x.file)), (n) => { droppedUntracked += n; })
+        : withModules;
       const changed = [], deleted = [];
       for (const f of compFiles) {
         const abs = path.join(repo, f.path);
@@ -469,6 +498,7 @@ async function analyze(repo, opts = {}) {
         }
       }
 
+      for (const c of changed) moduleCallers.hint(c);
       const changedKeys = changedSymbolKeys(changed);
       const concurrency = opts.concurrency ?? 8;
       const deferReach = opts.deferTestReach === true;
@@ -557,8 +587,9 @@ async function analyze(repo, opts = {}) {
 
   for (const k of outsideProgram) {
     const [comp, rel] = k.split('\u0000');
-    warnings.push(`${rel} is not included by any tsconfig in '${comp}' — its callers are unknown`);
+    warnings.push(`${rel} is not included by the tsconfig.json or jsconfig.json in '${comp}' — its callers are unknown`);
   }
+  if (moduleCallers) warnings.push(...moduleCallers.notes());
   if (droppedUntracked) warnings.push(`${droppedUntracked} caller(s) in untracked files ignored — they are not part of the committed change`);
   const all = components.flatMap((c) => c.changed);
   const allChangedKeys = changedSymbolKeys(all);
@@ -586,7 +617,7 @@ async function analyze(repo, opts = {}) {
   const otherFiles = everything
     .filter((f) => !analysedPaths.has(f.path))
     .map((f) => ({ path: f.path, status: f.status, noCallable: withSymbols.has(f.path) ? undefined : true }));
-  return {
+  const result = {
     allChanged: all.slice().sort((a, b) => b.score - a.score || a.label.localeCompare(b.label)),
     nestedCount: nested.size,
     otherFiles,
@@ -606,5 +637,9 @@ async function analyze(repo, opts = {}) {
     testReachComputed: all.length === 0 || all.some((c) => c.testState !== 'not-computed'),
     unknownCallers: all.filter((c) => c.callerState === 'unknown'),
   };
+  // The editor expands rows lazily through its own resolver; it must add the same
+  // module callers. Not enumerable: it is a live object, not part of the JSON result.
+  Object.defineProperty(result, 'moduleCallers', { value: moduleCallers, enumerable: false });
+  return result;
 }
 module.exports = { analyze, MODES, loadTypeScript, rangesFor, withoutUntrackedCallers };

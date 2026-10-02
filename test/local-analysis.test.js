@@ -476,6 +476,123 @@ const parse = (text, name = 'x.ts') => ts.createSourceFile(name, text, ts.Script
     resolver.dispose();
   }
 
+  console.log('▸ projects without a tsconfig, and CommonJS modules');
+  const CJS_TARGET = (n) => `function registerCommands(x) {\n  return [x, ${n}];\n}\nmodule.exports = { registerCommands };\n`;
+  const CJS_CALLERS = {
+    'src/destructured.js': "const { registerCommands } = require('./a');\nfunction activate() {\n  return registerCommands(1);\n}\nmodule.exports = { activate };\n",
+    'src/namespace.js': "const a = require('./a');\nfunction viaNamespace() {\n  return a.registerCommands(2);\n}\n",
+    'src/inline.js': "function inline() {\n  return require('./a').registerCommands(3);\n}\n",
+    // A parameter named `require` is not the module loader.
+    'src/shadowed.js': "function shadowed(require) {\n  return require('./a').registerCommands(4);\n}\n",
+    'test/a.test.js': "const { registerCommands } = require('../src/a');\nfunction testsIt() {\n  return registerCommands(5);\n}\n",
+  };
+  const labelsOf = (c) => (c ? c.callers.map((x) => x.label).sort() : null);
+  {
+    // No tsconfig.json or jsconfig.json: every changed file was dropped before analysis
+    // and the tree was empty with no warning.
+    const repo = mkRepo({ 'src/a.js': CJS_TARGET(0), ...CJS_CALLERS });
+    const base = headOf(repo);
+    write(repo, { 'src/a.js': CJS_TARGET(1) });
+    const r = await analyze(repo, since(base));
+    const c = byLabel(r, 'registerCommands');
+    check('a file with no config is analysed', !!c, J(r.allChanged.map((x) => x.label)));
+    check('and the run says it used an inferred project', r.warnings.some((w) => w.includes('no tsconfig.json or jsconfig.json')), J(r.warnings));
+    // TypeScript's call hierarchy does not follow require() back to the declaration:
+    // these all came back empty, and the symbol showed as "unknown".
+    check('destructured, namespace and inline require() callers are found',
+      J(labelsOf(c)) === J(['activate', 'inline', 'testsIt', 'viaNamespace']), J(labelsOf(c)));
+    check('a test caller is classified as a test', c && c.callers.find((x) => x.label === 'testsIt')?.test === true);
+    check('callers carry call sites', c && c.callers.every((x) => x.callSites.length === 1), J(c && c.callers.map((x) => x.callSites)));
+  }
+  {
+    // A jsconfig.json defines a project exactly as a tsconfig.json does.
+    const repo = mkRepo({
+      'jsconfig.json': J({ compilerOptions: { module: 'esnext', moduleResolution: 'bundler' }, include: ['src'] }),
+      'src/a.js': 'export function target(a) {\n  return a;\n}\n',
+      'src/b.js': "import { target } from './a.js';\nexport function caller() {\n  return target(1);\n}\n",
+    });
+    const base = headOf(repo);
+    write(repo, { 'src/a.js': 'export function target(a, b) {\n  return a + b;\n}\n' });
+    const r = await analyze(repo, since(base));
+    const c = byLabel(r, 'target');
+    check('a jsconfig.json project is analysed as a project', c && c.component === '(root)', c && c.component);
+    check('its ESM callers come from TypeScript', J(labelsOf(c)) === J(['caller']), J(labelsOf(c)));
+    check('no inferred-project warning', !r.warnings.some((w) => w.includes('inferred')), J(r.warnings));
+  }
+  {
+    // ESM with no config: the inferred project still sees callers in other files.
+    const repo = mkRepo({
+      'src/a.mjs': 'export function target(a) {\n  return a;\n}\n',
+      'src/b.mjs': "import { target } from './a.mjs';\nexport function caller() {\n  return target(1);\n}\n",
+    });
+    const base = headOf(repo);
+    write(repo, { 'src/a.mjs': 'export function target(a, b) {\n  return a + b;\n}\n' });
+    const r = await analyze(repo, since(base));
+    check('ESM callers are found with no config', J(labelsOf(byLabel(r, 'target'))) === J(['caller']), J(labelsOf(byLabel(r, 'target'))));
+  }
+  {
+    // CommonJS inside a configured project: the project loads, but TypeScript still
+    // cannot report the cross-file callers.
+    const repo = mkRepo({
+      'tsconfig.json': J({ compilerOptions: { allowJs: true, module: 'commonjs', noEmit: true }, include: ['src'] }),
+      'src/a.js': CJS_TARGET(0),
+      'src/destructured.js': CJS_CALLERS['src/destructured.js'],
+    });
+    const base = headOf(repo);
+    write(repo, { 'src/a.js': CJS_TARGET(1) });
+    const r = await analyze(repo, since(base));
+    check('CommonJS callers are found inside a tsconfig project', J(labelsOf(byLabel(r, 'registerCommands'))) === J(['activate']), J(labelsOf(byLabel(r, 'registerCommands'))));
+  }
+  {
+    const repo = mkRepo({
+      'src/c.js': 'exports.direct = function direct(x) {\n  return x;\n};\n',
+      'src/d.js': "const { direct } = require('./c');\nfunction user() {\n  return direct(1);\n}\n",
+    });
+    const base = headOf(repo);
+    write(repo, { 'src/c.js': 'exports.direct = function direct(x) {\n  return x + 1;\n};\n' });
+    const r = await analyze(repo, since(base));
+    const c = r.allChanged.find((x) => x.relPath === 'src/c.js');
+    check('`exports.x = function` callers are found', J(labelsOf(c)) === J(['user']), c && `${c.label} ${c.callerState} ${J(labelsOf(c))}`);
+  }
+  {
+    // The editor's inferred project holds only open files, so its server answers
+    // "no callers" for code called from closed files. Lazy expansion goes through the
+    // session's resolver, not analyze's, and must add the same callers.
+    const { withModuleCallers } = require('../src/engine/module-callers');
+    const repo = mkRepo({ 'src/a.js': CJS_TARGET(0), 'src/destructured.js': CJS_CALLERS['src/destructured.js'] });
+    const base = headOf(repo);
+    write(repo, { 'src/a.js': CJS_TARGET(1) });
+    const blind = {
+      incoming: async () => [],
+      incomingWithStatus: async () => ({ callers: [], complete: true }),
+      callerState: async () => ({ state: 'none', callers: [] }),
+      clear() {}, stats: () => ({}),
+    };
+    const r = await analyze(repo, since(base, { makeResolver: () => blind }));
+    const c = byLabel(r, 'registerCommands');
+    check('an editor resolver that sees no callers is corrected', J(labelsOf(c)) === J(['activate']) && c.callerState === 'resolved', c && `${c.callerState} ${J(labelsOf(c))}`);
+    check('the result carries the module callers, outside its JSON', !!r.moduleCallers && !('moduleCallers' in JSON.parse(J(r))));
+    const lazy = withModuleCallers(blind, r.moduleCallers);
+    const answer = await lazy.incomingWithStatus(c.file, c.namePos, true);
+    check('lazy expansion sees the same callers', J(answer.callers.map((x) => x.label)) === J(['activate']) && answer.complete === true, J(answer));
+    const plain = path.join(repo, 'src/destructured.js');
+    check('files that need no index pass through untouched', r.moduleCallers.appliesTo(plain) === 'no-config'
+      && withModuleCallers(blind, null) === blind);
+
+    // The server's "none" is not evidence when the index could not search everything:
+    // a file over the size budget is not indexed, and could hold the caller.
+    const budget = mkRepo({
+      'src/a.js': CJS_TARGET(0),
+      'src/vendor.js': `// ${'x'.repeat(1024 * 1024)}\nmodule.exports = {};\n`,
+    });
+    const base2 = headOf(budget);
+    write(budget, { 'src/a.js': CJS_TARGET(1) });
+    const r2 = await analyze(budget, since(base2, { makeResolver: () => blind }));
+    const d = byLabel(r2, 'registerCommands');
+    check('an editor "none" with an unfinished index search is unknown', d && d.callerState === 'unknown', d && d.callerState);
+    check('and the run names the skipped file count', r2.warnings.some((w) => w.includes('1 file(s) were not indexed')), J(r2.warnings));
+  }
+
   fs.rmSync(TMP, { recursive: true, force: true });
   console.log(fail ? `\n${fail} FAILED` : '\nall local analysis checks passed');
   process.exit(fail ? 1 : 0);

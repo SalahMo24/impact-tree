@@ -40,6 +40,13 @@ function untrackedFiles(git) {
   return out ? out.split('\0').filter(Boolean) : [];
 }
 
+// Every file in the worktree git would show: tracked plus untracked-but-not-ignored.
+// `null` when git could not list them, so a caller cannot mistake it for "no files".
+function worktreeFiles(git) {
+  const out = git.tryRaw([...PLAIN, 'ls-files', '--cached', '--others', '--exclude-standard', '-z']);
+  return out == null ? null : [...new Set(out.split('\0').filter(Boolean))];
+}
+
 // New-side changed ranges from a --unified=0 hunk header. A pure deletion
 // (`+N,0`) removed lines *between* new lines N and N+1, so it is recorded as the
 // fractional marker N + 0.5: it belongs to a symbol spanning that gap, never to the
@@ -125,9 +132,10 @@ const isTestPath = (f) => /(^|\/)(tests?|__tests__|__mocks__)\//.test(String(f).
 // Test check for an absolute path, relative to the repo it lives in
 const isTestFile = (repo, abs) => isTestPath(repo ? path.relative(repo, abs) : abs);
 
-// A "project" is the nearest ancestor directory holding a tsconfig.json. That covers a
-// plain repo (tsconfig at the root), a pnpm/yarn workspace, and a components/* monorepo
-// without hardcoding any one layout.
+// A "project" is the nearest ancestor directory holding a tsconfig.json or jsconfig.json,
+// the same search the TypeScript server does. That covers a plain repo, a pnpm/yarn
+// workspace, and a components/* monorepo without hardcoding any one layout. `null`
+// means no config: the editor puts such a file in an inferred project.
 //
 // Cached per analysis, not per process: the extension host lives for hours, and a
 // package that gains a tsconfig.json must be seen without a window reload.
@@ -145,7 +153,7 @@ function projectRootOf(repoAbs, relPath) {
     }
     seen.push(dir);
     const probe = dir === '.' ? repoAbs : path.join(repoAbs, dir);
-    if (fs.existsSync(path.join(probe, 'tsconfig.json'))) {
+    if (projectConfigIn(probe)) {
       const val = dir === '.' ? '' : dir;
       seen.forEach((d) => projectCache.set(`${repoAbs}\u0000${d}`, val));
       return val;
@@ -157,10 +165,20 @@ function projectRootOf(repoAbs, relPath) {
     dir = path.posix.dirname(dir);
   }
 }
+// The config file that defines the project in `dir`. tsconfig.json wins over
+// jsconfig.json in the same directory, as it does for the TypeScript server.
+function projectConfigIn(dir) {
+  for (const name of ['tsconfig.json', 'jsconfig.json']) {
+    if (fs.existsSync(path.join(dir, name))) return name;
+  }
+  return null;
+}
 const projectLabel = (root) => (root === '' ? '(root)' : root);
+// Files with no config share one project per repository, like the editor's.
+const INFERRED_PROJECT = '(inferred)';
 
 module.exports = {
-  changedFiles, untrackedFiles, hunks, allHunks, rangeOfHeader, wholeFileRange,
+  changedFiles, untrackedFiles, worktreeFiles, projectConfigIn, INFERRED_PROJECT, hunks, allHunks, rangeOfHeader, wholeFileRange,
   isTestPath, isTestFile, isSourcePath, SOURCE_EXT,
   projectRootOf, clearProjectCache, projectLabel, rel: (repo, f) => path.relative(repo, f),
 };

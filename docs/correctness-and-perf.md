@@ -159,3 +159,42 @@ Verification:
 - New tests for each bug in `test/bug-regressions.test.js` and `test/extension-commands.test.js`. The extension tests use hand-resolved promises for every interleaving. Each test was checked to fail against the previous code or a targeted mutation of the fix.
 - `npm test` passes. With `IMPACT_TREE_BASE=HEAD~20`, the tree smoke and call-site checks (422 exact, 0 wrong) pass against T3 Code, as do both pinned PR snapshots.
 - No live editor session was run.
+
+## Projects without a config, and CommonJS (2026-10-01)
+
+The extension found no call graph on its own source: a plain CommonJS repository with no
+`tsconfig.json`.
+
+- **Projects are found the way the TypeScript server finds them.** The nearest
+  `tsconfig.json` or `jsconfig.json` defines a project (tsconfig wins in the same
+  directory; jsconfig gets the server's JavaScript defaults). A file with neither belongs
+  to one inferred project per repository, and the run says so. Before, such files were
+  dropped before analysis, with no warning.
+- **Cross-file callers TypeScript cannot report come from the syntactic index.** This
+  applies to a target file in two cases, both properties of the file:
+  - it exports through `module.exports` / `exports.x` (TypeScript's call hierarchy does
+    not follow `require()` back to a declaration);
+  - no config claims it (the editor's inferred project holds only open files).
+
+  The index covers every source file git lists in the worktree and is built only when a
+  query needs it. Its callers are merged with TypeScript's, in analysis and in the
+  editor's lazy expansion.
+- **Scope:** static `import`, and `require()` with a string literal (destructured,
+  namespace, and `require('./m').fn()`), resolved through relative paths and workspace
+  package names. Not covered: tsconfig `paths` and bundler aliases for these files. A
+  `require()` with a computed path is named in the run's warnings. Files over 1 MB, or
+  beyond 20,000 files, are not indexed; the answer is then incomplete, never "no callers".
+
+Verification:
+
+- New cases in `test/local-analysis.test.js`. Each was checked to fail with its fix
+  removed: no index, jsconfig ignored, no `require('./m').fn()` receiver, a shadowed
+  `require` parameter counted, no-config files dropped, and an unfinished index search
+  treated as complete.
+- `npm test` passes. With `IMPACT_TREE_BASE=HEAD~20` against T3 Code, the call-site check
+  (422 exact, 0 wrong) and tree smoke pass. No file there qualified for the index, so it
+  was never built.
+- On this repository's uncommitted split of `extension.js`, every split module now
+  resolves to its real caller, for example `registerCommands` → `activate`.
+- No live editor session was run. The editor path is covered by a stub resolver that
+  answers "no callers", as the server's inferred project does for closed files.

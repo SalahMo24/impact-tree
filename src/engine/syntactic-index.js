@@ -261,6 +261,11 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
             const binding = require('./lexical').bindingAt(ts, recv, recv.text);
             const typeName = binding && (typeNameOf(binding.type) || (binding.initializer && ts.isNewExpression(binding.initializer) ? binding.initializer.expression.getText(sf) : null));
             receiver = { kind: 'ident', name: recv.text, typeName, binding };
+          } else if (ts.isCallExpression(recv) && ts.isIdentifier(recv.expression) && recv.expression.text === 'require'
+              && recv.arguments.length === 1 && ts.isStringLiteralLike(recv.arguments[0])
+              && !require('./lexical').bindingAt(ts, recv.expression, 'require')) {
+            // `require('./m').fn()`: a namespace import with no binding.
+            receiver = { kind: 'require', module: recv.arguments[0].text };
           } else if (recv.kind === ts.SyntaxKind.SuperKeyword) {
             receiver = { kind: 'super', static: staticContext(node) };
           } else if (recv.kind === ts.SyntaxKind.ThisKeyword) {
@@ -478,7 +483,9 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
           : declarationFor(rec, c.name));
         const imported = c.receiver?.kind === 'ident' && rec.imports.get(c.receiver.name);
         const ns = imported && (!c.receiver.binding || imported.binding === c.receiver.binding) ? imported : null;
-        const namespaceTarget = ns?.imported === '*' ? exportTarget(resolveModule(rec.file, ns.module, { mode: ns.mode }), c.name) : null;
+        const namespaceTarget = ns?.imported === '*' ? exportTarget(resolveModule(rec.file, ns.module, { mode: ns.mode }), c.name)
+          : c.receiver?.kind === 'require' ? exportTarget(resolveModule(rec.file, c.receiver.module, { mode: ts.ModuleKind.CommonJS }), c.name)
+            : null;
         if (c.name !== target.name && bareTarget?.name !== target.name && namespaceTarget?.name !== target.name) continue;
         let ok = false;
         if (c.receiver && c.receiver.kind === 'new') {

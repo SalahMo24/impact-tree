@@ -14,7 +14,37 @@ function labelOf(item) {
 
 // Own-LanguageService resolver. Used by the CLI and by the deferred no-checkout PR mode.
 // The extension uses resolver-vscode.js instead, which reuses the editor's TS server.
-function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTsconfig = 'tsconfig.test.json', filterInherited = true, repoRoot = null, workspaceGraph = null, servicePool = null } = {}) {
+// Options the TypeScript server applies to a jsconfig.json before reading it. Without
+// them a jsconfig project compiles no `.js` file at all.
+const JSCONFIG_DEFAULTS = { allowJs: true, maxNodeModuleJsDepth: 2, allowSyntheticDefaultImports: true, skipLibCheck: true, noEmit: true };
+
+// Options for files no config claims: the TypeScript server's inferred-project defaults
+// and VS Code's `js/ts.implicitProjectConfig` (ESNext modules, ES2020, no checkJs).
+// Module resolution is set explicitly: ESNext alone would select Classic resolution,
+// which ignores package.json and node_modules.
+function inferredOptions(ts) {
+  return {
+    ...JSCONFIG_DEFAULTS,
+    allowNonTsExtensions: true,
+    checkJs: false,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Node10 || ts.ModuleResolutionKind.NodeJs,
+    target: ts.ScriptTarget.ES2020,
+  };
+}
+
+/**
+ * @param {string} componentDir Directory of the project's config file, or the repository
+ *   root for an inferred project.
+ * @param {object} [opts]
+ * @param {string} [opts.tsconfig='tsconfig.json'] Config file name in `componentDir`;
+ *   `jsconfig.json` gets the TypeScript server's JavaScript defaults.
+ * @param {string[]} [opts.inferredFiles] Absolute paths of files no config claims. When
+ *   given, `componentDir` has no config: these files form one project with
+ *   `inferredOptions`, and project references and consumers do not apply.
+ * @returns {object|null} `null` when no project could be loaded.
+ */
+function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTsconfig = 'tsconfig.test.json', filterInherited = true, repoRoot = null, workspaceGraph = null, servicePool = null, inferredFiles = null } = {}) {
   // Classified relative to the repo: an absolute path put every caller of a repo that
   // happens to live under some `.../tests/...` directory into the test bucket.
   const isTest = (f) => isTestFile(repoRoot || componentDir, f);
@@ -30,7 +60,8 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
       seen.add(cfgPath);
       const raw = ts.readConfigFile(cfgPath, ts.sys.readFile);
       if (!raw.config) return;
-      const parsed = ts.parseJsonConfigFileContent(raw.config, ts.sys, path.dirname(cfgPath), undefined, cfgPath);
+      const existing = path.basename(cfgPath) === 'jsconfig.json' ? JSCONFIG_DEFAULTS : undefined;
+      const parsed = ts.parseJsonConfigFileContent(raw.config, ts.sys, path.dirname(cfgPath), existing, cfgPath);
       if (parsed.fileNames.length || !(parsed.projectReferences || []).length) out.push(parsed);
       for (const ref of parsed.projectReferences || []) {
         const target = ts.resolveProjectReferencePath ? ts.resolveProjectReferencePath(ref) : ref.path;
@@ -40,46 +71,59 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
     walk(full);
     return out;
   };
-  const consumers = repoRoot ? (workspaceGraph || require('./workspace-projects').workspaceProjects(ts, repoRoot)).consumers(componentDir) : [];
-  const configPaths = [path.join(componentDir, tsconfig), path.join(componentDir, testTsconfig),
+  const ownConfig = path.join(componentDir, tsconfig);
+  const consumers = repoRoot && !inferredFiles
+    ? (workspaceGraph || require('./workspace-projects').workspaceProjects(ts, repoRoot)).consumers(ownConfig)
+    : [];
+  const configPaths = inferredFiles ? [] : [ownConfig, path.join(componentDir, testTsconfig),
     ...consumers.flatMap(c => [c, path.join(path.dirname(c), testTsconfig)])];
-  const loaded = new Set();
+  const projects = [];
   for (const full of configPaths) {
     if (!fs.existsSync(full)) continue;
     for (const parsed of configsFrom(full)) {
-      const configPath = parsed.options.configFilePath || full;
-      if (loaded.has(configPath)) continue;
-      loaded.add(configPath);
-      const poolKey = `${ts.version}:${configPath}`;
-      if (servicePool?.services.has(poolKey)) {
-        const svc = servicePool.services.get(poolKey);
-        services.push(svc);
-        if (path.basename(full) !== testTsconfig) prodServices.push(svc);
-        continue;
-      }
-      const files = parsed.fileNames;
-      // Defect fix: a constant version made the service cache file contents forever —
-      // correct for a batch run, wrong the moment anything edits a file.
-      const versions = new Map();
-      const versionOf = (f) => {
-        try { const m = fs.statSync(f).mtimeMs; versions.set(f, String(m)); return String(m); }
-        catch { return versions.get(f) || '0'; }
-      };
-      if (servicePool && !servicePool.registries.has(ts)) servicePool.registries.set(ts, ts.createDocumentRegistry());
-      const svc = ts.createLanguageService({
-        getScriptFileNames: () => files,
-        getScriptVersion: versionOf,
-        getScriptSnapshot: (f) => (fs.existsSync(f) ? ts.ScriptSnapshot.fromString(fs.readFileSync(f, 'utf8')) : undefined),
-        getCurrentDirectory: () => path.dirname(configPath),
-        getCompilationSettings: () => parsed.options,
-        getDefaultLibFileName: (o) => ts.getDefaultLibFilePath(o),
-        realpath: ts.sys.realpath, fileExists: ts.sys.fileExists, readFile: ts.sys.readFile, readDirectory: ts.sys.readDirectory,
-        directoryExists: ts.sys.directoryExists, getDirectories: ts.sys.getDirectories,
-      }, servicePool ? servicePool.registries.get(ts) : ts.createDocumentRegistry());
-      servicePool?.services.set(poolKey, svc);
-      services.push(svc);
-      if (path.basename(full) !== testTsconfig) prodServices.push(svc);
+      projects.push({ parsed, configPath: parsed.options.configFilePath || full, test: path.basename(full) === testTsconfig });
     }
+  }
+  if (inferredFiles && inferredFiles.length) {
+    // Not a file on disk: a key that cannot collide with a real config in the pool.
+    projects.push({
+      parsed: { options: inferredOptions(ts), fileNames: inferredFiles, projectReferences: [] },
+      configPath: path.join(componentDir, '<inferred project>'), test: false,
+    });
+  }
+  const loaded = new Set();
+  for (const { parsed, configPath, test } of projects) {
+    if (loaded.has(configPath)) continue;
+    loaded.add(configPath);
+    const poolKey = `${ts.version}:${configPath}`;
+    if (servicePool?.services.has(poolKey)) {
+      const svc = servicePool.services.get(poolKey);
+      services.push(svc);
+      if (!test) prodServices.push(svc);
+      continue;
+    }
+    const files = parsed.fileNames;
+    // Defect fix: a constant version made the service cache file contents forever —
+    // correct for a batch run, wrong the moment anything edits a file.
+    const versions = new Map();
+    const versionOf = (f) => {
+      try { const m = fs.statSync(f).mtimeMs; versions.set(f, String(m)); return String(m); }
+      catch { return versions.get(f) || '0'; }
+    };
+    if (servicePool && !servicePool.registries.has(ts)) servicePool.registries.set(ts, ts.createDocumentRegistry());
+    const svc = ts.createLanguageService({
+      getScriptFileNames: () => files,
+      getScriptVersion: versionOf,
+      getScriptSnapshot: (f) => (fs.existsSync(f) ? ts.ScriptSnapshot.fromString(fs.readFileSync(f, 'utf8')) : undefined),
+      getCurrentDirectory: () => path.dirname(configPath),
+      getCompilationSettings: () => parsed.options,
+      getDefaultLibFileName: (o) => ts.getDefaultLibFilePath(o),
+      realpath: ts.sys.realpath, fileExists: ts.sys.fileExists, readFile: ts.sys.readFile, readDirectory: ts.sys.readDirectory,
+      directoryExists: ts.sys.directoryExists, getDirectories: ts.sys.getDirectories,
+    }, servicePool ? servicePool.registries.get(ts) : ts.createDocumentRegistry());
+    servicePool?.services.set(poolKey, svc);
+    services.push(svc);
+    if (!test) prodServices.push(svc);
   }
   if (!services.length) return null;
   const inProgram = (file) => services.some((ls) => {
@@ -213,4 +257,4 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
     dispose() { if (servicePool) return; services.forEach((s) => s.dispose && s.dispose()); },
   };
 }
-module.exports = { createTsResolver };
+module.exports = { createTsResolver, inferredOptions, JSCONFIG_DEFAULTS };

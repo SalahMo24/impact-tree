@@ -130,8 +130,25 @@ const check = (name, cond, extra = '') => {
   const findingsSection = sections.find((s2) => s2.key === 'findings');
   const otherSection = sections.find((s2) => s2.key === 'other');
   const findingNodes = await provider.getChildren(findingsSection);
-  const otherNodes = await provider.getChildren(otherSection);
-  check('body-only changes are visible', otherNodes.length > 0, `${otherNodes.length} under 'Other changes'`);
+  const otherRows = await provider.getChildren(otherSection);
+  // Other changes are grouped by file and by the change that contains them; every change
+  // must still be a finding row somewhere under the section.
+  const otherNodes = [];
+  const flatten = (rows) => {
+    for (const n of rows) {
+      if (n.type === 'changeFile') flatten(n.rows);
+      else if (n.type === 'finding') { otherNodes.push(n); flatten(n.inside || []); }
+    }
+  };
+  flatten(otherRows);
+  check('body-only changes are visible', otherNodes.length > 0, `${otherNodes.length} under 'Other changes' in ${otherRows.length} row(s)`);
+  check('other changes reachable exactly once', new Set(otherNodes.map((n) => `${n.file}#${n.pos}`)).size === otherNodes.length
+    && otherNodes.length === (result.allChanged || []).filter((c) => c.isRoot !== false && !result.findings.includes(c)).length,
+    `${otherNodes.length} rows`);
+  for (const g of otherRows.filter((n) => n.type === 'changeFile')) {
+    const it = provider.getTreeItem(g);
+    if (!/^[⛔✓∅?]  \d+ changes?$/.test(String(it.description))) { check('file group row leads with its worst state', false, String(it.description)); break; }
+  }
   const topLevel = findingNodes.length + otherNodes.length;
   const rootCount = (result.allChanged || []).filter((c) => c.isRoot !== false).length;
   check('top level shows only roots', topLevel === rootCount, `${topLevel} rows, ${rootCount} roots of ${(result.allChanged || []).length} changed`);
@@ -251,7 +268,7 @@ const check = (name, cond, extra = '') => {
   check('a resolver without completion status gets a "may be missing" row',
     notices.length === 1 && /may be missing|could not be loaded/.test(notices[0].label) && expanded[expanded.length - 1] === notices[0],
     notices.map((k) => k.label).join(' | '));
-  const kids = expanded.filter((k) => k.type !== 'message');
+  const kids = expanded.filter((k) => k.type !== 'message' && k.type !== 'insideGroup');
   const callerKids = (await Promise.all(kids.map(k => k.type === 'callerFile' ? provider.getChildren(k) : [k]))).flat();
   check('caller list has no blank rows', kids.every(k => ['caller', 'callerFile'].includes(k.type) && k.label)
     && callerKids.every(k => k.type === 'caller' && k.label), `${kids.length} rows, ${callerKids.length} callers`);

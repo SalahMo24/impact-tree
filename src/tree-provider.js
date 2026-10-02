@@ -33,6 +33,10 @@ const CALL_STATE = {
   unchanged:           { token: '○', severity: 'muted', text: 'not changed' },
 };
 
+// Rows that only group changes; their review state is derived from their members.
+const GROUP_TYPES = new Set(['changeFile', 'insideGroup']);
+const SEVERITY_RANK = { stale: 0, warn: 1, ok: 2, muted: 3 };
+
 function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, decorate = null, getPhase = () => 'ready', review = null }) {
   // A finding's direct callers are already resolved, so checking it can clear them too
   // and report real progress. Deeper levels are lazy and are not counted.
@@ -42,7 +46,11 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
     if (!review) return;
     const id = idOf(n);
     if (!id) return;
-    item.checkboxState = review.isReviewed(id)
+    // A grouping row is reviewed exactly when everything in it is, so unticking one
+    // change inside it unticks the group too.
+    const members = GROUP_TYPES.has(n.type) ? childIdsOf(n) : null;
+    const on = members ? members.length > 0 && review.remaining(members) === 0 : review.isReviewed(id);
+    item.checkboxState = on
       ? vscode.TreeItemCheckboxState.Checked
       : vscode.TreeItemCheckboxState.Unchecked;
   };
@@ -172,7 +180,87 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
     }
   }
 
+  const membersOf = (n) => [n, ...(n.inside || []).flatMap(membersOf)];
+  const rankOf = (n) => SEVERITY_RANK[statusOf(n.finding).severity] ?? 3;
+  const worstStatus = (nodes) => statusOf(nodes.reduce((w, x) => (rankOf(x) < rankOf(w) ? x : w)).finding);
+  // Worst first, otherwise the incoming (score) order. Array sort is stable.
+  const byWorst = (rows) => rows
+    .map((r) => [r, Math.min(...(r.members || membersOf(r)).map(rankOf))])
+    .sort((a, b) => a[1] - b[1]).map(([r]) => r);
+
+  // Body-only changes that call no other change are what is left once call edges have
+  // nested everything they can, so the remaining structure is where they live: a change
+  // declared inside another change nests under it, and a file holding several becomes
+  // one row. Nothing is dropped: every change stays reachable, and the worst state in a
+  // group leads its row, so a ⛔ cannot hide inside a collapsed group.
+  function groupByLocation(nodes) {
+    const byFile = new Map();
+    for (const n of nodes) {
+      if (!byFile.has(n.file)) byFile.set(n.file, []);
+      byFile.get(n.file).push(n);
+    }
+    const top = [];
+    for (const n of nodes) {
+      const c = n.finding;
+      let parent = null;
+      if (c.start != null && c.end != null) {
+        for (const o of byFile.get(n.file)) {
+          const p = o.finding;
+          if (o === n || p.start == null || p.start > c.start || p.end < c.end || (p.start === c.start && p.end === c.end)) continue;
+          if (!parent || p.end - p.start < parent.finding.end - parent.finding.start) parent = o;
+        }
+      }
+      if (!parent) { top.push(n); continue; }
+      (parent.inside ||= []).push(n);
+      n.container = parent.finding.label;
+      if (n.label.startsWith(`${parent.finding.label}.`)) n.label = n.label.slice(parent.finding.label.length + 1);
+    }
+    for (const n of nodes) if (n.inside) n.inside = byWorst(n.inside);
+    if (layout() === 'flat') return byWorst(top);
+    const st = getState();
+    const rowsByFile = new Map();
+    for (const n of top) {
+      if (!rowsByFile.has(n.file)) rowsByFile.set(n.file, []);
+      rowsByFile.get(n.file).push(n);
+    }
+    const out = [];
+    for (const [file, rows] of rowsByFile) {
+      // a one-child group is pure overhead, the rule caller files and folders follow
+      if (rows.length === 1) { out.push(rows[0]); continue; }
+      const relPath = rows[0].finding.relPath;
+      const uri = uriFor(file, null);
+      mark(uri, statusOfPath(st, relPath), 'muted', relPath);
+      out.push(N({
+        type: 'changeFile', label: path.basename(relPath), relPath, file,
+        rows: byWorst(rows), members: rows.flatMap(membersOf), decorationUri: uri,
+      }));
+    }
+    return byWorst(out);
+  }
+
+  function groupItem(n) {
+    const st = worstStatus(n.members);
+    const open = st.severity === 'stale' || st.severity === 'warn'
+      ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
+    const item = n.decorationUri ? new vscode.TreeItem(n.decorationUri, open) : new vscode.TreeItem(n.label, open);
+    item.label = n.label;
+    const count = n.members.length;
+    item.description = `${st.token}  ${count} change${count === 1 ? '' : 's'}`;
+    item.iconPath = n.type === 'changeFile' ? vscode.ThemeIcon.File : new vscode.ThemeIcon('list-tree');
+    item.tooltip = new vscode.MarkdownString([
+      n.type === 'changeFile' ? `**${n.relPath}**` : `**Changed inside ${n.container}**`, '',
+      `${count} body-only change${count === 1 ? '' : 's'}${n.type === 'changeFile' ? ' in this file' : ''}, worst first:`, '',
+      ...n.members.slice(0, 12).map((m) => `- ${statusOf(m.finding).token} ${m.finding.label}`),
+      ...(count > 12 ? [`- …and ${count - 12} more`] : []),
+    ].join('\n'));
+    item.contextValue = n.type;
+    applyCheckbox(item, n);
+    if (n.type === 'changeFile') item.command = { command: 'impactTree.openFile', title: 'Open diff', arguments: [n] };
+    return item;
+  }
+
   function toItem(n) {
+    if (GROUP_TYPES.has(n.type)) return groupItem(n);
     if (n.type === 'file') {
       const uri = n.decorationUri || (n.absPath ? vscode.Uri.file(n.absPath) : null);
       const item = uri
@@ -264,6 +352,12 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
       item.description = rowDesc(st.token,
         `${st.token}  ${st.marker}${qual}${kinds.length ? '  ·  ' + kinds.join(', ') : ''}`);
       if (n.ambiguous) item.label = `${f.label}  ‹${f.component}›`;
+      // The row starts collapsed, so a worse state among the changes inside it must
+      // show on the row itself.
+      const insideSt = n.inside && n.inside.length ? worstStatus(n.inside.flatMap(membersOf)) : null;
+      if (insideSt && SEVERITY_RANK[insideSt.severity] < SEVERITY_RANK[st.severity] && SEVERITY_RANK[insideSt.severity] <= 1) {
+        item.description = `${item.description}  ·  ${insideSt.token} inside`;
+      }
       item.iconPath = rowIcon(f.label, f);
       // the row is deliberately bare, so the tooltip must carry the whole story
       item.tooltip = new vscode.MarkdownString([
@@ -438,7 +532,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
         // otherwise every such symbol shows twice, once nested and once at top level.
         const isRoot = (c) => c.isRoot !== false;
         if (node.key === 'findings') return r.findings.filter(isRoot).map(mk);
-        if (node.key === 'other') return (r.allChanged || []).filter((c) => !r.findings.includes(c)).filter(isRoot).map(mk);
+        if (node.key === 'other') return groupByLocation((r.allChanged || []).filter((c) => !r.findings.includes(c)).filter(isRoot).map(mk));
         if (node.key === 'untested') {
           if (!r.testReachComputed) {
             return [N({ type: 'message', label: 'Compute test reachability', icon: 'play',
@@ -472,6 +566,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
       }
       if (node.type === 'dir') return childrenOfDir(node.node);
       if (node.type === 'callerFile') return node.callers;
+      if (GROUP_TYPES.has(node.type)) return node.rows;
       if (node.type === 'message' || node.type === 'summary' || node.type === 'legendItem'
         || node.type === 'deleted' || node.type === 'file' || node.cycle) return [];
       const state2 = getState();
@@ -550,6 +645,14 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
           type: 'message', icon: 'warning',
           label: grouped.length ? 'More callers may be missing' : 'Callers could not be loaded',
           desc: 'refresh to retry', tooltip: incomplete,
+        }));
+      }
+      // Changes declared inside this one are not its callers, so they sit in their own
+      // row rather than among the rows that call it.
+      if (node.inside && node.inside.length) {
+        grouped.unshift(N({
+          type: 'insideGroup', label: 'Changed inside', container: node.finding.label,
+          file: node.file, relPath: node.finding.relPath, rows: node.inside, members: node.inside.flatMap(membersOf),
         }));
       }
       return grouped;
