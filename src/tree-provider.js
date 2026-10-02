@@ -79,6 +79,22 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
     const st = getState();
     return (st && st.fileListLayout) || 'tree';
   };
+  // Rows for one directory's children. `prefix` is the repo-relative path of `node`.
+  const emitDirs = (node, prefix, segs) => {
+    const out = [];
+    for (const [name, child] of node.dirs) {
+      const nextSegs = [...segs, name];
+      const nextPrefix = prefix ? `${prefix}/${name}` : name;
+      // compact: a directory with exactly one subdirectory and no files merges down
+      if (child.dirs.size === 1 && child.files.length === 0) {
+        out.push(...emitDirs({ dirs: child.dirs, files: [] }, nextPrefix, nextSegs));
+        continue;
+      }
+      out.push({ type: 'dir', label: nextSegs.join('/'), dirPath: nextPrefix, node: child });
+    }
+    out.sort((a, b) => a.label.localeCompare(b.label));
+    return out.concat(node.files.sort((a, b) => a.label.localeCompare(b.label)));
+  };
   // Collapse single-child chains so `src/data/application-state` is one row, as the
   // explorer's compact folders do.
   const buildFileTree = (leaves) => {
@@ -93,36 +109,10 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
       }
       cur.files.push({ ...leaf, label: fileName });
     }
-    const emit = (node, prefix, segs) => {
-      const out = [];
-      for (const [name, child] of node.dirs) {
-        const nextSegs = [...segs, name];
-        const nextPrefix = prefix ? `${prefix}/${name}` : name;
-        // compact: a directory with exactly one subdirectory and no files merges down
-        if (child.dirs.size === 1 && child.files.length === 0) {
-          out.push(...emit({ dirs: child.dirs, files: [] }, nextPrefix, nextSegs));
-          continue;
-        }
-        out.push({ type: 'dir', label: nextSegs.join('/'), dirPath: nextPrefix, node: child });
-      }
-      out.sort((a, b) => a.label.localeCompare(b.label));
-      return out.concat(node.files.sort((a, b) => a.label.localeCompare(b.label)));
-    };
-    return emit(root, '', []);
+    return emitDirs(root, '', []);
   };
-  const childrenOfDir = (node) => {
-    const out = [];
-    for (const [name, child] of node.dirs) {
-      if (child.dirs.size === 1 && child.files.length === 0) {
-        const only = [...child.dirs.keys()][0];
-        out.push({ type: 'dir', label: `${name}/${only}`, node: child.dirs.get(only) });
-        continue;
-      }
-      out.push({ type: 'dir', label: name, node: child });
-    }
-    out.sort((a, b) => a.label.localeCompare(b.label));
-    return out.concat(node.files.sort((a, b) => a.label.localeCompare(b.label)));
-  };
+  // Expanding a folder compacts its subfolders exactly as the top level does.
+  const childrenOfDir = (node, prefix) => emitDirs(node, prefix, []);
   const statusOfPath = (st, relPath) => {
     const table = st && st.result && st.result.fileStatus;
     if (!table || relPath == null) return undefined;
@@ -564,7 +554,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
       if (node.type === 'legend') {
         return LEGEND.map(([icon, label, desc]) => N({ type: 'legendItem', icon, label, desc }));
       }
-      if (node.type === 'dir') return childrenOfDir(node.node);
+      if (node.type === 'dir') return childrenOfDir(node.node, node.dirPath);
       if (node.type === 'callerFile') return node.callers;
       if (GROUP_TYPES.has(node.type)) return node.rows;
       if (node.type === 'message' || node.type === 'summary' || node.type === 'legendItem'
@@ -624,7 +614,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
       for (const [rel, rows] of byFile) {
         if (rows.length === 1) { grouped.push(rows[0]); continue; }
         // worst state wins, so a group never looks calmer than its contents
-        const rank = (x) => (x.callState === 'unchanged' ? 2 : x.callState === 'changed-elsewhere' ? 1 : 0);
+        const rank = (x) => ({ 'changed-elsewhere': 3, unchanged: 2, 'updated-at-call': 1 })[x.callState] || 0;
         const worst = rows.slice().sort((a, b) => rank(b) - rank(a))[0];
         grouped.push(N({
           type: 'callerFile', reviewParent: idOf(node),

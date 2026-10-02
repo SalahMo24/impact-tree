@@ -787,3 +787,171 @@ test('local review identities reuse the base texts the analysis loaded', async (
     fs.rmSync(repo, { recursive: true, force: true });
   }
 });
+
+// ---- impactTree.concurrency: an unusable value must not stop analysis ------------------
+const CONCURRENCY_CASES = [
+  [0, 'invalid'], [-1, 'invalid'], [NaN, 'invalid'], [0.5, 'invalid'], ['abc', 'invalid'], [Infinity, 'invalid'],
+  [null, 'omitted'], [undefined, 'omitted'], [1, 'ok'], [2.7, 'ok'], [32, 'ok'], [33, 'clamped'], [1000, 'clamped'],
+];
+const concurrencyWarnings = (r) => r.warnings.filter((w) => w.includes('impactTree.concurrency'));
+const assertConcurrencyWarnings = (r, kind, value) => {
+  const found = concurrencyWarnings(r);
+  if (kind === 'invalid' || kind === 'clamped') {
+    assert.equal(found.length, 1, `${String(value)}: ${JSON.stringify(r.warnings)}`);
+    assert.ok(found[0].includes(String(value)), `names the bad value: ${found[0]}`);
+  } else assert.deepEqual(found, [], String(value));
+};
+
+test('remote analysis resolves every symbol whatever impactTree.concurrency holds', async () => {
+  const pr = { number: 2, headSha: 'head', mergeBaseSha: 'base' };
+  const texts = {
+    'lib/target.ts@base': 'export function target() { return 0; }\n',
+    'lib/target.ts@head': 'export function target(required: string) { return 1; }\n',
+    'lib/use.ts@head': "import { target } from './target'; export function caller() { target(); }\n",
+    'lib/use.ts@base': "import { target } from './target'; export function caller() { target(); }\n",
+  };
+  const gh = {
+    listPullRequestFiles: async () => ({ total: 2, files: ['lib/target.ts', 'lib/use.ts'].map((p) => ({ path: p, oldPath: p, status: 'modified', patch: '@@ -1 +1 @@\n-old\n+new' })) }),
+    fileAtRef: async (_, p, ref) => texts[`${p}@${ref}`] ?? null,
+  };
+  for (const [value, kind] of CONCURRENCY_CASES) {
+    clearVirtualText();
+    const r = await analyzeRemote({ ts, gh, slug: {}, pr, repoRoot: root, concurrency: value });
+    assert.deepEqual(r.allChanged.find((c) => c.label === 'target').callers.map((c) => c.label), ['caller'], String(value));
+    assertConcurrencyWarnings(r, kind, value);
+  }
+  clearVirtualText();
+});
+
+test('local analysis resolves every symbol whatever impactTree.concurrency holds', async () => {
+  const { analyze } = require('../src/engine/analyze');
+  const { execFileSync } = require('child_process');
+  const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-concurrency-')));
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+  try {
+    const write = (rel, text) => { fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true }); fs.writeFileSync(path.join(repo, rel), text); };
+    git('init', '-q', '--initial-branch=main'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.com');
+    write('tsconfig.json', JSON.stringify({ include: ['src'] }));
+    write('.gitignore', 'node_modules\n');
+    write('src/a.ts', 'export function target(n: number) { return n; }\n');
+    write('src/b.ts', 'import { target } from "./a";\nexport function caller() { return target(1); }\n');
+    git('add', '-A'); git('commit', '-qm', 'base');
+    fs.mkdirSync(path.join(repo, 'node_modules'));
+    fs.symlinkSync(path.dirname(require.resolve('typescript/package.json')), path.join(repo, 'node_modules', 'typescript'));
+    write('src/a.ts', 'export function target(n: number, m = 0) { return n + m; }\n');
+    for (const [value, kind] of CONCURRENCY_CASES) {
+      const r = await analyze(repo, { mode: 'working', skipForest: true, deferTestReach: true, concurrency: value });
+      const target = r.allChanged.find((c) => c.label === 'target');
+      assert.equal(target.callerState, 'resolved', String(value));
+      assert.deepEqual(target.callers.map((c) => c.label), ['caller'], String(value));
+      assertConcurrencyWarnings(r, kind, value);
+    }
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('mapLimit rejects a limit that is not a positive safe integer', async () => {
+  const { mapLimit } = require('../src/engine/concurrency');
+  for (const limit of [0, -1, NaN, 0.5, 1.5, Infinity, '2', null, undefined]) {
+    await assert.rejects(mapLimit([1], limit, async (x) => x), RangeError, String(limit));
+  }
+  assert.deepEqual(await mapLimit([1, 2, 3], 2, async (x) => x * 2), [2, 4, 6]);
+  assert.deepEqual(await mapLimit([], 1, async (x) => x), []);
+});
+
+test('package.json bounds impactTree.concurrency to 1..32', () => {
+  const setting = require('../package.json').contributes.configuration.properties['impactTree.concurrency'];
+  assert.equal(setting.minimum, 1); assert.equal(setting.maximum, 32);
+});
+
+// ---- TypeScript resolver: a query that threw is not an answer --------------------------
+test('a failed TypeScript query is unknown, never cached, and never "no callers"', async () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-ts-fail-')));
+  try {
+    const files = {
+      'tsconfig.json': '{"include":["*.ts"]}',
+      'a.ts': 'export function target() {}\nexport function lonely() {}\nexport function viaValue() {}\n',
+      'b.ts': "import { target, viaValue } from './a'; export function caller() { target(); }\nexport function pass() { [1].map(viaValue); }\n",
+    };
+    for (const [f, text] of Object.entries(files)) fs.writeFileSync(path.join(dir, f), text);
+    const file = path.join(dir, 'a.ts');
+    const at = (name) => files['a.ts'].indexOf(`function ${name}`) + 'function '.length;
+
+    // The real compiler, with failures injected by wrapping the services it creates.
+    const failing = new Set();
+    const flaky = { ...ts, createLanguageService: (...a) => {
+      const ls = ts.createLanguageService(...a);
+      for (const method of ['provideCallHierarchyIncomingCalls', 'findReferences']) {
+        const real = ls[method].bind(ls);
+        ls[method] = (...args) => { if (failing.has(method)) throw new Error(`${method} failed`); return real(...args); };
+      }
+      return ls;
+    } };
+    const resolver = require('../src/engine/resolver-ts').createTsResolver(flaky, dir, { filterInherited: false });
+
+    failing.add('provideCallHierarchyIncomingCalls');
+    for (const name of ['target', 'lonely']) {
+      const r = await resolver.callerState(file, at(name));
+      assert.equal(r.state, 'unknown', name); assert.equal(r.reason, 'query-failed', name); assert.deepEqual(r.callers, []);
+    }
+    assert.deepEqual(await resolver.incoming(file, at('target')), [], 'incoming still returns a plain array');
+    failing.clear();
+    // the failures above were not cached: the same questions now get real answers
+    assert.deepEqual((await resolver.callerState(file, at('target'))).callers.map((c) => c.label), ['caller']);
+    assert.equal((await resolver.callerState(file, at('lonely'))).state, 'none', 'a genuine empty answer is still none');
+
+    // an empty hierarchy plus a failed findReferences is not "none" either, and also retries
+    const fresh = require('../src/engine/resolver-ts').createTsResolver(flaky, dir, { filterInherited: false });
+    failing.add('findReferences');
+    const refsDown = await fresh.callerState(file, at('lonely'));
+    assert.equal(refsDown.state, 'unknown'); assert.equal(refsDown.reason, 'query-failed');
+    failing.clear();
+    assert.equal((await fresh.callerState(file, at('lonely'))).state, 'none');
+    assert.equal((await fresh.callerState(file, at('viaValue'))).state, 'unknown', 'passed as a value: referenced, not called');
+    resolver.dispose(); fresh.dispose();
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ---- readiness: a failed warm-up must be retried, not remembered ---------------------
+test('ensureReady retries after a failed prepare, shares a running one, and keeps a successful one', async () => {
+  const analyzeModule = require('../src/engine/analyze');
+  const resolverPath = require.resolve('../src/resolver-vscode');
+  const realLoad = analyzeModule.loadTypeScript, realResolver = require.cache[resolverPath];
+  let creations = 0, failNext = true;
+  analyzeModule.loadTypeScript = () => ts;
+  require.cache[resolverPath] = { id: resolverPath, filename: resolverPath, loaded: true, exports: {
+    createVscodeResolver: () => {
+      creations++;
+      if (failNext) { failNext = false; throw new Error('resolver exploded'); }
+      return { isWarm: () => true, warmUp: async () => true };
+    },
+  } };
+  try {
+    const { createReadiness } = require('../src/readiness');
+    const vscodeStub = { workspace: { getConfiguration: () => ({ get: (_, fallback) => fallback }) } };
+    const logs = [];
+    const session = { repoRoot: () => os.tmpdir(), phase: 'idle', resolver: null, readyPromise: null };
+    const { ensureReady } = createReadiness(vscodeStub, session, { log: (m) => logs.push(m) });
+
+    assert.equal(await ensureReady(), false, 'the failed prepare reports failure');
+    assert.equal(session.resolver, null);
+    assert.equal(session.phase, 'ready', 'the user can still proceed');
+    assert.ok(logs.some((m) => m.includes('resolver exploded')));
+
+    // the next call prepares afresh; two calls during that prepare share one promise
+    const first = ensureReady();
+    const second = ensureReady();
+    assert.equal(first, second, 'concurrent callers share the running promise');
+    assert.equal(await first, true);
+    assert.ok(session.resolver, 'the retry created the resolver');
+    assert.equal(creations, 2, 'one failed prepare plus exactly one retry');
+
+    // success is cached: a further call neither re-runs nor builds another resolver
+    assert.equal(await ensureReady(), true);
+    assert.equal(creations, 2);
+  } finally {
+    analyzeModule.loadTypeScript = realLoad;
+    if (realResolver) require.cache[resolverPath] = realResolver; else delete require.cache[resolverPath];
+  }
+});

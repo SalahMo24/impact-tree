@@ -219,6 +219,8 @@
         "impactTree.concurrency": {
           "type": "number",
           "default": 8,
+          "minimum": 1,
+          "maximum": 32,
           "description": "How many symbols to resolve callers for in parallel."
         },
         "impactTree.iconMode": {

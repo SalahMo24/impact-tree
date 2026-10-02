@@ -166,6 +166,8 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
   // Each query is a project-wide findReferences, so cost scales with program size and
   // with how common the symbol name is (`execute`, `write`). Skipping the test program
   // on deep walks roughly halves it; the extension avoids this entirely by being lazy.
+  // Returns { callers, failed }. `failed` means a service threw, so `callers` may be
+  // short; such an answer is never cached, and a later call asks again.
   function incomingSync(file, pos, withTests = true) {
     const key = `${withTests ? 'A' : 'P'}${file}#${pos}`;
     if (cache.has(key)) { stats.cacheHits++; return cache.get(key); }
@@ -173,9 +175,10 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
     stats.incomingCalls++;
     const seen = new Map();
     const use = withTests ? services : prodServices;
+    let failed = false;
     for (const ls of use) {
       let calls = [];
-      try { calls = ls.provideCallHierarchyIncomingCalls(file, pos) || []; } catch { calls = []; }
+      try { calls = ls.provideCallHierarchyIncomingCalls(file, pos) || []; } catch { failed = true; calls = []; }
       for (const c of calls) {
         const id = `${c.from.file}#${c.from.selectionSpan.start}`;
         if (!seen.has(id)) seen.set(id, {
@@ -197,37 +200,44 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
       out = kept;
     }
     stats.incomingMs += Date.now() - t;
-    cache.set(key, out);
-    return out;
+    const answer = { callers: out, failed };
+    if (!failed) cache.set(key, answer);
+    return answer;
   }
 
   // Defect fix: a function passed as a value (`dataSource.transaction(fn)`) is referenced
   // but never *called*, so call hierarchy returns nothing. That is unknown, not uncovered.
+  // `failed` means a service threw, so `count` may be short.
   function referenceCount(file, pos) {
     const t = Date.now(); stats.refCalls++;
-    let n = 0;
+    let count = 0;
+    let failed = false;
     for (const ls of services) {
       let refs = [];
-      try { refs = ls.findReferences(file, pos) || []; } catch { refs = []; }
-      for (const r of refs) n += r.references.filter((x) => !x.isDefinition).length;
+      try { refs = ls.findReferences(file, pos) || []; } catch { failed = true; refs = []; }
+      for (const r of refs) count += r.references.filter((x) => !x.isDefinition).length;
     }
     stats.refMs += Date.now() - t;
-    return n;
+    return { count, failed };
   }
 
   const cqrsCache = new Map();
+  // Returns { callers, failed }; `failed` is true when any underlying query threw.
   async function withCqrs(file, pos, withTests) {
     // for a handler's execute(), the interface-derived callers are all false positives
     const handler = cqrs.isHandlerExecute(file, pos);
-    const base = handler ? [] : incomingSync(file, pos, withTests);
+    const { callers: base, failed: hierarchyFailed } = handler ? { callers: [], failed: false } : incomingSync(file, pos, withTests);
     const key = `${file}#${pos}`;
     let extra = cqrsCache.get(key);
+    let failed = hierarchyFailed;
     if (extra === undefined) {
-      try { extra = await cqrs.extraCallers(file, pos); } catch { extra = []; }
-      cqrsCache.set(key, extra);
-      stats.cqrsEdges += extra.length;
+      try {
+        extra = await cqrs.extraCallers(file, pos);
+        cqrsCache.set(key, extra);
+        stats.cqrsEdges += extra.length;
+      } catch { extra = []; failed = true; }
     }
-    if (!extra.length) return base;
+    if (!extra.length) return { callers: base, failed };
     if (handler) stats.cqrsSuppressed = (stats.cqrsSuppressed || 0) + 1;
     const seen = new Set(base.map((c) => `${c.file}#${c.pos}`));
     const merged = base.slice();
@@ -236,21 +246,25 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
       if (!withTests && e.test) continue;
       merged.push(e);
     }
-    return merged;
+    return { callers: merged, failed };
   }
 
   return {
     kind: 'typescript-languageservice',
-    async incoming(file, pos, withTests = true) { return withCqrs(file, pos, withTests); },
+    async incoming(file, pos, withTests = true) { return (await withCqrs(file, pos, withTests)).callers; },
     async callerState(file, pos, { isConstructor = false } = {}) {
-      const callers = await withCqrs(file, pos, true);
+      const { callers, failed } = await withCqrs(file, pos, true);
       if (callers.length) return { state: 'resolved', callers };
       // No tsconfig includes this file, so no query could have found a caller. "none"
       // there claimed a function nobody calls; the truth is we did not look.
       if (!inProgram(file)) return { state: 'unknown', reason: 'not-in-program', callers: [] };
+      // A query that threw saw nothing; "no callers" would be a claim we cannot back.
+      if (failed) return { state: 'unknown', reason: 'query-failed', callers: [] };
       // A constructor with no `new X()` site is instantiated by the DI container.
       if (isConstructor) return { state: 'di', callers: [] };
-      return { state: referenceCount(file, pos) > 0 ? 'unknown' : 'none', callers: [] };
+      const refs = referenceCount(file, pos);
+      if (refs.failed && refs.count === 0) return { state: 'unknown', reason: 'query-failed', callers: [] };
+      return { state: refs.count > 0 ? 'unknown' : 'none', callers: [] };
     },
     stats: () => stats,
     program: () => services[0].getProgram(),

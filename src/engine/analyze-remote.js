@@ -20,19 +20,7 @@ const { hunkRangesFromPatch } = require('./patch');
 const { isSourcePath, isTestPath, isTestFile } = require('./diff');
 const { seedRoots, nestedIds } = require('./forest');
 const { registerVirtualText, offsetToPosition } = require('./textpos');
-
-async function mapLimit(items, limit, fn) {
-  const out = new Array(items.length);
-  let i = 0;
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
-    for (;;) {
-      const idx = i++;
-      if (idx >= items.length) return;
-      out[idx] = await fn(items[idx], idx);
-    }
-  }));
-  return out;
-}
+const { mapLimit, validateConcurrency } = require('./concurrency');
 
 // GitHub's file status is not the engine's. `removed` is a deletion, `copied` is a
 // new path, `changed` is a mode-only edit. Anything else (including `unchanged`)
@@ -46,10 +34,11 @@ const normaliseStatus = (s) => {
 
 async function analyzeRemote({
   ts, gh, slug, pr, repoRoot,
-  maxFiles = 300, concurrency = 8, onProgress = () => {}, trace = () => {},
+  maxFiles = 300, concurrency, onProgress = () => {}, trace = () => {},
 }) {
   if (!ts) throw new Error('Tier A needs TypeScript to parse the PR files');
   const warnings = [];
+  const workers = validateConcurrency(concurrency, warnings);
   if (gh.getPullRequest) pr = await gh.getPullRequest(slug, pr.number);
   const mergeBaseSha = pr.mergeBaseSha || (gh.mergeBase && await gh.mergeBase(slug, pr.baseSha, pr.headSha));
   if (!mergeBaseSha) throw new Error('Cannot preview this PR without its merge base');
@@ -103,7 +92,7 @@ async function analyzeRemote({
     }
   };
 
-  const contents = await mapLimit(sourceFiles, concurrency, async (f) => {
+  const contents = await mapLimit(sourceFiles, workers, async (f) => {
     const status = normaliseStatus(f.status);
     const [headText, baseText] = await Promise.all([
       status === 'deleted' ? null : grab('head', f.path, pr.headSha),
