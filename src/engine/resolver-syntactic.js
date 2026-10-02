@@ -14,6 +14,7 @@ function createSyntacticResolver(idx, { isTestPath = () => false, hints = new Ma
 
   // `complete: false` means the symbol could not be located in the index, so no caller
   // search ran for it. That is not the same answer as a search that found nothing.
+  /** @returns {Promise<import('./caller-contract').CallerAnswer>} */
   async function incomingWithStatus(file, pos, withTests = true) {
     const key = `${withTests ? 'A' : 'P'}${file}#${pos}`;
     if (cache.has(key)) { stats.cacheHits++; return { callers: cache.get(key), complete: true }; }
@@ -50,12 +51,15 @@ function createSyntacticResolver(idx, { isTestPath = () => false, hints = new Ma
     kind: 'syntactic-pr-files',
     incoming,
     incomingWithStatus,
+    /** @returns {Promise<import('./caller-contract').CallerState>} */
     async callerState(file, pos, { isConstructor = false } = {}) {
-      const callers = await incoming(file, pos);
-      if (callers.length) return { state: 'resolved', callers };
+      const { callers, ...coverage } = await incomingWithStatus(file, pos);
+      if (callers.length) return { state: 'resolved', callers, ...coverage };
       // Outside a checkout we cannot distinguish "nothing calls this" from "the
-      // caller is in a file the PR does not touch", so never claim the former.
-      return { state: isConstructor ? 'di' : 'unknown', callers: [] };
+      // caller is in a file the PR does not touch", so never claim the former: a
+      // finished search of the PR files is still an incomplete one.
+      const scoped = coverage.complete ? { complete: false, reason: 'pr-files-only' } : coverage;
+      return { state: isConstructor ? 'di' : 'unknown', callers: [], ...scoped };
     },
     stats: () => ({ ...stats, indexedFiles: idx.size }),
     invalidate() { cache.clear(); },

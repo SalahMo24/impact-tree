@@ -3,6 +3,8 @@ const path = require('path');
 const { changedSymbolKeys } = require('./engine/changed-symbols');
 const { createReadiness } = require('./readiness');
 const { withModuleCallers } = require('./engine/module-callers');
+const { classifyCallSiteUpdates } = require('./engine/call-sites');
+const { readLineOfOffset } = require('./engine/textpos');
 
 /**
  * Mutable review session for one editor window: which analysis is current, whether a
@@ -42,16 +44,14 @@ function createSession(vscode, { log, review }) {
 
   const isTierA = () => !!(session.state && session.state.result && session.state.result.tierA);
 
-  function callSiteUpdatedFor(result, repo) {
-    const { offsetToPosition } = require('./engine/textpos');
-    return (file, sites) => {
-      const ranges = (result.changedRanges || {})[path.relative(repo, file).split(path.sep).join('/')];
-      if (!ranges || !ranges.length || !sites || !sites.length) return false;
-      return sites.some((cs) => {
-        const a = offsetToPosition(file, cs.start), b = offsetToPosition(file, cs.end);
-        return a && b && ranges.some(([lo, hi]) => a.line + 1 <= hi && b.line + 1 >= lo);
-      });
-    };
+  // Classifies the call sites a caller row has in one file, as the pipelines did when the
+  // result was built. Reads line positions through textpos, so it touches disk.
+  function classifyCallSiteUpdatesFor(result, repo) {
+    return (file, callSites) => classifyCallSiteUpdates({
+      callSites,
+      changedLineRanges: (result.changedRanges || {})[path.relative(repo, file).split(path.sep).join('/')],
+      lineOfOffset: (offset) => readLineOfOffset(file, offset),
+    });
   }
 
   function viewStateFromResult(result, repo, extra = {}) {
@@ -60,7 +60,7 @@ function createSession(vscode, { log, review }) {
       ...session.state, result,
       changedKeys: changedSymbolKeys(result.allChanged),
       changedPaths: new Set(result.changedPaths || []),
-      callSiteUpdated: callSiteUpdatedFor(result, repo),
+      classifyCallSiteUpdates: classifyCallSiteUpdatesFor(result, repo),
       rel: (f) => path.relative(repo, f).split(path.sep).join('/'),
       absPath: (p2) => path.join(repo, p2),
       iconMode: cfg.get('iconMode', 'file'),
@@ -107,7 +107,7 @@ function createSession(vscode, { log, review }) {
       const st = session.resolver.stats();
       const wall = (Date.now() - tStart) / 1000;
       if (st.warmUpMs) log(`  server warm-up ${(st.warmUpMs / 1000).toFixed(1)}s (paid once per window)`);
-      log(`  WALL ${wall.toFixed(1)}s   (query time sums to ${(st.incomingMs / 1000).toFixed(1)}s across ${cfg.get('concurrency', 8)} workers — overlapping, not additive)`);
+      log(`  WALL ${wall.toFixed(1)}s   (query time sums to ${(st.incomingMs / 1000).toFixed(1)}s across ${result.concurrency} workers — overlapping, not additive)`);
       log(`  queries: ${st.incomingCalls}  min ${st.minMs}ms / median ${st.medianMs}ms / max ${st.maxMs}ms`);
       log(`  ${st.cacheHits} cache hits · ${st.warmupRetries} warmup retries · ${st.skipped} unresolved · ${st.resolvedEmpty} resolved-but-empty`);
       log(`  cqrs: +${st.cqrsEdges} edges / ${st.cqrsSuppressed} handlers de-noised`);

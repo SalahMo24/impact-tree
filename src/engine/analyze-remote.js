@@ -19,7 +19,8 @@ const { createSyntacticResolver } = require('./resolver-syntactic');
 const { hunkRangesFromPatch } = require('./patch');
 const { isSourcePath, isTestPath, isTestFile } = require('./diff');
 const { seedRoots, nestedIds } = require('./forest');
-const { registerVirtualText, offsetToPosition } = require('./textpos');
+const { registerVirtualText, readLineOfOffset } = require('./textpos');
+const { classifyCallSiteUpdates, classifyCallerUpdateState } = require('./call-sites');
 const { mapLimit, validateConcurrency } = require('./concurrency');
 
 // GitHub's file status is not the engine's. `removed` is a deletion, `copied` is a
@@ -68,7 +69,7 @@ async function analyzeRemote({
     .map((f) => ({ path: f.path, status: normaliseStatus(f.status), contentId: listedContentId(f) }));
 
   if (!sourceFiles.length) {
-    return emptyResult(pr, listed, otherFiles, warnings);
+    return emptyResult(pr, listed, otherFiles, warnings, workers);
   }
 
   // ---- fetch head and base text -------------------------------------------------
@@ -165,28 +166,24 @@ async function analyzeRemote({
   const resolver = createSyntacticResolver(idx, { isTestPath: (file) => isTestFile(repoRoot, file), hints });
 
   const changedKeys = changedSymbolKeys(changed);
-  const callSiteUpdated = (callerFile, callSites) => {
-    const rel = path.relative(repoRoot, callerFile).split(path.sep).join('/');
-    const ranges = changedRanges[rel];
-    if (!ranges || !ranges.length || !callSites || !callSites.length) return false;
-    return callSites.some((cs) => {
-      const a = offsetToPosition(callerFile, cs.start);
-      const b = offsetToPosition(callerFile, cs.end);
-      if (!a || !b) return false;
-      return ranges.some(([lo, hi]) => a.line + 1 <= hi && b.line + 1 >= lo);
-    });
-  };
+  const relOf = (file) => path.relative(repoRoot, file).split(path.sep).join('/');
 
   onProgress({ phase: 'resolve', message: 'resolving callers', done: 0, total: changed.length });
   let done = 0;
   for (const c of changed) {
     const cs = await resolver.callerState(c.file, c.namePos, { isConstructor: c.isConstructor });
     c.callerState = cs.state;
+    c.callersComplete = cs.complete === true;
+    c.callersIncompleteReason = c.callersComplete ? null : cs.reason ?? null;
     c.callers = cs.callers;
     for (const x of c.callers) {
-      const atCall = callSiteUpdated(x.file, x.callSites);
-      const symChanged = changedKeys.has(`${x.file}#${x.pos}`);
-      x.callState = atCall ? 'updated-at-call' : symChanged ? 'changed-elsewhere' : 'unchanged';
+      x.callSiteUpdates = classifyCallSiteUpdates({
+        callSites: x.callSites, changedLineRanges: changedRanges[relOf(x.file)],
+        lineOfOffset: (offset) => readLineOfOffset(x.file, offset),
+      });
+      x.callState = classifyCallerUpdateState({
+        callSiteUpdates: x.callSiteUpdates, callerChanged: changedKeys.has(`${x.file}#${x.pos}`),
+      });
     }
     c.stale = c.callers.filter((x) => !x.test && x.callState !== 'updated-at-call');
     c.staleCallers = c.stale.length;
@@ -234,6 +231,7 @@ async function analyzeRemote({
     dirtyCount: 0,
     base: { ref: pr.baseRef, sha: pr.mergeBaseSha },
     warnings,
+    concurrency: workers,
     changedFileCount: usable.length,
     changedPaths: usable.map((f) => f.path),
     fileStatus: Object.fromEntries(listed.files.map((f) => [f.path, normaliseStatus(f.status)])),
@@ -256,13 +254,13 @@ function listedContentId(f) {
   return parts.length ? parts.join('|') : null;
 }
 
-function emptyResult(pr, listed, otherFiles, warnings) {
+function emptyResult(pr, listed, otherFiles, warnings, concurrency) {
   return {
     tierA: true, pr, texts: new Map(), coverage: 'pr-files-only', prNumber: pr.number, headSha: pr.headSha,
     allChanged: [], nestedCount: 0, otherFiles,
     mode: 'pr-preview', requestedMode: 'pr-preview', modeDesc: `PR #${pr.number} without a checkout`,
     dirtyCount: 0, base: { ref: pr.baseRef, sha: pr.mergeBaseSha },
-    warnings: warnings.concat('no analysable source files in this pull request'),
+    warnings: warnings.concat('no analysable source files in this pull request'), concurrency,
     changedFileCount: 0, changedPaths: [],
     fileStatus: Object.fromEntries(listed.files.map((f) => [f.path, normaliseStatus(f.status)])),
     changedRanges: {},

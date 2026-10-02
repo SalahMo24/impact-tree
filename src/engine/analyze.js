@@ -12,7 +12,8 @@ const { changedSymbolsIn, changedSymbolKeys } = require('./changed-symbols');
 const { createTsResolver } = require('./resolver-ts');
 const { createModuleCallers, withModuleCallers } = require('./module-callers');
 const { seedRoots, nestedIds, blastRadius, buildTree } = require('./forest');
-const { offsetToPosition, clearVirtualText } = require('./textpos');
+const { readLineOfOffset, clearVirtualText } = require('./textpos');
+const { classifyCallSiteUpdates, classifyCallerUpdateState } = require('./call-sites');
 const { mapLimit, validateConcurrency } = require('./concurrency');
 
 // Prefer the project's own TypeScript so analysis matches what the editor sees; fall
@@ -214,8 +215,10 @@ function withoutUntrackedCallers(resolver, isUntracked, onDropped) {
       const kept = cs.callers.filter(keep);
       if (kept.length === cs.callers.length) return cs;
       onDropped(cs.callers.length - kept.length);
-      // Every caller the query found was untracked: nothing calls it within the commit.
-      return { ...cs, callers: kept, state: kept.length || cs.state !== 'resolved' ? cs.state : 'none' };
+      if (kept.length || cs.state !== 'resolved') return { ...cs, callers: kept };
+      // Every caller found was untracked. Only a finished search shows nothing in the
+      // commit calls it; an unfinished one may have missed a committed caller.
+      return { ...cs, callers: kept, state: cs.complete ? 'none' : 'unknown' };
     },
   };
   if (resolver.incomingWithStatus) {
@@ -292,17 +295,24 @@ function inferredProjectFiles(repo, git) {
  *   `callerState` is `'unknown'` or `'di'`, and `'uncovered'` otherwise.
  *   A thrown `incoming` query during that walk is discarded, so `'uncovered'`
  *   does not prove the walk finished.
+ * - `callersComplete` `true` when the caller search finished, `false` when it was cut
+ *   short and `callers` may be missing some; `callersIncompleteReason` says why, or is
+ *   `null` when complete. A `'resolved'` symbol can be incomplete.
  * - `callState` on each caller: `'updated-at-call'` when a hunk covers the call
  *   site, `'changed-elsewhere'` when that caller symbol also changed, and
- *   `'unchanged'` otherwise. `staleCallers` counts non-test callers that are not
- *   `'updated-at-call'`.
+ *   `'unchanged'` otherwise. A caller with an edited call site and an untouched or
+ *   unlocatable one is not `'updated-at-call'`; its `callSiteUpdates` holds the
+ *   `{updated, untouched, unknown}` sites behind the label. `staleCallers` counts
+ *   non-test callers that are not `'updated-at-call'`.
  *
  * `depth` bounds only the test-reach walk, with the changed symbol at depth 0.
  * Blast radius uses `blastDepth`. The rendered forest uses `treeDepth` and
  * `maxChildren`, and is omitted when `skipForest` is set. `changedRanges` values
  * are 1-based inclusive `[startLine, endLine]` pairs on the new side of the diff,
- * keyed by repository-relative path. `baseTexts` holds the base-side text of every changed
- * source path that existed at the base, keyed by its base path (`basePaths` maps a rename).
+ * keyed by repository-relative path. A pure deletion is the gap marker
+ * `[N + 0.5, N + 0.5]`, between lines N and N + 1, so bounds need not be integers.
+ * `baseTexts` holds the base-side text of every changed source path that existed at
+ * the base, keyed by its base path (`basePaths` maps a rename).
  *
  * @param {string} repo Absolute filesystem path of the repository root.
  * @param {object} [opts]
@@ -333,6 +343,7 @@ function inferredProjectFiles(repo, git) {
  *   modeDesc: string,
  *   base: {ref: string, sha: string, notes?: string[]},
  *   warnings: string[],
+ *   concurrency: number,
  *   dirtyCount: number,
  *   changedFileCount: number,
  *   changedPaths: string[],
@@ -354,6 +365,7 @@ function inferredProjectFiles(repo, git) {
  * }>} `findings` are changed symbols whose diff is more than a body edit.
  *   `untested` is the `'uncovered'` subset. `unknownCallers` is the `'unknown'` subset.
  *   `testReachComputed` is false only when every symbol was left `'not-computed'`.
+ *   `concurrency` is the worker count actually used after validating `opts.concurrency`.
  * @throws {Error} Unknown `mode`.
  * @throws {Error} `checkpoint` mode without `opts.checkpoint`, or a checkpoint that is
  *   not a commit (`code === 'NO_CHECKPOINT'`).
@@ -399,24 +411,7 @@ async function analyze(repo, opts = {}) {
   const baseTexts = git.showMany(base.sha, everything
     .filter((f) => f.status !== 'added' && isSourcePath(f.path)).map((f) => f.oldPath || f.path));
 
-  // A call site counts as updated only if a hunk actually covers it. A caller edited
-  // elsewhere in its body has NOT been updated for this change, even though its symbol
-  // shows as changed -- that is the false "already handled" signal we are removing.
-  const lineOf = (file, offset) => {
-    const p2 = offsetToPosition(file, offset);
-    return p2 ? p2.line + 1 : null;
-  };
   const relOf = (abs) => path.relative(repo, abs).split(path.sep).join('/');
-  const callSiteUpdated = (callerFile, callSites) => {
-    const rel2 = relOf(callerFile);
-    const ranges = changedRanges[rel2];
-    if (!ranges || !ranges.length || !callSites || !callSites.length) return false;
-    return callSites.some((cs) => {
-      const a = lineOf(callerFile, cs.start), b = lineOf(callerFile, cs.end);
-      if (a == null || b == null) return false;
-      return ranges.some(([lo, hi]) => a <= hi && b >= lo);
-    });
-  };
 
   const components = [];
   let droppedUntracked = 0;
@@ -496,16 +491,22 @@ async function analyze(repo, opts = {}) {
         try {
           cs = await resolver.callerState(c.file, c.namePos, { isConstructor: c.isConstructor });
         } catch (e) {
-          cs = { state: 'unknown', callers: [] };
+          cs = { state: 'unknown', callers: [], complete: false, reason: (e && e.message) || 'caller resolution failed' };
           warnings.push(`caller resolution failed for ${c.label} (${c.relPath}): ${e && e.message}`);
         }
         if (cs.reason === 'not-in-program') outsideProgram.add(`${comp}\u0000${c.relPath}`);
         c.callerState = cs.state;
+        c.callersComplete = cs.complete === true;
+        c.callersIncompleteReason = c.callersComplete ? null : cs.reason ?? null;
         c.callers = cs.callers;
         for (const x of cs.callers) {
-          const atCall = callSiteUpdated(x.file, x.callSites);
-          const symChanged = changedKeys.has(`${x.file}#${x.pos}`);
-          x.callState = atCall ? 'updated-at-call' : symChanged ? 'changed-elsewhere' : 'unchanged';
+          x.callSiteUpdates = classifyCallSiteUpdates({
+            callSites: x.callSites, changedLineRanges: changedRanges[relOf(x.file)],
+            lineOfOffset: (offset) => readLineOfOffset(x.file, offset),
+          });
+          x.callState = classifyCallerUpdateState({
+            callSiteUpdates: x.callSiteUpdates, callerChanged: changedKeys.has(`${x.file}#${x.pos}`),
+          });
         }
         // stale = the call was not updated, whatever else happened in that caller
         c.stale = cs.callers.filter((x) => !x.test && x.callState !== 'updated-at-call');
@@ -583,7 +584,9 @@ async function analyze(repo, opts = {}) {
   // A caller may belong to a different component whose symbols were parsed later.
   for (const c of all) {
     for (const caller of c.callers) {
-      if (caller.callState !== 'updated-at-call') caller.callState = allChangedKeys.has(`${caller.file}#${caller.pos}`) ? 'changed-elsewhere' : 'unchanged';
+      caller.callState = classifyCallerUpdateState({
+        callSiteUpdates: caller.callSiteUpdates, callerChanged: allChangedKeys.has(`${caller.file}#${caller.pos}`),
+      });
     }
     c.staleChangedElsewhere = c.stale.filter(caller => caller.callState === 'changed-elsewhere').length;
   }
@@ -608,7 +611,7 @@ async function analyze(repo, opts = {}) {
     allChanged: all.slice().sort((a, b) => b.score - a.score || a.label.localeCompare(b.label)),
     nestedCount: nested.size,
     otherFiles,
-    mode: effectiveMode, requestedMode: mode, modeDesc: effectiveCfg.desc, dirtyCount: dirty.length, base, warnings,
+    mode: effectiveMode, requestedMode: mode, modeDesc: effectiveCfg.desc, dirtyCount: dirty.length, base, warnings, concurrency,
     changedFileCount: files.length,
     changedPaths: files.map((f) => f.path),
     fileStatus: Object.fromEntries(everything.map((f) => [f.path, f.status])),

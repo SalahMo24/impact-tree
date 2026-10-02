@@ -78,16 +78,13 @@ const check = (name, cond, extra = '') => {
     dispose() { for (const r of resolvers.values()) r?.dispose(); },
   };
 
-  const { offsetToPosition } = require('../src/engine/textpos');
-  const callSiteUpdated = (file, sites) => {
-    const ranges = (result.changedRanges || {})[path.relative(repo, file)];
-    if (!ranges || !ranges.length || !sites || !sites.length) return false;
-    return sites.some((cs) => {
-      const a = offsetToPosition(file, cs.start), b = offsetToPosition(file, cs.end);
-      return a && b && ranges.some(([lo, hi]) => a.line + 1 <= hi && b.line + 1 >= lo);
-    });
-  };
-  const state = { result, changedKeys, callSiteUpdated, rel: (f) => path.relative(repo, f),
+  const { readLineOfOffset } = require('../src/engine/textpos');
+  const { classifyCallSiteUpdates } = require('../src/engine/call-sites');
+  const classifyCallers = (file, callSites) => classifyCallSiteUpdates({
+    callSites, changedLineRanges: (result.changedRanges || {})[path.relative(repo, file)],
+    lineOfOffset: (offset) => readLineOfOffset(file, offset),
+  });
+  const state = { result, changedKeys, classifyCallSiteUpdates: classifyCallers, rel: (f) => path.relative(repo, f),
     absPath: (p2) => path.join(repo, p2), error: null };
   let busy = false;
   let phase = 'ready';

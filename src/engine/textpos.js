@@ -48,6 +48,15 @@ function offsetToPosition(file, offset) {
   return { line: lo, character: o - e.starts[lo] };
 }
 
+/**
+ * 1-based line holding `offset`, read like `offsetToPosition`: from the registered text or
+ * the file on disk. `null` when the file cannot be read.
+ */
+function readLineOfOffset(file, offset) {
+  const position = offsetToPosition(file, offset);
+  return position ? position.line + 1 : null;
+}
+
 function positionToOffset(file, line, character) {
   const e = lineStarts(file);
   if (!e) return null;
@@ -56,7 +65,7 @@ function positionToOffset(file, line, character) {
 }
 
 module.exports = {
-  offsetToPosition, positionToOffset,
+  offsetToPosition, positionToOffset, readLineOfOffset,
   registerVirtualText, clearVirtualText, virtualText,
   _clear: () => { cache.clear(); virtual.clear(); },
 };

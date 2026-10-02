@@ -609,6 +609,19 @@ test('hiding untracked callers applies to the status query too', async () => {
   assert.equal('incomingWithStatus' in withoutUntrackedCallers({ incoming: async () => [], callerState: async () => ({}) }, () => false, () => {}), false);
 });
 
+test('dropping every untracked caller concludes "none" only from a finished search', async () => {
+  const { withoutUntrackedCallers } = require('../src/engine/analyze');
+  const untracked = [{ file: '/r/scratch.ts', pos: 1 }, { file: '/r/notes.ts', pos: 4 }];
+  const stateAfterDropping = async (coverage) => withoutUntrackedCallers({
+    incoming: async () => untracked,
+    callerState: async () => ({ state: 'resolved', callers: untracked, ...coverage }),
+  }, () => true, () => {}).callerState('/r/t.ts', 1);
+  const finished = await stateAfterDropping({ complete: true });
+  assert.deepEqual([finished.state, finished.callers, finished.complete], ['none', [], true]);
+  const unfinished = await stateAfterDropping({ complete: false, reason: 'query-failed' });
+  assert.deepEqual([unfinished.state, unfinished.callers, unfinished.complete, unfinished.reason], ['unknown', [], false, 'query-failed']);
+});
+
 test('editor caller queries report whether they completed, and retry incomplete ones', async () => {
   const Module = require('module'), original = Module._load;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-status-'));
@@ -795,6 +808,8 @@ const CONCURRENCY_CASES = [
 ];
 const concurrencyWarnings = (r) => r.warnings.filter((w) => w.includes('impactTree.concurrency'));
 const assertConcurrencyWarnings = (r, kind, value) => {
+  const used = { invalid: 8, omitted: 8, clamped: 32 }[kind] ?? Math.floor(value);
+  assert.equal(r.concurrency, used, `${String(value)} reports the worker count it used`);
   const found = concurrencyWarnings(r);
   if (kind === 'invalid' || kind === 'clamped') {
     assert.equal(found.length, 1, `${String(value)}: ${JSON.stringify(r.warnings)}`);
