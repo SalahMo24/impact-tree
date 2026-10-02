@@ -87,6 +87,38 @@ function makeSymbols(ts) {
   function collect(sf, { includeConstructors = true } = {}) {
     const out = [];
     const overloadSeen = new Map();
+    const siblingOrdinals = new WeakMap();
+    // Lexical blocks distinguish same-named helpers in different branches. Count
+    // siblings of the same syntax kind so comments and unrelated declarations do
+    // not change the path; offsets only locate a symbol, never identify it.
+    const ordinalOf = (node) => {
+      if (!siblingOrdinals.has(node.parent)) {
+        const counts = new Map(), ordinals = new WeakMap();
+        ts.forEachChild(node.parent, (child) => {
+          const ordinal = counts.get(child.kind) || 0;
+          ordinals.set(child, ordinal);
+          counts.set(child.kind, ordinal + 1);
+        });
+        siblingOrdinals.set(node.parent, ordinals);
+      }
+      return siblingOrdinals.get(node.parent).get(node);
+    };
+    const scopePath = (node, enclosing) => {
+      const parts = [];
+      for (let p = node.parent; p && !ts.isSourceFile(p) && p !== enclosing?.node; p = p.parent) {
+        // The enclosing callable already supplies its key. Its body adds no scope tag.
+        if (p === enclosing?.fn || (ts.isBlock(p) && ts.isFunctionLike(p.parent))) continue;
+        if (ts.isBlock(p) || ts.isIfStatement(p) || ts.isForStatement(p) || ts.isForOfStatement(p)
+          || ts.isForInStatement(p) || ts.isWhileStatement(p) || ts.isDoStatement(p)
+          || ts.isSwitchStatement(p) || ts.isCaseBlock(p) || ts.isCaseClause(p)
+          || ts.isDefaultClause(p) || ts.isTryStatement(p) || ts.isCatchClause(p) || ts.isModuleBlock(p)) {
+          parts.push(`${ts.SyntaxKind[p.kind]}:${ordinalOf(p)}`);
+        } else if (ts.isFunctionLike(p)) {
+          parts.push(`${ts.SyntaxKind[p.kind]}:${p.name?.getText(sf) || ordinalOf(p)}`);
+        }
+      }
+      return parts.reverse().join('/');
+    };
     const visit = (node, cls, enclosing, clsPos) => {
       let c = cls;
       let cPos = clsPos;
@@ -106,7 +138,8 @@ function makeSymbols(ts) {
               : nameNode.getText(sf);
           const label = c && !enclosing ? `${c}.${simpleName}` : enclosing ? `${enclosing.label}.${simpleName}` : simpleName;
           const accessor = ts.isGetAccessorDeclaration(node) ? 'get ' : ts.isSetAccessorDeclaration(node) ? 'set ' : '';
-          let key = `${accessor}${enclosing ? `${enclosing.key}>` : ''}${c && !enclosing ? `${c}.` : ''}${simpleName}`;
+          const scope = scopePath(node, enclosing);
+          let key = `${accessor}${enclosing ? `${enclosing.key}>` : ''}${scope ? `[${scope}]>` : ''}${c && !enclosing ? `${c}.` : ''}${simpleName}`;
           // overload signatures: same name, no body -- number them in source order
           const bodyless = (ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) && !node.body;
           if (bodyless) {
@@ -141,7 +174,7 @@ function makeSymbols(ts) {
             throws: throwsOf(fn, sf),
           };
           out.push(sym);
-          nextEnclosing = { label, key };
+          nextEnclosing = { label, key, node, fn };
         }
       }
       // a class declared inside a function starts a fresh member scope

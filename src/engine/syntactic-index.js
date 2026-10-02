@@ -74,6 +74,7 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
     const sf = parse(file, text);
 
     const imports = new Map();     // localName -> { module, imported }
+    const bindingImports = new Map(); // require declaration -> import, including nested scopes
     const decls = new Map();       // declared top-level name -> { kind, pos }
     const classes = new Map();     // className -> { members, methods }
     const calls = [];
@@ -186,11 +187,22 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
         for (const el of node.exportClause.elements) exports.set(el.name.text, (el.propertyName || el.name).text);
       }
       if (ts.isVariableDeclaration(node) && node.initializer && ts.isCallExpression(node.initializer)
-          && node.initializer.expression.getText(sf) === 'require' && ts.isStringLiteral(node.initializer.arguments[0])) {
+          && ts.isIdentifier(node.initializer.expression) && node.initializer.expression.text === 'require'
+          && !require('./lexical').bindingAt(ts, node.initializer.expression, 'require')
+          && ts.isStringLiteral(node.initializer.arguments[0])) {
         const mod = node.initializer.arguments[0].text;
-        if (ts.isIdentifier(node.name)) imports.set(node.name.text, { module: mod, imported: '*', binding: node, mode: ts.ModuleKind.CommonJS });
+        const recordRequire = (binding, imported) => {
+          const entry = { module: mod, imported, binding, mode: ts.ModuleKind.CommonJS };
+          bindingImports.set(binding, entry);
+          // Only module-scope bindings participate in exports and type-name lookup.
+          // A nested require must not replace the module's ESM or CommonJS import.
+          if (ts.isVariableStatement(node.parent.parent) && ts.isSourceFile(node.parent.parent.parent)) {
+            imports.set(binding.name.text, entry);
+          }
+        };
+        if (ts.isIdentifier(node.name)) recordRequire(node, '*');
         else if (ts.isObjectBindingPattern(node.name)) for (const el of node.name.elements) {
-          if (ts.isIdentifier(el.name)) imports.set(el.name.text, { module: mod, imported: (el.propertyName || el.name).text, binding: el, mode: ts.ModuleKind.CommonJS });
+          if (ts.isIdentifier(el.name)) recordRequire(el, (el.propertyName || el.name).text);
         }
       }
       if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken && ts.isPropertyAccessExpression(node.left)) {
@@ -239,8 +251,12 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
       }
 
       if (ts.isNewExpression(node) && (ts.isIdentifier(node.expression) || ts.isPropertyAccessExpression(node.expression))) {
+        const receiver = node.expression;
+        const bindingName = ts.isIdentifier(receiver) ? receiver.text
+          : ts.isIdentifier(receiver.expression) ? receiver.expression.text : null;
         calls.push({
-          name: 'constructor', receiver: { kind: 'new', typeName: node.expression.getText(sf) },
+          name: 'constructor', receiver: { kind: 'new', typeName: receiver.getText(sf),
+            binding: bindingName && require('./lexical').bindingAt(ts, receiver, bindingName) },
           pos: node.expression.getStart(sf), ownerClass: currentClass, owner: ownerLabel(),
         });
       }
@@ -292,7 +308,7 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
     for (const sym of symbols) {
       if (!sym.nested && !sym.className) decls.set(sym.simpleName, { kind: 'function', pos: sym.namePos });
     }
-    byFile.set(file, { file, imports, decls, classes, calls, localTypes, implementsEdges, extendsEdges, handlerFor, reExports, exports, symbols });
+    byFile.set(file, { file, imports, bindingImports, decls, classes, calls, localTypes, implementsEdges, extendsEdges, handlerFor, reExports, exports, symbols });
   }
 
   // --- module resolution, syntactic only -------------------------------------
@@ -396,13 +412,14 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
     }
     return null;
   };
-  const declarationFor = (rec, name) => {
+  const declarationFor = (rec, name, lexicalBinding = null) => {
+    const importFor = local => lexicalBinding ? rec.bindingImports.get(lexicalBinding) : rec.imports.get(local);
     if (name && name.includes('.')) {
       const [namespace, member] = name.split('.');
-      const binding = rec.imports.get(namespace);
+      const binding = importFor(namespace);
       if (binding?.imported === '*') return exportTarget(resolveModule(rec.file, binding.module, { mode: binding.mode }), member);
     }
-    const imp = rec.imports.get(name);
+    const imp = importFor(name);
     if (imp) return exportTarget(resolveModule(rec.file, imp.module, { mode: imp.mode }), imp.imported);
     if (rec.decls.has(name)) return { file: rec.file, name, pos: rec.decls.get(name).pos };
     return null;
@@ -478,28 +495,32 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
           }
           continue;
         }
-        const bareTarget = !c.receiver && (c.binding && rec.imports.get(c.name)?.binding !== c.binding
-          ? { file: rec.file, name: c.name, pos: c.binding.name?.getStart() }
-          : declarationFor(rec, c.name));
-        const imported = c.receiver?.kind === 'ident' && rec.imports.get(c.receiver.name);
-        const ns = imported && (!c.receiver.binding || imported.binding === c.receiver.binding) ? imported : null;
+        const bareImport = !c.receiver && c.binding && rec.bindingImports.get(c.binding);
+        const bareTarget = !c.receiver && (bareImport
+          ? exportTarget(resolveModule(rec.file, bareImport.module, { mode: bareImport.mode }), bareImport.imported)
+          : c.binding ? { file: rec.file, name: c.name, pos: c.binding.name?.getStart() }
+            : declarationFor(rec, c.name));
+        const receiverImport = c.receiver?.kind === 'ident'
+          && (c.receiver.binding ? rec.bindingImports.get(c.receiver.binding) : rec.imports.get(c.receiver.name));
+        const ns = receiverImport && !c.receiver.name.includes('.') ? receiverImport : null;
         const namespaceTarget = ns?.imported === '*' ? exportTarget(resolveModule(rec.file, ns.module, { mode: ns.mode }), c.name)
           : c.receiver?.kind === 'require' ? exportTarget(resolveModule(rec.file, c.receiver.module, { mode: ts.ModuleKind.CommonJS }), c.name)
             : null;
         if (c.name !== target.name && bareTarget?.name !== target.name && namespaceTarget?.name !== target.name) continue;
         let ok = false;
         if (c.receiver && c.receiver.kind === 'new') {
-          const d = declarationFor(rec, c.receiver.typeName);
+          const d = declarationFor(rec, c.receiver.typeName, c.receiver.binding);
           ok = target.name === 'constructor' && d?.file === target.file && d.name === target.className;
         } else if (!c.receiver) {
           ok = !target.className && bareTarget?.file === target.file && bareTarget.name === target.name && (target.pos == null || bareTarget.pos === target.pos);
         } else if (namespaceTarget && !target.className) {
           ok = namespaceTarget.file === target.file && namespaceTarget.name === target.name;
         } else if (c.receiver.kind === 'ident' && !c.receiver.typeName
-          && (!c.receiver.binding || ns || ts.isClassDeclaration(c.receiver.binding))) {
+          && (!c.receiver.binding || receiverImport || ts.isClassDeclaration(c.receiver.binding))) {
           // A class declared in an enclosing scope shadows an import of the same name.
           const local = !ns && c.receiver.binding && ts.isClassDeclaration(c.receiver.binding) && !c.receiver.name.includes('.');
-          const cls = staticOwner(local ? { file: rec.file, name: c.receiver.binding.name.text } : declarationFor(rec, c.receiver.name), target.name);
+          const cls = staticOwner(local ? { file: rec.file, name: c.receiver.binding.name.text }
+            : declarationFor(rec, c.receiver.name, c.receiver.binding), target.name);
           ok = !!cls && cls.file === target.file && cls.name === target.className;
         } else if ((c.receiver.kind === 'this' || c.receiver.kind === 'super') && c.receiver.static) {
           const owners = c.receiver.kind === 'this' ? [declarationFor(rec, c.ownerClass)]
