@@ -29,9 +29,9 @@ const LEGEND = [
 // questions. A caller edited just above and below the call line is the dangerous case:
 // it looks handled and is not.
 const CALL_STATE = {
-  'updated-at-call':   { token: '✓', severity: 'ok',    text: 'call updated' },
-  'changed-elsewhere': { token: '△', severity: 'warn',  text: 'changed, but not at the call' },
-  unchanged:           { token: '○', severity: 'muted', text: 'not changed' },
+  'updated-at-call':   { token: '✓', text: 'call updated' },
+  'changed-elsewhere': { token: '△', text: 'changed, but not at the call' },
+  unchanged:           { token: '○', text: 'not changed' },
 };
 
 // What a caller row knows about its call sites when the view state cannot classify them.
@@ -131,7 +131,7 @@ function createTreeProvider(vscode, {
     return table[slash];
   };
   // Registers a row's decoration only while the analysis it was built for is current.
-  const mark = (analysisId, uri, status, _severity, tooltip) => {
+  const mark = (analysisId, uri, status, tooltip) => {
     if (decorate && uri && isCurrentAnalysis(analysisId)) decorate.register(uri, { status, tooltip });
     return uri;
   };
@@ -167,7 +167,7 @@ function createTreeProvider(vscode, {
   const reachScope = (r) => `no test within ${r.reachDepth ? `${r.reachDepth} caller level(s)` : 'the searched caller levels'}`;
 
   // token + severity, not an icon: the icon slot belongs to the file glyph now, and
-  // severity is carried by the decoration colour
+  // severity orders rows and decides which groups start open
   function statusOf(f) {
     // Results from before `callersComplete` existed have no such field and read as complete.
     const mayBeMissing = f.callersComplete === false;
@@ -236,7 +236,7 @@ function createTreeProvider(vscode, {
       if (rows.length === 1) { out.push(rows[0]); continue; }
       const relPath = rows[0].finding.relPath;
       const uri = uriFor(file, null);
-      mark(analysisId, uri, statusOfPath(st, relPath), 'muted', relPath);
+      mark(analysisId, uri, statusOfPath(st, relPath), relPath);
       out.push(N({
         type: 'changeFile', label: path.basename(relPath), relPath, file,
         rows: byWorst(rows), members: rows.flatMap(membersOf), decorationUri: uri,
@@ -546,11 +546,8 @@ function createTreeProvider(vscode, {
         for (const c of r.allChanged || []) seen.set(c.label, (seen.get(c.label) || 0) + 1);
         // A factory, not a second parameter: `mk` is passed to Array.map, which supplies an index.
         const mkWith = (reachReason, scopeNote = null) => (c) => {
-          const sev = c.staleCallers > 0 ? 'stale'
-            : (c.callerState === 'unknown') ? 'warn'
-              : (c.kinds || []).some((k) => k.id !== 'body') ? 'ok' : 'muted';
           const uri = uriFor(c.file, c.namePos);
-          mark(analysisId, uri, statusOfPath(state, c.relPath), sev, `${c.relPath}:${c.startLine}`);
+          mark(analysisId, uri, statusOfPath(state, c.relPath), `${c.relPath}:${c.startLine}`);
           return N({
             type: 'finding', label: c.label, finding: c, file: c.file, pos: c.namePos, score: c.score,
             ambiguous: (seen.get(c.label) || 0) > 1, decorationUri: uri, reachReason, scopeNote,
@@ -575,7 +572,7 @@ function createTreeProvider(vscode, {
         if (node.key === 'deleted') {
           return r.deleted.map((d) => {
             const uri = uriFor(d.file, d.namePos);
-            mark(analysisId, uri, statusOfPath(state, d.relPath) || 'deleted', 'stale', `${d.label} deleted`);
+            mark(analysisId, uri, statusOfPath(state, d.relPath) || 'deleted', `${d.label} deleted`);
             return N({ type: 'deleted', label: d.label, key: d.key, relPath: d.relPath, file: d.file, decorationUri: uri });
           });
         }
@@ -583,7 +580,7 @@ function createTreeProvider(vscode, {
           const leaves = (r.otherFiles || []).map((f) => {
             const abs = state.absPath ? state.absPath(f.path) : null;
             const uri = abs ? uriFor(abs, null) : null;
-            mark(analysisId, uri, f.status, 'muted', f.path);
+            mark(analysisId, uri, f.status, f.path);
             return N({
               type: 'file', label: path.basename(f.path), relPath: f.path, status: f.status,
               absPath: abs, decorationUri: uri,
@@ -634,7 +631,7 @@ function createTreeProvider(vscode, {
         const callState = classifyCallerUpdateState({ callSiteUpdates, callerChanged: symChanged });
         const rel = state2 ? state2.rel(c.file) : c.file;
         const uri = uriFor(c.file, c.pos);
-        mark(analysisId, uri, statusOfPath(state2, rel), c.test ? 'muted' : (CALL_STATE[callState] || {}).severity, rel);
+        mark(analysisId, uri, statusOfPath(state2, rel), rel);
         return N({
           type: 'caller', reviewParent: idOf(node), label: c.label, file: c.file, pos: c.pos, test: c.test,
           callSites: c.callSites || [], sites: c.sites,
