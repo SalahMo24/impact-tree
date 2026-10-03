@@ -4,7 +4,9 @@
 //
 // "A test is reachable" is a positive finding. The absence of one is only a finding when
 // the walk looked everywhere it was asked to; a query that failed or did not finish, or
-// a budget or depth that cut the walk short, leaves it `'unknown'`, never `'uncovered'`.
+// a budget that cut the walk short, leaves it `'unknown'`, never `'uncovered'`. Depth is
+// different: it is the scope the caller asked for, so `'uncovered'` means "no test within
+// that many caller levels", and the UI says so.
 
 /** @typedef {import('./caller-contract').CallerRow} CallerRow */
 
@@ -22,17 +24,19 @@ const DEFAULT_REACH_BUDGET = 120;
  *   is admitted before it is inserted, so a graph of exactly `budget` callers finishes and
  *   one needing the next is refused, which stops the walk. Any integer >= 0; the caller
  *   (`analyze`) passes DEFAULT_REACH_BUDGET unless overridden.
- * - `depth`, in call levels, with the start symbol at 0. A node at `depth` is not
- *   expanded. Whether it has callers is unknown without a query, so reaching one with no
- *   test found is treated like exhausting the budget: the walk was cut short.
+ * - `depth`, in caller levels, with the start symbol at level 0: callers at levels 1 to
+ *   `depth` are searched. A node at level `depth` is not queried. Depth is the declared
+ *   scope, not a budget, so stopping there is not a failure to finish: a walk with no test
+ *   in those levels is `'uncovered'` within that scope.
  *
  * The result is `'covered'` as soon as any answer holds a test, whatever else failed.
- * Otherwise it is `'unknown'` when a query threw or was incomplete, when a limit stopped
- * the walk, or when it was cancelled, and `'uncovered'` only when none of those happened.
- * `incompleteReason` is the first cause, or null.
+ * Otherwise it is `'unknown'` when a query threw or was incomplete, when the budget
+ * stopped the walk, or when it was cancelled, and `'uncovered'` (within `depth` levels)
+ * when none of those happened. `incompleteReason` is the first cause, or null.
  *
- * Tests are asked for only on the first two levels (`withTests` is false below that) so
- * a large test program is not scanned for every deep node. A deeper test is not seen.
+ * Every query asks for tests: a test found at any searched level counts. At the default
+ * depth of 2 this is the same set of queries as before; only a user who raises
+ * `impactTree.reachDepth` pays for test-program work on the deeper levels.
  *
  * @param {{
  *   incoming: (file: string, pos: number, withTests?: boolean) => Promise<CallerRow[]>,
@@ -58,13 +62,13 @@ async function walkTestReach(resolver, start, { depth, budget, signal }) {
     // A cancelled walk claims nothing; mapLimit then rejects, so its answer is never used.
     if (signal && signal.aborted) { note('the analysis was cancelled'); return unknown(); }
     const [file, pos, d] = /** @type {[string, number, number]} */ (stack.pop());
-    if (d >= depth) { note(`the depth limit of ${depth} stopped the walk`); continue; }
+    if (d >= depth) continue;
     /** @type {{ callers: CallerRow[], complete: boolean, reason?: string }} */
     let answer;
     try {
       answer = resolver.incomingWithStatus
-        ? await resolver.incomingWithStatus(file, pos, d <= 1)
-        : { callers: await resolver.incoming(file, pos, d <= 1), complete: true };
+        ? await resolver.incomingWithStatus(file, pos, true)
+        : { callers: await resolver.incoming(file, pos, true), complete: true };
     } catch (e) {
       note(`a caller query failed: ${(e && /** @type {Error} */ (e).message) || 'unknown error'}`);
       continue;

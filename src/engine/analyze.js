@@ -295,10 +295,10 @@ function inferredProjectFiles(repo, git) {
  *   `'di'` for a constructor with no direct call.
  * - `testState` `'covered'` when a test is statically reachable (not proof that it runs
  *   or asserts anything), `'uncovered'` when the walk finished within its depth and
- *   budget and found none, `'unknown'` when no test was found and the walk could not
- *   finish (a caller query failed or was incomplete, the depth or budget stopped it, or
- *   `callerState` is `'unknown'` or `'di'`), and `'not-computed'` when `deferTestReach`
- *   skipped the walk. `testReachIncompleteReason` says why a state is `'unknown'` and is
+ *   budget and found none (within `reachDepth` caller levels, not beyond), `'unknown'`
+ *   when no test was found and the walk could not finish (a caller query failed or was
+ *   incomplete, the budget stopped it, or `callerState` is `'unknown'` or `'di'`), and
+ *   `'not-computed'` when `deferTestReach` skipped the walk. `testReachIncompleteReason` says why a state is `'unknown'` and is
  *   `null` otherwise. See `walkTestReach`.
  * - `callersComplete` `true` when the caller search finished, `false` when it was cut
  *   short and `callers` may be missing some; `callersIncompleteReason` says why, or is
@@ -310,8 +310,9 @@ function inferredProjectFiles(repo, git) {
  *   `{updated, untouched, unknown}` sites behind the label. `staleCallers` counts
  *   non-test callers that are not `'updated-at-call'`.
  *
- * `depth` bounds only the test-reach walk, with the changed symbol at depth 0; a walk
- * that has to stop at it without finding a test is `'unknown'`, not `'uncovered'`.
+ * `depth` bounds only the test-reach walk, with the changed symbol at depth 0. It is the
+ * declared scope: a test deeper than `depth` caller levels is out of scope, and a walk
+ * that finds none within it is `'uncovered'`, not `'unknown'`.
  * Blast radius uses `blastDepth`. The rendered forest uses `treeDepth` and
  * `maxChildren`, and is omitted when `skipForest` is set. `changedRanges` values
  * are 1-based inclusive `[startLine, endLine]` pairs on the new side of the diff,

@@ -104,3 +104,13 @@ test('a PR preview shows neither test section', async () => {
   const { top } = await sections(resultOf([change('a', 'unknown', 'x')], { tierA: true, testReachComputed: false }));
   assert.ok(!top.some((n) => n.key === 'untested' || n.key === 'testUnknown'));
 });
+
+test('the untested section and its rows say how many caller levels the search covered', async () => {
+  for (const depth of [1, 3, 6]) {
+    const { provider, rows } = await sections(resultOf([change('none', 'uncovered')], { reachDepth: depth }));
+    const { section, nodes } = await rows('untested');
+    const scope = new RegExp(`no test within ${depth} caller level`);
+    assert.match(provider.getTreeItem(section).description, scope);
+    assert.match(provider.getTreeItem(nodes[0]).tooltip.value, scope);
+  }
+});

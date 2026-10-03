@@ -208,7 +208,7 @@
           "default": 2,
           "minimum": 1,
           "maximum": 6,
-          "description": "How many caller levels the test-reachability walk follows upward from a changed symbol, 1 to 6. A symbol whose walk reaches this depth without finding a test is shown as unknown, not as untested. A value outside the range is replaced with 2 (or 6 when too large) and a warning is shown."
+          "description": "How many caller levels the test-reachability walk follows upward from a changed symbol, 1 to 6. A test further up than this is not looked for, so \"no test reaches\" means no test within this many levels. A value outside the range is replaced with 2 (or 6 when too large) and a warning is shown."
         },
         "impactTree.analyseOnStartup": {
           "type": "boolean",

@@ -467,12 +467,13 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
    their UI consumers. Add regression tests for failures and budget exhaustion.
    - Exists: the test-reach walk is `walkTestReach` in `src/engine/test-reach.js`, with the
      resolver injected. `testState` is `'covered'`, `'uncovered'` (the walk finished within
-     its depth and budget), `'unknown'` (a query failed or was incomplete, or the depth or
-     budget stopped it; `testReachIncompleteReason` says why) or `'not-computed'`. The
-     tree's "No test reaches" section holds only `'uncovered'` symbols; "Test reach
-     unknown" lists the rest with their reasons, and the CLI reports both.
-   - Planned: tests are searched only on the first two levels of the walk, so a test at
-     depth 3 or more is not seen when `impactTree.reachDepth` is raised.
+     its depth and budget), `'unknown'` (a query failed or was incomplete, or the
+     visited-node budget stopped it; `testReachIncompleteReason` says why) or
+     `'not-computed'`. Depth is a declared scope, not a budget: `'uncovered'` means no
+     test within `reachDepth` caller levels, and the tree and CLI say so. Tests are
+     searched at every level. The tree's "No test reaches" section holds only
+     `'uncovered'` symbols; "Test reach unknown" lists the rest with their reasons, and
+     the CLI reports both.
 2. Validate settings and consolidate genuinely equivalent concurrency helpers.
    Establish documented budgets and exhaustion behavior.
    - Exists: `src/engine/settings.js` validates `impactTree.concurrency` (1..32),

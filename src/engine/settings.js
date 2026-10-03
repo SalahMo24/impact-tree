@@ -9,8 +9,8 @@ const DEFAULT_CONCURRENCY = 8;
 const MAX_CONCURRENCY = 32;
 const DEFAULT_REACH_DEPTH = 2;
 const MAX_REACH_DEPTH = 6;
-// GitHub's client lists at most this many files whatever it is asked for.
 const DEFAULT_TIER_A_MAX_FILES = 300;
+// GitHub's client lists at most this many files whatever it is asked for.
 const MAX_TIER_A_MAX_FILES = 3000;
 
 /** @param {unknown} v @returns {string} */

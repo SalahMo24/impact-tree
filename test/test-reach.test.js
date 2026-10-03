@@ -136,21 +136,58 @@ test('the budget stops work: no query starts for a node that was never admitted'
   assert.ok(resolver.queried.length <= 1 + 3, resolver.queried.length);
 });
 
-// Depth: a node at the depth limit is not expanded. If one was reached and no test was
-// found, the walk stopped on scope, so the state is unknown; a walk that never reached
-// the limit finished within its scope.
+// Depth is a declared scope: the walk looks at caller levels 1..depth (the start symbol is
+// level 0) and a walk that finished inside that scope without a test is uncovered. A node
+// at the limit is never queried, so nothing beyond the scope is looked at.
+const levelOfNode = (name) => (name === 'root' ? 0 : Number(name.slice(1)) + 1);
 for (const length of [1, 2, 3, 5]) {
-  test(`depth boundary, chain of ${length} callers: depth ${length} stops, depth ${length + 1} finishes`, async () => {
-    const callers = chain(length);
-    const at = (depth) => walk(resolverOf(callers), { depth });
-    const stopped = await at(length);
-    assert.equal(stopped.state, 'unknown');
-    assert.match(stopped.incompleteReason, /depth/);
-    assert.equal((await at(length + 1)).state, 'uncovered');
-    assert.equal((await at(length + 3)).state, 'uncovered');
-    if (length > 1) assert.equal((await at(length - 1)).state, 'unknown');
+  test(`depth boundary, chain of ${length} callers: depths around ${length} are uncovered within scope`, async () => {
+    for (const depth of [length - 1, length, length + 1, length + 3].filter((d) => d >= 1)) {
+      const resolver = resolverOf(chain(length));
+      const r = await walk(resolver, { depth });
+      assert.deepEqual([r.state, r.incompleteReason], ['uncovered', null], `depth ${depth}`);
+      assert.ok(resolver.queried.every((n) => levelOfNode(n) < depth), `depth ${depth} queried ${resolver.queried}`);
+    }
+  });
+
+  test(`depth boundary, test at level ${length}: found at depth ${length} and ${length + 1}, out of scope at depth ${length - 1}`, async () => {
+    // root -> n0 -> ... -> n(length-2) -> t, so t is `length` levels up
+    const callers = {};
+    let below = 'root';
+    for (let i = 0; i < length - 1; i++) { callers[below] = [`n${i}`]; below = `n${i}`; }
+    callers[below] = ['t'];
+    callers.t = ['beyond'];
+    for (const [depth, want] of [[length - 1, 'uncovered'], [length, 'covered'], [length + 1, 'covered']]) {
+      if (depth < 1) continue;
+      const resolver = resolverOf(callers, { tests: ['t'] });
+      const r = await walk(resolver, { depth });
+      assert.equal(r.state, want, `depth ${depth}`);
+      assert.equal(r.incompleteReason, null, `depth ${depth}`);
+      assert.ok(resolver.queried.every((n) => levelOfNode(n) < depth), `queried beyond depth ${depth}: ${resolver.queried}`);
+    }
   });
 }
+
+test('a test one level beyond the depth is out of scope, and nothing past the depth is queried', async () => {
+  const resolver = resolverOf({ root: ['a'], a: ['b'], b: ['t'], t: ['u'] }, { tests: ['t'] });
+  const r = await walk(resolver, { depth: 2 });
+  assert.deepEqual([r.state, r.incompleteReason, r.tests], ['uncovered', null, []]);
+  assert.deepEqual(resolver.queried.sort(), ['a', 'root']);
+});
+
+test('tests are searched at every level, not only the first two', async () => {
+  const withTestsAsked = [];
+  const callers = { root: ['a'], a: ['b'], b: ['t'] };
+  const resolver = resolverOf(callers, { tests: ['t'] });
+  const original = resolver.incomingWithStatus;
+  resolver.incomingWithStatus = async (file, pos, withTests) => { withTestsAsked.push(withTests); return original(file, pos, withTests); };
+  const r = await walk(resolver, { depth: 3 });
+  assert.equal(r.state, 'covered');
+  assert.deepEqual(r.tests, ['t']);
+  assert.deepEqual(withTestsAsked, [true, true, true]);
+  const old = await walk(resolverOf(callers, { tests: ['t'], status: false }), { depth: 3 });
+  assert.equal(old.state, 'covered');
+});
 
 test('a root nobody calls is uncovered at any depth, because nothing was cut off', async () => {
   for (const depth of [1, 2, 6]) assert.equal((await walk(resolverOf({}), { depth })).state, 'uncovered', String(depth));
@@ -303,12 +340,14 @@ test('analyze reports testState, its reason and the validated depth through the 
     assert.deepEqual(deep.testUnknown, []);
 
     const shallow = await run({ depth: 1 });
-    assert.equal(by(shallow, 'covered').testState, 'unknown', 'the test is two levels up');
-    assert.match(by(shallow, 'covered').testReachIncompleteReason, /depth/);
+    // the test is two levels up: out of a depth-1 scope, so uncovered within it
+    assert.equal(by(shallow, 'covered').testState, 'uncovered');
+    assert.equal(by(shallow, 'covered').testReachIncompleteReason, null);
     assert.equal(by(shallow, 'lonely').testState, 'uncovered');
-    assert.equal(by(shallow, 'leaf').testState, 'unknown');
-    assert.deepEqual(shallow.untested.map((c) => c.label), ['lonely']);
-    assert.deepEqual(shallow.testUnknown.map((c) => c.label).sort(), ['covered', 'leaf']);
+    assert.equal(by(shallow, 'leaf').testState, 'uncovered');
+    assert.equal(shallow.reachDepth, 1);
+    assert.deepEqual(shallow.untested.map((c) => c.label).sort(), ['covered', 'leaf', 'lonely']);
+    assert.deepEqual(shallow.testUnknown, []);
 
     const budgeted = await run({ depth: 6, reachBudget: 1 });
     assert.equal(by(budgeted, 'leaf').testState, 'unknown');
