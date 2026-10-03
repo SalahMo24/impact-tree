@@ -31,6 +31,8 @@ jobs:
 
       - run: npm run typecheck
 
+      - run: npm run test:smoke
+
       - name: Fetch the pinned target repo
         # The tests need only the target's source tree, not its dependencies. They resolve
         # the base ref `main`, so the detached shallow checkout is put on a local `main`.
