@@ -26,6 +26,15 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
   if (!ts) return null;
   const read = readFile || ((f) => { try { return fs.readFileSync(f, 'utf8'); } catch { return null; } });
 
+  // Caches: `parsed` (class and import summary per file), `cfgCache` (tsconfig per
+  // directory), `declCache`, `ancestorCache` and `targetCache` (answers derived from
+  // them). Owner: this filter, created by the resolver that uses it: per project for the
+  // TypeScript resolver, and for the session's whole life for the editor resolver.
+  // Key: file path (or directory), plus the class, method or position asked about; the
+  // text comes from `readFile` at the time of the first read and the TypeScript module
+  // is fixed, so a file's content is not part of any key. Invalidation: `clear()`,
+  // which the editor resolver calls at the start of every local analysis; the TypeScript
+  // resolver is rebuilt per run. Disposal: with the filter.
   const parsed = new Map();
   // file -> { classes: Map<name, {heritage:[names], methods:Set}>, imports: Map<name, module> }
   function parse(file) {

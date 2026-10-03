@@ -9,6 +9,13 @@
 // reviewer to opposite conclusions.
 
 function createSyntacticResolver(idx, { isTestPath = () => false, hints = new Map() } = {}) {
+  // Cache: caller rows by target. Owner: this resolver, built for one PR preview and held
+  // by the session as `resolverOverride` until another analysis replaces it. Key: target
+  // file#position and whether tests were searched; the index and the hints are immutable,
+  // so the file set (the preview's revision) is part of the owner's context, not the key.
+  // A target the index cannot locate is not cached. Invalidation: `clear()`/`invalidate()`
+  // empty it; nothing else is needed because the index never changes. Disposal: `dispose()`,
+  // or garbage collection with the resolver.
   const cache = new Map();
   const stats = { incomingCalls: 0, cacheHits: 0, resolvedEmpty: 0, unknownTarget: 0 };
 

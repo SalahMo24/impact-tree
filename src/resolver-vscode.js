@@ -17,6 +17,14 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
   // query has succeeded, retrying unsupported symbols no longer helps. Preserve
   // their unknown state without paying the startup backoff on every query.
   let serverWarm = false;
+  // Cache: complete caller answers (`cache`) and how each query ended (`queryStates`).
+  // Owner: this resolver, which the session keeps for the window (`session.resolver`,
+  // created in src/readiness.js). Key: target file#position and whether tests were
+  // searched. The repository, TypeScript module and the inherited-member setting are
+  // fixed when the resolver is created, and files are assumed not to change during an
+  // analysis. Invalidation: the session calls `clear()` at the start of every local
+  // analysis; `invalidate(file)` drops the entries naming a file. An incomplete answer
+  // is never cached. Disposal: `session.dispose()` drops the resolver and with it both maps.
   const cache = new Map();
   const queryStates = new Map();
   const isTestPath = (f) => isTestFile(repoRoot, f);

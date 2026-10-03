@@ -159,6 +159,13 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
     },
   });
 
+  // Cache: caller answers. Owner: this resolver, created by one `analyze()` run per
+  // project and dropped with it. Key: target file#position and whether test projects
+  // were searched; the repository, TypeScript version and project configs are fixed by
+  // the resolver's construction, and files do not change during a run. Invalidation:
+  // none within a run; an answer from a query that threw is never stored. Disposal: the
+  // map is garbage with the resolver; `dispose()` releases the language services unless
+  // the run's service pool owns them.
   const cache = new Map();
   const stats = { incomingCalls: 0, incomingMs: 0, refCalls: 0, refMs: 0, cacheHits: 0, cqrsEdges: 0, inheritedDropped: 0 };
   // Same over-report the extension sees: both ask the TypeScript call hierarchy.
@@ -221,6 +228,9 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
     return { count, failed };
   }
 
+  // Cache: command-bus callers of one handler. Owner, invalidation and disposal as for
+  // `cache` above. Key: file#position; it holds callers with and without tests, which
+  // `withCqrs` filters per call, so the test flag is not part of the key.
   const cqrsCache = new Map();
   // Returns { callers, failed }; `failed` is true when any underlying query threw.
   async function withCqrs(file, pos, withTests) {

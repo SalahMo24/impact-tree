@@ -363,8 +363,13 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
     directoryExists: dir => /(?:^|[/\\])node_modules(?:[/\\]@[^/\\]+)?$/.test(dir) || directories.has(actual(dir)),
     realpath: actual,
   };
+  // Cache: module resolution results, including "not found". Owner: this index, one per
+  // PR preview. Key: importing file, specifier and the module mode; the options come from
+  // the importing file and are fixed at construction, as is the file set that is searched.
+  // Invalidation: none, because the index is immutable. Disposal: with the index.
   const resolveCache = new Map();
   // The mode an `import` declaration in `fromFile` would get, for callers with no usage site.
+  // Cache: import mode by file. Owner, invalidation and disposal as for `resolveCache`.
   const importModeCache = new Map();
   const importModeOf = (fromFile) => {
     if (!importModeCache.has(fromFile)) {
@@ -465,6 +470,8 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
     cache.set(start, seen);
     return seen;
   };
+  // Cache: transitive subtypes and supertypes by class key. Owner, invalidation and
+  // disposal as for `resolveCache`; the class graph is complete before the first query.
   const subCache = new Map();
   const superCache = new Map();
   const subtypesOf = (key) => closure(key, childrenOf, subCache);

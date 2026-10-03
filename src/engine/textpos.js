@@ -7,11 +7,22 @@ const fs = require('fs');
 // above the size limit cannot be synchronized with extensions") and which is slow
 // even when it succeeds. VS Code Positions are UTF-16 code units per line, which is
 // exactly what JS string indexing gives us, so the conversion is exact.
+// Cache: line starts of files on disk. Owner: this module, one per process. Key: the
+// path; each entry also records the file's mtime and size, and a lookup that finds them
+// changed rebuilds the entry, so an edited file is never answered from stale starts.
+// Invalidation: that check. Disposal: never evicted, so it grows with the files touched;
+// `_clear` (tests) empties it.
 const cache = new Map();
 
 // Tier A analyses files that exist only as text fetched from an API -- there is no
 // path on disk to stat. Registering the text lets every existing offset<->position
 // caller keep working unchanged instead of growing a parallel code path.
+// Cache: the text a PR preview registered for files that are not on disk. Owner: the
+// analysis that registered it (`analyzeRemote`), though the map is module-wide. Key: the
+// path only, so it has no revision of its own; it is correct because it holds the one
+// current preview and an entry shadows the disk. Invalidation: `clearVirtualText()`, which
+// `analyze()` and the PR preview call as they start. Disposal: the same call; nothing
+// clears it on a failed or cancelled preview.
 const virtual = new Map();
 
 function registerVirtualText(file, text) {

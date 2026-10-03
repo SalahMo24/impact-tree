@@ -50,7 +50,9 @@ function createReadiness(vscode, session, { log }) {
   }
 
   // Resolves every prerequisite once: workspace, typescript, resolver, warm language
-  // server. Concurrent callers share the same promise instead of racing.
+  // server. Concurrent callers share the same promise instead of racing. The session
+  // owns `session.resolver` and `session.readyPromise` (see src/session.js); this module
+  // creates the resolver once, from the repository root and the settings at that time.
   function ensureReady(progress) {
     if (session.readyPromise) return session.readyPromise;
     const prepare = (async () => {
