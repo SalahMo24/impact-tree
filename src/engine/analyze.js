@@ -15,6 +15,7 @@ const { seedRoots, nestedIds, blastRadius, buildTree } = require('./forest');
 const { readLineOfOffset, clearVirtualText } = require('./textpos');
 const { classifyCallSiteUpdates, classifyCallerUpdateState } = require('./call-sites');
 const { mapLimit, validateConcurrency } = require('./concurrency');
+const { throwIfCancelled } = require('./cancellation');
 
 // Prefer the project's own TypeScript so analysis matches what the editor sees; fall
 // back to the repo root, then to whatever this extension was installed with.
@@ -337,6 +338,10 @@ function inferredProjectFiles(repo, git) {
  * @param {(ctx: {ts: object, componentDir: string, component: string, repoRoot: string}) => object|null} [opts.makeResolver]
  *   Editor resolver for this project. When omitted, a language service is created per project.
  *   Returning null skips the project.
+ * @param {AbortSignal} [opts.signal] Stops the run: no caller query starts once it is
+ *   aborted. A query already running is awaited, because the resolvers' services are
+ *   disposed when the run ends; the editor's language server cannot be told to stop, so
+ *   its query finishes there and its answer is discarded.
  * @returns {Promise<{
  *   mode: string,
  *   requestedMode: string,
@@ -371,11 +376,14 @@ function inferredProjectFiles(repo, git) {
  *   not a commit (`code === 'NO_CHECKPOINT'`).
  * @throws {Error} `pr` or `branch` with no merge base (`code === 'NO_MERGE_BASE'`).
  * @throws {Error} Dirty tree in `pr` mode when `onDirty` is not `'fallback'`. `err.dirty` lists the entries.
+ * @throws {import('./cancellation').AnalysisCancelledError} `opts.signal` was aborted. No result is returned.
  */
 async function analyze(repo, opts = {}) {
   const mode = opts.mode || 'pr';
   const cfg = MODES[mode];
   if (!cfg) throw new Error(`unknown mode '${mode}' (expected ${Object.keys(MODES).join('|')})`);
+  const { signal } = opts;
+  throwIfCancelled(signal);
   const depth = opts.depth ?? 2;
   const git = makeGit(repo);
   const warnings = [];
@@ -387,6 +395,7 @@ async function analyze(repo, opts = {}) {
   clearVirtualText();
 
   const base = await cfg.resolveBase(git, opts, warnings);
+  throwIfCancelled(signal);
 
   const dirty = git.isDirty(null);
 
@@ -424,6 +433,7 @@ async function analyze(repo, opts = {}) {
   const report = opts.onProgress || (() => {});
   try {
     for (const [comp, entry] of byComponent) {
+      throwIfCancelled(signal);
       const compFiles = entry.files;
       report({
         phase: 'component',
@@ -521,6 +531,8 @@ async function analyze(repo, opts = {}) {
           const seen = new Set(); const stack = [[c.file, c.namePos, 0]];
           const budget = opts.reachBudget ?? 120;
           outer: while (stack.length) {
+            // A cancelled walk stops here; mapLimit then rejects, so its partial answer is never used.
+            if (signal && signal.aborted) break;
             const [f, p, d] = stack.pop();
             if (d >= depth || seen.size > budget) continue;
             let ups = [];
@@ -539,7 +551,7 @@ async function analyze(repo, opts = {}) {
           ? (tests.length ? 'covered' : (c.callerState === 'unknown' || c.callerState === 'di') ? 'unknown' : 'uncovered')
           : 'not-computed';
         report({ phase: 'resolve', component: comp, done: ++done, total: changed.length, label: c.label });
-      });
+      }, { signal });
 
       // Blast radius is only computed for roots we will actually show: at depth 4 with
       // 90-node closures it was the single largest cost in the run (234s -> see README).
@@ -553,12 +565,14 @@ async function analyze(repo, opts = {}) {
       for (let i = 0; i < ranked.length; i++) {
         const r = ranked[i];
         if (i >= (opts.rankedRoots ?? 6)) { roots.push({ ...r, blast: null, blastCapped: false }); continue; }
+        throwIfCancelled(signal);
         const b = await blastRadius(resolver, r.file, r.namePos, opts.blastDepth ?? 1);
         roots.push({ ...r, blast: b.count, blastCapped: b.capped });
       }
       roots.sort((a, b) => b.score - a.score || (b.blast || 0) - (a.blast || 0));
       const forest = [];
       for (const r of roots.slice(0, opts.rankedRoots ?? 6)) {
+        throwIfCancelled(signal);
         forest.push(await buildTree(resolver, r, {
           depth: opts.treeDepth ?? 2, maxChildren: opts.maxChildren ?? 8,
           isChanged: (id) => changedKeys.has(id),
@@ -572,6 +586,7 @@ async function analyze(repo, opts = {}) {
   } finally {
     for (const svc of servicePool.services.values()) svc.dispose();
   }
+  throwIfCancelled(signal);
 
   for (const k of outsideProgram) {
     const [comp, rel] = k.split('\u0000');

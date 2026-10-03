@@ -12,8 +12,9 @@ function loadTypeScriptForPreview(repo) {
 }
 
 /**
- * PR preview (no checkout) and checkout-then-analyse. Shares the session's in-flight
- * and checkout locks with local refresh.
+ * PR preview (no checkout) and checkout-then-analyse. Both go through the session's
+ * lifecycle: a preview is an analysis run like a local refresh, and a checkout claims
+ * the worktree from it.
  *
  * @param {*} vscode
  * @param {object} session
@@ -24,82 +25,76 @@ function createPrActions(vscode, session, { log, gh, repoSlug, sources, prDocume
   const { analyzeRemote } = require('./engine/analyze-remote');
 
   // Tier A: analyse the PR from the API alone. Never touches the worktree, so it is
-  // safe to run on any branch, mid-edit, with no confirmation.
+  // safe to run on any branch, mid-edit, with no confirmation. Replaces any running
+  // analysis, as every analysis request does.
   const previewPullRequest = async (pr) => {
-    if (session.refuseDuringCheckout()) return;
-    if (session.inFlight) { vscode.window.showWarningMessage('Impact Tree: an analysis is already running'); return; }
-    // Recorded before the run so that Refresh retries this PR even when the run fails.
-    session.state = { ...session.state, source: { kind: 'pr', pr } };
-    session.busy = true; session.decorate.clear(); session.provider.refresh();
-    session.inFlight = (async () => {
-      try {
-        await vscode.window.withProgress(
-          { location: { viewId: 'impactTree.changes' }, title: `Impact Tree: PR #${pr.number}` },
-          async (progress) => {
-            session.phase = 'analysing';
-            const t0 = Date.now();
-            const repo = session.repoRoot();
-            const cfg = vscode.workspace.getConfiguration('impactTree');
-            const ts = loadTypeScriptForPreview(repo);
+    // The source is recorded at begin so that Refresh retries this PR even when the run fails.
+    const run = session.beginAnalysisRun({ source: { kind: 'pr', pr }, stage: 'analysing' });
+    if (!run) return;
+    try {
+      await vscode.window.withProgress(
+        { location: { viewId: 'impactTree.changes' }, title: `Impact Tree: PR #${pr.number}` },
+        async (progress) => {
+          const t0 = Date.now();
+          const repo = session.repoRoot();
+          const cfg = vscode.workspace.getConfiguration('impactTree');
+          const ts = loadTypeScriptForPreview(repo);
 
-            const { clearVirtualText } = require('./engine/textpos');
-            clearVirtualText();
+          const { clearVirtualText } = require('./engine/textpos');
+          clearVirtualText();
 
-            const result = await analyzeRemote({
-              ts, gh, slug: repoSlug(), pr, repoRoot: repo,
-              maxFiles: cfg.get('tierA.maxFiles', 300),
-              concurrency: cfg.get('concurrency', 8),
-              onProgress: (p2) => progress.report({
-                message: p2.total ? `${p2.message} ${p2.done}/${p2.total}` : p2.message,
-              }),
-              trace: (m) => log(`  tierA · ${m}`),
-            });
-
-            pr = result.pr || pr;
-            session.state = { ...session.state, source: { kind: 'pr', pr } };
-            prDocuments.add(result);
-
-            // Text for the diff views, keyed the way the content provider looks it up.
-            const prText = new Map();
-            for (const [rel, t] of result.texts) prText.set(rel, t);
-
-            log(`tier A: PR #${pr.number} ${result.changedFileCount} file(s), `
-              + `${result.allChanged.length} changed symbol(s), ${result.findings.length} finding(s) `
-              + `in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
-            result.warnings.forEach((w) => log(`  warn: ${w}`));
-            const st = result.resolver ? result.resolver.stats() : {};
-            if (st.indexedFiles != null) {
-              log(`  indexed ${st.indexedFiles} PR file(s); ${st.unknownTarget || 0} symbol(s) not in the index`);
-            }
-
-            session.resolverOverride = result.resolver;
-            session.viewStateFromResult(result, repo, { prText });
-            session.review.configure(`v2:${repo}:pr:${pr.number}`,
-              require('./review-identity').createReviewIdentity(ts, repo, require('./review-identity').previewRevisions(result)));
-            vscode.window.setStatusBarMessage(
-              `Impact Tree: PR #${pr.number} preview — ${result.findings.length} finding(s), PR files only`, 8000);
+          const result = await analyzeRemote({
+            ts, gh, slug: repoSlug(), pr, repoRoot: repo,
+            maxFiles: cfg.get('tierA.maxFiles', 300),
+            concurrency: cfg.get('concurrency', 8),
+            onProgress: (p2) => progress.report({
+              message: p2.total ? `${p2.message} ${p2.done}/${p2.total}` : p2.message,
+            }),
+            trace: (m) => log(`  tierA · ${m}`),
+            signal: run.signal,
           });
-      } catch (e) {
-        session.state = { ...session.state, result: null, error: `PR #${pr.number}: ${e.message}` };
-        log(`ERROR tier A ${e.stack || e.message}`);
-        vscode.window.showErrorMessage(`Impact Tree: ${e.message}`);
-      } finally {
-        session.phase = 'ready'; session.busy = false; session.inFlight = null; session.provider.refresh();
-      }
-    })();
-    return session.inFlight;
+
+          pr = result.pr || pr;
+          // Text for the diff views, keyed the way the content provider looks it up.
+          const prText = new Map();
+          for (const [rel, t] of result.texts) prText.set(rel, t);
+          if (!session.completeAnalysisRun(run, {
+            result, repo, expansionResolver: result.resolver, source: { kind: 'pr', pr }, viewExtras: { prText },
+          })) return;
+          prDocuments.add(result);
+
+          log(`tier A: PR #${pr.number} ${result.changedFileCount} file(s), `
+            + `${result.allChanged.length} changed symbol(s), ${result.findings.length} finding(s) `
+            + `in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+          result.warnings.forEach((w) => log(`  warn: ${w}`));
+          const st = result.resolver ? result.resolver.stats() : {};
+          if (st.indexedFiles != null) {
+            log(`  indexed ${st.indexedFiles} PR file(s); ${st.unknownTarget || 0} symbol(s) not in the index`);
+          }
+
+          session.review.configure(`v2:${repo}:pr:${pr.number}`,
+            require('./review-identity').createReviewIdentity(ts, repo, require('./review-identity').previewRevisions(result)));
+          vscode.window.setStatusBarMessage(
+            `Impact Tree: PR #${pr.number} preview — ${result.findings.length} finding(s), PR files only`, 8000);
+        });
+    } catch (e) {
+      session.failAnalysisRun(run, e, { viewError: `PR #${pr.number}: ${e.message}`, logLabel: 'ERROR tier A' });
+    } finally {
+      session.releaseAnalysisRunResources(run);
+    }
   };
 
   // Checking out rewrites the worktree, so this states the exact effect and the branch
   // it is leaving before doing anything. `pull/N/head` works for forks too, which a
-  // plain `fetch origin <headRef>` would not.
+  // plain `fetch origin <headRef>` would not. A running analysis does not block it: the
+  // checkout cancels it once confirmed, and git waits until it has settled.
   const checkoutAndAnalyse = async (pr) => {
-    const busyWith = () => (session.checkingOut != null ? `PR #${session.checkingOut} is being checked out`
-      : session.inFlight ? 'an analysis is running' : null);
     const refuse = () => {
-      const why = busyWith();
-      if (why) vscode.window.showWarningMessage(`Impact Tree: ${why} — try checking out PR #${pr.number} when it finishes`);
-      return !!why;
+      const busy = session.checkoutInProgress();
+      if (busy != null) {
+        vscode.window.showWarningMessage(`Impact Tree: PR #${busy} is being checked out — try checking out PR #${pr.number} when it finishes`);
+      }
+      return busy != null;
     };
     if (refuse()) return;
     const { makeGit } = require('./engine/git');
@@ -116,10 +111,12 @@ function createPrActions(vscode, session, { log, gh, repoSlug, sources, prDocume
       { modal: true, detail: `This leaves '${was}' and moves the worktree to a detached HEAD.` },
       'Check out');
     if (yes !== 'Check out') return;
-    if (refuse()) return;                   // something started while the dialog was open
-    session.checkingOut = pr.number;
+    if (refuse()) return;                   // another checkout started while the dialog was open
+    let checkout = null;
     let sha;
     try {
+      checkout = await session.beginCheckout(pr.number);
+      if (!checkout) return;                // the window closed while the analysis settled
       await vscode.window.withProgress(
         { location: { viewId: 'impactTree.sources' }, title: `Fetching PR #${pr.number}` },
         async () => {
@@ -130,11 +127,12 @@ function createPrActions(vscode, session, { log, gh, repoSlug, sources, prDocume
           await git.rawAsync(['checkout', '--detach', sha, '--quiet']);
         });
     } catch (e) {
-      vscode.window.showErrorMessage(`Impact Tree: checkout failed — ${e.message}`);
+      if (session.getPhase() !== 'disposed') vscode.window.showErrorMessage(`Impact Tree: checkout failed — ${e.message}`);
       return;
     } finally {
-      session.checkingOut = null;
+      session.endCheckout(checkout);
     }
+    if (session.getPhase() === 'disposed') return;
     log(`checked out PR #${pr.number} (${pr.headRef}) at ${sha.slice(0, 10)} from '${was}'`);
     vscode.window.showInformationMessage(
       `Impact Tree: on PR #${pr.number}. Return with: git checkout ${was}`);

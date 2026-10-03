@@ -2,6 +2,7 @@
 'use strict';
 // One worker-pool helper and one validator for impactTree.concurrency, shared by the
 // local and the pull-request pipelines so a bad setting cannot behave differently in each.
+const { throwIfCancelled } = require('./cancellation');
 
 const DEFAULT_CONCURRENCY = 8;
 const MAX_CONCURRENCY = 32;
@@ -34,26 +35,34 @@ function validateConcurrency(value, warnings) {
 /**
  * Run fn over items with at most `limit` in flight; results keep input order. `limit`
  * must already be validated: zero workers would resolve having done nothing.
+ *
+ * Once `signal` is aborted no further item starts. Items already running are left to
+ * finish, because they may still be using resources the caller disposes once this
+ * settles; then the pool rejects with the cancellation error, never a partial result.
  * @template T, R
  * @param {T[]} items
  * @param {number} limit A positive integer; anything else throws a RangeError.
  * @param {(item: T, index: number) => Promise<R>|R} fn
+ * @param {{ signal?: AbortSignal }} [options]
  * @returns {Promise<R[]>} Results in input order.
+ * @throws {import('./cancellation').AnalysisCancelledError} When `signal` was aborted.
  */
-async function mapLimit(items, limit, fn) {
+async function mapLimit(items, limit, fn, { signal } = {}) {
   if (!Number.isSafeInteger(limit) || limit < 1) {
     throw new RangeError(`mapLimit needs a positive integer limit, got ${show(limit)}`);
   }
+  throwIfCancelled(signal);
   const out = new Array(items.length);
   let i = 0;
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (true) {
+    while (!(signal && signal.aborted)) {
       const idx = i++;
       if (idx >= items.length) return;
       out[idx] = await fn(items[idx], idx);
     }
   });
   await Promise.all(workers);
+  throwIfCancelled(signal);
   return out;
 }
 

@@ -468,6 +468,20 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
 2. Validate settings and consolidate genuinely equivalent concurrency helpers.
    Establish documented budgets and exhaustion behavior.
 3. Add request deadlines, cancellation, analysis ownership, and predictable cleanup.
+   - Exists: analysis ownership in `src/session.js`. One private lifecycle (`starting`,
+     `preparing`, `analysing`, `checkingOut`, `ready`, `disposed`); every entry point
+     goes through session operations (`beginAnalysisRun`, `completeAnalysisRun`,
+     `failAnalysisRun`, `releaseAnalysisRunResources`, `beginCheckout`/`endCheckout`,
+     `isCurrentAnalysis`, `dispose`). Admission is cancel and replace; a request during a
+     checkout is refused; a checkout waits for the analysis it cancels to settle.
+     Replaced, cancelled and post-disposal runs publish nothing; lazy tree expansions
+     and decorations check the analysis id they started under.
+   - Exists: cancellation reaching the engine. `analyze()` and `analyzeRemote()` take an
+     `AbortSignal`, `mapLimit` stops scheduling once it is aborted, and both reject with
+     `AnalysisCancelledError` (`src/engine/cancellation.js`). The editor's language
+     server cannot be cancelled: its in-flight query finishes and the answer is dropped.
+   - Planned (T3): request deadlines, and GitHub requests that honour the signal; today
+     a preview stops between requests, not during one.
 4. Make cache identity and retention policies explicit; address expensive editor
    work using measurements.
 5. Enroll modules in linting and JSDoc type checking, then enforce those checks in
@@ -477,7 +491,8 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      both plus `npm test` against a pinned `pingdotgg/t3code` commit.
    - A file is enrolled in both checks by putting `// @ts-check` on its first line;
      there is no other list. Enrolled today: `src/engine/concurrency.js`,
-     `src/engine/call-sites.js`, `src/engine/caller-contract.js`.
+     `src/engine/call-sites.js`, `src/engine/caller-contract.js`,
+     `src/engine/cancellation.js`.
    - Planned: type-aware lint rules such as `no-floating-promises`, and enrolling the
      remaining modules.
 

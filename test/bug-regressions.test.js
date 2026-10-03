@@ -951,7 +951,7 @@ test('ensureReady retries after a failed prepare, shares a running one, and keep
 
     assert.equal(await ensureReady(), false, 'the failed prepare reports failure');
     assert.equal(session.resolver, null);
-    assert.equal(session.phase, 'ready', 'the user can still proceed');
+    assert.equal(session.phase, 'idle', 'readiness leaves the displayed phase to the session lifecycle');
     assert.ok(logs.some((m) => m.includes('resolver exploded')));
 
     // the next call prepares afresh; two calls during that prepare share one promise

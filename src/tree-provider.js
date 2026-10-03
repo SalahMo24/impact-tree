@@ -41,7 +41,13 @@ const NO_SITE_EVIDENCE = { updated: [], untouched: [], unknown: [] };
 const GROUP_TYPES = new Set(['changeFile', 'insideGroup']);
 const SEVERITY_RANK = { stale: 0, warn: 1, ok: 2, muted: 3 };
 
-function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, decorate = null, getPhase = () => 'ready', review = null }) {
+// `getAnalysisId` and `isCurrentAnalysis` come from the session: rows and decorations
+// belong to the analysis that was current when they were requested. Without a session
+// every request is current.
+function createTreeProvider(vscode, {
+  getState, resolver, isBusy = () => false, decorate = null, getPhase = () => 'ready', review = null,
+  getAnalysisId = () => 0, isCurrentAnalysis = () => true,
+}) {
   // A finding's direct callers are already resolved, so checking it can clear them too
   // and report real progress. Deeper levels are lazy and are not counted.
   const idOf = (n) => review?.id ? review.id(n) : nodeId(n);
@@ -124,8 +130,9 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
     const slash = String(relPath).replace(/\\/g, '/');
     return table[slash];
   };
-  const mark = (uri, status, _severity, tooltip) => {
-    if (decorate && uri) decorate.register(uri, { status, tooltip });
+  // Registers a row's decoration only while the analysis it was built for is current.
+  const mark = (analysisId, uri, status, _severity, tooltip) => {
+    if (decorate && uri && isCurrentAnalysis(analysisId)) decorate.register(uri, { status, tooltip });
     return uri;
   };
   const symbolIcon = (label, sym) => {
@@ -191,7 +198,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
   // declared inside another change nests under it, and a file holding several becomes
   // one row. Nothing is dropped: every change stays reachable, and the worst state in a
   // group leads its row, so a ⛔ cannot hide inside a collapsed group.
-  function groupByLocation(nodes) {
+  function groupByLocation(nodes, analysisId) {
     const byFile = new Map();
     for (const n of nodes) {
       if (!byFile.has(n.file)) byFile.set(n.file, []);
@@ -227,7 +234,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
       if (rows.length === 1) { out.push(rows[0]); continue; }
       const relPath = rows[0].finding.relPath;
       const uri = uriFor(file, null);
-      mark(uri, statusOfPath(st, relPath), 'muted', relPath);
+      mark(analysisId, uri, statusOfPath(st, relPath), 'muted', relPath);
       out.push(N({
         type: 'changeFile', label: path.basename(relPath), relPath, file,
         rows: byWorst(rows), members: rows.flatMap(membersOf), decorationUri: uri,
@@ -443,6 +450,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
     refresh() { _emitter.fire(); },
     getTreeItem: toItem,
     async getChildren(node) {
+      const analysisId = getAnalysisId();
       const state = getState();
       if (!node) {
         const ph = getPhase();
@@ -526,7 +534,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
             : (c.callerState === 'unknown') ? 'warn'
               : (c.kinds || []).some((k) => k.id !== 'body') ? 'ok' : 'muted';
           const uri = uriFor(c.file, c.namePos);
-          mark(uri, statusOfPath(state, c.relPath), sev, `${c.relPath}:${c.startLine}`);
+          mark(analysisId, uri, statusOfPath(state, c.relPath), sev, `${c.relPath}:${c.startLine}`);
           return N({
             type: 'finding', label: c.label, finding: c, file: c.file, pos: c.namePos, score: c.score,
             ambiguous: (seen.get(c.label) || 0) > 1, decorationUri: uri,
@@ -536,7 +544,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
         // otherwise every such symbol shows twice, once nested and once at top level.
         const isRoot = (c) => c.isRoot !== false;
         if (node.key === 'findings') return r.findings.filter(isRoot).map(mk);
-        if (node.key === 'other') return groupByLocation((r.allChanged || []).filter((c) => !r.findings.includes(c)).filter(isRoot).map(mk));
+        if (node.key === 'other') return groupByLocation((r.allChanged || []).filter((c) => !r.findings.includes(c)).filter(isRoot).map(mk), analysisId);
         if (node.key === 'untested') {
           if (!r.testReachComputed) {
             return [N({ type: 'message', label: 'Compute test reachability', icon: 'play',
@@ -547,7 +555,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
         if (node.key === 'deleted') {
           return r.deleted.map((d) => {
             const uri = uriFor(d.file, d.namePos);
-            mark(uri, statusOfPath(state, d.relPath) || 'deleted', 'stale', `${d.label} deleted`);
+            mark(analysisId, uri, statusOfPath(state, d.relPath) || 'deleted', 'stale', `${d.label} deleted`);
             return N({ type: 'deleted', label: d.label, key: d.key, relPath: d.relPath, file: d.file, decorationUri: uri });
           });
         }
@@ -555,7 +563,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
           const leaves = (r.otherFiles || []).map((f) => {
             const abs = state.absPath ? state.absPath(f.path) : null;
             const uri = abs ? uriFor(abs, null) : null;
-            mark(uri, f.status, 'muted', f.path);
+            mark(analysisId, uri, f.status, 'muted', f.path);
             return N({
               type: 'file', label: path.basename(f.path), relPath: f.path, status: f.status,
               absPath: abs, decorationUri: uri,
@@ -591,6 +599,10 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
       } catch (e) {
         incomplete = (e && e.message) || 'the caller query failed';
       }
+      // A newer analysis replaced the result while the query ran, so these callers belong
+      // to a result no longer shown. The language server cannot cancel the query; it has
+      // finished by now, and only its answer is dropped.
+      if (!isCurrentAnalysis(analysisId)) return [];
       const excluded = new Set(state2?.result?.excludedCallerPaths || []);
       if (excluded.size && state2?.rel) callers = callers.filter((c) => !excluded.has(state2.rel(c.file)));
       const changedKeys = (state2 && state2.changedKeys) || new Set();
@@ -602,7 +614,7 @@ function createTreeProvider(vscode, { getState, resolver, isBusy = () => false, 
         const callState = classifyCallerUpdateState({ callSiteUpdates, callerChanged: symChanged });
         const rel = state2 ? state2.rel(c.file) : c.file;
         const uri = uriFor(c.file, c.pos);
-        mark(uri, statusOfPath(state2, rel), c.test ? 'muted' : (CALL_STATE[callState] || {}).severity, rel);
+        mark(analysisId, uri, statusOfPath(state2, rel), c.test ? 'muted' : (CALL_STATE[callState] || {}).severity, rel);
         return N({
           type: 'caller', reviewParent: idOf(node), label: c.label, file: c.file, pos: c.pos, test: c.test,
           callSites: c.callSites || [], sites: c.sites,
