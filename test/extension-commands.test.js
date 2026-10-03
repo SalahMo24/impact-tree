@@ -154,7 +154,9 @@ test('a successful checkout releases the lock for the next checkout', () => with
   assert.deepEqual(env.seen.analyze.map((a) => a.base), ['base7', 'base8']);
 }));
 
-test('a checkout is refused after its confirmation if an analysis started while the dialog was open', async (t) => {
+// Admission is cancel and replace: a confirmed checkout cancels the analysis that started
+// under its dialog, and git waits until that analysis has settled.
+test('a checkout confirmed while an analysis runs cancels it, and fetches only once it has settled', async (t) => {
   const cases = [
     ['a PR preview', 'remote', (env) => env.preview(pull(9))],
     ['a local Refresh', 'analyze', (env) => env.refresh()],
@@ -169,16 +171,18 @@ test('a checkout is refused after its confirmation if an analysis started while 
       const analysisDone = begin(env);
       await analysis.reached;                  // it is running now, under the open dialog
 
-      const fetch = env.holds.fetch.next();    // lets a wrongly accepted checkout be observed instead of hanging
       modal.release('Check out');
-      await Promise.race([checkout, fetch.reached]);
+      await new Promise(setImmediate);
 
-      assert.deepEqual(env.git.fetches, [], 'the confirmed checkout did not start');
+      assert.deepEqual(env.git.fetches, [], 'nothing is fetched while the analysis is still running');
       assert.deepEqual(env.git.checkouts, []);
-      assert.equal(refusals(env, /analysis is running.*PR #7/).length, 1, 'the user is told why');
+      assert.deepEqual(refusals(env, /PR #7/), [], 'the checkout is not refused');
 
       analysis.release();
       await analysisDone;
+      await checkout;
+      assert.deepEqual(env.git.fetches, [7], 'the checkout went ahead once the analysis settled');
+      assert.deepEqual(env.git.checkouts.map((c) => c.commit), [shaFor(7)]);
       assert.deepEqual(env.seen.errors, []);
     }));
   }

@@ -78,14 +78,13 @@ function registerCommands(vscode, {
         vscode.window.showInformationMessage('Test reachability requires local analysis. The PR preview is unchanged.');
         return;
       }
-      session.state = { ...session.state, wantTestReach: true };
-      await session.refresh();
+      await session.refreshWithTestReach();
     }),
 
     vscode.commands.registerCommand('impactTree.setCheckpoint', async () => {
       const { makeGit } = require('./engine/git');
       const sha = makeGit(session.repoRoot()).revParse('HEAD');
-      session.state = { ...session.state, checkpoint: sha };
+      session.setCheckpoint(sha);
       await context.workspaceState.update('impactTree.checkpoint', sha);
       vscode.window.showInformationMessage(`Impact Tree: checkpoint set at ${String(sha).slice(0, 10)}`);
     }),

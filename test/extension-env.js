@@ -40,17 +40,24 @@ function gates() {
 const shaFor = (n) => String(n).repeat(40).slice(0, 40);
 const pull = (n) => ({ number: n, headRef: `head${n}`, baseRef: `base${n}`, title: `PR ${n}`, url: `https://example.test/${n}` });
 
-const localResult = () => ({ mode: 'pr', requestedMode: 'pr', base: { ref: 'main', sha: 'HEAD' }, changedFileCount: 0,
-  findings: [], warnings: [], allChanged: [], components: [], changedPaths: [], otherFiles: [], deleted: [],
-  untested: [], unanalysable: [], changedRanges: {} });
+// A local result shaped by the request it answers: its mode, and whether test reach was asked for.
+const localResult = (request = {}, { baseRef = 'main', findings = [] } = {}) => ({
+  mode: request.mode || 'pr', requestedMode: request.mode || 'pr', base: { ref: baseRef, sha: 'HEAD' }, changedFileCount: 0,
+  findings, warnings: [], allChanged: findings, components: [], changedPaths: [], otherFiles: [], deleted: [],
+  untested: [], unanalysable: [], changedRanges: {}, testReachComputed: request.deferTestReach === false });
+// A changed symbol whose signature changed, so it is listed under Findings.
+const finding = (label, file, namePos) => ({ label, file, namePos, relPath: path.basename(file), startLine: 1,
+  kinds: [{ id: 'signature' }], staleCallers: 0, callerState: 'resolved', score: 1, callers: [], stale: [] });
 const previewResult = (pr) => ({ tierA: true, pr, prNumber: pr.number, headSha: `head-of-${pr.number}`, base: { ref: 'main', sha: 'merge' },
-  changedFileCount: 0, findings: [], warnings: [], allChanged: [], changedPaths: [], otherFiles: [], changedRanges: {},
-  texts: new Map(), resolver: null });
+  mode: 'pr-preview', changedFileCount: 0, findings: [], warnings: [], allChanged: [], changedPaths: [], otherFiles: [], changedRanges: {},
+  deleted: [], unanalysable: [], untested: [], texts: new Map(), resolver: null });
 
 // Loads a fresh extension against a clean temp git repo. Only the edges are faked:
-// the two analysers, and the network-facing async git calls (fetch, rev-parse of
-// FETCH_HEAD, checkout), so the worktree itself never moves.
-function createEnv() {
+// the two analysers, the editor's language-server resolver, and the network-facing
+// async git calls (fetch, rev-parse of FETCH_HEAD, checkout), so the worktree itself
+// never moves. `changedSource` puts a committed TypeScript change on a feature branch,
+// which is what readiness needs before it will warm the language server.
+function createEnv({ prewarm = false, changedSource = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-ext-commands-'));
   const sh = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
   sh('init', '-q', '--initial-branch=main'); sh('config', 'user.name', 'Test'); sh('config', 'user.email', 'test@example.com');
@@ -58,17 +65,27 @@ function createEnv() {
   fs.writeFileSync(path.join(dir, 'tsconfig.json'), '{"include":["*.ts"]}');
   sh('add', '.'); sh('commit', '-qm', 'base');
   sh('remote', 'add', 'origin', 'https://github.com/example/repo.git');
+  if (changedSource) {
+    sh('checkout', '-qb', 'feature');
+    fs.writeFileSync(path.join(dir, 'a.ts'), 'export function warm() { return 1; }\n');
+    sh('add', '.'); sh('commit', '-qm', 'feature');
+    fs.mkdirSync(path.join(dir, 'node_modules'));
+    fs.symlinkSync(path.dirname(require.resolve('typescript/package.json')), path.join(dir, 'node_modules', 'typescript'));
+  }
 
   const commands = new Map();
-  const seen = { warnings: [], errors: [], infos: [], log: [], modals: 0, analyze: [], remote: [] };
+  const seen = { warnings: [], errors: [], infos: [], log: [], status: [], modals: 0, analyze: [], remote: [],
+    signals: [], callerQueries: [], warmUps: [] };
   const git = { fetches: [], checkouts: [], calls: [] };
-  const holds = { fetch: gates(), modal: gates(), remote: gates(), analyze: gates() };
+  const holds = { fetch: gates(), modal: gates(), remote: gates(), analyze: gates(), callers: gates(), warmUp: gates() };
   const failures = new Map();
-  const hooks = { beforeCheckout: null, remoteResult: (pr) => previewResult(pr) };
+  const hooks = { beforeCheckout: null, remoteResult: (pr) => previewResult(pr), localResult: (o) => localResult(o),
+    warm: !changedSource, clearResolver: () => {} };
+  const captured = { tree: null, decorations: null };
   let fetchHead = null, quickPick = null;
 
   const disposable = () => ({ dispose() {} });
-  const cfg = { get: (name, fallback) => ({ prewarm: false, analyseOnStartup: false, fetchBase: false })[name] ?? fallback,
+  const cfg = { get: (name, fallback) => ({ prewarm, analyseOnStartup: false, fetchBase: false })[name] ?? fallback,
     update: async () => {} };
   const vscode = { ...baseStub, ConfigurationTarget: { Workspace: 2 },
     Position: class { constructor(line, character) { this.line = line; this.character = character; } },
@@ -77,8 +94,11 @@ function createEnv() {
     authentication: { getSession: async () => null },
     window: {
       createOutputChannel: () => ({ appendLine: (m) => seen.log.push(m), dispose() {}, show() {} }),
-      registerFileDecorationProvider: disposable,
-      createTreeView: () => ({ dispose() {}, onDidChangeCheckboxState: disposable }),
+      registerFileDecorationProvider: (provider) => { captured.decorations = provider; return disposable(); },
+      createTreeView: (id, options) => {
+        if (id === 'impactTree.changes') captured.tree = options.treeDataProvider;
+        return { dispose() {}, onDidChangeCheckboxState: disposable };
+      },
       withProgress: async (_, fn) => fn({ report() {} }),
       showQuickPick: async () => quickPick,
       showWarningMessage: async (message, options) => {
@@ -91,7 +111,7 @@ function createEnv() {
       },
       showErrorMessage: (m) => seen.errors.push(m),
       showInformationMessage: (m) => seen.infos.push(m),
-      setStatusBarMessage() {},
+      setStatusBarMessage: (m) => seen.status.push(m),
       visibleTextEditors: [],
     },
     commands: { registerCommand: (name, fn) => { commands.set(name, fn); return disposable(); }, executeCommand: async () => [] },
@@ -132,8 +152,9 @@ function createEnv() {
     let resolved = null;
     try { resolved = Module._resolveFilename(name, parent); } catch { /* not a file module */ }
     if (resolved === path.join(SRC, 'engine/analyze-remote.js')) {
-      return { analyzeRemote: async ({ pr }) => {
+      return { analyzeRemote: async ({ pr, signal }) => {
         seen.remote.push(pr.number);
+        seen.signals.push(signal);
         await holds.remote.enter(() => undefined);
         return hooks.remoteResult(pr);
       } };
@@ -141,9 +162,25 @@ function createEnv() {
     if (resolved === path.join(SRC, 'engine/analyze.js')) {
       return { ...originalLoad.call(this, name, parent, ...rest), analyze: async (_repo, o) => {
         seen.analyze.push({ mode: o.mode, base: o.base });
+        seen.signals.push(o.signal);
         await holds.analyze.enter(() => undefined);
-        return localResult();
+        return hooks.localResult(o, seen.analyze.length);
       } };
+    }
+    // The language-server resolver: its warm-up and its caller queries can be held, as a
+    // slow server would, and like the real one it cannot be told to stop.
+    if (resolved === path.join(SRC, 'resolver-vscode.js')) {
+      return { createVscodeResolver: () => ({
+        isWarm: () => hooks.warm,
+        warmUp: (file) => { seen.warmUps.push(file); return holds.warmUp.enter(() => true); },
+        clear: () => hooks.clearResolver(),
+        stats: () => ({}),
+        incoming: async () => [],
+        incomingWithStatus: (file, pos) => {
+          seen.callerQueries.push({ file, pos });
+          return holds.callers.enter(() => ({ callers: [], complete: true }));
+        },
+      }) };
     }
     if (resolved === path.join(SRC, 'engine/git.js')) {
       const real = originalLoad.call(this, name, parent, ...rest);
@@ -162,7 +199,9 @@ function createEnv() {
 
   const run = (name, ...args) => commands.get(name)(...args);
   return {
-    seen, git, holds, hooks,
+    seen, git, holds, hooks, vscode, dir,
+    tree: () => captured.tree,
+    decorations: () => captured.decorations,
     failGit: (cmd, error) => failures.set(cmd, error),
     moveFetchHead: (sha) => { fetchHead = sha; },
     // The user picks an action for a PR in the sources view (showQuickPick reads the pick synchronously).
@@ -170,6 +209,9 @@ function createEnv() {
     preview(pr) { quickPick = { id: 'preview' }; return run('impactTree.openPullRequest', pr); },
     refresh: () => run('impactTree.refresh'),
     analyseLocally: (mode) => run('impactTree.analyseMode', mode),
+    selectMode(label) { quickPick = { label }; return run('impactTree.selectMode'); },
+    computeTestReach: () => run('impactTree.computeTestReach'),
+    deactivate: () => extension.deactivate(),
     dispose() {
       context.subscriptions.forEach((s) => s.dispose());
       extension.deactivate();
@@ -181,11 +223,11 @@ function createEnv() {
   };
 }
 
-async function withEnv(fn) {
-  const env = createEnv();
+async function withEnv(fn, options) {
+  const env = createEnv(options);
   try { await fn(env); } finally { env.dispose(); }
 }
 
 const refusals = (env, pattern) => env.seen.warnings.filter((w) => pattern.test(w));
 
-module.exports = { deferred, gates, shaFor, pull, localResult, previewResult, createEnv, withEnv, refusals };
+module.exports = { deferred, gates, shaFor, pull, localResult, finding, previewResult, createEnv, withEnv, refusals };

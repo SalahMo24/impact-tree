@@ -24,14 +24,18 @@ const log = (m) => { if (out) out.appendLine(`[${new Date().toISOString().slice(
 
 function activate(context) {
   const review = createReviewState(context.workspaceState);
-  prDocuments = createPrDocuments();
-  context.subscriptions.push({ dispose: () => prDocuments.clear() });
+  // The disposable holds its own reference: deactivate() drops the module's before the
+  // editor disposes the subscriptions.
+  const documents = createPrDocuments();
+  prDocuments = documents;
+  context.subscriptions.push({ dispose: () => documents.clear() });
   out = vscode.window.createOutputChannel('Impact Tree');
   context.subscriptions.push(out);
   log(`activated  build=${BUILD}  resolver=vscode-callhierarchy  openTextDocument=never`);
 
-  session = createSession(vscode, { log, review });
-  session.state = { checkpoint: context.workspaceState.get('impactTree.checkpoint') };
+  // Local, so the closures below keep this activation's session after deactivate().
+  const owned = createSession(vscode, { log, review, checkpoint: context.workspaceState.get('impactTree.checkpoint') });
+  session = owned;
 
   const decorate = createDecorationProvider(vscode);
   session.decorate = decorate;
@@ -39,10 +43,12 @@ function activate(context) {
   const provider = createTreeProvider(vscode, {
     decorate,
     review,
-    isBusy: () => session.busy,
-    getPhase: () => session.phase,
-    getState: () => session.state,
-    resolver: session.treeResolver,
+    isBusy: owned.isBusy,
+    getPhase: owned.getPhase,
+    getState: () => owned.state,
+    getAnalysisId: owned.getAnalysisId,
+    isCurrentAnalysis: owned.isCurrentAnalysis,
+    resolver: owned.treeResolver,
   });
   session.provider = provider;
   const view = vscode.window.createTreeView('impactTree.changes',
@@ -122,16 +128,17 @@ function activate(context) {
   );
 
   if (vscode.workspace.getConfiguration('impactTree').get('prewarm', true)) {
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       log('preparing in the background so the first refresh is fast');
-      session.ensureReady().then(() => { log('ready'); provider.refresh(); });
+      owned.prewarmInBackground().catch((e) => log(`prewarm failed: ${e.message}`));
     }, 2000);
+    context.subscriptions.push({ dispose: () => clearTimeout(timer) });
   }
   if (vscode.workspace.getConfiguration('impactTree').get('analyseOnStartup', false)) session.refresh();
 }
 
 function deactivate() {
-  if (session) session.reset();
+  if (session) session.dispose();
   session = null;
   if (prDocuments) prDocuments.clear();
   prDocuments = null;
