@@ -64,6 +64,8 @@ function createTreeProvider(vscode, {
     let u;
     if (st && st.result && st.result.tierA && st.rel) {
       const rel = String(st.rel(file) || file).replace(/\\/g, '/').replace(/^\/+/, '');
+      // An identity for the row's icon and badge; no command opens it, so it does not
+      // need the file's old path or status that a tab's address carries.
       u = vscode.Uri.from({ scheme: 'impacttree-pr', path: `/${rel}`, query: prQuery(st.result, 'head') });
     } else {
       u = vscode.Uri.file(file);

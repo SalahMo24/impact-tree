@@ -437,6 +437,12 @@ async function analyze(repo, opts = {}) {
   const components = [];
   let droppedUntracked = 0;
   const outsideProgram = new Set();
+  // Cache: language services and document registries shared by the projects of this
+  // run. Owner: this `analyze()` call. Key: TypeScript version and config path for a
+  // service, the TypeScript module for a registry; the config is read once, and a file's
+  // version is its mtime, so an edit during the run is seen by the service. Invalidation:
+  // none; the next run builds a new pool. Disposal: the `finally` below disposes every
+  // service, including on failure and cancellation.
   const servicePool = { services: new Map(), registries: new Map() };
   let workspaceGraph;
   // Shared by every project: the index it builds on first use covers the whole worktree.

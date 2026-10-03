@@ -22,6 +22,14 @@ const hash = (s) => createHash('sha256').update(s == null ? '<absent>' : s).dige
  */
 function createReviewIdentity(ts, repo, { headText, baseText, fileRevision }) {
   const S = makeSymbols(ts);
+  // Cache: one entry per file with the ids and hashes of its symbols. Owner: this
+  // identity, built by the session for one completed analysis and replaced by the next
+  // (`review.configure`). Key: absolute file path; its head and base text come from the
+  // `revisions` given at creation, so the revision is the owner's context. A local
+  // head is read from disk the first time a row of the file is identified and then
+  // kept, so an edit after that does not change the file's ids until the next analysis.
+  // Invalidation: none; the next analysis builds a new identity. Disposal: garbage with
+  // the identity.
   const cache = new Map();
   const parse = (file, text) => ts.createSourceFile(file, text, ts.ScriptTarget.ES2021, true);
   // An entry keeps ids and hashes, not syntax trees: it lives as long as the review does.
@@ -100,11 +108,16 @@ function localRevisions(repo, result, git) {
   };
   // `createReviewIdentity` asks for a file's head and then its base, and keeps what it
   // needs, so only the most recent head is remembered: an unchanged file's base is its head.
+  // Cache: the head text of the file last asked for. Owner: this `localRevisions` call,
+  // one per local analysis. Key: repository-relative path. Invalidation: replaced by the
+  // next path asked for. Disposal: with the analysis's identity.
   let lastHead = { rel: null, text: null };
   const headText = (rel) => {
     if (lastHead.rel !== rel) lastHead = { rel, text: readHead(rel) };
     return lastHead.text;
   };
+  // Cache: base text by base-side path. Owner, invalidation and disposal as for
+  // `lastHead`. The base commit is fixed in `result.base.sha`, so the path is a full key.
   const bases = new Map();
   const baseText = (rel) => {
     if (!inDiff[rel]) return headText(rel);          // unchanged against the base
@@ -116,6 +129,8 @@ function localRevisions(repo, result, git) {
   };
   // File rows need only content ids. One batch covers every changed path, and the head
   // side is hashed without being kept, so a large lockfile is not retained.
+  // Cache: git blob ids of the base side, read once for every changed path. Owner,
+  // invalidation and disposal as for `lastHead`; the base commit is fixed in the result.
   let blobs = null;
   const fileRevision = (rel) => {
     if (!blobs) blobs = git.blobIds(result.base.sha, Object.keys(inDiff).map(basePathOf));

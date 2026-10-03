@@ -8,16 +8,20 @@
 // is not the pull request, so the edit is invisible.
 // A caller in a file the PR does not touch has no fetched text; a diff of it would
 // be two empty panes, so that one stays a plain editor.
-function callerOpen({ tierA, rel, baseRel, absPath, fileChanged, always, baseSha, prNumber, headSha }) {
+function callerOpen({ tierA, rel, baseRel, status, absPath, fileChanged, always, baseSha, prNumber, headSha }) {
   const showDiff = tierA
     ? !!(rel && fileChanged)
     : !!(rel && (always || fileChanged));
   if (!showDiff) return { kind: 'editor', uri: { scheme: 'file', path: absPath } };
+  const prSide = (side) => ({
+    scheme: 'impacttree-pr', path: rel,
+    query: require('./pr-documents').prQuery({ prNumber, headSha, base: { sha: baseSha } }, side, { path: rel, basePath: baseRel, status }),
+  });
   const right = tierA
-    ? { scheme: 'impacttree-pr', path: rel, query: require('./pr-documents').prQuery({ prNumber, headSha, base: { sha: baseSha } }, 'head') }
+    ? prSide('head')
     : { scheme: 'file', path: absPath };
   const left = tierA
-    ? { scheme: 'impacttree-pr', path: rel, query: require('./pr-documents').prQuery({ prNumber, headSha, base: { sha: baseSha } }, 'base') }
+    ? prSide('base')
     : { scheme: 'impacttree-base', path: baseRel || rel, query: String(baseSha || '') };
   return {
     kind: 'diff',

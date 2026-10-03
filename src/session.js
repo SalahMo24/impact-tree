@@ -51,8 +51,14 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
 
   const session = {
     state: { checkpoint },
+    // Cache owners. `resolver` is the editor resolver with its caller cache; it is created
+    // once by src/readiness.js, emptied by `resolver.clear()` at the start of every local
+    // analysis, and dropped by `dispose()`. `localResolver` wraps it with the cross-file
+    // callers the last local analysis found; it is reset at the start of the next one.
+    // `resolverOverride` is a PR preview's syntactic resolver, set when the preview
+    // completes and cleared when any other kind of analysis begins. `readyPromise` is the
+    // shared warm-up; a failed one is forgotten so the next call prepares again.
     resolver: null,
-    // session.resolver plus the cross-file callers the last local analysis added.
     localResolver: null,
     resolverOverride: null,
     readyPromise: null,

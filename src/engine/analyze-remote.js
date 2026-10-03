@@ -97,9 +97,12 @@ async function analyzeRemote({
   const otherFiles = listed.files
     .filter((f) => !sourceFiles.includes(f))
     .map((f) => ({ path: f.path, status: normaliseStatus(f.status), contentId: listedContentId(f) }));
+  // Every tab needs the pre-rename base path, including docs/config-only previews
+  // whose files are fetched on demand rather than parsed by this analysis.
+  const basePaths = Object.fromEntries(listed.files.filter((f) => f.oldPath && f.oldPath !== f.path).map((f) => [f.path, f.oldPath]));
 
   if (!sourceFiles.length) {
-    return emptyResult(pr, listed, otherFiles, warnings, workers);
+    return emptyResult(pr, listed, otherFiles, warnings, workers, basePaths);
   }
 
   // ---- fetch head and base text -------------------------------------------------
@@ -273,6 +276,7 @@ async function analyzeRemote({
     changedFileCount: usable.length,
     changedPaths: usable.map((f) => f.path),
     fileStatus: Object.fromEntries(listed.files.map((f) => [f.path, normaliseStatus(f.status)])),
+    basePaths,
     changedRanges,
     unanalysable: [],
     components: [{ component: 'pull request', changed, deleted, roots: ranked, forest: [], stats: resolver.stats() }],
@@ -292,7 +296,7 @@ function listedContentId(f) {
   return parts.length ? parts.join('|') : null;
 }
 
-function emptyResult(pr, listed, otherFiles, warnings, concurrency) {
+function emptyResult(pr, listed, otherFiles, warnings, concurrency, basePaths) {
   return {
     tierA: true, pr, texts: new Map(), coverage: 'pr-files-only', prNumber: pr.number, headSha: pr.headSha,
     allChanged: [], nestedCount: 0, otherFiles,
@@ -301,6 +305,7 @@ function emptyResult(pr, listed, otherFiles, warnings, concurrency) {
     warnings: warnings.concat('no analysable source files in this pull request'), concurrency,
     changedFileCount: 0, changedPaths: [],
     fileStatus: Object.fromEntries(listed.files.map((f) => [f.path, normaliseStatus(f.status)])),
+    basePaths,
     changedRanges: {},
     unanalysable: [], components: [], findings: [], deleted: [], untested: [],
     testReachComputed: false, unknownCallers: [], resolver: null,
