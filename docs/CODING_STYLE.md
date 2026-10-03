@@ -516,7 +516,10 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
    - A file is enrolled in both checks by putting `// @ts-check` on its first line;
      there is no other list. Enrolled today: `src/engine/concurrency.js`,
      `src/engine/call-sites.js`, `src/engine/caller-contract.js`,
-     `src/engine/cancellation.js`.
+     `src/engine/cancellation.js`, `src/engine/settings.js`, `src/engine/test-reach.js`,
+     `src/github-request.js`, and the tree's pure row models, grouping and renderer
+     (`src/tree-row-models.js`, `src/tree-grouping.js`, `src/tree-item-renderer.js`).
+     `src/tree-provider.js` itself is not enrolled yet.
    - Planned: type-aware lint rules such as `no-floating-promises`, and enrolling the
      remaining modules.
 
