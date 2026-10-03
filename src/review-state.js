@@ -9,10 +9,21 @@ function createReviewState(memento) {
   let reviewed = new Set();
   let identity = null;
 
-  const load = (base) => {
+  // A review loads under a new key for the first time when nothing is stored under it.
+  // Only then are the ticks of the key it replaces copied, and the old key is left
+  // untouched so an older build still finds its own. Once the copy is stored (or the
+  // user has stored anything, even an empty list) the new key is the only source: an
+  // untick or a clear is never undone by copying again. Row identities include the
+  // reviewed content, so a copied tick shows only on a row whose content is unchanged.
+  const load = (base, migrateFrom) => {
     baseKey = base || 'none';
     const raw = memento ? memento.get(`${KEY}.${baseKey}`) : null;
     reviewed = new Set(Array.isArray(raw) ? raw : []);
+    if (raw !== undefined || !memento || !migrateFrom) return;
+    const old = memento.get(`${KEY}.${migrateFrom}`);
+    if (!Array.isArray(old)) return;
+    reviewed = new Set(old);
+    persist();
   };
   const persist = () => {
     if (memento) memento.update(`${KEY}.${baseKey}`, [...reviewed]);
@@ -33,7 +44,17 @@ function createReviewState(memento) {
     return [];
   };
   return {
-    configure(context, identify) { identity = identify; if (context !== baseKey) load(context); },
+    /**
+     * Binds to the review `context` names, with the row identity function for it.
+     * @param {string} context Key of the review being shown.
+     * @param {((node: object) => string|null)|null} identify
+     * @param {{ migrateFrom?: string }} [opts] `migrateFrom` is the key `context` replaces; its
+     *   ticks are copied the first time `context` is loaded.
+     */
+    configure(context, identify, { migrateFrom } = {}) {
+      identity = identify;
+      if (context !== baseKey) load(context, migrateFrom);
+    },
     id, childIds,
     /** Rebind to a base SHA. Judgements do not carry across bases. */
     useBase(base) { if (base !== baseKey) load(base); },
