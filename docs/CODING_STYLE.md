@@ -480,8 +480,15 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      `AbortSignal`, `mapLimit` stops scheduling once it is aborted, and both reject with
      `AnalysisCancelledError` (`src/engine/cancellation.js`). The editor's language
      server cannot be cancelled: its in-flight query finishes and the answer is dropped.
-   - Planned (T3): request deadlines, and GitHub requests that honour the signal; today
-     a preview stops between requests, not during one.
+   - Exists: bounded GitHub requests. Every call goes through `fetchBounded`
+     (`src/github-request.js`), which applies a 30 s deadline, the caller's
+     `AbortSignal` (so cancelling stops an in-flight request, and a late body is never
+     read), and size limits enforced while the body streams (2 MiB per file, 10 MiB per
+     JSON response). The open-PR list is capped at 10 pages and reports truncation only
+     when a further page exists. Responses are validated for the fields used. Each
+     limit's unit, owner, enforcement point and exhaustion behaviour is documented at
+     `DEFAULT_LIMITS`. Not done: retries (there are none) and the language-server limit
+     above.
 4. Make cache identity and retention policies explicit; address expensive editor
    work using measurements.
 5. Enroll modules in linting and JSDoc type checking, then enforce those checks in

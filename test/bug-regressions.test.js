@@ -65,7 +65,7 @@ test('inheritance filter keeps scoped, shadowed, namespaced, and inherited-alias
 });
 
 const response = (status, data, contentType = 'application/json') => ({ status, ok: status >= 200 && status < 300,
-  headers: { get: () => contentType }, json: async () => data, text: async () => typeof data === 'string' ? data : JSON.stringify(data) });
+  headers: { get: () => contentType }, body: new Blob([typeof data === 'string' ? data : JSON.stringify(data)]).stream() });
 const client = async () => { const gh = createGitHub({ authentication: { getSession: async () => ({ accessToken: 'test' }) } }); await gh.signIn(); return gh; };
 test('GitHub pagination, exact caps, rate limits, and unsupported file encoding', async () => {
   const original = global.fetch;
@@ -74,12 +74,12 @@ test('GitHub pagination, exact caps, rate limits, and unsupported file encoding'
     global.fetch = async (url) => {
       const page = Number(new URL(url).searchParams.get('page'));
       const total = url.includes('/files?') ? 450 : 123;
-      return response(200, Array.from({ length: Math.max(0, Math.min(100, total - (page - 1) * 100)) }, (_, i) => ({ number: (page - 1) * 100 + i, filename: `f${i}.ts` })));
+      return response(200, Array.from({ length: Math.max(0, Math.min(100, total - (page - 1) * 100)) }, (_, i) => ({ number: (page - 1) * 100 + i, title: 't', head: { ref: 'f', sha: 'h' }, base: { ref: 'main', sha: 'b' }, filename: `f${i}.ts`, status: 'modified' })));
     };
-    assert.equal((await gh.listOpenPullRequests({ owner: 'o', repo: 'r' })).length, 123);
+    assert.equal((await gh.listOpenPullRequests({ owner: 'o', repo: 'r' })).pullRequests.length, 123);
     const files = await gh.listPullRequestFiles({ owner: 'o', repo: 'r' }, 1);
     assert.equal(files.files.length, 300); assert.equal(files.truncated, true);
-    global.fetch = async (url) => response(200, Number(new URL(url).searchParams.get('page')) <= 3 ? Array.from({ length: 100 }, () => ({ filename: 'a.ts' })) : []);
+    global.fetch = async (url) => response(200, Number(new URL(url).searchParams.get('page')) <= 3 ? Array.from({ length: 100 }, () => ({ filename: 'a.ts', status: 'modified' })) : []);
     assert.equal((await gh.listPullRequestFiles({ owner: 'o', repo: 'r' }, 1)).truncated, false);
     global.fetch = async () => response(403, {});
     await assert.rejects(gh.listOpenPullRequests({ owner: 'o', repo: 'r' }), /403/);

@@ -3,6 +3,13 @@
 // CLI: VS Code ships a built-in 'github' authentication provider, so we ask it for a
 // token and call the REST API directly. A first-time user needs neither installed.
 // Nothing in this module touches the worktree — checkout is the caller's decision.
+//
+// Every request goes through `send` -> `fetchBounded` (src/github-request.js), which owns
+// the deadline, cancellation and size limits documented beside DEFAULT_LIMITS there.
+
+const {
+  DEFAULT_LIMITS, fetchBounded, GitHubAuthError, GitHubResponseError,
+} = require('./github-request');
 
 // Matches both remote forms; the optional .git and any trailing slash are stripped so
 // `repo` is never captured as "impact-tree.git".
@@ -12,8 +19,39 @@ function parseRemote(url) {
   return m ? { owner: m[1], repo: m[2] } : null;
 }
 
-function createGitHub(vscode, { log = () => {} } = {}) {
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+const isString = (v) => typeof v === 'string';
+
+// Checks the fields normalisePr reads, not the whole GitHub schema. Fields GitHub may
+// legitimately leave out (a deleted user, a deleted fork) stay optional.
+function checkPullRequest(p, endpoint) {
+  const bad = (problem) => { throw new GitHubResponseError(endpoint, problem); };
+  if (!isObject(p)) bad('a pull request is not an object');
+  if (!Number.isSafeInteger(p.number)) bad('a pull request has no numeric `number`');
+  if (!isString(p.title)) bad(`#${p.number} has no \`title\``);
+  for (const side of ['head', 'base']) {
+    if (!isObject(p[side]) || !isString(p[side].ref) || !isString(p[side].sha)) {
+      bad(`#${p.number} has no \`${side}.ref\` and \`${side}.sha\``);
+    }
+  }
+  if (p.changed_files != null && !Number.isSafeInteger(p.changed_files)) {
+    bad(`#${p.number} has a non-numeric \`changed_files\``);
+  }
+  return p;
+}
+
+/**
+ * @param {object} vscode The editor API; only `authentication.getSession` is used.
+ * @param {object} [options]
+ * @param {(line: string) => void} [options.log]
+ * @param {typeof fetch} [options.fetch] The HTTP client. Defaults to the global `fetch`,
+ *   looked up per request. A seam so the request path can be driven by a fake.
+ * @param {Partial<typeof DEFAULT_LIMITS>} [options.limits] Overrides for DEFAULT_LIMITS;
+ *   omitted limits keep their defaults. The extension passes none.
+ */
+function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overrides } = {}) {
   let session = null;
+  const limits = { ...DEFAULT_LIMITS, ...overrides };
 
   // silent:true asks "is there already a session?" without ever showing a modal, so the
   // view can render a sign-in row instead of ambushing the user on startup.
@@ -32,33 +70,61 @@ function createGitHub(vscode, { log = () => {} } = {}) {
   const account = () => (session && session.account && session.account.label) || null;
   function signOutLocally() { session = null; }
 
-  async function api(pathname) {
+  // The one door to the network: every call below goes through it, so the deadline, the
+  // caller's cancellation and the size limit cannot be forgotten by a new endpoint.
+  async function send({ url, endpoint, accept, maxBytes, signal, passStatuses }) {
     if (!session) throw new Error('not signed in to GitHub');
-    if (typeof fetch !== 'function') throw new Error('this editor build has no global fetch — cannot reach the GitHub API');
-    const res = await fetch(`https://api.github.com${pathname}`, {
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    });
-    if (res.status === 401) {
+    const client = fetchImpl || globalThis.fetch;
+    if (typeof client !== 'function') throw new Error('this editor build has no global fetch — cannot reach the GitHub API');
+    try {
+      return await fetchBounded(client, url, {
+        headers: {
+          Authorization: `Bearer ${session.accessToken}`,
+          Accept: accept,
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      }, { endpoint, deadlineMs: limits.requestTimeoutMs, maxBytes, signal, passStatuses });
+    } catch (e) {
       // A revoked or under-scoped token looks identical to "no PRs" unless we say so.
-      session = null;
-      throw new Error(`GitHub rejected the token (${res.status}) — sign in again`);
+      if (e instanceof GitHubAuthError) session = null;
+      throw e;
     }
-    if (!res.ok) throw new Error(`GitHub ${res.status} on ${pathname}`);
-    return res.json();
   }
 
-  async function listOpenPullRequests({ owner, repo }) {
+  async function api(pathname, { signal } = {}) {
+    const res = await send({
+      url: `https://api.github.com${pathname}`, endpoint: pathname,
+      accept: 'application/vnd.github+json', maxBytes: limits.maxJsonBytes, signal,
+    });
+    try { return JSON.parse(res.text); }
+    catch { throw new GitHubResponseError(pathname, 'the body is not JSON'); }
+  }
+
+  /**
+   * The open pull requests, most recently updated first, up to
+   * `limits.maxPullRequestPages` pages of 100.
+   * @param {{owner: string, repo: string}} slug
+   * @param {{signal?: AbortSignal}} [options]
+   * @returns {Promise<{pullRequests: object[], truncated: boolean}>} `truncated` is true
+   *   only when GitHub has a page beyond the cap; a list that exactly fills the cap is not.
+   */
+  async function listOpenPullRequests({ owner, repo }, { signal } = {}) {
+    const listPage = async (page) => {
+      const endpoint = `/repos/${owner}/${repo}/pulls?state=open&sort=updated&direction=desc&per_page=100&page=${page}`;
+      const batch = await api(endpoint, { signal });
+      if (!Array.isArray(batch)) throw new GitHubResponseError(endpoint, 'expected a list of pull requests');
+      return batch.map((p) => checkPullRequest(p, endpoint));
+    };
     const raw = [];
-    for (let page = 1; ; page++) {
-      const batch = await api(`/repos/${owner}/${repo}/pulls?state=open&sort=updated&direction=desc&per_page=100&page=${page}`);
+    for (let page = 1; page <= limits.maxPullRequestPages; page++) {
+      const batch = await listPage(page);
       raw.push(...batch);
-      if (batch.length < 100) break;
+      if (batch.length < 100) return { pullRequests: raw.map(normalisePr), truncated: false };
     }
-    return raw.map(normalisePr);
+    // Every page up to the cap was full. One more request tells "exactly at the cap"
+    // from "more exist" without trusting a header.
+    const truncated = (await listPage(limits.maxPullRequestPages + 1)).length > 0;
+    return { pullRequests: raw.map(normalisePr), truncated };
   }
 
   function normalisePr(p) {
@@ -82,25 +148,36 @@ function createGitHub(vscode, { log = () => {} } = {}) {
     };
   }
 
-  async function getPullRequest({ owner, repo }, number) {
-    return normalisePr(await api(`/repos/${owner}/${repo}/pulls/${number}`));
+  async function getPullRequest({ owner, repo }, number, { signal } = {}) {
+    const endpoint = `/repos/${owner}/${repo}/pulls/${number}`;
+    return normalisePr(checkPullRequest(await api(endpoint, { signal }), endpoint));
   }
 
-  async function mergeBase({ owner, repo }, base, head) {
-    const r = await api(`/repos/${owner}/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}?per_page=1`);
-    if (!r.merge_base_commit?.sha) throw new Error('GitHub did not return a merge base');
-    return r.merge_base_commit.sha;
+  async function mergeBase({ owner, repo }, base, head, { signal } = {}) {
+    const endpoint = `/repos/${owner}/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}?per_page=1`;
+    const r = await api(endpoint, { signal });
+    const sha = isObject(r) && isObject(r.merge_base_commit) ? r.merge_base_commit.sha : null;
+    if (!isString(sha) || !sha) throw new GitHubResponseError(endpoint, 'no merge base commit');
+    return sha;
   }
 
   // The PR's file list, with the unified-diff patch GitHub already computed. `patch`
   // is absent for binary files and for files over GitHub's size cap -- callers must
   // treat a missing patch as "no hunk information", not as "no changes".
-  async function listPullRequestFiles({ owner, repo }, number, { max = 300 } = {}) {
+  async function listPullRequestFiles({ owner, repo }, number, { max = 300, signal } = {}) {
     const out = [];
     const limit = Math.min(3000, Math.max(1, max));
     let more = false;
     for (let page = 1; page <= 30; page++) {
-      const batch = await api(`/repos/${owner}/${repo}/pulls/${number}/files?per_page=100&page=${page}`);
+      const endpoint = `/repos/${owner}/${repo}/pulls/${number}/files?per_page=100&page=${page}`;
+      const batch = await api(endpoint, { signal });
+      if (!Array.isArray(batch)) throw new GitHubResponseError(endpoint, 'expected a list of files');
+      for (const f of batch) {
+        if (!isObject(f) || !isString(f.filename) || !isString(f.status)
+          || (f.patch != null && !isString(f.patch))) {
+          throw new GitHubResponseError(endpoint, 'a listed file lacks a string `filename` or `status`, or has a non-string `patch`');
+        }
+      }
       out.push(...batch);
       more = batch.length === 100;
       if (!more || out.length > limit) break;
@@ -124,28 +201,20 @@ function createGitHub(vscode, { log = () => {} } = {}) {
 
   // Raw file content at a ref. Uses the contents API with a raw Accept header so we
   // get the bytes directly instead of base64 in JSON.
-  async function fileAtRef({ owner, repo }, filePath, ref) {
-    if (!session) throw new Error('not signed in to GitHub');
-    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(ref)}`;
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${session.accessToken}`,
-        Accept: 'application/vnd.github.raw+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
+  async function fileAtRef({ owner, repo }, filePath, ref, { signal } = {}) {
+    const encodedPath = filePath.split('/').map(encodeURIComponent).join('/');
+    const res = await send({
+      url: `https://api.github.com/repos/${owner}/${repo}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`,
+      endpoint: `/repos/${owner}/${repo}/contents/${filePath}`,
+      accept: 'application/vnd.github.raw+json', maxBytes: limits.maxFileBytes, signal,
+      passStatuses: [404],
     });
     if (res.status === 404) return null;            // added on this branch, or deleted
-    if (res.status === 401) {
-      session = null;
-      throw new Error(`GitHub rejected the token (${res.status}) — sign in again`);
-    }
-    if (!res.ok) throw new Error(`GitHub ${res.status} fetching ${filePath}`);
-    const body = await res.text();
+    const body = res.text;
     // If the raw media type is not honoured (proxies and some enterprise setups strip
     // it) GitHub answers with JSON carrying base64 content. Returning that verbatim
     // would hand the parser a blob of JSON and produce zero symbols, silently.
-    const ctype = res.headers.get('content-type') || '';
-    if (ctype.includes('application/json')) {
+    if (res.contentType.includes('application/json')) {
       try {
         const j = JSON.parse(body);
         if (j && typeof j.content === 'string' && j.encoding === 'base64') {

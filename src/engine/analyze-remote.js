@@ -63,9 +63,9 @@ async function analyzeRemote({
   throwIfCancelled(signal);
   const warnings = [];
   const workers = validateConcurrency(concurrency, warnings);
-  if (gh.getPullRequest) pr = await gh.getPullRequest(slug, pr.number);
+  if (gh.getPullRequest) pr = await gh.getPullRequest(slug, pr.number, { signal });
   throwIfCancelled(signal);
-  const mergeBaseSha = pr.mergeBaseSha || (gh.mergeBase && await gh.mergeBase(slug, pr.baseSha, pr.headSha));
+  const mergeBaseSha = pr.mergeBaseSha || (gh.mergeBase && await gh.mergeBase(slug, pr.baseSha, pr.headSha, { signal }));
   throwIfCancelled(signal);
   if (!mergeBaseSha) throw new Error('Cannot preview this PR without its merge base');
   pr = { ...pr, mergeBaseSha };
@@ -73,10 +73,10 @@ async function analyzeRemote({
 
   trace(`PR #${pr.number}  head=${String(pr.headSha).slice(0, 8)}  base=${pr.baseRef}@${String(pr.baseSha || '?').slice(0, 8)}`);
   onProgress({ phase: 'files', message: `listing files in #${pr.number}` });
-  const listed = await gh.listPullRequestFiles(slug, pr.number, { max: maxFiles });
+  const listed = await gh.listPullRequestFiles(slug, pr.number, { max: maxFiles, signal });
   throwIfCancelled(signal);
   if (gh.getPullRequest) {
-    const after = await gh.getPullRequest(slug, pr.number);
+    const after = await gh.getPullRequest(slug, pr.number, { signal });
     throwIfCancelled(signal);
     if (after.headSha !== pr.headSha || after.baseSha !== pr.baseSha) {
       throw new Error('The PR changed while its files were loading. Refresh to analyse the new revision.');
@@ -109,7 +109,7 @@ async function analyzeRemote({
   const grab = async (which, filePath, ref) => {
     if (!ref) { warnings.push(`${filePath}: no ${which} ref to fetch from`); return null; }
     try {
-      const t = await gh.fileAtRef(slug, filePath, ref);
+      const t = await gh.fileAtRef(slug, filePath, ref, { signal });
       if (t == null) trace(`${which} 404  ${filePath}@${String(ref).slice(0, 8)}`);
       else trace(`${which} ${String(t.length).padStart(7)}b  ${filePath}@${String(ref).slice(0, 8)}`);
       return t;
@@ -181,9 +181,9 @@ async function analyzeRemote({
   trace(`total ${changed.length} changed symbol(s), ${deleted.length} deleted`);
   onProgress({ phase: 'index', message: `indexing ${usable.length} file(s)` });
   const moduleOptions = await require('./remote-config').remoteOptions(
-    ts, gh, slug, pr.headSha, repoRoot, usable.map((f) => f.path), warnings);
+    ts, gh, slug, pr.headSha, repoRoot, usable.map((f) => f.path), warnings, signal);
   throwIfCancelled(signal);
-  const packages = await require('./remote-config').remotePackages(gh, slug, pr.headSha, repoRoot, usable.map(f => f.path), warnings);
+  const packages = await require('./remote-config').remotePackages(gh, slug, pr.headSha, repoRoot, usable.map(f => f.path), warnings, signal);
   throwIfCancelled(signal);
   const idx = createSyntacticIndex(ts,
     usable.filter((f) => f.headText != null).map((f) => ({ path: abs(f.path), text: f.headText })),
