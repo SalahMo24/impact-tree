@@ -103,7 +103,7 @@ function createTreeProvider(vscode, {
       out.push({ type: 'dir', label: nextSegs.join('/'), dirPath: nextPrefix, node: child });
     }
     out.sort((a, b) => a.label.localeCompare(b.label));
-    return out.concat(node.files.sort((a, b) => a.label.localeCompare(b.label)));
+    return out.concat([...node.files].sort((a, b) => a.label.localeCompare(b.label)));
   };
   // Collapse single-child chains so `src/data/application-state` is one row, as the
   // explorer's compact folders do.
@@ -206,7 +206,8 @@ function createTreeProvider(vscode, {
       if (!byFile.has(n.file)) byFile.set(n.file, []);
       byFile.get(n.file).push(n);
     }
-    const top = [];
+    // A row's parent is the nearest change whose declaration encloses its own.
+    const parentOf = new Map();
     for (const n of nodes) {
       const c = n.finding;
       let parent = null;
@@ -217,12 +218,25 @@ function createTreeProvider(vscode, {
           if (!parent || p.end - p.start < parent.finding.end - parent.finding.start) parent = o;
         }
       }
-      if (!parent) { top.push(n); continue; }
-      (parent.inside ||= []).push(n);
-      n.container = parent.finding.label;
-      if (n.label.startsWith(`${parent.finding.label}.`)) n.label = n.label.slice(parent.finding.label.length + 1);
+      if (parent) parentOf.set(n, parent);
     }
-    for (const n of nodes) if (n.inside) n.inside = byWorst(n.inside);
+    // Copies, so the rows passed in are left as they were. A nested row names its
+    // container and drops the container's prefix from its label.
+    const copyOf = new Map(nodes.map((n) => {
+      const parent = parentOf.get(n);
+      if (!parent) return [n, { ...n }];
+      const prefix = `${parent.finding.label}.`;
+      return [n, { ...n, container: parent.finding.label, label: n.label.startsWith(prefix) ? n.label.slice(prefix.length) : n.label }];
+    }));
+    const insideOf = new Map();
+    const top = [];
+    for (const n of nodes) {
+      const parent = parentOf.get(n);
+      if (!parent) { top.push(copyOf.get(n)); continue; }
+      if (!insideOf.has(parent)) insideOf.set(parent, []);
+      insideOf.get(parent).push(copyOf.get(n));
+    }
+    for (const [parent, inside] of insideOf) copyOf.get(parent).inside = byWorst(inside);
     if (layout() === 'flat') return byWorst(top);
     const st = getState();
     const rowsByFile = new Map();
@@ -350,7 +364,7 @@ function createTreeProvider(vscode, {
     if (n.type === 'finding') {
       const kids = childIdsOf(n);
       const left = review ? review.remaining(kids) : 0;
-      n._reviewNote = review && kids.length ? (left ? `${left}/${kids.length} callers left to review` : 'all callers reviewed') : null;
+      const reviewNote = review && kids.length ? (left ? `${left}/${kids.length} callers left to review` : 'all callers reviewed') : null;
       const f = n.finding;
       const st = statusOf(f);
       const kinds = f.kinds.filter((k) => k.id !== 'body').map((k) => k.short || k.label);
@@ -390,15 +404,15 @@ function createTreeProvider(vscode, {
             ...(f.staleChangedElsewhere
               ? ['', `${f.staleChangedElsewhere} of them were edited — just not on the call line`] : [])]
           : []),
-        ...(n._reviewNote ? ['', `_${n._reviewNote}_`] : []),
+        ...(reviewNote ? ['', `_${reviewNote}_`] : []),
         '', `_score ${f.score}_`,
       ].join('\n'));
       item.contextValue = 'finding';
       applyCheckbox(item, n);
       // Review progress goes inline only in 'inline' mode; hover mode keeps the row to a
       // single state glyph, so the count lives in the tooltip instead.
-      if (n._reviewNote && detailMode() === 'inline') {
-        item.description = `${item.description || ''}${item.description ? '  ·  ' : ''}${n._reviewNote}`;
+      if (reviewNote && detailMode() === 'inline') {
+        item.description = `${item.description || ''}${item.description ? '  ·  ' : ''}${reviewNote}`;
       }
       item.command = { command: 'impactTree.openChange', title: 'Open change', arguments: [n] };
       return item;
