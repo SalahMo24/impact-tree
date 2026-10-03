@@ -70,6 +70,7 @@ function activate(context) {
   // ---- source picker: local modes and open pull requests -------------------
   const gh = createGitHub(vscode, { log });
   let prs = [];
+  let prsTruncated = false;
   let prError = null;
   let loadingPrs = false;
 
@@ -87,6 +88,7 @@ function activate(context) {
     getRepoSlug: repoSlug,
     github: gh,
     getPrs: () => prs,
+    getPrsTruncated: () => prsTruncated,
     getPrError: () => prError,
     isLoadingPrs: () => loadingPrs,
   });
@@ -98,10 +100,10 @@ function activate(context) {
     if (!slug || !gh.isSignedIn()) { sources.refresh(); return; }
     loadingPrs = true; prError = null; sources.refresh();
     try {
-      prs = await gh.listOpenPullRequests(slug);
-      log(`github: ${prs.length} open PR(s) in ${slug.owner}/${slug.repo}`);
+      ({ pullRequests: prs, truncated: prsTruncated } = await gh.listOpenPullRequests(slug));
+      log(`github: ${prs.length} open PR(s) in ${slug.owner}/${slug.repo}${prsTruncated ? ' (list truncated)' : ''}`);
     } catch (e) {
-      prs = []; prError = e.message;
+      prs = []; prsTruncated = false; prError = e.message;
       log(`github: ${e.message}`);
     } finally {
       loadingPrs = false; sources.refresh();

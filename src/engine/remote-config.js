@@ -3,12 +3,12 @@ const path = require('path');
 
 // Read only configuration from the pinned PR head. Callers still come exclusively
 // from PR files; a local checkout's tsconfig must never influence a remote preview.
-async function remoteOptions(ts, gh, slug, headSha, root, files, warnings) {
+async function remoteOptions(ts, gh, slug, headSha, root, files, warnings, signal) {
   const cache = new Map(), configs = new Map();
   const load = (rel) => {
     if (!cache.has(rel)) cache.set(rel, (async () => {
       let text;
-      try { text = await gh.fileAtRef(slug, rel, headSha); }
+      try { text = await gh.fileAtRef(slug, rel, headSha, { signal }); }
       catch (e) { warnings.push(`${rel}: configuration unavailable — ${e.message}`); return null; }
       if (text == null) return null;
       const abs = path.join(root, rel);
@@ -67,7 +67,7 @@ module.exports = { remoteOptions };
 
 // Ancestors of available PR sources are enough to identify packages containing those
 // sources. Metadata is read at the same pinned head, never from the local checkout.
-async function remotePackages(gh, slug, headSha, root, files, warnings) {
+async function remotePackages(gh, slug, headSha, root, files, warnings, signal) {
   const paths = new Set();
   for (const file of files) {
     let dir = path.posix.dirname(file);
@@ -83,7 +83,7 @@ async function remotePackages(gh, slug, headSha, root, files, warnings) {
     while (cursor < entries.length) {
       const file = entries[cursor++];
       try {
-        const text = await gh.fileAtRef(slug, file, headSha);
+        const text = await gh.fileAtRef(slug, file, headSha, { signal });
         if (text == null) continue;
         const data = JSON.parse(text);
         // An unnamed manifest still decides whether its `.ts` files are ES modules.

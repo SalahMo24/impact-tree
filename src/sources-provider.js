@@ -11,7 +11,7 @@ const MODE_ICON = {
 };
 
 function createSourcesProvider(vscode, {
-  modes, getMode, getRepoSlug, github, getPrs, getPrError, isLoadingPrs,
+  modes, getMode, getRepoSlug, github, getPrs, getPrsTruncated = () => false, getPrError, isLoadingPrs,
 }) {
   const _emitter = new vscode.EventEmitter();
   const N = (o) => o;
@@ -84,7 +84,7 @@ function createSourcesProvider(vscode, {
           return [N({ type: 'message', label: 'No open pull requests', icon: 'info',
             desc: 'click to refresh', command: 'impactTree.refreshPullRequests' })];
         }
-        return prs.map((p) => N({
+        const rows = prs.map((p) => N({
           type: 'pr',
           label: `#${p.number}  ${p.title}`,
           icon: p.draft ? 'git-pull-request-draft' : 'git-pull-request',
@@ -94,6 +94,13 @@ function createSourcesProvider(vscode, {
           command: 'impactTree.openPullRequest',
           args: [p],
         }));
+        // Same rule as the truncated-files warning: say the list is partial, never let
+        // a capped list pass as every open PR.
+        if (getPrsTruncated()) {
+          rows.push(N({ type: 'message', label: `Only the first ${prs.length} open pull requests are shown`,
+            icon: 'warning', desc: 'more exist on GitHub' }));
+        }
+        return rows;
       }
       return [];
     },
