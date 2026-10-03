@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 // The rule for "was this caller updated for the change": pure, over supplied evidence.
 // Each pipeline reads the file positions itself and passes them in as `lineOfOffset`,
@@ -19,6 +20,7 @@
  */
 function classifyCallSiteUpdates({ callSites, changedLineRanges, lineOfOffset }) {
   const ranges = changedLineRanges || [];
+  /** @type {{updated: object[], untouched: object[], unknown: object[]}} */
   const result = { updated: [], untouched: [], unknown: [] };
   for (const site of callSites || []) {
     const first = lineOfOffset(site.start), last = lineOfOffset(site.end);
