@@ -22,6 +22,7 @@ const { seedRoots, nestedIds } = require('./forest');
 const { registerVirtualText, readLineOfOffset } = require('./textpos');
 const { classifyCallSiteUpdates, classifyCallerUpdateState } = require('./call-sites');
 const { mapLimit, validateConcurrency } = require('./concurrency');
+const { throwIfCancelled } = require('./cancellation');
 
 // GitHub's file status is not the engine's. `removed` is a deletion, `copied` is a
 // new path, `changed` is a mode-only edit. Anything else (including `unchanged`)
@@ -33,15 +34,39 @@ const normaliseStatus = (s) => {
   return s;
 };
 
+/**
+ * Builds a pull request's impact tree from the GitHub API alone; see the file comment.
+ *
+ * `signal` cancels the preview. It is checked after every request and between caller
+ * queries, and no further file fetch starts once it is aborted; requests already sent
+ * are not interrupted (deadlines and abortable requests belong to the GitHub boundary).
+ * @param {object} args
+ * @param {object} args.ts The TypeScript module that parses the PR's files.
+ * @param {object} args.gh GitHub client: `listPullRequestFiles` and `fileAtRef`, with
+ *   optional `getPullRequest` and `mergeBase`.
+ * @param {object} args.slug `{ owner, repo }` of the repository.
+ * @param {object} args.pr The pull request; refreshed through `gh.getPullRequest` when available.
+ * @param {string} args.repoRoot Absolute path the PR's repository-relative paths are joined to.
+ * @param {number} [args.maxFiles=300] Files listed at most.
+ * @param {number} [args.concurrency] Parallel file fetches, 1..32; an invalid value warns and uses 8.
+ * @param {(event: {phase: string, message: string, done?: number, total?: number}) => void} [args.onProgress]
+ * @param {(message: string) => void} [args.trace]
+ * @param {AbortSignal} [args.signal]
+ * @returns {Promise<object>} The same shape as analyze()'s result, with `tierA: true`.
+ * @throws {import('./cancellation').AnalysisCancelledError} `signal` was aborted. No result is returned.
+ */
 async function analyzeRemote({
   ts, gh, slug, pr, repoRoot,
-  maxFiles = 300, concurrency, onProgress = () => {}, trace = () => {},
+  maxFiles = 300, concurrency, onProgress = () => {}, trace = () => {}, signal,
 }) {
   if (!ts) throw new Error('Tier A needs TypeScript to parse the PR files');
+  throwIfCancelled(signal);
   const warnings = [];
   const workers = validateConcurrency(concurrency, warnings);
   if (gh.getPullRequest) pr = await gh.getPullRequest(slug, pr.number);
+  throwIfCancelled(signal);
   const mergeBaseSha = pr.mergeBaseSha || (gh.mergeBase && await gh.mergeBase(slug, pr.baseSha, pr.headSha));
+  throwIfCancelled(signal);
   if (!mergeBaseSha) throw new Error('Cannot preview this PR without its merge base');
   pr = { ...pr, mergeBaseSha };
 
@@ -49,8 +74,10 @@ async function analyzeRemote({
   trace(`PR #${pr.number}  head=${String(pr.headSha).slice(0, 8)}  base=${pr.baseRef}@${String(pr.baseSha || '?').slice(0, 8)}`);
   onProgress({ phase: 'files', message: `listing files in #${pr.number}` });
   const listed = await gh.listPullRequestFiles(slug, pr.number, { max: maxFiles });
+  throwIfCancelled(signal);
   if (gh.getPullRequest) {
     const after = await gh.getPullRequest(slug, pr.number);
+    throwIfCancelled(signal);
     if (after.headSha !== pr.headSha || after.baseSha !== pr.baseSha) {
       throw new Error('The PR changed while its files were loading. Refresh to analyse the new revision.');
     }
@@ -101,7 +128,10 @@ async function analyzeRemote({
     ]);
     onProgress({ phase: 'fetch', message: 'fetching files', done: ++fetched, total: sourceFiles.length });
     return { ...f, status, headText, baseText };
-  });
+  }, { signal });
+  // Checked again before anything is registered: this run may have been replaced while
+  // the last fetch was resolving, and its text must not stand in for the newer run's.
+  throwIfCancelled(signal);
 
   // Without base text a modified file looks brand new, so every symbol collapses to a
   // body-only change and the Findings section comes back empty. That is a failure, not
@@ -152,7 +182,9 @@ async function analyzeRemote({
   onProgress({ phase: 'index', message: `indexing ${usable.length} file(s)` });
   const moduleOptions = await require('./remote-config').remoteOptions(
     ts, gh, slug, pr.headSha, repoRoot, usable.map((f) => f.path), warnings);
+  throwIfCancelled(signal);
   const packages = await require('./remote-config').remotePackages(gh, slug, pr.headSha, repoRoot, usable.map(f => f.path), warnings);
+  throwIfCancelled(signal);
   const idx = createSyntacticIndex(ts,
     usable.filter((f) => f.headText != null).map((f) => ({ path: abs(f.path), text: f.headText })),
     { baseDirs: [repoRoot], moduleOptions, packages });
@@ -171,6 +203,7 @@ async function analyzeRemote({
   onProgress({ phase: 'resolve', message: 'resolving callers', done: 0, total: changed.length });
   let done = 0;
   for (const c of changed) {
+    throwIfCancelled(signal);
     const cs = await resolver.callerState(c.file, c.namePos, { isConstructor: c.isConstructor });
     c.callerState = cs.state;
     c.callersComplete = cs.complete === true;
@@ -193,6 +226,8 @@ async function analyzeRemote({
     c.testState = 'not-computed';         // test reach needs the whole repo
     onProgress({ phase: 'resolve', message: 'resolving callers', done: ++done, total: changed.length });
   }
+
+  throwIfCancelled(signal);
 
   // ---- roots and nesting, same rules as the local path ----------------------------
   const ranked = seedRoots(changed, changedKeys).sort((a, b) => b.score - a.score);
