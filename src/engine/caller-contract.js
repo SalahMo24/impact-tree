@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 // The answer every caller resolver gives: the TypeScript language service, the editor's
 // call hierarchy, the syntactic PR index and the module-caller wrapper. Contracts only;

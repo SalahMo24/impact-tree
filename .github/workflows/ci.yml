@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # The target repo the tests analyse. Pinned so a change upstream cannot turn CI red
+      # or green; bump it deliberately, and re-run the suite when you do.
+      TARGET_REPO_URL: https://github.com/pingdotgg/t3code
+      TARGET_REPO_COMMIT: 9a609a4e444ba739d6fcd607769d68b679b0bcc5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      - name: Fetch the pinned target repo
+        # The tests need only the target's source tree, not its dependencies. They resolve
+        # the base ref `main`, so the detached shallow checkout is put on a local `main`.
+        run: |
+          echo "Target repo: $TARGET_REPO_URL at $TARGET_REPO_COMMIT"
+          target="$RUNNER_TEMP/target-repo"
+          mkdir "$target"
+          git -C "$target" init --quiet
+          git -C "$target" remote add origin "$TARGET_REPO_URL"
+          git -C "$target" fetch --quiet --depth 1 origin "$TARGET_REPO_COMMIT"
+          git -C "$target" checkout --quiet -B main FETCH_HEAD
+          echo "Checked out $(git -C "$target" rev-parse HEAD)"
+          echo "IMPACT_TREE_TARGET_REPO=$target" >> "$GITHUB_ENV"
+
+      - run: npm test
