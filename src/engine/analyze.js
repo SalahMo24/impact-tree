@@ -16,6 +16,7 @@ const { readLineOfOffset, clearVirtualText } = require('./textpos');
 const { classifyCallSiteUpdates, classifyCallerUpdateState } = require('./call-sites');
 const { mapLimit, validateConcurrency } = require('./concurrency');
 const { throwIfCancelled } = require('./cancellation');
+const { walkTestReach } = require('./test-reach');
 
 // Prefer the project's own TypeScript so analysis matches what the editor sees; fall
 // back to the repo root, then to whatever this extension was installed with.
@@ -528,23 +529,9 @@ async function analyze(repo, opts = {}) {
         // query count for information the reviewer may never open.
         let tests = [];
         if (!deferReach) {
-          const seen = new Set(); const stack = [[c.file, c.namePos, 0]];
-          const budget = opts.reachBudget ?? 120;
-          outer: while (stack.length) {
-            // A cancelled walk stops here; mapLimit then rejects, so its partial answer is never used.
-            if (signal && signal.aborted) break;
-            const [f, p, d] = stack.pop();
-            if (d >= depth || seen.size > budget) continue;
-            let ups = [];
-            try { ups = await resolver.incoming(f, p, d <= 1); } catch { ups = []; }
-            for (const k of ups) {
-              const id = `${k.file}#${k.pos}`;
-              if (seen.has(id)) continue;
-              seen.add(id);
-              if (k.test) { tests.push(k.label); break outer; }
-              stack.push([k.file, k.pos, d + 1]);
-            }
-          }
+          ({ tests } = await walkTestReach(resolver, { file: c.file, pos: c.namePos }, {
+            depth, budget: opts.reachBudget ?? 120, signal,
+          }));
         }
         c.tests = tests;
         c.testState = !deferReach
