@@ -472,6 +472,14 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
    work using measurements.
 5. Enroll modules in linting and JSDoc type checking, then enforce those checks in
    CI. Broaden coverage as modules are brought into compliance.
+   - Exists: `npm run lint` (ESLint flat config), `npm run typecheck` (`tsc` over
+     `jsconfig.json`, strict, `checkJs` off), and `.github/workflows/ci.yml`, which runs
+     both plus `npm test` against a pinned `pingdotgg/t3code` commit.
+   - A file is enrolled in both checks by putting `// @ts-check` on its first line;
+     there is no other list. Enrolled today: `src/engine/concurrency.js`,
+     `src/engine/call-sites.js`, `src/engine/caller-contract.js`.
+   - Planned: type-aware lint rules such as `no-floating-promises`, and enrolling the
+     remaining modules.
 
 This sequence is a migration plan, not permission for newly written code to defer
 the applicable requirements. Update it as implementation lands so readers can tell
