@@ -27,6 +27,10 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
   // is never cached. Disposal: `session.dispose()` drops the resolver and with it both maps.
   const cache = new Map();
   const queryStates = new Map();
+  // Clearing starts a new analysis. The editor cannot cancel an older query, so its
+  // late answer must not repopulate these maps after the replacement has cleared them.
+  let generation = 0;
+  const staleAnswer = () => ({ callers: [], complete: false, reason: 'caller query belongs to an earlier analysis' });
   const isTestPath = (f) => isTestFile(repoRoot, f);
   // incomingMs sums concurrent durations, so it exceeds wall time once queries overlap.
   // Keep it for cost, but record the distribution and let the caller time the phase.
@@ -154,6 +158,7 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
   // all of them. Only complete answers are cached, so asking again can still succeed.
   /** @returns {Promise<import('./engine/caller-contract').CallerAnswer>} */
   async function incomingWithStatus(file, pos, withTests = true) {
+    const startedGeneration = generation;
     const key = `${withTests ? 'A' : 'P'}${file}#${pos}`;
     if (cache.has(key)) { stats.cacheHits++; return { callers: cache.get(key), complete: true }; }
     const t = Date.now();
@@ -163,6 +168,7 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
     const isHandler = !!(cqrs && cqrs.isHandlerExecute(file, pos));
     if (isHandler) stats.cqrsSuppressed++;
     const { ready, calls, reason, empty } = isHandler ? { ready: true, calls: [] } : await query(file, pos);
+    if (startedGeneration !== generation) return staleAnswer();
     queryStates.set(key, { ready, reason, isHandler });
     if (ready && empty) { stats.resolvedEmpty++; stats.emptyAt.push({ file, pos }); }
     const dt = Date.now() - t;
@@ -208,6 +214,7 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
     if (cqrs) {
       let extra = [];
       try { extra = await cqrs.extraCallers(file, pos); } catch (e) { cqrsFailure = (e && e.message) || 'lookup failed'; }
+      if (startedGeneration !== generation) return staleAnswer();
       stats.cqrsEdges += extra.length;
       const have = new Set(out.map((c) => `${c.file}#${c.pos}`));
       for (const e of extra) {
@@ -274,6 +281,7 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
       for (const k of [...queryStates.keys()]) if (k.slice(1).startsWith(`${file}#`)) queryStates.delete(k);
     },
     clear() {
+      generation++;
       cache.clear();
       queryStates.clear();
       inherited?.clear();

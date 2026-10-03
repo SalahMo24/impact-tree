@@ -232,8 +232,8 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
 
   /**
    * Claims the worktree for a checkout. The claim is made before the first await, so an
-   * analysis requested from then on is refused. Cancels the running analysis and
-   * resolves only once that run has settled: git checkout must never run under it.
+   * analysis requested from then on is refused. Cancels every outstanding analysis,
+   * including replaced runs, and waits for all of them to settle before git can move.
    * @param {number} prNumber
    * @returns {Promise<{ prNumber: number } | null>} The checkout's handle, or null when the
    *   session is or became disposed.
@@ -243,16 +243,16 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
     if (disposed()) return null;
     if (lifecycle.checkout) throw new Error(`PR #${lifecycle.checkout.prNumber} is already being checked out`);
     const checkout = Object.freeze({ prNumber });
-    const previous = lifecycle.run;
+    const pending = [...records.values()];
     lifecycle.checkout = checkout;
     lifecycle.run = null;
     lifecycle.state = 'checkingOut';
     lifecycle.generation++;          // the worktree is about to move under the shown result
     session.provider.refresh();
-    if (previous) {
-      log(`checking out PR #${prNumber} — cancelling the running analysis`);
-      previous.controller.abort();
-      await previous.settled;
+    if (pending.length) {
+      log(`checking out PR #${prNumber} — waiting for outstanding analyses`);
+      for (const record of pending) record.controller.abort();
+      await Promise.all(pending.map((record) => record.settled));
     }
     return disposed() ? null : checkout;
   }
