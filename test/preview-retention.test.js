@@ -196,3 +196,34 @@ test('without a GitHub remote the tab says so', async () => {
   const shown = await provider(createPrDocuments(), gh, null).provideTextDocumentContent(addressOf(pr(4, 'h', 'm'), 'head', 'a.ts'));
   assert.match(shown, /repository/i);
 });
+
+// ---- the whole path: analyse, release, reopen -------------------------------------------
+test('a renamed file\'s base tab, opened after its preview was replaced, reads the old path at the merge base', async () => {
+  const ts = require('typescript');
+  const { analyzeRemote } = require('../src/engine/analyze-remote');
+  const { clearVirtualText } = require('../src/engine/textpos');
+  const files = [
+    { path: 'src/new.ts', oldPath: 'src/old.ts', status: 'renamed', patch: '@@ -1 +1 @@\n-export const a = 1;\n+export const a = 2;' },
+    { path: 'src/added.ts', oldPath: 'src/added.ts', status: 'added', patch: '@@ -0,0 +1 @@\n+export const b = 1;' },
+  ];
+  const asked = [];
+  const gh = {
+    listPullRequestFiles: async () => ({ files }),
+    fileAtRef: async (_, p, ref) => { asked.push(`${p}@${ref}`); return p === 'src/old.ts' ? 'export const a = 1;\n' : p === 'src/new.ts' ? 'export const a = 2;\n' : p === 'src/added.ts' ? 'export const b = 1;\n' : null; },
+  };
+  try {
+    const result = await analyzeRemote({ ts, gh, slug: SLUG, pr: { number: 3, headSha: 'headsha', mergeBaseSha: 'mergesha' }, repoRoot: '/remote' });
+    assert.deepEqual(result.basePaths, { 'src/new.ts': 'src/old.ts' }, 'only a path that moved is recorded');
+    const docs = createPrDocuments();
+    docs.add(result);
+    const file = (rel) => ({ path: rel, basePath: result.basePaths[rel], status: result.fileStatus[rel] });
+    docs.add(pr(99, 'later', 'laterbase'));            // another preview is published
+    asked.length = 0;
+    const live = await github(({ path: p, ref }) => textBody(`${p}@${ref}`));
+    const read = provider(docs, live.gh).provideTextDocumentContent;
+    assert.equal(await read(addressOf(result, 'base', 'src/new.ts', file('src/new.ts'))), 'src/old.ts@mergesha');
+    assert.equal(await read(addressOf(result, 'head', 'src/new.ts', file('src/new.ts'))), 'src/new.ts@headsha');
+    assert.equal(await read(addressOf(result, 'base', 'src/added.ts', file('src/added.ts'))), '', 'the added file has no base to fetch');
+    assert.deepEqual(live.requests.map((r) => `${r.path}@${r.ref}`), ['src/old.ts@mergesha', 'src/new.ts@headsha']);
+  } finally { clearVirtualText(); }
+});

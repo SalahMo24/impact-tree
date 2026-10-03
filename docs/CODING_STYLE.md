@@ -508,6 +508,29 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      above.
 4. Make cache identity and retention policies explicit; address expensive editor
    work using measurements.
+   - Exists: every cache has a comment at its definition stating owner, what its key
+     covers, invalidation and disposal: the TypeScript, editor and syntactic resolvers and
+     their service pool, the syntactic index, `textpos` line starts and virtual text, the
+     review-identity caches, the inheritance filter, and the session-owned
+     `resolver`/`readyPromise` (`src/session.js`).
+   - Exists: `prDocuments` (`src/pr-documents.js`) holds only the current preview's text;
+     publishing a new preview releases the previous one. An `impacttree-pr:` address
+     carries the PR number, head commit and merge-base commit, the base-side path of a
+     renamed file (`from`), and `absent=1` for a side that does not exist. `prQuery` is the
+     only place that builds it. The tree rows' own identity URIs in `tree-provider.js` omit
+     the last two because no command opens them.
+   - Exists: a tab on a revision that is not held is fetched from GitHub through
+     `gh.fileAtRef` at the commit and path in its address, under the request limits in
+     `src/github-request.js`, and nothing it fetches is kept. A failure shows a message
+     naming the cause (signed out, no longer on GitHub, timeout, too large, other) and what
+     to do; a side marked absent is an empty document without a request.
+   - Exists: file-row review tokens are not cached. Measured on t3code (Apple M3 Pro,
+     Node 22), a repaint re-reading and hashing the head of 300 changed files (3 MB) takes
+     about 10 ms; 1000 files (11 MB) about 120 ms; 3000 files (33 MB) about 370 ms. That
+     is below noticeable at the sizes a review usually has, and a cache would stop an edit
+     from unticking a file until the next analysis.
+   - Planned: a stat-keyed token cache, if reviews of more than about a thousand changed
+     files prove common; measure again before adding it.
 5. Enroll modules in linting and JSDoc type checking, then enforce those checks in
    CI. Broaden coverage as modules are brought into compliance.
    - Exists: `npm run lint` (ESLint flat config), `npm run typecheck` (`tsc` over
