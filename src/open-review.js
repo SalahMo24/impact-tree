@@ -54,10 +54,18 @@ function createOpenReview(vscode, session) {
     }
   }
 
+  // A tab's address names the file's old path and whether this side exists, so the tab
+  // can be rebuilt from GitHub alone once its revision is no longer held.
+  function prUri(relPath, side) {
+    const result = session.state.result;
+    const file = { path: relPath, basePath: result.basePaths?.[relPath], status: result.fileStatus?.[relPath] };
+    return vscode.Uri.from({ scheme: 'impacttree-pr', path: relPath, query: prQuery(result, side, file) });
+  }
+
   function baseUriFor(relPath) {
     // In a Tier A preview the base revision is not in the local object database, so it
     // has to come from the API-fetched text rather than `git show`.
-    if (session.isTierA()) return vscode.Uri.from({ scheme: 'impacttree-pr', path: relPath, query: prQuery(session.state.result, 'base') });
+    if (session.isTierA()) return prUri(relPath, 'base');
     return vscode.Uri.from({ scheme: 'impacttree-base', path: session.state.result.basePaths?.[relPath] || relPath, query: session.state.result.base.sha });
   }
 
@@ -65,7 +73,7 @@ function createOpenReview(vscode, session) {
   // preview the worktree is on some unrelated branch, so showing it would be actively
   // misleading -- serve the PR's own text instead.
   function headUriFor(relPath, absPath) {
-    if (session.isTierA()) return vscode.Uri.from({ scheme: 'impacttree-pr', path: relPath, query: prQuery(session.state.result, 'head') });
+    if (session.isTierA()) return prUri(relPath, 'head');
     return vscode.Uri.file(absPath || path.join(session.repoRoot(), relPath));
   }
 
@@ -117,7 +125,7 @@ function createOpenReview(vscode, session) {
     const always = vscode.workspace.getConfiguration('impactTree').get('alwaysDiffCallers', false);
     const fileChanged = !!(rel && session.state.changedPaths && session.state.changedPaths.has(rel));
     const plan = callerOpen({
-      tierA: session.isTierA(), rel, baseRel: session.state?.result?.basePaths?.[rel], absPath: node.file, fileChanged, always,
+      tierA: session.isTierA(), rel, baseRel: session.state?.result?.basePaths?.[rel], status: session.state?.result?.fileStatus?.[rel], absPath: node.file, fileChanged, always,
       baseSha: session.state && session.state.result && session.state.result.base && session.state.result.base.sha,
       prNumber: session.state && session.state.result && session.state.result.prNumber,
       headSha: session.state?.result?.headSha,

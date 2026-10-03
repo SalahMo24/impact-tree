@@ -126,7 +126,7 @@ function activate(context) {
     ...registerCommands(vscode, {
       BUILD, session, openReview, sources, gh, loadPrs, context, log, out,
     }),
-    ...registerContentProviders(vscode, { prDocuments, repoRoot: () => session.repoRoot() }),
+    ...registerContentProviders(vscode, { prDocuments, repoRoot: () => session.repoRoot(), gh, repoSlug }),
   );
 
   if (vscode.workspace.getConfiguration('impactTree').get('prewarm', true)) {

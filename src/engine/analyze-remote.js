@@ -273,6 +273,8 @@ async function analyzeRemote({
     changedFileCount: usable.length,
     changedPaths: usable.map((f) => f.path),
     fileStatus: Object.fromEntries(listed.files.map((f) => [f.path, normaliseStatus(f.status)])),
+    // Where GitHub holds a renamed file's base side; the base text above was fetched from it.
+    basePaths: Object.fromEntries(listed.files.filter((f) => f.oldPath && f.oldPath !== f.path).map((f) => [f.path, f.oldPath])),
     changedRanges,
     unanalysable: [],
     components: [{ component: 'pull request', changed, deleted, roots: ranked, forest: [], stats: resolver.stats() }],

@@ -132,14 +132,19 @@ test('remote roots retain separate recursive components beside an ordinary root'
   clearVirtualText();
 });
 
-test('preview documents keep old PRs and revisions separate, including punctuation in paths', () => {
+test('preview documents hold only the current revision, and paths with punctuation still resolve', () => {
   const docs = createPrDocuments();
   const a = { prNumber: 1, headSha: 'one', base: { sha: 'base' }, texts: new Map([['a?#.ts', { head: 'first', base: null }]]) };
   const b = { ...a, prNumber: 2, texts: new Map([['a?#.ts', { head: 'second' }]]) };
   const c = { ...a, headSha: 'pushed', texts: new Map([['a?#.ts', { head: 'updated' }]]) };
-  [a,b,c].forEach((r) => docs.add(r));
-  assert.deepEqual([a,b,c].map((r) => docs.read({ path: '/a?#.ts', query: prQuery(r, 'head') })), ['first','second','updated']);
-  assert.equal(docs.read({ path: '/a?#.ts', query: prQuery(a, 'base') }), '');
+  const read = (r, side) => docs.read({ path: '/a?#.ts', query: prQuery(r, side) });
+  for (const r of [a, b, c]) {
+    docs.add(r);
+    assert.equal(read(r, 'head'), r.texts.get('a?#.ts').head);
+    for (const other of [a, b, c].filter((o) => o !== r)) assert.equal(read(other, 'head'), null, 'another revision is not held');
+  }
+  assert.equal(read(c, 'base'), null, 'a side with no text is a miss for the provider to settle, not an empty file');
+  assert.equal(docs.read({ path: '/a?#.ts', query: prQuery(c, 'base', { path: 'a?#.ts', status: 'added' }) }), '');
 });
 
 test('review ticks survive offset/base movement, invalidate edited symbols, and remain parent-scoped', async () => {
@@ -246,14 +251,15 @@ test('editor commands refresh the selected PR, preserve preview documents, and r
     const finding = { finding: { relPath: 'src/a.ts', file: path.join(dir,'src/a.ts'), startLine: 1 } };
     await commands.get('impactTree.openChange')(finding);
     const oldUri = diffs.at(-1)[1];
-    assert.match(providers.get('impacttree-pr').provideTextDocumentContent(oldUri), /h1/);
+    assert.match(await providers.get('impacttree-pr').provideTextDocumentContent(oldUri), /h1/);
     head = 'h2';
     await commands.get('impactTree.refresh')();
     await commands.get('impactTree.openChange')(finding);
     const newUri = diffs.at(-1)[1];
     assert.notEqual(newUri.query, oldUri.query);
-    assert.match(providers.get('impacttree-pr').provideTextDocumentContent(newUri), /h2/);
-    assert.match(providers.get('impacttree-pr').provideTextDocumentContent(oldUri), /h1/);
+    assert.match(await providers.get('impacttree-pr').provideTextDocumentContent(newUri), /h2/);
+    // The first preview is no longer held; its tab is rebuilt from GitHub at its own commit.
+    assert.match(await providers.get('impacttree-pr').provideTextDocumentContent(oldUri), /h1/);
     await commands.get('impactTree.computeTestReach')();
     await commands.get('impactTree.openChange')(finding);
     assert.equal(diffs.at(-1)[1].scheme, 'impacttree-pr');
