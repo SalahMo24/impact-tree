@@ -57,7 +57,7 @@ const previewResult = (pr) => ({ tierA: true, pr, prNumber: pr.number, headSha: 
 // async git calls (fetch, rev-parse of FETCH_HEAD, checkout), so the worktree itself
 // never moves. `changedSource` puts a committed TypeScript change on a feature branch,
 // which is what readiness needs before it will warm the language server.
-function createEnv({ prewarm = false, changedSource = false } = {}) {
+function createEnv({ prewarm = false, changedSource = false, memento = new Map() } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-ext-commands-'));
   const sh = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
   sh('init', '-q', '--initial-branch=main'); sh('config', 'user.name', 'Test'); sh('config', 'user.email', 'test@example.com');
@@ -79,9 +79,9 @@ function createEnv({ prewarm = false, changedSource = false } = {}) {
   const git = { fetches: [], checkouts: [], calls: [] };
   const holds = { fetch: gates(), modal: gates(), remote: gates(), analyze: gates(), callers: gates(), warmUp: gates() };
   const failures = new Map();
-  const hooks = { beforeCheckout: null, remoteResult: (pr) => previewResult(pr), localResult: (o) => localResult(o),
+  const hooks = { beforeCheckout: null, headOf: shaFor, remoteResult: (pr) => previewResult(pr), localResult: (o) => localResult(o),
     warm: !changedSource, clearResolver: () => {} };
-  const captured = { tree: null, decorations: null };
+  const captured = { tree: null, decorations: null, checkbox: null };
   let fetchHead = null, quickPick = null;
 
   const disposable = () => ({ dispose() {} });
@@ -97,7 +97,7 @@ function createEnv({ prewarm = false, changedSource = false } = {}) {
       registerFileDecorationProvider: (provider) => { captured.decorations = provider; return disposable(); },
       createTreeView: (id, options) => {
         if (id === 'impactTree.changes') captured.tree = options.treeDataProvider;
-        return { dispose() {}, onDidChangeCheckboxState: disposable };
+        return { dispose() {}, onDidChangeCheckboxState: (handler) => { captured.checkbox = handler; return disposable(); } };
       },
       withProgress: async (_, fn) => fn({ report() {} }),
       showQuickPick: async () => quickPick,
@@ -127,7 +127,7 @@ function createEnv({ prewarm = false, changedSource = false } = {}) {
       git.fetches.push(Number(/pull\/(\d+)\/head/.exec(args.join(' '))[1]));
       await holds.fetch.enter(() => undefined);
       if (failures.has('fetch')) throw failures.get('fetch');
-      fetchHead = shaFor(git.fetches.at(-1));
+      fetchHead = hooks.headOf(git.fetches.at(-1));
       return '';
     }
     if (cmd === 'rev-parse' && args.includes('FETCH_HEAD^{commit}')) {
@@ -194,12 +194,18 @@ function createEnv({ prewarm = false, changedSource = false } = {}) {
   const reload = () => { for (const n of ['../src/extension', '../src/resolver-vscode']) delete require.cache[require.resolve(n)]; };
   reload();
   const extension = require('../src/extension');
-  const context = { subscriptions: [], workspaceState: { get: () => undefined, update: async () => {} } };
+  const context = { subscriptions: [], workspaceState: { get: (k) => memento.get(k), update: async (k, v) => { memento.set(k, v); } } };
   extension.activate(context);
 
   const run = (name, ...args) => commands.get(name)(...args);
   return {
-    seen, git, holds, hooks, vscode, dir,
+    seen, git, holds, hooks, vscode, dir, memento,
+    // The user ticks or unticks a row, as the tree view reports it.
+    tick(node, on) {
+      const state = on ? vscode.TreeItemCheckboxState.Checked : vscode.TreeItemCheckboxState.Unchecked;
+      captured.checkbox({ items: [[node, state]] });
+    },
+    isTicked: (node) => captured.tree.getTreeItem(node).checkboxState === vscode.TreeItemCheckboxState.Checked,
     tree: () => captured.tree,
     decorations: () => captured.decorations,
     failGit: (cmd, error) => failures.set(cmd, error),

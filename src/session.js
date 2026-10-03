@@ -114,9 +114,12 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
   /**
    * Admits a new analysis, cancelling and replacing the current one: the newest request
    * wins. Refused with a warning while a checkout holds the worktree, and silently once
-   * disposed. Records `source`, which Refresh repeats, even if the run later fails.
-   * @param {{ source: { kind: 'local' } | { kind: 'pr', pr: object }, stage: 'preparing'|'analysing' }} request
-   *   `stage` is the phase the run starts in; a local run prepares the language server first.
+   * disposed. Records `source`, which Refresh repeats, even if the run later fails. A
+   * `checkout` source is a PR whose head `sha` is checked out; it is analysed locally,
+   * against the PR's base, until a request with another source replaces it.
+   * @param {{ source: { kind: 'local' } | { kind: 'pr', pr: object } | { kind: 'checkout', pr: object, sha: string },
+   *   stage: 'preparing'|'analysing' }} request
+   *   `stage` is the phase the run starts in; a local or checkout run prepares the language server first.
    * @returns {{ id: number, signal: AbortSignal } | null} The run's handle, or null when refused.
    *   The signal is aborted when the run is replaced, a checkout starts, or the session is disposed.
    */
@@ -138,7 +141,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
     records.set(handle, record);
     lifecycle.run = record;
     lifecycle.state = stage;
-    if (source.kind === 'local') session.resolverOverride = null;     // leaving a PR preview
+    if (source.kind !== 'pr') session.resolverOverride = null;     // leaving a PR preview
     session.state = { ...session.state, source };
     session.decorate.clear();
     session.provider.refresh();
@@ -291,13 +294,30 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
     }
   }
 
+  // Which review the result belongs to, and the key it replaces. A checked-out PR is
+  // identified by its number and head commit: its worktree is a detached HEAD, which
+  // names no branch. The mode is the one requested, so a `pr` run that fell back to
+  // `branch` over a dirty tree stays the same review. Earlier builds keyed on `HEAD`
+  // (every checked-out PR alike) and on the effective mode; `replaces` is that key, for
+  // review.configure to copy ticks from the first time the new key loads.
+  function reviewKeys(source, repo, result, base) {
+    const key = (who, mode) => `v2:${repo}:${who}:${mode}:${base}`;
+    const who = source.kind === 'checkout'
+      ? `pr-checkout:${source.pr.number}@${source.sha}`
+      : require('./engine/git').makeGit(repo).currentBranch();
+    const current = key(who, result.requestedMode);
+    const replaced = key(source.kind === 'checkout' ? 'HEAD' : who, result.mode);
+    return { key: current, replaces: replaced === current ? undefined : replaced };
+  }
+
   // Analyses the working repository for `run` and publishes the result if the run is
   // still current. Throws on failure, including the cancellation error.
-  async function analyseLocalRun(run, mode, progress, opts) {
+  async function analyseLocalRun(run, source, mode, progress) {
     // A replaced run must not clear the resolver a newer run is using.
     throwIfCancelled(run.signal);
     const repo = repoRoot();
     const cfg = vscode.workspace.getConfiguration('impactTree');
+    const base = source.kind === 'checkout' ? source.pr.baseRef : cfg.get('baseBranch', 'main');
     session.resolver.clear();
     session.localResolver = null;
     const tStart = Date.now();
@@ -310,7 +330,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
         if (p2.phase === 'component') report(`analysing ${p2.component}…`);
         else if (p2.total) report(`${p2.component}: resolving callers ${p2.done}/${p2.total}`);
       },
-      mode, base: opts.base || cfg.get('baseBranch', 'main'), fetch: cfg.get('fetchBase', true),
+      mode, base, fetch: cfg.get('fetchBase', true),
       checkpoint: session.state && session.state.checkpoint,
       depth: cfg.get('reachDepth', 2),
       skipForest: true,                      // the tree resolves callers on expand
@@ -328,23 +348,17 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
       const git = makeGit(repo);
       const { createReviewIdentity, localRevisions } = require('./review-identity');
       const identity = createReviewIdentity(loadTypeScript(repo, repo), repo, localRevisions(repo, result, git));
-      review.configure(`v2:${repo}:${git.currentBranch()}:${result.mode}:${opts.base || cfg.get('baseBranch', 'main')}`, identity);
+      const { key, replaces } = reviewKeys(source, repo, result, base);
+      review.configure(key, identity, { migrateFrom: replaces });
     }
     const stale = result.findings.reduce((n, f) => n + f.staleCallers, 0);
     vscode.window.setStatusBarMessage(
       `Impact Tree: ${result.findings.length} finding(s), ${stale} un-updated caller(s), base ${result.base.ref}`, 8000);
   }
 
-  /**
-   * Analyses the working repository, replacing any running analysis. Never rejects: a
-   * failure is published through failAnalysisRun.
-   * @param {string} [mode] Defaults to the `impactTree.mode` setting.
-   * @param {{ base?: string }} [opts]
-   * @returns {Promise<void>} Settles when this run has ended, whether it completed,
-   *   failed, was refused or was replaced.
-   */
-  async function refresh(mode, opts = {}) {
-    const run = beginAnalysisRun({ source: { kind: 'local' }, stage: 'preparing' });
+  // Runs a local analysis of `source` in `mode`; never rejects.
+  async function analyseLocally(source, mode) {
+    const run = beginAnalysisRun({ source, stage: 'preparing' });
     if (!run) return;
     try {
       await vscode.window.withProgress(
@@ -353,13 +367,40 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
           await untilCancelled(run.signal, session.ensureReady(progress));
           beginAnalysingStage(run);
           session.provider.refresh();
-          await analyseLocalRun(run, mode || vscode.workspace.getConfiguration('impactTree').get('mode', 'pr'), progress, opts);
+          await analyseLocalRun(run, source, mode, progress);
         });
     } catch (e) {
       failAnalysisRun(run, e);
     } finally {
       releaseAnalysisRunResources(run);
     }
+  }
+
+  /**
+   * Analyses the working repository, replacing any running analysis. Never rejects: a
+   * failure is published through failAnalysisRun. Without `mode` it repeats the current
+   * source: a checked-out PR against its own base, otherwise the `impactTree.mode`
+   * setting. Naming a `mode` picks a local analysis, which leaves a checked-out PR.
+   * @param {string} [mode]
+   * @returns {Promise<void>} Settles when this run has ended, whether it completed,
+   *   failed, was refused or was replaced.
+   */
+  function refresh(mode) {
+    const held = session.state && session.state.source;
+    if (!mode && held && held.kind === 'checkout') return analyseCheckedOutPr(held.pr, held.sha);
+    return analyseLocally({ kind: 'local' }, mode || vscode.workspace.getConfiguration('impactTree').get('mode', 'pr'));
+  }
+
+  /**
+   * Analyses the worktree as PR `pr` checked out at `sha`, against the PR's base, and
+   * makes that PR the session source: every later plain refresh repeats it until another
+   * source is picked. Replaces any running analysis; never rejects.
+   * @param {{ number: number, baseRef: string }} pr
+   * @param {string} sha The head commit that was checked out.
+   * @returns {Promise<void>} As refresh().
+   */
+  function analyseCheckedOutPr(pr, sha) {
+    return analyseLocally({ kind: 'checkout', pr, sha }, 'pr');
   }
 
   /**
@@ -441,7 +482,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
   };
 
   Object.assign(session, {
-    repoRoot, isTierA, viewStateFromResult, refresh, refreshWithTestReach, setCheckpoint,
+    repoRoot, isTierA, viewStateFromResult, refresh, analyseCheckedOutPr, refreshWithTestReach, setCheckpoint,
     beginAnalysisRun, beginAnalysingStage, completeAnalysisRun, failAnalysisRun, releaseAnalysisRunResources,
     isCurrentAnalysis, getAnalysisId, beginCheckout, endCheckout, checkoutInProgress, isBusy, getPhase,
     prewarmInBackground, dispose, treeResolver,
