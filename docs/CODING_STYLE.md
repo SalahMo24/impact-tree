@@ -465,8 +465,25 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
 
 1. Preserve incomplete coverage through caller and test-reachability results and
    their UI consumers. Add regression tests for failures and budget exhaustion.
+   - Exists: the test-reach walk is `walkTestReach` in `src/engine/test-reach.js`, with the
+     resolver injected. `testState` is `'covered'`, `'uncovered'` (the walk finished within
+     its depth and budget), `'unknown'` (a query failed or was incomplete, or the
+     visited-node budget stopped it; `testReachIncompleteReason` says why) or
+     `'not-computed'`. Depth is a declared scope, not a budget: `'uncovered'` means no
+     test within `reachDepth` caller levels, and the tree and CLI say so. Tests are
+     searched at every level. The tree's "No test reaches" section holds only
+     `'uncovered'` symbols; "Test reach unknown" lists the rest with their reasons, and
+     the CLI reports both.
 2. Validate settings and consolidate genuinely equivalent concurrency helpers.
    Establish documented budgets and exhaustion behavior.
+   - Exists: `src/engine/settings.js` validates `impactTree.concurrency` (1..32),
+     `impactTree.reachDepth` (1..6) and `impactTree.tierA.maxFiles` (1..3000) with one
+     rule: omitted uses the default, an unusable value uses it with one warning, a value
+     above the maximum is clamped with one warning. The ranges are in `package.json`.
+   - Exists: the budgets are documented where they are defined, with unit, default and
+     what happens when hit: test reach (`test-reach.js`), `blastRadius` and `buildTree`
+     (`forest.js`), and the module-caller index (`module-callers.js`).
+   - Planned: budgets for the rest of the forest and for UI row construction.
 3. Add request deadlines, cancellation, analysis ownership, and predictable cleanup.
    - Exists: analysis ownership in `src/session.js`. One private lifecycle (`starting`,
      `preparing`, `analysing`, `checkingOut`, `ready`, `disposed`); every entry point

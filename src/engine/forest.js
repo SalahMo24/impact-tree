@@ -75,6 +75,9 @@ function seedRoots(changed) {
 
 // Global visited set: counts distinct reachable symbols (not paths).
 // Production callers only: blast radius is about reach through real code paths.
+// `depth` is in call levels (the changed symbol's callers are level 1). `budget`, default
+// 150, is in distinct callers visited: the walk stops as soon as that many are seen and
+// `capped` is true, so a count of exactly `budget` also reads as capped (a lower bound).
 async function blastRadius(resolver, file, pos, depth, budget = 150) {
   const seen = new Set();
   const walk = async (f, p, d) => {
@@ -93,6 +96,10 @@ async function blastRadius(resolver, file, pos, depth, budget = 150) {
 
 // Path-local visited set with backtracking: cuts cycles along the current path while
 // still letting a node appear under different roots (diamonds survive, cycles do not).
+// `depth`, default 3, is in tree levels below the root: nodes at that level are not
+// queried. `maxChildren`, default 8, is in production callers shown under one node: the
+// rest are not expanded and are counted in that node's `truncated`. It limits what is
+// rendered, not the query, which still loads every caller of the node.
 async function buildTree(resolver, root, { depth = 3, maxChildren = 8, isChanged }) {
   const build = async (file, pos, d, onPath) => {
     if (d >= depth) return { children: [], truncated: 0 };

@@ -21,7 +21,8 @@ const { isSourcePath, isTestPath, isTestFile } = require('./diff');
 const { seedRoots, nestedIds } = require('./forest');
 const { registerVirtualText, readLineOfOffset } = require('./textpos');
 const { classifyCallSiteUpdates, classifyCallerUpdateState } = require('./call-sites');
-const { mapLimit, validateConcurrency } = require('./concurrency');
+const { mapLimit } = require('./concurrency');
+const { validateConcurrency, validateTierAMaxFiles } = require('./settings');
 const { throwIfCancelled } = require('./cancellation');
 
 // GitHub's file status is not the engine's. `removed` is a deletion, `copied` is a
@@ -47,7 +48,8 @@ const normaliseStatus = (s) => {
  * @param {object} args.slug `{ owner, repo }` of the repository.
  * @param {object} args.pr The pull request; refreshed through `gh.getPullRequest` when available.
  * @param {string} args.repoRoot Absolute path the PR's repository-relative paths are joined to.
- * @param {number} [args.maxFiles=300] Files listed at most.
+ * @param {number} [args.maxFiles=300] Files listed at most, 1..3000; an invalid value warns and
+ *   uses 300, one above 3000 warns and uses 3000.
  * @param {number} [args.concurrency] Parallel file fetches, 1..32; an invalid value warns and uses 8.
  * @param {(event: {phase: string, message: string, done?: number, total?: number}) => void} [args.onProgress]
  * @param {(message: string) => void} [args.trace]
@@ -57,11 +59,12 @@ const normaliseStatus = (s) => {
  */
 async function analyzeRemote({
   ts, gh, slug, pr, repoRoot,
-  maxFiles = 300, concurrency, onProgress = () => {}, trace = () => {}, signal,
+  maxFiles, concurrency, onProgress = () => {}, trace = () => {}, signal,
 }) {
   if (!ts) throw new Error('Tier A needs TypeScript to parse the PR files');
   throwIfCancelled(signal);
   const warnings = [];
+  const fileLimit = validateTierAMaxFiles(maxFiles, warnings);
   const workers = validateConcurrency(concurrency, warnings);
   if (gh.getPullRequest) pr = await gh.getPullRequest(slug, pr.number, { signal });
   throwIfCancelled(signal);
@@ -73,7 +76,7 @@ async function analyzeRemote({
 
   trace(`PR #${pr.number}  head=${String(pr.headSha).slice(0, 8)}  base=${pr.baseRef}@${String(pr.baseSha || '?').slice(0, 8)}`);
   onProgress({ phase: 'files', message: `listing files in #${pr.number}` });
-  const listed = await gh.listPullRequestFiles(slug, pr.number, { max: maxFiles, signal });
+  const listed = await gh.listPullRequestFiles(slug, pr.number, { max: fileLimit, signal });
   throwIfCancelled(signal);
   if (gh.getPullRequest) {
     const after = await gh.getPullRequest(slug, pr.number, { signal });
@@ -83,7 +86,7 @@ async function analyzeRemote({
     }
   }
   if (listed.truncated || pr.changedFiles > listed.files.length) {
-    warnings.push(`PR has ${pr.changedFiles ?? `${listed.totalIsLowerBound ? "at least " : ""}${listed.total}`} files; analysing the first ${maxFiles} (impactTree.tierA.maxFiles)`);
+    warnings.push(`PR has ${pr.changedFiles ?? `${listed.totalIsLowerBound ? "at least " : ""}${listed.total}`} files; analysing the first ${fileLimit} (impactTree.tierA.maxFiles)`);
   }
 
   trace(`${listed.files.length} file(s) listed${listed.truncated ? ' (truncated)' : ''}`);

@@ -163,6 +163,8 @@ function createTreeProvider(vscode, {
     : vscode.ThemeIcon.File);
   const _emitter = new vscode.EventEmitter();
   const N = (p) => p;
+  // "Untested" is only true inside the searched scope, so say how far the search went.
+  const reachScope = (r) => `no test within ${r.reachDepth ? `${r.reachDepth} caller level(s)` : 'the searched caller levels'}`;
 
   // token + severity, not an icon: the icon slot belongs to the file glyph now, and
   // severity is carried by the decoration colour
@@ -363,12 +365,17 @@ function createTreeProvider(vscode, {
       if (insideSt && SEVERITY_RANK[insideSt.severity] < SEVERITY_RANK[st.severity] && SEVERITY_RANK[insideSt.severity] <= 1) {
         item.description = `${item.description}  ·  ${insideSt.token} inside`;
       }
+      // In the unknown-test section the reason is the point of the row, so it leads in
+      // either detail mode.
+      if (n.reachReason) item.description = `?  tests unknown: ${n.reachReason}  ·  ${item.description}`;
       item.iconPath = rowIcon(f.label, f);
       // the row is deliberately bare, so the tooltip must carry the whole story
       item.tooltip = new vscode.MarkdownString([
         `${st.token} **${f.label}**`,
         '',
         `${st.marker}`,
+        ...(n.reachReason ? ['', `_test reachability unknown: ${n.reachReason}_`] : []),
+        ...(n.scopeNote ? ['', `_${n.scopeNote}_`] : []),
         ...(f.callersComplete === false && f.callersIncompleteReason ? ['', `_caller search incomplete: ${f.callersIncompleteReason}_`] : []),
         ...(kinds.length ? ['', `**${kinds.join(', ')}**`] : []),
         '',
@@ -517,7 +524,15 @@ function createTreeProvider(vscode, {
           out.push(N({ type: 'section', key: 'untested', label: 'No test reaches',
             count: r.testReachComputed ? r.untested.length : 0, icon: 'beaker',
             computed: r.testReachComputed,
-            desc: r.testReachComputed ? '' : 'not computed — expand to run' }));
+            desc: r.testReachComputed ? reachScope(r) : 'not computed — expand to run' }));
+          // Kept apart from the section above, which only holds symbols the walk proved
+          // untested: a walk that failed or was cut short proves nothing either way.
+          const unknownReach = r.testReachComputed ? (r.testUnknown || []) : [];
+          if (unknownReach.length) {
+            out.push(N({ type: 'section', key: 'testUnknown', label: 'Test reach unknown',
+              count: unknownReach.length, icon: 'question',
+              desc: 'the search failed or stopped early — not the same as untested' }));
+          }
         }
         out.push(N({ type: 'section', key: 'files', label: 'Files without a call graph', count: (r.otherFiles || []).length,
           icon: 'files', desc: 'migrations, config, docs' }));
@@ -529,7 +544,8 @@ function createTreeProvider(vscode, {
         if (decorate) setTimeout(() => decorate.flush(), 0);
         const seen = new Map();
         for (const c of r.allChanged || []) seen.set(c.label, (seen.get(c.label) || 0) + 1);
-        const mk = (c) => {
+        // A factory, not a second parameter: `mk` is passed to Array.map, which supplies an index.
+        const mkWith = (reachReason, scopeNote = null) => (c) => {
           const sev = c.staleCallers > 0 ? 'stale'
             : (c.callerState === 'unknown') ? 'warn'
               : (c.kinds || []).some((k) => k.id !== 'body') ? 'ok' : 'muted';
@@ -537,9 +553,10 @@ function createTreeProvider(vscode, {
           mark(analysisId, uri, statusOfPath(state, c.relPath), sev, `${c.relPath}:${c.startLine}`);
           return N({
             type: 'finding', label: c.label, finding: c, file: c.file, pos: c.namePos, score: c.score,
-            ambiguous: (seen.get(c.label) || 0) > 1, decorationUri: uri,
+            ambiguous: (seen.get(c.label) || 0) > 1, decorationUri: uri, reachReason, scopeNote,
           });
         };
+        const mk = mkWith(null);
         // A changed symbol that calls another changed symbol appears ONLY under it --
         // otherwise every such symbol shows twice, once nested and once at top level.
         const isRoot = (c) => c.isRoot !== false;
@@ -550,7 +567,10 @@ function createTreeProvider(vscode, {
             return [N({ type: 'message', label: 'Compute test reachability', icon: 'play',
               desc: 'extra caller queries — run on demand', command: 'impactTree.computeTestReach' })];
           }
-          return r.untested.map(mk);
+          return r.untested.map(mkWith(null, reachScope(r)));
+        }
+        if (node.key === 'testUnknown') {
+          return (r.testUnknown || []).map((c) => mkWith(c.testReachIncompleteReason || 'the test search did not finish')(c));
         }
         if (node.key === 'deleted') {
           return r.deleted.map((d) => {

@@ -88,7 +88,7 @@ for (const c of result.components) {
   for (const root of c.forest.slice(0, 6)) {
     console.log('');
     console.log(`● ${root.label}   [${root.added ? 'ADDED' : 'CHANGED'}]  ${rel(root.file)}:${root.startLine}`);
-    console.log(`  blast ${root.blast ?? '-'}${root.blastCapped ? '+' : ''} · score ${root.score}${root.testCount ? ` · 🧪 ${root.testCount}` : ''}${root.testState === 'uncovered' ? ' · ⚠ no test' : ''}`);
+    console.log(`  blast ${root.blast ?? '-'}${root.blastCapped ? '+' : ''} · score ${root.score}${root.testCount ? ` · 🧪 ${root.testCount}` : ''}${root.testState === 'uncovered' ? ' · ⚠ no test' : ''}${root.testState === 'unknown' ? ' · ? test reach unknown' : ''}`);
     const walk = (nodes, truncated, prefix) => {
       nodes.forEach((n, i) => {
         const last = i === nodes.length - 1 && !truncated;
@@ -107,8 +107,9 @@ H('③ DELETED');
 result.deleted.length ? result.deleted.forEach((d) => console.log(`  ✕ ${d.label}   ${d.relPath}`)) : console.log('  (none)');
 
 H('④ TEST REACHABILITY');
-console.log(`  uncovered: ${result.untested.length}   callers-unknown: ${result.unknownCallers.length}`);
+console.log(`  uncovered (no test within ${result.reachDepth} caller level(s)): ${result.untested.length}   unknown: ${result.testUnknown.length}   callers-unknown: ${result.unknownCallers.length}`);
 result.untested.forEach((c) => console.log(`  ⚠ ${c.label}   ${rel(c.file)}:${c.startLine}`));
+result.testUnknown.forEach((c) => console.log(`  ? ${c.label}   ${rel(c.file)}:${c.startLine}  (not proven untested: ${c.testReachIncompleteReason})`));
 result.unknownCallers.forEach((c) => console.log(`  ? ${c.label}   ${rel(c.file)}:${c.startLine}  (value-passed, not called)`));
 
 H('SUMMARY');
