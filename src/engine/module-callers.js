@@ -7,6 +7,12 @@ const { createSyntacticResolver } = require('./resolver-syntactic');
 
 // Bounds on the whole-repository index. Past them the search is incomplete and says so;
 // a minified bundle or a vendored tree must not stall the editor.
+// - MAX_FILES, in source files: the first 20000 that git lists are read and indexed; each
+//   later one is skipped and counted. Not a setting.
+// - MAX_FILE_BYTES, in bytes of one file: a larger file is skipped and counted, never
+//   truncated. Not a setting.
+// Any skipped file makes an otherwise complete answer incomplete, with a reason naming
+// the count, and adds a warning to the analysis result.
 const MAX_FILES = 20000;
 const MAX_FILE_BYTES = 1024 * 1024;
 

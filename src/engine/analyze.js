@@ -14,9 +14,10 @@ const { createModuleCallers, withModuleCallers } = require('./module-callers');
 const { seedRoots, nestedIds, blastRadius, buildTree } = require('./forest');
 const { readLineOfOffset, clearVirtualText } = require('./textpos');
 const { classifyCallSiteUpdates, classifyCallerUpdateState } = require('./call-sites');
-const { mapLimit, validateConcurrency } = require('./concurrency');
+const { mapLimit } = require('./concurrency');
+const { validateConcurrency, validateReachDepth } = require('./settings');
 const { throwIfCancelled } = require('./cancellation');
-const { walkTestReach } = require('./test-reach');
+const { walkTestReach, DEFAULT_REACH_BUDGET } = require('./test-reach');
 
 // Prefer the project's own TypeScript so analysis matches what the editor sees; fall
 // back to the repo root, then to whatever this extension was installed with.
@@ -292,11 +293,13 @@ function inferredProjectFiles(repo, git) {
  *   the query finished and found none, `'unknown'` when the query failed, the file
  *   is outside the program, or the symbol is only referenced as a value, and
  *   `'di'` for a constructor with no direct call.
- * - `testState` `'covered'` when a test was reached, `'not-computed'` when
- *   `deferTestReach` skipped the walk, `'unknown'` when no test was reached and
- *   `callerState` is `'unknown'` or `'di'`, and `'uncovered'` otherwise.
- *   A thrown `incoming` query during that walk is discarded, so `'uncovered'`
- *   does not prove the walk finished.
+ * - `testState` `'covered'` when a test is statically reachable (not proof that it runs
+ *   or asserts anything), `'uncovered'` when the walk finished within its depth and
+ *   budget and found none, `'unknown'` when no test was found and the walk could not
+ *   finish (a caller query failed or was incomplete, the depth or budget stopped it, or
+ *   `callerState` is `'unknown'` or `'di'`), and `'not-computed'` when `deferTestReach`
+ *   skipped the walk. `testReachIncompleteReason` says why a state is `'unknown'` and is
+ *   `null` otherwise. See `walkTestReach`.
  * - `callersComplete` `true` when the caller search finished, `false` when it was cut
  *   short and `callers` may be missing some; `callersIncompleteReason` says why, or is
  *   `null` when complete. A `'resolved'` symbol can be incomplete.
@@ -307,7 +310,8 @@ function inferredProjectFiles(repo, git) {
  *   `{updated, untouched, unknown}` sites behind the label. `staleCallers` counts
  *   non-test callers that are not `'updated-at-call'`.
  *
- * `depth` bounds only the test-reach walk, with the changed symbol at depth 0.
+ * `depth` bounds only the test-reach walk, with the changed symbol at depth 0; a walk
+ * that has to stop at it without finding a test is `'unknown'`, not `'uncovered'`.
  * Blast radius uses `blastDepth`. The rendered forest uses `treeDepth` and
  * `maxChildren`, and is omitted when `skipForest` is set. `changedRanges` values
  * are 1-based inclusive `[startLine, endLine]` pairs on the new side of the diff,
@@ -326,8 +330,10 @@ function inferredProjectFiles(repo, git) {
  * @param {number} [opts.fetchTimeoutMs] Deadline for that fetch, in milliseconds.
  * @param {string|null} [opts.headRev] `'HEAD'` for the commit, `null` for the worktree. Defaults from the mode.
  * @param {'fallback'} [opts.onDirty] In `pr` mode, continue as `branch` instead of throwing.
- * @param {number} [opts.depth=2] How far the test-reach walk may go. The changed symbol is depth 0.
- * @param {number} [opts.reachBudget=120] Stop the test-reach walk after more than this many distinct callers.
+ * @param {number} [opts.depth=2] How far the test-reach walk may go, 1..6; the changed symbol
+ *   is depth 0. An invalid value warns and uses 2; one above 6 warns and uses 6.
+ * @param {number} [opts.reachBudget=120] Distinct callers one test-reach walk may visit
+ *   before it stops as `'unknown'`. The changed symbol does not count.
  * @param {boolean} [opts.deferTestReach] Leave every `testState` as `'not-computed'`.
  * @param {number} [opts.concurrency=8] Parallel caller queries per project, 1..32; an invalid value warns and uses 8.
  * @param {boolean} [opts.skipForest] Skip blast radius and the caller tree. Roots are still chosen.
@@ -350,6 +356,7 @@ function inferredProjectFiles(repo, git) {
  *   base: {ref: string, sha: string, notes?: string[]},
  *   warnings: string[],
  *   concurrency: number,
+ *   reachDepth: number,
  *   dirtyCount: number,
  *   changedFileCount: number,
  *   changedPaths: string[],
@@ -366,12 +373,15 @@ function inferredProjectFiles(repo, git) {
  *   deleted: object[],
  *   nestedCount: number,
  *   untested: object[],
+ *   testUnknown: object[],
  *   unknownCallers: object[],
  *   testReachComputed: boolean
  * }>} `findings` are changed symbols whose diff is more than a body edit.
- *   `untested` is the `'uncovered'` subset. `unknownCallers` is the `'unknown'` subset.
+ *   `untested` is the `testState` `'uncovered'` subset and `testUnknown` the `'unknown'`
+ *   one. `unknownCallers` is the `callerState` `'unknown'` subset.
  *   `testReachComputed` is false only when every symbol was left `'not-computed'`.
- *   `concurrency` is the worker count actually used after validating `opts.concurrency`.
+ *   `concurrency` is the worker count actually used after validating `opts.concurrency`;
+ *   `reachDepth` is the same for `opts.depth`.
  * @throws {Error} Unknown `mode`.
  * @throws {Error} `checkpoint` mode without `opts.checkpoint`, or a checkpoint that is
  *   not a commit (`code === 'NO_CHECKPOINT'`).
@@ -385,9 +395,9 @@ async function analyze(repo, opts = {}) {
   if (!cfg) throw new Error(`unknown mode '${mode}' (expected ${Object.keys(MODES).join('|')})`);
   const { signal } = opts;
   throwIfCancelled(signal);
-  const depth = opts.depth ?? 2;
   const git = makeGit(repo);
   const warnings = [];
+  const depth = validateReachDepth(opts.depth, warnings);
   const concurrency = validateConcurrency(opts.concurrency, warnings);
   // Per-run caches. The extension host lives for hours: a tsconfig added since the last
   // run must be seen, and text a Tier A preview registered for a PR must not stand in
@@ -527,16 +537,24 @@ async function analyze(repo, opts = {}) {
         // Test reachability: does ANY test sit in the upward closure. Deferred by default
         // -- it only feeds one section, and computing it for every symbol multiplies the
         // query count for information the reviewer may never open.
-        let tests = [];
+        c.tests = [];
+        c.testState = 'not-computed';
+        c.testReachIncompleteReason = null;
         if (!deferReach) {
-          ({ tests } = await walkTestReach(resolver, { file: c.file, pos: c.namePos }, {
-            depth, budget: opts.reachBudget ?? 120, signal,
-          }));
+          const reach = await walkTestReach(resolver, { file: c.file, pos: c.namePos }, {
+            depth, budget: opts.reachBudget ?? DEFAULT_REACH_BUDGET, signal,
+          });
+          c.tests = reach.tests;
+          c.testState = reach.state;
+          c.testReachIncompleteReason = reach.incompleteReason;
+          // A finished walk found nothing, but a symbol whose callers are unknown or
+          // DI-built has callers the walk could not see.
+          if (reach.state === 'uncovered' && (c.callerState === 'unknown' || c.callerState === 'di')) {
+            c.testState = 'unknown';
+            c.testReachIncompleteReason = c.callersIncompleteReason
+              || (c.callerState === 'di' ? 'a DI container builds this class, so its callers are not visible' : 'its callers are unknown');
+          }
         }
-        c.tests = tests;
-        c.testState = !deferReach
-          ? (tests.length ? 'covered' : (c.callerState === 'unknown' || c.callerState === 'di') ? 'unknown' : 'uncovered')
-          : 'not-computed';
         report({ phase: 'resolve', component: comp, done: ++done, total: changed.length, label: c.label });
       }, { signal });
 
@@ -613,7 +631,7 @@ async function analyze(repo, opts = {}) {
     allChanged: all.slice().sort((a, b) => b.score - a.score || a.label.localeCompare(b.label)),
     nestedCount: nested.size,
     otherFiles,
-    mode: effectiveMode, requestedMode: mode, modeDesc: effectiveCfg.desc, dirtyCount: dirty.length, base, warnings, concurrency,
+    mode: effectiveMode, requestedMode: mode, modeDesc: effectiveCfg.desc, dirtyCount: dirty.length, base, warnings, concurrency, reachDepth: depth,
     changedFileCount: files.length,
     changedPaths: files.map((f) => f.path),
     fileStatus: Object.fromEntries(everything.map((f) => [f.path, f.status])),
@@ -626,6 +644,7 @@ async function analyze(repo, opts = {}) {
     findings: all.filter((c) => c.kinds.some((k) => k.id !== 'body')).sort((a, b) => b.score - a.score),
     deleted: components.flatMap((c) => c.deleted),
     untested: all.filter((c) => c.testState === 'uncovered'),
+    testUnknown: all.filter((c) => c.testState === 'unknown'),
     testReachComputed: all.length === 0 || all.some((c) => c.testState !== 'not-computed'),
     unknownCallers: all.filter((c) => c.callerState === 'unknown'),
   };
