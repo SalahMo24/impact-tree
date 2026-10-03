@@ -30,7 +30,7 @@
     "test:tier-a-view": "node test/tier-a-view.test.js",
     "test:loadts": "node test/load-typescript.test.js",
     "test:baseref": "node test/base-ref.test.js",
-    "test:smoke": "node --test test/review-findings-smoke.test.js",
+    "test:smoke": "node --test test/review-findings-smoke.test.js test/review-preview-smoke.test.js",
     "lint": "eslint src",
     "typecheck": "tsc -p jsconfig.json"
   },
