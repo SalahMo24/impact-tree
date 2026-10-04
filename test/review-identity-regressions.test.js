@@ -14,6 +14,22 @@ const { createPrDocuments, prQuery } = require('../src/pr-documents');
 const { registerVirtualText, clearVirtualText } = require('../src/engine/textpos');
 const { ts, root } = require('./bug-regressions-helpers');
 
+test('arrow identities cover declaration context without including sibling declarators', () => {
+  const file = path.join(root, 'a.ts');
+  const base = 'export const f = () => 0, g = () => 0;\n';
+  const head = 'export const f = () => 1, g = () => 1;\n';
+  const id = (text, baseText = base) => {
+    const identity = createReviewIdentity(ts, root, { headText: () => text, baseText: () => baseText, fileRevision: () => null });
+    return identity({ type: 'finding', file, pos: text.indexOf('g =') });
+  };
+  const first = id(head);
+  assert.equal(id(head.replace('f = () => 1', 'f = () => 99')), first, 'an earlier sibling edit leaves g reviewed');
+  assert.equal(id("import 'new';\n" + head), first, 'unrelated offset movement leaves g reviewed');
+  assert.notEqual(id(head.replace('export ', '')), first, 'removing export changes the identity');
+  assert.notEqual(id(head.replace('const ', 'let ')), first, 'changing the binding kind changes the identity');
+  assert.notEqual(id(head, base.replace('export ', '')), first, 'base-side declaration context matters too');
+});
+
 test('preview documents hold only the current revision, and paths with punctuation still resolve', () => {
   const docs = createPrDocuments();
   const a = { prNumber: 1, headSha: 'one', base: { sha: 'base' }, texts: new Map([['a?#.ts', { head: 'first', base: null }]]) };

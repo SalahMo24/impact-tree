@@ -19,8 +19,8 @@ function hunkRangesFromPatch(patch) {
   return walkPatch(patch).ranges;
 }
 
-// `hunkDeletionsFromPatch` returns [{ at, oldStart, oldEnd }, ...]: for each marker the
-// base lines `oldStart..oldEnd` (1-based, inclusive) removed at that gap.
+// Removed base lines (1-based, inclusive), including replacement runs. `at` is the
+// gap before the run; `newEnd` exists only when added lines replace the removed ones.
 function hunkDeletionsFromPatch(patch) {
   return walkPatch(patch).deletions;
 }
@@ -34,13 +34,17 @@ function walkPatch(patch) {
   let newLine = 0;
   let oldLine = 0;
   let inHunk = false;
-  let deletedFrom = null;        // first base line of a run of `-` lines not yet followed by a `+`
+  let deletedFrom = null;
+  let deletedAt = null;
   const flush = () => {
     if (deletedFrom !== null) {
-      markers.push([newLine - 0.5, newLine - 0.5]);
-      deletions.push({ at: newLine - 0.5, oldStart: deletedFrom, oldEnd: oldLine - 1 });
+      const replaced = newLine > deletedAt + 0.5;
+      if (!replaced) markers.push([deletedAt, deletedAt]);
+      deletions.push({ at: deletedAt, oldStart: deletedFrom, oldEnd: oldLine - 1,
+        ...(replaced ? { newEnd: newLine - 1 } : {}) });
     }
     deletedFrom = null;
+    deletedAt = null;
   };
 
   for (const line of lines) {
@@ -56,8 +60,12 @@ function walkPatch(patch) {
     if (!inHunk) continue;
     if (line.startsWith('\\')) continue;           // "\ No newline at end of file"
     const c = line[0];
-    if (c === '+') { deletedFrom = null; touched.push([newLine, newLine]); newLine++; }
-    else if (c === '-') { if (deletedFrom === null) deletedFrom = oldLine; oldLine++; }
+    if (c === '+') { touched.push([newLine, newLine]); newLine++; }
+    else if (c === '-') {
+      if (deletedFrom !== null && newLine > deletedAt + 0.5) flush();
+      if (deletedFrom === null) { deletedFrom = oldLine; deletedAt = newLine - 0.5; }
+      oldLine++;
+    }
     else { flush(); newLine++; oldLine++; }          // context line, or an empty one
   }
   flush();

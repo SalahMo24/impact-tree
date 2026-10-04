@@ -147,6 +147,14 @@ function makeSymbols(ts) {
             overloadSeen.set(key, n);
             key = `${key}#overload${n}`;
           }
+          // A variable's node excludes `export` and its binding kind. Review hashes
+          // include that prefix without including any sibling declarations.
+          let reviewPrefix = '';
+          if (ts.isVariableDeclaration(node) && ts.isVariableDeclarationList(node.parent)) {
+            const list = node.parent;
+            const declaration = ts.isVariableStatement(list.parent) ? list.parent : list;
+            reviewPrefix = sf.text.slice(declaration.getStart(sf), list.declarations[0].getStart(sf));
+          }
           const sym = {
             label,
             key,
@@ -163,6 +171,7 @@ function makeSymbols(ts) {
             namePos: nameNode.getStart(sf),
             startLine, endLine, span: endLine - startLine,
             start: node.getStart(sf), end: node.getEnd(),
+            ...(reviewPrefix ? { reviewPrefix } : {}),
             decorators: [...decoratorsOf(node)],
             exported: declMods.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) || ts.isExportAssignment(node)
               || ts.isBinaryExpression(node),

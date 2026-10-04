@@ -36,6 +36,21 @@ const SCENARIOS = {
     head: "import { a } from './a';\nexport function f(x: number) {\n  return x + 1;\n}\n",
     outside: [1.5],
   },
+  'a removed import and a modified signature in one replacement': {
+    base: "import { a } from './a';\nexport function f(x: number) {\n  return x;\n}\n",
+    head: "export function f(x: string) {\n  return x;\n}\n",
+    outside: [0.5],
+  },
+  'a removed constant and a modified signature in one replacement': {
+    base: "export const LIMIT = 1;\nexport function f(x: number) {\n  return x;\n}\n",
+    head: "export function f(x: string) {\n  return x;\n}\n",
+    outside: [0.5],
+  },
+  'an edited import and signature already name the outside replacement lines': {
+    base: "import { a } from './a';\nexport function f(x: number) {\n  return x;\n}\n",
+    head: "import { b } from './b';\nexport function f(x: string) {\n  return x;\n}\n",
+    outside: [1],
+  },
   'a line deleted from inside a function': {
     base: "import { a } from './a';\nexport function f(x: number) {\n  const y = 1;\n  return x;\n}\n",
     head: "import { a } from './a';\nexport function f(x: number) {\n  return x;\n}\n",
@@ -189,6 +204,51 @@ test('the outside row\'s identity changes with the text outside functions, and o
   assert.notEqual(idOf(head.replace("'./a'", "'./b'"), ID_BASE), id, 'an edited import changes it');
   assert.notEqual(idOf(head.replace('LIMIT = 2', 'LIMIT = 3'), ID_BASE), id, 'an edited constant changes it');
   assert.notEqual(idOf(head, ID_BASE.replace('LIMIT = 1', 'LIMIT = 0')), id, 'a different base changes it');
+});
+
+test('outside hashes preserve blank lines in literal values on both sides', () => {
+  const literals = [
+    '`first\nsecond`',
+    '`first\n${value}\nsecond`',
+    '`first${value}\nsecond`',
+    '`first${value}\nsecond${value}third`',
+    '`first\n  \t\nsecond`',
+    "'first\\\nsecond'",
+  ];
+  const insertBlankLine = (text) => (text.includes('\\\n')
+    ? text.replace('\\\n', '\\\n\\\n') : text.replace('\n', '\n\n'));
+  for (const literal of literals) {
+    const base = `export const MESSAGE = ${literal};\nexport function f() {}\n`;
+    const head = base.replace('first', 'edited');
+    const id = idOf(head, base);
+    assert.notEqual(idOf(insertBlankLine(head), base), id,
+      `head-side literal whitespace matters: ${literal}`);
+    assert.notEqual(idOf(head, insertBlankLine(base)), id,
+      `base-side literal whitespace matters: ${literal}`);
+    assert.equal(idOf(`${head}\nexport function g() {}\n\n`, base), id, 'callable separator lines stay irrelevant');
+  }
+});
+
+test('a blank line inserted in a template value clears its reviewed outside row', { skip: !h && 'typescript not resolvable' }, async () => {
+  const baseText = 'export const MESSAGE = `hello\nworld`;\nexport function f() { return 0; }\n';
+  const head = baseText.replace('hello', 'hi').replace('return 0', 'return 1');
+  const dir = h.mkRepo({ 'tsconfig.json': h.TSCONFIG, [FILE]: baseText });
+  const base = h.headOf(dir);
+  const review = createReviewState(null);
+  const { makeGit } = require('../src/engine/git');
+  const rowFor = async (text) => {
+    h.write(dir, { [FILE]: text });
+    const result = await analyze(dir, h.since(base, { headRev: null }));
+    assert.equal(outsideOf(result).length, 1);
+    review.configure('pr-1', createReviewIdentity(h.ts, dir, localRevisions(dir, result, makeGit(dir))));
+    return { type: 'outside', ...outsideOf(result)[0] };
+  };
+  const first = await rowFor(head);
+  review.set(review.id(first), true);
+  assert.equal(review.isReviewed(review.id(await rowFor(head.replace('return 1', 'return 2')))), true,
+    'a function body edit keeps the tick');
+  assert.equal(review.isReviewed(review.id(await rowFor(head.replace('hi\nworld', 'hi\n\nworld')))), false,
+    'the template value changed, so it must be reviewed again');
 });
 
 test('a tick on the row survives a function edit and is lost by an import edit, in a PR preview', async () => {

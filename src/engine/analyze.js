@@ -324,6 +324,8 @@ function inferredProjectFiles(repo, git) {
  * the comment above a function. A deletion that only removed a deleted symbol, with its
  * blank and comment lines, is not listed; the deleted row stands for it. A file with no
  * changed or deleted symbol has no entry: it is in `otherFiles` with `noCallable`.
+ * A replacement that removes outside text but adds only callable lines is represented
+ * by a deletion marker before its added lines, even when that gap is inside a callable.
  * `baseTexts` holds the base-side text of every changed source path that existed at
  * the base, keyed by its base path (`basePaths` maps a rename).
  *

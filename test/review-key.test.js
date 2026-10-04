@@ -11,6 +11,8 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { createReviewState } = require('../src/review-state');
 const { pull, localResult, finding, withEnv } = require('./extension-env');
+const { ts } = require('./bug-regressions-helpers');
+const S = require('../src/engine/symbols').makeSymbols(ts);
 
 const WARM = 'export function warm() { return 1; }\n';
 const WARM_NAME_POS = WARM.indexOf('warm');
@@ -31,6 +33,31 @@ const detachOnCheckout = (env) => {
 };
 const checkOut = (env, pr) => env.openPullRequest(pr, 'analyse');
 const storedKeys = (env) => [...env.memento.keys()];
+
+test('a push clears an arrow function tick when its export or binding kind changes', async (t) => {
+  for (const next of ['const f = () => 2;\n', 'export let f = () => 2;\n']) {
+    await t.test(next.trim(), () => withEnv(async (env) => {
+      const file = path.join(env.dir, 'a.ts');
+      const base = 'export const f = () => 1;\n';
+      let head = 'export const f = () => 2;\n';
+      const commit = () => execFileSync('git', ['commit', '-qam', 'push'], { cwd: env.dir });
+      fs.writeFileSync(file, head); commit();
+      env.hooks.headOf = () => execFileSync('git', ['rev-parse', 'HEAD'], { cwd: env.dir, encoding: 'utf8' }).trim();
+      env.hooks.localResult = (o) => {
+        const symbol = S.collect(ts.createSourceFile(file, head, ts.ScriptTarget.ES2021, true))[0];
+        return { ...localResult(o, { findings: [{ ...finding('f', file, symbol.namePos), ...symbol, throwsAdded: [] }] }),
+          fileStatus: { 'a.ts': 'modified' }, baseTexts: new Map([['a.ts', base]]) };
+      };
+      await checkOut(env, onBranch('main'));
+      env.tick(await rowOf(env), true);
+      assert.ok(env.isTicked(await rowOf(env)));
+      head = next;
+      fs.writeFileSync(file, head); commit();
+      await checkOut(env, onBranch('main'));
+      assert.ok(!env.isTicked(await rowOf(env)), 'the declaration changed, so the tick must clear');
+    }, { changedSource: true }));
+  }
+});
 
 test('two checked-out PRs keep separate ticks, and each keeps its own across a return', () => withEnv(async (env) => {
   showWarm(env); detachOnCheckout(env);
