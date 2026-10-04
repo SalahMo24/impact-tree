@@ -3,6 +3,8 @@
 // It deliberately owns no analysis state — picking a source just fires a command and
 // the results land in the main Changes view, so there is one place to read results.
 
+const { groupPullRequests } = require('./pr-groups');
+
 const MODE_ICON = {
   working: 'edit',
   branch: 'git-branch',
@@ -12,6 +14,7 @@ const MODE_ICON = {
 
 function createSourcesProvider(vscode, {
   modes, getMode, getRepoSlug, github, getPrs, getPrsTruncated = () => false, getPrError, isLoadingPrs,
+  getTeams = () => ({ teams: [], truncated: false, error: null }),
 }) {
   const _emitter = new vscode.EventEmitter();
   const N = (o) => o;
@@ -84,24 +87,51 @@ function createSourcesProvider(vscode, {
           return [N({ type: 'message', label: 'No open pull requests', icon: 'info',
             desc: 'click to refresh', command: 'impactTree.refreshPullRequests' })];
         }
-        const rows = prs.map((p) => N({
+        const prRow = (p, via) => N({
           type: 'pr',
           label: `#${p.number}  ${p.title}`,
           icon: p.draft ? 'git-pull-request-draft' : 'git-pull-request',
-          desc: `${p.author}${p.isFork ? '  ·  fork' : ''}`,
+          desc: `${p.author}${via ? `  ·  via ${via.join(', ')}` : ''}${p.isFork ? '  ·  fork' : ''}`,
           tooltip: `${p.title}\n\n${p.headRef} → ${p.baseRef}\nby ${p.author}\nupdated ${p.updatedAt}`
+            + (via ? `\nreview requested from ${via.join(', ')}` : '')
             + (p.isFork ? `\n\nFrom fork ${p.headRepo} — analysing it needs a fetch from that fork.` : ''),
           command: 'impactTree.openPullRequest',
           args: [p],
-        }));
+        });
+        const team = getTeams();
+        const { requested, mine, others } = groupPullRequests(prs,
+          { login: github.account(), teams: team.error ? null : team.teams });
+        // A team list that failed or was cut short can hide requests; say so inside the
+        // group it affects, never let it pass as "nothing waiting on you".
+        const teamWarnings = [];
+        if (team.error) {
+          teamWarnings.push(N({ type: 'message', label: 'Team review requests are not shown', icon: 'warning',
+            desc: team.error, tooltip: `Your GitHub teams could not be loaded, so only reviews requested from you directly are listed here.\n\n${team.error}`,
+            command: 'impactTree.refreshPullRequests' }));
+        } else if (team.truncated) {
+          teamWarnings.push(N({ type: 'message', label: `Only your first ${team.teams.length} teams are checked`,
+            icon: 'warning', desc: 'requests to your other teams are not listed' }));
+        }
+        // Counts sit in the description so the label, and with it the expansion state the
+        // user chose, stays the same as PRs move between groups.
+        const group = (key, label, icon, expanded, prRows, notes = []) => N({
+          type: 'group', key, label, icon, expanded, desc: String(prRows.length), children: [...notes, ...prRows],
+        });
+        const out = [
+          group('pr-requested', 'Review requested', 'eye', true,
+            requested.map(({ pr, via }) => prRow(pr, via)), teamWarnings),
+          group('pr-mine', 'Yours', 'account', true, mine.map((p) => prRow(p))),
+          group('pr-others', 'Everyone else', 'organization', false, others.map((p) => prRow(p))),
+        ];
         // Same rule as the truncated-files warning: say the list is partial, never let
         // a capped list pass as every open PR.
         if (getPrsTruncated()) {
-          rows.push(N({ type: 'message', label: `Only the first ${prs.length} open pull requests are shown`,
+          out.push(N({ type: 'message', label: `Only the first ${prs.length} open pull requests are shown`,
             icon: 'warning', desc: 'more exist on GitHub' }));
         }
-        return rows;
+        return out;
       }
+      if (node.children) return node.children;
       return [];
     },
   };
