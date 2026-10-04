@@ -1,7 +1,7 @@
 'use strict';
 // The file-first row model, built directly from small results: no provider, no vscode
-// stub (except in the identity test, which compares with the old tree). Inputs are
-// deep-frozen, so a function that modified one would throw.
+// stub (except in the identity test, which checks that the provider shows the ticks the
+// old tree stored). Inputs are deep-frozen, so a function that modified one would throw.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const model = require('../src/review-tree-model');
@@ -380,25 +380,32 @@ test('review ids of the new rows equal the ids the old tree gives the same symbo
   }));
   const file = `${root}/a.ts`;
   const target = { file, relPath: 'a.ts', label: 'target', namePos: head.indexOf('target'), startLine: 2, endLine: 2, kinds: [BODY],
-    staleCallers: 0, callerState: 'none', callers: [], score: 1, testState: 'uncovered', tests: [] };
+    staleCallers: 0, callerState: 'none', callers: [], score: 1, testState: 'uncovered', tests: [], throwsAdded: [], component: '(root)' };
   const result = {
     allChanged: [target], findings: [], deleted: [{ label: 'gone', key: 'gone', relPath: 'a.ts', file, namePos: base.indexOf('gone'), startLine: 3 }],
     outside: [{ file, relPath: 'a.ts', ranges: [[1, 1]] }], otherFiles: [{ path: 'docs/n.md', status: 'added' }], untested: [target], testUnknown: [],
     warnings: [], unanalysable: [], testReachComputed: true, mode: 'branch', base: { ref: 'main', sha: 'abcdef0123' }, changedFileCount: 2,
     fileStatus: { 'a.ts': 'modified', 'docs/n.md': 'added' },
   };
-  const state = { result, rel: (f) => f.replace(`${root}/`, ''), absPath: (p) => `${root}/${p}`, fileListLayout: 'flat' };
-  const provider = createTreeProvider(vscode, { getState: () => state, resolver: { incoming: async () => [] }, review });
-  const old = {};
-  for (const section of (await provider.getChildren()).filter((n) => n.type === 'section')) {
-    for (const row of await provider.getChildren(section)) old[row.type] = row;
-  }
-  assert.deepEqual(Object.keys(old).sort(), ['deleted', 'file', 'finding', 'outside']);
-  const { rows } = model.buildFileRows(result, { uriOf, absPath: state.absPath });
+  // The ids the section tree gave these rows (its flat layout), recorded before it was
+  // removed: a tick stored then must be the same tick now.
+  const OLD_IDS = {
+    finding: 'finding:root>a.ts#target:390e0a3aa46d475e227507bf3cc83d07fb66081f5f6c9ce0044cdc608f1ea576:6e63f5de721da97c9082bf5ce3e20037a76f506c09eb0cd923f62ec6d5e08fb8',
+    outside: 'outside:root>a.ts#outside:7a38a50dc9bc3596f9806e0f16115d72241cba59081e953247ebe3d81cbdcdb5:2fed4012c3db96cb47728da2271057af44c0537729dee4a26f8f3c07c1a2c173',
+    deleted: 'deleted:root>deleted:a.ts#gone:31fd2c28036288b007e8beaa73cc3d4be8c1dd6c51d396090d2c0775f8bd5abc',
+    file: 'file:root>file:docs/n.md:rev:docs/n.md',
+  };
+  const { rows } = model.buildFileRows(result, { uriOf, absPath: (p) => `${root}/${p}` });
   const fresh = Object.fromEntries(model.collectCountingRows(rows).map((r) => [r.type, r]));
-  for (const type of ['finding', 'deleted', 'outside', 'file']) {
-    const id = review.id(fresh[type]);
-    assert.ok(id, `${type} has an id`);
-    assert.equal(id, review.id(old[type]), type);
-  }
+  assert.deepEqual(Object.keys(fresh).sort(), Object.keys(OLD_IDS).sort());
+  for (const type of Object.keys(OLD_IDS)) assert.equal(review.id(fresh[type]), OLD_IDS[type], type);
+  // and the provider shows the stored ticks on the rows it builds
+  for (const id of Object.values(OLD_IDS)) review.set(id, true);
+  const provider = createTreeProvider(vscode, {
+    getState: () => ({ result, rel: (f) => f.replace(`${root}/`, ''), absPath: (p) => `${root}/${p}` }), resolver: {}, review,
+  });
+  const shown = [];
+  for (const top of await provider.getChildren()) shown.push(top, ...(top.type === 'reviewFile' ? await provider.getChildren(top) : []));
+  assert.deepEqual(shown.map((r) => [r.type, provider.getTreeItem(r).checkboxState]),
+    [['reviewFile', 1], ['deleted', 1], ['finding', 1], ['outside', 1], ['file', 1]]);
 });

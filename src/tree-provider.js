@@ -3,16 +3,18 @@
 const { nodeId } = require('./review-state');
 const { prQuery } = require('./pr-documents');
 const models = require('./tree-row-models');
-const { groupChangesByLocation, groupCallerRowsByFile, buildFileTreeRows, buildDirectoryChildRows } = require('./tree-grouping');
+const reviewTree = require('./review-tree-model');
+const { groupCallerRowsByFile } = require('./tree-grouping');
 const { renderTreeItem } = require('./tree-item-renderer');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 /** @typedef {import('./tree-row-models').DecorationRequest} DecorationRequest */
 /** @typedef {import('./engine/caller-contract').CallerRow} CallerRow */
 /**
- * The session state the provider reads; null before the first analysis.
+ * The session state the provider reads; null before the first analysis. `source` is what
+ * is being reviewed (a local mode, a PR preview or a checked-out PR).
  * @typedef {{
- *   result: any, fileListLayout?: string, rowDetail?: string, iconMode?: string,
+ *   result: any, rowDetail?: string, iconMode?: string, source?: { kind: string, pr?: { number: number } },
  *   rel: (file: string) => string, absPath?: ((relPath: string) => string)|null,
  *   classifyCallSiteUpdates?: (file: string, callSites: Array<{ start: number, end: number }>) => { updated: object[], untouched: object[], unknown: object[] },
  *   changedKeys?: Set<string>,
@@ -27,14 +29,16 @@ const { renderTreeItem } = require('./tree-item-renderer');
  * }} CallerResolver
  */
 
-// Tree nodes resolve their callers on expand. That laziness is the whole reason the
-// extension is cheap where the CLI is not: the CLI pre-walked 152 positions (123s);
-// a reviewer expands maybe a dozen.
+// The view is file first: one row per changed file, worst first, holding that file's
+// changes; under a change, its callers and what is known of its tests. A caller row
+// resolves its own callers on expand. That laziness is the whole reason the extension
+// is cheap where the CLI is not: the CLI pre-walked 152 positions (123s); a reviewer
+// expands maybe a dozen.
 //
 // The provider owns what has a lifetime: reading the view state, scheduling caller
 // queries, checking that their answers still belong to the current analysis, and
-// publishing decorations. Rows are built and grouped by pure functions
-// (tree-row-models, tree-grouping) and rendered by tree-item-renderer.
+// publishing decorations. Rows are built by pure functions (review-tree-model,
+// tree-row-models, tree-grouping) and rendered by tree-item-renderer.
 
 // `getAnalysisId` and `isCurrentAnalysis` come from the session: rows and decorations
 // belong to the analysis that was current when they were requested. Without a session
@@ -56,36 +60,26 @@ function createTreeProvider(vscode, {
   getState, resolver, isBusy = () => false, decorate = null, getPhase = () => 'ready', review = null,
   getAnalysisId = () => 0, isCurrentAnalysis = () => true,
 }) {
-  // A finding's direct callers are already resolved, so checking it can clear them too
-  // and report real progress. Deeper levels are lazy and are not counted.
   /** @param {TreeRow} n */
   const idOf = (n) => review?.id ? review.id(n) : nodeId(n);
-  /** @param {TreeRow} n */
-  const childIdsOf = (n) => review?.childIds ? review.childIds(n) : [];
+  // The review ids a row's checkbox stands for; none for a row without a checkbox.
+  /** @param {TreeRow} n @returns {string[]} */
+  const tickIdsOf = (n) => /** @type {string[]} */ (reviewTree.collectTickTargets(n).map(idOf).filter(Boolean));
+  // A file's checkbox is reviewed exactly when all its rows are, so unticking one change
+  // inside it unticks the file too.
   /** @param {TreeRow} n */
   const checkedOf = (n) => {
     if (!review) return null;
-    const id = idOf(n);
-    if (!id) return null;
-    // A grouping row is reviewed exactly when everything in it is, so unticking one
-    // change inside it unticks the group too.
-    const members = models.GROUP_TYPES.has(n.type) ? childIdsOf(n) : null;
-    return members ? members.length > 0 && review.remaining(members) === 0 : review.isReviewed(id);
-  };
-  /** @param {TreeRow} n */
-  const reviewNoteOf = (n) => {
-    const kids = childIdsOf(n);
-    const left = review ? review.remaining(kids) : 0;
-    return review && kids.length ? (left ? `${left}/${kids.length} callers left to review` : 'all callers reviewed') : null;
+    const ids = tickIdsOf(n);
+    return ids.length ? review.remaining(ids) === 0 : null;
   };
   // Read at render time, so a settings change shows on the next refresh.
   const viewOf = () => {
     const st = getState();
     return {
-      layout: (st && st.fileListLayout) || 'tree',
       rowDetail: (st && st.rowDetail) || 'hover',
       iconMode: (st && st.iconMode) || 'file',
-      checkedOf, reviewNoteOf,
+      checkedOf,
     };
   };
   // file:///path#offset — unique per symbol so decorations do not collide, while the
@@ -135,47 +129,38 @@ function createTreeProvider(vscode, {
   };
   const _emitter = new vscode.EventEmitter();
 
-  /** @param {ProviderState|null} state */
-  function rootRows(state) {
+  /** @param {ProviderState} state */
+  const buildFiles = (state) => reviewTree.buildFileRows(state.result, { uriOf: uriFor, absPath: state.absPath });
+
+  /**
+   * @param {ProviderState|null} state
+   * @param {number} analysisId
+   */
+  function rootRows(state, analysisId) {
     const placeholder = models.buildPlaceholderRows({ phase: getPhase(), busy: isBusy(), state });
     if (placeholder) return placeholder;
     // A missing state got the placeholder above.
-    const r = /** @type {ProviderState} */ (state).result;
-    const leftToReview = review ? review.remaining(models.collectTopLevelChangeRefs(r).map(idOf)) : null;
-    return models.buildRootRows(r, { leftToReview });
+    const st = /** @type {ProviderState} */ (state);
+    const built = buildFiles(st);
+    scheduleDecorationFlush();
+    publishDecorations(analysisId, built.decorations);
+    // Only the worst file starts open, so the first thing on screen is the thing to look at.
+    const files = built.rows.map((r, i) => (i === 0 && r.type === 'reviewFile' ? { ...r, expanded: true } : r));
+    return [...models.buildNoticeRows(st.result), ...files];
   }
 
-  // The rows of one section, with the decorations they should carry.
+  // The callers and tests row under a change, from the result: no query.
   /**
-   * @param {TreeRow} node
-   * @param {ProviderState} state
+   * @param {TreeRow} node A change row.
+   * @param {number} analysisId
    */
-  function buildSectionContent(node, state) {
-    const r = state.result;
-    /**
-     * @param {any[]} list
-     * @param {{ reachReasonOf?: (change: any) => string|null, scopeNote?: string|null }} [opts]
-     */
-    const changes = (list, opts = {}) => models.buildChangeRows(list, { result: r, uriOf: uriFor, ...opts });
-    switch (node.key) {
-      case 'findings': return changes(r.findings.filter(models.isRootChange));
-      case 'other': {
-        const built = changes(models.otherChangesOf(r).filter(models.isRootChange));
-        const grouped = groupChangesByLocation(built.rows, { layout: viewOf().layout, result: r, uriOf: uriFor });
-        return { rows: grouped.rows, decorations: [...built.decorations, ...grouped.decorations] };
-      }
-      case 'untested':
-        if (!r.testReachComputed) return { rows: [models.buildComputeTestReachRow()], decorations: [] };
-        return changes(r.untested, { scopeNote: models.buildReachScopeNote(r) });
-      case 'testUnknown':
-        return changes(r.testUnknown || [], { reachReasonOf: (c) => c.testReachIncompleteReason || 'the test search did not finish' });
-      case 'deleted': return models.buildDeletedRows(r.deleted, { result: r, uriOf: uriFor });
-      case 'files': {
-        const leaves = models.buildFileLeafRows(r.otherFiles || [], { absPath: state.absPath, uriOf: uriFor });
-        return { rows: viewOf().layout === 'flat' ? leaves.rows : buildFileTreeRows(leaves.rows), decorations: leaves.decorations };
-      }
-      default: return { rows: [], decorations: [] };
-    }
+  function impactRows(node, analysisId) {
+    const state = getState();
+    if (!state || !state.result) return [];
+    const built = reviewTree.buildImpactRows(node, { result: state.result, uriOf: uriFor, rel: state.rel ? (f) => state.rel(f) : null });
+    scheduleDecorationFlush();
+    publishDecorations(analysisId, built.decorations);
+    return built.rows;
   }
 
   // Asks the resolver for a row's callers. A query that failed or did not finish must
@@ -196,8 +181,10 @@ function createTreeProvider(vscode, {
     }
   }
 
+  // A caller row's own callers, queried when it is expanded. Callers are not reviewed,
+  // so they carry no review parent.
   /**
-   * @param {TreeRow} node
+   * @param {TreeRow} node A caller row.
    * @param {number} analysisId
    */
   async function callerRows(node, analysisId) {
@@ -207,6 +194,8 @@ function createTreeProvider(vscode, {
     // to a result no longer shown. The language server cannot cancel the query; it has
     // finished by now, and only its answer is dropped.
     if (!isCurrentAnalysis(analysisId)) return [];
+    // The analysis already left untracked files out of the result's callers; the
+    // resolver answering here does not, so they are dropped from its answer.
     const callers = models.dropExcludedCallers(answer.callers, state?.result?.excludedCallerPaths, state?.rel ? (f) => state.rel(f) : null);
     scheduleDecorationFlush();
     // Classifying call sites reads line positions from disk, so it happens here.
@@ -217,13 +206,12 @@ function createTreeProvider(vscode, {
     }));
     const ancestry = models.collectAncestry(node);
     const built = models.buildCallerRows(classified, {
-      ancestry, reviewParent: idOf(node), changedKeys: (state && state.changedKeys) || new Set(),
+      ancestry, reviewParent: null, changedKeys: (state && state.changedKeys) || new Set(),
       rel: state ? (f) => state.rel(f) : null, result: state && state.result, uriOf: uriFor,
     });
     publishDecorations(analysisId, built.decorations);
-    const grouped = groupCallerRowsByFile(built.rows, { reviewParent: idOf(node), ancestry, uriOf: uriFor });
+    const grouped = groupCallerRowsByFile(built.rows, { reviewParent: null, ancestry, uriOf: uriFor });
     if (answer.incomplete) grouped.push(models.buildIncompleteCallersRow(answer.incomplete, grouped.length > 0));
-    if (node.inside && node.inside.length) grouped.unshift(models.buildInsideGroupRow(node));
     return grouped;
   }
 
@@ -235,22 +223,39 @@ function createTreeProvider(vscode, {
     /** @param {TreeRow} [node] */
     async getChildren(node) {
       const analysisId = getAnalysisId();
-      if (!node) return rootRows(getState());
-      if (node.type === 'section') {
-        // A section row exists only once there is a result to draw.
-        const state = /** @type {ProviderState} */ (getState());
-        scheduleDecorationFlush();
-        const content = buildSectionContent(node, state);
-        publishDecorations(analysisId, content.decorations);
-        return content.rows;
+      if (!node) return rootRows(getState(), analysisId);
+      switch (node.type) {
+        case 'reviewFile': return node.rows;
+        case 'finding': return impactRows(node, analysisId);
+        case 'caller': return node.cycle ? [] : callerRows(node, analysisId);
+        case 'callerFile': return node.callers;
+        // a file without a call graph, a deleted symbol, outside lines and messages
+        default: return [];
       }
-      if (node.type === 'legend') return models.buildLegendRows();
-      if (node.type === 'dir') return buildDirectoryChildRows(node);
-      if (node.type === 'callerFile') return node.callers;
-      if (models.GROUP_TYPES.has(node.type)) return node.rows;
-      if (node.type === 'message' || node.type === 'summary' || node.type === 'legendItem'
-        || node.type === 'deleted' || node.type === 'file' || node.type === 'outside' || node.cycle) return [];
-      return callerRows(node, analysisId);
+    },
+    /**
+     * Ticks or unticks what a row's checkbox stands for: a file's rows, or the row itself.
+     * A row without a checkbox changes nothing. The caller refreshes the view.
+     * @param {TreeRow} row
+     * @param {boolean} on
+     * @returns {void}
+     */
+    setChecked(row, on) {
+      const ids = tickIdsOf(row);
+      if (review && ids.length) review.setAll(ids, on);
+    },
+    /**
+     * The view's message and badge for what the tree shows: none while a placeholder row
+     * is shown or there is no result, else `buildReviewSummary` with the current ticks.
+     * @returns {{ message: string|undefined, badge: { value: number, tooltip: string }|undefined }}
+     */
+    summarize() {
+      const state = getState();
+      if (models.buildPlaceholderRows({ phase: getPhase(), busy: isBusy(), state }) || !state || !state.result) {
+        return { message: undefined, badge: undefined };
+      }
+      const counts = reviewTree.countReview(buildFiles(state).rows, (r) => checkedOf(r) === true);
+      return reviewTree.buildReviewSummary(state.result, state.source, counts);
     },
   };
 }

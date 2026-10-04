@@ -62,6 +62,11 @@ function createReviewState(memento) {
     useBase(base) { if (base !== baseKey) load(base); },
     isReviewed: (id) => reviewed.has(id),
     set(id, on) { if (on) reviewed.add(id); else reviewed.delete(id); persist(); },
+    /** Marks every id in `ids` reviewed or not, and stores them once. */
+    setAll(ids, on) {
+      for (const i of ids) { if (on) reviewed.add(i); else reviewed.delete(i); }
+      persist();
+    },
     /** Mark a node and everything we already know sits under it. */
     setWithChildren(id, childIds, on) {
       this.set(id, on);

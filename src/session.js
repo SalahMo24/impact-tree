@@ -109,7 +109,6 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
       absPath: (p2) => path.join(repo, p2),
       iconMode: cfg.get('iconMode', 'file'),
       rowDetail: cfg.get('rowDetail', 'hover'),
-      fileListLayout: cfg.get('fileListLayout', 'tree'),
       error: null,
       ...extra,
     };

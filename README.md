@@ -64,8 +64,7 @@ Modes: `pr` (committed branch vs base) · `branch` (includes uncommitted) ·
 | `impactTree.mode` | `pr` | which diff to review |
 | `impactTree.baseBranch` | `main` | always resolved to `origin/<branch>` |
 | `impactTree.iconMode` | `file` | `file` glyphs or `symbol` kinds on code rows |
-| `impactTree.rowDetail` | `hover` | detail in the tooltip, or `inline` |
-| `impactTree.fileListLayout` | `tree` | folder hierarchy or `flat` |
+| `impactTree.rowDetail` | `hover` | a change row's verdict words and kinds in the tooltip, or `inline` |
 | `impactTree.prewarm` | `true` | index at startup so the first run is fast |
 
 ## Performance

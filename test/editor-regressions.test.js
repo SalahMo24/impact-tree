@@ -174,7 +174,7 @@ test('editor distinguishes no references, callbacks, failed queries, and unsuppo
 
 test('a finding with no callers found is not shown as updated', () => {
   const provider = createTreeProvider(require('./vscode-stub'), { getState: () => ({ rowDetail: 'hover' }), resolver: {} });
-  const finding = (callerState) => ({ type: 'finding', label: 'target', file: '/review/t.ts', pos: 1,
+  const finding = (callerState) => ({ type: 'finding', label: 'target', name: 'target', file: '/review/t.ts', pos: 1,
     finding: { label: 'target', relPath: 't.ts', startLine: 1, component: '(root)', kinds: [{ id: 'optional-param', short: '+optional param' }],
       callerState, staleCallers: 0, stale: [], throwsAdded: [], score: 1 } });
   const none = provider.getTreeItem(finding('none'));
@@ -187,7 +187,7 @@ test('a finding with no callers found is not shown as updated', () => {
 
 test('an expansion whose caller query failed or did not finish says so', async () => {
   const expand = (resolver) => createTreeProvider(require('./vscode-stub'), { getState: () => ({ rel: (f) => path.relative(root, f) }), resolver })
-    .getChildren({ type: 'finding', file: '/review/t.ts', pos: 1 });
+    .getChildren({ type: 'caller', file: '/review/t.ts', pos: 1 });
   const caller = { file: '/review/c.ts', pos: 1, label: 'caller' };
   const failed = await expand({ incoming: async () => { throw new Error('tsserver crashed'); } });
   assert.deepEqual(failed.map((r) => [r.type, r.label, r.tooltip]), [['message', 'Callers could not be loaded', 'tsserver crashed']]);

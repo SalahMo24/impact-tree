@@ -1,10 +1,11 @@
 'use strict';
-// Command-level regressions for src/extension.js: concurrent checkouts, and Refresh
-// after a failed PR preview. Every interleaving is produced by hand-resolved promises
+// Command-level regressions for src/extension.js: concurrent checkouts, Refresh after a
+// failed PR preview, and the change view's message and badge. Every interleaving is produced by hand-resolved promises
 // (docs/CODING_STYLE.md sections 5 and 10); nothing here sleeps or relies on timers.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { shaFor, pull, previewResult, withEnv, refusals } = require('./extension-env');
+const path = require('path');
+const { shaFor, pull, previewResult, localResult, finding, withEnv, refusals } = require('./extension-env');
 
 test('a failed silent sign-in is logged and leaves the signed-out sources view, with no unhandled rejection', async () => {
   const unhandled = [];
@@ -225,4 +226,20 @@ test('of two checkouts whose dialogs are both open, the one confirmed first proc
   assert.deepEqual(env.git.checkouts.map((c) => c.commit), [shaFor(8)]);
   assert.match(env.seen.infos.at(-1), /on PR #8\b/);
   assert.deepEqual(env.seen.analyze, [{ mode: 'pr', base: 'base8' }]);
+}));
+
+test('the view message and badge follow a new result and every tick', () => withEnv(async (env) => {
+  const a = path.join(env.dir, 'a.ts');
+  env.hooks.localResult = (o) => localResult(o, { findings: [finding('one', a, 5), finding('two', a, 40)] });
+  assert.equal(env.view().message, undefined, 'nothing is shown before an analysis');
+  await env.refresh();
+  assert.equal(env.view().message, 'pr against main · 0 need attention · 2 of 2 left');
+  assert.deepEqual(env.view().badge, { value: 2, tooltip: '2 of 2 left to review' });
+  const [file] = (await env.tree().getChildren()).filter((r) => r.type === 'reviewFile');
+  env.tick(file, true);
+  assert.equal(env.view().message, 'pr against main · 0 need attention · 0 of 2 left');
+  assert.equal(env.view().badge, undefined);
+  env.tick((await env.changeRows())[1], false);
+  assert.deepEqual(env.view().badge, { value: 1, tooltip: '1 of 2 left to review' });
+  assert.equal(env.isTicked(file), false, 'unticking a change unticks its file');
 }));

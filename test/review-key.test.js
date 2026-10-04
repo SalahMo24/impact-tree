@@ -18,11 +18,7 @@ const WARM = 'export function warm() { return 1; }\n';
 const WARM_NAME_POS = WARM.indexOf('warm');
 const onBranch = (base) => ({ ...pull(1), baseRef: base });
 
-const rowOf = async (env) => {
-  const sections = await env.tree().getChildren();
-  const findings = sections.find((n) => n.type === 'section' && n.key === 'findings');
-  return (await env.tree().getChildren(findings))[0];
-};
+const rowOf = async (env) => (await env.changeRows())[0];
 const warmFinding = (env) => ({ ...finding('warm', path.join(env.dir, 'a.ts'), WARM_NAME_POS), throwsAdded: [], component: 'root' });
 const showWarm = (env) => {
   env.hooks.localResult = (o) => localResult(o, { findings: [warmFinding(env)] });
@@ -184,10 +180,14 @@ test('a tick under the old shared HEAD key shows on its unchanged row after the 
 
 test('a row whose content changed after it was ticked shows unticked after the upgrade', () => idsTickedFor(WARM).then((ids) => withEnv(async (env) => {
   fs.writeFileSync(path.join(env.dir, 'a.ts'), 'export function warm() { return 2; }\n');
+  // committed, or the checkout is refused over a dirty worktree and there is no row at all
+  execFileSync('git', ['commit', '-qam', 'edit'], { cwd: env.dir });
   env.memento.set(legacyKeys(env, 'main').shared, ids);
   showWarm(env);
   await checkOut(env, onBranch('main'));
-  assert.ok(!env.isTicked(await rowOf(env)));
+  const row = await rowOf(env);
+  assert.equal(row.label, 'warm');
+  assert.ok(!env.isTicked(row));
 }, { changedSource: true })));
 
 test('a tick under a fallback key still shows after the key change, and that key stays', () => idsTickedFor(WARM).then((ids) => withEnv(async (env) => {

@@ -169,6 +169,17 @@ test('root rows: summary with review progress, preview notice, warnings and the 
   assert.ok(!preview.some((r) => r.key === 'untested' || r.key === 'testUnknown'));
 });
 
+test('notice rows: the preview notice first, then one row per warning and per unanalysed component', () => {
+  const local = models.buildNoticeRows(deepFreeze(resultOf({ warnings: ['w1', 'w2'], unanalysable: [{ count: 2, component: 'legacy' }] })));
+  assert.deepEqual(local.map((r) => [r.type, r.icon, r.label]), [
+    ['message', 'warning', 'w1'], ['message', 'warning', 'w2'], ['message', 'circle-slash', "2 file(s) in 'legacy' not analysed"],
+  ]);
+  const preview = models.buildNoticeRows(deepFreeze(resultOf({ tierA: true, changedFileCount: 4, warnings: ['w'] })));
+  assert.deepEqual(preview.map((r) => r.label), ['Preview — PR files only (4 file(s))', 'w']);
+  assert.match(preview[0].desc, /callers outside this PR are NOT shown/);
+  assert.deepEqual(models.buildNoticeRows(resultOf()), []);
+});
+
 test('top-level change refs name only root changes', () => {
   const refs = models.collectTopLevelChangeRefs(resultOf({ allChanged: [change('a.ts', 'a'), change('a.ts', 'b', { isRoot: false })] }));
   assert.deepEqual(refs.map((r) => r.type), ['finding']);
@@ -176,20 +187,23 @@ test('top-level change refs name only root changes', () => {
 });
 
 test('change rows mark shared labels, carry reach notes, and ask for one decoration each', () => {
-  const web = change('web/u.ts', 'helper');
-  const api = change('api/u.ts', 'helper');
-  const solo = change('s.ts', 'solo', { testReachIncompleteReason: 'budget' });
-  const result = deepFreeze(resultOf({ allChanged: [web, api, solo], fileStatus: { 'web/u.ts': 'modified' } }));
-  const { rows, decorations } = models.buildChangeRows([solo, web], {
-    result, uriOf, reachReasonOf: (c) => c.testReachIncompleteReason || null, scopeNote: 'note',
-  });
-  assert.deepEqual(rows.map((r) => [r.label, r.ambiguous, r.reachReason, r.scopeNote]), [['solo', false, 'budget', 'note'], ['helper', true, null, 'note']]);
+  const web = change('web/u.ts', 'helper', { testState: 'uncovered' });
+  const api = change('api/u.ts', 'helper', { testState: 'covered' });
+  const solo = change('s.ts', 'solo', { testState: 'unknown', testReachIncompleteReason: 'budget' });
+  const bare = change('b.ts', 'bare', { testState: 'unknown' });
+  const deferred = change('d.ts', 'deferred', { testState: 'not-computed' });
+  const result = deepFreeze(resultOf({ allChanged: [web, api, solo, bare, deferred], fileStatus: { 'web/u.ts': 'modified' }, reachDepth: 3 }));
+  const { rows, decorations } = models.buildChangeRows([solo, web, api, bare, deferred], { result, uriOf });
+  assert.deepEqual(rows.map((r) => [r.label, r.ambiguous, r.reachReason, r.scopeNote]), [
+    ['solo', false, 'budget', null],
+    ['helper', true, null, 'no test within 3 caller level(s)'],
+    ['helper', true, null, null],
+    ['bare', false, 'the test search did not finish', null],
+    ['deferred', false, null, null],
+  ], 'only a finished walk gets the scope note; an unknown one always gets a reason');
   assert.equal(rows[1].finding, web);
   assert.equal(rows[1].decorationUri, `uri:/r/web/u.ts#${web.namePos}`);
-  assert.deepEqual(decorations.map((d) => [d.status, d.tooltip]), [[undefined, `s.ts:${solo.startLine}`], ['modified', `web/u.ts:${web.startLine}`]]);
-  const plain = models.buildChangeRows([web], { result, uriOf }).rows[0];
-  assert.equal(plain.reachReason, null);
-  assert.equal(plain.scopeNote, null);
+  assert.deepEqual(decorations.slice(0, 2).map((d) => [d.status, d.tooltip]), [[undefined, `s.ts:${solo.startLine}`], ['modified', `web/u.ts:${web.startLine}`]]);
 });
 
 test('deleted rows fall back to the deleted status', () => {

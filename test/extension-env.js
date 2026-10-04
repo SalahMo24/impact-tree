@@ -81,7 +81,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   const failures = new Map();
   const hooks = { beforeCheckout: null, headOf: shaFor, remoteResult: (pr) => previewResult(pr), localResult: (o) => localResult(o),
     warm: !changedSource, clearResolver: () => {} };
-  const captured = { tree: null, decorations: null, checkbox: null, sources: null };
+  const captured = { tree: null, view: null, decorations: null, checkbox: null, sources: null };
   let fetchHead = null, quickPick = null;
 
   const disposable = () => ({ dispose() {} });
@@ -103,10 +103,12 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     window: {
       createOutputChannel: () => ({ appendLine: (m) => seen.log.push(m), dispose() {}, show() {} }),
       registerFileDecorationProvider: (provider) => { captured.decorations = provider; return disposable(); },
+      // The view object is kept, so a test reads the message and badge the extension sets on it.
       createTreeView: (id, options) => {
-        if (id === 'impactTree.changes') captured.tree = options.treeDataProvider;
+        const view = { dispose() {}, onDidChangeCheckboxState: (handler) => { captured.checkbox = handler; return disposable(); } };
+        if (id === 'impactTree.changes') { captured.tree = options.treeDataProvider; captured.view = view; }
         if (id === 'impactTree.sources') captured.sources = options.treeDataProvider;
-        return { dispose() {}, onDidChangeCheckboxState: (handler) => { captured.checkbox = handler; return disposable(); } };
+        return view;
       },
       withProgress: async (_, fn) => fn({ report() {} }),
       showQuickPick: async () => quickPick,
@@ -221,6 +223,15 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     },
     isTicked: (node) => captured.tree.getTreeItem(node).checkboxState === vscode.TreeItemCheckboxState.Checked,
     tree: () => captured.tree,
+    view: () => captured.view,
+    // The change rows of every file the tree shows, in display order.
+    async changeRows() {
+      const rows = [];
+      for (const top of await captured.tree.getChildren()) {
+        if (top.type === 'reviewFile') rows.push(...await captured.tree.getChildren(top));
+      }
+      return rows.filter((r) => r.type === 'finding');
+    },
     sources: () => captured.sources,
     decorations: () => captured.decorations,
     failGit: (cmd, error) => failures.set(cmd, error),

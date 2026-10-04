@@ -54,16 +54,17 @@ function activate(context) {
   const view = vscode.window.createTreeView('impactTree.changes',
     { treeDataProvider: provider, showCollapseAll: true, manageCheckboxStateManually: true });
   context.subscriptions.push(view);
+  // The summary lives in the view's message and badge, and follows every repaint: a new
+  // result, a phase change, a tick.
+  const showSummary = () => {
+    const { message, badge } = provider.summarize();
+    view.message = message;
+    view.badge = badge;
+  };
+  context.subscriptions.push(provider.onDidChangeTreeData(showSummary));
   context.subscriptions.push(view.onDidChangeCheckboxState((e) => {
-    for (const [node, state] of e.items) {
-      const id = review.id(node);
-      if (!id) continue;
-      const on = state === vscode.TreeItemCheckboxState.Checked;
-      // A file or "changed inside" group ticks its changes and, as ticking each of
-      // them would, the callers already known under them.
-      const kids = review.childIds(node).concat((node.members || []).flatMap((m) => review.childIds(m)));
-      review.setWithChildren(id, kids, on);
-    }
+    // A file's checkbox ticks its changes; a change's ticks only itself, not its callers.
+    for (const [node, state] of e.items) provider.setChecked(node, state === vscode.TreeItemCheckboxState.Checked);
     provider.refresh();
   }));
 

@@ -98,17 +98,30 @@ check('there is no U badge — untracked is a worktree state, not a PR state',
   !Object.values(STATUS_BADGE).includes('U'));
 
 const REPO = '/repo';
+// Two callers, neither updated at the call: one in a file the PR changed elsewhere, one in
+// a file the PR adds. Both callers are changed symbols of the PR themselves.
+const callerOf = (label, relPath, pos, start) => {
+  const sites = [{ start, end: start + 8 }];
+  return { label, file: `${REPO}/${relPath}`, pos, test: false, sites: 1, callSites: sites,
+    callSiteUpdates: { updated: [], untouched: sites, unknown: [] } };
+};
+const changedAt = (label, relPath, namePos) => ({
+  label, file: `${REPO}/${relPath}`, relPath, namePos, startLine: 1, score: 1, staleCallers: 0, callerState: 'none',
+  callers: [], kinds: [{ id: 'body' }], throwsAdded: [], component: 'pr',
+});
 const finding = {
   label: 'Store.findLatest', file: `${REPO}/src/store.ts`, relPath: 'src/store.ts',
-  namePos: 5, startLine: 2, score: 3, isRoot: true, staleCallers: 1, staleChangedElsewhere: 1,
-  callerState: 'resolved', kinds: [{ id: 'param', short: 'param' }], callers: [],
+  namePos: 5, startLine: 2, score: 3, isRoot: true, staleCallers: 2, staleChangedElsewhere: 1,
+  callerState: 'resolved', kinds: [{ id: 'param', short: 'param' }],
+  callers: [callerOf('Service.run', 'src/caller.ts', 40, 10), callerOf('Fresh.make', 'src/fresh.ts', 8, 4)],
+  stale: [{ label: 'Service.run' }, { label: 'Fresh.make' }],
   throwsAdded: [], baseSig: 'findLatest(id)', headSig: 'findLatest(id, scope)', component: 'pr',
 };
 const state = {
   result: {
     tierA: true,
     findings: [finding],
-    allChanged: [finding],
+    allChanged: [finding, changedAt('Service.run', 'src/caller.ts', 40), changedAt('Fresh.make', 'src/fresh.ts', 8)],
     deleted: [],
     otherFiles: [
       { path: 'docs/new.md', status: 'added' },
@@ -129,28 +142,17 @@ const state = {
   },
   rel: (f) => path.relative(REPO, f),
   absPath: (p) => path.join(REPO, p),
-  fileListLayout: 'flat',
   rowDetail: 'hover',
   iconMode: 'file',
-  changedKeys: new Set([`${REPO}/src/caller.ts#40`]),
-  classifyCallSiteUpdates: (_, sites) => ({ updated: [], untouched: sites, unknown: [] }),
 };
 
 const decorate = createDecorationProvider(vscodeStub);
-const provider = createTreeProvider(vscodeStub, {
-  getState: () => state,
-  resolver: {
-    incoming: async () => [
-      { label: 'Service.run', file: `${REPO}/src/caller.ts`, pos: 40, test: false, sites: 1, callSites: [{ start: 10, end: 18 }] },
-      { label: 'Fresh.make', file: `${REPO}/src/fresh.ts`, pos: 8, test: false, sites: 1, callSites: [{ start: 4, end: 8 }] },
-    ],
-  },
-  decorate,
-});
+// The callers under a change come from the result, so the resolver is never asked.
+const provider = createTreeProvider(vscodeStub, { getState: () => state, resolver: { incoming: async () => [] }, decorate });
 
 (async () => {
   const roots = await provider.getChildren();
-  const files = await provider.getChildren(roots.find((n) => n.type === 'section' && n.key === 'files'));
+  const files = roots.filter((n) => n.type === 'file');
   const badgeOf = (node) => {
     const item = provider.getTreeItem(node);
     const d = item.resourceUri ? decorate.provideFileDecoration(item.resourceUri) : null;
@@ -164,7 +166,9 @@ const provider = createTreeProvider(vscodeStub, {
   check('a deleted file is D', byName['gone.md'] && byName['gone.md'].badge === 'D', JSON.stringify(byName['gone.md']));
   check('a renamed file is R', byName['moved.md'] && byName['moved.md'].badge === 'R', JSON.stringify(byName['moved.md']));
 
-  const findings = await provider.getChildren(roots.find((n) => n.type === 'section' && n.key === 'findings'));
+  const store = roots.find((n) => n.type === 'reviewFile' && n.relPath === 'src/store.ts');
+  check('the changed file is M', store && badgeOf(store).badge === 'M', store && JSON.stringify(badgeOf(store)));
+  const findings = await provider.getChildren(store);
   check('the changed symbol itself is M', badgeOf(findings[0]).badge === 'M', JSON.stringify(badgeOf(findings[0])));
   const callers = await provider.getChildren(findings[0]);
   const run = callers.find((c) => c.label === 'Service.run');

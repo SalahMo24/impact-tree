@@ -337,14 +337,58 @@ function buildRootRows(r, { leftToReview }) {
 }
 
 /**
+ * The rows above the changed files: the preview notice, then one row per analysis
+ * warning and per component that could not be analysed.
+ * @param {any} r The result.
+ * @returns {TreeRow[]}
+ */
+function buildNoticeRows(r) {
+  /** @type {TreeRow[]} */
+  const rows = [];
+  // Tier A cannot see a caller in a file the PR does not touch. Presenting a truncated
+  // tree as if it were complete is the one failure mode that would make this feature
+  // worse than useless, so it is stated on the face of it.
+  if (r.tierA) {
+    rows.push({
+      type: 'message', icon: 'eye',
+      label: `Preview — PR files only (${r.changedFileCount} file(s))`,
+      desc: 'callers outside this PR are NOT shown  ·  check out for full impact',
+      tooltip: 'Built from the pull request\'s own files via the GitHub API.\n'
+        + 'Your worktree was not touched.\n\n'
+        + 'Any caller living in a file this PR does not change is invisible here.\n'
+        + 'Use "Check out and analyse" on the PR for the complete tree.',
+    });
+  }
+  for (const w of r.warnings) rows.push({ type: 'message', label: w, icon: 'warning' });
+  for (const u of r.unanalysable) {
+    rows.push({ type: 'message', icon: 'circle-slash',
+      label: `${u.count} file(s) in '${u.component}' not analysed`, desc: 'see analysis warning' });
+  }
+  return rows;
+}
+
+/**
+ * What a change's row says about tests reaching it, beyond its tests row: why the walk is
+ * unknown, or how far a walk that found no test went. A walk that failed or was cut short
+ * proves nothing, so it never reads as untested.
+ * @param {any} change
+ * @param {any} result
+ * @returns {{ reachReason: string|null, scopeNote: string|null }}
+ */
+const describeTestReach = (change, result) => ({
+  reachReason: change.testState === 'unknown' ? change.testReachIncompleteReason || 'the test search did not finish' : null,
+  scopeNote: change.testState === 'uncovered' ? buildReachScopeNote(result) : null,
+});
+
+/**
  * One row per changed symbol, with the decoration each should carry. `ambiguous` marks a
- * label that more than one changed symbol shares, so the row can name its component.
+ * label that more than one changed symbol shares, so the row can name its component;
+ * `reachReason` and `scopeNote` are from `describeTestReach`.
  * @param {any[]} changes Changed symbols, in display order.
- * @param {{ result: any, uriOf: ResourceUriOf, reachReasonOf?: (change: any) => string|null, scopeNote?: string|null }} opts
- *   `reachReasonOf` gives a row's test-reach-unknown reason; `scopeNote` is shown on every row.
+ * @param {{ result: any, uriOf: ResourceUriOf }} opts
  * @returns {{ rows: TreeRow[], decorations: DecorationRequest[] }}
  */
-function buildChangeRows(changes, { result, uriOf, reachReasonOf = () => null, scopeNote = null }) {
+function buildChangeRows(changes, { result, uriOf }) {
   /** @type {Map<string, number>} */
   const seen = new Map();
   for (const c of result.allChanged || []) seen.set(c.label, (seen.get(c.label) || 0) + 1);
@@ -355,7 +399,7 @@ function buildChangeRows(changes, { result, uriOf, reachReasonOf = () => null, s
     decorations.push({ uri, status: getFileStatus(result, c.relPath), tooltip: `${c.relPath}:${c.startLine}` });
     return {
       type: 'finding', label: c.label, finding: c, file: c.file, pos: c.namePos, score: c.score,
-      ambiguous: (seen.get(c.label) || 0) > 1, decorationUri: uri, reachReason: reachReasonOf(c), scopeNote,
+      ambiguous: (seen.get(c.label) || 0) > 1, decorationUri: uri, ...describeTestReach(c, result),
     };
   });
   return { rows, decorations };
@@ -528,7 +572,7 @@ const buildInsideGroupRow = (row) => ({
 module.exports = {
   LEGEND, CALL_STATE, NO_SITE_EVIDENCE, GROUP_TYPES,
   classifyChangeVerdict, classifyDeletedVerdict, classifyOutsideVerdict, classifyRowVerdict, classifyWorstRowVerdict, collectRowAndNested, getFileStatus,
-  buildReachScopeNote, buildPlaceholderRows, collectTopLevelChangeRefs, buildRootRows,
+  buildReachScopeNote, buildPlaceholderRows, collectTopLevelChangeRefs, buildRootRows, buildNoticeRows,
   isRootChange, otherChangesOf, buildChangeRows, buildDeletedRows, buildFileLeafRows, buildOutsideRows, describeOutsideRanges,
   buildComputeTestReachRow, buildLegendRows, dropExcludedCallers, collectAncestry, buildCallerRows,
   buildIncompleteCallersRow, buildInsideGroupRow,
