@@ -34,6 +34,9 @@ function checkPullRequest(p, endpoint) {
       bad(`#${p.number} has no \`${side}.ref\` and \`${side}.sha\``);
     }
   }
+  if (isObject(p.user) && p.user.avatar_url != null && !isString(p.user.avatar_url)) {
+    bad(`#${p.number} has a non-string \`user.avatar_url\``);
+  }
   if (p.changed_files != null && !Number.isSafeInteger(p.changed_files)) {
     bad(`#${p.number} has a non-numeric \`changed_files\``);
   }
@@ -48,6 +51,18 @@ function checkPullRequest(p, endpoint) {
     bad(`#${p.number} has a \`requested_teams\` entry without a numeric \`id\` and string \`name\``);
   }
   return p;
+}
+
+// The tree row shows avatars at 16px, so ask for a small image (`s` is GitHub's size
+// parameter, in pixels; 32 stays sharp on high-DPI screens). Anything but an https URL
+// is dropped and the row falls back to its PR icon.
+function avatarUrl(raw) {
+  if (!isString(raw)) return null;
+  let url;
+  try { url = new URL(raw); } catch { return null; }
+  if (url.protocol !== 'https:') return null;
+  url.searchParams.set('s', '32');
+  return url.toString();
 }
 
 // Checks the fields listMyTeams reads. `parent` is null for a top-level team.
@@ -180,6 +195,7 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
       number: p.number,
       title: p.title,
       author: p.user && p.user.login,
+      authorAvatarUrl: avatarUrl(p.user && p.user.avatar_url),
       headRef: p.head && p.head.ref,
       headSha: p.head && p.head.sha,
       headRepo: p.head && p.head.repo && p.head.repo.full_name,

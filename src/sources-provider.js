@@ -30,7 +30,7 @@ function createSourcesProvider(vscode, {
       return item;
     }
     const item = new vscode.TreeItem(n.label, vscode.TreeItemCollapsibleState.None);
-    item.iconPath = n.icon ? new vscode.ThemeIcon(n.icon) : undefined;
+    item.iconPath = n.avatar ? vscode.Uri.parse(n.avatar) : n.icon ? new vscode.ThemeIcon(n.icon) : undefined;
     item.description = n.desc;
     if (n.tooltip) item.tooltip = n.tooltip;
     if (n.command) item.command = { command: n.command, title: n.label, arguments: n.args || [] };
@@ -91,7 +91,10 @@ function createSourcesProvider(vscode, {
           type: 'pr',
           label: `#${p.number}  ${p.title}`,
           icon: p.draft ? 'git-pull-request-draft' : 'git-pull-request',
-          desc: `${p.author}${via ? `  ·  via ${via.join(', ')}` : ''}${p.isFork ? '  ·  fork' : ''}`,
+          // The author's avatar replaces the PR icon when GitHub gave one, so a draft has
+          // to be said in words as well.
+          avatar: p.authorAvatarUrl || null,
+          desc: `${p.author}${p.draft ? '  ·  draft' : ''}${via ? `  ·  via ${via.join(', ')}` : ''}${p.isFork ? '  ·  fork' : ''}`,
           tooltip: `${p.title}\n\n${p.headRef} → ${p.baseRef}\nby ${p.author}\nupdated ${p.updatedAt}`
             + (via ? `\nreview requested from ${via.join(', ')}` : '')
             + (p.isFork ? `\n\nFrom fork ${p.headRepo} — analysing it needs a fetch from that fork.` : ''),

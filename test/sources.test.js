@@ -11,6 +11,7 @@ const vscodeStub = {
   TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
   ThemeIcon: class { constructor(id) { this.id = id; } },
   TreeItem: class { constructor(label, state) { this.label = label; this.collapsibleState = state; } },
+  Uri: { parse: (s) => ({ uri: s }) },
 };
 
 const MODES = {
@@ -129,6 +130,8 @@ function build(over = {}) {
   check('drafts use the draft icon', rows[1].icon === 'git-pull-request-draft', rows[1].icon);
   check('a fork is flagged in the row, not discovered at checkout',
     /fork/.test(rows[1].desc), rows[1].desc);
+  check('a draft is said in the description too, since an avatar can replace its icon',
+    /draft/.test(rows[1].desc) && !/draft/.test(rows[0].desc), `${rows[0].desc} | ${rows[1].desc}`);
   check('clicking a PR passes the whole PR object',
     rows[0].command === 'impactTree.openPullRequest' && rows[0].args[0].number === 12);
 
@@ -163,7 +166,14 @@ function build(over = {}) {
   check('group renders expanded', item.collapsibleState === vscodeStub.TreeItemCollapsibleState.Expanded);
   check('a collapsed PR group renders collapsed',
     p.getTreeItem(groups[2]).collapsibleState === vscodeStub.TreeItemCollapsibleState.Collapsed);
+  const avatarUrl = 'https://avatars.githubusercontent.com/u/1?v=4&s=32';
+  const withAvatar = await build({ getPrs: () => [{ ...list[0], authorAvatarUrl: avatarUrl }] }).getChildren(prsNode);
+  const [avatarRow] = await build().getChildren(withAvatar[2]);
+  check('a PR row shows its author\'s avatar', p.getTreeItem(avatarRow).iconPath.uri === avatarUrl,
+    JSON.stringify(p.getTreeItem(avatarRow).iconPath));
   const leaf = p.getTreeItem(rows[0]);
+  check('without an avatar the row keeps its PR icon', leaf.iconPath.id === 'git-pull-request',
+    JSON.stringify(leaf.iconPath));
   check('pr row renders as a leaf', leaf.collapsibleState === vscodeStub.TreeItemCollapsibleState.None);
   check('pr row has a click command', leaf.command && leaf.command.command === 'impactTree.openPullRequest');
 
