@@ -18,8 +18,10 @@ const sameLogin = (a, b) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
  * @param {{ login: string | null, teams: Team[] | null }} me `teams` is null when the
  *   team list could not be loaded; only direct requests are matched then.
  * @returns {{ requested: {pr: P, via: string[]}[], mine: P[], others: P[] }} Every PR
- *   lands in exactly one group, in this precedence. `via` names why it is requested:
- *   'you' for a direct request, then the requested teams the user belongs to.
+ *   lands in exactly one group. Authorship comes first: the author's own team is often
+ *   requested on their PR (by CODEOWNERS, say), and that is not a review waiting on
+ *   them. `via` names why a PR is requested: 'you' for a direct request, then the
+ *   requested teams the user belongs to.
  */
 function groupPullRequests(prs, { login, teams }) {
   // A request to a parent team reaches the members of its child teams. Only the
@@ -34,11 +36,11 @@ function groupPullRequests(prs, { login, teams }) {
   const mine = [];
   const others = [];
   for (const pr of prs) {
+    if (sameLogin(pr.author, login)) { mine.push(pr); continue; }
     const via = [];
     if (pr.requestedReviewers.some((r) => sameLogin(r, login))) via.push('you');
     for (const t of pr.requestedTeams) if (myTeamIds.has(t.id)) via.push(t.name);
     if (via.length) requested.push({ pr, via });
-    else if (sameLogin(pr.author, login)) mine.push(pr);
     else others.push(pr);
   }
   return { requested, mine, others };
