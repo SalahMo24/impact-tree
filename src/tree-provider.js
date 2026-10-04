@@ -249,7 +249,7 @@ function createTreeProvider(vscode, {
       if (node.type === 'callerFile') return node.callers;
       if (models.GROUP_TYPES.has(node.type)) return node.rows;
       if (node.type === 'message' || node.type === 'summary' || node.type === 'legendItem'
-        || node.type === 'deleted' || node.type === 'file' || node.cycle) return [];
+        || node.type === 'deleted' || node.type === 'file' || node.type === 'outside' || node.cycle) return [];
       return callerRows(node, analysisId);
     },
   };

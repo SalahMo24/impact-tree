@@ -81,6 +81,7 @@ const nodeId = (n) => {
   if (!n) return null;
   if (n.type === 'file') return `file:${n.relPath}`;
   if (n.type === 'deleted') return `del:${n.relPath}#${n.label}`;
+  if (n.type === 'outside') return `outside:${n.relPath}`;
   if (n.type === 'finding' || n.type === 'caller') return `${n.file}#${n.pos}`;
   // A file grouping several callers of the same change; ticking it ticks them all.
   if (n.type === 'callerFile') return `cfile:${n.relPath}`;

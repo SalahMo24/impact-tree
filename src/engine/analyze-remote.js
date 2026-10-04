@@ -16,7 +16,7 @@ const { score } = require('./signature');
 const { changedSymbolsIn, changedSymbolKeys } = require('./changed-symbols');
 const { createSyntacticIndex } = require('./syntactic-index');
 const { createSyntacticResolver } = require('./resolver-syntactic');
-const { hunkRangesFromPatch } = require('./patch');
+const { hunkRangesFromPatch, hunkDeletionsFromPatch } = require('./patch');
 const { isSourcePath, isTestPath, isTestFile } = require('./diff');
 const { seedRoots, nestedIds } = require('./forest');
 const { registerVirtualText, readLineOfOffset } = require('./textpos');
@@ -54,7 +54,8 @@ const normaliseStatus = (s) => {
  * @param {(event: {phase: string, message: string, done?: number, total?: number}) => void} [args.onProgress]
  * @param {(message: string) => void} [args.trace]
  * @param {AbortSignal} [args.signal]
- * @returns {Promise<object>} The same shape as analyze()'s result, with `tierA: true`.
+ * @returns {Promise<object>} The same shape as analyze()'s result, with `tierA: true`; `outside`
+ *   (see analyze()) is computed from the PR's patch and fetched texts.
  * @throws {import('./cancellation').AnalysisCancelledError} `signal` was aborted. No result is returned.
  */
 async function analyzeRemote({
@@ -164,6 +165,7 @@ async function analyzeRemote({
   const changedRanges = {};
   const changed = [];
   const deleted = [];
+  const outside = [];
   for (const f of usable) {
     const ranges = hunkRangesFromPatch(f.patch);
     changedRanges[f.path] = ranges;
@@ -173,11 +175,12 @@ async function analyzeRemote({
     const r = changedSymbolsIn(ts, S, {
       absPath: abs(f.path), relPath: f.path, status: f.status,
       headText: f.headText, baseText: f.baseText,
-      hunkRanges: ranges,
+      hunkRanges: ranges, hunkDeletions: hunkDeletionsFromPatch(f.patch),
       component: 'pull request', projectRoot: null,
     });
     changed.push(...r.changed);
     deleted.push(...r.deleted);
+    if (r.outside.length) outside.push({ file: abs(f.path), relPath: f.path, ranges: r.outside });
     trace(`${f.path}: ${ranges.length} hunk(s), `
       + `head=${f.headText ? f.headText.length : 0}b base=${f.baseText ? f.baseText.length : 0}b `
       + `-> ${r.changed.length} changed, ${r.deleted.length} deleted symbol(s)`);
@@ -278,6 +281,7 @@ async function analyzeRemote({
     fileStatus: Object.fromEntries(listed.files.map((f) => [f.path, normaliseStatus(f.status)])),
     basePaths,
     changedRanges,
+    outside,
     unanalysable: [],
     components: [{ component: 'pull request', changed, deleted, roots: ranked, forest: [], stats: resolver.stats() }],
     findings: changed.filter((c) => c.kinds.some((k) => k.id !== 'body')).sort((a, b) => b.score - a.score),
@@ -306,7 +310,7 @@ function emptyResult(pr, listed, otherFiles, warnings, concurrency, basePaths) {
     changedFileCount: 0, changedPaths: [],
     fileStatus: Object.fromEntries(listed.files.map((f) => [f.path, normaliseStatus(f.status)])),
     basePaths,
-    changedRanges: {},
+    changedRanges: {}, outside: [],
     unanalysable: [], components: [], findings: [], deleted: [], untested: [],
     testReachComputed: false, unknownCallers: [], resolver: null,
   };

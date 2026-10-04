@@ -88,7 +88,9 @@ function renderChangeGroupItem(vscode, n, view) {
   item.tooltip = new vscode.MarkdownString([
     n.type === 'changeFile' ? `**${n.relPath}**` : `**Changed inside ${n.container}**`, '',
     `${count} body-only change${count === 1 ? '' : 's'}${n.type === 'changeFile' ? ' in this file' : ''}, worst first:`, '',
-    ...n.members.slice(0, 12).map((/** @type {TreeRow} */ m) => `- ${classifyChangeStatus(m.finding).token} ${m.finding.label}`),
+    ...n.members.slice(0, 12).map((/** @type {TreeRow} */ m) => (m.finding
+      ? `- ${classifyChangeStatus(m.finding).token} ${m.finding.label}`
+      : `- ${m.label}: ${m.desc}`)),
     ...(count > 12 ? [`- …and ${count - 12} more`] : []),
   ].join('\n'));
   item.contextValue = n.type;
@@ -166,6 +168,19 @@ function renderPlainItem(vscode, item, n, view) {
       item.description = renderHelpers(vscode, view).inline(path.basename(n.relPath));
       item.iconPath = new vscode.ThemeIcon('trash');  // semantics beat decoration here
       item.tooltip = new vscode.MarkdownString([`✕ **${n.label}**`, '', '_deleted in this change_', '', `\`${n.relPath}\``].join('\n'));
+      applyCheckbox(vscode, item, n, view);
+      item.command = { command: 'impactTree.openFile', title: 'Open diff', arguments: [n] };
+      return item;
+    case 'outside':
+      item.collapsibleState = vscode.TreeItemCollapsibleState.None;
+      // Inside its file's group the file is the parent; alone it has to name it.
+      item.description = n.inGroup ? n.desc : `${path.basename(n.relPath)}  ·  ${n.desc}`;
+      item.iconPath = new vscode.ThemeIcon('symbol-namespace');
+      item.tooltip = new vscode.MarkdownString([
+        `**Outside functions** — \`${n.relPath}\``, '', n.desc, '',
+        '_Changed lines in no function: imports, constants, types, fields and the like._',
+      ].join('\n'));
+      item.contextValue = 'outside';
       applyCheckbox(vscode, item, n, view);
       item.command = { command: 'impactTree.openFile', title: 'Open diff', arguments: [n] };
       return item;

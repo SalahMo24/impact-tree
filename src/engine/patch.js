@@ -7,7 +7,8 @@
 // So rather than trusting the @@ header's span, walk the hunk body and record only
 // the lines actually marked + or -. That reproduces --unified=0 semantics exactly.
 
-// Returns [[startLine, endLine], ...] 1-based on the NEW side, merged and sorted.
+// `hunkRangesFromPatch` returns [[startLine, endLine], ...] 1-based on the NEW side, merged
+// and sorted.
 //
 // A pure deletion (a run of `-` lines not followed by `+` lines) has no new-side line
 // of its own. It is recorded as the fractional marker `N - 0.5` -- the gap before new
@@ -15,33 +16,49 @@
 // line made the function after the deletion (or before it) look changed, and could
 // mark an untouched neighbouring call site as updated.
 function hunkRangesFromPatch(patch) {
-  if (!patch) return [];
+  return walkPatch(patch).ranges;
+}
+
+// `hunkDeletionsFromPatch` returns [{ at, oldStart, oldEnd }, ...]: for each marker the
+// base lines `oldStart..oldEnd` (1-based, inclusive) removed at that gap.
+function hunkDeletionsFromPatch(patch) {
+  return walkPatch(patch).deletions;
+}
+
+function walkPatch(patch) {
+  if (!patch) return { ranges: [], deletions: [] };
   const lines = String(patch).split('\n');
   const touched = [];
   const markers = [];
+  const deletions = [];
   let newLine = 0;
+  let oldLine = 0;
   let inHunk = false;
-  let pendingDeletion = false;
+  let deletedFrom = null;        // first base line of a run of `-` lines not yet followed by a `+`
   const flush = () => {
-    if (pendingDeletion) markers.push([newLine - 0.5, newLine - 0.5]);
-    pendingDeletion = false;
+    if (deletedFrom !== null) {
+      markers.push([newLine - 0.5, newLine - 0.5]);
+      deletions.push({ at: newLine - 0.5, oldStart: deletedFrom, oldEnd: oldLine - 1 });
+    }
+    deletedFrom = null;
   };
 
   for (const line of lines) {
-    const header = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(line);
+    const header = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(line);
     if (header) {
       flush();
       // `+0,0` (the file became empty) still means "before line 1"
-      newLine = Math.max(1, parseInt(header[1], 10) + (header[2] === '0' ? 1 : 0));
+      newLine = Math.max(1, parseInt(header[2], 10) + (header[3] === '0' ? 1 : 0));
+      oldLine = parseInt(header[1], 10);
       inHunk = true;
       continue;
     }
     if (!inHunk) continue;
     if (line.startsWith('\\')) continue;           // "\ No newline at end of file"
     const c = line[0];
-    if (c === '+') { pendingDeletion = false; touched.push([newLine, newLine]); newLine++; }
-    else if (c === '-') { pendingDeletion = true; }
-    else { flush(); newLine++; }                      // context line, or an empty one
+    if (c === '+') { deletedFrom = null; touched.push([newLine, newLine]); newLine++; }
+    else if (c === '-') { if (deletedFrom === null) deletedFrom = oldLine; oldLine++; }
+    else { flush(); newLine++; oldLine++; }          // context line, or an empty one
   }
   flush();
 
@@ -57,7 +74,7 @@ function hunkRangesFromPatch(patch) {
     }
   }
   // markers are never merged into a neighbouring range: that would re-anchor them
-  return merged.concat(markers).sort((a, b) => a[0] - b[0]);
+  return { ranges: merged.concat(markers).sort((a, b) => a[0] - b[0]), deletions };
 }
 
-module.exports = { hunkRangesFromPatch };
+module.exports = { hunkRangesFromPatch, hunkDeletionsFromPatch };
