@@ -24,12 +24,16 @@ const { AnalysisCancelledError } = require('./engine/cancellation');
  * - `maxPullRequestPages`: pages of 100, default 10 (1,000 pull requests). Enforced by
  *   `listOpenPullRequests`. Exhaustion: the list is returned truncated, and says so
  *   only when one more page proves that there were more.
+ * - `maxTeamPages`: pages of 100, default 3 (300 teams). Enforced by `listMyTeams`.
+ *   Exhaustion: the team list is returned truncated under the same rule, and the PR
+ *   view says that review requests to further teams may be missed.
  */
 const DEFAULT_LIMITS = Object.freeze({
   requestTimeoutMs: 30 * 1000,
   maxFileBytes: 2 * 1024 * 1024,
   maxJsonBytes: 10 * 1024 * 1024,
   maxPullRequestPages: 10,
+  maxTeamPages: 3,
 });
 
 /** The request outlived its deadline. */

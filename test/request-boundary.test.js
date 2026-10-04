@@ -202,6 +202,14 @@ test('a malformed response is a named boundary error, one per validated endpoint
     ['a compare without a merge base', (gh) => gh.mergeBase(SLUG, 'a', 'b'), { status: 'ahead' }, '/repos/o/r/compare/'],
     ['a merge base sha that is empty', (gh) => gh.mergeBase(SLUG, 'a', 'b'), { merge_base_commit: { sha: '' } }, '/repos/o/r/compare/'],
     ['a body that is not JSON', (gh) => gh.getPullRequest(SLUG, 4), '<html>proxy</html>', '/repos/o/r/pulls/4'],
+    ['requested reviewers that are not a list', (gh) => gh.getPullRequest(SLUG, 4), pr(4, { requested_reviewers: { login: 'x' } }), '/repos/o/r/pulls/4'],
+    ['a requested reviewer without a login', (gh) => gh.listOpenPullRequests(SLUG), [pr(4, { requested_reviewers: [{ id: 3 }] })], '/repos/o/r/pulls'],
+    ['a requested team with a string id', (gh) => gh.listOpenPullRequests(SLUG), [pr(4, { requested_teams: [{ id: '7', name: 't' }] })], '/repos/o/r/pulls'],
+    ['a requested team without a name', (gh) => gh.getPullRequest(SLUG, 4), pr(4, { requested_teams: [{ id: 7 }] }), '/repos/o/r/pulls/4'],
+    ['a team list that is not an array', (gh) => gh.listMyTeams(), { teams: [] }, '/user/teams'],
+    ['a team without an id', (gh) => gh.listMyTeams(), [{ name: 't' }], '/user/teams'],
+    ['a team with a fractional id', (gh) => gh.listMyTeams(), [{ id: 1.5, name: 't' }], '/user/teams'],
+    ['a team whose parent has no id', (gh) => gh.listMyTeams(), [{ id: 1, name: 't', parent: {} }], '/user/teams'],
   ];
   for (const [name, call, body, endpoint] of cases) {
     const gh = await client(async () => (typeof body === 'string' ? text(body) : json(body)));
@@ -220,6 +228,40 @@ test('well-formed responses still pass validation, including optional gaps', asy
   assert.deepEqual([p.number, p.author, p.headRepo, p.changedFiles], [9, null, null, 4]);
   assert.equal((await gh.listPullRequestFiles(SLUG, 9)).files.length, 2);
   assert.equal(await gh.mergeBase(SLUG, 'a', 'b'), 'abc');
+});
+
+test('review requests are read from the PR, and a PR without them has none', async () => {
+  const gh = await client(async () => json([
+    pr(1, { requested_reviewers: [{ login: 'x' }, { login: 'y' }], requested_teams: [{ id: 7, name: 'backend', slug: 'backend' }] }),
+    pr(2, { requested_reviewers: null }),
+    pr(3),
+  ]));
+  const [a, b, c] = (await gh.listOpenPullRequests(SLUG)).pullRequests;
+  assert.deepEqual([a.requestedReviewers, a.requestedTeams], [['x', 'y'], [{ id: 7, name: 'backend' }]]);
+  for (const p of [b, c]) assert.deepEqual([p.requestedReviewers, p.requestedTeams], [[], []]);
+});
+
+test('teams carry their parent, and the team list stops at its page cap like the PR list', async () => {
+  const one = await client(async () => json([{ id: 1, name: 'web', parent: { id: 9 } }, { id: 2, name: 'all', parent: null }, { id: 3, name: 'ops' }]));
+  assert.deepEqual(await one.listMyTeams(), { teams: [
+    { id: 1, name: 'web', parentId: 9 }, { id: 2, name: 'all', parentId: null }, { id: 3, name: 'ops', parentId: null },
+  ], truncated: false });
+
+  const CAP = 2;
+  for (const pages of [CAP - 1, CAP, CAP + 1]) {
+    const requested = [];
+    const gh = await client(async (url) => {
+      const u = new URL(url);
+      assert.equal(u.pathname, '/user/teams');
+      const page = Number(u.searchParams.get('page'));
+      requested.push(page);
+      return json(page <= pages ? Array.from({ length: 100 }, (_, i) => ({ id: page * 1000 + i, name: `t${i}` })) : []);
+    }, { maxTeamPages: CAP });
+    const r = await gh.listMyTeams();
+    assert.equal(r.teams.length, Math.min(pages, CAP) * 100, `${pages} full pages`);
+    assert.equal(r.truncated, pages > CAP, `${pages} full pages: truncated`);
+    assert.ok(Math.max(...requested) <= CAP + 1, `never past the lookahead page: ${requested}`);
+  }
 });
 
 // ---- statuses ---------------------------------------------------------------------
@@ -255,16 +297,17 @@ test('the sources view warns when the open-PR list was truncated, and only then'
     ThemeIcon: class { constructor(id) { this.id = id; } },
     TreeItem: class { constructor(label, state) { this.label = label; this.collapsibleState = state; } },
   };
-  const list = [{ number: 1, title: 't', author: 'a', headRef: 'f', baseRef: 'main', draft: false, isFork: false, updatedAt: 't' }];
+  const list = [{ number: 1, title: 't', author: 'a', headRef: 'f', baseRef: 'main', draft: false, isFork: false, updatedAt: 't',
+    requestedReviewers: [], requestedTeams: [] }];
   const rows = async (truncated) => createSourcesProvider(vscodeStub, {
-    modes: {}, getMode: () => 'pr', getRepoSlug: () => SLUG, github: { isSignedIn: () => true },
+    modes: {}, getMode: () => 'pr', getRepoSlug: () => SLUG, github: { isSignedIn: () => true, account: () => 'me' },
     getPrs: () => list, getPrsTruncated: () => truncated, getPrError: () => null, isLoadingPrs: () => false,
   }).getChildren({ key: 'prs' });
   const full = await rows(true);
-  assert.equal(full.length, 2, 'the PRs, then one warning');
-  assert.equal(full[1].icon, 'warning');
-  assert.match(full[1].label, /first 1 open pull request/i);
-  assert.equal((await rows(false)).length, 1);
+  assert.equal(full.length, 4, 'the three PR groups, then one warning');
+  assert.equal(full[3].icon, 'warning');
+  assert.match(full[3].label, /first 1 open pull request/i);
+  assert.ok((await rows(false)).every((r) => r.type === 'group'));
 });
 
 // ---- PR preview -------------------------------------------------------------------

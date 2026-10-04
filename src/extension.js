@@ -73,6 +73,8 @@ function activate(context) {
   let prsTruncated = false;
   let prError = null;
   let loadingPrs = false;
+  // Only decides which group a PR is listed under; a failure here never hides the PRs.
+  let team = { teams: [], truncated: false, error: null };
 
   const repoSlug = () => {
     try {
@@ -91,6 +93,7 @@ function activate(context) {
     getPrsTruncated: () => prsTruncated,
     getPrError: () => prError,
     isLoadingPrs: () => loadingPrs,
+    getTeams: () => team,
   });
   context.subscriptions.push(vscode.window.createTreeView('impactTree.sources',
     { treeDataProvider: sources }));
@@ -99,9 +102,15 @@ function activate(context) {
     const slug = repoSlug();
     if (!slug || !gh.isSignedIn()) { sources.refresh(); return; }
     loadingPrs = true; prError = null; sources.refresh();
+    const teamsLoaded = gh.listMyTeams().then(
+      ({ teams, truncated }) => ({ teams, truncated, error: null }),
+      (e) => ({ teams: [], truncated: false, error: e.message }));
     try {
       ({ pullRequests: prs, truncated: prsTruncated } = await gh.listOpenPullRequests(slug));
       log(`github: ${prs.length} open PR(s) in ${slug.owner}/${slug.repo}${prsTruncated ? ' (list truncated)' : ''}`);
+      team = await teamsLoaded;
+      log(team.error ? `github: teams unavailable: ${team.error}`
+        : `github: ${team.teams.length} team(s)${team.truncated ? ' (list truncated)' : ''}`);
     } catch (e) {
       prs = []; prsTruncated = false; prError = e.message;
       log(`github: ${e.message}`);

@@ -37,7 +37,29 @@ function checkPullRequest(p, endpoint) {
   if (p.changed_files != null && !Number.isSafeInteger(p.changed_files)) {
     bad(`#${p.number} has a non-numeric \`changed_files\``);
   }
+  // Review requests decide which group a PR is listed under, so a malformed entry must
+  // fail here rather than quietly drop the PR out of "Review requested".
+  if (p.requested_reviewers != null && (!Array.isArray(p.requested_reviewers)
+    || !p.requested_reviewers.every((u) => isObject(u) && isString(u.login)))) {
+    bad(`#${p.number} has a \`requested_reviewers\` entry without a string \`login\``);
+  }
+  if (p.requested_teams != null && (!Array.isArray(p.requested_teams)
+    || !p.requested_teams.every((t) => isObject(t) && Number.isSafeInteger(t.id) && isString(t.name)))) {
+    bad(`#${p.number} has a \`requested_teams\` entry without a numeric \`id\` and string \`name\``);
+  }
   return p;
+}
+
+// Checks the fields listMyTeams reads. `parent` is null for a top-level team.
+function checkTeam(t, endpoint) {
+  const bad = (problem) => { throw new GitHubResponseError(endpoint, problem); };
+  if (!isObject(t) || !Number.isSafeInteger(t.id) || !isString(t.name)) {
+    bad('a team has no numeric `id` and string `name`');
+  }
+  if (t.parent != null && !(isObject(t.parent) && Number.isSafeInteger(t.parent.id))) {
+    bad(`team ${t.id} has a \`parent\` without a numeric \`id\``);
+  }
+  return t;
 }
 
 /**
@@ -100,6 +122,25 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
     catch { throw new GitHubResponseError(pathname, 'the body is not JSON'); }
   }
 
+  // Pages of 100 from `endpointFor(page)`, up to `maxPages`. Every page up to the cap
+  // being full is ambiguous, so one more request tells "exactly at the cap" from "more
+  // exist" without trusting a header.
+  async function listPages(endpointFor, maxPages, what, check, signal) {
+    const listPage = async (page) => {
+      const endpoint = endpointFor(page);
+      const batch = await api(endpoint, { signal });
+      if (!Array.isArray(batch)) throw new GitHubResponseError(endpoint, `expected a list of ${what}`);
+      return batch.map((item) => check(item, endpoint));
+    };
+    const items = [];
+    for (let page = 1; page <= maxPages; page++) {
+      const batch = await listPage(page);
+      items.push(...batch);
+      if (batch.length < 100) return { items, truncated: false };
+    }
+    return { items, truncated: (await listPage(maxPages + 1)).length > 0 };
+  }
+
   /**
    * The open pull requests, most recently updated first, up to
    * `limits.maxPullRequestPages` pages of 100.
@@ -109,22 +150,29 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
    *   only when GitHub has a page beyond the cap; a list that exactly fills the cap is not.
    */
   async function listOpenPullRequests({ owner, repo }, { signal } = {}) {
-    const listPage = async (page) => {
-      const endpoint = `/repos/${owner}/${repo}/pulls?state=open&sort=updated&direction=desc&per_page=100&page=${page}`;
-      const batch = await api(endpoint, { signal });
-      if (!Array.isArray(batch)) throw new GitHubResponseError(endpoint, 'expected a list of pull requests');
-      return batch.map((p) => checkPullRequest(p, endpoint));
+    const { items, truncated } = await listPages(
+      (page) => `/repos/${owner}/${repo}/pulls?state=open&sort=updated&direction=desc&per_page=100&page=${page}`,
+      limits.maxPullRequestPages, 'pull requests', checkPullRequest, signal);
+    return { pullRequests: items.map(normalisePr), truncated };
+  }
+
+  /**
+   * The signed-in user's teams across every organization, up to `limits.maxTeamPages`
+   * pages of 100. Needs the `repo` scope the session already holds (`user` or
+   * `read:org` also work). An organization that blocks this app answers with an error,
+   * which the caller reports instead of treating as "no teams".
+   * @param {{signal?: AbortSignal}} [options]
+   * @returns {Promise<{teams: {id: number, name: string, parentId: number | null}[],
+   *   truncated: boolean}>} `truncated` follows listOpenPullRequests' rule.
+   */
+  async function listMyTeams({ signal } = {}) {
+    const { items, truncated } = await listPages(
+      (page) => `/user/teams?per_page=100&page=${page}`,
+      limits.maxTeamPages, 'teams', checkTeam, signal);
+    return {
+      teams: items.map((t) => ({ id: t.id, name: t.name, parentId: t.parent ? t.parent.id : null })),
+      truncated,
     };
-    const raw = [];
-    for (let page = 1; page <= limits.maxPullRequestPages; page++) {
-      const batch = await listPage(page);
-      raw.push(...batch);
-      if (batch.length < 100) return { pullRequests: raw.map(normalisePr), truncated: false };
-    }
-    // Every page up to the cap was full. One more request tells "exactly at the cap"
-    // from "more exist" without trusting a header.
-    const truncated = (await listPage(limits.maxPullRequestPages + 1)).length > 0;
-    return { pullRequests: raw.map(normalisePr), truncated };
   }
 
   function normalisePr(p) {
@@ -145,6 +193,9 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
       isFork: !!(p.head && p.head.repo && p.base && p.base.repo
         && p.head.repo.full_name !== p.base.repo.full_name),
       changedFiles: p.changed_files,
+      // Pending requests only: GitHub drops a reviewer from this list once they review.
+      requestedReviewers: (p.requested_reviewers || []).map((u) => u.login),
+      requestedTeams: (p.requested_teams || []).map((t) => ({ id: t.id, name: t.name })),
     };
   }
 
@@ -231,7 +282,7 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
   }
 
   return {
-    signIn, isSignedIn, account, signOutLocally, listOpenPullRequests,
+    signIn, isSignedIn, account, signOutLocally, listOpenPullRequests, listMyTeams,
     listPullRequestFiles, fileAtRef, parseRemote, getPullRequest, mergeBase,
   };
 }
