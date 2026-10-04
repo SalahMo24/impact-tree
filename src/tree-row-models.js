@@ -90,7 +90,8 @@ function classifyRiskyVerdict(change, risky) {
   const mayBeMissing = change.callersComplete === false;
   if (stale > 0) {
     const of = `${stale} of ${n} caller${n === 1 ? '' : 's'}`;
-    return { level: 0, token: '⛔', text: `${of} not updated`,
+    const nearby = change.staleChangedElsewhere || 0;
+    return { level: 0, token: '⛔', text: `${of} not updated${nearby ? ` (${nearby} edited nearby)` : ''}${mayBeMissing ? ' — more may be missing' : ''}`,
       sentence: `${what}, and ${of} ${stale === 1 ? 'was' : 'were'} not changed on the call line. Check that ${stale === 1 ? 'it still works' : 'they still work'}.${mayBeMissing ? ' More callers may be missing.' : ''}` };
   }
   if (mayBeMissing || !callersKnown(change)) {
@@ -141,12 +142,12 @@ function classifyChangeVerdict(change) {
 }
 
 /**
- * The verdict of a deleted symbol: always level 1, because nothing here can say that
- * no one still uses it.
+ * The verdict of a deleted symbol: always level 1, because the analysis does not search a
+ * deleted symbol's former callers and so cannot say that no one still uses it.
  * @returns {Verdict}
  */
 const classifyDeletedVerdict = () => ({ level: 1, token: '−', text: 'deleted',
-  sentence: 'This symbol was removed. Nothing in the analysed code still calls it, but check dynamic users.' });
+  sentence: 'This symbol was removed. Its former callers were not searched, so check that nothing still uses it, including dynamic users.' });
 
 /**
  * The verdict of an "outside functions" row: always level 4, with its line ranges as text.

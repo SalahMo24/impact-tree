@@ -20,28 +20,30 @@ const MAX_DEPTH = 8;
 
 // ---- results ---------------------------------------------------------------------------
 const BODY = { id: 'body', label: 'body' };
+// Callers consistent with the state: `resolved` means at least one was found.
+const callersFor = (n) => Array.from({ length: n }, (_, i) => ({ file: '/repo/src/use.ts', pos: 1000 + i, label: `user${i}`, callState: 'unchanged' }));
 const change = (relPath, label, namePos, extra = {}) => ({
   file: `/repo/${relPath}`, relPath, label, namePos, start: namePos, end: namePos + 10, startLine: namePos,
-  component: '(root)', kinds: [BODY], throwsAdded: [], callers: [], stale: [], staleCallers: 0,
-  callerState: 'resolved', score: 1, ...extra,
+  component: '(root)', kinds: [BODY], throwsAdded: [], callers: (extra.callerState ?? 'resolved') === 'resolved' ? callersFor(1) : [],
+  stale: [], staleCallers: 0, callerState: 'resolved', score: 1, ...extra,
 });
 
 function localResult() {
   const save = change('src/store.ts', 'Store.save', 10, {
     className: 'Store', score: 9, staleCallers: 2, staleChangedElsewhere: 1, stale: [{ label: 'useB' }, { label: 'main' }],
     kinds: [{ id: 'param', label: 'parameter', short: 'param' }, BODY], baseSig: 'save(a)', headSig: 'save(a, b)',
-    throwsAdded: ['Error'], callers: [{ file: '/repo/src/use.ts', pos: 40, label: 'useA' }, { file: '/repo/src/use.ts', pos: 80, label: 'useB' }],
+    throwsAdded: ['Error'], callers: [{ file: '/repo/src/use.ts', pos: 80, label: 'useB', callState: 'unchanged' }, { file: '/repo/src/app.ts', pos: 7, label: 'main', callState: 'changed-elsewhere' }],
   });
   const load = change('src/store.ts', 'Store.load', 50, {
     className: 'Store', callersComplete: false, callersIncompleteReason: 'query-failed',
-    callers: [{ file: '/repo/src/use.ts', pos: 120, label: 'loader' }],
+    callers: [{ file: '/repo/src/use.ts', pos: 120, label: 'loader', callState: 'updated-at-call' }],
     kinds: [{ id: 'optional-param', label: 'optional param' }],
   });
   const webHelper = change('src/web/util.ts', 'helper', 5, { component: 'web', callerState: 'none', kinds: [{ id: 'sig', label: 'signature' }] });
   const apiHelper = change('src/api/util.ts', 'helper', 5, { component: 'api', callerState: 'di', kinds: [{ id: 'sig', label: 'signature' }] });
   const nestedFinding = change('src/store.ts', 'Store.inner', 70, { isRoot: false, callerState: 'unknown', kinds: [{ id: 'sig', label: 'signature' }] });
   const big = change('src/big.ts', 'Big', 1, {
-    isConstructor: true, staleCallers: 11, kinds: [{ id: 'sig', label: 'signature' }],
+    isConstructor: true, staleCallers: 11, callers: callersFor(11), kinds: [{ id: 'sig', label: 'signature' }],
     stale: Array.from({ length: 11 }, (_, i) => ({ label: `caller${i}` })),
   });
   const findings = [save, load, webHelper, apiHelper, nestedFinding, big];

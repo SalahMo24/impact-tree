@@ -38,7 +38,10 @@ test('every risky kind and every caller outcome gets the level the review rules 
     // [name, change, level, token, text]
     ['risky, one stale of three', { staleCallers: 1, callers: callersOf(3) }, 0, '⛔', '1 of 3 callers not updated'],
     ['risky, all stale', { staleCallers: 2, callers: callersOf(2) }, 0, '⛔', '2 of 2 callers not updated'],
-    ['risky, stale and the search incomplete', { staleCallers: 1, callersComplete: false, callers: callersOf(1) }, 0, '⛔', '1 of 1 caller not updated'],
+    ['risky, stale and the search incomplete', { staleCallers: 1, callersComplete: false, callers: callersOf(1) }, 0, '⛔', '1 of 1 caller not updated — more may be missing'],
+    ['risky, stale, one edited nearby', { staleCallers: 2, staleChangedElsewhere: 1, callers: callersOf(3) }, 0, '⛔', '2 of 3 callers not updated (1 edited nearby)'],
+    ['risky, stale, edited nearby and incomplete', { staleCallers: 2, staleChangedElsewhere: 2, callersComplete: false, callers: callersOf(2) }, 0, '⛔', '2 of 2 callers not updated (2 edited nearby) — more may be missing'],
+    ['risky, stale, none edited nearby', { staleCallers: 1, staleChangedElsewhere: 0, callers: callersOf(1) }, 0, '⛔', '1 of 1 caller not updated'],
     ['risky, search incomplete', { callersComplete: false, callers: callersOf(1, 'updated-at-call') }, 1, '?', 'callers unknown'],
     ['risky, callers unknown', { callerState: 'unknown', callers: [] }, 1, '?', 'callers unknown'],
     ['risky, a state the result does not define', { callerState: undefined, callers: [] }, 1, '?', 'callers unknown'],
@@ -93,6 +96,8 @@ test('the sentence keeps the facts the row cannot: stale count, missing callers,
 test('deleted symbols and outside-functions rows have fixed verdicts', () => {
   assert.deepEqual(models.classifyDeletedVerdict(), { level: 1, token: '−', text: 'deleted', sentence: models.classifyDeletedVerdict().sentence });
   assert.match(models.classifyDeletedVerdict().sentence, /removed/);
+  assert.match(models.classifyDeletedVerdict().sentence, /not searched/);
+  assert.doesNotMatch(models.classifyDeletedVerdict().sentence, /nothing (in the analysed code )?(still )?calls|no(thing| one) (still )?call/i, 'it does not claim nothing calls it');
   const outside = models.classifyOutsideVerdict([[1, 4], [22, 22]]);
   assert.deepEqual([outside.level, outside.token, outside.text], [4, '≡', 'lines 1–4, 22']);
   assert.match(outside.sentence, /not inside any function/);

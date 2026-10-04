@@ -131,7 +131,7 @@
     "label": "Store.save",
     "resourceUri": "uri:file:///repo/src/store.ts#10",
     "tooltip": {
-     "markdown": "⛔ **Store.save**\n\nThe parameter, and 2 of 2 callers were not changed on the call line. Check that they still work.\n\n**param**\n\n`src/store.ts:10`  ·  component `(root)`\n\n---\n\nbase: `save(a)`\n\nhead: `save(a, b)`\n\n---\n\n+ throw `Error`\n\n---\n\n**2 call site(s) not updated:**\n- useB\n- main\n\n1 of them were edited — just not on the call line\n\n_1/2 callers left to review_\n\n_score 9_"
+     "markdown": "⛔ **Store.save**\n\nThe parameter, and 2 of 2 callers were not changed on the call line. Check that they still work.\n\n**param**\n\n`src/store.ts:10`  ·  component `(root)`\n\n---\n\nbase: `save(a)`\n\nhead: `save(a, b)`\n\n---\n\n+ throw `Error`\n\n---\n\n**2 call site(s) not updated:**\n- useB\n- main\n\n1 of them were edited — just not on the call line\n\n_2/2 callers left to review_\n\n_score 9_"
     }
    }
   },
@@ -943,7 +943,7 @@
     "label": "Big",
     "resourceUri": "uri:file:///repo/src/big.ts#1",
     "tooltip": {
-     "markdown": "⛔ **Big**\n\nThe signature, and 11 of 0 callers were not changed on the call line. Check that they still work.\n\n**signature**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
+     "markdown": "⛔ **Big**\n\nThe signature, and 11 of 11 callers were not changed on the call line. Check that they still work.\n\n**signature**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_11/11 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -1096,7 +1096,7 @@
     "label": "createOpen",
     "resourceUri": "uri:file:///repo/src/open.ts#100",
     "tooltip": {
-     "markdown": "● **createOpen**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **createOpen**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:100`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -1175,7 +1175,7 @@
     "label": "uriFor",
     "resourceUri": "uri:file:///repo/src/open.ts#200",
     "tooltip": {
-     "markdown": "● **createOpen.uriFor**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:200`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **createOpen.uriFor**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:200`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -1313,7 +1313,7 @@
     "label": "sameUri",
     "resourceUri": "uri:file:///repo/src/open.ts#1100",
     "tooltip": {
-     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -1351,7 +1351,7 @@
     "label": "READY",
     "resourceUri": "uri:file:///repo/src/ready.ts#3",
     "tooltip": {
-     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -1430,7 +1430,7 @@
     "label": "deepWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#8",
     "tooltip": {
-     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -1468,7 +1468,7 @@
     "label": "bareWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#20",
     "tooltip": {
-     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -1637,7 +1637,7 @@
     "label": "READY",
     "resourceUri": "uri:file:///repo/src/ready.ts#3",
     "tooltip": {
-     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_no test within 3 caller level(s)_\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n_no test within 3 caller level(s)_\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -1675,7 +1675,7 @@
     "label": "sameUri",
     "resourceUri": "uri:file:///repo/src/open.ts#1100",
     "tooltip": {
-     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -1746,7 +1746,7 @@
     "label": "deepWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#8",
     "tooltip": {
-     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_test reachability unknown: the walk budget of 120 callers ran out_\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n_test reachability unknown: the walk budget of 120 callers ran out_\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -1784,7 +1784,7 @@
     "label": "bareWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#20",
     "tooltip": {
-     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_test reachability unknown: the test search did not finish_\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n_test reachability unknown: the test search did not finish_\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -2426,7 +2426,7 @@
      "status": "modified",
      "tooltip": "src/store.ts:10"
     },
-    "description": "⛔  2 of 2 callers not updated  ·  param",
+    "description": "⛔  2 of 2 callers not updated (1 edited nearby)  ·  param",
     "icon": "symbol-method",
     "label": "Store.save",
     "resourceUri": "uri:file:///repo/src/store.ts#10",
@@ -3225,12 +3225,12 @@
      "status": null,
      "tooltip": "src/big.ts:1"
     },
-    "description": "⛔  11 of 0 callers not updated  ·  signature",
+    "description": "⛔  11 of 11 callers not updated  ·  signature",
     "icon": "symbol-constructor",
     "label": "Big",
     "resourceUri": "uri:file:///repo/src/big.ts#1",
     "tooltip": {
-     "markdown": "⛔ **Big**\n\nThe signature, and 11 of 0 callers were not changed on the call line. Check that they still work.\n\n**signature**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
+     "markdown": "⛔ **Big**\n\nThe signature, and 11 of 11 callers were not changed on the call line. Check that they still work.\n\n**signature**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
     }
    }
   },
@@ -3324,12 +3324,12 @@
      "status": "added",
      "tooltip": "src/open.ts:100"
     },
-    "description": "●  reaches 0 callers",
+    "description": "●  reaches 1 caller",
     "icon": "symbol-function",
     "label": "createOpen",
     "resourceUri": "uri:file:///repo/src/open.ts#100",
     "tooltip": {
-     "markdown": "● **createOpen**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **createOpen**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:100`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -3401,12 +3401,12 @@
      "status": "added",
      "tooltip": "src/open.ts:200"
     },
-    "description": "●  reaches 0 callers",
+    "description": "●  reaches 1 caller",
     "icon": "symbol-method",
     "label": "uriFor",
     "resourceUri": "uri:file:///repo/src/open.ts#200",
     "tooltip": {
-     "markdown": "● **createOpen.uriFor**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:200`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **createOpen.uriFor**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:200`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -3536,12 +3536,12 @@
      "status": "added",
      "tooltip": "src/open.ts:1100"
     },
-    "description": "●  reaches 0 callers",
+    "description": "●  reaches 1 caller",
     "icon": "symbol-function",
     "label": "sameUri",
     "resourceUri": "uri:file:///repo/src/open.ts#1100",
     "tooltip": {
-     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -3573,12 +3573,12 @@
      "status": null,
      "tooltip": "src/ready.ts:3"
     },
-    "description": "●  reaches 0 callers",
+    "description": "●  reaches 1 caller",
     "icon": "symbol-variable",
     "label": "READY",
     "resourceUri": "uri:file:///repo/src/ready.ts#3",
     "tooltip": {
-     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -3610,12 +3610,12 @@
      "status": null,
      "tooltip": "src/reach.ts:8"
     },
-    "description": "●  reaches 0 callers",
+    "description": "●  reaches 1 caller",
     "icon": "symbol-function",
     "label": "deepWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#8",
     "tooltip": {
-     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -3647,12 +3647,12 @@
      "status": null,
      "tooltip": "src/reach.ts:20"
     },
-    "description": "●  reaches 0 callers",
+    "description": "●  reaches 1 caller",
     "icon": "symbol-function",
     "label": "bareWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#20",
     "tooltip": {
-     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -3815,12 +3815,12 @@
      "status": null,
      "tooltip": "src/ready.ts:3"
     },
-    "description": "●  reaches 0 callers",
+    "description": "●  reaches 1 caller",
     "icon": "symbol-variable",
     "label": "READY",
     "resourceUri": "uri:file:///repo/src/ready.ts#3",
     "tooltip": {
-     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_no test within 3 caller level(s)_\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n_no test within 3 caller level(s)_\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -3852,12 +3852,12 @@
      "status": "added",
      "tooltip": "src/open.ts:1100"
     },
-    "description": "●  reaches 0 callers",
+    "description": "●  reaches 1 caller",
     "icon": "symbol-function",
     "label": "sameUri",
     "resourceUri": "uri:file:///repo/src/open.ts#1100",
     "tooltip": {
-     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -3922,12 +3922,12 @@
      "status": null,
      "tooltip": "src/reach.ts:8"
     },
-    "description": "?  tests unknown: the walk budget of 120 callers ran out  ·  ●  reaches 0 callers",
+    "description": "?  tests unknown: the walk budget of 120 callers ran out  ·  ●  reaches 1 caller",
     "icon": "symbol-function",
     "label": "deepWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#8",
     "tooltip": {
-     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_test reachability unknown: the walk budget of 120 callers ran out_\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n_test reachability unknown: the walk budget of 120 callers ran out_\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -3959,12 +3959,12 @@
      "status": null,
      "tooltip": "src/reach.ts:20"
     },
-    "description": "?  tests unknown: the test search did not finish  ·  ●  reaches 0 callers",
+    "description": "?  tests unknown: the test search did not finish  ·  ●  reaches 1 caller",
     "icon": "symbol-function",
     "label": "bareWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#20",
     "tooltip": {
-     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_test reachability unknown: the test search did not finish_\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n_test reachability unknown: the test search did not finish_\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -4507,12 +4507,12 @@
      "status": "modified",
      "tooltip": "src/store.ts:10"
     },
-    "description": "⛔  2 of 2 callers not updated  ·  param  ·  all callers reviewed",
+    "description": "⛔  2 of 2 callers not updated (1 edited nearby)  ·  param  ·  1/2 callers left to review",
     "icon": "__file__",
     "label": "Store.save",
     "resourceUri": "uri:file:///repo/src/store.ts#10",
     "tooltip": {
-     "markdown": "⛔ **Store.save**\n\nThe parameter, and 2 of 2 callers were not changed on the call line. Check that they still work.\n\n**param**\n\n`src/store.ts:10`  ·  component `(root)`\n\n---\n\nbase: `save(a)`\n\nhead: `save(a, b)`\n\n---\n\n+ throw `Error`\n\n---\n\n**2 call site(s) not updated:**\n- useB\n- main\n\n1 of them were edited — just not on the call line\n\n_all callers reviewed_\n\n_score 9_"
+     "markdown": "⛔ **Store.save**\n\nThe parameter, and 2 of 2 callers were not changed on the call line. Check that they still work.\n\n**param**\n\n`src/store.ts:10`  ·  component `(root)`\n\n---\n\nbase: `save(a)`\n\nhead: `save(a, b)`\n\n---\n\n+ throw `Error`\n\n---\n\n**2 call site(s) not updated:**\n- useB\n- main\n\n1 of them were edited — just not on the call line\n\n_1/2 callers left to review_\n\n_score 9_"
     }
    }
   },
@@ -5319,12 +5319,12 @@
      "status": null,
      "tooltip": "src/big.ts:1"
     },
-    "description": "⛔  11 of 0 callers not updated  ·  signature",
+    "description": "⛔  11 of 11 callers not updated  ·  signature  ·  11/11 callers left to review",
     "icon": "__file__",
     "label": "Big",
     "resourceUri": "uri:file:///repo/src/big.ts#1",
     "tooltip": {
-     "markdown": "⛔ **Big**\n\nThe signature, and 11 of 0 callers were not changed on the call line. Check that they still work.\n\n**signature**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
+     "markdown": "⛔ **Big**\n\nThe signature, and 11 of 11 callers were not changed on the call line. Check that they still work.\n\n**signature**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_11/11 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -5472,12 +5472,12 @@
      "status": "added",
      "tooltip": "src/open.ts:100"
     },
-    "description": "●  reaches 0 callers",
+    "description": "●  reaches 1 caller  ·  1/1 callers left to review",
     "icon": "__file__",
     "label": "createOpen",
     "resourceUri": "uri:file:///repo/src/open.ts#100",
     "tooltip": {
-     "markdown": "● **createOpen**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **createOpen**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:100`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -5551,12 +5551,12 @@
      "status": "added",
      "tooltip": "src/open.ts:200"
     },
-    "description": "●  reaches 0 callers",
+    "description": "●  reaches 1 caller  ·  1/1 callers left to review",
     "icon": "__file__",
     "label": "uriFor",
     "resourceUri": "uri:file:///repo/src/open.ts#200",
     "tooltip": {
-     "markdown": "● **createOpen.uriFor**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:200`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **createOpen.uriFor**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:200`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -5689,12 +5689,12 @@
      "status": "added",
      "tooltip": "src/open.ts:1100"
     },
-    "description": "●  reaches 0 callers",
+    "description": "●  reaches 1 caller  ·  1/1 callers left to review",
     "icon": "__file__",
     "label": "sameUri",
     "resourceUri": "uri:file:///repo/src/open.ts#1100",
     "tooltip": {
-     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -5727,12 +5727,12 @@
      "status": null,
      "tooltip": "src/ready.ts:3"
     },
-    "description": "●  reaches 0 callers",
+    "description": "●  reaches 1 caller  ·  1/1 callers left to review",
     "icon": "__file__",
     "label": "READY",
     "resourceUri": "uri:file:///repo/src/ready.ts#3",
     "tooltip": {
-     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -5806,12 +5806,12 @@
      "status": null,
      "tooltip": "src/reach.ts:8"
     },
-    "description": "●  reaches 0 callers",
+    "description": "●  reaches 1 caller  ·  1/1 callers left to review",
     "icon": "__file__",
     "label": "deepWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#8",
     "tooltip": {
-     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -5844,12 +5844,12 @@
      "status": null,
      "tooltip": "src/reach.ts:20"
     },
-    "description": "●  reaches 0 callers",
+    "description": "●  reaches 1 caller  ·  1/1 callers left to review",
     "icon": "__file__",
     "label": "bareWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#20",
     "tooltip": {
-     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -6015,12 +6015,12 @@
      "status": null,
      "tooltip": "src/ready.ts:3"
     },
-    "description": "●  reaches 0 callers",
+    "description": "●  reaches 1 caller  ·  1/1 callers left to review",
     "icon": "__file__",
     "label": "READY",
     "resourceUri": "uri:file:///repo/src/ready.ts#3",
     "tooltip": {
-     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_no test within 3 caller level(s)_\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n_no test within 3 caller level(s)_\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -6053,12 +6053,12 @@
      "status": "added",
      "tooltip": "src/open.ts:1100"
     },
-    "description": "●  reaches 0 callers",
+    "description": "●  reaches 1 caller  ·  1/1 callers left to review",
     "icon": "__file__",
     "label": "sameUri",
     "resourceUri": "uri:file:///repo/src/open.ts#1100",
     "tooltip": {
-     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -6124,12 +6124,12 @@
      "status": null,
      "tooltip": "src/reach.ts:8"
     },
-    "description": "?  tests unknown: the walk budget of 120 callers ran out  ·  ●  reaches 0 callers",
+    "description": "?  tests unknown: the walk budget of 120 callers ran out  ·  ●  reaches 1 caller  ·  1/1 callers left to review",
     "icon": "__file__",
     "label": "deepWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#8",
     "tooltip": {
-     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_test reachability unknown: the walk budget of 120 callers ran out_\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n_test reachability unknown: the walk budget of 120 callers ran out_\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -6162,12 +6162,12 @@
      "status": null,
      "tooltip": "src/reach.ts:20"
     },
-    "description": "?  tests unknown: the test search did not finish  ·  ●  reaches 0 callers",
+    "description": "?  tests unknown: the test search did not finish  ·  ●  reaches 1 caller  ·  1/1 callers left to review",
     "icon": "__file__",
     "label": "bareWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#20",
     "tooltip": {
-     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_test reachability unknown: the test search did not finish_\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n_test reachability unknown: the test search did not finish_\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -7618,7 +7618,7 @@
     "label": "Big",
     "resourceUri": "uri:file:///repo/src/big.ts#1",
     "tooltip": {
-     "markdown": "⛔ **Big**\n\nThe signature, and 11 of 0 callers were not changed on the call line. Check that they still work.\n\n**signature**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
+     "markdown": "⛔ **Big**\n\nThe signature, and 11 of 11 callers were not changed on the call line. Check that they still work.\n\n**signature**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
     }
    }
   },
@@ -7769,7 +7769,7 @@
     "label": "createOpen",
     "resourceUri": "uri:file:///repo/src/open.ts#100",
     "tooltip": {
-     "markdown": "● **createOpen**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **createOpen**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:100`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -7846,7 +7846,7 @@
     "label": "uriFor",
     "resourceUri": "uri:file:///repo/src/open.ts#200",
     "tooltip": {
-     "markdown": "● **createOpen.uriFor**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:200`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **createOpen.uriFor**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:200`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -7981,7 +7981,7 @@
     "label": "sameUri",
     "resourceUri": "uri:file:///repo/src/open.ts#1100",
     "tooltip": {
-     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -8018,7 +8018,7 @@
     "label": "READY",
     "resourceUri": "uri:file:///repo/src/ready.ts#3",
     "tooltip": {
-     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -8095,7 +8095,7 @@
     "label": "deepWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#8",
     "tooltip": {
-     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -8132,7 +8132,7 @@
     "label": "bareWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#20",
     "tooltip": {
-     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -8877,7 +8877,7 @@
     "label": "Service.run",
     "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#12",
     "tooltip": {
-     "markdown": "⛔ **Service.run**\n\nThe , and 1 of 0 callers was not changed on the call line. Check that it still works.\n\n**param**\n\n`src/service.ts:12`  ·  component `(root)`\n\n---\n\n**1 call site(s) not updated:**\n- Caller.go\n\n_score 1_"
+     "markdown": "⛔ **Service.run**\n\nThe , and 1 of 1 caller was not changed on the call line. Check that it still works.\n\n**param**\n\n`src/service.ts:12`  ·  component `(root)`\n\n---\n\n**1 call site(s) not updated:**\n- Caller.go\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -9227,7 +9227,7 @@
     "label": "Service.idle",
     "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#90",
     "tooltip": {
-     "markdown": "● **Service.idle**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/service.ts:90`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **Service.idle**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/service.ts:90`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -9813,12 +9813,12 @@
      "status": "modified",
      "tooltip": "src/service.ts:12"
     },
-    "description": "⛔  1 of 0 callers not updated  ·  param",
+    "description": "⛔  1 of 1 caller not updated  ·  param",
     "icon": "symbol-method",
     "label": "Service.run",
     "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#12",
     "tooltip": {
-     "markdown": "⛔ **Service.run**\n\nThe , and 1 of 0 callers was not changed on the call line. Check that it still works.\n\n**param**\n\n`src/service.ts:12`  ·  component `(root)`\n\n---\n\n**1 call site(s) not updated:**\n- Caller.go\n\n_score 1_"
+     "markdown": "⛔ **Service.run**\n\nThe , and 1 of 1 caller was not changed on the call line. Check that it still works.\n\n**param**\n\n`src/service.ts:12`  ·  component `(root)`\n\n---\n\n**1 call site(s) not updated:**\n- Caller.go\n\n_score 1_"
     }
    }
   },
@@ -10113,12 +10113,12 @@
      "status": "modified",
      "tooltip": "src/service.ts:90"
     },
-    "description": "●  reaches 0 callers",
+    "description": "●  reaches 1 caller",
     "icon": "symbol-method",
     "label": "Service.idle",
     "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#90",
     "tooltip": {
-     "markdown": "● **Service.idle**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/service.ts:90`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **Service.idle**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/service.ts:90`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
