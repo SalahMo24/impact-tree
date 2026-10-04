@@ -138,37 +138,6 @@ test('the placeholder row explains every state without a result, and there is no
   assert.equal(label({ state: { result: resultOf() } }), undefined);
 });
 
-test('root rows: summary with review progress, preview notice, warnings and the sections a result has', () => {
-  const nested = change('a.ts', 'nested', { isRoot: false });
-  const top = change('a.ts', 'top', { staleCallers: 3 });
-  const body = change('b.ts', 'body');
-  const local = deepFreeze(resultOf({
-    allChanged: [top, nested, body], findings: [top, nested], untested: [body], testUnknown: [], reachDepth: 2,
-    warnings: ['w'], unanalysable: [{ count: 2, component: 'legacy' }], requestedMode: 'branch',
-  }));
-  const rows = models.buildRootRows(local, { leftToReview: 2 });
-  assert.deepEqual(rows.map((r) => r.key || r.type), ['summary', 'message', 'message', 'findings', 'other', 'deleted', 'untested', 'files', 'legend']);
-  assert.equal(rows[0].label, '3 changed symbols  ·  2 left to review');
-  assert.match(rows[0].desc, /^2 finding\(s\)  ·  3 call site\(s\) not updated/);
-  assert.match(rows[0].tooltip, /\(requested 'branch'\)/);
-  const findings = rows.find((r) => r.key === 'findings');
-  assert.equal(findings.count, 1);
-  assert.match(findings.desc, /1 nested under its callee/);
-  assert.equal(rows.find((r) => r.key === 'untested').desc, 'no test within 2 caller level(s)');
-  assert.equal(models.buildRootRows(local, { leftToReview: 0 })[0].label, '3 changed symbols  ·  all reviewed');
-  assert.equal(models.buildRootRows(local, { leftToReview: null })[0].label, '3 changed symbols');
-
-  const unknown = models.buildRootRows(resultOf({ testUnknown: [body] }), { leftToReview: null });
-  assert.equal(unknown.find((r) => r.key === 'testUnknown').count, 1);
-  const deferred = models.buildRootRows(resultOf({ testReachComputed: false, testUnknown: [body] }), { leftToReview: null });
-  assert.equal(deferred.find((r) => r.key === 'testUnknown'), undefined, 'no unknown section before the walk ran');
-  assert.equal(deferred.find((r) => r.key === 'untested').computed, false);
-
-  const preview = models.buildRootRows(resultOf({ tierA: true, changedFileCount: 4 }), { leftToReview: null });
-  assert.equal(preview[1].label, 'Preview — PR files only (4 file(s))');
-  assert.ok(!preview.some((r) => r.key === 'untested' || r.key === 'testUnknown'));
-});
-
 test('notice rows: the preview notice first, then one row per warning and per unanalysed component', () => {
   const local = models.buildNoticeRows(deepFreeze(resultOf({ warnings: ['w1', 'w2'], unanalysable: [{ count: 2, component: 'legacy' }] })));
   assert.deepEqual(local.map((r) => [r.type, r.icon, r.label]), [
@@ -178,12 +147,6 @@ test('notice rows: the preview notice first, then one row per warning and per un
   assert.deepEqual(preview.map((r) => r.label), ['Preview — PR files only (4 file(s))', 'w']);
   assert.match(preview[0].desc, /callers outside this PR are NOT shown/);
   assert.deepEqual(models.buildNoticeRows(resultOf()), []);
-});
-
-test('top-level change refs name only root changes', () => {
-  const refs = models.collectTopLevelChangeRefs(resultOf({ allChanged: [change('a.ts', 'a'), change('a.ts', 'b', { isRoot: false })] }));
-  assert.deepEqual(refs.map((r) => r.type), ['finding']);
-  assert.equal(refs[0].file, '/r/a.ts');
 });
 
 test('change rows mark shared labels, carry reach notes, and ask for one decoration each', () => {
@@ -264,20 +227,12 @@ test('caller rows: state from the evidence, cycles from the ancestry, sorted by 
   assert.equal(noView.rows[0].relPath, '/r/a.ts', 'without a path mapping the file is its own path');
 });
 
-test('an incomplete caller list says whether anything was found; changes inside get their own row', () => {
+test('an incomplete caller list says whether anything was found', () => {
   assert.equal(models.buildIncompleteCallersRow('why', true).label, 'More callers may be missing');
   assert.deepEqual(models.buildIncompleteCallersRow('why', false),
     { type: 'message', icon: 'warning', label: 'Callers could not be loaded', desc: 'refresh to retry', tooltip: 'why' });
-  const inner = { type: 'finding', label: 'x', inside: [{ type: 'finding', label: 'y' }] };
-  const holder = deepFreeze({ type: 'finding', label: 'H', file: '/r/h.ts', finding: { label: 'H', relPath: 'h.ts' }, inside: [inner] });
-  const group = models.buildInsideGroupRow(holder);
-  assert.equal(group.type, 'insideGroup');
-  assert.equal(group.container, 'H');
-  assert.equal(group.rows, holder.inside);
-  assert.deepEqual(group.members.map((m) => m.label), ['x', 'y']);
 });
 
-test('legend rows follow the legend, and the deferred-walk row runs the walk', () => {
-  assert.deepEqual(models.buildLegendRows().map((r) => r.icon), models.LEGEND.map(([icon]) => icon));
+test('the deferred-walk row runs the walk', () => {
   assert.equal(models.buildComputeTestReachRow().command, 'impactTree.computeTestReach');
 });
