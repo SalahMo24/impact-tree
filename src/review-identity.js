@@ -5,6 +5,40 @@ const { createHash } = require('crypto');
 const { makeSymbols } = require('./engine/symbols');
 const hash = (s) => createHash('sha256').update(s == null ? '<absent>' : s).digest('hex');
 
+// Text without its callables, null staying null. Whole lines are cut, from the line a
+// callable starts on to the line it ends on, so a function added or removed leaves no
+// `export const ;` behind. Blank separator lines are ignored, but lines inside literal
+// text (including template chunks and JSX text) keep their meaningful whitespace.
+function blankSpans(ts, sf, symbols) {
+  if (!sf) return null;
+  const literalKinds = new Set([
+    ts.SyntaxKind.StringLiteral, ts.SyntaxKind.NoSubstitutionTemplateLiteral,
+    ts.SyntaxKind.TemplateHead, ts.SyntaxKind.TemplateMiddle, ts.SyntaxKind.TemplateTail,
+    ts.SyntaxKind.JsxText,
+  ]);
+  const literalLines = new Set();
+  const stack = [sf];
+  while (stack.length) {
+    const node = stack.pop();
+    if (literalKinds.has(node.kind)) {
+      const first = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line;
+      const last = sf.getLineAndCharacterOfPosition(node.getEnd()).line;
+      for (let line = first; line <= last; line++) literalLines.add(line + 1);
+    }
+    ts.forEachChild(node, (child) => { stack.push(child); });
+  }
+  const spans = symbols.slice().sort((a, b) => a.startLine - b.startLine || b.endLine - a.endLine);
+  let at = 0;
+  return sf.text.split('\n').filter((line, index) => {
+    const number = index + 1;
+    while (at < spans.length && spans[at].endLine < number) at++;
+    if (at < spans.length && spans[at].startLine <= number) return false;
+    return line.trim() !== '' || literalLines.has(number);
+  }).join('\n');
+}
+
+const symbolHash = (text, symbol) => hash((symbol.reviewPrefix || '') + text.slice(symbol.start, symbol.end));
+
 /**
  * Persisted review identities for one completed analysis. Offsets only locate a row;
  * each identity is built from the content that was reviewed, so a change to that
@@ -38,16 +72,22 @@ function createReviewIdentity(ts, repo, { headText, baseText, fileRevision }) {
     const rel = path.relative(repo, file).split(path.sep).join('/');
     const head = headText(rel);
     const base = baseText(rel);
-    const headSymbols = head == null ? [] : S.collect(parse(file, head));
-    const baseSymbols = base == null ? [] : base === head ? headSymbols : S.collect(parse(file, base));
-    const baseSliceHash = new Map(baseSymbols.map((b) => [b.key, hash(base.slice(b.start, b.end))]));
+    const headSf = head == null ? null : parse(file, head);
+    const baseSf = base == null ? null : base === head ? headSf : parse(file, base);
+    const headSymbols = headSf ? S.collect(headSf) : [];
+    const baseSymbols = baseSf ? baseSf === headSf ? headSymbols : S.collect(baseSf) : [];
+    const baseSliceHash = new Map(baseSymbols.map((b) => [b.key, symbolHash(base, b)]));
     const byNamePos = new Map(), byClassPos = new Map();
     for (const s of headSymbols) {
-      const id = `${rel}#${s.key}:${hash(head.slice(s.start, s.end))}:${baseSliceHash.get(s.key) || hash(null)}`;
+      const id = `${rel}#${s.key}:${symbolHash(head, s)}:${baseSliceHash.get(s.key) || hash(null)}`;
       if (!byNamePos.has(s.namePos)) byNamePos.set(s.namePos, id);
       if (s.isConstructor && !byClassPos.has(s.classNamePos)) byClassPos.set(s.classNamePos, id);
     }
-    const entry = { file, rel, head, baseHash: hash(base), baseSliceHash, byNamePos, byClassPos, declHashes: null };
+    const entry = {
+      file, rel, head, baseHash: hash(base), baseSliceHash, byNamePos, byClassPos, declHashes: null,
+      // Of everything outside the callables, on each side; see `outsideId`.
+      outsideHash: `${hash(blankSpans(ts, headSf, headSymbols))}:${hash(blankSpans(ts, baseSf, baseSymbols))}`,
+    };
     cache.set(file, entry);
     return entry;
   };
@@ -59,6 +99,12 @@ function createReviewIdentity(ts, repo, { headText, baseText, fileRevision }) {
     return `${entry.rel}#@${n.label}:${entry.declHashes.get(n.pos) || hash(entry.head)}:${entry.baseHash}`;
   };
 
+  // The changed lines outside every callable are identified by everything outside them: each
+  // side's text with every callable's lines cut out. A body edit leaves that text
+  // as it was; an edit to an import, a constant or a type changes it, and so does a changed
+  // base, as for a symbol. Not the row's ranges: line numbers move when a function above grows.
+  const outsideId = (entry) => `${entry.rel}#outside:${entry.outsideHash}`;
+
   return (n) => {
     if (n.type === 'file') {
       const token = n.relPath ? fileRevision(n.relPath) : null;
@@ -67,6 +113,7 @@ function createReviewIdentity(ts, repo, { headText, baseText, fileRevision }) {
     const file = n.file || n.absPath || (n.relPath && path.join(repo, n.relPath));
     if (!file) return null;
     const entry = read(file);
+    if (n.type === 'outside') return outsideId(entry);
     if (n.type === 'deleted') {
       const key = n.key || n.label;
       return `deleted:${entry.rel}#${key}:${entry.baseSliceHash.get(key) || hash(null)}`;

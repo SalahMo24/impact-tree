@@ -7,11 +7,88 @@
 // it never reads a file or shells out — so the caller decides where text comes from.
 const { diffSignature, newThrows, KIND } = require('./signature');
 
-// file: { absPath, relPath, oldPath, status, headText, baseText, hunkRanges, component, projectRoot }
+const TRIVIA_LINE = /^\s*(\/\/|\/\*|\*|$)/;
+
+// The part of a diff no row represents: changed lines that no changed callable's span
+// contains (imports, top-level constants, types, class fields, a doc comment above a
+// function). `spans` are the changed callables' [startLine, endLine]; the result has the
+// shape of `hunkRanges`, and is empty when every changed line is inside one.
+//
+// A pure-deletion marker `N - 0.5` is inside a callable only when that callable spans both
+// neighbouring lines. One outside every callable is still accounted for when what it
+// removed was a deleted callable: the deleted row stands for those base lines, and for the
+// blank and comment lines around them (its doc comment goes with it, as the reviewer
+// sees it). `hunkDeletions` says which base lines each marker removed; a hunk that removed
+// anything else too (an import beside the function), or no callable at all (a lone comment),
+// is not explained by a deleted row and is reported. A marker with no entry in
+// `hunkDeletions` is reported: when unsure, show it.
+// Replacements also retain their removed base lines. If their added lines are all
+// callable lines but their removed lines include outside content, report the gap
+// before the replacement; the head spans alone cannot account for that content.
+function outsideRanges({ spans, baseCallables, hunkRanges, hunkDeletions, deleted, baseText }) {
+  const sorted = spans.slice().sort((a, b) => a[0] - b[0]);
+  const baseLines = baseText == null ? null : baseText.split('\n');
+  const inDeleted = (line) => deleted.some((d) => d.startLine <= line && line <= d.endLine);
+  const explainedByDeleted = (del) => {
+    if (!del || !baseLines) return false;
+    let touchesCallable = false;
+    for (let line = del.oldStart; line <= del.oldEnd; line++) {
+      if (inDeleted(line)) touchesCallable = true;
+      else if (!TRIVIA_LINE.test(baseLines[line - 1] ?? '')) return false;
+    }
+    return touchesCallable;
+  };
+
+  const lines = [];
+  const markers = [];
+  for (const [lo, hi] of hunkRanges) {
+    if (!Number.isInteger(lo) || !Number.isInteger(hi)) {
+      const inside = sorted.some(([s, e]) => s < lo && e > hi);
+      if (!inside && !explainedByDeleted(hunkDeletions.find((x) => x.at === lo))) markers.push([lo, hi]);
+      continue;
+    }
+    let from = lo;
+    for (const [s, e] of sorted) {
+      if (e < from) continue;
+      if (s > hi) break;
+      if (s > from) lines.push([from, s - 1]);
+      from = Math.max(from, e + 1);
+    }
+    if (from <= hi) lines.push([from, hi]);
+  }
+  // A replacement can remove an import beside a modified signature while adding
+  // only callable lines. Its base-side outside content still needs a review row.
+  for (const del of hunkDeletions) {
+    if (del.newEnd === undefined || explainedByDeleted(del)) continue;
+    if (lines.some(([lo, hi]) => lo <= del.newEnd && hi >= del.at + 0.5)) continue;
+    const touchesDeleted = deleted.some((d) => d.startLine <= del.oldEnd && d.endLine >= del.oldStart);
+    for (let line = del.oldStart; line <= del.oldEnd; line++) {
+      if (baseCallables.some((c) => c.startLine <= line && line <= c.endLine)) continue;
+      // A replacement may edit a surviving function and delete another together.
+      // The deleted row still owns its accompanying comments and separator lines.
+      if (touchesDeleted && baseLines && TRIVIA_LINE.test(baseLines[line - 1] ?? '')) continue;
+      markers.push([del.at, del.at]);
+      break;
+    }
+  }
+  const merged = [];
+  for (const r of lines) {
+    const prev = merged[merged.length - 1];
+    if (prev && r[0] <= prev[1] + 1) prev[1] = Math.max(prev[1], r[1]);
+    else merged.push(r.slice());
+  }
+  return merged.concat(markers).sort((a, b) => a[0] - b[0]);
+}
+
+// file: { absPath, relPath, oldPath, status, headText, baseText, hunkRanges, hunkDeletions, component, projectRoot }
 // hunkRanges: [[startLine, endLine], ...] 1-based, on the NEW side.
+// hunkDeletions: [{ at, oldStart, oldEnd, newEnd? }, ...], removed base lines and
+// the replacement's final new-side line, when it is not a pure deletion.
+// Returns { changed, deleted, outside }; `outside` is `outsideRanges`' answer for a file with at
+// least one changed or deleted symbol, and [] otherwise: a file with none is listed whole.
 function changedSymbolsIn(ts, S, file) {
   const {
-    absPath, relPath, oldPath, status, headText, baseText, hunkRanges = [], component, projectRoot,
+    absPath, relPath, oldPath, status, headText, baseText, hunkRanges = [], hunkDeletions = [], component, projectRoot,
   } = file;
 
   const parse = (text) => {
@@ -67,7 +144,10 @@ function changedSymbolsIn(ts, S, file) {
     }
   }
 
-  return { changed, deleted };
+  const outside = headSf && (changed.length || deleted.length)
+    ? outsideRanges({ spans: changed.map((c) => [c.startLine, c.endLine]), baseCallables, hunkRanges, hunkDeletions, deleted, baseText })
+    : [];
+  return { changed, deleted, outside };
 }
 
 function changedSymbolKeys(symbols) {

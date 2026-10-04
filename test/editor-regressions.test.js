@@ -107,6 +107,11 @@ test('editor commands refresh the selected PR, preserve preview documents, and r
     assert.equal(providers.get('impacttree-base').provideTextDocumentContent(diffs.at(-1)[0]), originalSource);
     await commands.get('impactTree.openFile')({relPath:'new.ts',status:'renamed'});
     assert.equal(providers.get('impacttree-base').provideTextDocumentContent(diffs.at(-1)[0]), originalSource);
+    // an "Outside functions" row opens its file's diff at the first changed line
+    await commands.get('impactTree.openFile')({ type: 'outside', relPath: 'new.ts', status: 'renamed', ranges: [[6.5, 6.5], [9, 12]] });
+    assert.deepEqual(diffs.at(-1)[3].selection.args, [6, 0, 6, 0]);
+    await commands.get('impactTree.openFile')({ type: 'outside', relPath: 'new.ts', status: 'renamed', ranges: [[2, 4]] });
+    assert.deepEqual(diffs.at(-1)[3].selection.args, [1, 0, 1, 0]);
     await commands.get('impactTree.openCaller')({file:path.join(dir,'new.ts'),pos:16});
     assert.equal(providers.get('impacttree-base').provideTextDocumentContent(diffs.at(-1)[0]), originalSource);
     assert.equal(typeof tickListener, 'function');

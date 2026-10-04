@@ -1,3 +1,4 @@
+// @ts-check
 'use strict';
 // GitHub access with no dependency on the GitHub Pull Requests extension or the `gh`
 // CLI: VS Code ships a built-in 'github' authentication provider, so we ask it for a
@@ -11,25 +12,67 @@ const {
   DEFAULT_LIMITS, fetchBounded, GitHubAuthError, GitHubResponseError,
 } = require('./github-request');
 
-// Matches both remote forms; the optional .git and any trailing slash are stripped so
-// `repo` is never captured as "impact-tree.git".
+/**
+ * The parts of GitHub's responses this module reads, not the whole schema. Each raw type
+ * says what GitHub documents; the `check*` functions verify it at runtime because the
+ * body is untrusted.
+ * @typedef {{ owner: string, repo: string }} RepoSlug
+ * @typedef {{ login: string, avatar_url?: string | null }} RawUser
+ * @typedef {{ ref: string, sha: string, repo?: { full_name: string } | null }} RawBranch
+ * @typedef {object} RawPullRequest
+ * @property {number} number
+ * @property {string} title
+ * @property {string} html_url
+ * @property {string} updated_at
+ * @property {boolean} [draft]
+ * @property {RawUser | null} [user] Null or absent for a deleted user.
+ * @property {RawBranch} head
+ * @property {RawBranch} base
+ * @property {number | null} [changed_files]
+ * @property {{ login: string }[] | null} [requested_reviewers]
+ * @property {{ id: number, name: string }[] | null} [requested_teams]
+ * @typedef {{ id: number, name: string, parent?: { id: number } | null }} RawTeam
+ * @typedef {object} RawFile
+ * @property {string} filename
+ * @property {string} status
+ * @property {string} [previous_filename]
+ * @property {string} [patch] Absent for binary files and files over GitHub's size cap.
+ * @property {string} [sha]
+ * @property {number} additions
+ * @property {number} deletions
+ * @typedef {{ accessToken: string, account?: { label?: string } }} AuthSession The
+ *   fields read from the editor's GitHub authentication session.
+ */
+
+/**
+ * Matches both remote forms; the optional .git and any trailing slash are stripped so
+ * `repo` is never captured as "impact-tree.git".
+ * @param {string | null | undefined} url
+ */
 function parseRemote(url) {
   const m = String(url || '').trim().replace(/\/+$/, '')
     .match(/github\.com[/:]([^/]+)\/(.+?)(?:\.git)?$/);
   return m ? { owner: m[1], repo: m[2] } : null;
 }
 
+/** @param {unknown} v @returns {v is Record<string, unknown>} */
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+/** @param {unknown} v @returns {v is string} */
 const isString = (v) => typeof v === 'string';
 
-// Checks the fields normalisePr reads, not the whole GitHub schema. Fields GitHub may
-// legitimately leave out (a deleted user, a deleted fork) stay optional.
+/**
+ * Checks the fields normalisePr reads, not the whole GitHub schema. Fields GitHub may
+ * legitimately leave out (a deleted user, a deleted fork) stay optional.
+ * @param {RawPullRequest} p
+ * @param {string} endpoint
+ */
 function checkPullRequest(p, endpoint) {
+  /** @param {string} problem @returns {never} */
   const bad = (problem) => { throw new GitHubResponseError(endpoint, problem); };
   if (!isObject(p)) bad('a pull request is not an object');
   if (!Number.isSafeInteger(p.number)) bad('a pull request has no numeric `number`');
   if (!isString(p.title)) bad(`#${p.number} has no \`title\``);
-  for (const side of ['head', 'base']) {
+  for (const side of /** @type {const} */ (['head', 'base'])) {
     if (!isObject(p[side]) || !isString(p[side].ref) || !isString(p[side].sha)) {
       bad(`#${p.number} has no \`${side}.ref\` and \`${side}.sha\``);
     }
@@ -53,9 +96,12 @@ function checkPullRequest(p, endpoint) {
   return p;
 }
 
-// The tree row shows avatars at 16px, so ask for a small image (`s` is GitHub's size
-// parameter, in pixels; 32 stays sharp on high-DPI screens). Anything but an https URL
-// is dropped and the row falls back to its PR icon.
+/**
+ * The tree row shows avatars at 16px, so ask for a small image (`s` is GitHub's size
+ * parameter, in pixels; 32 stays sharp on high-DPI screens). Anything but an https URL
+ * is dropped and the row falls back to its PR icon.
+ * @param {unknown} raw
+ */
 function avatarUrl(raw) {
   if (!isString(raw)) return null;
   let url;
@@ -65,8 +111,13 @@ function avatarUrl(raw) {
   return url.toString();
 }
 
-// Checks the fields listMyTeams reads. `parent` is null for a top-level team.
+/**
+ * Checks the fields listMyTeams reads. `parent` is null for a top-level team.
+ * @param {RawTeam} t
+ * @param {string} endpoint
+ */
 function checkTeam(t, endpoint) {
+  /** @param {string} problem @returns {never} */
   const bad = (problem) => { throw new GitHubResponseError(endpoint, problem); };
   if (!isObject(t) || !Number.isSafeInteger(t.id) || !isString(t.name)) {
     bad('a team has no numeric `id` and string `name`');
@@ -78,7 +129,9 @@ function checkTeam(t, endpoint) {
 }
 
 /**
- * @param {object} vscode The editor API; only `authentication.getSession` is used.
+ * @param {{ authentication: { getSession: (providerId: string, scopes: string[],
+ *   options: { silent: true } | { createIfNone: true }) => PromiseLike<AuthSession | undefined> } }} vscode
+ *   The editor API; only `authentication.getSession` is used.
  * @param {object} [options]
  * @param {(line: string) => void} [options.log]
  * @param {typeof fetch} [options.fetch] The HTTP client. Defaults to the global `fetch`,
@@ -87,17 +140,22 @@ function checkTeam(t, endpoint) {
  *   omitted limits keep their defaults. The extension passes none.
  */
 function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overrides } = {}) {
+  /** @type {AuthSession | null | undefined} */
   let session = null;
   const limits = { ...DEFAULT_LIMITS, ...overrides };
 
-  // silent:true asks "is there already a session?" without ever showing a modal, so the
-  // view can render a sign-in row instead of ambushing the user on startup.
+  /**
+   * silent:true asks "is there already a session?" without ever showing a modal, so the
+   * view can render a sign-in row instead of ambushing the user on startup.
+   * @param {{ interactive?: boolean }} [options]
+   */
   async function signIn({ interactive = false } = {}) {
     try {
       session = await vscode.authentication.getSession(
         'github', ['repo'], interactive ? { createIfNone: true } : { silent: true });
     } catch (e) {
-      log(`github auth failed: ${e.message}`);
+      // The editor rejects with an Error.
+      log(`github auth failed: ${/** @type {Error} */ (e).message}`);
       session = null;
     }
     return session;
@@ -107,8 +165,17 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
   const account = () => (session && session.account && session.account.label) || null;
   function signOutLocally() { session = null; }
 
-  // The one door to the network: every call below goes through it, so the deadline, the
-  // caller's cancellation and the size limit cannot be forgotten by a new endpoint.
+  /**
+   * The one door to the network: every call below goes through it, so the deadline, the
+   * caller's cancellation and the size limit cannot be forgotten by a new endpoint.
+   * @param {object} request
+   * @param {string} request.url
+   * @param {string} request.endpoint
+   * @param {string} request.accept
+   * @param {number} request.maxBytes
+   * @param {AbortSignal} [request.signal]
+   * @param {number[]} [request.passStatuses]
+   */
   async function send({ url, endpoint, accept, maxBytes, signal, passStatuses }) {
     if (!session) throw new Error('not signed in to GitHub');
     const client = fetchImpl || globalThis.fetch;
@@ -128,25 +195,43 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
     }
   }
 
+  /**
+   * @param {string} pathname
+   * @param {{ signal?: AbortSignal }} [options]
+   * @returns {Promise<unknown>}
+   */
   async function api(pathname, { signal } = {}) {
     const res = await send({
       url: `https://api.github.com${pathname}`, endpoint: pathname,
       accept: 'application/vnd.github+json', maxBytes: limits.maxJsonBytes, signal,
     });
-    try { return JSON.parse(res.text); }
+    // No `passStatuses` here, so the body was read.
+    try { return JSON.parse(/** @type {string} */ (res.text)); }
     catch { throw new GitHubResponseError(pathname, 'the body is not JSON'); }
   }
 
-  // Pages of 100 from `endpointFor(page)`, up to `maxPages`. Every page up to the cap
-  // being full is ambiguous, so one more request tells "exactly at the cap" from "more
-  // exist" without trusting a header.
+  /**
+   * Pages of 100 from `endpointFor(page)`, up to `maxPages`. Every page up to the cap
+   * being full is ambiguous, so one more request tells "exactly at the cap" from "more
+   * exist" without trusting a header.
+   * @template T The raw item shape `check` verifies and returns.
+   * @param {(page: number) => string} endpointFor
+   * @param {number} maxPages
+   * @param {string} what Names the items in the error for a body that is not a list.
+   * @param {(item: T, endpoint: string) => T} check
+   * @param {AbortSignal} [signal]
+   * @returns {Promise<{ items: T[], truncated: boolean }>}
+   */
   async function listPages(endpointFor, maxPages, what, check, signal) {
+    /** @param {number} page */
     const listPage = async (page) => {
       const endpoint = endpointFor(page);
       const batch = await api(endpoint, { signal });
       if (!Array.isArray(batch)) throw new GitHubResponseError(endpoint, `expected a list of ${what}`);
-      return batch.map((item) => check(item, endpoint));
+      // Each item is verified by `check`, which is what makes the cast hold.
+      return /** @type {T[]} */ (batch).map((item) => check(item, endpoint));
     };
+    /** @type {T[]} */
     const items = [];
     for (let page = 1; page <= maxPages; page++) {
       const batch = await listPage(page);
@@ -190,6 +275,7 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
     };
   }
 
+  /** @param {RawPullRequest} p */
   function normalisePr(p) {
     return {
       number: p.number,
@@ -215,11 +301,23 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
     };
   }
 
+  /**
+   * @param {RepoSlug} slug
+   * @param {number} number
+   * @param {{ signal?: AbortSignal }} [options]
+   */
   async function getPullRequest({ owner, repo }, number, { signal } = {}) {
     const endpoint = `/repos/${owner}/${repo}/pulls/${number}`;
-    return normalisePr(checkPullRequest(await api(endpoint, { signal }), endpoint));
+    // `checkPullRequest` verifies the body, which is what makes the cast hold.
+    return normalisePr(checkPullRequest(/** @type {RawPullRequest} */ (await api(endpoint, { signal })), endpoint));
   }
 
+  /**
+   * @param {RepoSlug} slug
+   * @param {string} base
+   * @param {string} head
+   * @param {{ signal?: AbortSignal }} [options]
+   */
   async function mergeBase({ owner, repo }, base, head, { signal } = {}) {
     const endpoint = `/repos/${owner}/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}?per_page=1`;
     const r = await api(endpoint, { signal });
@@ -228,10 +326,16 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
     return sha;
   }
 
-  // The PR's file list, with the unified-diff patch GitHub already computed. `patch`
-  // is absent for binary files and for files over GitHub's size cap -- callers must
-  // treat a missing patch as "no hunk information", not as "no changes".
+  /**
+   * The PR's file list, with the unified-diff patch GitHub already computed. `patch`
+   * is absent for binary files and for files over GitHub's size cap -- callers must
+   * treat a missing patch as "no hunk information", not as "no changes".
+   * @param {RepoSlug} slug
+   * @param {number} number
+   * @param {{ max?: number, signal?: AbortSignal }} [options]
+   */
   async function listPullRequestFiles({ owner, repo }, number, { max = 300, signal } = {}) {
+    /** @type {RawFile[]} */
     const out = [];
     const limit = Math.min(3000, Math.max(1, max));
     let more = false;
@@ -266,8 +370,14 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
     };
   }
 
-  // Raw file content at a ref. Uses the contents API with a raw Accept header so we
-  // get the bytes directly instead of base64 in JSON.
+  /**
+   * Raw file content at a ref. Uses the contents API with a raw Accept header so we
+   * get the bytes directly instead of base64 in JSON.
+   * @param {RepoSlug} slug
+   * @param {string} filePath
+   * @param {string} ref
+   * @param {{ signal?: AbortSignal }} [options]
+   */
   async function fileAtRef({ owner, repo }, filePath, ref, { signal } = {}) {
     const encodedPath = filePath.split('/').map(encodeURIComponent).join('/');
     const res = await send({
@@ -277,7 +387,7 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
       passStatuses: [404],
     });
     if (res.status === 404) return null;            // added on this branch, or deleted
-    const body = res.text;
+    const body = /** @type {string} */ (res.text);   // null only for the passed 404, returned above
     // If the raw media type is not honoured (proxies and some enterprise setups strip
     // it) GitHub answers with JSON carrying base64 content. Returning that verbatim
     // would hand the parser a blob of JSON and produce zero symbols, silently.
@@ -290,8 +400,8 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
         if (j && Array.isArray(j)) throw new Error(`${filePath} is a directory, not a file`);
         throw new Error(`unsupported file encoding for ${filePath}`);
       } catch (e) {
-        if (/is a directory/.test(e.message)) throw e;
-        throw new Error(`unexpected JSON response for ${filePath}`);
+        if (/is a directory/.test(/** @type {Error} */ (e).message)) throw e;   // every throw above is an Error
+        throw new Error(`unexpected JSON response for ${filePath}`, { cause: e });
       }
     }
     return body;

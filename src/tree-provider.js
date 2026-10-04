@@ -1,9 +1,31 @@
+// @ts-check
 'use strict';
 const { nodeId } = require('./review-state');
 const { prQuery } = require('./pr-documents');
 const models = require('./tree-row-models');
 const { groupChangesByLocation, groupCallerRowsByFile, buildFileTreeRows, buildDirectoryChildRows } = require('./tree-grouping');
 const { renderTreeItem } = require('./tree-item-renderer');
+
+/** @typedef {import('./tree-row-models').TreeRow} TreeRow */
+/** @typedef {import('./tree-row-models').DecorationRequest} DecorationRequest */
+/** @typedef {import('./engine/caller-contract').CallerRow} CallerRow */
+/**
+ * The session state the provider reads; null before the first analysis.
+ * @typedef {{
+ *   result: any, fileListLayout?: string, rowDetail?: string, iconMode?: string,
+ *   rel: (file: string) => string, absPath?: ((relPath: string) => string)|null,
+ *   classifyCallSiteUpdates?: (file: string, callSites: Array<{ start: number, end: number }>) => { updated: object[], untouched: object[], unknown: object[] },
+ *   changedKeys?: Set<string>,
+ * }} ProviderState
+ */
+/**
+ * What the provider needs of a caller resolver. `incomingWithStatus` is optional: a
+ * resolver without it cannot say whether its search finished.
+ * @typedef {{
+ *   incoming: (file: string, pos: number, withTests?: boolean) => Promise<CallerRow[]>,
+ *   incomingWithStatus?: (file: string, pos: number, withTests?: boolean) => Promise<import('./engine/caller-contract').CallerAnswer>,
+ * }} CallerResolver
+ */
 
 // Tree nodes resolve their callers on expand. That laziness is the whole reason the
 // extension is cheap where the CLI is not: the CLI pre-walked 152 positions (123s);
@@ -20,14 +42,27 @@ const { renderTreeItem } = require('./tree-item-renderer');
 //
 // Longer than the 70-line review trigger only because it is a factory: its length is
 // the closures it defines over the injected dependencies, each well under 30 lines.
+/**
+ * @param {any} vscode
+ * @param {{
+ *   getState: () => ProviderState|null, resolver: CallerResolver, isBusy?: () => boolean,
+ *   decorate?: ReturnType<typeof import('./decorations').createDecorationProvider>|null,
+ *   getPhase?: () => string,
+ *   review?: ReturnType<typeof import('./review-state').createReviewState>|null,
+ *   getAnalysisId?: () => number, isCurrentAnalysis?: (analysisId: number) => boolean,
+ * }} deps
+ */
 function createTreeProvider(vscode, {
   getState, resolver, isBusy = () => false, decorate = null, getPhase = () => 'ready', review = null,
   getAnalysisId = () => 0, isCurrentAnalysis = () => true,
 }) {
   // A finding's direct callers are already resolved, so checking it can clear them too
   // and report real progress. Deeper levels are lazy and are not counted.
+  /** @param {TreeRow} n */
   const idOf = (n) => review?.id ? review.id(n) : nodeId(n);
+  /** @param {TreeRow} n */
   const childIdsOf = (n) => review?.childIds ? review.childIds(n) : [];
+  /** @param {TreeRow} n */
   const checkedOf = (n) => {
     if (!review) return null;
     const id = idOf(n);
@@ -37,6 +72,7 @@ function createTreeProvider(vscode, {
     const members = models.GROUP_TYPES.has(n.type) ? childIdsOf(n) : null;
     return members ? members.length > 0 && review.remaining(members) === 0 : review.isReviewed(id);
   };
+  /** @param {TreeRow} n */
   const reviewNoteOf = (n) => {
     const kids = childIdsOf(n);
     const left = review ? review.remaining(kids) : 0;
@@ -58,6 +94,10 @@ function createTreeProvider(vscode, {
   // those and paints the worktree status (U for untracked, M for a local edit) on
   // top of the PR status. A non-file scheme is invisible to git, so the only badge
   // is the one we register from the pull request.
+  /**
+   * @param {string} file
+   * @param {number|null} pos
+   */
   const uriFor = (file, pos) => {
     if (!file) return null;
     const st = getState();
@@ -73,10 +113,20 @@ function createTreeProvider(vscode, {
     return pos == null ? u : u.with({ fragment: String(pos) });
   };
   // Registers a row's decoration only while the analysis it was built for is current.
+  /**
+   * @param {number} analysisId
+   * @param {any} uri
+   * @param {string|undefined} status
+   * @param {string} tooltip
+   */
   const mark = (analysisId, uri, status, tooltip) => {
     if (decorate && uri && isCurrentAnalysis(analysisId)) decorate.register(uri, { status, tooltip });
     return uri;
   };
+  /**
+   * @param {number} analysisId
+   * @param {DecorationRequest[]} requests
+   */
   const publishDecorations = (analysisId, requests) => {
     for (const d of requests) mark(analysisId, d.uri, d.status, d.tooltip);
   };
@@ -85,17 +135,27 @@ function createTreeProvider(vscode, {
   };
   const _emitter = new vscode.EventEmitter();
 
+  /** @param {ProviderState|null} state */
   function rootRows(state) {
     const placeholder = models.buildPlaceholderRows({ phase: getPhase(), busy: isBusy(), state });
     if (placeholder) return placeholder;
-    const r = state.result;
+    // A missing state got the placeholder above.
+    const r = /** @type {ProviderState} */ (state).result;
     const leftToReview = review ? review.remaining(models.collectTopLevelChangeRefs(r).map(idOf)) : null;
     return models.buildRootRows(r, { leftToReview });
   }
 
   // The rows of one section, with the decorations they should carry.
+  /**
+   * @param {TreeRow} node
+   * @param {ProviderState} state
+   */
   function buildSectionContent(node, state) {
     const r = state.result;
+    /**
+     * @param {any[]} list
+     * @param {{ reachReasonOf?: (change: any) => string|null, scopeNote?: string|null }} [opts]
+     */
     const changes = (list, opts = {}) => models.buildChangeRows(list, { result: r, uriOf: uriFor, ...opts });
     switch (node.key) {
       case 'findings': return changes(r.findings.filter(models.isRootChange));
@@ -120,6 +180,7 @@ function createTreeProvider(vscode, {
 
   // Asks the resolver for a row's callers. A query that failed or did not finish must
   // not look like a symbol nobody calls, so the answer says why it is incomplete.
+  /** @param {TreeRow} node */
   async function queryCallers(node) {
     try {
       if (resolver.incomingWithStatus) {
@@ -129,10 +190,16 @@ function createTreeProvider(vscode, {
       const callers = await resolver.incoming(node.file, node.pos, true);
       return { callers, incomplete: 'this resolver does not report whether its caller search finished' };
     } catch (e) {
-      return { callers: [], incomplete: (e && e.message) || 'the caller query failed' };
+      // A rejection can be any value; one without a message gets the default text.
+      const failure = /** @type {{ message?: string }|null|undefined} */ (e);
+      return { callers: [], incomplete: (failure && failure.message) || 'the caller query failed' };
     }
   }
 
+  /**
+   * @param {TreeRow} node
+   * @param {number} analysisId
+   */
   async function callerRows(node, analysisId) {
     const state = getState();
     const answer = await queryCallers(node);
@@ -163,12 +230,15 @@ function createTreeProvider(vscode, {
   return {
     onDidChangeTreeData: _emitter.event,
     refresh() { _emitter.fire(); },
+    /** @param {TreeRow} n */
     getTreeItem: (n) => renderTreeItem(vscode, n, viewOf()),
+    /** @param {TreeRow} [node] */
     async getChildren(node) {
       const analysisId = getAnalysisId();
       if (!node) return rootRows(getState());
       if (node.type === 'section') {
-        const state = getState();
+        // A section row exists only once there is a result to draw.
+        const state = /** @type {ProviderState} */ (getState());
         scheduleDecorationFlush();
         const content = buildSectionContent(node, state);
         publishDecorations(analysisId, content.decorations);
@@ -179,7 +249,7 @@ function createTreeProvider(vscode, {
       if (node.type === 'callerFile') return node.callers;
       if (models.GROUP_TYPES.has(node.type)) return node.rows;
       if (node.type === 'message' || node.type === 'summary' || node.type === 'legendItem'
-        || node.type === 'deleted' || node.type === 'file' || node.cycle) return [];
+        || node.type === 'deleted' || node.type === 'file' || node.type === 'outside' || node.cycle) return [];
       return callerRows(node, analysisId);
     },
   };

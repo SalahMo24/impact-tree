@@ -6,6 +6,24 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { shaFor, pull, previewResult, withEnv, refusals } = require('./extension-env');
 
+test('a failed silent sign-in is logged and leaves the signed-out sources view, with no unhandled rejection', async () => {
+  const unhandled = [];
+  const onUnhandled = (reason) => unhandled.push(reason);
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    await withEnv(async (env) => {
+      let refreshes = 0;
+      env.sources().onDidChangeTreeData(() => { refreshes++; });
+      await new Promise((resolve) => setImmediate(resolve));   // let the rejected sign-in settle
+      assert.deepEqual(unhandled, []);
+      assert.equal(env.seen.log.filter((m) => /github: sign-in failed: no keychain/.test(m)).length, 1);
+      assert.equal(refreshes, 1, 'the sources view is refreshed once, as signed out');
+    }, { signIn: async () => { throw new Error('no keychain'); } });
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+});
+
 test('Refresh after a failed PR preview previews the same PR again, not a local analysis', () => withEnv(async (env) => {
   let attempt = 0;
   env.hooks.remoteResult = (pr) => { if (++attempt === 1) throw new Error('The PR changed while its files were loading'); return previewResult(pr); };

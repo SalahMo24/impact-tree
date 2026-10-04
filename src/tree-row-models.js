@@ -85,19 +85,21 @@ function classifyChangeStatus(change) {
 const collectRowAndNested = (row) => [row, ...(row.inside || []).flatMap(collectRowAndNested)];
 
 /**
- * Severity rank of a change row; lower is worse.
+ * Severity rank of a change row; lower is worse. A row of changed lines outside functions
+ * has no callers to be stale, so it ranks as muted.
  * @param {TreeRow} row
  * @returns {number}
  */
-const rankChangeRow = (row) => SEVERITY_RANK[classifyChangeStatus(row.finding).severity] ?? 3;
+const rankChangeRow = (row) => (row.finding ? SEVERITY_RANK[classifyChangeStatus(row.finding).severity] ?? 3 : SEVERITY_RANK.muted);
 
 /**
  * The status of the worst change among `rows`; the first wins a tie.
- * @param {TreeRow[]} rows Non-empty list of change rows.
+ * @param {TreeRow[]} rows Non-empty list of change rows with at least one that has a `finding`;
+ *   rows without one (outside functions) are not considered.
  * @returns {ReturnType<typeof classifyChangeStatus>}
  */
 const classifyWorstChangeStatus = (rows) =>
-  classifyChangeStatus(rows.reduce((w, x) => (rankChangeRow(x) < rankChangeRow(w) ? x : w)).finding);
+  classifyChangeStatus(rows.filter((x) => x.finding).reduce((w, x) => (rankChangeRow(x) < rankChangeRow(w) ? x : w)).finding);
 
 /**
  * The git status the result records for a repo-relative path, trying the path with
@@ -158,8 +160,12 @@ const otherChangesOf = (result) => (result.allChanged || []).filter((/** @type {
  * @param {any} result
  * @returns {TreeRow[]}
  */
-const collectTopLevelChangeRefs = (result) => (result.allChanged || []).filter(isRootChange)
-  .map((/** @type {any} */ c) => ({ type: 'finding', file: c.file, pos: c.namePos }));
+const collectTopLevelChangeRefs = (result) => [
+  ...(result.allChanged || []).filter(isRootChange)
+    .map((/** @type {any} */ c) => ({ type: 'finding', file: c.file, pos: c.namePos })),
+  // changed lines outside functions are reviewed like any other change
+  ...(result.outside || []).map((/** @type {any} */ o) => ({ type: 'outside', file: o.file, relPath: o.relPath })),
+];
 
 /**
  * The summary row: counts, mode and base, and review progress when it is tracked.
@@ -195,7 +201,7 @@ function buildSectionHeaderRows(r) {
   const rows = [
     { type: 'section', key: 'findings', label: 'Findings', count: findingRoots.length, icon: 'warning',
       desc: `signature, throw or deletion risk${nestedFindings ? `  ·  ${nestedFindings} nested under its callee` : ''}` },
-    { type: 'section', key: 'other', label: 'Other changes', count: other.length, icon: 'edit',
+    { type: 'section', key: 'other', label: 'Other changes', count: other.length + (r.outside || []).length, icon: 'edit',
       desc: `body-only edits${nestedOther ? `  ·  ${nestedOther} nested under their callee` : ''}` },
     { type: 'section', key: 'deleted', label: 'Deleted', count: r.deleted.length, icon: 'trash', desc: '' },
   ];
@@ -272,6 +278,43 @@ function buildChangeRows(changes, { result, uriOf, reachReasonOf = () => null, s
     return {
       type: 'finding', label: c.label, finding: c, file: c.file, pos: c.namePos, score: c.score,
       ambiguous: (seen.get(c.label) || 0) > 1, decorationUri: uri, reachReason: reachReasonOf(c), scopeNote,
+    };
+  });
+  return { rows, decorations };
+}
+
+/**
+ * The changed lines of an "Outside functions" row in words: `lines 1–4, 22`, and for a pure
+ * deletion, the gap marker `N - 0.5`, `deleted before line N`.
+ * Every range is named: the row is the only place these lines are listed, so none is
+ * summarised away.
+ * @param {Array<[number, number]>} ranges
+ * @returns {string}
+ */
+function describeOutsideRanges(ranges) {
+  const lines = ranges.filter(([lo]) => Number.isInteger(lo)).map(([lo, hi]) => (lo === hi ? `${lo}` : `${lo}–${hi}`));
+  const deletions = ranges.filter(([lo]) => !Number.isInteger(lo)).map(([lo]) => `deleted before line ${Math.ceil(lo)}`);
+  const noun = lines.length === 1 && !lines[0].includes('–') ? 'line' : 'lines';
+  return [...(lines.length ? [`${noun} ${lines.join(', ')}`] : []), ...deletions].join(', ');
+}
+
+/**
+ * One "Outside functions" row per file whose changed lines include some outside every
+ * callable, with the decoration it should carry. It has no callers and no expansion.
+ * @param {any[]} outside `result.outside`.
+ * @param {{ result: any, uriOf: ResourceUriOf }} opts
+ * @returns {{ rows: TreeRow[], decorations: DecorationRequest[] }}
+ */
+function buildOutsideRows(outside, { result, uriOf }) {
+  /** @type {DecorationRequest[]} */
+  const decorations = [];
+  const rows = outside.map((o) => {
+    const uri = uriOf(o.file, null);
+    const status = getFileStatus(result, o.relPath);
+    decorations.push({ uri, status, tooltip: o.relPath });
+    return {
+      type: 'outside', label: 'Outside functions', file: o.file, relPath: o.relPath, ranges: o.ranges,
+      status, desc: describeOutsideRanges(o.ranges), inGroup: false, decorationUri: uri,
     };
   });
   return { rows, decorations };
@@ -408,7 +451,7 @@ module.exports = {
   LEGEND, CALL_STATE, NO_SITE_EVIDENCE, GROUP_TYPES, SEVERITY_RANK,
   classifyChangeStatus, classifyWorstChangeStatus, collectRowAndNested, rankChangeRow, getFileStatus,
   buildReachScopeNote, buildPlaceholderRows, collectTopLevelChangeRefs, buildRootRows,
-  isRootChange, otherChangesOf, buildChangeRows, buildDeletedRows, buildFileLeafRows,
+  isRootChange, otherChangesOf, buildChangeRows, buildDeletedRows, buildFileLeafRows, buildOutsideRows, describeOutsideRanges,
   buildComputeTestReachRow, buildLegendRows, dropExcludedCallers, collectAncestry, buildCallerRows,
   buildIncompleteCallersRow, buildInsideGroupRow,
 };

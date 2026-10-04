@@ -5,7 +5,7 @@
 // rows and leaves the ones it was given as they were; a group that wants a decoration
 // returns it as data for the provider to publish.
 const path = require('path');
-const { collectRowAndNested, rankChangeRow, getFileStatus } = require('./tree-row-models');
+const { collectRowAndNested, rankChangeRow, getFileStatus, buildOutsideRows } = require('./tree-row-models');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 /** @typedef {import('./tree-row-models').DecorationRequest} DecorationRequest */
@@ -88,15 +88,19 @@ function nestEnclosedChanges(rows) {
  * everything they can, so the remaining structure is location: a change declared inside
  * another nests under it, and in the tree layout a file holding several becomes one row.
  * Nothing is dropped: every change stays reachable, and the worst state in a group leads
- * its row, so a ⛔ cannot hide inside a collapsed group.
+ * its row, so a ⛔ cannot hide inside a collapsed group. The changed lines outside any
+ * function (`result.outside`) join their file's changes, last: they are a change of the
+ * file like the others, and cannot nest under one.
  * @param {TreeRow[]} rows Change rows from `buildChangeRows`; not modified.
  * @param {{ layout: string, result: any, uriOf: ResourceUriOf }} opts
- * @returns {{ rows: TreeRow[], decorations: DecorationRequest[] }} Decorations for the file rows.
+ * @returns {{ rows: TreeRow[], decorations: DecorationRequest[] }} Decorations for the file rows
+ *   and the outside-functions rows.
  */
 function groupChangesByLocation(rows, { layout, result, uriOf }) {
-  const top = nestEnclosedChanges(rows);
+  const outside = buildOutsideRows(result.outside || [], { result, uriOf });
+  const top = [...nestEnclosedChanges(rows), ...outside.rows];
   /** @type {DecorationRequest[]} */
-  const decorations = [];
+  const decorations = [...outside.decorations];
   if (layout === 'flat') return { rows: sortByWorstStatus(top), decorations };
   /** @type {Map<string, TreeRow[]>} */
   const rowsByFile = new Map();
@@ -109,12 +113,14 @@ function groupChangesByLocation(rows, { layout, result, uriOf }) {
   for (const [file, fileRows] of rowsByFile) {
     // a one-child group is pure overhead, the rule caller files and folders follow
     if (fileRows.length === 1) { out.push(fileRows[0]); continue; }
-    const relPath = fileRows[0].finding.relPath;
+    const relPath = (fileRows[0].finding || fileRows[0]).relPath;
     const uri = uriOf(file, null);
     decorations.push({ uri, status: getFileStatus(result, relPath), tooltip: relPath });
+    // the group names the file, so its outside row need not
+    const members = fileRows.map((n) => (n.type === 'outside' ? { ...n, inGroup: true } : n));
     out.push({
       type: 'changeFile', label: path.basename(relPath), relPath, file,
-      rows: sortByWorstStatus(fileRows), members: fileRows.flatMap(collectRowAndNested), decorationUri: uri,
+      rows: sortByWorstStatus(members), members: members.flatMap(collectRowAndNested), decorationUri: uri,
     });
   }
   return { rows: sortByWorstStatus(out), decorations };

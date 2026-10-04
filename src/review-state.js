@@ -10,18 +10,19 @@ function createReviewState(memento) {
   let identity = null;
 
   // A review loads under a new key for the first time when nothing is stored under it.
-  // Only then are the ticks of the key it replaces copied, and the old key is left
-  // untouched so an older build still finds its own. Once the copy is stored (or the
-  // user has stored anything, even an empty list) the new key is the only source: an
-  // untick or a clear is never undone by copying again. Row identities include the
-  // reviewed content, so a copied tick shows only on a row whose content is unchanged.
+  // Only then are the ticks of the key it replaces copied (the first of several with
+  // stored ticks), and the old keys are left untouched so an older build still finds
+  // its own. Once the copy is stored (or the user has stored anything, even an empty
+  // list) the new key is the only source: an untick or a clear is never undone by
+  // copying again. Row identities include the reviewed content, so a copied tick shows
+  // only on a row whose content is unchanged.
   const load = (base, migrateFrom) => {
     baseKey = base || 'none';
     const raw = memento ? memento.get(`${KEY}.${baseKey}`) : null;
     reviewed = new Set(Array.isArray(raw) ? raw : []);
     if (raw !== undefined || !memento || !migrateFrom) return;
-    const old = memento.get(`${KEY}.${migrateFrom}`);
-    if (!Array.isArray(old)) return;
+    const old = [].concat(migrateFrom).map((k) => memento.get(`${KEY}.${k}`)).find(Array.isArray);
+    if (!old) return;
     reviewed = new Set(old);
     persist();
   };
@@ -48,8 +49,9 @@ function createReviewState(memento) {
      * Binds to the review `context` names, with the row identity function for it.
      * @param {string} context Key of the review being shown.
      * @param {((node: object) => string|null)|null} identify
-     * @param {{ migrateFrom?: string }} [opts] `migrateFrom` is the key `context` replaces; its
-     *   ticks are copied the first time `context` is loaded.
+     * @param {{ migrateFrom?: string|string[] }} [opts] `migrateFrom` is the key `context` replaces, or
+     *   those it replaces in order of preference; the ticks of the first with any are copied the
+     *   first time `context` is loaded.
      */
     configure(context, identify, { migrateFrom } = {}) {
       identity = identify;
@@ -79,6 +81,7 @@ const nodeId = (n) => {
   if (!n) return null;
   if (n.type === 'file') return `file:${n.relPath}`;
   if (n.type === 'deleted') return `del:${n.relPath}#${n.label}`;
+  if (n.type === 'outside') return `outside:${n.relPath}`;
   if (n.type === 'finding' || n.type === 'caller') return `${n.file}#${n.pos}`;
   // A file grouping several callers of the same change; ticking it ticks them all.
   if (n.type === 'callerFile') return `cfile:${n.relPath}`;

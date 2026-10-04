@@ -74,13 +74,13 @@ function loadTypeScript(repo, projectDir) {
 // One `git diff` for every file, split only so a huge PR stays under the OS argument
 // limit. A rename's two paths always travel in the same chunk: git can only pair them
 // when both are in the pathspec.
-function rangesFor(git, baseSha, headRev, files, { maxChars = 60000 } = {}) {
+function rangesFor(git, baseSha, headRev, files, { maxChars = 60000, deletionsOut } = {}) {
   const groups = files.map((f) => (f.oldPath && f.oldPath !== f.path ? [f.oldPath, f.path] : [f.path]));
   const out = {};
   let chunk = [], size = 0;
   const flush = () => {
     if (!chunk.length) return;
-    Object.assign(out, allHunks(git, baseSha, headRev, chunk));
+    Object.assign(out, allHunks(git, baseSha, headRev, chunk, deletionsOut));
     chunk = []; size = 0;
   };
   for (const g of groups) {
@@ -318,6 +318,14 @@ function inferredProjectFiles(repo, git) {
  * are 1-based inclusive `[startLine, endLine]` pairs on the new side of the diff,
  * keyed by repository-relative path. A pure deletion is the gap marker
  * `[N + 0.5, N + 0.5]`, between lines N and N + 1, so bounds need not be integers.
+ * `outside` has one entry per changed source file with at least one changed or deleted
+ * symbol, holding the changed lines (same range format, deletion markers included) that
+ * no changed callable's span contains: imports, top-level constants, types, class fields,
+ * the comment above a function. A deletion that only removed a deleted symbol, with its
+ * blank and comment lines, is not listed; the deleted row stands for it. A file with no
+ * changed or deleted symbol has no entry: it is in `otherFiles` with `noCallable`.
+ * A replacement that removes outside text but adds only callable lines is represented
+ * by a deletion marker before its added lines, even when that gap is inside a callable.
  * `baseTexts` holds the base-side text of every changed source path that existed at
  * the base, keyed by its base path (`basePaths` maps a rename).
  *
@@ -364,6 +372,7 @@ function inferredProjectFiles(repo, git) {
  *   fileStatus: Record<string, string>,
  *   basePaths: Record<string, string>,
  *   changedRanges: Record<string, Array<[number, number]>>,
+ *   outside: Array<{file: string, relPath: string, ranges: Array<[number, number]>}>,
  *   baseTexts: Map<string, string|null>,
  *   excludedCallerPaths: string[],
  *   otherFiles: Array<{path: string, status: string, noCallable?: true}>,
@@ -423,7 +432,8 @@ async function analyze(repo, opts = {}) {
   // relPath -> [[startLine, endLine], ...] of the new-side changed ranges
   const changedRanges = {};
   const tracked = files.filter((f) => !f.untracked);
-  const ranges = tracked.length ? rangesFor(git, base.sha, headRev, tracked) : {};
+  const deletions = {};
+  const ranges = tracked.length ? rangesFor(git, base.sha, headRev, tracked, { deletionsOut: deletions }) : {};
   for (const f of files) {
     changedRanges[f.path] = f.untracked ? wholeFileRange(path.join(repo, f.path)) : (ranges[f.path] || []);
   }
@@ -435,6 +445,7 @@ async function analyze(repo, opts = {}) {
   const relOf = (abs) => path.relative(repo, abs).split(path.sep).join('/');
 
   const components = [];
+  const outside = [];
   let droppedUntracked = 0;
   const outsideProgram = new Set();
   // Cache: language services and document registries shared by the projects of this
@@ -499,11 +510,13 @@ async function analyze(repo, opts = {}) {
             headText,
             baseText: f.status === 'added' ? null : baseTexts.get(f.oldPath || f.path) ?? null,
             hunkRanges: changedRanges[f.path] || [],
-            component: comp, 
+            hunkDeletions: deletions[f.path] || [],
+            component: comp,
             projectRoot: entry.root,
           });
           changed.push(...r.changed);
           deleted.push(...r.deleted);
+          if (r.outside.length) outside.push({ file: abs, relPath: f.path, ranges: r.outside });
         } catch (e) {
           warnings.push(`${f.path}: could not be analysed — ${e && e.message}`);
         }
@@ -644,6 +657,7 @@ async function analyze(repo, opts = {}) {
     fileStatus: Object.fromEntries(everything.map((f) => [f.path, f.status])),
     basePaths: Object.fromEntries(everything.filter(f => f.oldPath).map(f => [f.path, f.oldPath])),
     changedRanges,
+    outside,
     baseTexts,
     excludedCallerPaths: headRev !== null ? [...untracked] : [],
     unanalysable: [...unanalysable].map(([component, count]) => ({ component, count })),

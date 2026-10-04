@@ -59,6 +59,21 @@ function rangeOfHeader(line) {
   return count === 0 ? [start + 0.5, start + 0.5] : [start, start + count - 1];
 }
 
+// Removed base lines, including replacements. `at` is the gap before the replacement
+// (or the pure-deletion gap); `newEnd` exists only for replacements.
+function deletionOfHeader(line) {
+  const m = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
+  if (!m) return null;
+  const count = m[2] === undefined ? 1 : Number(m[2]);
+  if (count === 0) return null;
+  const newStart = Number(m[3]);
+  const newCount = m[4] === undefined ? 1 : Number(m[4]);
+  return {
+    at: newStart + (newCount ? -0.5 : 0.5), oldStart: Number(m[1]), oldEnd: Number(m[1]) + count - 1,
+    ...(newCount ? { newEnd: newStart + newCount - 1 } : {}),
+  };
+}
+
 // git's C-style path quoting, for the few characters quotePath=false still quotes
 function unquote(p) {
   if (!p.startsWith('"')) return p;
@@ -76,8 +91,10 @@ function unquote(p) {
 
 // Every file's ranges from ONE `git diff`, instead of a process per file. Renames are
 // paired by -M across the whole diff, so a renamed file's ranges are its real edits
-// rather than the whole file reading as added.
-function allHunks(git, baseSha, headRev, pathspecs) {
+// rather than the whole file reading as added. When `deletionsOut` is given, each file's
+// removed base ranges are added to it as `{ at, oldStart, oldEnd, newEnd? }`, keyed by
+// path like the ranges. Replacements also name their final new-side line.
+function allHunks(git, baseSha, headRev, pathspecs, deletionsOut) {
   const out = git.raw([...PLAIN, 'diff', ...DIFF_FLAGS, '-M', '--unified=0', baseSha, ...(headRev ? [headRev] : []),
     '--', ...(pathspecs || [])]);
   const byPath = {};
@@ -96,12 +113,15 @@ function allHunks(git, baseSha, headRev, pathspecs) {
       const p = unquote(l.slice(4).replace(/\t$/, ''));
       cur = p === '/dev/null' ? null : p.replace(/^b\//, '');
       if (cur && !byPath[cur]) byPath[cur] = [];
+      if (cur && deletionsOut && !deletionsOut[cur]) deletionsOut[cur] = [];
       continue;
     }
     const m = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/.exec(l);
     if (!m) continue;
     skip = (m[1] === undefined ? 1 : Number(m[1])) + (m[2] === undefined ? 1 : Number(m[2]));
     if (cur) byPath[cur].push(rangeOfHeader(l));
+    const deletion = cur && deletionsOut ? deletionOfHeader(l) : null;
+    if (deletion) deletionsOut[cur].push(deletion);
   }
   return byPath;
 }

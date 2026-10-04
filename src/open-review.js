@@ -99,8 +99,13 @@ function createOpenReview(vscode, session) {
         // deleted file: show the base revision alone
         await vscode.window.showTextDocument(baseUriFor(rel), { preview: true });
       } else if (inDiff || node.status) {
+        // A row of changed lines (outside functions) opens at the first of them; a deletion
+        // marker `N - 0.5` is the gap before line N.
+        const first = node.ranges && node.ranges[0];
+        const line = first ? Math.max(0, Math.ceil(first[0]) - 1) : null;
         await vscode.commands.executeCommand('vscode.diff', baseUriFor(rel), abs,
-          `${require('path').basename(rel)} (${String(session.state.result.base.sha).slice(0, 7)} ↔ ${session.isTierA() ? `PR #${session.state.result.prNumber}` : 'working'})`);
+          `${require('path').basename(rel)} (${String(session.state.result.base.sha).slice(0, 7)} ↔ ${session.isTierA() ? `PR #${session.state.result.prNumber}` : 'working'})`,
+          ...(line === null ? [] : [{ selection: new vscode.Range(line, 0, line, 0) }]));
       } else {
         await vscode.window.showTextDocument(abs);
       }
