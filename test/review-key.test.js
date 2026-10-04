@@ -49,14 +49,26 @@ test('two checked-out PRs keep separate ticks, and each keeps its own across a r
   assert.ok(env.isTicked(await rowOf(env)), 'PR 7 still has its tick, untouched by PR 8');
 }, { changedSource: true }));
 
-test('the same PR at a new head commit is a different review', () => withEnv(async (env) => {
+test('a push to a checked-out PR keeps the ticks of rows whose content is unchanged', () => withEnv(async (env) => {
   showWarm(env);
   await checkOut(env, onBranch('main'));
   env.tick(await rowOf(env), true);
 
   env.hooks.headOf = () => '9'.repeat(40);
   await checkOut(env, onBranch('main'));
-  assert.ok(!env.isTicked(await rowOf(env)), 'a pushed PR is reviewed again');
+  assert.ok(env.isTicked(await rowOf(env)), 'the push did not touch this row, so it stays reviewed');
+}, { changedSource: true }));
+
+test('a push that changes a ticked row shows it unticked', () => withEnv(async (env) => {
+  showWarm(env);
+  await checkOut(env, onBranch('main'));
+  env.tick(await rowOf(env), true);
+
+  env.hooks.headOf = () => '9'.repeat(40);
+  fs.writeFileSync(path.join(env.dir, 'a.ts'), 'export function warm() { return 2; }\n');
+  execFileSync('git', ['commit', '-qam', 'push'], { cwd: env.dir });
+  await checkOut(env, onBranch('main'));
+  assert.ok(!env.isTicked(await rowOf(env)), 'the row changed, so it is reviewed again');
 }, { changedSource: true }));
 
 test('a refresh after Check out and analyse compares against the PR base, whatever it is', async (t) => {
@@ -160,6 +172,49 @@ test('a tick under a fallback key still shows after the key change, and that key
   assert.ok(env.isTicked(await rowOf(env)));
   assert.deepEqual(env.memento.get(fallback), ids);
 }, { changedSource: true })));
+
+const SHA = 'a'.repeat(40);
+const perHeadKey = (env) => `impactTree.reviewed.v2:${env.dir}:pr-checkout:1@${SHA}:pr:main`;
+
+test('a tick under the per-head PR key shows on its unchanged row after the upgrade, and that key stays', () => idsTickedFor(WARM).then((ids) => withEnv(async (env) => {
+  env.hooks.headOf = () => SHA;
+  env.memento.set(perHeadKey(env), ids);
+  showWarm(env);
+  await checkOut(env, onBranch('main'));
+  assert.ok(env.isTicked(await rowOf(env)));
+  assert.deepEqual(env.memento.get(perHeadKey(env)), ids, 'the old key is left as it was');
+}, { changedSource: true })));
+
+test('the per-head key is tried before the shared HEAD key', () => idsTickedFor(WARM).then((ids) => withEnv(async (env) => {
+  env.hooks.headOf = () => SHA;
+  env.memento.set(perHeadKey(env), ids);
+  env.memento.set(legacyKeys(env, 'main').shared, ['stale']);
+  showWarm(env);
+  await checkOut(env, onBranch('main'));
+  assert.ok(env.isTicked(await rowOf(env)));
+  assert.ok(!storedKeys(env).some((k) => k.endsWith(':pr-checkout:1:pr:main')
+    && env.memento.get(k).includes('stale')), 'the shared key was not consulted');
+}, { changedSource: true })));
+
+test('an untick after migrating from the per-head key is not undone on reload', () => idsTickedFor(WARM).then((ids) => withEnv(async (env) => {
+  env.hooks.headOf = () => SHA;
+  env.memento.set(perHeadKey(env), ids);
+  showWarm(env);
+  await checkOut(env, onBranch('main'));
+  env.tick(await rowOf(env), false);
+  await checkOut(env, onBranch('main'));
+  assert.ok(!env.isTicked(await rowOf(env)));
+}, { changedSource: true })));
+
+test('migrateFrom may list several keys: the first with stored ticks is copied', () => {
+  const store = new Map([['impactTree.reviewed.b', ['b1']], ['impactTree.reviewed.c', ['c1']]]);
+  const memento = { get: (k) => store.get(k), update: (k, v) => store.set(k, v) };
+  const review = createReviewState(memento);
+  review.configure('new', null, { migrateFrom: ['a', 'b', 'c'] });
+  assert.deepEqual([review.isReviewed('b1'), review.isReviewed('c1')], [true, false]);
+  assert.deepEqual(store.get('impactTree.reviewed.b'), ['b1'], 'the old keys are never written');
+  assert.deepEqual(store.get('impactTree.reviewed.c'), ['c1']);
+});
 
 test('migration happens once: later ticks and clears belong to the new key alone', () => {
   const store = new Map([['impactTree.reviewed.old', ['a', 'b']]]);

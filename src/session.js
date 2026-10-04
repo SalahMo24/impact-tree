@@ -301,19 +301,23 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
   }
 
   // Which review the result belongs to, and the key it replaces. A checked-out PR is
-  // identified by its number and head commit: its worktree is a detached HEAD, which
-  // names no branch. The mode is the one requested, so a `pr` run that fell back to
-  // `branch` over a dirty tree stays the same review. Earlier builds keyed on `HEAD`
-  // (every checked-out PR alike) and on the effective mode; `replaces` is that key, for
-  // review.configure to copy ticks from the first time the new key loads.
+  // identified by its number alone: its worktree is a detached HEAD, which names no
+  // branch, and a push must not start the review over (row ids carry the content, so a
+  // changed row is unticked anyway). The mode is the one requested, so a `pr` run that
+  // fell back to `branch` over a dirty tree stays the same review. Earlier builds keyed on
+  // the head commit as well, and before that on `HEAD` (every checked-out PR alike) with
+  // the effective mode; `replaces` lists those keys, best first, for review.configure to
+  // copy ticks from the first time the new key loads.
   function reviewKeys(source, repo, result, base) {
     const key = (who, mode) => `v2:${repo}:${who}:${mode}:${base}`;
     const who = source.kind === 'checkout'
-      ? `pr-checkout:${source.pr.number}@${source.sha}`
+      ? `pr-checkout:${source.pr.number}`
       : require('./engine/git').makeGit(repo).currentBranch();
     const current = key(who, result.requestedMode);
-    const replaced = key(source.kind === 'checkout' ? 'HEAD' : who, result.mode);
-    return { key: current, replaces: replaced === current ? undefined : replaced };
+    const replaced = source.kind === 'checkout'
+      ? [key(`${who}@${source.sha}`, result.requestedMode), key('HEAD', result.mode)]
+      : [key(who, result.mode)];
+    return { key: current, replaces: replaced.filter((k) => k !== current) };
   }
 
   // Analyses the working repository for `run` and publishes the result if the run is
