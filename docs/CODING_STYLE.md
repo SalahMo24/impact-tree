@@ -471,9 +471,9 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      visited-node budget stopped it; `testReachIncompleteReason` says why) or
      `'not-computed'`. Depth is a declared scope, not a budget: `'uncovered'` means no
      test within `reachDepth` caller levels, and the tree and CLI say so. Tests are
-     searched at every level. The tree's "No test reaches" section holds only
-     `'uncovered'` symbols; "Test reach unknown" lists the rest with their reasons, and
-     the CLI reports both.
+     searched at every level. In the tree only an `'uncovered'` change row reads
+     "no test"; an `'unknown'` one says "Test reach unknown" with its reason in its tests
+     row and tooltip, and the CLI reports both.
 2. Validate settings and consolidate genuinely equivalent concurrency helpers.
    Establish documented budgets and exhaustion behavior.
    - Exists: `src/engine/settings.js` validates `impactTree.concurrency` (1..32),
@@ -541,8 +541,8 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      `src/engine/call-sites.js`, `src/engine/caller-contract.js`,
      `src/engine/cancellation.js`, `src/engine/settings.js`, `src/engine/test-reach.js`,
      `src/github-request.js`, `src/github.js`, and the tree's provider, pure row models,
-     grouping and renderer (`src/tree-provider.js`, `src/tree-row-models.js`,
-     `src/tree-grouping.js`, `src/tree-item-renderer.js`).
+     grouping and renderer (`src/tree-provider.js`, `src/review-tree-model.js`,
+     `src/tree-row-models.js`, `src/tree-grouping.js`, `src/tree-item-renderer.js`).
    - Planned: type-aware lint rules such as `no-floating-promises` (whether to add them
      before the review loop is an open decision), and enrolling the remaining modules.
 
