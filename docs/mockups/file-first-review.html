@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Impact Tree: file-first review mockup</title>
+<style>
+  :root {
+    --bg: #1e1e1e; --side: #252526; --act: #333333; --title: #3c3c3c; --border: #3c3c3c;
+    --fg: #cccccc; --dim: #8b8b8b; --faint: #6a6a6a; --hover: #2a2d2e; --sel: #04395e; --focus: #007fd4;
+    --red: #f14c4c; --amber: #cca700; --green: #89d185; --blue: #3794ff; --purple: #b180d7;
+    --add-bg: rgba(155,185,85,.18); --del-bg: rgba(255,80,80,.18); --add-gut: rgba(155,185,85,.45); --del-gut: rgba(255,80,80,.45);
+    --mono: Menlo, Monaco, "SF Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #111; color: var(--fg); font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .page-head { display: flex; align-items: center; gap: 16px; padding: 10px 16px; background: #181818; border-bottom: 1px solid #000; }
+  .page-head h1 { font-size: 14px; margin: 0; font-weight: 600; }
+  .page-head .src { color: var(--dim); font-size: 12px; }
+  .tabs { display: flex; gap: 4px; margin-left: auto; }
+  .tabs button, .toggle { background: #2d2d2d; color: var(--fg); border: 1px solid #444; padding: 4px 10px; border-radius: 3px; cursor: pointer; font: inherit; font-size: 12px; }
+  .tabs button.on { background: #0e639c; border-color: #1177bb; }
+  .toggle.on { border-color: var(--focus); }
+  .screen { display: none; } .screen.on { display: block; }
+
+  /* window chrome */
+  .window { display: grid; grid-template-columns: 48px 380px 1fr; grid-template-rows: 1fr 22px; height: calc(100vh - 47px); min-height: 640px; }
+  .activity { background: var(--act); display: flex; flex-direction: column; align-items: center; padding-top: 8px; gap: 18px; color: var(--faint); font-size: 20px; }
+  .activity .on { color: #fff; border-left: 2px solid #fff; width: 100%; text-align: center; }
+  .sidebar { background: var(--side); display: flex; flex-direction: column; min-height: 0; border-right: 1px solid #1a1a1a; }
+  .pane-title { display: flex; align-items: center; height: 35px; padding: 0 8px 0 20px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #bbb; }
+  .pane-title .actions { margin-left: auto; display: flex; gap: 2px; }
+  .icon-btn { background: none; border: 0; color: var(--fg); width: 24px; height: 22px; border-radius: 4px; cursor: pointer; font-size: 13px; position: relative; }
+  .icon-btn:hover { background: rgba(90,93,94,.31); }
+  .icon-btn.on { background: rgba(90,93,94,.5); outline: 1px solid var(--focus); }
+  .section-head { display: flex; align-items: center; height: 22px; padding-left: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; border-top: 1px solid #3c3c3c; cursor: pointer; }
+  .section-head .chev { width: 16px; text-align: center; }
+  .tree-pane { flex: 1 1 60%; min-height: 0; display: flex; flex-direction: column; }
+  .tree-message { padding: 4px 12px 8px 20px; color: var(--fg); font-size: 12px; }
+  .tree-message .meter { height: 3px; background: #3a3a3a; border-radius: 2px; margin-top: 5px; overflow: hidden; }
+  .tree-message .meter span { display: block; height: 100%; background: var(--green); }
+  .tree { overflow-y: auto; flex: 1; outline: none; }
+  .row { display: flex; align-items: center; height: 22px; padding-right: 8px; cursor: pointer; white-space: nowrap; position: relative; }
+  .row:hover { background: var(--hover); }
+  .row.sel { background: var(--sel); outline: 1px solid var(--focus); outline-offset: -1px; }
+  .row .twist { width: 16px; flex: none; text-align: center; color: #c5c5c5; font-size: 10px; }
+  .row .cb { width: 14px; height: 14px; flex: none; margin-right: 6px; border: 1px solid #6b6b6b; border-radius: 3px; background: #313131; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; color: #fff; }
+  .row .cb.on { background: #0e639c; border-color: #0e639c; }
+  .row .cb.part::after { content: ""; width: 7px; height: 2px; background: #ccc; }
+  .row .ico { width: 16px; flex: none; margin-right: 6px; text-align: center; font-size: 12px; }
+  .row .label { flex: none; }
+  .row .desc { color: var(--dim); margin-left: 6px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; min-width: 0; flex: 0 1 auto; }
+  .row .right { margin-left: auto; padding-left: 8px; display: flex; gap: 6px; align-items: center; flex: none; }
+  .row.done .label { color: var(--dim); }
+  .badge { font-size: 11px; color: var(--dim); }
+  .status-letter { font-size: 11px; width: 12px; text-align: center; }
+  .st-modified { color: #e2c08d; } .st-added { color: #73c991; } .st-deleted { color: #c74e39; }
+  .lead { font-weight: 600; margin-right: 4px; flex: none; }
+  .lv0 { color: var(--red); } .lv1 { color: var(--amber); } .lv2 { color: var(--green); } .lv3 { color: var(--blue); } .lv4 { color: var(--faint); }
+  .chip { font-size: 10.5px; padding: 0 5px; border-radius: 8px; border: 1px solid #555; color: #bbb; line-height: 15px; }
+  .chip.risk { border-color: rgba(241,76,76,.6); color: #f48771; }
+  .chip.untested { border-color: rgba(204,167,0,.5); color: #d7ba7d; }
+  .future { outline: 1px dashed var(--purple); outline-offset: 1px; border-radius: 3px; color: var(--purple); }
+  .future-row { color: var(--purple) !important; }
+
+  .detail-pane { flex: 0 1 40%; min-height: 120px; overflow-y: auto; border-top: 1px solid #3c3c3c; }
+  .detail { padding: 6px 14px 14px 20px; font-size: 12.5px; }
+  .detail h3 { font-size: 13px; margin: 6px 0 2px; font-family: var(--mono); font-weight: 600; }
+  .detail .where { color: var(--dim); font-size: 12px; }
+  .detail .verdict { margin: 10px 0; padding: 7px 9px; border-left: 3px solid var(--dim); background: rgba(255,255,255,.04); }
+  .detail .verdict.lv0 { border-color: var(--red); color: var(--fg); } .detail .verdict.lv1 { border-color: var(--amber); color: var(--fg); }
+  .detail .verdict.lv2 { border-color: var(--green); color: var(--fg); } .detail .verdict.lv3 { border-color: var(--blue); color: var(--fg); }
+  .detail .verdict.lv4 { color: var(--fg); }
+  .detail h4 { font-size: 11px; text-transform: uppercase; color: var(--dim); margin: 12px 0 4px; letter-spacing: .04em; }
+  .sig { font-family: var(--mono); font-size: 11.5px; padding: 2px 6px; white-space: pre-wrap; word-break: break-all; }
+  .sig.old { background: var(--del-bg); } .sig.new { background: var(--add-bg); }
+  .detail table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  .detail td { padding: 2px 4px; vertical-align: top; }
+  .detail td.st { width: 18px; text-align: center; }
+  .detail a { color: #3794ff; text-decoration: none; cursor: pointer; }
+  .btn { background: #0e639c; color: #fff; border: 0; padding: 4px 10px; border-radius: 2px; font: inherit; font-size: 12px; cursor: pointer; margin-right: 6px; }
+  .btn.sec { background: #3a3d41; }
+  .kbd { font-family: var(--mono); font-size: 10.5px; border: 1px solid #555; border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; color: #bbb; }
+
+  /* editor */
+  .editor { background: var(--bg); display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .editor-tabs { display: flex; background: var(--side); height: 35px; }
+  .editor-tab { padding: 0 14px; display: flex; align-items: center; gap: 6px; background: var(--bg); border-top: 1px solid var(--focus); font-size: 12.5px; }
+  .editor-tab .dim { color: var(--dim); }
+  .crumbs { padding: 2px 16px; color: var(--dim); font-size: 12px; height: 22px; }
+  .code { flex: 1; overflow: auto; font: 12px/18px var(--mono); padding-bottom: 40px; }
+  .ln { display: flex; white-space: pre; }
+  .ln .g { width: 44px; flex: none; text-align: right; padding-right: 8px; color: #6e7681; user-select: none; }
+  .ln .m { width: 14px; flex: none; color: #6e7681; user-select: none; }
+  .ln .s { padding-right: 20px; }
+  .ln.add { background: var(--add-bg); } .ln.add .m { color: var(--green); }
+  .ln.del { background: var(--del-bg); } .ln.del .m { color: var(--red); }
+  .ln.focus .g { color: #c6c6c6; }
+  .ln { cursor: text; }
+  .ln.cursor { box-shadow: inset 0 1px #3a3a3a, inset 0 -1px #3a3a3a; }
+  .ln.cursor .g { color: #fff; }
+  .ln.cursor .s::before { content: ''; border-left: 2px solid #aeafad; margin-right: -2px; }
+  .code:focus { outline: none; }
+  .follow { margin-left: auto; margin-right: 8px; font-weight: 400; text-transform: none; color: var(--dim); }
+  .hunk-gap { color: #6e7681; padding: 2px 0 2px 66px; background: rgba(55,148,255,.06); font-size: 11px; }
+  .lens { font: 11.5px/18px -apple-system, BlinkMacSystemFont, sans-serif; color: #999; padding-left: 66px; white-space: nowrap; }
+  .lens a { color: #999; cursor: pointer; } .lens a:hover { color: var(--blue); text-decoration: underline; }
+  .lens .sep { margin: 0 6px; color: #555; }
+  .peek { margin: 2px 0 6px 60px; border-top: 2px solid var(--blue); border-bottom: 2px solid var(--blue); background: #1b2733; display: grid; grid-template-columns: 1fr 260px; font-family: -apple-system, sans-serif; font-size: 12px; max-width: 980px; }
+  .peek-head { grid-column: 1 / 3; background: #1f3044; padding: 3px 10px; color: #ddd; display: flex; gap: 8px; }
+  .peek-head .dim { color: var(--dim); }
+  .peek-code { font: 12px/18px var(--mono); background: #1e1e1e; padding: 6px 0; min-height: 120px; }
+  .peek-code .hl { background: rgba(255, 213, 0, .15); }
+  .peek-list { background: #252526; border-left: 1px solid #333; max-height: 220px; overflow-y: auto; }
+  .peek-file { padding: 3px 8px; color: #ccc; font-weight: 600; }
+  .peek-item { padding: 2px 8px 2px 22px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .peek-item.on { background: var(--sel); }
+  .statusbar { grid-column: 1 / 4; background: #007acc; color: #fff; display: flex; align-items: center; gap: 14px; padding: 0 10px; font-size: 12px; }
+  .statusbar .r { margin-left: auto; display: flex; gap: 14px; }
+  .statusbar span { cursor: default; }
+
+  /* annotations */
+  .anno { display: none; position: absolute; z-index: 5; background: var(--purple); color: #111; font: 700 10px/16px sans-serif; width: 16px; height: 16px; border-radius: 50%; text-align: center; pointer-events: none; }
+  body.annotate .anno { display: inline-block; }
+  .notes { display: none; position: fixed; right: 14px; bottom: 34px; width: 430px; max-height: 60vh; overflow-y: auto; background: #2b2133; border: 1px solid var(--purple); border-radius: 6px; padding: 10px 14px; font-size: 12px; z-index: 10; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+  body.annotate .notes { display: block; }
+  .notes h4 { margin: 0 0 6px; color: #e0c8f5; }
+  .notes ol { padding-left: 18px; margin: 0; } .notes li { margin-bottom: 6px; }
+  .notes code { font-family: var(--mono); font-size: 11px; color: #e0c8f5; }
+
+  /* today + questions */
+  .doc { max-width: 1100px; margin: 0 auto; padding: 20px; }
+  .compare { display: grid; grid-template-columns: 420px 1fr; gap: 24px; }
+  .compare .sidebar { border: 1px solid #000; height: auto; max-height: calc(100vh - 120px); overflow-y: auto; }
+  .doc h2 { font-size: 16px; } .doc p, .doc li { color: #bbb; }
+  .doc .stat { font-size: 28px; font-weight: 600; color: var(--red); }
+  .q { background: #252526; border: 1px solid #3c3c3c; border-radius: 6px; padding: 12px 16px; margin-bottom: 12px; }
+  .q h3 { margin: 0 0 6px; font-size: 14px; }
+  .q .opt { margin: 4px 0 0 14px; color: #bbb; }
+  .q .rec { color: var(--green); } .q .alt { color: var(--dim); }
+</style>
+</head>
+<body>
+<div class="page-head">
+  <h1>Impact Tree: file-first review</h1>
+  <span class="src">Mockup, using real data: <span id="srcline"></span></span>
+  <button class="toggle" id="annoToggle" title="Number each piece and say which VS Code API draws it">Annotations</button>
+  <div class="tabs">
+    <button data-screen="proposed" class="on">Proposed</button>
+    <button data-screen="today">Today (same PR)</button>
+    <button data-screen="questions">Decisions</button>
+  </div>
+</div>
+
+<!-- ============================== PROPOSED ============================== -->
+<div class="screen on" id="screen-proposed">
+  <div class="window">
+    <div class="activity"><div>⎘</div><div>⌕</div><div>⑂</div><div class="on">⊶</div></div>
+    <div class="sidebar">
+      <div class="tree-pane">
+        <div class="pane-title" style="position:relative">
+          Impact Tree: Review
+          <span class="anno" style="left:4px;top:2px">1</span>
+          <div class="actions">
+            <button class="icon-btn" data-filter="attention" title="Show only what needs attention">⚠</button>
+            <button class="icon-btn" data-filter="unreviewed" title="Hide reviewed">◐</button>
+            <button class="icon-btn" id="nextBtn" title="Next unreviewed (⌥N)">↓</button>
+            <button class="icon-btn" title="Collapse all" id="collapseBtn">⊟</button>
+            <button class="icon-btn" title="Refresh">↻</button>
+          </div>
+        </div>
+        <div class="tree-message" id="treeMessage" style="position:relative"><span class="anno" style="left:2px;top:2px">2</span></div>
+        <div class="tree" id="tree" tabindex="0" style="position:relative"></div>
+      </div>
+      <div class="detail-pane" id="detailPane">
+        <div class="section-head" style="position:relative"><span class="chev">⌄</span>Details<span class="follow" id="followNote"></span><span class="anno" style="left:70px;top:3px">6</span></div>
+        <div class="detail" id="detail"></div>
+      </div>
+    </div>
+    <div class="editor">
+      <div class="editor-tabs"><div class="editor-tab" id="editorTab"></div></div>
+      <div class="crumbs" id="crumbs"></div>
+      <div class="code" id="code" tabindex="0" style="position:relative"></div>
+    </div>
+    <div class="statusbar" style="position:relative">
+      <span>⑂ docs/t8-readiness</span>
+      <div class="r">
+        <span id="sbProgress" title="Click: next unreviewed"></span>
+        <span class="anno" style="position:static">7</span>
+        <span id="sbCursor">Ln 1, Col 1</span><span>JavaScript</span>
+      </div>
+    </div>
+  </div>
+  <div class="notes" id="notes">
+    <h4>What each piece is, and the VS Code API behind it</h4>
+    <ol>
+      <li><b>One review view.</b> The <code>TreeView</code> from today. The Findings / Other / Deleted / No test / Files sections are gone; every changed file is one top-level row. The filters and "next" are <code>view/title</code> menu commands with toggled icons.</li>
+      <li><b>Summary line.</b> <code>TreeView.message</code> (the text above the tree), plus <code>TreeView.badge</code> on the activity icon for "left to review". It replaces the summary row and the Legend section.</li>
+      <li><b>File rows, worst first.</b> A file ranks by its worst change; files with nothing risky drop to the bottom. Its checkbox is derived: ticked when every counting row is ticked, which is exactly when the file is marked viewed on GitHub (proposal a). The <span class="future">dashed purple</span> pieces arrive with the review loop.</li>
+      <li><b>Change rows.</b> One per changed or deleted symbol, plus "Outside functions". The lead glyph is the <i>review</i> verdict, and the risk kind is a chip. Body-only edits don't lead with ⛔: their callers are expected to be unchanged (see Decisions, Q1).</li>
+      <li><b>Impact rows.</b> A change's callers (✓ updated at the call · △ changed elsewhere · ○ untouched) and its tests. Callers never have a checkbox: they don't count towards "viewed".</li>
+      <li><b>Detail panel.</b> A <code>WebviewView</code> under the tree that explains one change in sentences: the verdict, the signature before and after, callers (each opens the peek) and tests, with Mark reviewed / Next. It follows the tree selection <i>and</i> the cursor in the review diff (<code>window.onDidChangeTextEditorSelection</code> on the diff's right side), and the tree reveals the same row (<code>TreeView.reveal</code>). Click any line in the diff, or move with the arrow keys, to try it.</li>
+      <li><b>Status bar.</b> A <code>StatusBarItem</code> with what's left and how many rows need attention; clicking it runs "next unreviewed" (<span class="kbd">⌥N</span>, a contributed keybinding).</li>
+      <li><b>Diff CodeLens, attention only.</b> A <code>CodeLensProvider</code> on the review diff's right side, only on changes that need attention (⛔ or ?): verdict · Show callers (opens the peek) · Mark reviewed. On PR #15 that is 3 lenses, not 52; body-only edits get no lens, and the panel carries their details.</li>
+      <li><b>Callers peek.</b> <code>editor.action.peekLocations</code> with the call sites: the same peek widget as "Find references", so it needs no custom UI. Opened from a lens, a caller in the panel, a caller row in the tree, or the "Show callers" command (<span class="kbd">⇧⌥C</span>) on any changed function under the cursor.</li>
+    </ol>
+  </div>
+</div>
+
+<!-- ============================== TODAY ============================== -->
+<div class="screen" id="screen-today">
+  <div class="doc">
+    <div class="compare">
+      <div class="sidebar">
+        <div class="pane-title">Impact Tree: Changes by blast radius</div>
+        <div class="tree" id="todayTree"></div>
+      </div>
+      <div>
+        <h2>The same PR in today's tree</h2>
+        <p><span class="stat" id="staleStat"></span></p>
+        <p>The tree is laid out by analysis category (Findings, Other changes, Deleted, No test reaches, Files without a call graph, Legend), not by the path a reviewer takes. To review <code>src/github.js</code> you visit the Findings section, the Other changes section and its own file group, and its outside-functions row sits apart again.</p>
+        <p>Every body-only change whose callers did not change leads with ⛔ "call site(s) not updated". For a body-only edit that is the normal case, so the one real signature risk (<code>allHunks</code>: a new parameter that the caller in <code>diff.js:133</code> doesn't pass) looks the same as thirty routine edits.</p>
+        <p>The proposed tree keeps every one of these facts and still shows a count for each. It changes only the order they are grouped in and which ones lead.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================== QUESTIONS ============================== -->
+<div class="screen" id="screen-questions">
+  <div class="doc" id="questions"></div>
+</div>
+
+<script src="data.js"></script>
+<script>
+'use strict';
+const D = window.DATA;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const base = (p) => p.split('/').pop();
+const dir = (p) => p.split('/').slice(0, -1).join('/');
+$('srcline').textContent = `PR #${D.number} (${D.title}) against ${D.base.ref} @ ${D.base.sha}`;
+
+// ---------- verdicts: what a change row leads with ----------
+// Level 0 breaks callers, 1 risk unknown, 2 risk handled, 3 behaviour reaches callers, 4 quiet.
+const VERDICT_WORDS = ['Needs attention', 'Risk unknown', 'Risk handled', 'Reaches callers', 'Quiet'];
+const REASON = { 'referenced-as-value': 'passed around as a value, so the call sites cannot be followed' };
+function verdictOf(c) {
+  const risky = c.kinds.filter((k) => k.id !== 'body');
+  const n = c.callers.length;
+  const untouched = c.callers.filter((x) => x.callState !== 'updated-at-call').length;
+  if (risky.length && c.staleCallers > 0) {
+    return { lv: 0, glyph: '⛔', text: `${c.staleCallers} of ${n} caller${n === 1 ? '' : 's'} not updated`,
+      sentence: `The ${risky.map((k) => k.label).join(', ')}, and ${c.staleCallers} of ${n} caller${n === 1 ? '' : 's'} ${c.staleCallers === 1 ? 'was' : 'were'} not changed on the call line. Check that ${c.staleCallers === 1 ? 'it still works' : 'they still work'}.` };
+  }
+  if (risky.length && (!c.callersComplete || c.callerState === 'unknown')) {
+    return { lv: 1, glyph: '?', text: 'callers unknown',
+      sentence: `The ${risky.map((k) => k.label).join(', ')}, but its callers could not be found: it is ${REASON[c.incompleteReason] || c.incompleteReason || 'not resolvable'}. Check its users by hand.` };
+  }
+  if (risky.length) {
+    return { lv: 2, glyph: '✓', text: n ? 'all callers updated' : 'no callers',
+      sentence: `The ${risky.map((k) => k.label).join(', ')}. ${n ? 'Every caller was updated on the call line.' : 'Nothing calls it in the code searched.'}` };
+  }
+  if (c.callerState === 'unknown' || !c.callersComplete && n === 0) {
+    return { lv: 3, glyph: '?', text: 'callers unknown', quiet: true,
+      sentence: `Only the body changed. Its callers could not be found: it is ${REASON[c.incompleteReason] || c.incompleteReason || 'not resolvable'}.` };
+  }
+  if (n) {
+    return { lv: 3, glyph: '●', text: `reaches ${n} caller${n === 1 ? '' : 's'}`,
+      sentence: `Only the body changed: the signature is the same, so callers still compile. ${untouched} of ${n} caller${n === 1 ? '' : 's'} ${untouched === 1 ? 'is' : 'are'} unchanged, which is expected; check they still get the behaviour they rely on.${c.callersComplete ? '' : ' More callers may be missing.'}` };
+  }
+  return { lv: 4, glyph: '∅', text: 'no callers', sentence: 'Only the body changed, and nothing calls it in the code searched.' };
+}
+
+// ---------- row model ----------
+const rows = new Map(); // id -> row
+const files = [];
+function addRow(r) { rows.set(r.id, r); return r; }
+const allPaths = Object.keys(D.fileStatus);
+for (const p of allPaths) {
+  const changes = D.changes.filter((c) => c.relPath === p).map((c) => {
+    const v = verdictOf(c);
+    return addRow({ id: `c:${p}:${c.label}`, type: 'change', file: p, c, v, counts: true });
+  });
+  const kids = [...changes];
+  for (const d of D.deleted.filter((x) => x.relPath === p)) {
+    kids.push(addRow({ id: `d:${p}:${d.label}`, type: 'deleted', file: p, d, counts: true,
+      v: { lv: 1, glyph: '−', text: 'deleted', sentence: 'This symbol was removed. Nothing in the analysed code still calls it, but check dynamic users.' } }));
+  }
+  for (const o of D.outside.filter((x) => x.relPath === p)) {
+    kids.push(addRow({ id: `o:${p}`, type: 'outside', file: p, o, counts: true,
+      v: { lv: 4, glyph: '≡', text: rangesText(o.ranges), sentence: 'Changed lines that are not inside any function: imports, constants, type comments and top-level statements. They have no callers, so read them in the diff.' } }));
+  }
+  kids.sort((a, b) => a.v.lv - b.v.lv || (a.type === 'outside') - (b.type === 'outside') || lineOf(a) - lineOf(b));
+  const noGraph = kids.length === 0;
+  const lv = noGraph ? 5 : Math.min(...kids.map((k) => k.v.lv));
+  const file = addRow({ id: `f:${p}`, type: 'file', file: p, kids, lv, noGraph, counts: noGraph,
+    attention: kids.filter((k) => k.v.lv <= 1).length, untested: changes.filter((k) => k.c.testState === 'uncovered').length });
+  files.push(file);
+}
+files.sort((a, b) => a.lv - b.lv || b.attention - a.attention || b.kids.length - a.kids.length || a.file.localeCompare(b.file));
+function lineOf(r) { return r.c ? r.c.startLine : r.d ? (r.d.startLine || 0) : r.o ? r.o.ranges[0][0] : 0; }
+function rangesText(ranges) {
+  const parts = ranges.map(([lo, hi]) => (lo === hi ? `${lo}` : `${lo}–${hi}`));
+  return `line${parts.length === 1 && !parts[0].includes('–') ? '' : 's'} ${parts.join(', ')}`;
+}
+const counting = () => [...rows.values()].filter((r) => r.counts);
+
+// ---------- state ----------
+const state = {
+  filter: 'all', selected: null, expanded: new Set(), checked: new Set(), peekOpen: false, peekIdx: 0,
+  cursor: null, // head line of the caret in the review diff; null until the reviewer clicks in it
+};
+// start with the worst file open, so the first thing on screen is the thing to look at
+state.expanded.add(files[0].id);
+state.selected = files[0].kids[0].id;
+
+const isChecked = (r) => (r.type === 'file' && !r.noGraph ? r.kids.every((k) => state.checked.has(k.id)) : state.checked.has(r.id));
+const isPartial = (r) => r.type === 'file' && !r.noGraph && !isChecked(r) && r.kids.some((k) => state.checked.has(k.id));
+function toggleCheck(r) {
+  const on = !isChecked(r);
+  const targets = r.type === 'file' && !r.noGraph ? r.kids : [r];
+  for (const t of targets) (on ? state.checked.add(t.id) : state.checked.delete(t.id));
+}
+function visibleKids(f) {
+  return f.kids.filter((k) => (state.filter !== 'attention' || k.v.lv <= 1) && (state.filter !== 'unreviewed' || !state.checked.has(k.id)));
+}
+function fileVisible(f) {
+  if (state.filter === 'attention') return f.attention > 0;
+  if (state.filter === 'unreviewed') return !isChecked(f);
+  return true;
+}
+
+// ---------- tree rendering ----------
+const flat = []; // rows in display order, for keyboard navigation
+function render() {
+  renderMessage();
+  renderTree();
+  renderDetail();
+  renderEditor();
+  renderStatus();
+}
+function renderMessage() {
+  const all = counting();
+  const done = all.filter((r) => state.checked.has(r.id)).length;
+  const attention = all.filter((r) => r.v && r.v.lv <= 1 && !state.checked.has(r.id)).length;
+  const filt = { all: '', attention: ' · <b>filter: needs attention</b>', unreviewed: ' · <b>filter: unreviewed</b>' }[state.filter];
+  $('treeMessage').innerHTML = `<span class="anno" style="left:2px;top:2px">2</span>PR #${D.number} against ${esc(D.base.ref)} · <span class="lv0">${attention} need attention</span> · ${all.length - done} of ${all.length} left${filt}
+    ${D.warnings.length ? `<div style="color:var(--amber);margin-top:3px" title="${esc(D.warnings.join('\n'))}">⚠ ${D.warnings.length} analysis warning — hover</div>` : ''}
+    <div class="meter"><span style="width:${(100 * done / all.length).toFixed(1)}%"></span></div>`;
+  document.querySelectorAll('[data-filter]').forEach((b) => b.classList.toggle('on', b.dataset.filter === state.filter));
+}
+function cbHtml(r) {
+  if (!r.counts && r.type !== 'file') return '';
+  return `<span class="cb ${isChecked(r) ? 'on' : ''} ${isPartial(r) ? 'part' : ''}" data-cb="${esc(r.id)}">${isChecked(r) ? '✓' : ''}</span>`;
+}
+function rowHtml(r, depth, opts = {}) {
+  flat.push(r);
+  const pad = 4 + depth * 14;
+  const expandable = opts.expandable;
+  const open = state.expanded.has(r.id);
+  const twist = expandable ? (open ? '⌄' : '›') : '';
+  return `<div class="row ${state.selected === r.id ? 'sel' : ''} ${opts.done ? 'done' : ''}" data-id="${esc(r.id)}" style="padding-left:${pad}px">
+    <span class="twist">${twist}</span>${opts.cb ?? ''}${opts.body}</div>`;
+}
+function renderTree() {
+  flat.length = 0;
+  let h = '';
+  let annoFile = false;
+  let annoChange = false;
+  for (const f of files) {
+    if (!fileVisible(f)) continue;
+    const st = D.fileStatus[f.file] || 'modified';
+    const worst = f.noGraph ? null : f.kids.reduce((w, k) => (k.v.lv < w.v.lv ? k : w));
+    const done = f.kids.filter((k) => state.checked.has(k.id)).length;
+    const attentionLeft = f.kids.filter((k) => k.v.lv <= 1 && !state.checked.has(k.id)).length;
+    const right = f.noGraph
+      ? `<span class="badge">no call graph</span>`
+      : `${attentionLeft ? `<span class="lv${worst.v.lv} lead" title="${attentionLeft} unreviewed change(s) need attention">${worst.v.glyph} ${attentionLeft}</span>` : ''}
+         <span class="badge">${done}/${f.kids.length}</span>
+         ${isChecked(f) ? '<span class="future" title="Synced to GitHub as viewed (review loop)">👁 viewed</span>' : ''}
+         <span class="future" title="Review threads on this file (review loop)" style="display:${f.file === 'src/engine/diff.js' ? 'inline' : 'none'}">💬 1</span>`;
+    const body = `<span class="ico" style="color:#519aba">${f.file.endsWith('.md') ? 'ⓜ' : f.file.endsWith('.json') ? '{}' : 'JS'}</span>
+      <span class="label">${esc(base(f.file))}</span><span class="desc">${esc(dir(f.file))}</span>
+      <span class="right">${right}<span class="status-letter st-${st}">${st[0].toUpperCase()}</span></span>`;
+    h += rowHtml(f, 0, { expandable: !f.noGraph, cb: cbHtml(f), body, done: isChecked(f) });
+    if (!annoFile) { h += '<span class="anno" style="position:absolute;left:2px;margin-top:-20px">3</span>'; annoFile = true; }
+    if (f.noGraph || !state.expanded.has(f.id)) continue;
+    for (const k of visibleKids(f)) {
+      h += changeRowHtml(k);
+      if (!annoChange) { h += '<span class="anno" style="position:absolute;left:18px;margin-top:-20px">4</span>'; annoChange = true; }
+      if (k.type === 'change' && state.expanded.has(k.id)) h += impactRowsHtml(k);
+    }
+  }
+  if (!flat.length) h = '<div style="padding:10px 20px;color:var(--dim)">Nothing matches this filter. Everything that needs attention is reviewed.</div>';
+  $('tree').innerHTML = h;
+}
+function changeRowHtml(k) {
+  const v = k.v;
+  let label;
+  let chips = '';
+  let icon = 'ƒ';
+  if (k.type === 'change') {
+    const parts = k.c.label.split('.');
+    label = `${esc(parts.pop())}${parts.length ? `<span class="desc" style="margin-left:4px">in ${esc(parts.join('.'))}</span>` : ''}`;
+    chips = k.c.kinds.filter((x) => x.id !== 'body').map((x) => `<span class="chip risk">${esc(x.short)}</span>`).join('');
+    if (k.c.testState === 'uncovered') chips += '<span class="chip untested" title="No test within 2 caller levels">no test</span>';
+  } else if (k.type === 'deleted') {
+    label = `<s>${esc(k.d.label.split('.').pop())}</s>`;
+    icon = 'ƒ';
+  } else {
+    label = 'Outside functions';
+    icon = '≡';
+  }
+  const body = `<span class="ico" style="color:#b180d7">${icon}</span><span class="label">${label}</span>
+    <span class="desc"><span class="lv${v.lv}">${v.glyph}</span> ${esc(v.text)}</span>
+    <span class="right">${chips}${k.id === `c:src/engine/diff.js:allHunks` ? '<span class="future" title="Your pending comment (review loop)">💬 1</span>' : ''}</span>`;
+  return rowHtml(k, 1, { expandable: k.type === 'change' && (k.c.callers.length > 0 || k.c.tests.length > 0 || !k.c.callersComplete), cb: cbHtml(k), body, done: state.checked.has(k.id) });
+}
+const CALL = { 'updated-at-call': ['✓', 'lv2', 'updated at the call'], 'changed-elsewhere': ['△', 'lv1', 'changed, but not at the call'], unchanged: ['○', 'lv4', 'not changed'] };
+function impactRowsHtml(k) {
+  let h = '';
+  for (const [i, x] of k.c.callers.entries()) {
+    const [g, cls, words] = CALL[x.callState] || ['?', 'lv1', 'unknown'];
+    const r = addRow({ id: `${k.id}>caller:${i}`, type: 'caller', parent: k, x });
+    h += rowHtml(r, 2, { body: `<span class="ico ${cls}" title="${words}">${g}</span>
+      <span class="label">${x.test ? '🧪 ' : ''}${esc(x.label)}</span><span class="desc">${esc(base(x.relPath))}:${x.siteLine}</span>` });
+  }
+  if (!k.c.callersComplete) {
+    const r = addRow({ id: `${k.id}>more`, type: 'note', parent: k });
+    h += rowHtml(r, 2, { body: `<span class="ico lv1">⚠</span><span class="label">${k.c.callers.length ? 'More callers may be missing' : 'Callers could not be found'}</span><span class="desc">${esc(k.c.incompleteReason || '')}</span>` });
+  }
+  const testsRow = addRow({ id: `${k.id}>tests`, type: 'note', parent: k });
+  const t = k.c.testState === 'covered' ? `<span class="ico lv2">🧪</span><span class="label">Tested by ${esc(k.c.tests.join(', '))}</span>`
+    : k.c.testState === 'uncovered' ? '<span class="ico lv1">🧪</span><span class="label">No test within 2 caller levels</span>'
+      : '<span class="ico lv4">🧪</span><span class="label">Test reach unknown</span>';
+  h += rowHtml(testsRow, 2, { body: t });
+  return h;
+}
+
+// ---------- detail panel ----------
+function selectedRow() { return rows.get(state.selected) || null; }
+function ownerOf(r) { return r && (r.parent || r); }
+function renderDetail() {
+  const r = ownerOf(selectedRow());
+  if (!r) { $('detail').innerHTML = '<p class="where">Select a row.</p>'; return; }
+  if (r.type === 'file') {
+    const left = r.kids.filter((k) => !state.checked.has(k.id)).length;
+    $('detail').innerHTML = `<h3>${esc(base(r.file))}</h3><div class="where">${esc(r.file)} · ${esc(D.fileStatus[r.file])}</div>
+      <div class="verdict ${r.noGraph ? 'lv4' : `lv${r.lv}`}">${r.noGraph
+        ? 'No call graph for this file (tests, config, docs). Read the diff and tick the file.'
+        : `${r.kids.length} change${r.kids.length === 1 ? '' : 's'}, ${r.attention} need${r.attention === 1 ? 's' : ''} attention, ${left} left to review. When all are ticked the file is marked viewed on GitHub.`}</div>
+      <button class="btn" data-act="tick">${isChecked(r) ? 'Untick file' : 'Mark file reviewed'}</button><button class="btn sec" data-act="next">Next unreviewed <span class="kbd">⌥N</span></button>`;
+    return;
+  }
+  const v = r.v;
+  let h = '';
+  if (r.type === 'change') {
+    const c = r.c;
+    h += `<h3>${esc(c.label)}</h3><div class="where">${esc(c.relPath)}:${c.startLine}–${c.endLine}</div>`;
+    h += `<div class="verdict lv${v.lv}"><b>${VERDICT_WORDS[v.lv]}.</b> ${esc(v.sentence)}</div>`;
+    if (c.baseSig !== c.headSig) {
+      h += `<h4>Signature</h4><div class="sig old">− ${esc(c.baseSig)}</div><div class="sig new">+ ${esc(c.headSig)}</div>`;
+    }
+    if (c.throwsAdded.length) h += `<h4>New throw</h4>${c.throwsAdded.map((t) => `<div class="sig new">+ throw ${esc(t)}</div>`).join('')}`;
+    if (c.callers.length) {
+      h += `<h4>Callers (${c.callers.length}) <a data-peek="0" style="text-transform:none;font-weight:400;margin-left:6px">Show callers <span class="kbd">⇧⌥C</span></a></h4><table>${c.callers.map((x, i) => {
+        const [g, cls, words] = CALL[x.callState] || ['?', 'lv1', 'unknown'];
+        return `<tr><td class="st ${cls}" title="${words}">${g}</td><td><a data-peek="${i}">${x.test ? '🧪 ' : ''}${esc(x.label)}</a></td><td class="where">${esc(x.relPath)}:${x.siteLine}</td></tr>`;
+      }).join('')}</table>`;
+    }
+    h += `<h4>Tests</h4><div>${c.testState === 'covered' ? `🧪 ${esc(c.tests.join(', '))}` : c.testState === 'uncovered' ? '<span class="lv1">No test within 2 caller levels.</span>' : 'Test reach unknown.'}</div>`;
+    h += `<h4 class="future-row">Threads <span class="future" style="font-weight:400;text-transform:none">review loop</span></h4><div class="future-row" style="font-size:12px">${r.id === 'c:src/engine/diff.js:allHunks'
+      ? '💬 <b>You</b> (pending): "hunks() doesn\'t pass deletionsOut — intended?"' : 'No threads on this symbol.'}</div>`;
+  } else if (r.type === 'outside') {
+    h += `<h3>Outside functions</h3><div class="where">${esc(r.file)} · ${esc(v.text)}</div><div class="verdict lv4">${esc(v.sentence)}</div>`;
+  } else if (r.type === 'deleted') {
+    h += `<h3>${esc(r.d.label)}</h3><div class="where">${esc(r.file)} · deleted</div><div class="verdict lv1">${esc(v.sentence)}</div>`;
+  }
+  h += `<div style="margin-top:12px"><button class="btn" data-act="tick">${state.checked.has(r.id) ? 'Untick' : 'Mark reviewed'}</button><button class="btn sec" data-act="next">Next unreviewed <span class="kbd">⌥N</span></button></div>`;
+  $('detail').innerHTML = h;
+}
+
+// ---------- editor ----------
+// The review diff shows every hunk of the selected row's file. Selecting a row in the tree
+// scrolls to it; moving the caret in the diff selects the row under it instead.
+let editorFile = null;
+function renderEditor() {
+  const r = ownerOf(selectedRow());
+  const file = r ? r.file : files[0].file;
+  if (file !== editorFile) { editorFile = file; state.cursor = null; }
+  const atCursor = state.cursor != null ? rowAtLine(file, state.cursor) : null;
+  $('editorTab').innerHTML = `<span>${esc(base(file))}</span><span class="dim">(${esc(D.base.ref)} ↔ PR #${D.number})</span>`;
+  $('crumbs').textContent = `${file.split('/').join(' › ')}${r && r.c ? ` › ${r.c.label.split('.').join(' › ')}` : ''}`;
+  let lo = -Infinity; let hi = -Infinity;
+  if (r && r.type === 'change') { lo = r.c.startLine; hi = r.c.endLine; }
+  // lenses only where the reviewer must act: ⛔ and ?
+  const fileRow = rows.get(`f:${file}`);
+  const lensAt = new Map();
+  for (const k of (fileRow ? fileRow.kids : [])) if (k.type === 'change' && k.v.lv <= 1) lensAt.set(k.c.startLine, k);
+  let h = '<span class="anno" style="right:12px;top:6px">8</span>';
+  let prevEnd = null;
+  for (const hk of D.diffs[file] || []) {
+    const first = hk.lines.find((l) => l.n != null);
+    h += `<div class="hunk-gap">${prevEnd ? `⋯ ${first ? first.n - prevEnd - 1 : ''} unchanged lines` : ''} ${esc(hk.header.replace(/^@@[^@]*@@/, '').trim())}</div>`;
+    let lastHead = first ? first.n : 1;
+    for (const l of hk.lines) {
+      if (l.t !== '-' && lensAt.has(l.n)) h += lensHtml(lensAt.get(l.n));
+      // a deleted line has no head line number; it belongs to the head line just before it
+      const at = l.n ?? lastHead;
+      const focus = l.n != null && l.n >= lo && l.n <= hi;
+      const caret = state.cursor != null && l.n === state.cursor;
+      h += `<div class="ln ${l.t === '+' ? 'add' : l.t === '-' ? 'del' : ''} ${focus ? 'focus' : ''} ${caret ? 'cursor' : ''}" data-at="${at}"><span class="g">${l.n ?? ''}</span><span class="m">${l.t === ' ' ? '' : l.t}</span><span class="s">${esc(l.s)}</span></div>`;
+      if (l.t !== '-' && state.peekOpen && r && r.type === 'change' && l.n === r.c.startLine) h += peekHtml(r);
+      if (l.n != null) { prevEnd = l.n; lastHead = l.n; }
+    }
+  }
+  $('code').innerHTML = h;
+  $('sbCursor').textContent = `Ln ${state.cursor ?? 1}, Col 1`;
+  $('followNote').textContent = atCursor ? `at cursor, line ${state.cursor}` : 'selected in tree';
+  if (renderEditor.scrollTo !== state.selected) {
+    renderEditor.scrollTo = state.selected;
+    const target = $('code').querySelector('.lens.cur') || $('code').querySelector('.ln.focus');
+    if (target) { target.scrollIntoView({ block: 'start' }); $('code').scrollTop -= 40; } else $('code').scrollTop = 0;
+  }
+}
+// The row a head line belongs to: the innermost changed function around it, else the file's
+// outside-functions row if the line is one of its, else the file itself.
+function rowAtLine(file, n) {
+  const f = rows.get(`f:${file}`);
+  if (!f || f.noGraph) return f;
+  const around = f.kids.filter((k) => k.type === 'change' && n >= k.c.startLine && n <= k.c.endLine)
+    .sort((a, b) => (a.c.endLine - a.c.startLine) - (b.c.endLine - b.c.startLine));
+  if (around.length) return around[0];
+  return f.kids.find((k) => k.type === 'outside' && k.o.ranges.some(([a, b]) => n >= a && n <= b)) || f;
+}
+// Caret moved in the diff: select the row under it and reveal it in the tree, without
+// scrolling the diff.
+function moveCursor(n) {
+  state.cursor = n;
+  const r = rowAtLine(editorFile, n);
+  if (r && ownerOf(selectedRow()) !== r) {
+    state.selected = r.id; state.peekOpen = false; state.peekIdx = 0;
+    if (r.type !== 'file') state.expanded.add(`f:${r.file}`);
+    renderEditor.scrollTo = r.id;
+  }
+  const top = $('code').scrollTop;
+  render();
+  $('code').scrollTop = top;
+  const sel = $('tree').querySelector('.row.sel');
+  if (sel) sel.scrollIntoView({ block: 'nearest' });
+}
+function lensHtml(k) {
+  const v = k.v;
+  const c = k.c;
+  const cur = ownerOf(selectedRow()) === k;
+  return `<div class="lens ${cur ? 'cur' : ''}"><span class="lv${v.lv}">${v.glyph} ${esc(v.text)}</span><span class="sep">|</span>`
+    + `${c.callers.length ? `<a data-lens-peek="${esc(k.id)}">Show callers</a><span class="sep">|</span>` : ''}`
+    + `<a data-lens-tick="${esc(k.id)}">${state.checked.has(k.id) ? '☑ Reviewed' : '☐ Mark reviewed'}</a></div>`;
+}
+function peekHtml(k) {
+  const cs = k.c.callers;
+  if (!cs.length) return '';
+  const i = Math.min(state.peekIdx, cs.length - 1);
+  const x = cs[i];
+  const [g, cls, words] = CALL[x.callState] || ['?', 'lv1', 'unknown'];
+  const byFile = new Map();
+  cs.forEach((y, j) => { if (!byFile.has(y.relPath)) byFile.set(y.relPath, []); byFile.get(y.relPath).push([y, j]); });
+  return `<div class="peek" style="position:relative"><span class="anno" style="right:6px;top:-8px">9</span>
+    <div class="peek-head"><b>${esc(base(x.relPath))}</b><span class="dim">${esc(dir(x.relPath))}</span><span class="${cls}">${g} ${words}</span><span style="margin-left:auto" class="dim">Callers of ${esc(k.c.label)} — ${cs.length}</span></div>
+    <div class="peek-code">
+      <div class="ln"><span class="g">${x.line}</span><span class="m"></span><span class="s" style="color:var(--dim)">… ${esc(x.label)}</span></div>
+      <div class="ln hl"><span class="g">${x.siteLine}</span><span class="m"></span><span class="s">${esc(x.siteText)}</span></div>
+    </div>
+    <div class="peek-list">${[...byFile].map(([f, items]) => `<div class="peek-file">${esc(base(f))} <span class="dim" style="font-weight:400;color:var(--dim)">${items.length}</span></div>${items.map(([y, j]) => {
+      const [g2, c2] = CALL[y.callState] || ['?', 'lv1'];
+      return `<div class="peek-item ${j === i ? 'on' : ''}" data-peek="${j}"><span class="${c2}">${g2}</span> ${y.test ? '🧪 ' : ''}${esc(y.label)} <span style="color:var(--dim)">:${y.siteLine}</span></div>`;
+    }).join('')}`).join('')}</div></div>`;
+}
+
+function renderStatus() {
+  const all = counting();
+  const left = all.filter((r) => !state.checked.has(r.id)).length;
+  const attention = all.filter((r) => r.v && r.v.lv <= 1 && !state.checked.has(r.id)).length;
+  $('sbProgress').innerHTML = `⊶ ${left} left · ⛔ ${attention} · ⌥N next`;
+}
+
+// ---------- behaviour ----------
+function select(id) { state.selected = id; state.cursor = null; state.peekOpen = false; state.peekIdx = 0; render(); }
+function nextUnreviewed() {
+  for (const f of files) {
+    if (f.noGraph) { if (!state.checked.has(f.id)) return select(f.id); continue; }
+    const k = f.kids.find((x) => !state.checked.has(x.id));
+    if (k) { state.expanded.add(f.id); return select(k.id); }
+  }
+}
+$('tree').addEventListener('click', (e) => {
+  const cb = e.target.closest('[data-cb]');
+  const row = e.target.closest('.row');
+  if (!row) return;
+  const r = rows.get(row.dataset.id);
+  if (cb) { toggleCheck(r); render(); return; }
+  if (e.target.closest('.twist') || r.type === 'file' || state.selected === r.id) {
+    state.expanded.has(r.id) ? state.expanded.delete(r.id) : state.expanded.add(r.id);
+  }
+  if (r.type === 'caller') { state.selected = r.parent.id; state.cursor = null; state.peekOpen = true; state.peekIdx = Number(r.id.split(':').pop()); render(); return; }
+  select(r.id);
+});
+$('tree').addEventListener('keydown', (e) => {
+  const i = flat.findIndex((r) => r.id === state.selected);
+  if (e.key === 'ArrowDown' && flat[i + 1]) { e.preventDefault(); select(flat[i + 1].id); }
+  if (e.key === 'ArrowUp' && flat[i - 1]) { e.preventDefault(); select(flat[i - 1].id); }
+  if (e.key === 'ArrowRight') { state.expanded.add(state.selected); render(); }
+  if (e.key === 'ArrowLeft') { state.expanded.delete(state.selected); render(); }
+  if (e.key === ' ') { e.preventDefault(); toggleCheck(selectedRow()); render(); }
+});
+document.addEventListener('keydown', (e) => { if (e.altKey && (e.code === 'KeyN')) { e.preventDefault(); nextUnreviewed(); } });
+document.querySelectorAll('[data-filter]').forEach((b) => b.addEventListener('click', () => {
+  state.filter = state.filter === b.dataset.filter ? 'all' : b.dataset.filter; render();
+}));
+$('nextBtn').addEventListener('click', nextUnreviewed);
+$('sbProgress').addEventListener('click', nextUnreviewed);
+$('collapseBtn').addEventListener('click', () => { state.expanded.clear(); render(); });
+$('detail').addEventListener('click', (e) => {
+  const act = e.target.closest('[data-act]');
+  const peek = e.target.closest('[data-peek]');
+  const r = ownerOf(selectedRow());
+  if (act && act.dataset.act === 'tick') { toggleCheck(r); render(); }
+  if (act && act.dataset.act === 'next') { if (!state.checked.has(r.id)) toggleCheck(r); nextUnreviewed(); }
+  if (peek) { state.selected = r.id; state.peekOpen = true; state.peekIdx = Number(peek.dataset.peek); render(); }
+});
+$('code').addEventListener('click', (e) => {
+  const a = e.target.closest('[data-lens-peek],[data-lens-tick],[data-lens-select],[data-peek]');
+  if (!a) return;
+  if (a.dataset.lensPeek) { const same = state.selected === a.dataset.lensPeek && state.peekOpen; state.selected = a.dataset.lensPeek; state.peekOpen = !same; state.peekIdx = 0; render(); }
+  else if (a.dataset.lensTick) { toggleCheck(rows.get(a.dataset.lensTick)); render(); }
+  else if (a.dataset.lensSelect) select(a.dataset.lensSelect);
+  else if (a.dataset.peek) { state.peekIdx = Number(a.dataset.peek); render(); }
+});
+$('code').addEventListener('mousedown', (e) => {
+  const ln = e.target.closest('.ln[data-at]');
+  if (ln && !e.target.closest('.peek')) moveCursor(Number(ln.dataset.at));
+});
+$('code').addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  e.preventDefault();
+  const heads = [...new Set([...$('code').querySelectorAll('.ln[data-at]')].map((x) => Number(x.dataset.at)))];
+  const i = heads.indexOf(state.cursor ?? heads[0]);
+  const next = heads[Math.max(0, Math.min(heads.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))];
+  moveCursor(next);
+  const caret = $('code').querySelector('.ln.cursor');
+  if (caret) caret.scrollIntoView({ block: 'nearest' });
+});
+document.addEventListener('keydown', (e) => {
+  if (!(e.altKey && e.shiftKey && e.code === 'KeyC')) return;
+  const r = ownerOf(selectedRow());
+  if (r && r.type === 'change' && r.c.callers.length) { e.preventDefault(); state.peekOpen = !state.peekOpen; state.peekIdx = 0; render(); }
+});
+$('annoToggle').addEventListener('click', () => { document.body.classList.toggle('annotate'); $('annoToggle').classList.toggle('on'); });
+document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => {
+  document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('on', s.id === `screen-${b.dataset.screen}`));
+}));
+
+// ---------- today's layout, for comparison ----------
+function todayStatus(c) {
+  if (c.staleCallers > 0) return ['⛔', 'lv0', `${c.staleCallers} call site(s) not updated${c.callersComplete ? '' : ' — more callers may be missing'}`];
+  if (c.callerState === 'resolved') return c.callersComplete ? ['✓', 'lv2', 'all call sites updated'] : ['?', 'lv1', 'callers found so far are updated, but more may be missing'];
+  if (c.callerState === 'none') return ['∅', 'lv4', 'no callers found'];
+  return ['?', 'lv1', 'callers unknown'];
+}
+function renderToday() {
+  const findings = D.changes.filter((c) => c.kinds.some((k) => k.id !== 'body'));
+  const other = D.changes.filter((c) => !findings.includes(c) && c.isRoot);
+  const stale = D.changes.filter((c) => c.staleCallers > 0).length;
+  $('staleStat').innerHTML = `${stale} of ${D.changes.length} <span style="font-size:14px;color:#bbb;font-weight:400">changed symbols lead with ⛔, and ${D.changes.filter((c) => c.staleCallers > 0 && c.kinds.some((k) => k.id !== 'body')).length} of those changed a signature.</span>`;
+  const row = (depth, icon, label, desc, cls = '') => `<div class="row" style="padding-left:${4 + depth * 14}px"><span class="twist">${icon}</span><span class="label ${cls}">${label}</span><span class="desc">${desc}</span></div>`;
+  const sym = (c, depth) => { const [g, cls, t] = todayStatus(c); return row(depth, '›', esc(c.label), `<span class="${cls}">${g}</span> ${esc(t)}`); };
+  let h = row(0, '', `${D.changes.length} changed symbols  ·  ${D.changes.filter((c) => c.isRoot).length + D.outside.length} left to review`, `${findings.length} finding(s) · ${D.changes.reduce((n, c) => n + c.staleCallers, 0)} call site(s) not updated · checkpoint · ${esc(D.base.ref)}`);
+  h += row(0, '', `⚠ ${esc(D.warnings[0] || '')}`, '');
+  h += row(0, '⌄', `⚠ Findings  ${findings.length}`, 'signature, throw or deletion risk', 'b');
+  for (const c of findings) h += sym(c, 1);
+  h += row(0, '⌄', `✎ Other changes  ${other.length + D.outside.length}`, 'body-only edits · nested under their callee');
+  const byFile = new Map();
+  for (const c of other) { if (!byFile.has(c.relPath)) byFile.set(c.relPath, []); byFile.get(c.relPath).push(c); }
+  for (const o of D.outside) { if (!byFile.has(o.relPath)) byFile.set(o.relPath, []); byFile.get(o.relPath).push({ outside: o }); }
+  for (const [f, cs] of byFile) {
+    if (cs.length === 1 && !cs[0].outside) { h += sym(cs[0], 1); continue; }
+    h += row(1, '⌄', esc(base(f)), '');
+    for (const c of cs) h += c.outside ? row(2, '', 'Outside functions', rangesText(c.outside.ranges)) : sym(c, 2);
+  }
+  h += row(0, '›', `🗑 Deleted  ${D.deleted.length}`, '');
+  h += row(0, '›', `🧪 No test reaches  ${D.changes.filter((c) => c.testState === 'uncovered').length}`, 'no test within 2 caller level(s)');
+  h += row(0, '›', `🗂 Files without a call graph  ${D.otherFiles.length}`, 'migrations, config, docs');
+  h += row(0, '›', 'Legend', '');
+  $('todayTree').innerHTML = h;
+}
+
+// ---------- questions ----------
+$('questions').innerHTML = `
+<h2>Decisions for the file-first review (2026-10-04)</h2>
+<p>All six questions are settled, and the Proposed tab shows each <span class="rec">decision</span>. The alternative that was considered is listed under it.</p>
+${[
+  ['Q1. Reserve ⛔ for risky changes?',
+    'Today ⛔ means "a caller was not changed on the call line", whatever kind the change is. For a body-only edit that is the expected state, so ⛔ fires on 30 of 52 rows. Decided: ⛔ only when a signature, throw or deletion risk meets a caller that was not updated. A body-only change with callers shows "● reaches N callers" in neutral blue. Every count stays visible; only the lead glyph and the ranking change.',
+    ['<span class="rec">decided:</span> yes, ⛔ needs a risk kind', '<span class="alt">considered:</span> keep ⛔ for any untouched caller and rank by kind instead']],
+  ['Q2. Should changes nest by declaration inside a file?',
+    'Today a method nests under its changed container ("Changed inside"), and a changed callee nests under its changed caller. Decided: a file\'s changes are one flat list, worst first, with the container as dim text ("api in createGitHub"). The tree is never deeper than file → change → impact.',
+    ['<span class="rec">decided:</span> flat with "in &lt;container&gt;"', '<span class="alt">considered:</span> keep declaration nesting']],
+  ['Q3. Where should files without a call graph go (tests, docs, package.json)?',
+    'Decided: in the same list as the other files, ranked last, each with one checkbox, so "viewed" works the same everywhere.',
+    ['<span class="rec">decided:</span> same list, ranked last', '<span class="alt">considered:</span> their own group at the bottom']],
+  ['Q4. Where should the detail panel live?',
+    'A webview pane under the tree in the same sidebar, so the selected row and its explanation are seen together. It also follows the cursor in the review diff, so a reviewer reading the diff gets the same details without a lens on every function. The bottom panel was the alternative: wider, but often hidden behind the terminal.',
+    ['<span class="rec">decided:</span> sidebar, under the tree, following both the tree selection and the cursor in the diff', '<span class="alt">considered:</span> bottom panel']],
+  ['Q5. What should the default filter be?',
+    'Decided: All, worst first, with only the worst file expanded. "Needs attention" and "Unreviewed" are toggles in the view title. The alternative opens on "Needs attention", which hides 22 of 24 files on this PR.',
+    ['<span class="rec">decided:</span> All, worst file expanded', '<span class="alt">considered:</span> open on Needs attention']],
+  ['Q6. Should the CodeLens appear on every changed symbol?',
+    `A lens on every changed symbol gave PR #${D.number} ${D.changes.length} lenses, most on body-only edits, each adding a line to the diff. Decided: a lens only where the reviewer must act (⛔ or ?), ${files.reduce((n, f) => n + f.kids.filter((k) => k.type === 'change' && k.v.lv <= 1).length, 0)} on this PR. Everything else about a change is in the detail panel, which follows the cursor, and the callers peek is a command (⇧⌥C) on any changed function.`,
+    ['<span class="rec">decided:</span> lens on ⛔ and ? only; details in the panel; peek as a command', '<span class="alt">considered:</span> a lens on every changed symbol']],
+].map(([h, p, opts]) => `<div class="q"><h3>${h}</h3><p>${p}</p>${opts.map((o) => `<div class="opt">• ${o}</div>`).join('')}</div>`).join('')}
+<p style="color:var(--dim)">Placeholders with a <span class="future">dashed purple outline</span> (💬 thread counts, 👁 viewed, the Threads section) show where the review loop plugs in. They are not part of this redesign.</p>`;
+
+render();
+renderToday();
+// #today, #questions and #annotate open the page in that state, for sharing and screenshots
+const hash = location.hash.slice(1).split(',');
+if (hash.includes('annotate')) $('annoToggle').click();
+for (const screen of ['today', 'questions']) if (hash.includes(screen)) document.querySelector(`[data-screen="${screen}"]`).click();
+$('tree').focus();
+</script>
+</body>
+</html>
