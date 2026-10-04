@@ -56,6 +56,15 @@ test('my own PRs go to "mine" and everything else to "others"', () => {
   assert.deepEqual(numbers(g.others), [2, 4]);
 });
 
+test('my own PR stays mine when my team is requested on it', () => {
+  const g = groupPullRequests([
+    pr(1, { author: 'me', requestedTeams: [{ id: 10, name: 'backend' }] }),
+    pr(2, { author: 'me', requestedTeams: [{ id: 5, name: 'engineering' }], requestedReviewers: ['someone-else'] }),
+  ], { login: 'me', teams: [team(10, 'backend', 5)] });
+  assert.deepEqual(numbers(g.mine), [1, 2]);
+  assert.deepEqual(requestedNumbers(g), []);
+});
+
 test('without a team list only direct requests are matched', () => {
   const g = groupPullRequests([
     pr(1, { requestedTeams: [{ id: 10, name: 'backend' }] }),
@@ -89,6 +98,6 @@ test('every PR lands in exactly one group, and each group keeps the input order'
   for (const list of [requestedNumbers(g), numbers(g.mine), numbers(g.others)]) {
     assert.deepEqual(list, [...list].sort((a, b) => a - b));
   }
-  // A requested PR outranks authorship.
-  assert.ok(requestedNumbers(g).includes(12) && !numbers(g.mine).includes(12));
+  // Authorship outranks a request: #20 is mine and requests my team.
+  assert.ok(numbers(g.mine).includes(20) && !requestedNumbers(g).includes(20));
 });
