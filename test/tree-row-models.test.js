@@ -24,22 +24,93 @@ const resultOf = (extra = {}) => ({
   mode: 'pr', base: { ref: 'origin/main', sha: '0123456789abcdef' }, changedFileCount: 1, testReachComputed: true, ...extra,
 });
 
-test('a change status leads with the worst fact about its callers', () => {
-  const status = (extra) => models.classifyChangeStatus({ staleCallers: 0, callerState: 'resolved', ...extra });
-  assert.deepEqual(status({ staleCallers: 2, staleChangedElsewhere: 1 }),
-    { token: '⛔', severity: 'stale', marker: '2 call site(s) not updated (1 edited nearby)' });
-  assert.match(status({ staleCallers: 1, callersComplete: false }).marker, /more callers may be missing$/);
-  assert.deepEqual(status({}), { token: '✓', severity: 'ok', marker: 'all call sites updated' });
-  assert.equal(status({ callersComplete: false }).severity, 'warn', 'an incomplete search is never ok');
-  assert.equal(status({ callerState: 'none' }).token, '∅');
-  assert.equal(status({ callerState: 'di' }).severity, 'muted');
-  for (const callerState of ['unknown', undefined, 'anything']) assert.equal(status({ callerState }).marker, 'callers unknown');
+// The kinds of src/engine/signature.js, so a new kind there is covered by this table.
+const { KIND } = require('../src/engine/signature');
+const BODY = { id: 'body' };
+const RISKY_KINDS = Object.values(KIND).filter((k) => k.id !== 'body');
+const callersOf = (n, callState = 'unchanged') => Array.from({ length: n }, (_, i) => ({ label: `c${i}`, callState }));
+const verdictOf = (extra) => models.classifyChangeVerdict({
+  staleCallers: 0, callerState: 'resolved', kinds: [BODY], callers: callersOf(2), ...extra,
 });
 
-test('the worst status of several rows comes from the worst row, the first on a tie', () => {
-  const rowOf = (extra) => ({ type: 'finding', label: 'x', finding: { staleCallers: 0, callerState: 'resolved', ...extra } });
-  assert.equal(models.classifyWorstChangeStatus([rowOf({}), rowOf({ callerState: 'unknown' }), rowOf({ callerState: 'none' })]).marker, 'callers unknown');
-  assert.equal(models.classifyWorstChangeStatus([rowOf({ callerState: 'none' }), rowOf({ callerState: 'di' })]).marker, 'no callers found');
+test('every risky kind and every caller outcome gets the level the review rules give it', () => {
+  const table = [
+    // [name, change, level, token, text]
+    ['risky, one stale of three', { staleCallers: 1, callers: callersOf(3) }, 0, '⛔', '1 of 3 callers not updated'],
+    ['risky, all stale', { staleCallers: 2, callers: callersOf(2) }, 0, '⛔', '2 of 2 callers not updated'],
+    ['risky, stale and the search incomplete', { staleCallers: 1, callersComplete: false, callers: callersOf(1) }, 0, '⛔', '1 of 1 caller not updated'],
+    ['risky, search incomplete', { callersComplete: false, callers: callersOf(1, 'updated-at-call') }, 1, '?', 'callers unknown'],
+    ['risky, callers unknown', { callerState: 'unknown', callers: [] }, 1, '?', 'callers unknown'],
+    ['risky, a state the result does not define', { callerState: undefined, callers: [] }, 1, '?', 'callers unknown'],
+    ['risky, DI-built', { callerState: 'di', callers: [] }, 1, '?', 'DI-constructed'],
+    ['risky, all callers updated', { callers: callersOf(2, 'updated-at-call') }, 2, '✓', 'all callers updated'],
+    ['risky, no callers', { callerState: 'none', callers: [] }, 2, '✓', 'no callers'],
+    ['risky, old result without callersComplete', { callers: callersOf(1, 'updated-at-call'), callersComplete: undefined }, 2, '✓', 'all callers updated'],
+  ];
+  for (const kind of RISKY_KINDS) {
+    for (const [name, extra, level, token, text] of table) {
+      const v = verdictOf({ kinds: [BODY, kind], ...extra });
+      assert.deepEqual([v.level, v.token, v.text], [level, token, text], `${kind.id}: ${name}`);
+      assert.ok(v.sentence.includes(kind.label), `${kind.id}: ${name}: the sentence names the kind`);
+    }
+  }
+});
+
+test('a body-only change is never needs-attention, however many callers were left alone', () => {
+  const table = [
+    ['callers, none touched', { staleCallers: 2, callers: callersOf(2) }, 3, '●', 'reaches 2 callers'],
+    ['one caller', { staleCallers: 1, callers: callersOf(1) }, 3, '●', 'reaches 1 caller'],
+    ['callers, search incomplete', { callersComplete: false, callers: callersOf(1) }, 3, '●', 'reaches 1 caller'],
+    ['callers unknown', { callerState: 'unknown', callers: [] }, 3, '?', 'callers unknown'],
+    ['incomplete and nothing found', { callerState: 'none', callersComplete: false, callers: [] }, 3, '?', 'callers unknown'],
+    ['a state the result does not define', { callerState: 'anything', callers: [] }, 3, '?', 'callers unknown'],
+    ['DI-built', { callerState: 'di', callers: [] }, 3, '?', 'DI-constructed'],
+    ['no callers', { callerState: 'none', callers: [] }, 4, '∅', 'no callers'],
+  ];
+  for (const [name, extra, level, token, text] of table) {
+    const v = verdictOf(extra);
+    assert.deepEqual([v.level, v.token, v.text], [level, token, text], name);
+  }
+});
+
+test('the sentence keeps the facts the row cannot: stale count, missing callers, why unknown', () => {
+  const kinds = [BODY, KIND.NEW_THROW];
+  assert.match(verdictOf({ kinds, staleCallers: 1, callers: callersOf(3) }).sentence, /1 of 3 callers? was not changed on the call line/);
+  assert.match(verdictOf({ kinds, staleCallers: 2, callers: callersOf(3) }).sentence, /2 of 3 callers were not changed/);
+  assert.match(verdictOf({ kinds, staleCallers: 1, callersComplete: false, callers: callersOf(1) }).sentence, /More callers may be missing/);
+  assert.doesNotMatch(verdictOf({ kinds, staleCallers: 1, callers: callersOf(1) }).sentence, /may be missing/);
+  assert.match(verdictOf({ callersComplete: false, callers: callersOf(2) }).sentence, /More callers may be missing/);
+  assert.doesNotMatch(verdictOf({ callers: callersOf(2) }).sentence, /may be missing/);
+  const unknown = (extra) => verdictOf({ kinds, callerState: 'unknown', callers: [], callersComplete: false, ...extra }).sentence;
+  assert.match(unknown({ callersIncompleteReason: 'referenced-as-value' }), /passed around as a value/);
+  assert.match(unknown({ callersIncompleteReason: 'query-failed' }), /the search reported "query-failed"/);
+  assert.match(unknown({ callersIncompleteReason: undefined }), /did not say why/);
+  assert.match(verdictOf({ kinds, callersComplete: false, callersIncompleteReason: 'referenced-as-value', callers: callersOf(1, 'updated-at-call') }).sentence,
+    /callers found so far are updated, but more may be missing: it is passed around as a value/);
+  assert.match(verdictOf({ kinds, callerState: 'di', callers: [] }).sentence, /DI container/);
+});
+
+test('deleted symbols and outside-functions rows have fixed verdicts', () => {
+  assert.deepEqual(models.classifyDeletedVerdict(), { level: 1, token: '−', text: 'deleted', sentence: models.classifyDeletedVerdict().sentence });
+  assert.match(models.classifyDeletedVerdict().sentence, /removed/);
+  const outside = models.classifyOutsideVerdict([[1, 4], [22, 22]]);
+  assert.deepEqual([outside.level, outside.token, outside.text], [4, '≡', 'lines 1–4, 22']);
+  assert.match(outside.sentence, /not inside any function/);
+  assert.equal(models.classifyOutsideVerdict([[9.5, 9.5]]).text, 'deleted before line 10');
+});
+
+test('the worst verdict of several rows is the lowest level, the first on a tie', () => {
+  const rowOf = (label, extra) => ({ type: 'finding', label, finding: change('a.ts', label, extra) });
+  const rows = [rowOf('a', {}), rowOf('b', { callerState: 'unknown', kinds: [RISKY_KINDS[0]] }), rowOf('c', { callerState: 'none', callers: [] }), rowOf('d', { callerState: 'unknown', kinds: [RISKY_KINDS[1]] })];
+  assert.deepEqual(models.classifyWorstRowVerdict(rows), models.classifyChangeVerdict(rows[1].finding));
+  assert.equal(models.classifyWorstRowVerdict([{ type: 'outside', ranges: [[1, 1]] }, rows[2]]).level, 4);
+  assert.equal(models.classifyWorstRowVerdict([{ type: 'outside', ranges: [[1, 1]] }, { type: 'deleted' }]).level, 1);
+});
+
+test('a row takes the verdict of what it holds, and a row without a symbol is not a change', () => {
+  assert.equal(models.classifyRowVerdict({ type: 'finding', finding: change('a.ts', 'f', { callerState: 'unknown', kinds: [RISKY_KINDS[0]] }) }).level, 1);
+  assert.equal(models.classifyRowVerdict({ type: 'outside', ranges: [[3, 3]] }).level, 4);
+  assert.equal(models.classifyRowVerdict({ type: 'deleted' }).level, 1);
 });
 
 test('a file status is looked up as given, then with forward slashes', () => {

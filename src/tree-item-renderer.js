@@ -9,7 +9,7 @@
 // invisible exactly when the row matters most.
 const path = require('path');
 const {
-  CALL_STATE, GROUP_TYPES, SEVERITY_RANK, classifyChangeStatus, classifyWorstChangeStatus, collectRowAndNested,
+  CALL_STATE, GROUP_TYPES, classifyChangeVerdict, classifyWorstRowVerdict, collectRowAndNested,
 } = require('./tree-row-models');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
@@ -77,8 +77,8 @@ function applyCheckbox(vscode, item, row, view) {
  * @param {TreeView} view
  */
 function renderChangeGroupItem(vscode, n, view) {
-  const st = classifyWorstChangeStatus(n.members);
-  const open = st.severity === 'stale' || st.severity === 'warn'
+  const st = classifyWorstRowVerdict(n.members);
+  const open = st.level <= 1
     ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
   const item = n.decorationUri ? new vscode.TreeItem(n.decorationUri, open) : new vscode.TreeItem(n.label, open);
   item.label = n.label;
@@ -89,7 +89,7 @@ function renderChangeGroupItem(vscode, n, view) {
     n.type === 'changeFile' ? `**${n.relPath}**` : `**Changed inside ${n.container}**`, '',
     `${count} body-only change${count === 1 ? '' : 's'}${n.type === 'changeFile' ? ' in this file' : ''}, worst first:`, '',
     ...n.members.slice(0, 12).map((/** @type {TreeRow} */ m) => (m.finding
-      ? `- ${classifyChangeStatus(m.finding).token} ${m.finding.label}`
+      ? `- ${classifyChangeVerdict(m.finding).token} ${m.finding.label}`
       : `- ${m.label}: ${m.desc}`)),
     ...(count > 12 ? [`- …and ${count - 12} more`] : []),
   ].join('\n'));
@@ -201,7 +201,7 @@ function renderPlainItem(vscode, item, n, view) {
  * The tooltip lines of a change row. The row is deliberately bare, so the tooltip must
  * carry the whole story.
  * @param {TreeRow} n
- * @param {ReturnType<typeof classifyChangeStatus>} st
+ * @param {import('./tree-row-models').Verdict} st
  * @param {string[]} kinds Short names of the non-body change kinds.
  * @param {string|null} reviewNote
  * @returns {string[]}
@@ -211,7 +211,7 @@ function buildChangeTooltipLines(n, st, kinds, reviewNote) {
   return [
     `${st.token} **${f.label}**`,
     '',
-    `${st.marker}`,
+    st.sentence,
     ...(n.reachReason ? ['', `_test reachability unknown: ${n.reachReason}_`] : []),
     ...(n.scopeNote ? ['', `_${n.scopeNote}_`] : []),
     ...(f.callersComplete === false && f.callersIncompleteReason ? ['', `_caller search incomplete: ${f.callersIncompleteReason}_`] : []),
@@ -244,17 +244,17 @@ function renderChangeItem(vscode, item, n, view) {
   const { rowDesc, rowIcon } = renderHelpers(vscode, view);
   const reviewNote = view.reviewNoteOf(n);
   const f = n.finding;
-  const st = classifyChangeStatus(f);
+  const st = classifyChangeVerdict(f);
   const kinds = f.kinds.filter((/** @type {any} */ k) => k.id !== 'body').map((/** @type {any} */ k) => k.short || k.label);
   // marker first, then the short kind list — both survive truncation
   const qual = n.ambiguous ? `  ·  ${f.component}` : '';
   item.description = rowDesc(st.token,
-    `${st.token}  ${st.marker}${qual}${kinds.length ? '  ·  ' + kinds.join(', ') : ''}`);
+    `${st.token}  ${st.text}${qual}${kinds.length ? '  ·  ' + kinds.join(', ') : ''}`);
   if (n.ambiguous) item.label = `${f.label}  ‹${f.component}›`;
   // The row starts collapsed, so a worse state among the changes inside it must show on
   // the row itself.
-  const insideSt = n.inside && n.inside.length ? classifyWorstChangeStatus(n.inside.flatMap(collectRowAndNested)) : null;
-  if (insideSt && SEVERITY_RANK[insideSt.severity] < SEVERITY_RANK[st.severity] && SEVERITY_RANK[insideSt.severity] <= 1) {
+  const insideSt = n.inside && n.inside.length ? classifyWorstRowVerdict(n.inside.flatMap(collectRowAndNested)) : null;
+  if (insideSt && insideSt.level < st.level && insideSt.level <= 1) {
     item.description = `${item.description}  ·  ${insideSt.token} inside`;
   }
   // In the unknown-test section the reason is the point of the row, so it leads in

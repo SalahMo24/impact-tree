@@ -17,10 +17,12 @@ const deepFreeze = (v) => {
 };
 const uriOf = (file, pos) => `uri:${file}${pos == null ? '' : `#${pos}`}`;
 
+// A kind other than `body`: only such a change can need attention.
+const RISKY = { kinds: [{ id: 'signature' }] };
 let at = 0;
 // A change row as buildChangeRows makes it.
 const row = (relPath, label, start, end, extra = {}) => {
-  const finding = { file: `/r/${relPath}`, relPath, label, namePos: at++, start, end, staleCallers: 0, callerState: 'resolved', ...extra };
+  const finding = { file: `/r/${relPath}`, relPath, label, namePos: at++, start, end, staleCallers: 0, callerState: 'resolved', kinds: [{ id: 'body' }], ...extra };
   return { type: 'finding', label, finding, file: finding.file, pos: finding.namePos, decorationUri: uriOf(finding.file, finding.namePos) };
 };
 const shape = (rows) => rows.map((n) => (n.type === 'changeFile'
@@ -56,15 +58,15 @@ test('rows go worst first, otherwise in input order, ranked by what they hold', 
   const ok = row('a.ts', 'ok', 0, 10);
   const muted = row('b.ts', 'muted', 0, 10, { callerState: 'none' });
   const holder = row('c.ts', 'holder', 0, 100);
-  const staleInside = row('c.ts', 'holder.stale', 10, 20, { staleCallers: 1 });
-  const unknown = row('d.ts', 'unknown', 0, 10, { callerState: 'unknown' });
+  const staleInside = row('c.ts', 'holder.stale', 10, 20, { staleCallers: 1, ...RISKY });
+  const unknown = row('d.ts', 'unknown', 0, 10, { callerState: 'unknown', ...RISKY });
   const { rows } = groupChangesByLocation(deepFreeze([muted, ok, unknown, holder, staleInside]), { layout: 'flat', result: {}, uriOf });
   assert.deepEqual(shape(rows), ['holder{stale}', 'unknown', 'ok', 'muted']);
 });
 
 test('the tree layout makes a file row for a file with several top-level changes, and asks for its decoration', () => {
   const one = row('src/x.ts', 'one', 0, 10);
-  const two = row('src/x.ts', 'two', 20, 30, { callerState: 'unknown' });
+  const two = row('src/x.ts', 'two', 20, 30, { callerState: 'unknown', ...RISKY });
   const wrapper = row('src/y.ts', 'wrap', 0, 100);
   const inner = row('src/y.ts', 'wrap.inner', 10, 20);
   const lone = row('src/z.ts', 'lone', 0, 10);
@@ -88,7 +90,7 @@ test('a file row counts the changes nested in its rows as members', () => {
 });
 
 test('sortByWorstStatus returns a new array and leaves the input order alone', () => {
-  const rows = deepFreeze([row('a.ts', 'fine', 0, 1), row('a.ts', 'bad', 2, 3, { staleCallers: 2 }), row('a.ts', 'fine2', 4, 5)]);
+  const rows = deepFreeze([row('a.ts', 'fine', 0, 1), row('a.ts', 'bad', 2, 3, { staleCallers: 2, ...RISKY }), row('a.ts', 'fine2', 4, 5)]);
   const sorted = sortByWorstStatus(rows);
   assert.deepEqual(sorted.map((r) => r.label), ['bad', 'fine', 'fine2']);
   assert.deepEqual(rows.map((r) => r.label), ['fine', 'bad', 'fine2']);

@@ -131,7 +131,7 @@
     "label": "Store.save",
     "resourceUri": "uri:file:///repo/src/store.ts#10",
     "tooltip": {
-     "markdown": "⛔ **Store.save**\n\n2 call site(s) not updated (1 edited nearby)\n\n**param**\n\n`src/store.ts:10`  ·  component `(root)`\n\n---\n\nbase: `save(a)`\n\nhead: `save(a, b)`\n\n---\n\n+ throw `Error`\n\n---\n\n**2 call site(s) not updated:**\n- useB\n- main\n\n1 of them were edited — just not on the call line\n\n_1/2 callers left to review_\n\n_score 9_"
+     "markdown": "⛔ **Store.save**\n\nThe parameter, and 2 of 2 callers were not changed on the call line. Check that they still work.\n\n**param**\n\n`src/store.ts:10`  ·  component `(root)`\n\n---\n\nbase: `save(a)`\n\nhead: `save(a, b)`\n\n---\n\n+ throw `Error`\n\n---\n\n**2 call site(s) not updated:**\n- useB\n- main\n\n1 of them were edited — just not on the call line\n\n_1/2 callers left to review_\n\n_score 9_"
     }
    }
   },
@@ -704,7 +704,7 @@
     "label": "Store.load",
     "resourceUri": "uri:file:///repo/src/store.ts#50",
     "tooltip": {
-     "markdown": "? **Store.load**\n\ncallers found so far are updated, but more may be missing\n\n_caller search incomplete: query-failed_\n\n**optional param**\n\n`src/store.ts:50`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
+     "markdown": "? **Store.load**\n\nThe optional param, and the callers found so far are updated, but more may be missing: the search reported \"query-failed\". Check its users by hand.\n\n_caller search incomplete: query-failed_\n\n**optional param**\n\n`src/store.ts:50`  ·  component `(root)`\n\n_1/1 callers left to review_\n\n_score 1_"
     }
    }
   },
@@ -826,12 +826,12 @@
      "status": null,
      "tooltip": "src/web/util.ts:5"
     },
-    "description": "∅",
+    "description": "✓",
     "icon": "__file__",
     "label": "helper  ‹web›",
     "resourceUri": "uri:file:///repo/src/web/util.ts#5",
     "tooltip": {
-     "markdown": "∅ **helper**\n\nno callers found\n\n**signature**\n\n`src/web/util.ts:5`  ·  component `web`\n\n_score 1_"
+     "markdown": "✓ **helper**\n\nThe signature. Nothing calls it in the code searched.\n\n**signature**\n\n`src/web/util.ts:5`  ·  component `web`\n\n_score 1_"
     }
    }
   },
@@ -887,7 +887,7 @@
     "label": "helper  ‹api›",
     "resourceUri": "uri:file:///repo/src/api/util.ts#5",
     "tooltip": {
-     "markdown": "? **helper**\n\nDI-constructed\n\n**signature**\n\n`src/api/util.ts:5`  ·  component `api`\n\n_score 1_"
+     "markdown": "? **helper**\n\nThe signature, but its callers could not be found: it is built by a DI container, so its callers are not visible. Check its users by hand.\n\n**signature**\n\n`src/api/util.ts:5`  ·  component `api`\n\n_score 1_"
     }
    }
   },
@@ -943,7 +943,7 @@
     "label": "Big",
     "resourceUri": "uri:file:///repo/src/big.ts#1",
     "tooltip": {
-     "markdown": "⛔ **Big**\n\n11 call site(s) not updated\n\n**signature**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
+     "markdown": "⛔ **Big**\n\nThe signature, and 11 of 0 callers were not changed on the call line. Check that they still work.\n\n**signature**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
     }
    }
   },
@@ -1023,8 +1023,8 @@
     "label": "open.ts",
     "members": [
      "<finding:createOpen>",
-     "<finding:same>",
      "<finding:uriFor>",
+     "<finding:same>",
      "<finding:sameUri>"
     ],
     "relPath": "src/open.ts",
@@ -1036,7 +1036,7 @@
    },
    "item": {
     "checkbox": 0,
-    "collapsible": 2,
+    "collapsible": 1,
     "command": {
      "arguments": [
       "<this row>"
@@ -1049,12 +1049,12 @@
      "status": "added",
      "tooltip": "src/open.ts"
     },
-    "description": "?  4 changes",
+    "description": "●  4 changes",
     "icon": "__file__",
     "label": "open.ts",
     "resourceUri": "uri:file:///repo/src/open.ts",
     "tooltip": {
-     "markdown": "**src/open.ts**\n\n4 body-only changes in this file, worst first:\n\n- ✓ createOpen\n- ? createOpen.same\n- ✓ createOpen.uriFor\n- ✓ sameUri"
+     "markdown": "**src/open.ts**\n\n4 body-only changes in this file, worst first:\n\n- ● createOpen\n- ● createOpen.uriFor\n- ? createOpen.same\n- ● sameUri"
     }
    }
   },
@@ -1066,8 +1066,8 @@
     "file": "/repo/src/open.ts",
     "finding": "<change:createOpen>",
     "inside": [
-     "<finding:same>",
-     "<finding:uriFor>"
+     "<finding:uriFor>",
+     "<finding:same>"
     ],
     "label": "createOpen",
     "pos": 100,
@@ -1091,12 +1091,12 @@
      "status": "added",
      "tooltip": "src/open.ts:100"
     },
-    "description": "✓  ·  ? inside",
+    "description": "●",
     "icon": "__file__",
     "label": "createOpen",
     "resourceUri": "uri:file:///repo/src/open.ts#100",
     "tooltip": {
-     "markdown": "✓ **createOpen**\n\nall call sites updated\n\n`src/open.ts:100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **createOpen**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:100`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -1117,31 +1117,70 @@
     "file": "/repo/src/open.ts",
     "label": "Changed inside",
     "members": [
-     "<finding:same>",
-     "<finding:uriFor>"
+     "<finding:uriFor>",
+     "<finding:same>"
     ],
     "relPath": "src/open.ts",
     "rows": [
-     "<finding:same>",
-     "<finding:uriFor>"
+     "<finding:uriFor>",
+     "<finding:same>"
     ],
     "type": "insideGroup"
    },
    "item": {
     "checkbox": 1,
-    "collapsible": 2,
+    "collapsible": 1,
     "contextValue": "insideGroup",
     "decoration": null,
-    "description": "?  2 changes",
+    "description": "●  2 changes",
     "icon": "list-tree",
     "label": "Changed inside",
     "tooltip": {
-     "markdown": "**Changed inside createOpen**\n\n2 body-only changes, worst first:\n\n- ? createOpen.same\n- ✓ createOpen.uriFor"
+     "markdown": "**Changed inside createOpen**\n\n2 body-only changes, worst first:\n\n- ● createOpen.uriFor\n- ? createOpen.same"
     }
    }
   },
   {
-   "at": "/4:Other changes/0:open.ts/0:createOpen/0:Changed inside/0:same",
+   "at": "/4:Other changes/0:open.ts/0:createOpen/0:Changed inside/0:uriFor",
+   "model": {
+    "ambiguous": false,
+    "container": "createOpen",
+    "decorationUri": "uri:file:///repo/src/open.ts#200",
+    "file": "/repo/src/open.ts",
+    "finding": "<change:createOpen.uriFor>",
+    "label": "uriFor",
+    "pos": 200,
+    "reachReason": null,
+    "scopeNote": null,
+    "score": 1,
+    "type": "finding"
+   },
+   "item": {
+    "checkbox": 1,
+    "collapsible": 1,
+    "command": {
+     "arguments": [
+      "<this row>"
+     ],
+     "command": "impactTree.openChange",
+     "title": "Open change"
+    },
+    "contextValue": "finding",
+    "decoration": {
+     "status": "added",
+     "tooltip": "src/open.ts:200"
+    },
+    "description": "●",
+    "icon": "__file__",
+    "label": "uriFor",
+    "resourceUri": "uri:file:///repo/src/open.ts#200",
+    "tooltip": {
+     "markdown": "● **createOpen.uriFor**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:200`  ·  component `(root)`\n\n_score 1_"
+    }
+   }
+  },
+  {
+   "at": "/4:Other changes/0:open.ts/0:createOpen/0:Changed inside/1:same",
    "model": {
     "ambiguous": false,
     "container": "createOpen",
@@ -1175,46 +1214,7 @@
     "label": "same",
     "resourceUri": "uri:file:///repo/src/open.ts#400",
     "tooltip": {
-     "markdown": "? **createOpen.same**\n\ncallers unknown\n\n`src/open.ts:400`  ·  component `(root)`\n\n_score 1_"
-    }
-   }
-  },
-  {
-   "at": "/4:Other changes/0:open.ts/0:createOpen/0:Changed inside/1:uriFor",
-   "model": {
-    "ambiguous": false,
-    "container": "createOpen",
-    "decorationUri": "uri:file:///repo/src/open.ts#200",
-    "file": "/repo/src/open.ts",
-    "finding": "<change:createOpen.uriFor>",
-    "label": "uriFor",
-    "pos": 200,
-    "reachReason": null,
-    "scopeNote": null,
-    "score": 1,
-    "type": "finding"
-   },
-   "item": {
-    "checkbox": 1,
-    "collapsible": 1,
-    "command": {
-     "arguments": [
-      "<this row>"
-     ],
-     "command": "impactTree.openChange",
-     "title": "Open change"
-    },
-    "contextValue": "finding",
-    "decoration": {
-     "status": "added",
-     "tooltip": "src/open.ts:200"
-    },
-    "description": "✓",
-    "icon": "__file__",
-    "label": "uriFor",
-    "resourceUri": "uri:file:///repo/src/open.ts#200",
-    "tooltip": {
-     "markdown": "✓ **createOpen.uriFor**\n\nall call sites updated\n\n`src/open.ts:200`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "? **createOpen.same**\n\nOnly the body changed. Its callers could not be found: the search did not say why.\n\n`src/open.ts:400`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -1308,12 +1308,12 @@
      "status": "added",
      "tooltip": "src/open.ts:1100"
     },
-    "description": "✓",
+    "description": "●",
     "icon": "__file__",
     "label": "sameUri",
     "resourceUri": "uri:file:///repo/src/open.ts#1100",
     "tooltip": {
-     "markdown": "✓ **sameUri**\n\nall call sites updated\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -1346,12 +1346,12 @@
      "status": null,
      "tooltip": "src/ready.ts:3"
     },
-    "description": "✓",
+    "description": "●",
     "icon": "__file__",
     "label": "READY",
     "resourceUri": "uri:file:///repo/src/ready.ts#3",
     "tooltip": {
-     "markdown": "✓ **READY**\n\nall call sites updated\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -1387,12 +1387,12 @@
      "status": null,
      "tooltip": "src/reach.ts"
     },
-    "description": "✓  2 changes",
+    "description": "●  2 changes",
     "icon": "__file__",
     "label": "reach.ts",
     "resourceUri": "uri:file:///repo/src/reach.ts",
     "tooltip": {
-     "markdown": "**src/reach.ts**\n\n2 body-only changes in this file, worst first:\n\n- ✓ deepWalk\n- ✓ bareWalk"
+     "markdown": "**src/reach.ts**\n\n2 body-only changes in this file, worst first:\n\n- ● deepWalk\n- ● bareWalk"
     }
    }
   },
@@ -1425,12 +1425,12 @@
      "status": null,
      "tooltip": "src/reach.ts:8"
     },
-    "description": "✓",
+    "description": "●",
     "icon": "__file__",
     "label": "deepWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#8",
     "tooltip": {
-     "markdown": "✓ **deepWalk**\n\nall call sites updated\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -1463,12 +1463,12 @@
      "status": null,
      "tooltip": "src/reach.ts:20"
     },
-    "description": "✓",
+    "description": "●",
     "icon": "__file__",
     "label": "bareWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#20",
     "tooltip": {
-     "markdown": "✓ **bareWalk**\n\nall call sites updated\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -1632,12 +1632,12 @@
      "status": null,
      "tooltip": "src/ready.ts:3"
     },
-    "description": "✓",
+    "description": "●",
     "icon": "__file__",
     "label": "READY",
     "resourceUri": "uri:file:///repo/src/ready.ts#3",
     "tooltip": {
-     "markdown": "✓ **READY**\n\nall call sites updated\n\n_no test within 3 caller level(s)_\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_no test within 3 caller level(s)_\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -1670,12 +1670,12 @@
      "status": "added",
      "tooltip": "src/open.ts:1100"
     },
-    "description": "✓",
+    "description": "●",
     "icon": "__file__",
     "label": "sameUri",
     "resourceUri": "uri:file:///repo/src/open.ts#1100",
     "tooltip": {
-     "markdown": "✓ **sameUri**\n\nall call sites updated\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -1741,12 +1741,12 @@
      "status": null,
      "tooltip": "src/reach.ts:8"
     },
-    "description": "?  tests unknown: the walk budget of 120 callers ran out  ·  ✓",
+    "description": "?  tests unknown: the walk budget of 120 callers ran out  ·  ●",
     "icon": "__file__",
     "label": "deepWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#8",
     "tooltip": {
-     "markdown": "✓ **deepWalk**\n\nall call sites updated\n\n_test reachability unknown: the walk budget of 120 callers ran out_\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_test reachability unknown: the walk budget of 120 callers ran out_\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -1779,12 +1779,12 @@
      "status": null,
      "tooltip": "src/reach.ts:20"
     },
-    "description": "?  tests unknown: the test search did not finish  ·  ✓",
+    "description": "?  tests unknown: the test search did not finish  ·  ●",
     "icon": "__file__",
     "label": "bareWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#20",
     "tooltip": {
-     "markdown": "✓ **bareWalk**\n\nall call sites updated\n\n_test reachability unknown: the test search did not finish_\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_test reachability unknown: the test search did not finish_\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -2153,11 +2153,11 @@
    }
   },
   {
-   "at": "/9:Legend/3:⛔  call sites this change did NOT update",
+   "at": "/9:Legend/3:⛔  a signature or throw change whose callers were NOT updated",
    "model": {
     "desc": "review these first",
     "icon": "error",
-    "label": "⛔  call sites this change did NOT update",
+    "label": "⛔  a signature or throw change whose callers were NOT updated",
     "type": "legendItem"
    },
    "item": {
@@ -2165,15 +2165,15 @@
     "decoration": null,
     "description": "review these first",
     "icon": "error",
-    "label": "⛔  call sites this change did NOT update"
+    "label": "⛔  a signature or throw change whose callers were NOT updated"
    }
   },
   {
-   "at": "/9:Legend/4:✓  all call sites updated",
+   "at": "/9:Legend/4:✓  signature or throw change, all callers updated",
    "model": {
     "desc": "every caller found was changed on the call line",
     "icon": "pass",
-    "label": "✓  all call sites updated",
+    "label": "✓  signature or throw change, all callers updated",
     "type": "legendItem"
    },
    "item": {
@@ -2181,15 +2181,31 @@
     "decoration": null,
     "description": "every caller found was changed on the call line",
     "icon": "pass",
-    "label": "✓  all call sites updated"
+    "label": "✓  signature or throw change, all callers updated"
    }
   },
   {
-   "at": "/9:Legend/5:∅  no callers found",
+   "at": "/9:Legend/5:●  body-only change that reaches callers",
+   "model": {
+    "desc": "the signature is the same, so callers still compile; their untouched call sites are expected",
+    "icon": "circle-filled",
+    "label": "●  body-only change that reaches callers",
+    "type": "legendItem"
+   },
+   "item": {
+    "collapsible": 0,
+    "decoration": null,
+    "description": "the signature is the same, so callers still compile; their untouched call sites are expected",
+    "icon": "circle-filled",
+    "label": "●  body-only change that reaches callers"
+   }
+  },
+  {
+   "at": "/9:Legend/6:∅  body-only change, no callers found",
    "model": {
     "desc": "in the code searched — dynamic calls and unloaded projects are not seen",
     "icon": "circle-slash",
-    "label": "∅  no callers found",
+    "label": "∅  body-only change, no callers found",
     "type": "legendItem"
    },
    "item": {
@@ -2197,11 +2213,11 @@
     "decoration": null,
     "description": "in the code searched — dynamic calls and unloaded projects are not seen",
     "icon": "circle-slash",
-    "label": "∅  no callers found"
+    "label": "∅  body-only change, no callers found"
    }
   },
   {
-   "at": "/9:Legend/6:△  caller changed, but NOT on the call line",
+   "at": "/9:Legend/7:△  caller changed, but NOT on the call line",
    "model": {
     "desc": "looks handled and is not",
     "icon": "warning",
@@ -2217,7 +2233,7 @@
    }
   },
   {
-   "at": "/9:Legend/7:○  caller not changed at all",
+   "at": "/9:Legend/8:○  caller not changed at all",
    "model": {
     "desc": "affected but untouched",
     "icon": "circle-outline",
@@ -2233,9 +2249,9 @@
    }
   },
   {
-   "at": "/9:Legend/8:?  callers unknown",
+   "at": "/9:Legend/9:?  callers unknown",
    "model": {
-    "desc": "the search failed or could not tell — e.g. passed as a value or DI-constructed",
+    "desc": "the search failed or could not tell — e.g. passed as a value or DI-constructed; on a signature or throw change, review it",
     "icon": "question",
     "label": "?  callers unknown",
     "type": "legendItem"
@@ -2243,13 +2259,13 @@
    "item": {
     "collapsible": 0,
     "decoration": null,
-    "description": "the search failed or could not tell — e.g. passed as a value or DI-constructed",
+    "description": "the search failed or could not tell — e.g. passed as a value or DI-constructed; on a signature or throw change, review it",
     "icon": "question",
     "label": "?  callers unknown"
    }
   },
   {
-   "at": "/9:Legend/9:🧪  test that reaches this code",
+   "at": "/9:Legend/10:🧪  test that reaches this code",
    "model": {
     "desc": "",
     "icon": "beaker",
@@ -2265,7 +2281,7 @@
    }
   },
   {
-   "at": "/9:Legend/10:↑  cycle — already shown higher up",
+   "at": "/9:Legend/11:↑  cycle — already shown higher up",
    "model": {
     "desc": "",
     "icon": "issue-reopened",
@@ -2410,12 +2426,12 @@
      "status": "modified",
      "tooltip": "src/store.ts:10"
     },
-    "description": "⛔  2 call site(s) not updated (1 edited nearby)  ·  param",
+    "description": "⛔  2 of 2 callers not updated  ·  param",
     "icon": "symbol-method",
     "label": "Store.save",
     "resourceUri": "uri:file:///repo/src/store.ts#10",
     "tooltip": {
-     "markdown": "⛔ **Store.save**\n\n2 call site(s) not updated (1 edited nearby)\n\n**param**\n\n`src/store.ts:10`  ·  component `(root)`\n\n---\n\nbase: `save(a)`\n\nhead: `save(a, b)`\n\n---\n\n+ throw `Error`\n\n---\n\n**2 call site(s) not updated:**\n- useB\n- main\n\n1 of them were edited — just not on the call line\n\n_score 9_"
+     "markdown": "⛔ **Store.save**\n\nThe parameter, and 2 of 2 callers were not changed on the call line. Check that they still work.\n\n**param**\n\n`src/store.ts:10`  ·  component `(root)`\n\n---\n\nbase: `save(a)`\n\nhead: `save(a, b)`\n\n---\n\n+ throw `Error`\n\n---\n\n**2 call site(s) not updated:**\n- useB\n- main\n\n1 of them were edited — just not on the call line\n\n_score 9_"
     }
    }
   },
@@ -2974,12 +2990,12 @@
      "status": "modified",
      "tooltip": "src/store.ts:50"
     },
-    "description": "?  callers found so far are updated, but more may be missing  ·  optional param",
+    "description": "?  callers unknown  ·  optional param",
     "icon": "symbol-method",
     "label": "Store.load",
     "resourceUri": "uri:file:///repo/src/store.ts#50",
     "tooltip": {
-     "markdown": "? **Store.load**\n\ncallers found so far are updated, but more may be missing\n\n_caller search incomplete: query-failed_\n\n**optional param**\n\n`src/store.ts:50`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "? **Store.load**\n\nThe optional param, and the callers found so far are updated, but more may be missing: the search reported \"query-failed\". Check its users by hand.\n\n_caller search incomplete: query-failed_\n\n**optional param**\n\n`src/store.ts:50`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -3099,12 +3115,12 @@
      "status": null,
      "tooltip": "src/web/util.ts:5"
     },
-    "description": "∅  no callers found  ·  web  ·  signature",
+    "description": "✓  no callers  ·  web  ·  signature",
     "icon": "symbol-function",
     "label": "helper  ‹web›",
     "resourceUri": "uri:file:///repo/src/web/util.ts#5",
     "tooltip": {
-     "markdown": "∅ **helper**\n\nno callers found\n\n**signature**\n\n`src/web/util.ts:5`  ·  component `web`\n\n_score 1_"
+     "markdown": "✓ **helper**\n\nThe signature. Nothing calls it in the code searched.\n\n**signature**\n\n`src/web/util.ts:5`  ·  component `web`\n\n_score 1_"
     }
    }
   },
@@ -3159,7 +3175,7 @@
     "label": "helper  ‹api›",
     "resourceUri": "uri:file:///repo/src/api/util.ts#5",
     "tooltip": {
-     "markdown": "? **helper**\n\nDI-constructed\n\n**signature**\n\n`src/api/util.ts:5`  ·  component `api`\n\n_score 1_"
+     "markdown": "? **helper**\n\nThe signature, but its callers could not be found: it is built by a DI container, so its callers are not visible. Check its users by hand.\n\n**signature**\n\n`src/api/util.ts:5`  ·  component `api`\n\n_score 1_"
     }
    }
   },
@@ -3209,12 +3225,12 @@
      "status": null,
      "tooltip": "src/big.ts:1"
     },
-    "description": "⛔  11 call site(s) not updated  ·  signature",
+    "description": "⛔  11 of 0 callers not updated  ·  signature",
     "icon": "symbol-constructor",
     "label": "Big",
     "resourceUri": "uri:file:///repo/src/big.ts#1",
     "tooltip": {
-     "markdown": "⛔ **Big**\n\n11 call site(s) not updated\n\n**signature**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
+     "markdown": "⛔ **Big**\n\nThe signature, and 11 of 0 callers were not changed on the call line. Check that they still work.\n\n**signature**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
     }
    }
   },
@@ -3284,8 +3300,8 @@
     "file": "/repo/src/open.ts",
     "finding": "<change:createOpen>",
     "inside": [
-     "<finding:same>",
-     "<finding:uriFor>"
+     "<finding:uriFor>",
+     "<finding:same>"
     ],
     "label": "createOpen",
     "pos": 100,
@@ -3308,12 +3324,12 @@
      "status": "added",
      "tooltip": "src/open.ts:100"
     },
-    "description": "✓  all call sites updated  ·  ? inside",
+    "description": "●  reaches 0 callers",
     "icon": "symbol-function",
     "label": "createOpen",
     "resourceUri": "uri:file:///repo/src/open.ts#100",
     "tooltip": {
-     "markdown": "✓ **createOpen**\n\nall call sites updated\n\n`src/open.ts:100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **createOpen**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:100`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -3334,30 +3350,68 @@
     "file": "/repo/src/open.ts",
     "label": "Changed inside",
     "members": [
-     "<finding:same>",
-     "<finding:uriFor>"
+     "<finding:uriFor>",
+     "<finding:same>"
     ],
     "relPath": "src/open.ts",
     "rows": [
-     "<finding:same>",
-     "<finding:uriFor>"
+     "<finding:uriFor>",
+     "<finding:same>"
     ],
     "type": "insideGroup"
    },
    "item": {
-    "collapsible": 2,
+    "collapsible": 1,
     "contextValue": "insideGroup",
     "decoration": null,
-    "description": "?  2 changes",
+    "description": "●  2 changes",
     "icon": "list-tree",
     "label": "Changed inside",
     "tooltip": {
-     "markdown": "**Changed inside createOpen**\n\n2 body-only changes, worst first:\n\n- ? createOpen.same\n- ✓ createOpen.uriFor"
+     "markdown": "**Changed inside createOpen**\n\n2 body-only changes, worst first:\n\n- ● createOpen.uriFor\n- ? createOpen.same"
     }
    }
   },
   {
-   "at": "/4:Other changes/0:createOpen/0:Changed inside/0:same",
+   "at": "/4:Other changes/0:createOpen/0:Changed inside/0:uriFor",
+   "model": {
+    "ambiguous": false,
+    "container": "createOpen",
+    "decorationUri": "uri:file:///repo/src/open.ts#200",
+    "file": "/repo/src/open.ts",
+    "finding": "<change:createOpen.uriFor>",
+    "label": "uriFor",
+    "pos": 200,
+    "reachReason": null,
+    "scopeNote": null,
+    "score": 1,
+    "type": "finding"
+   },
+   "item": {
+    "collapsible": 1,
+    "command": {
+     "arguments": [
+      "<this row>"
+     ],
+     "command": "impactTree.openChange",
+     "title": "Open change"
+    },
+    "contextValue": "finding",
+    "decoration": {
+     "status": "added",
+     "tooltip": "src/open.ts:200"
+    },
+    "description": "●  reaches 0 callers",
+    "icon": "symbol-method",
+    "label": "uriFor",
+    "resourceUri": "uri:file:///repo/src/open.ts#200",
+    "tooltip": {
+     "markdown": "● **createOpen.uriFor**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:200`  ·  component `(root)`\n\n_score 1_"
+    }
+   }
+  },
+  {
+   "at": "/4:Other changes/0:createOpen/0:Changed inside/1:same",
    "model": {
     "ambiguous": false,
     "container": "createOpen",
@@ -3390,45 +3444,7 @@
     "label": "same",
     "resourceUri": "uri:file:///repo/src/open.ts#400",
     "tooltip": {
-     "markdown": "? **createOpen.same**\n\ncallers unknown\n\n`src/open.ts:400`  ·  component `(root)`\n\n_score 1_"
-    }
-   }
-  },
-  {
-   "at": "/4:Other changes/0:createOpen/0:Changed inside/1:uriFor",
-   "model": {
-    "ambiguous": false,
-    "container": "createOpen",
-    "decorationUri": "uri:file:///repo/src/open.ts#200",
-    "file": "/repo/src/open.ts",
-    "finding": "<change:createOpen.uriFor>",
-    "label": "uriFor",
-    "pos": 200,
-    "reachReason": null,
-    "scopeNote": null,
-    "score": 1,
-    "type": "finding"
-   },
-   "item": {
-    "collapsible": 1,
-    "command": {
-     "arguments": [
-      "<this row>"
-     ],
-     "command": "impactTree.openChange",
-     "title": "Open change"
-    },
-    "contextValue": "finding",
-    "decoration": {
-     "status": "added",
-     "tooltip": "src/open.ts:200"
-    },
-    "description": "✓  all call sites updated",
-    "icon": "symbol-method",
-    "label": "uriFor",
-    "resourceUri": "uri:file:///repo/src/open.ts#200",
-    "tooltip": {
-     "markdown": "✓ **createOpen.uriFor**\n\nall call sites updated\n\n`src/open.ts:200`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "? **createOpen.same**\n\nOnly the body changed. Its callers could not be found: the search did not say why.\n\n`src/open.ts:400`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -3520,12 +3536,12 @@
      "status": "added",
      "tooltip": "src/open.ts:1100"
     },
-    "description": "✓  all call sites updated",
+    "description": "●  reaches 0 callers",
     "icon": "symbol-function",
     "label": "sameUri",
     "resourceUri": "uri:file:///repo/src/open.ts#1100",
     "tooltip": {
-     "markdown": "✓ **sameUri**\n\nall call sites updated\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -3557,12 +3573,12 @@
      "status": null,
      "tooltip": "src/ready.ts:3"
     },
-    "description": "✓  all call sites updated",
+    "description": "●  reaches 0 callers",
     "icon": "symbol-variable",
     "label": "READY",
     "resourceUri": "uri:file:///repo/src/ready.ts#3",
     "tooltip": {
-     "markdown": "✓ **READY**\n\nall call sites updated\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -3594,12 +3610,12 @@
      "status": null,
      "tooltip": "src/reach.ts:8"
     },
-    "description": "✓  all call sites updated",
+    "description": "●  reaches 0 callers",
     "icon": "symbol-function",
     "label": "deepWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#8",
     "tooltip": {
-     "markdown": "✓ **deepWalk**\n\nall call sites updated\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -3631,12 +3647,12 @@
      "status": null,
      "tooltip": "src/reach.ts:20"
     },
-    "description": "✓  all call sites updated",
+    "description": "●  reaches 0 callers",
     "icon": "symbol-function",
     "label": "bareWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#20",
     "tooltip": {
-     "markdown": "✓ **bareWalk**\n\nall call sites updated\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -3799,12 +3815,12 @@
      "status": null,
      "tooltip": "src/ready.ts:3"
     },
-    "description": "✓  all call sites updated",
+    "description": "●  reaches 0 callers",
     "icon": "symbol-variable",
     "label": "READY",
     "resourceUri": "uri:file:///repo/src/ready.ts#3",
     "tooltip": {
-     "markdown": "✓ **READY**\n\nall call sites updated\n\n_no test within 3 caller level(s)_\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_no test within 3 caller level(s)_\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -3836,12 +3852,12 @@
      "status": "added",
      "tooltip": "src/open.ts:1100"
     },
-    "description": "✓  all call sites updated",
+    "description": "●  reaches 0 callers",
     "icon": "symbol-function",
     "label": "sameUri",
     "resourceUri": "uri:file:///repo/src/open.ts#1100",
     "tooltip": {
-     "markdown": "✓ **sameUri**\n\nall call sites updated\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -3906,12 +3922,12 @@
      "status": null,
      "tooltip": "src/reach.ts:8"
     },
-    "description": "?  tests unknown: the walk budget of 120 callers ran out  ·  ✓  all call sites updated",
+    "description": "?  tests unknown: the walk budget of 120 callers ran out  ·  ●  reaches 0 callers",
     "icon": "symbol-function",
     "label": "deepWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#8",
     "tooltip": {
-     "markdown": "✓ **deepWalk**\n\nall call sites updated\n\n_test reachability unknown: the walk budget of 120 callers ran out_\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_test reachability unknown: the walk budget of 120 callers ran out_\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -3943,12 +3959,12 @@
      "status": null,
      "tooltip": "src/reach.ts:20"
     },
-    "description": "?  tests unknown: the test search did not finish  ·  ✓  all call sites updated",
+    "description": "?  tests unknown: the test search did not finish  ·  ●  reaches 0 callers",
     "icon": "symbol-function",
     "label": "bareWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#20",
     "tooltip": {
-     "markdown": "✓ **bareWalk**\n\nall call sites updated\n\n_test reachability unknown: the test search did not finish_\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_test reachability unknown: the test search did not finish_\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -4217,11 +4233,11 @@
    }
   },
   {
-   "at": "/9:Legend/3:⛔  call sites this change did NOT update",
+   "at": "/9:Legend/3:⛔  a signature or throw change whose callers were NOT updated",
    "model": {
     "desc": "review these first",
     "icon": "error",
-    "label": "⛔  call sites this change did NOT update",
+    "label": "⛔  a signature or throw change whose callers were NOT updated",
     "type": "legendItem"
    },
    "item": {
@@ -4229,15 +4245,15 @@
     "decoration": null,
     "description": "review these first",
     "icon": "error",
-    "label": "⛔  call sites this change did NOT update"
+    "label": "⛔  a signature or throw change whose callers were NOT updated"
    }
   },
   {
-   "at": "/9:Legend/4:✓  all call sites updated",
+   "at": "/9:Legend/4:✓  signature or throw change, all callers updated",
    "model": {
     "desc": "every caller found was changed on the call line",
     "icon": "pass",
-    "label": "✓  all call sites updated",
+    "label": "✓  signature or throw change, all callers updated",
     "type": "legendItem"
    },
    "item": {
@@ -4245,15 +4261,31 @@
     "decoration": null,
     "description": "every caller found was changed on the call line",
     "icon": "pass",
-    "label": "✓  all call sites updated"
+    "label": "✓  signature or throw change, all callers updated"
    }
   },
   {
-   "at": "/9:Legend/5:∅  no callers found",
+   "at": "/9:Legend/5:●  body-only change that reaches callers",
+   "model": {
+    "desc": "the signature is the same, so callers still compile; their untouched call sites are expected",
+    "icon": "circle-filled",
+    "label": "●  body-only change that reaches callers",
+    "type": "legendItem"
+   },
+   "item": {
+    "collapsible": 0,
+    "decoration": null,
+    "description": "the signature is the same, so callers still compile; their untouched call sites are expected",
+    "icon": "circle-filled",
+    "label": "●  body-only change that reaches callers"
+   }
+  },
+  {
+   "at": "/9:Legend/6:∅  body-only change, no callers found",
    "model": {
     "desc": "in the code searched — dynamic calls and unloaded projects are not seen",
     "icon": "circle-slash",
-    "label": "∅  no callers found",
+    "label": "∅  body-only change, no callers found",
     "type": "legendItem"
    },
    "item": {
@@ -4261,11 +4293,11 @@
     "decoration": null,
     "description": "in the code searched — dynamic calls and unloaded projects are not seen",
     "icon": "circle-slash",
-    "label": "∅  no callers found"
+    "label": "∅  body-only change, no callers found"
    }
   },
   {
-   "at": "/9:Legend/6:△  caller changed, but NOT on the call line",
+   "at": "/9:Legend/7:△  caller changed, but NOT on the call line",
    "model": {
     "desc": "looks handled and is not",
     "icon": "warning",
@@ -4281,7 +4313,7 @@
    }
   },
   {
-   "at": "/9:Legend/7:○  caller not changed at all",
+   "at": "/9:Legend/8:○  caller not changed at all",
    "model": {
     "desc": "affected but untouched",
     "icon": "circle-outline",
@@ -4297,9 +4329,9 @@
    }
   },
   {
-   "at": "/9:Legend/8:?  callers unknown",
+   "at": "/9:Legend/9:?  callers unknown",
    "model": {
-    "desc": "the search failed or could not tell — e.g. passed as a value or DI-constructed",
+    "desc": "the search failed or could not tell — e.g. passed as a value or DI-constructed; on a signature or throw change, review it",
     "icon": "question",
     "label": "?  callers unknown",
     "type": "legendItem"
@@ -4307,13 +4339,13 @@
    "item": {
     "collapsible": 0,
     "decoration": null,
-    "description": "the search failed or could not tell — e.g. passed as a value or DI-constructed",
+    "description": "the search failed or could not tell — e.g. passed as a value or DI-constructed; on a signature or throw change, review it",
     "icon": "question",
     "label": "?  callers unknown"
    }
   },
   {
-   "at": "/9:Legend/9:🧪  test that reaches this code",
+   "at": "/9:Legend/10:🧪  test that reaches this code",
    "model": {
     "desc": "",
     "icon": "beaker",
@@ -4329,7 +4361,7 @@
    }
   },
   {
-   "at": "/9:Legend/10:↑  cycle — already shown higher up",
+   "at": "/9:Legend/11:↑  cycle — already shown higher up",
    "model": {
     "desc": "",
     "icon": "issue-reopened",
@@ -4475,12 +4507,12 @@
      "status": "modified",
      "tooltip": "src/store.ts:10"
     },
-    "description": "⛔  2 call site(s) not updated (1 edited nearby)  ·  param  ·  all callers reviewed",
+    "description": "⛔  2 of 2 callers not updated  ·  param  ·  all callers reviewed",
     "icon": "__file__",
     "label": "Store.save",
     "resourceUri": "uri:file:///repo/src/store.ts#10",
     "tooltip": {
-     "markdown": "⛔ **Store.save**\n\n2 call site(s) not updated (1 edited nearby)\n\n**param**\n\n`src/store.ts:10`  ·  component `(root)`\n\n---\n\nbase: `save(a)`\n\nhead: `save(a, b)`\n\n---\n\n+ throw `Error`\n\n---\n\n**2 call site(s) not updated:**\n- useB\n- main\n\n1 of them were edited — just not on the call line\n\n_all callers reviewed_\n\n_score 9_"
+     "markdown": "⛔ **Store.save**\n\nThe parameter, and 2 of 2 callers were not changed on the call line. Check that they still work.\n\n**param**\n\n`src/store.ts:10`  ·  component `(root)`\n\n---\n\nbase: `save(a)`\n\nhead: `save(a, b)`\n\n---\n\n+ throw `Error`\n\n---\n\n**2 call site(s) not updated:**\n- useB\n- main\n\n1 of them were edited — just not on the call line\n\n_all callers reviewed_\n\n_score 9_"
     }
    }
   },
@@ -5048,12 +5080,12 @@
      "status": "modified",
      "tooltip": "src/store.ts:50"
     },
-    "description": "?  callers found so far are updated, but more may be missing  ·  optional param  ·  all callers reviewed",
+    "description": "?  callers unknown  ·  optional param  ·  all callers reviewed",
     "icon": "__file__",
     "label": "Store.load",
     "resourceUri": "uri:file:///repo/src/store.ts#50",
     "tooltip": {
-     "markdown": "? **Store.load**\n\ncallers found so far are updated, but more may be missing\n\n_caller search incomplete: query-failed_\n\n**optional param**\n\n`src/store.ts:50`  ·  component `(root)`\n\n_all callers reviewed_\n\n_score 1_"
+     "markdown": "? **Store.load**\n\nThe optional param, and the callers found so far are updated, but more may be missing: the search reported \"query-failed\". Check its users by hand.\n\n_caller search incomplete: query-failed_\n\n**optional param**\n\n`src/store.ts:50`  ·  component `(root)`\n\n_all callers reviewed_\n\n_score 1_"
     }
    }
   },
@@ -5175,12 +5207,12 @@
      "status": null,
      "tooltip": "src/web/util.ts:5"
     },
-    "description": "∅  no callers found  ·  web  ·  signature",
+    "description": "✓  no callers  ·  web  ·  signature",
     "icon": "__file__",
     "label": "helper  ‹web›",
     "resourceUri": "uri:file:///repo/src/web/util.ts#5",
     "tooltip": {
-     "markdown": "∅ **helper**\n\nno callers found\n\n**signature**\n\n`src/web/util.ts:5`  ·  component `web`\n\n_score 1_"
+     "markdown": "✓ **helper**\n\nThe signature. Nothing calls it in the code searched.\n\n**signature**\n\n`src/web/util.ts:5`  ·  component `web`\n\n_score 1_"
     }
    }
   },
@@ -5236,7 +5268,7 @@
     "label": "helper  ‹api›",
     "resourceUri": "uri:file:///repo/src/api/util.ts#5",
     "tooltip": {
-     "markdown": "? **helper**\n\nDI-constructed\n\n**signature**\n\n`src/api/util.ts:5`  ·  component `api`\n\n_score 1_"
+     "markdown": "? **helper**\n\nThe signature, but its callers could not be found: it is built by a DI container, so its callers are not visible. Check its users by hand.\n\n**signature**\n\n`src/api/util.ts:5`  ·  component `api`\n\n_score 1_"
     }
    }
   },
@@ -5287,12 +5319,12 @@
      "status": null,
      "tooltip": "src/big.ts:1"
     },
-    "description": "⛔  11 call site(s) not updated  ·  signature",
+    "description": "⛔  11 of 0 callers not updated  ·  signature",
     "icon": "__file__",
     "label": "Big",
     "resourceUri": "uri:file:///repo/src/big.ts#1",
     "tooltip": {
-     "markdown": "⛔ **Big**\n\n11 call site(s) not updated\n\n**signature**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
+     "markdown": "⛔ **Big**\n\nThe signature, and 11 of 0 callers were not changed on the call line. Check that they still work.\n\n**signature**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
     }
    }
   },
@@ -5372,8 +5404,8 @@
     "label": "open.ts",
     "members": [
      "<finding:createOpen>",
-     "<finding:same>",
      "<finding:uriFor>",
+     "<finding:same>",
      "<finding:sameUri>"
     ],
     "relPath": "src/open.ts",
@@ -5385,7 +5417,7 @@
    },
    "item": {
     "checkbox": 0,
-    "collapsible": 2,
+    "collapsible": 1,
     "command": {
      "arguments": [
       "<this row>"
@@ -5398,12 +5430,12 @@
      "status": "added",
      "tooltip": "src/open.ts"
     },
-    "description": "?  4 changes",
+    "description": "●  4 changes",
     "icon": "__file__",
     "label": "open.ts",
     "resourceUri": "uri:file:///repo/src/open.ts",
     "tooltip": {
-     "markdown": "**src/open.ts**\n\n4 body-only changes in this file, worst first:\n\n- ✓ createOpen\n- ? createOpen.same\n- ✓ createOpen.uriFor\n- ✓ sameUri"
+     "markdown": "**src/open.ts**\n\n4 body-only changes in this file, worst first:\n\n- ● createOpen\n- ● createOpen.uriFor\n- ? createOpen.same\n- ● sameUri"
     }
    }
   },
@@ -5415,8 +5447,8 @@
     "file": "/repo/src/open.ts",
     "finding": "<change:createOpen>",
     "inside": [
-     "<finding:same>",
-     "<finding:uriFor>"
+     "<finding:uriFor>",
+     "<finding:same>"
     ],
     "label": "createOpen",
     "pos": 100,
@@ -5440,12 +5472,12 @@
      "status": "added",
      "tooltip": "src/open.ts:100"
     },
-    "description": "✓  all call sites updated  ·  ? inside",
+    "description": "●  reaches 0 callers",
     "icon": "__file__",
     "label": "createOpen",
     "resourceUri": "uri:file:///repo/src/open.ts#100",
     "tooltip": {
-     "markdown": "✓ **createOpen**\n\nall call sites updated\n\n`src/open.ts:100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **createOpen**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:100`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -5466,31 +5498,70 @@
     "file": "/repo/src/open.ts",
     "label": "Changed inside",
     "members": [
-     "<finding:same>",
-     "<finding:uriFor>"
+     "<finding:uriFor>",
+     "<finding:same>"
     ],
     "relPath": "src/open.ts",
     "rows": [
-     "<finding:same>",
-     "<finding:uriFor>"
+     "<finding:uriFor>",
+     "<finding:same>"
     ],
     "type": "insideGroup"
    },
    "item": {
     "checkbox": 0,
-    "collapsible": 2,
+    "collapsible": 1,
     "contextValue": "insideGroup",
     "decoration": null,
-    "description": "?  2 changes",
+    "description": "●  2 changes",
     "icon": "list-tree",
     "label": "Changed inside",
     "tooltip": {
-     "markdown": "**Changed inside createOpen**\n\n2 body-only changes, worst first:\n\n- ? createOpen.same\n- ✓ createOpen.uriFor"
+     "markdown": "**Changed inside createOpen**\n\n2 body-only changes, worst first:\n\n- ● createOpen.uriFor\n- ? createOpen.same"
     }
    }
   },
   {
-   "at": "/4:Other changes/0:open.ts/0:createOpen/0:Changed inside/0:same",
+   "at": "/4:Other changes/0:open.ts/0:createOpen/0:Changed inside/0:uriFor",
+   "model": {
+    "ambiguous": false,
+    "container": "createOpen",
+    "decorationUri": "uri:file:///repo/src/open.ts#200",
+    "file": "/repo/src/open.ts",
+    "finding": "<change:createOpen.uriFor>",
+    "label": "uriFor",
+    "pos": 200,
+    "reachReason": null,
+    "scopeNote": null,
+    "score": 1,
+    "type": "finding"
+   },
+   "item": {
+    "checkbox": 0,
+    "collapsible": 1,
+    "command": {
+     "arguments": [
+      "<this row>"
+     ],
+     "command": "impactTree.openChange",
+     "title": "Open change"
+    },
+    "contextValue": "finding",
+    "decoration": {
+     "status": "added",
+     "tooltip": "src/open.ts:200"
+    },
+    "description": "●  reaches 0 callers",
+    "icon": "__file__",
+    "label": "uriFor",
+    "resourceUri": "uri:file:///repo/src/open.ts#200",
+    "tooltip": {
+     "markdown": "● **createOpen.uriFor**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:200`  ·  component `(root)`\n\n_score 1_"
+    }
+   }
+  },
+  {
+   "at": "/4:Other changes/0:open.ts/0:createOpen/0:Changed inside/1:same",
    "model": {
     "ambiguous": false,
     "container": "createOpen",
@@ -5524,46 +5595,7 @@
     "label": "same",
     "resourceUri": "uri:file:///repo/src/open.ts#400",
     "tooltip": {
-     "markdown": "? **createOpen.same**\n\ncallers unknown\n\n`src/open.ts:400`  ·  component `(root)`\n\n_score 1_"
-    }
-   }
-  },
-  {
-   "at": "/4:Other changes/0:open.ts/0:createOpen/0:Changed inside/1:uriFor",
-   "model": {
-    "ambiguous": false,
-    "container": "createOpen",
-    "decorationUri": "uri:file:///repo/src/open.ts#200",
-    "file": "/repo/src/open.ts",
-    "finding": "<change:createOpen.uriFor>",
-    "label": "uriFor",
-    "pos": 200,
-    "reachReason": null,
-    "scopeNote": null,
-    "score": 1,
-    "type": "finding"
-   },
-   "item": {
-    "checkbox": 0,
-    "collapsible": 1,
-    "command": {
-     "arguments": [
-      "<this row>"
-     ],
-     "command": "impactTree.openChange",
-     "title": "Open change"
-    },
-    "contextValue": "finding",
-    "decoration": {
-     "status": "added",
-     "tooltip": "src/open.ts:200"
-    },
-    "description": "✓  all call sites updated",
-    "icon": "__file__",
-    "label": "uriFor",
-    "resourceUri": "uri:file:///repo/src/open.ts#200",
-    "tooltip": {
-     "markdown": "✓ **createOpen.uriFor**\n\nall call sites updated\n\n`src/open.ts:200`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "? **createOpen.same**\n\nOnly the body changed. Its callers could not be found: the search did not say why.\n\n`src/open.ts:400`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -5657,12 +5689,12 @@
      "status": "added",
      "tooltip": "src/open.ts:1100"
     },
-    "description": "✓  all call sites updated",
+    "description": "●  reaches 0 callers",
     "icon": "__file__",
     "label": "sameUri",
     "resourceUri": "uri:file:///repo/src/open.ts#1100",
     "tooltip": {
-     "markdown": "✓ **sameUri**\n\nall call sites updated\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -5695,12 +5727,12 @@
      "status": null,
      "tooltip": "src/ready.ts:3"
     },
-    "description": "✓  all call sites updated",
+    "description": "●  reaches 0 callers",
     "icon": "__file__",
     "label": "READY",
     "resourceUri": "uri:file:///repo/src/ready.ts#3",
     "tooltip": {
-     "markdown": "✓ **READY**\n\nall call sites updated\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -5736,12 +5768,12 @@
      "status": null,
      "tooltip": "src/reach.ts"
     },
-    "description": "✓  2 changes",
+    "description": "●  2 changes",
     "icon": "__file__",
     "label": "reach.ts",
     "resourceUri": "uri:file:///repo/src/reach.ts",
     "tooltip": {
-     "markdown": "**src/reach.ts**\n\n2 body-only changes in this file, worst first:\n\n- ✓ deepWalk\n- ✓ bareWalk"
+     "markdown": "**src/reach.ts**\n\n2 body-only changes in this file, worst first:\n\n- ● deepWalk\n- ● bareWalk"
     }
    }
   },
@@ -5774,12 +5806,12 @@
      "status": null,
      "tooltip": "src/reach.ts:8"
     },
-    "description": "✓  all call sites updated",
+    "description": "●  reaches 0 callers",
     "icon": "__file__",
     "label": "deepWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#8",
     "tooltip": {
-     "markdown": "✓ **deepWalk**\n\nall call sites updated\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -5812,12 +5844,12 @@
      "status": null,
      "tooltip": "src/reach.ts:20"
     },
-    "description": "✓  all call sites updated",
+    "description": "●  reaches 0 callers",
     "icon": "__file__",
     "label": "bareWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#20",
     "tooltip": {
-     "markdown": "✓ **bareWalk**\n\nall call sites updated\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -5983,12 +6015,12 @@
      "status": null,
      "tooltip": "src/ready.ts:3"
     },
-    "description": "✓  all call sites updated",
+    "description": "●  reaches 0 callers",
     "icon": "__file__",
     "label": "READY",
     "resourceUri": "uri:file:///repo/src/ready.ts#3",
     "tooltip": {
-     "markdown": "✓ **READY**\n\nall call sites updated\n\n_no test within 3 caller level(s)_\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_no test within 3 caller level(s)_\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -6021,12 +6053,12 @@
      "status": "added",
      "tooltip": "src/open.ts:1100"
     },
-    "description": "✓  all call sites updated",
+    "description": "●  reaches 0 callers",
     "icon": "__file__",
     "label": "sameUri",
     "resourceUri": "uri:file:///repo/src/open.ts#1100",
     "tooltip": {
-     "markdown": "✓ **sameUri**\n\nall call sites updated\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -6092,12 +6124,12 @@
      "status": null,
      "tooltip": "src/reach.ts:8"
     },
-    "description": "?  tests unknown: the walk budget of 120 callers ran out  ·  ✓  all call sites updated",
+    "description": "?  tests unknown: the walk budget of 120 callers ran out  ·  ●  reaches 0 callers",
     "icon": "__file__",
     "label": "deepWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#8",
     "tooltip": {
-     "markdown": "✓ **deepWalk**\n\nall call sites updated\n\n_test reachability unknown: the walk budget of 120 callers ran out_\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_test reachability unknown: the walk budget of 120 callers ran out_\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -6130,12 +6162,12 @@
      "status": null,
      "tooltip": "src/reach.ts:20"
     },
-    "description": "?  tests unknown: the test search did not finish  ·  ✓  all call sites updated",
+    "description": "?  tests unknown: the test search did not finish  ·  ●  reaches 0 callers",
     "icon": "__file__",
     "label": "bareWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#20",
     "tooltip": {
-     "markdown": "✓ **bareWalk**\n\nall call sites updated\n\n_test reachability unknown: the test search did not finish_\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n_test reachability unknown: the test search did not finish_\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -6509,11 +6541,11 @@
    }
   },
   {
-   "at": "/9:Legend/3:⛔  call sites this change did NOT update",
+   "at": "/9:Legend/3:⛔  a signature or throw change whose callers were NOT updated",
    "model": {
     "desc": "review these first",
     "icon": "error",
-    "label": "⛔  call sites this change did NOT update",
+    "label": "⛔  a signature or throw change whose callers were NOT updated",
     "type": "legendItem"
    },
    "item": {
@@ -6521,15 +6553,15 @@
     "decoration": null,
     "description": "review these first",
     "icon": "error",
-    "label": "⛔  call sites this change did NOT update"
+    "label": "⛔  a signature or throw change whose callers were NOT updated"
    }
   },
   {
-   "at": "/9:Legend/4:✓  all call sites updated",
+   "at": "/9:Legend/4:✓  signature or throw change, all callers updated",
    "model": {
     "desc": "every caller found was changed on the call line",
     "icon": "pass",
-    "label": "✓  all call sites updated",
+    "label": "✓  signature or throw change, all callers updated",
     "type": "legendItem"
    },
    "item": {
@@ -6537,15 +6569,31 @@
     "decoration": null,
     "description": "every caller found was changed on the call line",
     "icon": "pass",
-    "label": "✓  all call sites updated"
+    "label": "✓  signature or throw change, all callers updated"
    }
   },
   {
-   "at": "/9:Legend/5:∅  no callers found",
+   "at": "/9:Legend/5:●  body-only change that reaches callers",
+   "model": {
+    "desc": "the signature is the same, so callers still compile; their untouched call sites are expected",
+    "icon": "circle-filled",
+    "label": "●  body-only change that reaches callers",
+    "type": "legendItem"
+   },
+   "item": {
+    "collapsible": 0,
+    "decoration": null,
+    "description": "the signature is the same, so callers still compile; their untouched call sites are expected",
+    "icon": "circle-filled",
+    "label": "●  body-only change that reaches callers"
+   }
+  },
+  {
+   "at": "/9:Legend/6:∅  body-only change, no callers found",
    "model": {
     "desc": "in the code searched — dynamic calls and unloaded projects are not seen",
     "icon": "circle-slash",
-    "label": "∅  no callers found",
+    "label": "∅  body-only change, no callers found",
     "type": "legendItem"
    },
    "item": {
@@ -6553,11 +6601,11 @@
     "decoration": null,
     "description": "in the code searched — dynamic calls and unloaded projects are not seen",
     "icon": "circle-slash",
-    "label": "∅  no callers found"
+    "label": "∅  body-only change, no callers found"
    }
   },
   {
-   "at": "/9:Legend/6:△  caller changed, but NOT on the call line",
+   "at": "/9:Legend/7:△  caller changed, but NOT on the call line",
    "model": {
     "desc": "looks handled and is not",
     "icon": "warning",
@@ -6573,7 +6621,7 @@
    }
   },
   {
-   "at": "/9:Legend/7:○  caller not changed at all",
+   "at": "/9:Legend/8:○  caller not changed at all",
    "model": {
     "desc": "affected but untouched",
     "icon": "circle-outline",
@@ -6589,9 +6637,9 @@
    }
   },
   {
-   "at": "/9:Legend/8:?  callers unknown",
+   "at": "/9:Legend/9:?  callers unknown",
    "model": {
-    "desc": "the search failed or could not tell — e.g. passed as a value or DI-constructed",
+    "desc": "the search failed or could not tell — e.g. passed as a value or DI-constructed; on a signature or throw change, review it",
     "icon": "question",
     "label": "?  callers unknown",
     "type": "legendItem"
@@ -6599,13 +6647,13 @@
    "item": {
     "collapsible": 0,
     "decoration": null,
-    "description": "the search failed or could not tell — e.g. passed as a value or DI-constructed",
+    "description": "the search failed or could not tell — e.g. passed as a value or DI-constructed; on a signature or throw change, review it",
     "icon": "question",
     "label": "?  callers unknown"
    }
   },
   {
-   "at": "/9:Legend/9:🧪  test that reaches this code",
+   "at": "/9:Legend/10:🧪  test that reaches this code",
    "model": {
     "desc": "",
     "icon": "beaker",
@@ -6621,7 +6669,7 @@
    }
   },
   {
-   "at": "/9:Legend/10:↑  cycle — already shown higher up",
+   "at": "/9:Legend/11:↑  cycle — already shown higher up",
    "model": {
     "desc": "",
     "icon": "issue-reopened",
@@ -6771,7 +6819,7 @@
     "label": "Store.save",
     "resourceUri": "uri:file:///repo/src/store.ts#10",
     "tooltip": {
-     "markdown": "⛔ **Store.save**\n\n2 call site(s) not updated (1 edited nearby)\n\n**param**\n\n`src/store.ts:10`  ·  component `(root)`\n\n---\n\nbase: `save(a)`\n\nhead: `save(a, b)`\n\n---\n\n+ throw `Error`\n\n---\n\n**2 call site(s) not updated:**\n- useB\n- main\n\n1 of them were edited — just not on the call line\n\n_score 9_"
+     "markdown": "⛔ **Store.save**\n\nThe parameter, and 2 of 2 callers were not changed on the call line. Check that they still work.\n\n**param**\n\n`src/store.ts:10`  ·  component `(root)`\n\n---\n\nbase: `save(a)`\n\nhead: `save(a, b)`\n\n---\n\n+ throw `Error`\n\n---\n\n**2 call site(s) not updated:**\n- useB\n- main\n\n1 of them were edited — just not on the call line\n\n_score 9_"
     }
    }
   },
@@ -7335,7 +7383,7 @@
     "label": "Store.load",
     "resourceUri": "uri:file:///repo/src/store.ts#50",
     "tooltip": {
-     "markdown": "? **Store.load**\n\ncallers found so far are updated, but more may be missing\n\n_caller search incomplete: query-failed_\n\n**optional param**\n\n`src/store.ts:50`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "? **Store.load**\n\nThe optional param, and the callers found so far are updated, but more may be missing: the search reported \"query-failed\". Check its users by hand.\n\n_caller search incomplete: query-failed_\n\n**optional param**\n\n`src/store.ts:50`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -7455,12 +7503,12 @@
      "status": null,
      "tooltip": "src/web/util.ts:5"
     },
-    "description": "∅",
+    "description": "✓",
     "icon": "__file__",
     "label": "helper  ‹web›",
     "resourceUri": "uri:file:///repo/src/web/util.ts#5",
     "tooltip": {
-     "markdown": "∅ **helper**\n\nno callers found\n\n**signature**\n\n`src/web/util.ts:5`  ·  component `web`\n\n_score 1_"
+     "markdown": "✓ **helper**\n\nThe signature. Nothing calls it in the code searched.\n\n**signature**\n\n`src/web/util.ts:5`  ·  component `web`\n\n_score 1_"
     }
    }
   },
@@ -7515,7 +7563,7 @@
     "label": "helper  ‹api›",
     "resourceUri": "uri:file:///repo/src/api/util.ts#5",
     "tooltip": {
-     "markdown": "? **helper**\n\nDI-constructed\n\n**signature**\n\n`src/api/util.ts:5`  ·  component `api`\n\n_score 1_"
+     "markdown": "? **helper**\n\nThe signature, but its callers could not be found: it is built by a DI container, so its callers are not visible. Check its users by hand.\n\n**signature**\n\n`src/api/util.ts:5`  ·  component `api`\n\n_score 1_"
     }
    }
   },
@@ -7570,7 +7618,7 @@
     "label": "Big",
     "resourceUri": "uri:file:///repo/src/big.ts#1",
     "tooltip": {
-     "markdown": "⛔ **Big**\n\n11 call site(s) not updated\n\n**signature**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
+     "markdown": "⛔ **Big**\n\nThe signature, and 11 of 0 callers were not changed on the call line. Check that they still work.\n\n**signature**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
     }
    }
   },
@@ -7650,8 +7698,8 @@
     "label": "open.ts",
     "members": [
      "<finding:createOpen>",
-     "<finding:same>",
      "<finding:uriFor>",
+     "<finding:same>",
      "<finding:sameUri>"
     ],
     "relPath": "src/open.ts",
@@ -7662,7 +7710,7 @@
     "type": "changeFile"
    },
    "item": {
-    "collapsible": 2,
+    "collapsible": 1,
     "command": {
      "arguments": [
       "<this row>"
@@ -7675,12 +7723,12 @@
      "status": "added",
      "tooltip": "src/open.ts"
     },
-    "description": "?  4 changes",
+    "description": "●  4 changes",
     "icon": "__file__",
     "label": "open.ts",
     "resourceUri": "uri:file:///repo/src/open.ts",
     "tooltip": {
-     "markdown": "**src/open.ts**\n\n4 body-only changes in this file, worst first:\n\n- ✓ createOpen\n- ? createOpen.same\n- ✓ createOpen.uriFor\n- ✓ sameUri"
+     "markdown": "**src/open.ts**\n\n4 body-only changes in this file, worst first:\n\n- ● createOpen\n- ● createOpen.uriFor\n- ? createOpen.same\n- ● sameUri"
     }
    }
   },
@@ -7692,8 +7740,8 @@
     "file": "/repo/src/open.ts",
     "finding": "<change:createOpen>",
     "inside": [
-     "<finding:same>",
-     "<finding:uriFor>"
+     "<finding:uriFor>",
+     "<finding:same>"
     ],
     "label": "createOpen",
     "pos": 100,
@@ -7716,12 +7764,12 @@
      "status": "added",
      "tooltip": "src/open.ts:100"
     },
-    "description": "✓  ·  ? inside",
+    "description": "●",
     "icon": "__file__",
     "label": "createOpen",
     "resourceUri": "uri:file:///repo/src/open.ts#100",
     "tooltip": {
-     "markdown": "✓ **createOpen**\n\nall call sites updated\n\n`src/open.ts:100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **createOpen**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:100`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -7742,30 +7790,68 @@
     "file": "/repo/src/open.ts",
     "label": "Changed inside",
     "members": [
-     "<finding:same>",
-     "<finding:uriFor>"
+     "<finding:uriFor>",
+     "<finding:same>"
     ],
     "relPath": "src/open.ts",
     "rows": [
-     "<finding:same>",
-     "<finding:uriFor>"
+     "<finding:uriFor>",
+     "<finding:same>"
     ],
     "type": "insideGroup"
    },
    "item": {
-    "collapsible": 2,
+    "collapsible": 1,
     "contextValue": "insideGroup",
     "decoration": null,
-    "description": "?  2 changes",
+    "description": "●  2 changes",
     "icon": "list-tree",
     "label": "Changed inside",
     "tooltip": {
-     "markdown": "**Changed inside createOpen**\n\n2 body-only changes, worst first:\n\n- ? createOpen.same\n- ✓ createOpen.uriFor"
+     "markdown": "**Changed inside createOpen**\n\n2 body-only changes, worst first:\n\n- ● createOpen.uriFor\n- ? createOpen.same"
     }
    }
   },
   {
-   "at": "/4:Other changes/0:open.ts/0:createOpen/0:Changed inside/0:same",
+   "at": "/4:Other changes/0:open.ts/0:createOpen/0:Changed inside/0:uriFor",
+   "model": {
+    "ambiguous": false,
+    "container": "createOpen",
+    "decorationUri": "uri:file:///repo/src/open.ts#200",
+    "file": "/repo/src/open.ts",
+    "finding": "<change:createOpen.uriFor>",
+    "label": "uriFor",
+    "pos": 200,
+    "reachReason": null,
+    "scopeNote": null,
+    "score": 1,
+    "type": "finding"
+   },
+   "item": {
+    "collapsible": 1,
+    "command": {
+     "arguments": [
+      "<this row>"
+     ],
+     "command": "impactTree.openChange",
+     "title": "Open change"
+    },
+    "contextValue": "finding",
+    "decoration": {
+     "status": "added",
+     "tooltip": "src/open.ts:200"
+    },
+    "description": "●",
+    "icon": "__file__",
+    "label": "uriFor",
+    "resourceUri": "uri:file:///repo/src/open.ts#200",
+    "tooltip": {
+     "markdown": "● **createOpen.uriFor**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:200`  ·  component `(root)`\n\n_score 1_"
+    }
+   }
+  },
+  {
+   "at": "/4:Other changes/0:open.ts/0:createOpen/0:Changed inside/1:same",
    "model": {
     "ambiguous": false,
     "container": "createOpen",
@@ -7798,45 +7884,7 @@
     "label": "same",
     "resourceUri": "uri:file:///repo/src/open.ts#400",
     "tooltip": {
-     "markdown": "? **createOpen.same**\n\ncallers unknown\n\n`src/open.ts:400`  ·  component `(root)`\n\n_score 1_"
-    }
-   }
-  },
-  {
-   "at": "/4:Other changes/0:open.ts/0:createOpen/0:Changed inside/1:uriFor",
-   "model": {
-    "ambiguous": false,
-    "container": "createOpen",
-    "decorationUri": "uri:file:///repo/src/open.ts#200",
-    "file": "/repo/src/open.ts",
-    "finding": "<change:createOpen.uriFor>",
-    "label": "uriFor",
-    "pos": 200,
-    "reachReason": null,
-    "scopeNote": null,
-    "score": 1,
-    "type": "finding"
-   },
-   "item": {
-    "collapsible": 1,
-    "command": {
-     "arguments": [
-      "<this row>"
-     ],
-     "command": "impactTree.openChange",
-     "title": "Open change"
-    },
-    "contextValue": "finding",
-    "decoration": {
-     "status": "added",
-     "tooltip": "src/open.ts:200"
-    },
-    "description": "✓",
-    "icon": "__file__",
-    "label": "uriFor",
-    "resourceUri": "uri:file:///repo/src/open.ts#200",
-    "tooltip": {
-     "markdown": "✓ **createOpen.uriFor**\n\nall call sites updated\n\n`src/open.ts:200`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "? **createOpen.same**\n\nOnly the body changed. Its callers could not be found: the search did not say why.\n\n`src/open.ts:400`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -7928,12 +7976,12 @@
      "status": "added",
      "tooltip": "src/open.ts:1100"
     },
-    "description": "✓",
+    "description": "●",
     "icon": "__file__",
     "label": "sameUri",
     "resourceUri": "uri:file:///repo/src/open.ts#1100",
     "tooltip": {
-     "markdown": "✓ **sameUri**\n\nall call sites updated\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **sameUri**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/open.ts:1100`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -7965,12 +8013,12 @@
      "status": null,
      "tooltip": "src/ready.ts:3"
     },
-    "description": "✓",
+    "description": "●",
     "icon": "__file__",
     "label": "READY",
     "resourceUri": "uri:file:///repo/src/ready.ts#3",
     "tooltip": {
-     "markdown": "✓ **READY**\n\nall call sites updated\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -8005,12 +8053,12 @@
      "status": null,
      "tooltip": "src/reach.ts"
     },
-    "description": "✓  2 changes",
+    "description": "●  2 changes",
     "icon": "__file__",
     "label": "reach.ts",
     "resourceUri": "uri:file:///repo/src/reach.ts",
     "tooltip": {
-     "markdown": "**src/reach.ts**\n\n2 body-only changes in this file, worst first:\n\n- ✓ deepWalk\n- ✓ bareWalk"
+     "markdown": "**src/reach.ts**\n\n2 body-only changes in this file, worst first:\n\n- ● deepWalk\n- ● bareWalk"
     }
    }
   },
@@ -8042,12 +8090,12 @@
      "status": null,
      "tooltip": "src/reach.ts:8"
     },
-    "description": "✓",
+    "description": "●",
     "icon": "__file__",
     "label": "deepWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#8",
     "tooltip": {
-     "markdown": "✓ **deepWalk**\n\nall call sites updated\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **deepWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:8`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -8079,12 +8127,12 @@
      "status": null,
      "tooltip": "src/reach.ts:20"
     },
-    "description": "✓",
+    "description": "●",
     "icon": "__file__",
     "label": "bareWalk",
     "resourceUri": "uri:file:///repo/src/reach.ts#20",
     "tooltip": {
-     "markdown": "✓ **bareWalk**\n\nall call sites updated\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "● **bareWalk**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/reach.ts:20`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
@@ -8584,11 +8632,11 @@
    }
   },
   {
-   "at": "/8:Legend/3:⛔  call sites this change did NOT update",
+   "at": "/8:Legend/3:⛔  a signature or throw change whose callers were NOT updated",
    "model": {
     "desc": "review these first",
     "icon": "error",
-    "label": "⛔  call sites this change did NOT update",
+    "label": "⛔  a signature or throw change whose callers were NOT updated",
     "type": "legendItem"
    },
    "item": {
@@ -8596,15 +8644,15 @@
     "decoration": null,
     "description": "review these first",
     "icon": "error",
-    "label": "⛔  call sites this change did NOT update"
+    "label": "⛔  a signature or throw change whose callers were NOT updated"
    }
   },
   {
-   "at": "/8:Legend/4:✓  all call sites updated",
+   "at": "/8:Legend/4:✓  signature or throw change, all callers updated",
    "model": {
     "desc": "every caller found was changed on the call line",
     "icon": "pass",
-    "label": "✓  all call sites updated",
+    "label": "✓  signature or throw change, all callers updated",
     "type": "legendItem"
    },
    "item": {
@@ -8612,15 +8660,31 @@
     "decoration": null,
     "description": "every caller found was changed on the call line",
     "icon": "pass",
-    "label": "✓  all call sites updated"
+    "label": "✓  signature or throw change, all callers updated"
    }
   },
   {
-   "at": "/8:Legend/5:∅  no callers found",
+   "at": "/8:Legend/5:●  body-only change that reaches callers",
+   "model": {
+    "desc": "the signature is the same, so callers still compile; their untouched call sites are expected",
+    "icon": "circle-filled",
+    "label": "●  body-only change that reaches callers",
+    "type": "legendItem"
+   },
+   "item": {
+    "collapsible": 0,
+    "decoration": null,
+    "description": "the signature is the same, so callers still compile; their untouched call sites are expected",
+    "icon": "circle-filled",
+    "label": "●  body-only change that reaches callers"
+   }
+  },
+  {
+   "at": "/8:Legend/6:∅  body-only change, no callers found",
    "model": {
     "desc": "in the code searched — dynamic calls and unloaded projects are not seen",
     "icon": "circle-slash",
-    "label": "∅  no callers found",
+    "label": "∅  body-only change, no callers found",
     "type": "legendItem"
    },
    "item": {
@@ -8628,11 +8692,11 @@
     "decoration": null,
     "description": "in the code searched — dynamic calls and unloaded projects are not seen",
     "icon": "circle-slash",
-    "label": "∅  no callers found"
+    "label": "∅  body-only change, no callers found"
    }
   },
   {
-   "at": "/8:Legend/6:△  caller changed, but NOT on the call line",
+   "at": "/8:Legend/7:△  caller changed, but NOT on the call line",
    "model": {
     "desc": "looks handled and is not",
     "icon": "warning",
@@ -8648,7 +8712,7 @@
    }
   },
   {
-   "at": "/8:Legend/7:○  caller not changed at all",
+   "at": "/8:Legend/8:○  caller not changed at all",
    "model": {
     "desc": "affected but untouched",
     "icon": "circle-outline",
@@ -8664,9 +8728,9 @@
    }
   },
   {
-   "at": "/8:Legend/8:?  callers unknown",
+   "at": "/8:Legend/9:?  callers unknown",
    "model": {
-    "desc": "the search failed or could not tell — e.g. passed as a value or DI-constructed",
+    "desc": "the search failed or could not tell — e.g. passed as a value or DI-constructed; on a signature or throw change, review it",
     "icon": "question",
     "label": "?  callers unknown",
     "type": "legendItem"
@@ -8674,13 +8738,13 @@
    "item": {
     "collapsible": 0,
     "decoration": null,
-    "description": "the search failed or could not tell — e.g. passed as a value or DI-constructed",
+    "description": "the search failed or could not tell — e.g. passed as a value or DI-constructed; on a signature or throw change, review it",
     "icon": "question",
     "label": "?  callers unknown"
    }
   },
   {
-   "at": "/8:Legend/9:🧪  test that reaches this code",
+   "at": "/8:Legend/10:🧪  test that reaches this code",
    "model": {
     "desc": "",
     "icon": "beaker",
@@ -8696,7 +8760,7 @@
    }
   },
   {
-   "at": "/8:Legend/10:↑  cycle — already shown higher up",
+   "at": "/8:Legend/11:↑  cycle — already shown higher up",
    "model": {
     "desc": "",
     "icon": "issue-reopened",
@@ -8813,7 +8877,7 @@
     "label": "Service.run",
     "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#12",
     "tooltip": {
-     "markdown": "⛔ **Service.run**\n\n1 call site(s) not updated\n\n**param**\n\n`src/service.ts:12`  ·  component `(root)`\n\n---\n\n**1 call site(s) not updated:**\n- Caller.go\n\n_score 1_"
+     "markdown": "⛔ **Service.run**\n\nThe , and 1 of 0 callers was not changed on the call line. Check that it still works.\n\n**param**\n\n`src/service.ts:12`  ·  component `(root)`\n\n---\n\n**1 call site(s) not updated:**\n- Caller.go\n\n_score 1_"
     }
    }
   },
@@ -9100,14 +9164,14 @@
     ],
     "relPath": "src/service.ts",
     "rows": [
-     "<finding:Service.stop>",
-     "<finding:Service.idle>"
+     "<finding:Service.idle>",
+     "<finding:Service.stop>"
     ],
     "type": "changeFile"
    },
    "item": {
     "checkbox": 0,
-    "collapsible": 2,
+    "collapsible": 1,
     "command": {
      "arguments": [
       "<this row>"
@@ -9120,17 +9184,73 @@
      "status": "modified",
      "tooltip": "src/service.ts"
     },
-    "description": "?  2 changes",
+    "description": "●  2 changes",
     "icon": "__file__",
     "label": "service.ts",
     "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha",
     "tooltip": {
-     "markdown": "**src/service.ts**\n\n2 body-only changes in this file, worst first:\n\n- ✓ Service.idle\n- ? Service.stop"
+     "markdown": "**src/service.ts**\n\n2 body-only changes in this file, worst first:\n\n- ● Service.idle\n- ? Service.stop"
     }
    }
   },
   {
-   "at": "/3:Other changes/0:service.ts/0:Service.stop",
+   "at": "/3:Other changes/0:service.ts/0:Service.idle",
+   "model": {
+    "ambiguous": false,
+    "decorationUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#90",
+    "file": "/repo/src/service.ts",
+    "finding": "<change:Service.idle>",
+    "label": "Service.idle",
+    "pos": 90,
+    "reachReason": null,
+    "scopeNote": null,
+    "score": 1,
+    "type": "finding"
+   },
+   "item": {
+    "checkbox": 0,
+    "collapsible": 1,
+    "command": {
+     "arguments": [
+      "<this row>"
+     ],
+     "command": "impactTree.openChange",
+     "title": "Open change"
+    },
+    "contextValue": "finding",
+    "decoration": {
+     "status": "modified",
+     "tooltip": "src/service.ts:90"
+    },
+    "description": "●",
+    "icon": "__file__",
+    "label": "Service.idle",
+    "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#90",
+    "tooltip": {
+     "markdown": "● **Service.idle**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/service.ts:90`  ·  component `(root)`\n\n_score 1_"
+    }
+   }
+  },
+  {
+   "at": "/3:Other changes/0:service.ts/0:Service.idle/0:Callers could not be loaded",
+   "model": {
+    "desc": "refresh to retry",
+    "icon": "warning",
+    "label": "Callers could not be loaded",
+    "tooltip": "this resolver does not report whether its caller search finished",
+    "type": "message"
+   },
+   "item": {
+    "collapsible": 0,
+    "decoration": null,
+    "description": "refresh to retry",
+    "icon": "warning",
+    "label": "Callers could not be loaded",
+    "tooltip": "this resolver does not report whether its caller search finished"
+   }
+  },
+  {
+   "at": "/3:Other changes/0:service.ts/1:Service.stop",
    "model": {
     "ambiguous": false,
     "decorationUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#120",
@@ -9163,68 +9283,12 @@
     "label": "Service.stop",
     "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#120",
     "tooltip": {
-     "markdown": "? **Service.stop**\n\ncallers unknown\n\n`src/service.ts:120`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "? **Service.stop**\n\nOnly the body changed. Its callers could not be found: the search did not say why.\n\n`src/service.ts:120`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
   {
-   "at": "/3:Other changes/0:service.ts/0:Service.stop/0:Callers could not be loaded",
-   "model": {
-    "desc": "refresh to retry",
-    "icon": "warning",
-    "label": "Callers could not be loaded",
-    "tooltip": "this resolver does not report whether its caller search finished",
-    "type": "message"
-   },
-   "item": {
-    "collapsible": 0,
-    "decoration": null,
-    "description": "refresh to retry",
-    "icon": "warning",
-    "label": "Callers could not be loaded",
-    "tooltip": "this resolver does not report whether its caller search finished"
-   }
-  },
-  {
-   "at": "/3:Other changes/0:service.ts/1:Service.idle",
-   "model": {
-    "ambiguous": false,
-    "decorationUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#90",
-    "file": "/repo/src/service.ts",
-    "finding": "<change:Service.idle>",
-    "label": "Service.idle",
-    "pos": 90,
-    "reachReason": null,
-    "scopeNote": null,
-    "score": 1,
-    "type": "finding"
-   },
-   "item": {
-    "checkbox": 0,
-    "collapsible": 1,
-    "command": {
-     "arguments": [
-      "<this row>"
-     ],
-     "command": "impactTree.openChange",
-     "title": "Open change"
-    },
-    "contextValue": "finding",
-    "decoration": {
-     "status": "modified",
-     "tooltip": "src/service.ts:90"
-    },
-    "description": "✓",
-    "icon": "__file__",
-    "label": "Service.idle",
-    "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#90",
-    "tooltip": {
-     "markdown": "✓ **Service.idle**\n\nall call sites updated\n\n`src/service.ts:90`  ·  component `(root)`\n\n_score 1_"
-    }
-   }
-  },
-  {
-   "at": "/3:Other changes/0:service.ts/1:Service.idle/0:Callers could not be loaded",
+   "at": "/3:Other changes/0:service.ts/1:Service.stop/0:Callers could not be loaded",
    "model": {
     "desc": "refresh to retry",
     "icon": "warning",
@@ -9510,11 +9574,11 @@
    }
   },
   {
-   "at": "/6:Legend/3:⛔  call sites this change did NOT update",
+   "at": "/6:Legend/3:⛔  a signature or throw change whose callers were NOT updated",
    "model": {
     "desc": "review these first",
     "icon": "error",
-    "label": "⛔  call sites this change did NOT update",
+    "label": "⛔  a signature or throw change whose callers were NOT updated",
     "type": "legendItem"
    },
    "item": {
@@ -9522,15 +9586,15 @@
     "decoration": null,
     "description": "review these first",
     "icon": "error",
-    "label": "⛔  call sites this change did NOT update"
+    "label": "⛔  a signature or throw change whose callers were NOT updated"
    }
   },
   {
-   "at": "/6:Legend/4:✓  all call sites updated",
+   "at": "/6:Legend/4:✓  signature or throw change, all callers updated",
    "model": {
     "desc": "every caller found was changed on the call line",
     "icon": "pass",
-    "label": "✓  all call sites updated",
+    "label": "✓  signature or throw change, all callers updated",
     "type": "legendItem"
    },
    "item": {
@@ -9538,15 +9602,31 @@
     "decoration": null,
     "description": "every caller found was changed on the call line",
     "icon": "pass",
-    "label": "✓  all call sites updated"
+    "label": "✓  signature or throw change, all callers updated"
    }
   },
   {
-   "at": "/6:Legend/5:∅  no callers found",
+   "at": "/6:Legend/5:●  body-only change that reaches callers",
+   "model": {
+    "desc": "the signature is the same, so callers still compile; their untouched call sites are expected",
+    "icon": "circle-filled",
+    "label": "●  body-only change that reaches callers",
+    "type": "legendItem"
+   },
+   "item": {
+    "collapsible": 0,
+    "decoration": null,
+    "description": "the signature is the same, so callers still compile; their untouched call sites are expected",
+    "icon": "circle-filled",
+    "label": "●  body-only change that reaches callers"
+   }
+  },
+  {
+   "at": "/6:Legend/6:∅  body-only change, no callers found",
    "model": {
     "desc": "in the code searched — dynamic calls and unloaded projects are not seen",
     "icon": "circle-slash",
-    "label": "∅  no callers found",
+    "label": "∅  body-only change, no callers found",
     "type": "legendItem"
    },
    "item": {
@@ -9554,11 +9634,11 @@
     "decoration": null,
     "description": "in the code searched — dynamic calls and unloaded projects are not seen",
     "icon": "circle-slash",
-    "label": "∅  no callers found"
+    "label": "∅  body-only change, no callers found"
    }
   },
   {
-   "at": "/6:Legend/6:△  caller changed, but NOT on the call line",
+   "at": "/6:Legend/7:△  caller changed, but NOT on the call line",
    "model": {
     "desc": "looks handled and is not",
     "icon": "warning",
@@ -9574,7 +9654,7 @@
    }
   },
   {
-   "at": "/6:Legend/7:○  caller not changed at all",
+   "at": "/6:Legend/8:○  caller not changed at all",
    "model": {
     "desc": "affected but untouched",
     "icon": "circle-outline",
@@ -9590,9 +9670,9 @@
    }
   },
   {
-   "at": "/6:Legend/8:?  callers unknown",
+   "at": "/6:Legend/9:?  callers unknown",
    "model": {
-    "desc": "the search failed or could not tell — e.g. passed as a value or DI-constructed",
+    "desc": "the search failed or could not tell — e.g. passed as a value or DI-constructed; on a signature or throw change, review it",
     "icon": "question",
     "label": "?  callers unknown",
     "type": "legendItem"
@@ -9600,13 +9680,13 @@
    "item": {
     "collapsible": 0,
     "decoration": null,
-    "description": "the search failed or could not tell — e.g. passed as a value or DI-constructed",
+    "description": "the search failed or could not tell — e.g. passed as a value or DI-constructed; on a signature or throw change, review it",
     "icon": "question",
     "label": "?  callers unknown"
    }
   },
   {
-   "at": "/6:Legend/9:🧪  test that reaches this code",
+   "at": "/6:Legend/10:🧪  test that reaches this code",
    "model": {
     "desc": "",
     "icon": "beaker",
@@ -9622,7 +9702,7 @@
    }
   },
   {
-   "at": "/6:Legend/10:↑  cycle — already shown higher up",
+   "at": "/6:Legend/11:↑  cycle — already shown higher up",
    "model": {
     "desc": "",
     "icon": "issue-reopened",
@@ -9733,12 +9813,12 @@
      "status": "modified",
      "tooltip": "src/service.ts:12"
     },
-    "description": "⛔  1 call site(s) not updated  ·  param",
+    "description": "⛔  1 of 0 callers not updated  ·  param",
     "icon": "symbol-method",
     "label": "Service.run",
     "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#12",
     "tooltip": {
-     "markdown": "⛔ **Service.run**\n\n1 call site(s) not updated\n\n**param**\n\n`src/service.ts:12`  ·  component `(root)`\n\n---\n\n**1 call site(s) not updated:**\n- Caller.go\n\n_score 1_"
+     "markdown": "⛔ **Service.run**\n\nThe , and 1 of 0 callers was not changed on the call line. Check that it still works.\n\n**param**\n\n`src/service.ts:12`  ·  component `(root)`\n\n---\n\n**1 call site(s) not updated:**\n- Caller.go\n\n_score 1_"
     }
    }
   },
@@ -10006,7 +10086,62 @@
    ]
   },
   {
-   "at": "/3:Other changes/0:Service.stop",
+   "at": "/3:Other changes/0:Service.idle",
+   "model": {
+    "ambiguous": false,
+    "decorationUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#90",
+    "file": "/repo/src/service.ts",
+    "finding": "<change:Service.idle>",
+    "label": "Service.idle",
+    "pos": 90,
+    "reachReason": null,
+    "scopeNote": null,
+    "score": 1,
+    "type": "finding"
+   },
+   "item": {
+    "collapsible": 1,
+    "command": {
+     "arguments": [
+      "<this row>"
+     ],
+     "command": "impactTree.openChange",
+     "title": "Open change"
+    },
+    "contextValue": "finding",
+    "decoration": {
+     "status": "modified",
+     "tooltip": "src/service.ts:90"
+    },
+    "description": "●  reaches 0 callers",
+    "icon": "symbol-method",
+    "label": "Service.idle",
+    "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#90",
+    "tooltip": {
+     "markdown": "● **Service.idle**\n\nOnly the body changed: the signature is the same, so callers still compile. 0 of 0 callers are unchanged, which is expected; check they still get the behaviour they rely on.\n\n`src/service.ts:90`  ·  component `(root)`\n\n_score 1_"
+    }
+   }
+  },
+  {
+   "at": "/3:Other changes/0:Service.idle/0:Callers could not be loaded",
+   "model": {
+    "desc": "refresh to retry",
+    "icon": "warning",
+    "label": "Callers could not be loaded",
+    "tooltip": "this resolver does not report whether its caller search finished",
+    "type": "message"
+   },
+   "item": {
+    "collapsible": 0,
+    "decoration": null,
+    "description": "refresh to retry",
+    "icon": "warning",
+    "label": "Callers could not be loaded",
+    "tooltip": "this resolver does not report whether its caller search finished"
+   }
+  },
+  {
+   "at": "/3:Other changes/1:Service.stop",
    "model": {
     "ambiguous": false,
     "decorationUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#120",
@@ -10038,67 +10173,12 @@
     "label": "Service.stop",
     "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#120",
     "tooltip": {
-     "markdown": "? **Service.stop**\n\ncallers unknown\n\n`src/service.ts:120`  ·  component `(root)`\n\n_score 1_"
+     "markdown": "? **Service.stop**\n\nOnly the body changed. Its callers could not be found: the search did not say why.\n\n`src/service.ts:120`  ·  component `(root)`\n\n_score 1_"
     }
    }
   },
   {
-   "at": "/3:Other changes/0:Service.stop/0:Callers could not be loaded",
-   "model": {
-    "desc": "refresh to retry",
-    "icon": "warning",
-    "label": "Callers could not be loaded",
-    "tooltip": "this resolver does not report whether its caller search finished",
-    "type": "message"
-   },
-   "item": {
-    "collapsible": 0,
-    "decoration": null,
-    "description": "refresh to retry",
-    "icon": "warning",
-    "label": "Callers could not be loaded",
-    "tooltip": "this resolver does not report whether its caller search finished"
-   }
-  },
-  {
-   "at": "/3:Other changes/1:Service.idle",
-   "model": {
-    "ambiguous": false,
-    "decorationUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#90",
-    "file": "/repo/src/service.ts",
-    "finding": "<change:Service.idle>",
-    "label": "Service.idle",
-    "pos": 90,
-    "reachReason": null,
-    "scopeNote": null,
-    "score": 1,
-    "type": "finding"
-   },
-   "item": {
-    "collapsible": 1,
-    "command": {
-     "arguments": [
-      "<this row>"
-     ],
-     "command": "impactTree.openChange",
-     "title": "Open change"
-    },
-    "contextValue": "finding",
-    "decoration": {
-     "status": "modified",
-     "tooltip": "src/service.ts:90"
-    },
-    "description": "✓  all call sites updated",
-    "icon": "symbol-method",
-    "label": "Service.idle",
-    "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#90",
-    "tooltip": {
-     "markdown": "✓ **Service.idle**\n\nall call sites updated\n\n`src/service.ts:90`  ·  component `(root)`\n\n_score 1_"
-    }
-   }
-  },
-  {
-   "at": "/3:Other changes/1:Service.idle/0:Callers could not be loaded",
+   "at": "/3:Other changes/1:Service.stop/0:Callers could not be loaded",
    "model": {
     "desc": "refresh to retry",
     "icon": "warning",
@@ -10334,11 +10414,11 @@
    }
   },
   {
-   "at": "/6:Legend/3:⛔  call sites this change did NOT update",
+   "at": "/6:Legend/3:⛔  a signature or throw change whose callers were NOT updated",
    "model": {
     "desc": "review these first",
     "icon": "error",
-    "label": "⛔  call sites this change did NOT update",
+    "label": "⛔  a signature or throw change whose callers were NOT updated",
     "type": "legendItem"
    },
    "item": {
@@ -10346,15 +10426,15 @@
     "decoration": null,
     "description": "review these first",
     "icon": "error",
-    "label": "⛔  call sites this change did NOT update"
+    "label": "⛔  a signature or throw change whose callers were NOT updated"
    }
   },
   {
-   "at": "/6:Legend/4:✓  all call sites updated",
+   "at": "/6:Legend/4:✓  signature or throw change, all callers updated",
    "model": {
     "desc": "every caller found was changed on the call line",
     "icon": "pass",
-    "label": "✓  all call sites updated",
+    "label": "✓  signature or throw change, all callers updated",
     "type": "legendItem"
    },
    "item": {
@@ -10362,15 +10442,31 @@
     "decoration": null,
     "description": "every caller found was changed on the call line",
     "icon": "pass",
-    "label": "✓  all call sites updated"
+    "label": "✓  signature or throw change, all callers updated"
    }
   },
   {
-   "at": "/6:Legend/5:∅  no callers found",
+   "at": "/6:Legend/5:●  body-only change that reaches callers",
+   "model": {
+    "desc": "the signature is the same, so callers still compile; their untouched call sites are expected",
+    "icon": "circle-filled",
+    "label": "●  body-only change that reaches callers",
+    "type": "legendItem"
+   },
+   "item": {
+    "collapsible": 0,
+    "decoration": null,
+    "description": "the signature is the same, so callers still compile; their untouched call sites are expected",
+    "icon": "circle-filled",
+    "label": "●  body-only change that reaches callers"
+   }
+  },
+  {
+   "at": "/6:Legend/6:∅  body-only change, no callers found",
    "model": {
     "desc": "in the code searched — dynamic calls and unloaded projects are not seen",
     "icon": "circle-slash",
-    "label": "∅  no callers found",
+    "label": "∅  body-only change, no callers found",
     "type": "legendItem"
    },
    "item": {
@@ -10378,11 +10474,11 @@
     "decoration": null,
     "description": "in the code searched — dynamic calls and unloaded projects are not seen",
     "icon": "circle-slash",
-    "label": "∅  no callers found"
+    "label": "∅  body-only change, no callers found"
    }
   },
   {
-   "at": "/6:Legend/6:△  caller changed, but NOT on the call line",
+   "at": "/6:Legend/7:△  caller changed, but NOT on the call line",
    "model": {
     "desc": "looks handled and is not",
     "icon": "warning",
@@ -10398,7 +10494,7 @@
    }
   },
   {
-   "at": "/6:Legend/7:○  caller not changed at all",
+   "at": "/6:Legend/8:○  caller not changed at all",
    "model": {
     "desc": "affected but untouched",
     "icon": "circle-outline",
@@ -10414,9 +10510,9 @@
    }
   },
   {
-   "at": "/6:Legend/8:?  callers unknown",
+   "at": "/6:Legend/9:?  callers unknown",
    "model": {
-    "desc": "the search failed or could not tell — e.g. passed as a value or DI-constructed",
+    "desc": "the search failed or could not tell — e.g. passed as a value or DI-constructed; on a signature or throw change, review it",
     "icon": "question",
     "label": "?  callers unknown",
     "type": "legendItem"
@@ -10424,13 +10520,13 @@
    "item": {
     "collapsible": 0,
     "decoration": null,
-    "description": "the search failed or could not tell — e.g. passed as a value or DI-constructed",
+    "description": "the search failed or could not tell — e.g. passed as a value or DI-constructed; on a signature or throw change, review it",
     "icon": "question",
     "label": "?  callers unknown"
    }
   },
   {
-   "at": "/6:Legend/9:🧪  test that reaches this code",
+   "at": "/6:Legend/10:🧪  test that reaches this code",
    "model": {
     "desc": "",
     "icon": "beaker",
@@ -10446,7 +10542,7 @@
    }
   },
   {
-   "at": "/6:Legend/10:↑  cycle — already shown higher up",
+   "at": "/6:Legend/11:↑  cycle — already shown higher up",
    "model": {
     "desc": "",
     "icon": "issue-reopened",

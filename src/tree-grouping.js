@@ -5,7 +5,7 @@
 // rows and leaves the ones it was given as they were; a group that wants a decoration
 // returns it as data for the provider to publish.
 const path = require('path');
-const { collectRowAndNested, rankChangeRow, getFileStatus, buildOutsideRows } = require('./tree-row-models');
+const { collectRowAndNested, classifyWorstRowVerdict, getFileStatus, buildOutsideRows } = require('./tree-row-models');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 /** @typedef {import('./tree-row-models').DecorationRequest} DecorationRequest */
@@ -18,7 +18,7 @@ const { collectRowAndNested, rankChangeRow, getFileStatus, buildOutsideRows } = 
  * @returns {TreeRow[]} A new array.
  */
 const sortByWorstStatus = (rows) => rows
-  .map((r) => /** @type {[TreeRow, number]} */ ([r, Math.min(...(r.members || collectRowAndNested(r)).map(rankChangeRow))]))
+  .map((r) => /** @type {[TreeRow, number]} */ ([r, classifyWorstRowVerdict(r.members || collectRowAndNested(r)).level]))
   .sort((a, b) => a[1] - b[1]).map(([r]) => r);
 
 /**

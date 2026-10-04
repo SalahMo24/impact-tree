@@ -23,12 +23,13 @@ const LEGEND = [
   ['file', 'Icon = file type', 'from your file-icon theme, on code rows and file rows alike'],
   ['symbol-method', 'impactTree.iconMode = "symbol"', 'switch code rows to method/function icons instead'],
   ['tag', 'Badge M / A / D / R', 'git status against the review base, not HEAD — hover for the word'],
-  ['error', '⛔  call sites this change did NOT update', 'review these first'],
-  ['pass', '✓  all call sites updated', 'every caller found was changed on the call line'],
-  ['circle-slash', '∅  no callers found', 'in the code searched — dynamic calls and unloaded projects are not seen'],
+  ['error', '⛔  a signature or throw change whose callers were NOT updated', 'review these first'],
+  ['pass', '✓  signature or throw change, all callers updated', 'every caller found was changed on the call line'],
+  ['circle-filled', '●  body-only change that reaches callers', 'the signature is the same, so callers still compile; their untouched call sites are expected'],
+  ['circle-slash', '∅  body-only change, no callers found', 'in the code searched — dynamic calls and unloaded projects are not seen'],
   ['warning', '△  caller changed, but NOT on the call line', 'looks handled and is not'],
   ['circle-outline', '○  caller not changed at all', 'affected but untouched'],
-  ['question', '?  callers unknown', 'the search failed or could not tell — e.g. passed as a value or DI-constructed'],
+  ['question', '?  callers unknown', 'the search failed or could not tell — e.g. passed as a value or DI-constructed; on a signature or throw change, review it'],
   ['beaker', '🧪  test that reaches this code', ''],
   ['issue-reopened', '↑  cycle — already shown higher up', ''],
 ];
@@ -48,34 +49,120 @@ const NO_SITE_EVIDENCE = { updated: [], untouched: [], unknown: [] };
 
 // Rows that only group changes; their review state is derived from their members.
 const GROUP_TYPES = new Set(['changeFile', 'insideGroup']);
-/** @type {Record<string, number>} */
-const SEVERITY_RANK = { stale: 0, warn: 1, ok: 2, muted: 3 };
+/** @typedef {{ level: number, token: string, text: string, sentence: string }} Verdict */
+
+// What the analysis could not say about a caller search, in words a reviewer can act on.
+/** @type {Record<string, string>} */
+const INCOMPLETE_REASON_TEXT = { 'referenced-as-value': 'passed around as a value, so the call sites cannot be followed' };
 
 /**
- * The state a changed symbol's row leads with. A token and a severity rather than an
- * icon: the icon slot belongs to the file glyph, and severity orders rows and decides
- * which groups start open.
- * @param {any} change A changed symbol from the result.
- * @returns {{ token: string, severity: 'stale'|'warn'|'ok'|'muted', marker: string }}
+ * Why a caller search could not list the callers, as a clause for a sentence.
+ * @param {any} change
+ * @returns {string}
  */
-function classifyChangeStatus(change) {
+function describeUnknownCallers(change) {
+  if (change.callerState === 'di') return 'it is built by a DI container, so its callers are not visible';
+  const reason = change.callersIncompleteReason;
+  if (INCOMPLETE_REASON_TEXT[reason]) return `it is ${INCOMPLETE_REASON_TEXT[reason]}`;
+  return reason ? `the search reported "${reason}"` : 'the search did not say why';
+}
+
+/**
+ * Whether the caller search answered: it found callers or finished and found none.
+ * `unknown`, `di` and any state a result does not define are not answers.
+ * @param {any} change
+ * @returns {boolean}
+ */
+const callersKnown = (change) => change.callerState === 'resolved' || change.callerState === 'none';
+
+/**
+ * The verdict of a change that has a risky kind: level 0 when a caller was left alone,
+ * 1 when the callers cannot be told, otherwise 2.
+ * @param {any} change
+ * @param {any[]} risky The non-body kinds.
+ * @returns {Verdict}
+ */
+function classifyRiskyVerdict(change, risky) {
+  const n = (change.callers ?? []).length;
+  const stale = change.staleCallers;
+  const what = `The ${risky.map((k) => k.label).join(', ')}`;
   // Results from before `callersComplete` existed have no such field and read as complete.
   const mayBeMissing = change.callersComplete === false;
-  if (change.staleCallers > 0) {
-    const e = change.staleChangedElsewhere || 0;
-    return { token: '⛔', severity: 'stale',
-      marker: `${change.staleCallers} call site(s) not updated${e ? ` (${e} edited nearby)` : ''}${mayBeMissing ? ' — more callers may be missing' : ''}` };
+  if (stale > 0) {
+    const of = `${stale} of ${n} caller${n === 1 ? '' : 's'}`;
+    return { level: 0, token: '⛔', text: `${of} not updated`,
+      sentence: `${what}, and ${of} ${stale === 1 ? 'was' : 'were'} not changed on the call line. Check that ${stale === 1 ? 'it still works' : 'they still work'}.${mayBeMissing ? ' More callers may be missing.' : ''}` };
   }
-  switch (change.callerState) {
-    case 'resolved': return mayBeMissing
-      ? { token: '?', severity: 'warn', marker: 'callers found so far are updated, but more may be missing' }
-      : { token: '✓', severity: 'ok', marker: 'all call sites updated' };
-    // A completed search that found nothing is not evidence that callers were updated.
-    case 'none': return { token: '∅', severity: 'muted', marker: 'no callers found' };
-    case 'di': return { token: '?', severity: 'muted', marker: 'DI-constructed' };
-    default: return { token: '?', severity: 'warn', marker: 'callers unknown' };
+  if (mayBeMissing || !callersKnown(change)) {
+    const found = change.callerState === 'resolved';
+    return { level: 1, token: '?', text: change.callerState === 'di' ? 'DI-constructed' : 'callers unknown',
+      sentence: `${what}, ${found ? 'and the callers found so far are updated, but more may be missing' : 'but its callers could not be found'}: ${describeUnknownCallers(change)}. Check its users by hand.` };
   }
+  const none = change.callerState === 'none';
+  return { level: 2, token: '✓', text: none ? 'no callers' : 'all callers updated',
+    sentence: `${what}. ${none ? 'Nothing calls it in the code searched.' : 'Every caller was updated on the call line.'}` };
 }
+
+/**
+ * The verdict of a change whose signature and throws did not change: level 3 when it
+ * reaches callers or they are unknown, 4 when nothing calls it.
+ * @param {any} change
+ * @returns {Verdict}
+ */
+function classifyBodyOnlyVerdict(change) {
+  const callers = change.callers ?? [];
+  const n = callers.length;
+  const mayBeMissing = change.callersComplete === false;
+  // A finished search that found nothing is `none`; one that was cut short may have missed callers.
+  if (!callersKnown(change) || (mayBeMissing && change.callerState === 'none')) {
+    return { level: 3, token: '?', text: change.callerState === 'di' ? 'DI-constructed' : 'callers unknown',
+      sentence: `Only the body changed. Its callers could not be found: ${describeUnknownCallers(change)}.` };
+  }
+  if (change.callerState === 'none') {
+    return { level: 4, token: '∅', text: 'no callers', sentence: 'Only the body changed, and nothing calls it in the code searched.' };
+  }
+  const untouched = callers.filter((/** @type {any} */ c) => c.callState !== 'updated-at-call').length;
+  return { level: 3, token: '●', text: `reaches ${n} caller${n === 1 ? '' : 's'}`,
+    sentence: `Only the body changed: the signature is the same, so callers still compile. ${untouched} of ${n} caller${n === 1 ? '' : 's'} ${untouched === 1 ? 'is' : 'are'} unchanged, which is expected; check they still get the behaviour they rely on.${mayBeMissing ? ' More callers may be missing.' : ''}` };
+}
+
+/**
+ * What a changed symbol's row leads with. Needs attention (level 0, `⛔`) means a risky
+ * change met a caller that was not updated; a risky kind is any kind but `body`, because
+ * a body-only edit leaves callers untouched as a matter of course. Levels: 0 breaks
+ * callers, 1 risk unknown, 2 risk handled, 3 behaviour reaches callers, 4 quiet.
+ * Lower is worse; the level orders rows and decides which groups start open.
+ * @param {any} change A changed symbol from the result.
+ * @returns {Verdict} `sentence` is the one-paragraph explanation for the detail panel.
+ */
+function classifyChangeVerdict(change) {
+  const risky = change.kinds.filter((/** @type {any} */ k) => k.id !== 'body');
+  return risky.length ? classifyRiskyVerdict(change, risky) : classifyBodyOnlyVerdict(change);
+}
+
+/**
+ * The verdict of a deleted symbol: always level 1, because nothing here can say that
+ * no one still uses it.
+ * @returns {Verdict}
+ */
+const classifyDeletedVerdict = () => ({ level: 1, token: '−', text: 'deleted',
+  sentence: 'This symbol was removed. Nothing in the analysed code still calls it, but check dynamic users.' });
+
+/**
+ * The verdict of an "outside functions" row: always level 4, with its line ranges as text.
+ * @param {Array<[number, number]>} ranges The changed line ranges outside every callable.
+ * @returns {Verdict}
+ */
+const classifyOutsideVerdict = (ranges) => ({ level: 4, token: '≡', text: describeOutsideRanges(ranges),
+  sentence: 'Changed lines that are not inside any function: imports, constants, type comments and top-level statements. They have no callers, so read them in the diff.' });
+
+/**
+ * The verdict of a change row, a deleted row or an outside row.
+ * @param {TreeRow} row A row with a `finding`, or of type `deleted` or `outside`.
+ * @returns {Verdict}
+ */
+const classifyRowVerdict = (row) => (row.finding ? classifyChangeVerdict(row.finding)
+  : row.type === 'deleted' ? classifyDeletedVerdict() : classifyOutsideVerdict(row.ranges));
 
 /**
  * A change row followed by every change nested inside it, at any depth.
@@ -85,21 +172,11 @@ function classifyChangeStatus(change) {
 const collectRowAndNested = (row) => [row, ...(row.inside || []).flatMap(collectRowAndNested)];
 
 /**
- * Severity rank of a change row; lower is worse. A row of changed lines outside functions
- * has no callers to be stale, so it ranks as muted.
- * @param {TreeRow} row
- * @returns {number}
+ * The worst verdict among `rows`; the first wins a tie.
+ * @param {TreeRow[]} rows Non-empty list of change, deleted or outside rows.
+ * @returns {Verdict}
  */
-const rankChangeRow = (row) => (row.finding ? SEVERITY_RANK[classifyChangeStatus(row.finding).severity] ?? 3 : SEVERITY_RANK.muted);
-
-/**
- * The status of the worst change among `rows`; the first wins a tie.
- * @param {TreeRow[]} rows Non-empty list of change rows with at least one that has a `finding`;
- *   rows without one (outside functions) are not considered.
- * @returns {ReturnType<typeof classifyChangeStatus>}
- */
-const classifyWorstChangeStatus = (rows) =>
-  classifyChangeStatus(rows.filter((x) => x.finding).reduce((w, x) => (rankChangeRow(x) < rankChangeRow(w) ? x : w)).finding);
+const classifyWorstRowVerdict = (rows) => rows.map(classifyRowVerdict).reduce((w, v) => (v.level < w.level ? v : w));
 
 /**
  * The git status the result records for a repo-relative path, trying the path with
@@ -448,8 +525,8 @@ const buildInsideGroupRow = (row) => ({
 });
 
 module.exports = {
-  LEGEND, CALL_STATE, NO_SITE_EVIDENCE, GROUP_TYPES, SEVERITY_RANK,
-  classifyChangeStatus, classifyWorstChangeStatus, collectRowAndNested, rankChangeRow, getFileStatus,
+  LEGEND, CALL_STATE, NO_SITE_EVIDENCE, GROUP_TYPES,
+  classifyChangeVerdict, classifyDeletedVerdict, classifyOutsideVerdict, classifyRowVerdict, classifyWorstRowVerdict, collectRowAndNested, getFileStatus,
   buildReachScopeNote, buildPlaceholderRows, collectTopLevelChangeRefs, buildRootRows,
   isRootChange, otherChangesOf, buildChangeRows, buildDeletedRows, buildFileLeafRows, buildOutsideRows, describeOutsideRanges,
   buildComputeTestReachRow, buildLegendRows, dropExcludedCallers, collectAncestry, buildCallerRows,
