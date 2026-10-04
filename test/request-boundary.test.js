@@ -206,6 +206,7 @@ test('a malformed response is a named boundary error, one per validated endpoint
     ['a requested reviewer without a login', (gh) => gh.listOpenPullRequests(SLUG), [pr(4, { requested_reviewers: [{ id: 3 }] })], '/repos/o/r/pulls'],
     ['a requested team with a string id', (gh) => gh.listOpenPullRequests(SLUG), [pr(4, { requested_teams: [{ id: '7', name: 't' }] })], '/repos/o/r/pulls'],
     ['a requested team without a name', (gh) => gh.getPullRequest(SLUG, 4), pr(4, { requested_teams: [{ id: 7 }] }), '/repos/o/r/pulls/4'],
+    ['an author avatar that is not a string', (gh) => gh.getPullRequest(SLUG, 4), pr(4, { user: { login: 'a', avatar_url: 5 } }), '/repos/o/r/pulls/4'],
     ['a team list that is not an array', (gh) => gh.listMyTeams(), { teams: [] }, '/user/teams'],
     ['a team without an id', (gh) => gh.listMyTeams(), [{ name: 't' }], '/user/teams'],
     ['a team with a fractional id', (gh) => gh.listMyTeams(), [{ id: 1.5, name: 't' }], '/user/teams'],
@@ -239,6 +240,21 @@ test('review requests are read from the PR, and a PR without them has none', asy
   const [a, b, c] = (await gh.listOpenPullRequests(SLUG)).pullRequests;
   assert.deepEqual([a.requestedReviewers, a.requestedTeams], [['x', 'y'], [{ id: 7, name: 'backend' }]]);
   for (const p of [b, c]) assert.deepEqual([p.requestedReviewers, p.requestedTeams], [[], []]);
+});
+
+test('an author avatar is asked for at row size, and only an https URL is kept', async () => {
+  const cases = [
+    ['https://avatars.githubusercontent.com/u/9?v=4', 'https://avatars.githubusercontent.com/u/9?v=4&s=32'],
+    ['https://avatars.githubusercontent.com/u/9?s=460', 'https://avatars.githubusercontent.com/u/9?s=32'],
+    ['https://avatars.githubusercontent.com/in/15368', 'https://avatars.githubusercontent.com/in/15368?s=32'],
+    ['http://avatars.example/u/9', null],
+    ['javascript:alert(1)', null],
+    ['not a url', null],
+    [undefined, null],
+  ];
+  const gh = await client(async () => json(cases.map(([avatar], i) => pr(i + 1, { user: { login: 'a', avatar_url: avatar } }))));
+  const got = (await gh.listOpenPullRequests(SLUG)).pullRequests.map((p) => p.authorAvatarUrl);
+  assert.deepEqual(got, cases.map(([, want]) => want));
 });
 
 test('teams carry their parent, and the team list stops at its page cap like the PR list', async () => {
