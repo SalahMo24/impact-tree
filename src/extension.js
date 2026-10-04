@@ -129,7 +129,9 @@ function activate(context) {
 
   // Restore an existing session silently so a returning user sees their PRs without
   // being prompted; never pop a sign-in modal on startup.
-  gh.signIn().then((sess) => { if (sess) loadPrs(); else sources.refresh(); });
+  gh.signIn().then(
+    (sess) => { if (sess) loadPrs(); else sources.refresh(); },
+    (e) => { log(`github: sign-in failed: ${e.message}`); sources.refresh(); });
 
   context.subscriptions.push(
     ...registerCommands(vscode, {

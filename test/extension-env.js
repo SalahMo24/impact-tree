@@ -57,7 +57,7 @@ const previewResult = (pr) => ({ tierA: true, pr, prNumber: pr.number, headSha: 
 // async git calls (fetch, rev-parse of FETCH_HEAD, checkout), so the worktree itself
 // never moves. `changedSource` puts a committed TypeScript change on a feature branch,
 // which is what readiness needs before it will warm the language server.
-function createEnv({ prewarm = false, changedSource = false, memento = new Map() } = {}) {
+function createEnv({ prewarm = false, changedSource = false, memento = new Map(), signIn = null } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-ext-commands-'));
   const sh = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
   sh('init', '-q', '--initial-branch=main'); sh('config', 'user.name', 'Test'); sh('config', 'user.email', 'test@example.com');
@@ -81,7 +81,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   const failures = new Map();
   const hooks = { beforeCheckout: null, headOf: shaFor, remoteResult: (pr) => previewResult(pr), localResult: (o) => localResult(o),
     warm: !changedSource, clearResolver: () => {} };
-  const captured = { tree: null, decorations: null, checkbox: null };
+  const captured = { tree: null, decorations: null, checkbox: null, sources: null };
   let fetchHead = null, quickPick = null;
 
   const disposable = () => ({ dispose() {} });
@@ -91,12 +91,21 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     Position: class { constructor(line, character) { this.line = line; this.character = character; } },
     Range: class { constructor(...args) { this.args = args; } },
     OverviewRulerLane: { Center: 2 },
+    // Unlike the shared stub's, this one delivers events, so a test can see a view refresh.
+    EventEmitter: class {
+      constructor() {
+        const listeners = [];
+        this.event = (listener) => { listeners.push(listener); return disposable(); };
+        this.fire = (value) => { for (const listener of listeners) listener(value); };
+      }
+    },
     authentication: { getSession: async () => null },
     window: {
       createOutputChannel: () => ({ appendLine: (m) => seen.log.push(m), dispose() {}, show() {} }),
       registerFileDecorationProvider: (provider) => { captured.decorations = provider; return disposable(); },
       createTreeView: (id, options) => {
         if (id === 'impactTree.changes') captured.tree = options.treeDataProvider;
+        if (id === 'impactTree.sources') captured.sources = options.treeDataProvider;
         return { dispose() {}, onDidChangeCheckboxState: (handler) => { captured.checkbox = handler; return disposable(); } };
       },
       withProgress: async (_, fn) => fn({ report() {} }),
@@ -182,6 +191,11 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
         },
       }) };
     }
+    // The silent sign-in at startup, replaced when a test needs it to fail in a way the real one cannot.
+    if (signIn && resolved === path.join(SRC, 'github.js')) {
+      const real = originalLoad.call(this, name, parent, ...rest);
+      return { ...real, createGitHub: (...args) => ({ ...real.createGitHub(...args), signIn }) };
+    }
     if (resolved === path.join(SRC, 'engine/git.js')) {
       const real = originalLoad.call(this, name, parent, ...rest);
       return { ...real, makeGit: (repo) => {
@@ -207,6 +221,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     },
     isTicked: (node) => captured.tree.getTreeItem(node).checkboxState === vscode.TreeItemCheckboxState.Checked,
     tree: () => captured.tree,
+    sources: () => captured.sources,
     decorations: () => captured.decorations,
     failGit: (cmd, error) => failures.set(cmd, error),
     moveFetchHead: (sha) => { fetchHead = sha; },
