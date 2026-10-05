@@ -12,9 +12,8 @@ const { pull, localResult, finding, withEnv, refusals } = require('./extension-e
 const flush = () => new Promise(setImmediate);
 const rootRows = (env) => env.tree().getChildren();
 const rootLabels = async (env) => (await rootRows(env)).map((n) => n.label);
-const summaryOf = async (env) => (await rootRows(env)).find((n) => n.type === 'summary');
-const sectionOf = async (env, key) => (await rootRows(env)).find((n) => n.type === 'section' && n.key === key);
-const findingRows = async (env) => env.tree().getChildren(await sectionOf(env, 'findings'));
+// The view's message, which the extension sets whenever the tree repaints.
+const messageOf = (env) => env.view().message;
 const decorationAt = (env, file, pos) => env.decorations().provideFileDecoration(env.vscode.Uri.file(file).with({ fragment: String(pos) }));
 const PREVIEW_ROW = /^Preview — PR files only/;
 
@@ -40,8 +39,8 @@ test('1. a newer refresh replaces an older one, whose late result, decorations a
       if (ending === 'result') first.release(); else first.fail(new Error('older run blew up'));
       await olderRun;
 
-      assert.deepEqual((await findingRows(env)).map((n) => n.label), ['newer']);
-      assert.match((await summaryOf(env)).desc, /newer-base/);
+      assert.deepEqual((await env.changeRows()).map((n) => n.label), ['newer']);
+      assert.match(messageOf(env), /against newer-base /);
       assert.equal(decorationAt(env, older[0].file, older[0].namePos), undefined, 'no decoration of the older result');
       assert.notEqual(decorationAt(env, newer.file, newer.namePos), undefined);
       assert.deepEqual(env.seen.errors, []);
@@ -62,7 +61,7 @@ test('2. selectMode during a run produces a result in the newly selected mode', 
       first.release();
       await running;
       assert.deepEqual(env.seen.analyze.map((a) => a.mode), [from, to]);
-      assert.match((await summaryOf(env)).desc, new RegExp(` ${to} `), 'the view shows the selected mode');
+      assert.match(messageOf(env), new RegExp(`^${to} mode against `), 'the view shows the selected mode');
       assert.deepEqual(env.seen.errors, []);
     }));
   }
@@ -71,6 +70,7 @@ test('2. selectMode during a run produces a result in the newly selected mode', 
 test('3. computeTestReach during a run produces a result with test reachability computed', async (t) => {
   for (const order of ['older ends first', 'older ends last']) {
     await t.test(order, () => withEnv(async (env) => {
+      env.hooks.localResult = (o) => localResult(o, { findings: [finding('target', path.join(env.dir, 'a.ts'), 5)] });
       const first = env.holds.analyze.next();
       const running = env.refresh();
       await first.reached;
@@ -78,7 +78,9 @@ test('3. computeTestReach during a run produces a result with test reachability 
       const reach = env.computeTestReach();
       await second.reached;
       if (order === 'older ends first') { first.release(); await running; second.release(); await reach; } else { second.release(); await reach; first.release(); await running; }
-      assert.equal((await sectionOf(env, 'untested')).computed, true);
+      const [row] = await env.changeRows();
+      const testsRow = (await env.tree().getChildren(row)).at(-1);
+      assert.notEqual(testsRow.label, 'Compute test reachability', 'the shown result has its test reach computed');
     }));
   }
 });
@@ -93,7 +95,7 @@ test('4. a local refresh during a PR preview gives a local result, and the rever
     await preview;
     assert.equal(env.seen.analyze.length, 1, 'the local analysis ran');
     assert.ok(!(await rootLabels(env)).some((l) => PREVIEW_ROW.test(l)), 'the preview did not take over the view');
-    assert.match((await summaryOf(env)).desc, / pr /);
+    assert.match(messageOf(env), /^pr mode against /);
     await env.refresh();
     assert.deepEqual(env.seen.remote, [7], 'Refresh now follows the local analysis');
     assert.deepEqual(env.seen.errors, []);
@@ -160,11 +162,14 @@ test('6. every analysis requested during a checkout is refused with a visible wa
 test('7. a lazy expansion that resolves after a newer analysis returns no rows and registers no decorations', async (t) => {
   for (const newer of ['still running', 'finished']) {
     await t.test(`the newer analysis is ${newer}`, () => withEnv(async (env) => {
-      const target = finding('target', path.join(env.dir, 'a.ts'), 5);
+      // The change's own caller is in the result; expanding that caller row queries the resolver.
+      const user = { label: 'user', file: path.join(env.dir, 'u.ts'), pos: 3, test: false, callSites: [], sites: 0 };
+      const target = { ...finding('target', path.join(env.dir, 'a.ts'), 5), callers: [user] };
       env.hooks.localResult = (o) => localResult(o, { findings: [target] });
       await env.refresh();
-      const [row] = await findingRows(env);
-      assert.equal(row.label, 'target');
+      const callerRowOf = async () => (await env.tree().getChildren((await env.changeRows())[0]))[0];
+      const row = await callerRowOf();
+      assert.deepEqual([row.type, row.label], ['caller', 'user']);
 
       const query = env.holds.callers.next();
       const expansion = env.tree().getChildren(row);
@@ -182,7 +187,7 @@ test('7. a lazy expansion that resolves after a newer analysis returns no rows a
 
       // A fresh expansion of the current result still works.
       const again = env.holds.callers.next();
-      const current = env.tree().getChildren((await findingRows(env))[0]);
+      const current = env.tree().getChildren(await callerRowOf());
       await again.reached;
       again.release({ callers: [caller], complete: true });
       assert.deepEqual((await current).map((n) => n.label), ['caller']);
@@ -273,7 +278,7 @@ test('10. an older run\'s finally never changes the state of a newer run', async
 
       second.release();
       await newerRun;
-      assert.match((await summaryOf(env)).desc, / branch /);
+      assert.match(messageOf(env), /^branch mode against /);
       assert.deepEqual(env.seen.errors, []);
     }));
   }

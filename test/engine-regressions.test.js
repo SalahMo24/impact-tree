@@ -77,7 +77,7 @@ test('constructor aliases nest consistently and lazy expansion keeps untracked c
     getState: () => ({ result: { excludedCallerPaths: ['scratch.ts'] }, rel: (f) => path.relative(root,f) }),
     resolver: { incomingWithStatus: async () => ({ callers: [{file:'/review/scratch.ts',pos:1,label:'scratch'},{file:'/review/committed.ts',pos:1,label:'kept'}], complete: true }) },
   });
-  const rows = await provider.getChildren({ type:'finding', file:a.file, pos:10 });
+  const rows = await provider.getChildren({ type:'caller', file:a.file, pos:10 });
   assert.deepEqual(rows.map((r) => r.label),['kept']);
 });
 

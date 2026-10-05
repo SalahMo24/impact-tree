@@ -47,8 +47,6 @@ const CALL_STATE = {
 // What a caller row knows about its call sites when the view state cannot classify them.
 const NO_SITE_EVIDENCE = { updated: [], untouched: [], unknown: [] };
 
-// Rows that only group changes; their review state is derived from their members.
-const GROUP_TYPES = new Set(['changeFile', 'insideGroup']);
 /** @typedef {{ level: number, token: string, text: string, sentence: string }} Verdict */
 
 // What the analysis could not say about a caller search, in words a reviewer can act on.
@@ -132,7 +130,7 @@ function classifyBodyOnlyVerdict(change) {
  * change met a caller that was not updated; a risky kind is any kind but `body`, because
  * a body-only edit leaves callers untouched as a matter of course. Levels: 0 breaks
  * callers, 1 risk unknown, 2 risk handled, 3 behaviour reaches callers, 4 quiet.
- * Lower is worse; the level orders rows and decides which groups start open.
+ * Lower is worse; the level orders a file's rows and the files.
  * @param {any} change A changed symbol from the result.
  * @returns {Verdict} `sentence` is the one-paragraph explanation for the detail panel.
  */
@@ -164,13 +162,6 @@ const classifyOutsideVerdict = (ranges) => ({ level: 4, token: '≡', text: desc
  */
 const classifyRowVerdict = (row) => (row.finding ? classifyChangeVerdict(row.finding)
   : row.type === 'deleted' ? classifyDeletedVerdict() : classifyOutsideVerdict(row.ranges));
-
-/**
- * A change row followed by every change nested inside it, at any depth.
- * @param {TreeRow} row
- * @returns {TreeRow[]}
- */
-const collectRowAndNested = (row) => [row, ...(row.inside || []).flatMap(collectRowAndNested)];
 
 /**
  * The worst verdict among `rows`; the first wins a tie.
@@ -225,93 +216,15 @@ function buildPlaceholderRows({ phase, busy, state }) {
   return null;
 }
 
-// A changed symbol that calls another changed symbol appears only under it; otherwise
-// every such symbol shows twice, once nested and once at top level.
-/** @param {any} change */
-const isRootChange = (change) => change.isRoot !== false;
-/** @param {any} result */
-const otherChangesOf = (result) => (result.allChanged || []).filter((/** @type {any} */ c) => !result.findings.includes(c));
-
 /**
- * Stand-ins for the top-level change rows, enough for the review identity to name them,
- * so the summary can count what is left to review.
- * @param {any} result
- * @returns {TreeRow[]}
- */
-const collectTopLevelChangeRefs = (result) => [
-  ...(result.allChanged || []).filter(isRootChange)
-    .map((/** @type {any} */ c) => ({ type: 'finding', file: c.file, pos: c.namePos })),
-  // changed lines outside functions are reviewed like any other change
-  ...(result.outside || []).map((/** @type {any} */ o) => ({ type: 'outside', file: o.file, relPath: o.relPath })),
-];
-
-/**
- * The summary row: counts, mode and base, and review progress when it is tracked.
- * @param {any} r The result.
- * @param {number|null} leftToReview Unreviewed top-level changes, or null without review.
- * @returns {TreeRow}
- */
-function buildSummaryRow(r, leftToReview) {
-  const stale = r.findings.reduce((/** @type {number} */ n, /** @type {any} */ f) => n + f.staleCallers, 0);
-  const changed = (r.allChanged || []).length;
-  return {
-    type: 'summary',
-    label: `${changed} changed symbol${changed === 1 ? '' : 's'}`
-      + (leftToReview === null ? '' : leftToReview === 0 ? '  ·  all reviewed' : `  ·  ${leftToReview} left to review`),
-    desc: `${r.findings.length} finding(s)  ·  ${stale} call site(s) not updated  ·  ${r.mode}  ·  ${r.base.ref}`,
-    tooltip: `mode '${r.mode}'${r.requestedMode && r.requestedMode !== r.mode ? ` (requested '${r.requestedMode}')` : ''}\nbase ${r.base.ref} @ ${String(r.base.sha).slice(0, 10)}\n${r.changedFileCount} analysed file(s), ${(r.otherFiles || []).length} not analysed`,
-  };
-}
-
-/**
- * The section rows, in display order. Sections keep a body-only change visible without
- * competing with findings.
+ * The rows above the changed files: the preview notice, then one row per analysis
+ * warning and per component that could not be analysed.
  * @param {any} r The result.
  * @returns {TreeRow[]}
  */
-function buildSectionHeaderRows(r) {
-  const findingRoots = r.findings.filter(isRootChange);
-  const otherAll = otherChangesOf(r);
-  const other = otherAll.filter(isRootChange);
-  const nestedFindings = r.findings.length - findingRoots.length;
-  const nestedOther = otherAll.length - other.length;
+function buildNoticeRows(r) {
   /** @type {TreeRow[]} */
-  const rows = [
-    { type: 'section', key: 'findings', label: 'Findings', count: findingRoots.length, icon: 'warning',
-      desc: `signature, throw or deletion risk${nestedFindings ? `  ·  ${nestedFindings} nested under its callee` : ''}` },
-    { type: 'section', key: 'other', label: 'Other changes', count: other.length + (r.outside || []).length, icon: 'edit',
-      desc: `body-only edits${nestedOther ? `  ·  ${nestedOther} nested under their callee` : ''}` },
-    { type: 'section', key: 'deleted', label: 'Deleted', count: r.deleted.length, icon: 'trash', desc: '' },
-  ];
-  if (!r.tierA) {
-    rows.push({ type: 'section', key: 'untested', label: 'No test reaches',
-      count: r.testReachComputed ? r.untested.length : 0, icon: 'beaker',
-      computed: r.testReachComputed,
-      desc: r.testReachComputed ? buildReachScopeNote(r) : 'not computed — expand to run' });
-    // Kept apart from the section above, which only holds symbols the walk proved
-    // untested: a walk that failed or was cut short proves nothing either way.
-    const unknownReach = r.testReachComputed ? (r.testUnknown || []) : [];
-    if (unknownReach.length) {
-      rows.push({ type: 'section', key: 'testUnknown', label: 'Test reach unknown',
-        count: unknownReach.length, icon: 'question',
-        desc: 'the search failed or stopped early — not the same as untested' });
-    }
-  }
-  rows.push({ type: 'section', key: 'files', label: 'Files without a call graph', count: (r.otherFiles || []).length,
-    icon: 'files', desc: 'migrations, config, docs' });
-  return rows;
-}
-
-/**
- * The top level of a tree with a result: summary, preview notice, warnings, sections
- * and the legend.
- * @param {any} r The result.
- * @param {{ leftToReview: number|null }} progress
- * @returns {TreeRow[]}
- */
-function buildRootRows(r, { leftToReview }) {
-  /** @type {TreeRow[]} */
-  const rows = [buildSummaryRow(r, leftToReview)];
+  const rows = [];
   // Tier A cannot see a caller in a file the PR does not touch. Presenting a truncated
   // tree as if it were complete is the one failure mode that would make this feature
   // worse than useless, so it is stated on the face of it.
@@ -331,20 +244,35 @@ function buildRootRows(r, { leftToReview }) {
     rows.push({ type: 'message', icon: 'circle-slash',
       label: `${u.count} file(s) in '${u.component}' not analysed`, desc: 'see analysis warning' });
   }
-  rows.push(...buildSectionHeaderRows(r));
-  rows.push({ type: 'legend', label: 'Legend' });
   return rows;
 }
 
 /**
+ * What a change's row says about tests reaching it, beyond its tests row: why the walk is
+ * unknown, or how far a walk that found no test went. A walk that failed or was cut short
+ * proves nothing, so it never reads as untested. Both are null when no walk ran: in a PR
+ * preview, or before test reach is computed.
+ * @param {any} change
+ * @param {any} result
+ * @returns {{ reachReason: string|null, scopeNote: string|null }}
+ */
+function describeTestReach(change, result) {
+  if (result.tierA || !result.testReachComputed) return { reachReason: null, scopeNote: null };
+  return {
+    reachReason: change.testState === 'unknown' ? change.testReachIncompleteReason || 'the test search did not finish' : null,
+    scopeNote: change.testState === 'uncovered' ? buildReachScopeNote(result) : null,
+  };
+}
+
+/**
  * One row per changed symbol, with the decoration each should carry. `ambiguous` marks a
- * label that more than one changed symbol shares, so the row can name its component.
+ * label that more than one changed symbol shares, so the row can name its component;
+ * `reachReason` and `scopeNote` are from `describeTestReach`.
  * @param {any[]} changes Changed symbols, in display order.
- * @param {{ result: any, uriOf: ResourceUriOf, reachReasonOf?: (change: any) => string|null, scopeNote?: string|null }} opts
- *   `reachReasonOf` gives a row's test-reach-unknown reason; `scopeNote` is shown on every row.
+ * @param {{ result: any, uriOf: ResourceUriOf }} opts
  * @returns {{ rows: TreeRow[], decorations: DecorationRequest[] }}
  */
-function buildChangeRows(changes, { result, uriOf, reachReasonOf = () => null, scopeNote = null }) {
+function buildChangeRows(changes, { result, uriOf }) {
   /** @type {Map<string, number>} */
   const seen = new Map();
   for (const c of result.allChanged || []) seen.set(c.label, (seen.get(c.label) || 0) + 1);
@@ -355,7 +283,7 @@ function buildChangeRows(changes, { result, uriOf, reachReasonOf = () => null, s
     decorations.push({ uri, status: getFileStatus(result, c.relPath), tooltip: `${c.relPath}:${c.startLine}` });
     return {
       type: 'finding', label: c.label, finding: c, file: c.file, pos: c.namePos, score: c.score,
-      ambiguous: (seen.get(c.label) || 0) > 1, decorationUri: uri, reachReason: reachReasonOf(c), scopeNote,
+      ambiguous: (seen.get(c.label) || 0) > 1, decorationUri: uri, ...describeTestReach(c, result),
     };
   });
   return { rows, decorations };
@@ -392,7 +320,7 @@ function buildOutsideRows(outside, { result, uriOf }) {
     decorations.push({ uri, status, tooltip: o.relPath });
     return {
       type: 'outside', label: 'Outside functions', file: o.file, relPath: o.relPath, ranges: o.ranges,
-      status, desc: describeOutsideRanges(o.ranges), inGroup: false, decorationUri: uri,
+      status, desc: describeOutsideRanges(o.ranges), decorationUri: uri,
     };
   });
   return { rows, decorations };
@@ -440,9 +368,6 @@ function buildFileLeafRows(files, { absPath, uriOf }) {
 /** @returns {TreeRow} The row that runs the deferred test-reach walk when clicked. */
 const buildComputeTestReachRow = () => ({ type: 'message', label: 'Compute test reachability', icon: 'play',
   desc: 'extra caller queries — run on demand', command: 'impactTree.computeTestReach' });
-
-/** @returns {TreeRow[]} One row per legend entry. */
-const buildLegendRows = () => LEGEND.map(([icon, label, desc]) => ({ type: 'legendItem', icon, label, desc }));
 
 /**
  * The callers a review shows: those in paths the review excludes (untracked files in a
@@ -514,22 +439,11 @@ const buildIncompleteCallersRow = (reason, hasCallers) => ({
   desc: 'refresh to retry', tooltip: reason,
 });
 
-/**
- * The row holding the changes declared inside a change row. They are not its callers,
- * so they sit in their own row rather than among the rows that call it.
- * @param {TreeRow} row A change row with a non-empty `inside`.
- * @returns {TreeRow}
- */
-const buildInsideGroupRow = (row) => ({
-  type: 'insideGroup', label: 'Changed inside', container: row.finding.label,
-  file: row.file, relPath: row.finding.relPath, rows: row.inside, members: row.inside.flatMap(collectRowAndNested),
-});
-
 module.exports = {
-  LEGEND, CALL_STATE, NO_SITE_EVIDENCE, GROUP_TYPES,
-  classifyChangeVerdict, classifyDeletedVerdict, classifyOutsideVerdict, classifyRowVerdict, classifyWorstRowVerdict, collectRowAndNested, getFileStatus,
-  buildReachScopeNote, buildPlaceholderRows, collectTopLevelChangeRefs, buildRootRows,
-  isRootChange, otherChangesOf, buildChangeRows, buildDeletedRows, buildFileLeafRows, buildOutsideRows, describeOutsideRanges,
-  buildComputeTestReachRow, buildLegendRows, dropExcludedCallers, collectAncestry, buildCallerRows,
-  buildIncompleteCallersRow, buildInsideGroupRow,
+  LEGEND, CALL_STATE, NO_SITE_EVIDENCE,
+  classifyChangeVerdict, classifyDeletedVerdict, classifyOutsideVerdict, classifyRowVerdict, classifyWorstRowVerdict, getFileStatus,
+  buildReachScopeNote, buildPlaceholderRows, buildNoticeRows,
+  buildChangeRows, buildDeletedRows, buildFileLeafRows, buildOutsideRows, describeOutsideRanges,
+  buildComputeTestReachRow, dropExcludedCallers, collectAncestry, buildCallerRows,
+  buildIncompleteCallersRow,
 };

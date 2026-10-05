@@ -45,6 +45,17 @@ test('preview documents hold only the current revision, and paths with punctuati
   assert.equal(docs.read({ path: '/a?#.ts', query: prQuery(c, 'base', { path: 'a?#.ts', status: 'added' }) }), '');
 });
 
+// The rows a reviewer ticks, as the provider builds them: the rows of each file with a
+// call graph, and each file without one.
+async function countingRowsOf(provider) {
+  const rows = [];
+  for (const top of await provider.getChildren()) {
+    if (top.type === 'reviewFile') rows.push(...await provider.getChildren(top));
+    else if (top.type === 'file') rows.push(top);
+  }
+  return rows;
+}
+
 test('review ticks survive offset/base movement, invalidate edited symbols, and remain parent-scoped', async () => {
   const store = new Map();
   const memento = { get: (k) => store.get(k), update: (k,v) => store.set(k,v) };
@@ -68,11 +79,6 @@ test('review ticks survive offset/base movement, invalidate edited symbols, and 
   target = node('target'); caller = node('caller', 'caller', review.id(target));
   assert.equal(review.isReviewed(review.id(target)), true);
   assert.equal(review.isReviewed(review.id(caller)), true);
-  const finding = { ...target, finding: { label: 'target', relPath: 'a.ts', startLine: 2, component: 'root', kinds: [], throwsAdded: [], score: 0, callers: [{ file, pos: caller.pos, label: 'caller' }] } };
-  const provider = createTreeProvider(require('./vscode-stub'), { getState: () => ({ rowDetail: 'hover' }), resolver: {}, review });
-  assert.match(provider.getTreeItem(finding).tooltip.value, /all callers reviewed/);
-  review.set(review.id(caller), false);
-  assert.match(provider.getTreeItem(finding).tooltip.value, /1\/1 callers left/);
   head = head.replace('return 1', 'return 2'); configure();
   assert.equal(review.isReviewed(review.id(node('target'))), false);
   assert.equal(review.isReviewed(review.id(node('caller','caller', review.id(node('target'))))), false);
@@ -89,8 +95,9 @@ test('deleted rows and unrecorded callers in one file have their own review iden
     const S = require('../src/engine/symbols').makeSymbols(ts);
     const deleted = S.collect(ts.createSourceFile(file, baseText, ts.ScriptTarget.ES2021, true))
       .filter((s) => s.label !== 'A' && s.label !== 'B').map((s) => ({ ...s, file, relPath: 'a.ts' }));
-    const provider = createTreeProvider(require('./vscode-stub'), { getState: () => ({ result: { deleted }, rel: (f) => path.relative(root, f) }), resolver: {} });
-    return provider.getChildren({ type: 'section', key: 'deleted' });
+    const result = { allChanged: [], deleted, outside: [], otherFiles: [], warnings: [], unanalysable: [], fileStatus: { 'a.ts': 'modified' } };
+    const provider = createTreeProvider(require('./vscode-stub'), { getState: () => ({ result, rel: (f) => path.relative(root, f) }), resolver: {} });
+    return countingRowsOf(provider);
   };
   const rows = await deletedRows(base);
   assert.ok(rows.length >= 3, `expected the two run() methods and gone(), got ${rows.map((r) => r.label)}`);
@@ -134,7 +141,7 @@ test('preview identities come from the PR, never from the local checkout', async
       const provider = createTreeProvider(require('./vscode-stub'), {
         getState: () => ({ result, rel: (f) => path.relative(repo, f), absPath: (p) => path.join(repo, p) }), resolver: {},
       });
-      return Promise.all(['deleted', 'files'].map((key) => provider.getChildren({ type: 'section', key }))).then((r) => r.flat());
+      return countingRowsOf(provider);
     };
     const idsOf = async (result) => {
       const identity = createReviewIdentity(ts, repo, previewRevisions(result));

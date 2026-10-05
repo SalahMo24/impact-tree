@@ -159,7 +159,7 @@ test('tree: a mixed caller expands as not updated and says how many calls were',
         resolver: { incomingWithStatus: async () => ({ callers, complete: true }) },
         decorate: createDecorationProvider(stub),
       });
-      const [group] = await provider.getChildren({ type: 'finding', file: '/review/src/a.ts', pos: 1 });
+      const [group] = await provider.getChildren({ type: 'caller', file: '/review/src/a.ts', pos: 1 });
       assert.equal(group.type, 'callerFile');
       const rows = Object.fromEntries(group.callers.map((c) => [c.label, c]));
       assert.deepEqual(Object.fromEntries(Object.entries(rows).map(([l, c]) => [l, c.callState])),
@@ -382,7 +382,7 @@ test('PR preview records whether each symbol\'s callers are complete', async () 
 // ---- caller completeness: what the finding row claims ----------------------------------
 test('finding rows never read as fully updated when the caller search was incomplete', () => {
   const provider = createTreeProvider(vscodeStub, { getState: () => ({ rowDetail: 'hover' }), resolver: {} });
-  const row = (finding) => ({ type: 'finding', label: 'target', file: '/review/t.ts', pos: 1,
+  const row = (finding) => ({ type: 'finding', label: 'target', name: 'target', file: '/review/t.ts', pos: 1,
     finding: { label: 'target', relPath: 't.ts', startLine: 1, component: '(root)', kinds: [{ id: 'param', short: 'param' }],
       callerState: 'resolved', staleCallers: 0, stale: [], throwsAdded: [], score: 1, ...finding } });
   const item = (finding) => provider.getTreeItem(row(finding));
@@ -414,19 +414,22 @@ test('finding rows never read as fully updated when the caller search was incomp
   assert.match(item({ callerState: 'unknown', callersComplete: false }).tooltip.value, /callers could not be found/);
 });
 
-test('an incomplete finding ranks as a warning inside a group, never as ok', async () => {
+test('an incomplete finding ranks as needing attention in its file, never as ok', async () => {
   const change = (label, extra) => ({ file: '/repo/src/x.js', relPath: 'src/x.js', label, namePos: label.length, start: label.length * 10, end: label.length * 10 + 5,
     startLine: 1, component: '(root)', kinds: [{ id: 'body', label: 'body' }], throwsAdded: [], callers: [], stale: [], staleCallers: 0,
     callerState: 'resolved', score: 1, ...extra });
   // a risky kind: a body-only change with callers leads with ●, so only a risky one can show the warning
-  const partial = change('partial', { kinds: [{ id: 'param', label: 'param' }], callersComplete: false, callersIncompleteReason: 'query-failed' });
-  const fine = change('fine', { callersComplete: true });
+  // every caller found was updated, but the search did not finish
+  const updated = { file: '/repo/src/y.js', pos: 3, label: 'user', test: false, sites: 1, callSites: [{ start: 4, end: 8 }],
+    callSiteUpdates: { updated: [{ start: 4, end: 8 }], untouched: [], unknown: [] } };
+  const partial = change('partial', { kinds: [{ id: 'param', label: 'param' }], callers: [updated], callersComplete: false, callersIncompleteReason: 'query-failed' });
+  const fine = change('fine', { callerState: 'none', callersComplete: true });
   const result = { allChanged: [fine, partial], findings: [], deleted: [], warnings: [], unanalysable: [], otherFiles: [], untested: [],
     mode: 'working', base: { ref: 'HEAD', sha: '0' }, testReachComputed: true };
   const provider = createTreeProvider(vscodeStub, { getState: () => ({ result, rowDetail: 'hover', rel: (f) => f.replace('/repo/', '') }),
     resolver: { incomingWithStatus: async () => ({ callers: [], complete: true }) } });
-  const sections = await provider.getChildren();
-  const [fileRow] = await provider.getChildren(sections.find((s) => s.key === 'other'));
-  assert.equal(fileRow.type, 'changeFile');
-  assert.ok(provider.getTreeItem(fileRow).description.startsWith('?'), 'the group leads with its worst member');
+  const [fileRow] = await provider.getChildren();
+  assert.equal(fileRow.type, 'reviewFile');
+  assert.match(provider.getTreeItem(fileRow).description, /  ·  \? 1  ·  /, 'the file counts it as needing attention');
+  assert.deepEqual((await provider.getChildren(fileRow)).map((r) => r.label), ['partial', 'fine'], 'and ranks it first');
 });

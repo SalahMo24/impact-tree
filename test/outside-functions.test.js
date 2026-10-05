@@ -89,7 +89,7 @@ test('local analysis reports changed lines outside every callable', { skip: !h &
   }
 });
 
-test('a file whose only change is outside functions stays under "Files without a call graph" alone', { skip: !h && 'typescript not resolvable' }, async () => {
+test('a file whose only changed lines are imports, with no changed callable, is a file without a call graph', { skip: !h && 'typescript not resolvable' }, async () => {
   const dir = h.mkRepo({ 'tsconfig.json': h.TSCONFIG, [FILE]: "import { a } from './a';\nexport function f() {}\n" });
   const base = h.headOf(dir);
   h.write(dir, { [FILE]: "import { a } from './a';\nimport { b } from './b';\nexport function f() {}\n" });
@@ -117,17 +117,18 @@ test('a PR preview reports the same outside ranges as a local run', { skip: !h &
   }
 });
 
+
 // ---- the tree ----------------------------------------------------------------------
 const change = (relPath, label, namePos) => ({
-  file: `/repo/${relPath}`, relPath, label, namePos, start: namePos, end: namePos + 10, startLine: 1, component: '(root)',
-  kinds: [{ id: 'body', label: 'body' }], throwsAdded: [], callers: [], stale: [], staleCallers: 0, callerState: 'resolved', score: 1,
+  file: `/repo/${relPath}`, relPath, label, namePos, start: namePos, end: namePos + 10, startLine: namePos, endLine: namePos + 1,
+  component: '(root)', kinds: [{ id: 'body', label: 'body' }], throwsAdded: [], callers: [], stale: [], staleCallers: 0, callerState: 'none', score: 1,
 });
 const one = change('src/a.ts', 'one', 10);
 const two = change('src/a.ts', 'two', 50);
 const solo = change('src/b.ts', 'solo', 10);
 const resultOf = (outside) => ({
   allChanged: [one, two, solo], findings: [], deleted: [], warnings: [], unanalysable: [], otherFiles: [], untested: [],
-  fileStatus: { 'src/a.ts': 'modified', 'src/b.ts': 'modified' },
+  fileStatus: Object.fromEntries([...['src/a.ts', 'src/b.ts'], ...outside.map((o) => o.relPath)].map((p) => [p, 'modified'])),
   mode: 'working', base: { ref: 'HEAD', sha: '0' }, testReachComputed: true, outside,
 });
 const viewOf = (outside, review = null) => {
@@ -135,56 +136,54 @@ const viewOf = (outside, review = null) => {
     getState: () => ({ result: resultOf(outside), rowDetail: 'hover', rel: (f) => f.replace('/repo/', '') }),
     resolver: { incomingWithStatus: async () => ({ callers: [], complete: true }) }, review,
   });
-  const section = async (key) => provider.getChildren((await provider.getChildren()).find((s) => s.key === key));
-  return { provider, section };
+  const fileRow = async (relPath) => (await provider.getChildren()).find((r) => r.relPath === relPath);
+  return { provider, fileRow };
 };
 const OUT_A = { file: '/repo/src/a.ts', relPath: 'src/a.ts', ranges: [[1, 4], [22, 22]] };
 
-test('"Outside functions" sits in its file\'s group under Other changes and opens at the first range', async () => {
-  const { provider, section } = viewOf([OUT_A]);
-  const [group, lone] = await section('other');
-  assert.equal(group.type, 'changeFile');
-  const rows = await provider.getChildren(group);
+test('"Outside functions" is the last row of its file and opens at the first range', async () => {
+  const { provider, fileRow } = viewOf([OUT_A]);
+  const file = await fileRow('src/a.ts');
+  const rows = await provider.getChildren(file);
   assert.deepEqual(rows.map((r) => r.label), ['one', 'two', 'Outside functions']);
   const item = provider.getTreeItem(rows[2]);
-  assert.equal(item.description, 'lines 1–4, 22');
+  assert.equal(item.description, 'lines 1–4, 22', 'its file row names the file');
   assert.equal(item.collapsibleState, vscode.TreeItemCollapsibleState.None, 'no expansion, so no callers');
   assert.deepEqual(await provider.getChildren(rows[2]), []);
   assert.equal(item.command.command, 'impactTree.openFile');
   assert.deepEqual(item.command.arguments[0].ranges[0], [1, 4]);
-  assert.match(provider.getTreeItem(group).description, /3 changes/, 'it counts as one of the file\'s changes');
-  assert.equal(lone.label, 'solo');
+  assert.match(provider.getTreeItem(file).description, /0\/3$/, 'it counts as one of the file\'s changes');
+  assert.deepEqual(await provider.getChildren(await fileRow('src/b.ts')).then((r) => r.map((x) => x.label)), ['solo']);
 });
 
 test('a pure deletion reads as the line it was removed before', async () => {
-  const { provider, section } = viewOf([{ ...OUT_A, ranges: [[6.5, 6.5]] }]);
-  const rows = await provider.getChildren((await section('other'))[0]);
+  const { provider, fileRow } = viewOf([{ ...OUT_A, ranges: [[6.5, 6.5]] }]);
+  const rows = await provider.getChildren(await fileRow('src/a.ts'));
   assert.equal(provider.getTreeItem(rows.at(-1)).description, 'deleted before line 7');
   assert.equal(models.describeOutsideRanges([[1, 1], [6.5, 6.5], [9, 12]]), 'lines 1, 9–12, deleted before line 7');
 });
 
-test('without a group the row names its file; the section counts it', async () => {
-  const { provider, section } = viewOf([{ file: '/repo/src/c.ts', relPath: 'src/c.ts', ranges: [[3, 3]] }]);
-  const row = (await section('other')).find((r) => r.type === 'outside');
-  assert.equal(provider.getTreeItem(row).description, 'c.ts  ·  line 3');
-  const sections = await provider.getChildren();
-  assert.equal(sections.find((s) => s.key === 'other').count, 4, '3 symbols + 1 outside row');
+test('a file whose only change is outside functions is a file row holding it, and the review counts it', async () => {
+  const { provider, fileRow } = viewOf([{ file: '/repo/src/c.ts', relPath: 'src/c.ts', ranges: [[3, 3]] }]);
+  const file = await fileRow('src/c.ts');
+  assert.equal(file.type, 'reviewFile');
+  const [row] = await provider.getChildren(file);
+  assert.equal(provider.getTreeItem(row).description, 'line 3');
+  assert.match(provider.summarize().message, / 4 of 4 left$/, '3 symbols + 1 outside row');
 });
 
-test('ticking the file group ticks its "Outside functions" row, and unticking the row unticks the group', async () => {
+test('ticking the file ticks its "Outside functions" row, and unticking the row unticks the file', async () => {
   const store = new Map();
   const review = createReviewState({ get: (k) => store.get(k), update: (k, v) => store.set(k, v) });
-  const { provider, section } = viewOf([OUT_A], review);
-  const [group] = await section('other');
-  const outsideRow = (await provider.getChildren(group)).find((r) => r.type === 'outside');
-  const kids = review.childIds(group);
-  assert.equal(kids.length, 3);
-  review.setWithChildren(review.id(group), kids, true);
+  const { provider, fileRow } = viewOf([OUT_A], review);
+  const file = await fileRow('src/a.ts');
+  const outsideRow = (await provider.getChildren(file)).find((r) => r.type === 'outside');
+  provider.setChecked(file, true);
+  assert.equal(review.size(), 3);
   assert.equal(provider.getTreeItem(outsideRow).checkboxState, vscode.TreeItemCheckboxState.Checked);
-  review.set(review.id(outsideRow), false);
-  assert.equal(provider.getTreeItem(group).checkboxState, vscode.TreeItemCheckboxState.Unchecked);
-  const summary = (await provider.getChildren())[0];
-  assert.match(summary.label, /left to review/);
+  provider.setChecked(outsideRow, false);
+  assert.equal(provider.getTreeItem(file).checkboxState, vscode.TreeItemCheckboxState.Unchecked);
+  assert.match(provider.summarize().message, / 2 of 4 left$/, 'the outside row and solo');
 });
 
 // ---- identity ----------------------------------------------------------------------

@@ -185,12 +185,17 @@ function buildImpactRows(changeRow, { result, uriOf, rel = null }) {
 
 /**
  * The one row saying what is known about tests reaching a change. A state the result
- * does not define is not an answer, so it reads as unknown.
+ * does not define is not an answer, so it reads as unknown. A PR preview never searches
+ * tests and cannot run the walk, so its row says so and offers no command.
  * @param {any} change
  * @param {any} result
  * @returns {TreeRow}
  */
 function buildTestsRow(change, result) {
+  if (result.tierA) {
+    return { type: 'message', icon: 'beaker', label: 'Tests are not searched in a PR preview',
+      tooltip: 'A preview reads only the pull request\'s own files. Check out the PR to see which tests reach this change.' };
+  }
   if (!result.testReachComputed) return models.buildComputeTestReachRow();
   const state = change.testState;
   if (state === 'covered') {
@@ -212,6 +217,60 @@ function buildTestsRow(change, result) {
  * @returns {TreeRow[]}
  */
 const collectCountingRows = (files) => files.flatMap((f) => (f.type === 'reviewFile' ? f.rows : [f]));
+
+// The row types that are counting rows: one checkbox each, ticked on their own.
+const COUNTING_TYPES = new Set(['finding', 'deleted', 'outside', 'file']);
+
+/**
+ * The counting rows a checkbox on `row` stands for. A `reviewFile`'s checkbox is derived
+ * from its rows, so it stands for all of them; a counting row stands for itself; any other
+ * row (a caller, a message, a tests row) has no checkbox and stands for nothing.
+ * @param {TreeRow} row
+ * @returns {TreeRow[]}
+ */
+const collectTickTargets = (row) => (row.type === 'reviewFile' ? row.rows : COUNTING_TYPES.has(row.type) ? [row] : []);
+
+/**
+ * Whether a counting row needs attention: a verdict at level 0 or 1. A file without a call
+ * graph has no verdict and never does.
+ * @param {TreeRow} row A counting row.
+ * @returns {boolean}
+ */
+const needsAttention = (row) => row.type !== 'file' && models.classifyRowVerdict(row).level <= 1;
+
+/**
+ * How far a review has got.
+ * @param {TreeRow[]} files The rows from `buildFileRows`.
+ * @param {(row: TreeRow) => boolean} isReviewed Whether a counting row is ticked.
+ * @returns {{ total: number, left: number, attention: number }} `attention` counts the
+ *   unreviewed rows that need attention.
+ */
+function countReview(files, isReviewed) {
+  const rows = collectCountingRows(files);
+  const left = rows.filter((r) => !isReviewed(r));
+  return { total: rows.length, left: left.length, attention: left.filter(needsAttention).length };
+}
+
+/**
+ * The view's message and badge for a shown result: what is reviewed against what, how many
+ * unreviewed rows need attention, and how many are left. A PR (a preview or a checkout) is
+ * named by its number; a local review by its mode, and the mode it was asked for when the
+ * analysis fell back to another.
+ * @param {any} result
+ * @param {{ kind: string, pr?: { number: number } }|null|undefined} source The session's source.
+ * @param {{ total: number, left: number, attention: number }} counts From `countReview`.
+ * @returns {{ message: string, badge: { value: number, tooltip: string }|undefined }} No
+ *   badge once nothing is left.
+ */
+function buildReviewSummary(result, source, { total, left, attention }) {
+  const pr = source && (source.kind === 'pr' || source.kind === 'checkout') && source.pr ? source.pr.number : null;
+  const asked = result.requestedMode && result.requestedMode !== result.mode ? ` (requested ${result.requestedMode})` : '';
+  const what = pr == null ? `${result.mode} mode${asked}` : `PR #${pr}`;
+  return {
+    message: `${what} against ${result.base.ref} · ${attention} need attention · ${left} of ${total} left`,
+    badge: left > 0 ? { value: left, tooltip: `${left} of ${total} left to review` } : undefined,
+  };
+}
 
 /**
  * The row for a line of a file's head side: the innermost change containing it, else the
@@ -237,4 +296,7 @@ function findRowAtLine(files, relPath, line) {
 /** @param {TreeRow} row A change row. @returns {number} Its length in lines, less one. */
 const span = (row) => row.finding.endLine - row.finding.startLine;
 
-module.exports = { buildFileRows, buildImpactRows, collectCountingRows, findRowAtLine };
+module.exports = {
+  buildFileRows, buildImpactRows, collectCountingRows, collectTickTargets, needsAttention, countReview, buildReviewSummary,
+  findRowAtLine,
+};

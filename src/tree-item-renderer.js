@@ -4,26 +4,25 @@
 // module and the view settings, and reads nothing else: no session state, no review
 // store, no decorations. The provider supplies review progress through `view`.
 //
-// Layout rule: the *status marker leads* the description and the path is reduced to a
-// basename. A sidebar truncates from the right, so anything trailing a long path is
-// invisible exactly when the row matters most.
+// Layout rule: a row's description is short and in a fixed order, so a column of rows
+// scans. A file row names its folder, then what needs attention, then its progress; a
+// change row says where it is declared, then its verdict, then "no test". Paths are
+// reduced to a basename: a sidebar truncates from the right.
 const path = require('path');
 const {
-  CALL_STATE, GROUP_TYPES, classifyChangeVerdict, classifyWorstRowVerdict, collectRowAndNested,
+  CALL_STATE, classifyChangeVerdict, classifyDeletedVerdict, classifyWorstRowVerdict,
 } = require('./tree-row-models');
+const { needsAttention } = require('./review-tree-model');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 /**
  * What a row's rendering depends on besides the row.
- * - `layout`: 'tree' or 'flat' (impactTree.fileListLayout).
- * - `rowDetail`: 'hover' keeps a row to icon, name, badge and one state glyph, with the
- *   words and kind tags in the tooltip; 'inline' is the denser row.
+ * - `rowDetail`: 'hover' keeps a change row to its name and one verdict glyph, with the
+ *   verdict's words and the change kinds in the tooltip; 'inline' shows them on the row.
  * - `iconMode`: 'file' for the file-type glyph, 'symbol' for a symbol-kind icon.
  * - `checkedOf(row)`: whether the row's review checkbox is ticked, or null for no checkbox.
- * - `reviewNoteOf(row)`: review progress of a change row's callers, or null.
  * @typedef {{
- *   layout: string, rowDetail: string, iconMode: string,
- *   checkedOf: (row: TreeRow) => boolean|null, reviewNoteOf: (row: TreeRow) => string|null,
+ *   rowDetail: string, iconMode: string, checkedOf: (row: TreeRow) => boolean|null,
  * }} TreeView
  */
 
@@ -46,7 +45,6 @@ function symbolIcon(label, sym) {
  */
 function renderHelpers(vscode, view) {
   return {
-    inline: (/** @type {string} */ text) => (view.rowDetail === 'inline' ? text : undefined),
     // 'hover' keeps the single state glyph in the row so the column is still scannable.
     rowDesc: (/** @type {string} */ token, /** @type {string} */ full) => (view.rowDetail === 'inline' ? full : token),
     // VS Code infers a folder glyph for any expandable row with a resourceUri;
@@ -71,36 +69,54 @@ function applyCheckbox(vscode, item, row, view) {
 }
 
 /**
- * A row that groups changes: a file holding several, or the changes inside one.
+ * The description of a change or deleted row: where it is declared, its verdict as
+ * `impactTree.rowDetail` asks, and what the test walk established. In either detail mode
+ * a walk that found no test reads "no test", and one that did not finish "tests ?", so
+ * a lack of evidence never looks like a covered change; the reason is in the tooltip.
+ * @param {string|null|undefined} container
+ * @param {string} verdict The glyph, or the glyph and words.
+ * @param {TreeRow|null} change A change row, for its `scopeNote` and `reachReason`; null for a deleted row.
+ * @returns {string}
+ */
+const describeChangeRow = (container, verdict, change) => [
+  container ? `in ${container}` : null, verdict,
+  change && change.scopeNote ? 'no test' : null, change && change.reachReason ? 'tests ?' : null,
+].filter(Boolean).join('  ·  ');
+
+/**
+ * A changed file with a call graph. Its checkbox is ticked when all its rows are; its
+ * description counts the rows that still need attention and how many are done.
  * @param {any} vscode
- * @param {TreeRow} n
+ * @param {TreeRow} n A `reviewFile` row.
  * @param {TreeView} view
  */
-function renderChangeGroupItem(vscode, n, view) {
-  const st = classifyWorstRowVerdict(n.members);
-  const open = st.level <= 1
-    ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
+function renderReviewFileItem(vscode, n, view) {
+  const open = n.expanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
   const item = n.decorationUri ? new vscode.TreeItem(n.decorationUri, open) : new vscode.TreeItem(n.label, open);
   item.label = n.label;
-  const count = n.members.length;
-  item.description = `${st.token}  ${count} change${count === 1 ? '' : 's'}`;
-  item.iconPath = n.type === 'changeFile' ? vscode.ThemeIcon.File : new vscode.ThemeIcon('list-tree');
+  item.iconPath = vscode.ThemeIcon.File;
+  /** @type {TreeRow[]} */
+  const rows = n.rows;
+  const left = rows.filter((r) => !view.checkedOf(r));
+  const attention = left.filter(needsAttention);
+  const folder = path.dirname(n.relPath);
+  item.description = [
+    folder === '.' ? null : folder,
+    attention.length ? `${classifyWorstRowVerdict(attention).token} ${attention.length}` : null,
+    `${rows.length - left.length}/${rows.length}`,
+  ].filter(Boolean).join('  ·  ');
   item.tooltip = new vscode.MarkdownString([
-    n.type === 'changeFile' ? `**${n.relPath}**` : `**Changed inside ${n.container}**`, '',
-    `${count} body-only change${count === 1 ? '' : 's'}${n.type === 'changeFile' ? ' in this file' : ''}, worst first:`, '',
-    ...n.members.slice(0, 12).map((/** @type {TreeRow} */ m) => (m.finding
-      ? `- ${classifyChangeVerdict(m.finding).token} ${m.finding.label}`
-      : `- ${m.label}: ${m.desc}`)),
-    ...(count > 12 ? [`- …and ${count - 12} more`] : []),
+    `**${n.relPath}**`, ...(n.status ? ['', `_${n.status}_`] : []), '',
+    `${rows.length} change${rows.length === 1 ? '' : 's'}, ${attention.length} need${attention.length === 1 ? 's' : ''} attention, ${left.length} left to review`,
   ].join('\n'));
-  item.contextValue = n.type;
+  item.contextValue = 'reviewFile';
   applyCheckbox(vscode, item, n, view);
-  if (n.type === 'changeFile') item.command = { command: 'impactTree.openFile', title: 'Open diff', arguments: [n] };
+  item.command = { command: 'impactTree.openFile', title: 'Open diff', arguments: [n] };
   return item;
 }
 
 /**
- * A changed file without a call graph.
+ * A changed file without a call graph: its own counting row.
  * @param {any} vscode
  * @param {TreeRow} n
  * @param {TreeView} view
@@ -117,18 +133,20 @@ function renderFileItem(vscode, n, view) {
     item.label = n.label || path.basename(n.relPath);
     item.iconPath = vscode.ThemeIcon.File;
   }
-  item.description = view.layout === 'flat'
-    ? `${path.dirname(n.relPath)}`
-    : renderHelpers(vscode, view).inline(`${n.status}  ·  ${path.dirname(n.relPath)}`);
-  item.tooltip = new vscode.MarkdownString([`**${path.basename(n.relPath)}**`, '', `_${n.status}_`, '', `\`${n.relPath}\``].join('\n'));
+  const folder = path.dirname(n.relPath);
+  item.description = [folder === '.' ? null : folder, 'no call graph'].filter(Boolean).join('  ·  ');
+  item.tooltip = new vscode.MarkdownString([
+    `**${path.basename(n.relPath)}**`, '', `_${n.status}_`, '', `\`${n.relPath}\``, '',
+    '_No call graph (tests, config, docs): read the diff and tick the file._',
+  ].join('\n'));
   applyCheckbox(vscode, item, n, view);
   item.command = { command: 'impactTree.openFile', title: 'Open diff', arguments: [n] };
   return item;
 }
 
 /**
- * Rows whose rendering needs no status: summary, messages, folders, sections, deleted
- * symbols and the legend. Returns null for any other row type.
+ * Rows whose rendering needs no verdict of a changed symbol: messages, deleted symbols and
+ * the changed lines outside functions. Returns null for any other row type.
  * @param {any} vscode
  * @param {any} item The row's item, already constructed.
  * @param {TreeRow} n
@@ -136,45 +154,29 @@ function renderFileItem(vscode, n, view) {
  */
 function renderPlainItem(vscode, item, n, view) {
   switch (n.type) {
-    case 'summary':
-      item.description = n.desc;
-      item.iconPath = new vscode.ThemeIcon('git-compare');
-      item.collapsibleState = vscode.TreeItemCollapsibleState.None;
-      item.tooltip = n.tooltip;
-      return item;
     case 'message':
       item.description = n.desc;
       item.iconPath = new vscode.ThemeIcon(n.icon || 'info');
       item.tooltip = n.tooltip || n.label;
       if (n.command) item.command = { command: n.command, title: n.label };
       return item;
-    case 'dir': {
-      const di = new vscode.TreeItem(n.label, vscode.TreeItemCollapsibleState.Expanded);
-      di.iconPath = vscode.ThemeIcon.Folder;
-      di.tooltip = n.dirPath || n.label;
-      di.contextValue = 'directory';
-      return di;
-    }
-    case 'section':
-      item.label = `${n.label}  (${n.count})`;
-      item.description = n.desc;
-      item.iconPath = new vscode.ThemeIcon(n.icon);
-      item.collapsibleState = (n.count === 0 && n.computed !== false)
-        ? vscode.TreeItemCollapsibleState.None
-        : (n.key === 'findings' ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
-      return item;
-    case 'deleted':
+    case 'deleted': {
+      const st = classifyDeletedVerdict();
       item.collapsibleState = vscode.TreeItemCollapsibleState.None;
-      item.description = renderHelpers(vscode, view).inline(path.basename(n.relPath));
+      // VS Code cannot strike a tree label through, so the icon says it is gone.
+      item.label = n.name;
+      item.description = describeChangeRow(n.container, renderHelpers(vscode, view).rowDesc(st.token, `${st.token}  ${st.text}`), null);
       item.iconPath = new vscode.ThemeIcon('trash');  // semantics beat decoration here
-      item.tooltip = new vscode.MarkdownString([`✕ **${n.label}**`, '', '_deleted in this change_', '', `\`${n.relPath}\``].join('\n'));
+      item.tooltip = new vscode.MarkdownString([`✕ **${n.label}**`, '', st.sentence, '', `\`${n.relPath}\``].join('\n'));
+      item.contextValue = 'deleted';
       applyCheckbox(vscode, item, n, view);
       item.command = { command: 'impactTree.openFile', title: 'Open diff', arguments: [n] };
       return item;
+    }
     case 'outside':
       item.collapsibleState = vscode.TreeItemCollapsibleState.None;
-      // Inside its file's group the file is the parent; alone it has to name it.
-      item.description = n.inGroup ? n.desc : `${path.basename(n.relPath)}  ·  ${n.desc}`;
+      // The file row it sits under names the file.
+      item.description = n.desc;
       item.iconPath = new vscode.ThemeIcon('symbol-namespace');
       item.tooltip = new vscode.MarkdownString([
         `**Outside functions** — \`${n.relPath}\``, '', n.desc, '',
@@ -184,29 +186,20 @@ function renderPlainItem(vscode, item, n, view) {
       applyCheckbox(vscode, item, n, view);
       item.command = { command: 'impactTree.openFile', title: 'Open diff', arguments: [n] };
       return item;
-    case 'legend':
-      item.iconPath = new vscode.ThemeIcon('list-unordered');
-      item.collapsibleState = vscode.TreeItemCollapsibleState.Collapsed;
-      return item;
-    case 'legendItem':
-      item.iconPath = new vscode.ThemeIcon(n.icon);
-      item.description = n.desc;
-      return item;
     default:
       return null;
   }
 }
 
 /**
- * The tooltip lines of a change row. The row is deliberately bare, so the tooltip must
+ * The tooltip lines of a change row. In hover mode the row is bare, so the tooltip must
  * carry the whole story.
  * @param {TreeRow} n
  * @param {import('./tree-row-models').Verdict} st
  * @param {string[]} kinds Short names of the non-body change kinds.
- * @param {string|null} reviewNote
  * @returns {string[]}
  */
-function buildChangeTooltipLines(n, st, kinds, reviewNote) {
+function buildChangeTooltipLines(n, st, kinds) {
   const f = n.finding;
   return [
     `${st.token} **${f.label}**`,
@@ -228,53 +221,39 @@ function buildChangeTooltipLines(n, st, kinds, reviewNote) {
         ...(f.staleChangedElsewhere
           ? ['', `${f.staleChangedElsewhere} of them were edited — just not on the call line`] : [])]
       : []),
-    ...(reviewNote ? ['', `_${reviewNote}_`] : []),
     '', `_score ${f.score}_`,
   ];
 }
 
 /**
- * A changed symbol.
+ * A changed symbol, named by its own name; the symbol it is declared in is in the
+ * description.
  * @param {any} vscode
  * @param {any} item The row's item, already constructed.
- * @param {TreeRow} n
+ * @param {TreeRow} n A change row from `buildFileRows`.
  * @param {TreeView} view
  */
 function renderChangeItem(vscode, item, n, view) {
   const { rowDesc, rowIcon } = renderHelpers(vscode, view);
-  const reviewNote = view.reviewNoteOf(n);
   const f = n.finding;
   const st = classifyChangeVerdict(f);
   const kinds = f.kinds.filter((/** @type {any} */ k) => k.id !== 'body').map((/** @type {any} */ k) => k.short || k.label);
-  // marker first, then the short kind list — both survive truncation
   const qual = n.ambiguous ? `  ·  ${f.component}` : '';
-  item.description = rowDesc(st.token,
-    `${st.token}  ${st.text}${qual}${kinds.length ? '  ·  ' + kinds.join(', ') : ''}`);
-  if (n.ambiguous) item.label = `${f.label}  ‹${f.component}›`;
-  // The row starts collapsed, so a worse state among the changes inside it must show on
-  // the row itself.
-  const insideSt = n.inside && n.inside.length ? classifyWorstRowVerdict(n.inside.flatMap(collectRowAndNested)) : null;
-  if (insideSt && insideSt.level < st.level && insideSt.level <= 1) {
-    item.description = `${item.description}  ·  ${insideSt.token} inside`;
-  }
-  // In the unknown-test section the reason is the point of the row, so it leads in
-  // either detail mode.
-  if (n.reachReason) item.description = `?  tests unknown: ${n.reachReason}  ·  ${item.description}`;
+  item.label = n.ambiguous ? `${n.name}  ‹${f.component}›` : n.name;
+  item.description = describeChangeRow(n.container,
+    rowDesc(st.token, `${st.token}  ${st.text}${qual}${kinds.length ? '  ·  ' + kinds.join(', ') : ''}`),
+    n);
   item.iconPath = rowIcon(f.label, f);
-  item.tooltip = new vscode.MarkdownString(buildChangeTooltipLines(n, st, kinds, reviewNote).join('\n'));
+  item.tooltip = new vscode.MarkdownString(buildChangeTooltipLines(n, st, kinds).join('\n'));
   item.contextValue = 'finding';
   applyCheckbox(vscode, item, n, view);
-  // Review progress goes inline only in 'inline' mode; hover mode keeps the row to a
-  // single state glyph, so the count lives in the tooltip instead.
-  if (reviewNote && view.rowDetail === 'inline') {
-    item.description = `${item.description || ''}${item.description ? '  ·  ' : ''}${reviewNote}`;
-  }
   item.command = { command: 'impactTree.openChange', title: 'Open change', arguments: [n] };
   return item;
 }
 
 /**
- * A file grouping several callers of one change.
+ * A file grouping several callers of one change. Callers are the impact of a change, not
+ * something to review, so the row has no checkbox.
  * @param {any} vscode
  * @param {any} item The row's item, already constructed.
  * @param {TreeRow} n
@@ -295,13 +274,12 @@ function renderCallerFileItem(vscode, item, n, view) {
     ...(n.callers.length > 12 ? [`- …and ${n.callers.length - 12} more`] : []),
   ].join('\n'));
   item.contextValue = 'callerFile';
-  applyCheckbox(vscode, item, n, view);
   item.command = { command: 'impactTree.openFile', title: 'Open file', arguments: [n] };
   return item;
 }
 
 /**
- * One caller of a change.
+ * One caller of a change, or of a caller further up. It has no checkbox.
  * @param {any} vscode
  * @param {any} item The row's item, already constructed.
  * @param {TreeRow} n
@@ -334,22 +312,22 @@ function renderCallerItem(vscode, item, n, view) {
       : []),
   ].join('\n'));
   item.contextValue = n.changed ? 'changedCaller' : 'caller';
-  applyCheckbox(vscode, item, n, view);
   item.command = { command: 'impactTree.openCaller', title: 'Open caller', arguments: [n] };
   return item;
 }
 
 /**
- * Renders one row as a TreeItem.
+ * Renders one row as a TreeItem. Every expandable row starts collapsed, except a file row
+ * the provider marks `expanded`.
  * @param {any} vscode The vscode module (or a stand-in with the same constructors).
  * @param {TreeRow} n A row model.
  * @param {TreeView} view
  * @returns {any} A new vscode.TreeItem.
  */
 function renderTreeItem(vscode, n, view) {
-  if (GROUP_TYPES.has(n.type)) return renderChangeGroupItem(vscode, n, view);
+  if (n.type === 'reviewFile') return renderReviewFileItem(vscode, n, view);
   if (n.type === 'file') return renderFileItem(vscode, n, view);
-  const collapsible = n.type === 'message' || n.type === 'legendItem' || n.cycle
+  const collapsible = n.type === 'message' || n.cycle
     ? vscode.TreeItemCollapsibleState.None
     : vscode.TreeItemCollapsibleState.Collapsed;
   // Construct from the Uri so the file-icon theme applies, then override the label:
