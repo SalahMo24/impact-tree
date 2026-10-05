@@ -349,6 +349,40 @@ function createTreeProvider(vscode, {
       const state = shownState();
       return state ? reviewTree.findNextUnreviewed(builtFor(state).rows, { after, isReviewed, filter }) : null;
     },
+    /**
+     * Whether a counting row is ticked.
+     * @param {TreeRow} row
+     * @returns {boolean}
+     */
+    isReviewed,
+    /**
+     * The file row or counting row of the shown review with this tree id (`treeItemId`),
+     * whether or not the filter shows it.
+     * @param {string} id
+     * @returns {TreeRow|null} Null when no review is shown or no row has the id.
+     */
+    rowById(id) {
+      const state = shownState();
+      if (!state) return null;
+      const rows = builtFor(state).rows.flatMap((f) => [f, ...(f.rows || [])]);
+      return rows.find((r) => reviewTree.treeItemId(r) === id) || null;
+    },
+    /**
+     * The row of the shown review for a line of a file's head side; see `findRowAtLine`.
+     * @param {string} relPath Repo-relative path.
+     * @param {number} line 1-based head-side line.
+     * @returns {TreeRow|null} Null when no review is shown or the file is not in it.
+     */
+    rowAtLine(relPath, line) {
+      const state = shownState();
+      return state ? reviewTree.findRowAtLine(builtFor(state).rows, relPath, line) : null;
+    },
+    /**
+     * The callers and tests row under a change row, as the tree shows them when it is expanded.
+     * @param {TreeRow} row A change row.
+     * @returns {TreeRow[]} Empty when no review is shown.
+     */
+    impactRowsOf: (row) => (shownState() ? impactRows(row, getAnalysisId()) : []),
   };
 }
 module.exports = { createTreeProvider, LEGEND: models.LEGEND };
