@@ -185,12 +185,17 @@ function buildImpactRows(changeRow, { result, uriOf, rel = null }) {
 
 /**
  * The one row saying what is known about tests reaching a change. A state the result
- * does not define is not an answer, so it reads as unknown.
+ * does not define is not an answer, so it reads as unknown. A PR preview never searches
+ * tests and cannot run the walk, so its row says so and offers no command.
  * @param {any} change
  * @param {any} result
  * @returns {TreeRow}
  */
 function buildTestsRow(change, result) {
+  if (result.tierA) {
+    return { type: 'message', icon: 'beaker', label: 'Tests are not searched in a PR preview',
+      tooltip: 'A preview reads only the pull request\'s own files. Check out the PR to see which tests reach this change.' };
+  }
   if (!result.testReachComputed) return models.buildComputeTestReachRow();
   const state = change.testState;
   if (state === 'covered') {
@@ -260,7 +265,7 @@ function countReview(files, isReviewed) {
 function buildReviewSummary(result, source, { total, left, attention }) {
   const pr = source && (source.kind === 'pr' || source.kind === 'checkout') && source.pr ? source.pr.number : null;
   const asked = result.requestedMode && result.requestedMode !== result.mode ? ` (requested ${result.requestedMode})` : '';
-  const what = pr == null ? `${result.mode}${asked}` : `PR #${pr}`;
+  const what = pr == null ? `${result.mode} mode${asked}` : `PR #${pr}`;
   return {
     message: `${what} against ${result.base.ref} · ${attention} need attention · ${left} of ${total} left`,
     badge: left > 0 ? { value: left, tooltip: `${left} of ${total} left to review` } : undefined,

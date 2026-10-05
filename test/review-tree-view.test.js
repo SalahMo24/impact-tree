@@ -182,14 +182,14 @@ test('the file row shows its folder, the unreviewed attention count with the wor
 test('the summary counts unreviewed attention rows and what is left, and follows the ticks', async () => {
   const { provider, fileAt } = viewOf(sampleResult(), { state: { source: { kind: 'local' } } });
   assert.deepEqual(provider.summarize(), {
-    message: 'branch against origin/main · 2 need attention · 6 of 6 left',
+    message: 'branch mode against origin/main · 2 need attention · 6 of 6 left',
     badge: { value: 6, tooltip: '6 of 6 left to review' },
   });
   provider.setChecked(await fileAt('src/a.ts'), true);
-  assert.equal(provider.summarize().message, 'branch against origin/main · 0 need attention · 2 of 6 left');
+  assert.equal(provider.summarize().message, 'branch mode against origin/main · 0 need attention · 2 of 6 left');
   provider.setChecked(await fileAt('src/b.ts'), true);
   provider.setChecked(await fileAt('notes.md'), true);
-  assert.deepEqual(provider.summarize(), { message: 'branch against origin/main · 0 need attention · 0 of 6 left', badge: undefined });
+  assert.deepEqual(provider.summarize(), { message: 'branch mode against origin/main · 0 need attention · 0 of 6 left', badge: undefined });
 });
 
 test('there is no summary without a result, or while a placeholder is shown', () => {
@@ -207,11 +207,11 @@ test('the summary names the PR for a preview or a checkout, and the mode for a l
   const result = resultOf({ base: { ref: 'main', sha: 'x' } });
   assert.equal(buildReviewSummary(result, { kind: 'pr', pr: { number: 15 } }, counts).message, 'PR #15 against main · 3 need attention · 70 of 71 left');
   assert.equal(buildReviewSummary(result, { kind: 'checkout', pr: { number: 9 }, sha: 'abc' }, counts).message, 'PR #9 against main · 3 need attention · 70 of 71 left');
-  assert.equal(buildReviewSummary(result, { kind: 'local' }, counts).message, 'branch against main · 3 need attention · 70 of 71 left');
-  assert.equal(buildReviewSummary(result, null, counts).message, 'branch against main · 3 need attention · 70 of 71 left');
+  assert.equal(buildReviewSummary(result, { kind: 'local' }, counts).message, 'branch mode against main · 3 need attention · 70 of 71 left');
+  assert.equal(buildReviewSummary(result, null, counts).message, 'branch mode against main · 3 need attention · 70 of 71 left');
   const fellBack = resultOf({ mode: 'branch', requestedMode: 'pr', base: { ref: 'origin/main', sha: 'x' } });
   assert.equal(buildReviewSummary(fellBack, { kind: 'local' }, { attention: 1, left: 1, total: 1 }).message,
-    'branch (requested pr) against origin/main · 1 need attention · 1 of 1 left', 'a fallback mode says what was asked for');
+    'branch mode (requested pr) against origin/main · 1 need attention · 1 of 1 left', 'a fallback mode says what was asked for');
   assert.deepEqual(buildReviewSummary(result, null, { attention: 0, left: 1, total: 2 }).badge, { value: 1, tooltip: '1 of 2 left to review' });
   assert.equal(buildReviewSummary(result, null, { attention: 0, left: 0, total: 2 }).badge, undefined, 'nothing left, no badge');
 });

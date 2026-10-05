@@ -57,11 +57,27 @@ test('only a finished walk reads "no test"; an unknown one says why, on the tool
   }
 });
 
-test('hover mode keeps "no test" on the row and the unknown reason in the tooltip', async () => {
-  const rows = await rowsOf(resultOf([change('failedSearch', 'unknown', 'a caller query failed: boom'), change('none', 'uncovered')]), 'hover');
-  assert.equal(rows.none.item.description, '∅  ·  no test');
-  assert.equal(rows.failedSearch.item.description, '∅');
-  assert.match(rows.failedSearch.item.tooltip.value, /boom/);
+test('in both detail modes the row marks "no test" and "tests ?", and a covered row has neither', async () => {
+  for (const mode of ['hover', 'inline']) {
+    const rows = await rowsOf(resultOf([
+      change('failedSearch', 'unknown', 'a caller query failed: boom'), change('none', 'uncovered'), change('covered', 'covered'),
+    ]), mode);
+    const verdict = mode === 'hover' ? '∅' : '∅  no callers';
+    assert.equal(rows.none.item.description, `${verdict}  ·  no test`, mode);
+    assert.equal(rows.failedSearch.item.description, `${verdict}  ·  tests ?`, `${mode}: unknown is not the same as covered`);
+    assert.equal(rows.covered.item.description, verdict, mode);
+    assert.match(rows.failedSearch.item.tooltip.value, /boom/, `${mode}: the reason stays in the tooltip`);
+    assert.doesNotMatch(rows.failedSearch.item.description, /boom/);
+  }
+});
+
+test('no test marker before the walk runs, or in a PR preview', async () => {
+  const deferred = await rowsOf(resultOf([change('a', 'not-computed')]), 'hover');
+  assert.equal(deferred.a.item.description, '∅');
+  const preview = await rowsOf(resultOf([change('b', 'unknown', 'x')], { tierA: true, testReachComputed: false }), 'hover');
+  assert.equal(preview.b.item.description, '∅');
+  assert.equal(preview.b.tests.label, 'Tests are not searched in a PR preview');
+  assert.equal(preview.b.testsItem.command, undefined);
 });
 
 test('an unknown symbol with no reason recorded still says the search did not finish', async () => {

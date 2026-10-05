@@ -250,15 +250,19 @@ function buildNoticeRows(r) {
 /**
  * What a change's row says about tests reaching it, beyond its tests row: why the walk is
  * unknown, or how far a walk that found no test went. A walk that failed or was cut short
- * proves nothing, so it never reads as untested.
+ * proves nothing, so it never reads as untested. Both are null when no walk ran: in a PR
+ * preview, or before test reach is computed.
  * @param {any} change
  * @param {any} result
  * @returns {{ reachReason: string|null, scopeNote: string|null }}
  */
-const describeTestReach = (change, result) => ({
-  reachReason: change.testState === 'unknown' ? change.testReachIncompleteReason || 'the test search did not finish' : null,
-  scopeNote: change.testState === 'uncovered' ? buildReachScopeNote(result) : null,
-});
+function describeTestReach(change, result) {
+  if (result.tierA || !result.testReachComputed) return { reachReason: null, scopeNote: null };
+  return {
+    reachReason: change.testState === 'unknown' ? change.testReachIncompleteReason || 'the test search did not finish' : null,
+    scopeNote: change.testState === 'uncovered' ? buildReachScopeNote(result) : null,
+  };
+}
 
 /**
  * One row per changed symbol, with the decoration each should carry. `ambiguous` marks a

@@ -5,7 +5,7 @@
     "tooltip": "11 of 16 left to review",
     "value": 11
    },
-   "message": "branch (requested pr) against origin/main · 5 need attention · 11 of 16 left"
+   "message": "branch mode (requested pr) against origin/main · 5 need attention · 11 of 16 left"
   },
   "rows": [
    {
@@ -523,7 +523,7 @@
       "status": "modified",
       "tooltip": "src/store.ts:30"
      },
-     "description": "in Store  ·  ?",
+     "description": "in Store  ·  ?  ·  tests ?",
      "icon": "__file__",
      "label": "load",
      "resourceUri": "uri:file:///repo/src/store.ts#300",
@@ -663,7 +663,7 @@
       "status": "modified",
       "tooltip": "src/store.ts:50"
      },
-     "description": "in Store  ·  ?",
+     "description": "in Store  ·  ?  ·  tests ?",
      "icon": "__file__",
      "label": "inner",
      "resourceUri": "uri:file:///repo/src/store.ts#500",
@@ -1819,7 +1819,7 @@
     "tooltip": "16 of 16 left to review",
     "value": 16
    },
-   "message": "branch (requested pr) against origin/main · 6 need attention · 16 of 16 left"
+   "message": "branch mode (requested pr) against origin/main · 6 need attention · 16 of 16 left"
   },
   "rows": [
    {
@@ -2334,7 +2334,7 @@
       "status": "modified",
       "tooltip": "src/store.ts:30"
      },
-     "description": "in Store  ·  ?  callers unknown  ·  optional param",
+     "description": "in Store  ·  ?  callers unknown  ·  optional param  ·  tests ?",
      "icon": "symbol-method",
      "label": "load",
      "resourceUri": "uri:file:///repo/src/store.ts#300",
@@ -2473,7 +2473,7 @@
       "status": "modified",
       "tooltip": "src/store.ts:50"
      },
-     "description": "in Store  ·  ?  callers unknown  ·  sig",
+     "description": "in Store  ·  ?  callers unknown  ·  sig  ·  tests ?",
      "icon": "symbol-method",
      "label": "inner",
      "resourceUri": "uri:file:///repo/src/store.ts#500",
@@ -3610,7 +3610,7 @@
     "tooltip": "16 of 16 left to review",
     "value": 16
    },
-   "message": "branch (requested pr) against origin/main · 6 need attention · 16 of 16 left"
+   "message": "branch mode (requested pr) against origin/main · 6 need attention · 16 of 16 left"
   },
   "rows": [
    {
@@ -5729,18 +5729,13 @@
     }
    },
    {
-    "at": "/1:service.ts/0:Service.run/1:Compute test reachability",
+    "at": "/1:service.ts/0:Service.run/1:Tests are not searched in a PR preview",
     "item": {
      "collapsible": 0,
-     "command": {
-      "command": "impactTree.computeTestReach",
-      "title": "Compute test reachability"
-     },
      "decoration": null,
-     "description": "extra caller queries — run on demand",
-     "icon": "play",
-     "label": "Compute test reachability",
-     "tooltip": "Compute test reachability"
+     "icon": "beaker",
+     "label": "Tests are not searched in a PR preview",
+     "tooltip": "A preview reads only the pull request's own files. Check out the PR to see which tests reach this change."
     }
    },
    {
@@ -5862,18 +5857,13 @@
     }
    },
    {
-    "at": "/1:service.ts/1:Service.idle/1:Compute test reachability",
+    "at": "/1:service.ts/1:Service.idle/1:Tests are not searched in a PR preview",
     "item": {
      "collapsible": 0,
-     "command": {
-      "command": "impactTree.computeTestReach",
-      "title": "Compute test reachability"
-     },
      "decoration": null,
-     "description": "extra caller queries — run on demand",
-     "icon": "play",
-     "label": "Compute test reachability",
-     "tooltip": "Compute test reachability"
+     "icon": "beaker",
+     "label": "Tests are not searched in a PR preview",
+     "tooltip": "A preview reads only the pull request's own files. Check out the PR to see which tests reach this change."
     }
    },
    {
@@ -5981,18 +5971,13 @@
     }
    },
    {
-    "at": "/3:caller.ts/0:Caller.stop/0:Compute test reachability",
+    "at": "/3:caller.ts/0:Caller.stop/0:Tests are not searched in a PR preview",
     "item": {
      "collapsible": 0,
-     "command": {
-      "command": "impactTree.computeTestReach",
-      "title": "Compute test reachability"
-     },
      "decoration": null,
-     "description": "extra caller queries — run on demand",
-     "icon": "play",
-     "label": "Compute test reachability",
-     "tooltip": "Compute test reachability"
+     "icon": "beaker",
+     "label": "Tests are not searched in a PR preview",
+     "tooltip": "A preview reads only the pull request's own files. Check out the PR to see which tests reach this change."
     }
    },
    {
@@ -6329,18 +6314,13 @@
     }
    },
    {
-    "at": "/1:service.ts/0:Service.run/1:Compute test reachability",
+    "at": "/1:service.ts/0:Service.run/1:Tests are not searched in a PR preview",
     "item": {
      "collapsible": 0,
-     "command": {
-      "command": "impactTree.computeTestReach",
-      "title": "Compute test reachability"
-     },
      "decoration": null,
-     "description": "extra caller queries — run on demand",
-     "icon": "play",
-     "label": "Compute test reachability",
-     "tooltip": "Compute test reachability"
+     "icon": "beaker",
+     "label": "Tests are not searched in a PR preview",
+     "tooltip": "A preview reads only the pull request's own files. Check out the PR to see which tests reach this change."
     }
    },
    {
@@ -6461,18 +6441,13 @@
     }
    },
    {
-    "at": "/1:service.ts/1:Service.idle/1:Compute test reachability",
+    "at": "/1:service.ts/1:Service.idle/1:Tests are not searched in a PR preview",
     "item": {
      "collapsible": 0,
-     "command": {
-      "command": "impactTree.computeTestReach",
-      "title": "Compute test reachability"
-     },
      "decoration": null,
-     "description": "extra caller queries — run on demand",
-     "icon": "play",
-     "label": "Compute test reachability",
-     "tooltip": "Compute test reachability"
+     "icon": "beaker",
+     "label": "Tests are not searched in a PR preview",
+     "tooltip": "A preview reads only the pull request's own files. Check out the PR to see which tests reach this change."
     }
    },
    {
@@ -6576,18 +6551,13 @@
     }
    },
    {
-    "at": "/3:caller.ts/0:Caller.stop/0:Compute test reachability",
+    "at": "/3:caller.ts/0:Caller.stop/0:Tests are not searched in a PR preview",
     "item": {
      "collapsible": 0,
-     "command": {
-      "command": "impactTree.computeTestReach",
-      "title": "Compute test reachability"
-     },
      "decoration": null,
-     "description": "extra caller queries — run on demand",
-     "icon": "play",
-     "label": "Compute test reachability",
-     "tooltip": "Compute test reachability"
+     "icon": "beaker",
+     "label": "Tests are not searched in a PR preview",
+     "tooltip": "A preview reads only the pull request's own files. Check out the PR to see which tests reach this change."
     }
    },
    {

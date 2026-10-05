@@ -326,6 +326,17 @@ test('when test reach was not computed the row offers to compute it', () => {
   assert.equal(tests[0].command, 'impactTree.computeTestReach');
 });
 
+test('a PR preview states that tests are not searched, and offers no command that would refuse', () => {
+  for (const testState of ['not-computed', 'unknown', undefined]) {
+    const { rows } = impactOf(change('src/a.js', 'a', { testState }), { tierA: true, testReachComputed: false });
+    const tests = testsRows(rows);
+    assert.equal(tests.length, 1);
+    assert.equal(tests[0].label, 'Tests are not searched in a PR preview');
+    assert.equal(tests[0].command, undefined);
+    assert.match(tests[0].tooltip, /Check out the PR/);
+  }
+});
+
 test('there is exactly one tests row, after the callers', () => {
   const callers = [callerOf('src/u.js', 'u', 1)];
   for (const state of ['covered', 'uncovered', 'unknown']) {

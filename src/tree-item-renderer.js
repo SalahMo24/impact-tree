@@ -70,14 +70,17 @@ function applyCheckbox(vscode, item, row, view) {
 
 /**
  * The description of a change or deleted row: where it is declared, its verdict as
- * `impactTree.rowDetail` asks, and whether a finished test walk found no test.
+ * `impactTree.rowDetail` asks, and what the test walk established. In either detail mode
+ * a walk that found no test reads "no test", and one that did not finish "tests ?", so
+ * a lack of evidence never looks like a covered change; the reason is in the tooltip.
  * @param {string|null|undefined} container
  * @param {string} verdict The glyph, or the glyph and words.
- * @param {boolean} untested
+ * @param {TreeRow|null} change A change row, for its `scopeNote` and `reachReason`; null for a deleted row.
  * @returns {string}
  */
-const describeChangeRow = (container, verdict, untested) => [
-  container ? `in ${container}` : null, verdict, untested ? 'no test' : null,
+const describeChangeRow = (container, verdict, change) => [
+  container ? `in ${container}` : null, verdict,
+  change && change.scopeNote ? 'no test' : null, change && change.reachReason ? 'tests ?' : null,
 ].filter(Boolean).join('  ·  ');
 
 /**
@@ -162,7 +165,7 @@ function renderPlainItem(vscode, item, n, view) {
       item.collapsibleState = vscode.TreeItemCollapsibleState.None;
       // VS Code cannot strike a tree label through, so the icon says it is gone.
       item.label = n.name;
-      item.description = describeChangeRow(n.container, renderHelpers(vscode, view).rowDesc(st.token, `${st.token}  ${st.text}`), false);
+      item.description = describeChangeRow(n.container, renderHelpers(vscode, view).rowDesc(st.token, `${st.token}  ${st.text}`), null);
       item.iconPath = new vscode.ThemeIcon('trash');  // semantics beat decoration here
       item.tooltip = new vscode.MarkdownString([`✕ **${n.label}**`, '', st.sentence, '', `\`${n.relPath}\``].join('\n'));
       item.contextValue = 'deleted';
@@ -239,7 +242,7 @@ function renderChangeItem(vscode, item, n, view) {
   item.label = n.ambiguous ? `${n.name}  ‹${f.component}›` : n.name;
   item.description = describeChangeRow(n.container,
     rowDesc(st.token, `${st.token}  ${st.text}${qual}${kinds.length ? '  ·  ' + kinds.join(', ') : ''}`),
-    f.testState === 'uncovered');
+    n);
   item.iconPath = rowIcon(f.label, f);
   item.tooltip = new vscode.MarkdownString(buildChangeTooltipLines(n, st, kinds).join('\n'));
   item.contextValue = 'finding';
