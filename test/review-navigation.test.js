@@ -21,7 +21,8 @@ function useResult(env) {
   const bad = { ...finding('bad', a, 10), startLine: 10, endLine: 12, staleCallers: 1, callers: [caller(b)] };
   const reach = { ...finding('reach', a, 50), startLine: 50, endLine: 52, kinds: [{ id: 'body', label: 'body' }], callers: [caller(b)] };
   const quiet = { ...finding('quiet', b, 5), startLine: 5, endLine: 6, kinds: [{ id: 'body', label: 'body' }] };
-  env.hooks.localResult = (o) => ({ ...localResult(o, { findings: [bad, reach, quiet] }), otherFiles: [{ path: 'notes.md', status: 'added' }] });
+  const findings = [bad, reach, quiet].map(c => ({ ...c, throwsAdded: [] }));
+  env.hooks.localResult = (o) => ({ ...localResult(o, { findings }), otherFiles: [{ path: 'notes.md', status: 'added' }] });
 }
 // The labels of every file row and every row under it, as the view shows them.
 async function shown(env) {
@@ -116,7 +117,7 @@ test('next unreviewed reveals and selects the first row, then the one after the 
   await env.run('impactTree.nextUnreviewed');
   assert.equal(env.seen.revealed.length, 1);
   assert.equal(env.seen.revealed[0].row, rows[0], 'with no selection it starts at the top');
-  assert.deepEqual(env.seen.revealed[0].options, { select: true, focus: false, expand: true });
+  assert.deepEqual(env.seen.revealed[0].options, { select: true, focus: true, expand: true });
   env.view().selection = [rows[0]];
   await env.run('impactTree.nextUnreviewed');
   assert.equal(env.seen.revealed[1].row, rows[1]);
@@ -140,6 +141,22 @@ test('a selected caller or tests row counts as the change it sits under', () => 
   env.view().selection = [tests];
   await env.run('impactTree.nextUnreviewed');
   assert.equal(env.seen.revealed.at(-1).row, rows[1]);
+}));
+
+test('next unreviewed from an editor focuses the tree so Space reviews the selected row', () => withEnv(async env => {
+  useResult(env);
+  await env.refresh();
+  const { rows } = await rowsOf(env);
+  env.moveCursor(env.vscode.Uri.file(path.join(env.dir, 'a.ts')), 11);
+  assert.equal(env.seen.focus, 'editor');
+  await env.run('impactTree.nextUnreviewed');
+  assert.equal(env.seen.focus, 'tree');
+  assert.equal(env.seen.focusedRow, rows[0]);
+  env.pressSpace();
+  assert.equal(env.isTicked(rows[0]), true);
+  assert.equal(env.isTicked(rows[1]), false, 'the following row stays unreviewed');
+  assert.equal(env.seen.editorSpaces, 0, 'Space is not delivered to the editor');
+  assert.equal(env.seen.statusBar.text.split(' ')[1], '3', 'the review count follows the keyboard tick');
 }));
 
 test('next unreviewed follows the active filter and wraps', () => withEnv(async (env) => {

@@ -87,12 +87,15 @@ button.secondary:hover { background: var(--vscode-button-secondaryHoverBackgroun
 `;
 
 // Turns a click on a button or caller link into a message for the extension. The extension
-// validates every message, so this script decides nothing. A tick names the row it was
-// drawn for, so the extension can drop one that arrives after the panel moved on. An
+// validates every message, so this script decides nothing. Every action carries this
+// page's nonce, so a delayed click cannot act on another row or analysis. An
 // `origin` message from the extension rewrites the header's text, so a cursor moving
 // inside the row shown does not reload the page.
-const SCRIPT = `
+/** @param {string} token The validated base64 nonce of this rendered page. */
+const script = (token) => `
 const vscode = acquireVsCodeApi();
+const token = ${JSON.stringify(token)};
+const postMessage = (message) => vscode.postMessage({ ...message, token });
 window.addEventListener('message', (event) => {
   const data = event.data;
   const header = document.querySelector('.origin');
@@ -103,10 +106,10 @@ document.addEventListener('click', (event) => {
   if (!el) return;
   event.preventDefault();
   const act = el.getAttribute('data-act');
-  if (act === 'tick') vscode.postMessage({ type: 'tick', id: el.getAttribute('data-id'), on: el.getAttribute('data-on') === 'true' });
-  else if (act === 'next') vscode.postMessage({ type: 'next' });
-  else if (act === 'peek') vscode.postMessage({ type: 'showCallers', id: el.getAttribute('data-id') });
-  else if (act === 'caller') vscode.postMessage({ type: 'openCaller', index: Number(el.getAttribute('data-index')) });
+  if (act === 'tick') postMessage({ type: 'tick', id: el.getAttribute('data-id'), on: el.getAttribute('data-on') === 'true' });
+  else if (act === 'next') postMessage({ type: 'next' });
+  else if (act === 'peek') postMessage({ type: 'showCallers', id: el.getAttribute('data-id') });
+  else if (act === 'caller') postMessage({ type: 'openCaller', index: Number(el.getAttribute('data-index')) });
 });
 `;
 
@@ -248,7 +251,7 @@ function buildDetailHtml(row, { result, isReviewed, impactRows, nonce, cspSource
     + '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
     + `<style nonce="${nonce}">${STYLE}</style></head>`
     + `<body>${header}${bodyHtml(row, { result, isReviewed, impactRows, lineOf })}`
-    + `<script nonce="${nonce}">${SCRIPT}</script></body></html>`;
+    + `<script nonce="${nonce}">${script(nonce)}</script></body></html>`;
 }
 
 module.exports = { buildDetailHtml, listCallerRows, describeOrigin, tidySignature, escapeHtml, VERDICT_WORDS };

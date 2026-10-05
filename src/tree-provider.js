@@ -327,6 +327,12 @@ function createTreeProvider(vscode, {
       const state = shownState();
       return state ? reviewTree.countReview(builtFor(state).rows, isReviewed) : null;
     },
+    /**
+     * The analysis that owns actions drawn for the shown review. Stable across ticks and
+     * filters; null while no result is shown. A later analysis invalidates old actions.
+     * @returns {number|null}
+     */
+    reviewVersion: () => (shownState() ? getAnalysisId() : null),
     /** @returns {import('./review-tree-model').ReviewFilter} */
     getFilter: () => filter,
     /**

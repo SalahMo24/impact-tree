@@ -36,6 +36,10 @@ const textOf = (details) => details.webview.html.replace(/<style[\s\S]*?<\/style
   .replace(/<[^>]*>/g, ' ').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 // The tree id the panel's tick button names, as its script would send it.
 const tickId = (details) => /data-act="tick" data-id="([^"]*)"/.exec(details.webview.html)[1].replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+// Capture the page that drew an action, rather than attaching the current token on delivery.
+const pageAction = (details, message) => message && typeof message === 'object'
+  ? { ...message, token: /<script nonce="([^"]+)"/.exec(details.webview.html)[1] } : message;
+const sendAction = (details, message) => details.send(pageAction(details, message));
 const fileUri = (env, rel) => env.vscode.Uri.file(path.join(env.dir, rel));
 const rowsOf = async (env) => {
   const files = await env.tree().getChildren();
@@ -198,23 +202,23 @@ test('the tick message ticks the row shown and repaints; next runs the command; 
   const details = env.openDetails();
   const { files, a } = await rowsOf(env);
   env.select([a[0]]);
-  await details.send({ type: 'tick', id: tickId(details), on: true });
+  await sendAction(details, { type: 'tick', id: tickId(details), on: true });
   assert.equal(env.isTicked(a[0]), true);
   assert.match(textOf(details), /Untick Next unreviewed$/);
   assert.equal(env.seen.statusBar.text.split(' ')[1], '3', 'the status bar repainted too');
-  await details.send({ type: 'tick', id: tickId(details), on: false });
+  await sendAction(details, { type: 'tick', id: tickId(details), on: false });
   assert.equal(env.isTicked(a[0]), false);
 
   env.select([files[0]]);
-  await details.send({ type: 'tick', id: tickId(details), on: true });
+  await sendAction(details, { type: 'tick', id: tickId(details), on: true });
   assert.ok(a.every((r) => env.isTicked(r)), 'a file\'s button ticks its rows');
   assert.match(textOf(details), /0 left to review\. Untick file /);
 
-  await details.send({ type: 'next' });
+  await sendAction(details, { type: 'next' });
   assert.deepEqual(env.seen.executed.filter(([name]) => name === 'impactTree.nextUnreviewed').length, 1);
 
   env.select([a[0]]);
-  await details.send({ type: 'openCaller', index: 0 });
+  await sendAction(details, { type: 'openCaller', index: 0 });
   const opened = env.seen.executed.filter(([name]) => name === 'impactTree.openCaller');
   assert.equal(opened.length, 1);
   assert.equal(opened[0][1].label, 'user');
@@ -229,10 +233,10 @@ test('a tick drawn for another row than the one shown now is dropped', () => wit
   env.select([a[0]]);
   const drawnFor = tickId(details);
   env.moveCursor(fileUri(env, 'a.ts'), 51);   // the panel moves on to `reach` before the click arrives
-  await details.send({ type: 'tick', id: drawnFor, on: true });
+  await sendAction(details, { type: 'tick', id: drawnFor, on: true });
   assert.equal(env.isTicked(a[0]), false);
   assert.equal(env.isTicked(a[1]), false);
-  await details.send({ type: 'tick', id: tickId(details), on: true });
+  await sendAction(details, { type: 'tick', id: tickId(details), on: true });
   assert.equal(env.isTicked(a[1]), true);
 }));
 
@@ -248,13 +252,13 @@ test('a malformed or unknown message is ignored', () => withEnv(async (env) => {
     { type: 'tick', id, on: 'true' }, { type: 'tick', id, on: 1 }, { type: 'tick', id: `${id} `, on: true },
     { type: 'openCaller' }, { type: 'openCaller', index: 1 }, { type: 'openCaller', index: -1 }, { type: 'openCaller', index: 0.5 },
     { type: 'openCaller', index: '0' }, { type: 'run', command: 'workbench.action.quit' }]) {
-    await details.send(message);
+    await sendAction(details, message);
   }
   assert.equal(env.isTicked(a[0]), false);
   assert.equal(env.seen.executed.length, before, 'no command ran');
 
   env.select([(await env.tree().getChildren())[2]]);
-  await details.send({ type: 'openCaller', index: 0 });
+  await sendAction(details, { type: 'openCaller', index: 0 });
   assert.equal(env.seen.executed.length, before, 'a file has no callers to open');
 }));
 
@@ -283,15 +287,15 @@ test('the Show callers message runs the command for the row shown; one drawn for
   const ran = () => env.seen.executed.filter(([name]) => name === 'impactTree.showCallers');
   const id = peekId();
   assert.equal(id, tickId(details), 'the id of the row shown');
-  await details.send({ type: 'showCallers', id });
+  await sendAction(details, { type: 'showCallers', id });
   assert.deepEqual(ran(), [['impactTree.showCallers', id]]);
 
   for (const message of [{ type: 'showCallers' }, { type: 'showCallers', id: 5 }, { type: 'showCallers', id: null }, { type: 'showCallers', id: `${id} ` },
-    { type: 'showCallers', id: `finding:a.ts:reach:${a[1].pos}` }, { type: 'showCallers', index: 0 }]) await details.send(message);
+    { type: 'showCallers', id: `finding:a.ts:reach:${a[1].pos}` }, { type: 'showCallers', index: 0 }]) await sendAction(details, message);
   assert.equal(ran().length, 1, 'only the row shown');
 
   env.select([(await env.tree().getChildren())[2]]);   // a file without a call graph
-  await details.send({ type: 'showCallers', id });
+  await sendAction(details, { type: 'showCallers', id });
   assert.equal(ran().length, 1, 'the panel moved on to another row');
   assert.doesNotMatch(details.webview.html, /data-act="peek"/, 'a file row has no callers link');
 }));
@@ -312,4 +316,144 @@ test('showChange shows the change in the panel and reveals it in the tree; a bad
   for (const id of [undefined, null, 5, '', 'finding:a.ts:nothing:1']) await env.run('impactTree.showChange', id);
   assert.equal(env.seen.revealed.length, 1);
   assert.match(textOf(details), /^selected in tree reach /);
+}));
+
+test('cursor following opens no view, and neither view follows while it is hidden', () => withEnv(async env => {
+  useResult(env);
+  await env.refresh();
+  env.setTreeVisible(false);
+  env.moveCursor(fileUri(env, 'a.ts'), 11);
+  assert.equal(env.seen.revealed.length, 0, 'Details was never opened and the change view is hidden');
+
+  const details = env.openDetails();
+  details.setVisible(false);
+  const loads = details.loads;
+  env.moveCursor(fileUri(env, 'a.ts'), 51);
+  assert.equal(details.loads, loads, 'a collapsed Details view does not follow the cursor');
+  assert.equal(env.seen.revealed.length, 0, 'the hidden change view is not revealed');
+}));
+
+test('a visible change view follows the cursor while Details is collapsed', () => withEnv(async env => {
+  useResult(env);
+  await env.refresh();
+  env.moveCursor(fileUri(env, 'a.ts'), 11);
+  assert.equal(env.seen.revealed.length, 1, 'Details was never opened');
+  assert.equal(treeItemId(env.seen.revealed[0].row), treeItemId((await rowsOf(env)).a[0]));
+  assert.equal(env.seen.revealed[0].options.focus, false);
+}));
+
+test('a visible Details view follows the cursor while the change view is hidden, and the tree catches up', () => withEnv(async env => {
+  useResult(env);
+  await env.refresh();
+  const details = env.openDetails();
+  const { a } = await rowsOf(env);
+  env.select([a[0]]);
+  env.setTreeVisible(false);
+  env.moveCursor(fileUri(env, 'a.ts'), 51);
+  assert.match(textOf(details), /^at cursor, line 51 reach /, 'Details follows without the tree');
+  assert.equal(env.seen.revealed.length, 0, 'the hidden change view is not revealed');
+
+  env.setTreeVisible(true);
+  assert.equal(env.seen.revealed.length, 1, 'the tree selects the row Details shows once it is visible');
+  assert.equal(treeItemId(env.seen.revealed[0].row), treeItemId(a[1]));
+  env.select([a[1]]);
+  assert.match(textOf(details), /^at cursor, line 51 reach /, 'the reveal keeps the cursor header');
+
+  env.setTreeVisible(false);
+  env.setTreeVisible(true);
+  assert.equal(env.seen.revealed.length, 1, 'a tree that already selects the shown row is left alone');
+}));
+
+test('a delayed caller link cannot open a caller of the new panel selection', () => withEnv(async env => {
+  useResult(env);
+  const original = env.hooks.localResult;
+  env.hooks.localResult = o => {
+    const result = original(o);
+    result.allChanged[1].callers = [{ ...caller(path.join(env.dir, 'b.ts')), label: 'reachUser' }];
+    return result;
+  };
+  await env.refresh();
+  const details = env.openDetails();
+  const { a } = await rowsOf(env);
+  env.select([a[0]]);
+  const click = pageAction(details, { type: 'openCaller', index: 0 });
+  env.select([a[1]]);
+  await details.send(click);
+  const opened = () => env.seen.executed.filter(([command]) => command === 'impactTree.openCaller');
+  assert.equal(opened().length, 0);
+  await sendAction(details, { type: 'openCaller', index: 0 });
+  assert.equal(opened().length, 1, 'the current page can still open its caller');
+  assert.equal(opened()[0][1].label, 'reachUser');
+}));
+
+test('all actions from an older page are ignored after content changes at the same tree id', () => withEnv(async env => {
+  const file = path.join(env.dir, 'a.ts');
+  fs.writeFileSync(file, 'export function f() { return 1; }\n');
+  env.hooks.localResult = o => ({ ...localResult(o), fileStatus: { 'a.ts': 'added' }, allChanged: [
+    { ...finding('f', file, 16), startLine: 1, endLine: 1, throwsAdded: [], staleCallers: 1,
+      callers: [caller(path.join(env.dir, 'b.ts'))] },
+  ] });
+  await env.refresh();
+  const details = env.openDetails();
+  const [oldRow] = await env.changeRows();
+  env.select([oldRow]);
+  const id = tickId(details);
+  const messages = [{ type: 'tick', id, on: true }, { type: 'next' }, { type: 'showCallers', id }, { type: 'openCaller', index: 0 }];
+  const queued = messages.map(message => pageAction(details, message));
+  fs.writeFileSync(file, 'export function f() { return 2; }\n');
+  await env.refresh();
+  const [newRow] = await env.changeRows();
+  assert.equal(treeItemId(newRow), id, 'the UI id stays stable despite new reviewed content');
+  const before = env.seen.executed.length;
+  for (const message of queued) await details.send(message);
+  assert.equal(env.isTicked(newRow), false);
+  assert.equal(env.seen.executed.length, before, 'no old next, peek or caller command runs');
+  await sendAction(details, { type: 'tick', id, on: true });
+  assert.equal(env.isTicked(newRow), true, 'the current page can review the new content');
+}));
+
+test('a stale file checkbox cannot mark a changed file reviewed after refresh', () => withEnv(async env => {
+  useResult(env);
+  const file = path.join(env.dir, 'notes.md');
+  fs.writeFileSync(file, 'first draft');
+  await env.refresh();
+  const details = env.openDetails();
+  const { files } = await rowsOf(env);
+  env.select([files[2]]);
+  const click = pageAction(details, { type: 'tick', id: tickId(details), on: true });
+  fs.writeFileSync(file, 'second draft');
+  await env.refresh();
+  const newFile = (await rowsOf(env)).files[2];
+  assert.equal(treeItemId(newFile), click.id);
+  await details.send(click);
+  assert.equal(env.isTicked(newFile), false);
+  await sendAction(details, { type: 'tick', id: click.id, on: true });
+  assert.equal(env.isTicked(newFile), true);
+}));
+
+test('header-only cursor updates keep the page actions valid', () => withEnv(async env => {
+  useResult(env);
+  await env.refresh();
+  const details = env.openDetails();
+  env.moveCursor(fileUri(env, 'a.ts'), 11);
+  const click = pageAction(details, { type: 'tick', id: tickId(details), on: true });
+  env.moveCursor(fileUri(env, 'a.ts'), 12);
+  await details.send(click);
+  const { a } = await rowsOf(env);
+  assert.equal(env.isTicked(a[0]), true);
+}));
+
+test('well-formed panel actions require the current page token', () => withEnv(async env => {
+  useResult(env);
+  await env.refresh();
+  const details = env.openDetails();
+  const { a } = await rowsOf(env);
+  env.select([a[0]]);
+  const id = tickId(details);
+  const before = env.seen.executed.length;
+  for (const message of [{ type: 'tick', id, on: true }, { type: 'next' }, { type: 'showCallers', id }, { type: 'openCaller', index: 0 }]) {
+    for (const token of [undefined, null, 1, {}, '', 'obsolete']) await details.send({ ...message, token });
+  }
+  assert.equal(env.isTicked(a[0]), false);
+  assert.equal(env.seen.executed.length, before);
 }));

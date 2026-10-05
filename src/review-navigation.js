@@ -72,7 +72,7 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
     if (!provider.reviewCounts()) return;
     const row = provider.nextUnreviewed(startOfWalk());
     if (!row) { vscode.window.showInformationMessage(nothingLeftText(provider.getFilter())); return; }
-    await view.reveal(row, { select: true, focus: false, expand: true });
+    await view.reveal(row, { select: true, focus: true, expand: true });
   };
 
   /** @param {'attention'|'unreviewed'} name */
