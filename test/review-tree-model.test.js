@@ -375,6 +375,160 @@ test('findRowAtLine ignores deleted rows, which have no line in the new file', (
   assert.equal(model.findRowAtLine(rows, 'a.js', 5).type, 'reviewFile');
 });
 
+// ---- filters and the walk to the next unreviewed row ------------------------------------
+// a.js: bad (⛔), mid (●), low (∅) and an outside row; b.js: unk (?); c.js: q (∅); n.md has no call graph.
+function walkRows() {
+  const result = resultOf({
+    allChanged: [stale1('a.js', 'bad'), reaches('a.js', 'mid'), quiet('a.js', 'low'), unknown1('b.js', 'unk'), quiet('c.js', 'q')],
+    outside: [outside('a.js', [[1, 2]])], otherFiles: [{ path: 'n.md', status: 'added' }],
+  });
+  const { rows } = build(result);
+  const row = (rel, label) => (rel === 'n.md' ? rows.find((f) => f.relPath === rel) : rows.find((f) => f.relPath === rel).rows.find((r) => r.label === label));
+  const ticked = new Set();
+  return { rows, row, ticked, isReviewed: (r) => ticked.has(r) };
+}
+const shownLabels = (entries) => entries.map((e) => [e.file.relPath, e.rows.map((r) => r.label)]);
+
+test('no filter keeps every file with every counting row, in display order', () => {
+  const { rows, isReviewed } = walkRows();
+  assert.deepEqual(shownLabels(model.filterFileRows(rows, 'all', isReviewed)), [
+    ['a.js', ['bad', 'mid', 'low', 'Outside functions']], ['b.js', ['unk']], ['c.js', ['q']], ['n.md', ['n.md']],
+  ]);
+});
+
+test('"attention" keeps the unticked rows at level 1 or worse, and the files that have one', () => {
+  const { rows, row, ticked, isReviewed } = walkRows();
+  assert.deepEqual(shownLabels(model.filterFileRows(rows, 'attention', isReviewed)), [['a.js', ['bad']], ['b.js', ['unk']]]);
+  ticked.add(row('a.js', 'bad'));
+  assert.deepEqual(shownLabels(model.filterFileRows(rows, 'attention', isReviewed)), [['b.js', ['unk']]], 'a ticked row is gone, and its file with it');
+  ticked.add(row('b.js', 'unk'));
+  assert.deepEqual(model.filterFileRows(rows, 'attention', isReviewed), []);
+});
+
+test('"unreviewed" keeps the unticked counting rows, and a file row without a call graph while it is unticked', () => {
+  const { rows, row, ticked, isReviewed } = walkRows();
+  ticked.add(row('a.js', 'mid')); ticked.add(row('a.js', 'Outside functions')); ticked.add(row('c.js', 'q'));
+  assert.deepEqual(shownLabels(model.filterFileRows(rows, 'unreviewed', isReviewed)), [['a.js', ['bad', 'low']], ['b.js', ['unk']], ['n.md', ['n.md']]]);
+  ticked.add(row('n.md')); ticked.add(row('a.js', 'bad')); ticked.add(row('a.js', 'low'));
+  assert.deepEqual(shownLabels(model.filterFileRows(rows, 'unreviewed', isReviewed)), [['b.js', ['unk']]]);
+});
+
+test('filtering hands back the file rows themselves and does not modify them', () => {
+  const { rows, isReviewed } = walkRows();
+  const before = rows.map((f) => (f.rows ? f.rows.length : null));
+  const [first] = model.filterFileRows(rows, 'attention', isReviewed);
+  assert.equal(first.file, rows[0]);
+  assert.deepEqual(rows.map((f) => (f.rows ? f.rows.length : null)), before, 'the file still holds all its rows');
+});
+
+test('toggling a filter turns it on, turns the other off, and a second toggle returns to all', () => {
+  assert.equal(model.toggleFilter('all', 'attention'), 'attention');
+  assert.equal(model.toggleFilter('attention', 'unreviewed'), 'unreviewed');
+  assert.equal(model.toggleFilter('unreviewed', 'unreviewed'), 'all');
+  assert.equal(model.toggleFilter('attention', 'attention'), 'all');
+});
+
+test('the summary names a filter that narrows the tree and says nothing for all', () => {
+  const result = { mode: 'branch', base: { ref: 'main' } };
+  const counts = { total: 5, left: 3, attention: 1 };
+  assert.equal(model.buildReviewSummary(result, null, counts).message, 'branch mode against main · 1 need attention · 3 of 5 left');
+  assert.equal(model.buildReviewSummary(result, null, counts, 'all').message, 'branch mode against main · 1 need attention · 3 of 5 left');
+  assert.match(model.buildReviewSummary(result, null, counts, 'attention').message, / · filter: needs attention$/);
+  assert.match(model.buildReviewSummary(result, null, counts, 'unreviewed').message, / · filter: unreviewed$/);
+});
+
+test('a filter that leaves nothing is explained by one message row', () => {
+  assert.deepEqual(model.buildEmptyFilterRow('attention'), { type: 'message', icon: 'pass', label: 'Nothing needs attention',
+    tooltip: 'Every change that needs attention is reviewed. Turn the filter off to see the rest.' });
+  assert.deepEqual(model.buildEmptyFilterRow('unreviewed'), { type: 'message', icon: 'pass', label: 'Everything is reviewed',
+    tooltip: 'Every change is reviewed. Turn the filter off to see them.' });
+});
+
+test('the next unreviewed row starts at the top, then follows display order', () => {
+  const { rows, row, ticked, isReviewed } = walkRows();
+  const next = (after, filter = 'all') => model.findNextUnreviewed(rows, { after, isReviewed, filter });
+  assert.equal(next(null), row('a.js', 'bad'));
+  assert.equal(next(row('a.js', 'bad')), row('a.js', 'mid'));
+  assert.equal(next(row('a.js', 'Outside functions')), row('b.js', 'unk'), 'across a file boundary');
+  assert.equal(next(row('c.js', 'q')), row('n.md'), 'a file without a call graph is a row to visit');
+  ticked.add(row('a.js', 'mid'));
+  assert.equal(next(row('a.js', 'bad')), row('a.js', 'low'), 'ticked rows are skipped');
+});
+
+test('the walk wraps around once, and ends at the starting row when it is the only one left', () => {
+  const { rows, row, ticked, isReviewed } = walkRows();
+  const next = (after, filter = 'all') => model.findNextUnreviewed(rows, { after, isReviewed, filter });
+  assert.equal(next(row('n.md')), row('a.js', 'bad'), 'after the last row it goes back to the first');
+  ticked.add(row('a.js', 'bad'));
+  assert.equal(next(row('n.md')), row('a.js', 'mid'));
+  for (const f of rows) for (const r of f.rows || [f]) if (r !== row('c.js', 'q')) ticked.add(r);
+  assert.equal(next(row('c.js', 'q')), row('c.js', 'q'), 'the only one left, even though it is the starting row');
+  assert.equal(next(row('n.md')), row('c.js', 'q'));
+});
+
+test('nothing left is null, for every filter, starting anywhere', () => {
+  const { rows, row, ticked, isReviewed } = walkRows();
+  for (const f of rows) for (const r of f.rows || [f]) ticked.add(r);
+  for (const filter of ['all', 'attention', 'unreviewed']) {
+    assert.equal(model.findNextUnreviewed(rows, { after: null, isReviewed, filter }), null, filter);
+    assert.equal(model.findNextUnreviewed(rows, { after: row('b.js', 'unk'), isReviewed, filter }), null, filter);
+  }
+  assert.equal(model.findNextUnreviewed([], { after: null, isReviewed, filter: 'all' }), null);
+});
+
+test('a file row stands just before its own rows, and a file without a call graph after itself', () => {
+  const { rows, row, isReviewed } = walkRows();
+  const next = (after) => model.findNextUnreviewed(rows, { after, isReviewed, filter: 'all' });
+  assert.equal(next(rows[0]), row('a.js', 'bad'), 'selecting a file goes to its first row');
+  assert.equal(next(rows[1]), row('b.js', 'unk'));
+  assert.equal(next(row('n.md')), row('a.js', 'bad'));
+});
+
+test('with a filter the walk visits only the rows it shows, and starts from a hidden row\'s place', () => {
+  const { rows, row, ticked, isReviewed } = walkRows();
+  const next = (after, filter) => model.findNextUnreviewed(rows, { after, isReviewed, filter });
+  assert.equal(next(row('a.js', 'bad'), 'attention'), row('b.js', 'unk'), 'mid and low are hidden');
+  assert.equal(next(row('b.js', 'unk'), 'attention'), row('a.js', 'bad'), 'and it wraps to the first shown');
+  assert.equal(next(row('a.js', 'mid'), 'attention'), row('b.js', 'unk'), 'a hidden selection starts from its own place');
+  assert.equal(next(row('c.js', 'q'), 'attention'), row('a.js', 'bad'), 'its whole file is hidden: nothing after it, so it wraps');
+  ticked.add(row('a.js', 'low'));
+  assert.equal(next(row('a.js', 'mid'), 'unreviewed'), row('a.js', 'Outside functions'));
+  ticked.add(row('b.js', 'unk'));
+  assert.equal(next(row('b.js', 'unk'), 'unreviewed'), row('c.js', 'q'), 'a ticked selection is hidden by the filter but still marks the place');
+});
+
+test('a row that is not among the file rows, such as a caller, starts the walk at the top', () => {
+  const { rows, row, isReviewed } = walkRows();
+  const result = resultOf({ allChanged: [reaches('a.js', 'mid')] });
+  const [under] = model.buildImpactRows(build(result).rows[0].rows[0], { result, uriOf }).rows;
+  assert.equal(under.type, 'caller');
+  assert.equal(model.findNextUnreviewed(rows, { after: under, isReviewed, filter: 'all' }), row('a.js', 'bad'));
+});
+
+test('tree item ids exist for file and counting rows only, and are unique in the tree', () => {
+  const result = resultOf({
+    allChanged: [stale1('a.js', 'bad'), reaches('a.js', 'mid'), change('d.js', 'twin', { startLine: 10 }), change('d.js', 'twin', { startLine: 40 }),
+      change('e.js', 'twin', { startLine: 10 })],
+    deleted: [deleted('a.js', 'gone', 5), deleted('e.js', 'gone', 5)],
+    outside: [outside('a.js', [[1, 2]]), outside('e.js', [[1, 1]])], otherFiles: [{ path: 'n.md', status: 'added' }],
+  });
+  const { rows } = build(result);
+  const ids = [];
+  for (const f of rows) {
+    ids.push(model.treeItemId(f));
+    for (const r of f.rows || []) {
+      ids.push(model.treeItemId(r));
+      if (r.type !== 'finding') continue;
+      for (const under of model.buildImpactRows(r, { result, uriOf }).rows) assert.equal(model.treeItemId(under), undefined, `${under.type} row has no id`);
+    }
+  }
+  assert.equal(ids.length, 13);
+  assert.ok(ids.every((id) => typeof id === 'string' && id.length > 0), ids.join('\n'));
+  assert.equal(new Set(ids).size, ids.length, 'unique');
+  assert.equal(model.treeItemId({ type: 'caller', label: 'x', file: '/r/x', pos: 1 }), undefined);
+  assert.equal(model.treeItemId({ type: 'message', label: 'x' }), undefined);
+});
+
 // ---- review identity --------------------------------------------------------------------
 test('review ids of the new rows equal the ids the old tree gives the same symbols', async () => {
   const vscode = require('./vscode-stub');

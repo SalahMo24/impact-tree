@@ -29,6 +29,7 @@ test('editor commands refresh the selected PR, preserve preview documents, and r
     window: {
       createOutputChannel: () => ({ appendLine() {}, dispose() {}, show() {} }),
       registerFileDecorationProvider: disposable,
+      createStatusBarItem: () => ({ show() {}, hide() {}, dispose() {} }),
       createTreeView: () => ({ dispose() {}, onDidChangeCheckboxState: (fn) => { tickListener = fn; return disposable(); } }),
       withProgress: async (_, fn) => fn({ report() {} }),
       showQuickPick: async () => quickPick,

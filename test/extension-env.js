@@ -74,8 +74,11 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   }
 
   const commands = new Map();
+  // `contexts` holds the latest value of each context key the extension set; `revealed`
+  // the rows the change view was asked to reveal, with their options; `statusBar` is the
+  // extension's status bar item.
   const seen = { warnings: [], errors: [], infos: [], log: [], status: [], modals: 0, analyze: [], remote: [],
-    signals: [], callerQueries: [], warmUps: [] };
+    signals: [], callerQueries: [], warmUps: [], contexts: {}, revealed: [], statusBar: null };
   const git = { fetches: [], checkouts: [], calls: [] };
   const holds = { fetch: gates(), modal: gates(), remote: gates(), analyze: gates(), callers: gates(), warmUp: gates() };
   const failures = new Map();
@@ -105,7 +108,9 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       registerFileDecorationProvider: (provider) => { captured.decorations = provider; return disposable(); },
       // The view object is kept, so a test reads the message and badge the extension sets on it.
       createTreeView: (id, options) => {
-        const view = { dispose() {}, onDidChangeCheckboxState: (handler) => { captured.checkbox = handler; return disposable(); } };
+        // A test sets `selection` as the user's selection; `reveal` records what was asked.
+        const view = { dispose() {}, selection: [], onDidChangeCheckboxState: (handler) => { captured.checkbox = handler; return disposable(); },
+          reveal: async (row, options) => { seen.revealed.push({ row, options }); } };
         if (id === 'impactTree.changes') { captured.tree = options.treeDataProvider; captured.view = view; }
         if (id === 'impactTree.sources') captured.sources = options.treeDataProvider;
         return view;
@@ -123,9 +128,17 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       showErrorMessage: (m) => seen.errors.push(m),
       showInformationMessage: (m) => seen.infos.push(m),
       setStatusBarMessage: (m) => seen.status.push(m),
+      createStatusBarItem: (alignment, priority) => {
+        seen.statusBar = { alignment, priority, text: '', visible: false, show() { this.visible = true; }, hide() { this.visible = false; }, dispose() {} };
+        return seen.statusBar;
+      },
       visibleTextEditors: [],
     },
-    commands: { registerCommand: (name, fn) => { commands.set(name, fn); return disposable(); }, executeCommand: async () => [] },
+    commands: { registerCommand: (name, fn) => { commands.set(name, fn); return disposable(); },
+      executeCommand: async (name, ...args) => {
+        if (name === 'setContext') { seen.contexts[args[0]] = args[1]; return undefined; }
+        return [];
+      } },
     env: { openExternal: async () => {} },
     workspace: { workspaceFolders: [{ uri: baseStub.Uri.file(dir) }], getConfiguration: () => cfg,
       registerTextDocumentContentProvider: disposable },
@@ -215,7 +228,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
 
   const run = (name, ...args) => commands.get(name)(...args);
   return {
-    seen, git, holds, hooks, vscode, dir, memento,
+    seen, git, holds, hooks, vscode, dir, memento, run,
     // The user ticks or unticks a row, as the tree view reports it.
     tick(node, on) {
       const state = on ? vscode.TreeItemCheckboxState.Checked : vscode.TreeItemCheckboxState.Unchecked;

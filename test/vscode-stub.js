@@ -34,6 +34,7 @@ const vscodeStub = {
   EventEmitter: class { constructor() { this.event = () => ({ dispose() {} }); } fire() {} },
   TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
   TreeItemCheckboxState: { Unchecked: 0, Checked: 1 },
+  StatusBarAlignment: { Left: 1, Right: 2 },
   ThemeIcon: Object.assign(
     class { constructor(id) { this.id = id; } },
     { File: { id: '__file__' }, Folder: { id: '__folder__' } }),

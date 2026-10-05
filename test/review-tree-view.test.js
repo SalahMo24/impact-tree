@@ -56,10 +56,10 @@ function memoryReview() {
   return createReviewState({ get: (k) => store.get(k), update: (k, v) => store.set(k, v) });
 }
 
-function viewOf(result, { review = memoryReview(), state = {}, resolver = { incomingWithStatus: async () => ({ callers: [], complete: true }) } } = {}) {
+function viewOf(result, { review = memoryReview(), state = {}, deps = {}, resolver = { incomingWithStatus: async () => ({ callers: [], complete: true }) } } = {}) {
   const provider = createTreeProvider(vscode, {
     getState: () => ({ result, rowDetail: 'hover', rel: (f) => f.replace('/r/', ''), absPath: (p) => `/r/${p}`, ...state }),
-    resolver, review,
+    resolver, review, ...deps,
   });
   const item = (row) => provider.getTreeItem(row);
   const files = async () => (await provider.getChildren()).filter((r) => r.type === 'reviewFile' || r.type === 'file');
@@ -214,4 +214,184 @@ test('the summary names the PR for a preview or a checkout, and the mode for a l
     'branch mode (requested pr) against origin/main · 1 need attention · 1 of 1 left', 'a fallback mode says what was asked for');
   assert.deepEqual(buildReviewSummary(result, null, { attention: 0, left: 1, total: 2 }).badge, { value: 1, tooltip: '1 of 2 left to review' });
   assert.equal(buildReviewSummary(result, null, { attention: 0, left: 0, total: 2 }).badge, undefined, 'nothing left, no badge');
+});
+
+// ---- filters, ids, parents and the walk -------------------------------------------------
+// What the filtered tree shows: each file with the labels of its visible rows.
+async function shown(provider) {
+  const out = [];
+  for (const top of await provider.getChildren()) {
+    out.push([top.relPath ?? top.label, top.type === 'reviewFile' ? (await provider.getChildren(top)).map((r) => r.label) : []]);
+  }
+  return out;
+}
+
+test('the filter starts on all, and "needs attention" hides every row that does not', async () => {
+  const { provider, fileAt } = viewOf(sampleResult());
+  assert.equal(provider.getFilter(), 'all');
+  assert.deepEqual(await shown(provider), [['src/a.ts', ['bad', 'gone', 'Holder.body', 'Outside functions']], ['src/b.ts', ['quiet']], ['notes.md', []]]);
+  provider.toggleFilter('attention');
+  assert.equal(provider.getFilter(), 'attention');
+  assert.deepEqual(await shown(provider), [['src/a.ts', ['bad', 'gone']]], 'b.ts and notes.md have no row that needs attention');
+  provider.setChecked((await provider.getChildren(await fileAt('src/a.ts')))[0], true);
+  assert.deepEqual(await shown(provider), [['src/a.ts', ['gone']]], 'a ticked row leaves the filter');
+});
+
+test('"unreviewed" hides ticked rows and files whose rows are all ticked, and keeps an unticked file row', async () => {
+  const { provider, fileAt } = viewOf(sampleResult());
+  provider.toggleFilter('unreviewed');
+  assert.deepEqual(await shown(provider), [['src/a.ts', ['bad', 'gone', 'Holder.body', 'Outside functions']], ['src/b.ts', ['quiet']], ['notes.md', []]]);
+  const [bad] = await provider.getChildren(await fileAt('src/a.ts'));
+  provider.setChecked(bad, true);
+  provider.setChecked(await fileAt('src/b.ts'), true);
+  assert.deepEqual(await shown(provider), [['src/a.ts', ['gone', 'Holder.body', 'Outside functions']], ['notes.md', []]]);
+  provider.setChecked(await fileAt('notes.md'), true);
+  assert.deepEqual((await shown(provider)).map(([f]) => f), ['src/a.ts']);
+});
+
+test('a filter hides rows, not a file\'s progress: its checkbox and counts still stand for all its rows', async () => {
+  const { provider, item, fileAt } = viewOf(sampleResult());
+  provider.toggleFilter('attention');
+  const a = await fileAt('src/a.ts');
+  assert.equal(item(a).description, 'src  ·  ⛔ 2  ·  0/4');
+  provider.setChecked(a, true);
+  assert.equal(item(a).checkboxState, Checked);
+  provider.toggleFilter('attention');
+  const rows = await provider.getChildren(a);
+  assert.ok(rows.every((r) => item(r).checkboxState === Checked), 'ticking the file in a filter ticked every row, not only the visible ones');
+});
+
+test('turning one filter on turns the other off, and the active one again returns to all', () => {
+  const { provider } = viewOf(sampleResult());
+  provider.toggleFilter('attention');
+  provider.toggleFilter('unreviewed');
+  assert.equal(provider.getFilter(), 'unreviewed');
+  provider.toggleFilter('attention');
+  assert.equal(provider.getFilter(), 'attention');
+  provider.toggleFilter('attention');
+  assert.equal(provider.getFilter(), 'all');
+});
+
+test('the summary message names the active filter', () => {
+  const { provider } = viewOf(sampleResult(), { state: { source: { kind: 'local' } } });
+  assert.equal(provider.summarize().message, 'branch mode against origin/main · 2 need attention · 6 of 6 left');
+  provider.toggleFilter('attention');
+  assert.equal(provider.summarize().message, 'branch mode against origin/main · 2 need attention · 6 of 6 left · filter: needs attention');
+  provider.toggleFilter('unreviewed');
+  assert.equal(provider.summarize().message, 'branch mode against origin/main · 2 need attention · 6 of 6 left · filter: unreviewed');
+});
+
+test('when a filter leaves nothing the root is one message row, after any notices', async () => {
+  const { provider, fileAt } = viewOf({ ...sampleResult(), warnings: ['careful'] });
+  provider.toggleFilter('attention');
+  for (const row of await provider.getChildren(await fileAt('src/a.ts'))) provider.setChecked(row, true);
+  assert.deepEqual((await provider.getChildren()).map((r) => [r.type, r.label]), [['message', 'careful'], ['message', 'Nothing needs attention']]);
+  provider.toggleFilter('unreviewed');
+  assert.deepEqual((await provider.getChildren()).map((r) => r.label), ['careful', 'a.ts', 'b.ts', 'notes.md'], 'only the attention rows were ticked');
+  for (const f of ['src/a.ts', 'src/b.ts', 'notes.md']) provider.setChecked(await fileAt(f), true);
+  assert.deepEqual((await provider.getChildren()).map((r) => r.label), ['careful', 'Everything is reviewed']);
+  provider.toggleFilter('unreviewed');
+  assert.equal((await provider.getChildren()).length, 4, 'all: the warning and three files');
+});
+
+test('an empty result with no filter stays empty', async () => {
+  const { provider } = viewOf(resultOf());
+  assert.deepEqual(await provider.getChildren(), []);
+});
+
+test('getParent: a file has none, a counting row has its file, a caller has the row it was built under', async () => {
+  const sameFile = [callerOf('src/user.ts', 'one', false), callerOf('src/user.ts', 'two', true)];
+  const holder = change('src/a.ts', 'holder', 10, { callerState: 'resolved', callers: sameFile });
+  const { provider } = viewOf(resultOf({ allChanged: [holder], outside: [{ file: '/r/src/a.ts', relPath: 'src/a.ts', ranges: [[1, 2]] }],
+    fileStatus: { 'src/a.ts': 'modified' } }),
+  { resolver: { incomingWithStatus: async () => ({ callers: [callerOf('src/deep.ts', 'deep', false)], complete: true }) } });
+  const [file] = await provider.getChildren();
+  assert.equal(provider.getParent(file), undefined);
+  const [change1, outsideRow] = await provider.getChildren(file);
+  assert.equal(provider.getParent(change1).relPath, 'src/a.ts');
+  assert.equal(provider.getParent(outsideRow).relPath, 'src/a.ts');
+  const [callerFile, tests] = await provider.getChildren(change1);
+  assert.equal(callerFile.type, 'callerFile');
+  assert.equal(provider.getParent(callerFile), change1);
+  assert.equal(provider.getParent(tests), change1);
+  const [caller] = await provider.getChildren(callerFile);
+  assert.equal(provider.getParent(caller), callerFile, 'a caller grouped under its file');
+  const [deeper] = await provider.getChildren(caller);
+  assert.equal(provider.getParent(deeper), caller);
+});
+
+test('a counting row has its file as parent before anything under it was expanded', async () => {
+  const { provider, fileAt } = viewOf(sampleResult());
+  const b = await fileAt('src/b.ts');
+  const files = await provider.getChildren();
+  assert.equal(provider.getParent(b.rows[0]), files.find((f) => f.relPath === 'src/b.ts'), 'known from the root build');
+  assert.equal(provider.getParent(await fileAt('notes.md')), undefined);
+});
+
+test('tree item ids are unique over every level of the tree, and caller and tests rows have none', async () => {
+  const twinA = change('src/a.ts', 'twin', 10, { callerState: 'resolved', callers: [callerOf('src/u.ts', 'u', false), callerOf('src/v.ts', 'u', false)] });
+  const twinB = change('src/a.ts', 'twin', 40, { callerState: 'resolved', callers: [callerOf('src/u.ts', 'u', false)] });
+  const sample = sampleResult();
+  const result = { ...sample, allChanged: [...sample.allChanged, twinA, twinB] };
+  const { provider, item } = viewOf(result);
+  const ids = [];
+  const walk = async (row) => {
+    const id = item(row).id;
+    if (['reviewFile', 'file', 'finding', 'deleted', 'outside'].includes(row.type)) {
+      assert.equal(typeof id, 'string', `${row.type} ${row.label}`);
+      ids.push(id);
+    } else assert.equal(id, undefined, `${row.type} ${row.label} has no id`);
+    for (const child of await provider.getChildren(row)) await walk(child);
+  };
+  for (const top of await provider.getChildren()) await walk(top);
+  assert.ok(ids.length >= 9, `${ids.length} ids`);
+  assert.equal(new Set(ids).size, ids.length);
+});
+
+test('the built rows are shared by the root, getParent, the walk and the summary, and rebuilt when the analysis changes', async () => {
+  let analysisId = 1;
+  let current = sampleResult();
+  const provider = createTreeProvider(vscode, {
+    getState: () => ({ result: current, rel: (f) => f.replace('/r/', ''), absPath: (p) => `/r/${p}` }), resolver: {},
+    review: memoryReview(), getAnalysisId: () => analysisId,
+  });
+  // the first file is shown as an expanded copy, so the second is the one to compare
+  const second = async () => (await provider.getChildren())[1];
+  const before = await second();
+  provider.summarize();
+  provider.nextUnreviewed(null);
+  assert.equal(await second(), before, 'the same row objects, not a rebuild');
+  const [child] = await provider.getChildren(before);
+  assert.equal(provider.getParent(child), before);
+  current = sampleResult();
+  const rebuilt = await second();
+  assert.notEqual(rebuilt, before, 'a new result object');
+  analysisId = 2;
+  assert.notEqual(await second(), rebuilt, 'a new analysis id, even for the same result');
+  assert.equal(provider.getParent(child), undefined, 'a row of the old analysis has no parent now');
+});
+
+test('the next unreviewed row follows the filter and the ticks, and is null when none is left', async () => {
+  const { provider, fileAt } = viewOf(sampleResult());
+  const a = await fileAt('src/a.ts');
+  const [bad, gone, body, outsideRow] = await provider.getChildren(a);
+  assert.equal(provider.nextUnreviewed(null), bad);
+  assert.equal(provider.nextUnreviewed(bad), gone);
+  provider.toggleFilter('attention');
+  assert.equal(provider.nextUnreviewed(bad), gone);
+  assert.equal(provider.nextUnreviewed(gone), bad, 'body and the others are hidden, so it wraps');
+  provider.toggleFilter('attention');
+  provider.setChecked(a, true);
+  assert.equal(provider.nextUnreviewed(outsideRow).label, 'quiet', 'a.ts is ticked, so the walk goes on to b.ts');
+  assert.equal(provider.nextUnreviewed(body).label, 'quiet');
+  for (const f of ['src/b.ts', 'notes.md']) provider.setChecked(await fileAt(f), true);
+  assert.equal(provider.nextUnreviewed(null), null);
+});
+
+test('the counts of a shown review, and none while a placeholder is shown', async () => {
+  const { provider } = viewOf(sampleResult());
+  assert.deepEqual(provider.reviewCounts(), { total: 6, left: 6, attention: 2 });
+  const none = createTreeProvider(vscode, { getState: () => null, resolver: {} });
+  assert.equal(none.reviewCounts(), null);
+  assert.equal(none.nextUnreviewed(null), null);
 });
