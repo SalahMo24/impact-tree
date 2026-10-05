@@ -87,7 +87,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   const hooks = { beforeCheckout: null, headOf: shaFor, remoteResult: (pr) => previewResult(pr), localResult: (o) => localResult(o),
     warm: !changedSource, clearResolver: () => {}, onCommand: null };
   const captured = { tree: null, view: null, decorations: null, checkbox: null, sources: null, webviews: new Map(),
-    selection: [], cursor: [], lenses: null };
+    selection: [], cursor: [], treeVisibility: [], lenses: null };
   let fetchHead = null, quickPick = null;
 
   const disposable = () => ({ dispose() {} });
@@ -116,6 +116,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
         // A test sets `selection` as the user's selection; `reveal` records what was asked.
         const view = { dispose() {}, visible: true, selection: [], onDidChangeCheckboxState: (handler) => { captured.checkbox = handler; return disposable(); },
           onDidChangeSelection: (handler) => { if (id === 'impactTree.changes') captured.selection.push(handler); return disposable(); },
+          onDidChangeVisibility: (handler) => { if (id === 'impactTree.changes') captured.treeVisibility.push(handler); return disposable(); },
           reveal: async (row, options) => {
             seen.revealed.push({ row, options });
             if (options.focus) { seen.focus = 'tree'; seen.focusedRow = row; }
@@ -260,6 +261,8 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     },
     tree: () => captured.tree,
     view: () => captured.view,
+    // Collapses or shows the change view as VS Code does, firing its visibility event.
+    setTreeVisible(visible) { captured.view.visible = visible; for (const handler of captured.treeVisibility) handler({ visible }); },
     // The change rows of every file the tree shows, in display order.
     async changeRows() {
       const rows = [];

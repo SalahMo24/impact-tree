@@ -32,7 +32,7 @@ test('editor commands refresh the selected PR, preserve preview documents, and r
       registerFileDecorationProvider: disposable,
       createStatusBarItem: () => ({ show() {}, hide() {}, dispose() {} }),
       createTreeView: () => ({ dispose() {}, onDidChangeCheckboxState: (fn) => { tickListener = fn; return disposable(); },
-        onDidChangeSelection: disposable }),
+        onDidChangeSelection: disposable, onDidChangeVisibility: disposable }),
       registerWebviewViewProvider: disposable, onDidChangeTextEditorSelection: disposable,
       withProgress: async (_, fn) => fn({ report() {} }),
       showQuickPick: async () => quickPick,

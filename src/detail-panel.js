@@ -71,7 +71,8 @@ function parseMessage(message, token) {
  * @param {{
  *   provider: ReturnType<typeof import('./tree-provider').createTreeProvider>,
  *   view: { visible: boolean, selection: readonly TreeRow[], reveal: (row: TreeRow, options: object) => PromiseLike<void>,
- *     onDidChangeSelection: (listener: (e: { selection: readonly TreeRow[] }) => void) => { dispose(): any } },
+ *     onDidChangeSelection: (listener: (e: { selection: readonly TreeRow[] }) => void) => { dispose(): any },
+ *     onDidChangeVisibility: (listener: (e: { visible: boolean }) => void) => { dispose(): any } },
  *   getState: () => { result: any, rel: (file: string) => string }|null,
  *   lineOf: (file: string, offset: number) => number|null,
  *   log: (message: string) => void,
@@ -141,9 +142,11 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
   // selection away from the row just clicked.
   /** @param {{ textEditor: any, selections: readonly any[], kind?: number }} e */
   function onCursor(e) {
-    // reveal opens a hidden view, even with focus:false. Automatic following must not
-    // replace the reviewer's current sidebar or open a panel they have not chosen to use.
-    if (!view.visible || !webviewView?.visible) return;
+    // Each view follows only while it is on screen: reveal opens a hidden view, even with
+    // focus:false, and must not replace the reviewer's sidebar. A tree that missed the
+    // cursor catches up when it is shown again.
+    const treeVisible = view.visible;
+    if (!treeVisible && !webviewView?.visible) return;
     if (e.kind === vscode.TextEditorSelectionChangeKind.Command) return;
     if (e.textEditor !== vscode.window.activeTextEditor || !e.selections.length) return;
     const state = getState();
@@ -160,10 +163,27 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
       return;
     }
     show(id, origin);
+    if (treeVisible) revealShown(row, id);
+  }
+
+  // Selects the row the panel shows without the selection replacing the panel's header.
+  // A row the filter hides cannot be revealed; the panel still shows it.
+  /** @param {TreeRow} row @param {string} id */
+  function revealShown(row, id) {
     revealedFromCursor = id;
-    // A row the filter hides cannot be revealed; the panel still shows it.
     Promise.resolve(view.reveal(row, { select: true, focus: false }))
       .then(undefined, (/** @type {any} */ err) => log(`details: could not reveal ${id}: ${err && err.message}`));
+  }
+
+  // A tree shown again may still select the row it had before the cursor moved on, and
+  // clicking an already selected row changes nothing. It is visible now, so revealing the
+  // panel's row cannot open or switch a view.
+  function onTreeVisible() {
+    if (!view.visible || !shown.id) return;
+    const owner = ownerOf(view.selection[0]);
+    if (owner && treeItemId(owner) === shown.id) return;
+    const row = currentRow();
+    if (row) revealShown(row, shown.id);
   }
 
   // A lens asks for a change to be explained: the panel shows it and the tree selects it, as
@@ -228,6 +248,7 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
       vscode.window.registerWebviewViewProvider('impactTree.details', webviewProvider),
       vscode.commands.registerCommand('impactTree.showChange', showChange),
       view.onDidChangeSelection(onSelection),
+      view.onDidChangeVisibility(onTreeVisible),
       provider.onDidChangeTreeData(render),
       vscode.window.onDidChangeTextEditorSelection(onCursor),
       { dispose: disposeView },

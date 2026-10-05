@@ -318,31 +318,50 @@ test('showChange shows the change in the panel and reveals it in the tree; a bad
   assert.match(textOf(details), /^selected in tree reach /);
 }));
 
-test('cursor following does not open Details or replace a hidden change view', () => withEnv(async env => {
+test('cursor following opens no view, and neither view follows while it is hidden', () => withEnv(async env => {
+  useResult(env);
+  await env.refresh();
+  env.setTreeVisible(false);
+  env.moveCursor(fileUri(env, 'a.ts'), 11);
+  assert.equal(env.seen.revealed.length, 0, 'Details was never opened and the change view is hidden');
+
+  const details = env.openDetails();
+  details.setVisible(false);
+  const loads = details.loads;
+  env.moveCursor(fileUri(env, 'a.ts'), 51);
+  assert.equal(details.loads, loads, 'a collapsed Details view does not follow the cursor');
+  assert.equal(env.seen.revealed.length, 0, 'the hidden change view is not revealed');
+}));
+
+test('a visible change view follows the cursor while Details is collapsed', () => withEnv(async env => {
   useResult(env);
   await env.refresh();
   env.moveCursor(fileUri(env, 'a.ts'), 11);
-  assert.equal(env.seen.revealed.length, 0, 'Details has never been resolved');
+  assert.equal(env.seen.revealed.length, 1, 'Details was never opened');
+  assert.equal(treeItemId(env.seen.revealed[0].row), treeItemId((await rowsOf(env)).a[0]));
+  assert.equal(env.seen.revealed[0].options.focus, false);
+}));
 
+test('a visible Details view follows the cursor while the change view is hidden, and the tree catches up', () => withEnv(async env => {
+  useResult(env);
+  await env.refresh();
   const details = env.openDetails();
-  assert.equal(textOf(details), NOT_FOLLOWED);
-  const loads = details.loads;
-  details.setVisible(false);
+  const { a } = await rowsOf(env);
+  env.select([a[0]]);
+  env.setTreeVisible(false);
   env.moveCursor(fileUri(env, 'a.ts'), 51);
-  assert.equal(details.loads, loads, 'a collapsed Details view does not follow the cursor');
-  assert.equal(env.seen.revealed.length, 0);
+  assert.match(textOf(details), /^at cursor, line 51 reach /, 'Details follows without the tree');
+  assert.equal(env.seen.revealed.length, 0, 'the hidden change view is not revealed');
 
-  details.setVisible(true);
-  env.view().visible = false;
-  const shownLoads = details.loads;
-  env.moveCursor(fileUri(env, 'a.ts'), 11);
-  assert.equal(details.loads, shownLoads, 'another sidebar view stays open');
-  assert.equal(env.seen.revealed.length, 0);
+  env.setTreeVisible(true);
+  assert.equal(env.seen.revealed.length, 1, 'the tree selects the row Details shows once it is visible');
+  assert.equal(treeItemId(env.seen.revealed[0].row), treeItemId(a[1]));
+  env.select([a[1]]);
+  assert.match(textOf(details), /^at cursor, line 51 reach /, 'the reveal keeps the cursor header');
 
-  env.view().visible = true;
-  env.moveCursor(fileUri(env, 'a.ts'), 11);
-  assert.match(textOf(details), /^at cursor, line 11 bad /);
-  assert.equal(env.seen.revealed.length, 1, 'visible views still follow the cursor');
+  env.setTreeVisible(false);
+  env.setTreeVisible(true);
+  assert.equal(env.seen.revealed.length, 1, 'a tree that already selects the shown row is left alone');
 }));
 
 test('a delayed caller link cannot open a caller of the new panel selection', () => withEnv(async env => {
