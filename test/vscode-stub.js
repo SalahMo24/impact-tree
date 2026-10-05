@@ -35,6 +35,7 @@ const vscodeStub = {
   TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
   TreeItemCheckboxState: { Unchecked: 0, Checked: 1 },
   StatusBarAlignment: { Left: 1, Right: 2 },
+  TextEditorSelectionChangeKind: { Keyboard: 1, Mouse: 2, Command: 3 },
   ThemeIcon: Object.assign(
     class { constructor(id) { this.id = id; } },
     { File: { id: '__file__' }, Folder: { id: '__folder__' } }),
