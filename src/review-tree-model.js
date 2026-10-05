@@ -300,6 +300,18 @@ function filterFileRows(files, filter, isReviewed) {
 }
 
 /**
+ * The one row shown in place of an empty tree when a filter leaves nothing, so a tree that
+ * is empty because everything is reviewed does not look broken.
+ * @param {'attention'|'unreviewed'} filter
+ * @returns {TreeRow}
+ */
+const buildEmptyFilterRow = (filter) => (filter === 'attention'
+  ? { type: 'message', icon: 'pass', label: 'Nothing needs attention',
+    tooltip: 'Every change that needs attention is reviewed. Turn the filter off to see the rest.' }
+  : { type: 'message', icon: 'pass', label: 'Everything is reviewed',
+    tooltip: 'Every change is reviewed. Turn the filter off to see them.' });
+
+/**
  * The id a row has in the tree view, which keeps a row's expansion across a refresh and
  * lets the view reveal it. Only file rows and counting rows have one: caller, caller-file
  * and tests rows can repeat under several parents, and an id is unique in a tree.
@@ -381,5 +393,5 @@ const span = (row) => row.finding.endLine - row.finding.startLine;
 
 module.exports = {
   buildFileRows, buildImpactRows, collectCountingRows, collectTickTargets, needsAttention, countReview, buildReviewSummary,
-  findRowAtLine, filterFileRows, toggleFilter, findNextUnreviewed, treeItemId,
+  findRowAtLine, filterFileRows, toggleFilter, findNextUnreviewed, treeItemId, buildEmptyFilterRow,
 };

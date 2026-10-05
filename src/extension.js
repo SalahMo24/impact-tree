@@ -2,6 +2,7 @@
 const vscode = require('vscode');
 const { MODES } = require('./engine/analyze');
 const { createTreeProvider } = require('./tree-provider');
+const { createReviewNavigation } = require('./review-navigation');
 const { createDecorationProvider } = require('./decorations');
 const { createReviewState } = require('./review-state');
 const { createGitHub, parseRemote } = require('./github');
@@ -54,14 +55,18 @@ function activate(context) {
   const view = vscode.window.createTreeView('impactTree.changes',
     { treeDataProvider: provider, showCollapseAll: true, manageCheckboxStateManually: true });
   context.subscriptions.push(view);
+  const navigation = createReviewNavigation(vscode, { provider, view });
+  context.subscriptions.push(...navigation.disposables);
   // The summary lives in the view's message and badge, and follows every repaint: a new
-  // result, a phase change, a tick.
+  // result, a phase change, a tick, a filter. So do the status bar and the context keys.
   const showSummary = () => {
     const { message, badge } = provider.summarize();
     view.message = message;
     view.badge = badge;
+    navigation.update();
   };
   context.subscriptions.push(provider.onDidChangeTreeData(showSummary));
+  showSummary();
   context.subscriptions.push(view.onDidChangeCheckboxState((e) => {
     // A file's checkbox ticks its changes; a change's ticks only itself, not its callers.
     for (const [node, state] of e.items) provider.setChecked(node, state === vscode.TreeItemCheckboxState.Checked);

@@ -15,7 +15,7 @@
   "main": "./src/extension.js",
   "scripts": {
     "analyze": "node --max-old-space-size=8192 src/cli.js",
-    "test": "node test/scope.test.js && node test/local-symbols.test.js && node test/local-diff.test.js && node test/local-programs.test.js && node test/syntax-regressions.test.js && node test/remote-regressions.test.js && node test/editor-regressions.test.js && node test/review-identity-regressions.test.js && node test/engine-regressions.test.js && node test/call-site-classifier.test.js && node test/caller-evidence.test.js && node test/extension-commands.test.js && node test/cancellation.test.js && node test/request-boundary.test.js && node test/session-lifecycle.test.js && node test/review-key.test.js && node test/load-typescript.test.js && node test/base-ref.test.js && node test/sources.test.js && node test/pr-groups.test.js && node test/tier-a-view.test.js && node test/tree-grouping.test.js && node test/tree-characterization.test.js && node test/tree-grouping-rules.test.js && node test/tree-row-models.test.js && node test/review-tree-model.test.js && node test/review-tree-view.test.js && node test/outside-functions.test.js && node test/test-reach.test.js && node test/test-reach-view.test.js && node test/syntactic-index.test.js && node test/inheritance.test.js && node test/tier-a.test.js && node test/preview-retention.test.js && node --max-old-space-size=8192 test/languages.test.js && node --max-old-space-size=8192 test/textpos.test.js && node --max-old-space-size=8192 test/callsites.test.js && node --max-old-space-size=8192 test/run-fixtures.js && node --max-old-space-size=8192 test/tree-smoke.js",
+    "test": "node test/scope.test.js && node test/local-symbols.test.js && node test/local-diff.test.js && node test/local-programs.test.js && node test/syntax-regressions.test.js && node test/remote-regressions.test.js && node test/editor-regressions.test.js && node test/review-identity-regressions.test.js && node test/engine-regressions.test.js && node test/call-site-classifier.test.js && node test/caller-evidence.test.js && node test/extension-commands.test.js && node test/cancellation.test.js && node test/request-boundary.test.js && node test/session-lifecycle.test.js && node test/review-key.test.js && node test/load-typescript.test.js && node test/base-ref.test.js && node test/sources.test.js && node test/pr-groups.test.js && node test/tier-a-view.test.js && node test/tree-grouping.test.js && node test/tree-characterization.test.js && node test/tree-grouping-rules.test.js && node test/tree-row-models.test.js && node test/review-tree-model.test.js && node test/review-tree-view.test.js && node test/review-navigation.test.js &&node test/outside-functions.test.js && node test/test-reach.test.js && node test/test-reach-view.test.js && node test/syntactic-index.test.js && node test/inheritance.test.js && node test/tier-a.test.js && node test/preview-retention.test.js && node --max-old-space-size=8192 test/languages.test.js && node --max-old-space-size=8192 test/textpos.test.js && node --max-old-space-size=8192 test/callsites.test.js && node --max-old-space-size=8192 test/run-fixtures.js && node --max-old-space-size=8192 test/tree-smoke.js",
     "record": "node --max-old-space-size=8192 test/record-fixture.js",
     "test:fixtures": "node --max-old-space-size=8192 test/run-fixtures.js",
     "test:tree": "node --max-old-space-size=8192 test/tree-smoke.js",
@@ -66,6 +66,31 @@
         "command": "impactTree.refresh",
         "title": "Impact Tree: Refresh",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "impactTree.filterAttention",
+        "title": "Impact Tree: Show only what needs attention",
+        "icon": "$(warning)"
+      },
+      {
+        "command": "impactTree.filterAttentionOn",
+        "title": "Impact Tree: Show everything (now showing only what needs attention)",
+        "icon": "$(error)"
+      },
+      {
+        "command": "impactTree.filterUnreviewed",
+        "title": "Impact Tree: Hide reviewed changes",
+        "icon": "$(circle-large-outline)"
+      },
+      {
+        "command": "impactTree.filterUnreviewedOn",
+        "title": "Impact Tree: Show reviewed changes again (now hiding them)",
+        "icon": "$(circle-large-filled)"
+      },
+      {
+        "command": "impactTree.nextUnreviewed",
+        "title": "Impact Tree: Go to next unreviewed change (Alt+N, rebind in Keyboard Shortcuts)",
+        "icon": "$(arrow-down)"
       },
       {
         "command": "impactTree.selectMode",
@@ -139,29 +164,54 @@
           "group": "navigation@1"
         },
         {
-          "command": "impactTree.selectMode",
-          "when": "view == impactTree.changes",
+          "command": "impactTree.filterAttention",
+          "when": "view == impactTree.changes && impactTree.filter != attention",
           "group": "navigation@2"
         },
         {
-          "command": "impactTree.setCheckpoint",
-          "when": "view == impactTree.changes",
+          "command": "impactTree.filterAttentionOn",
+          "when": "view == impactTree.changes && impactTree.filter == attention",
+          "group": "navigation@2"
+        },
+        {
+          "command": "impactTree.filterUnreviewed",
+          "when": "view == impactTree.changes && impactTree.filter != unreviewed",
           "group": "navigation@3"
         },
         {
-          "command": "impactTree.showLegend",
+          "command": "impactTree.filterUnreviewedOn",
+          "when": "view == impactTree.changes && impactTree.filter == unreviewed",
+          "group": "navigation@3"
+        },
+        {
+          "command": "impactTree.nextUnreviewed",
           "when": "view == impactTree.changes",
           "group": "navigation@4"
         },
         {
-          "command": "impactTree.showLog",
+          "command": "impactTree.selectMode",
           "when": "view == impactTree.changes",
           "group": "navigation@5"
         },
         {
-          "command": "impactTree.clearReviewed",
+          "command": "impactTree.setCheckpoint",
           "when": "view == impactTree.changes",
           "group": "navigation@6"
+        },
+        {
+          "command": "impactTree.showLegend",
+          "when": "view == impactTree.changes",
+          "group": "navigation@7"
+        },
+        {
+          "command": "impactTree.showLog",
+          "when": "view == impactTree.changes",
+          "group": "navigation@8"
+        },
+        {
+          "command": "impactTree.clearReviewed",
+          "when": "view == impactTree.changes",
+          "group": "navigation@9"
         },
         {
           "command": "impactTree.refreshPullRequests",
@@ -170,6 +220,26 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "impactTree.filterAttention",
+          "when": "impactTree.hasReview"
+        },
+        {
+          "command": "impactTree.filterAttentionOn",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.filterUnreviewed",
+          "when": "impactTree.hasReview"
+        },
+        {
+          "command": "impactTree.filterUnreviewedOn",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.nextUnreviewed",
+          "when": "impactTree.hasReview"
+        },
         {
           "command": "impactTree.analyseMode",
           "when": "false"
@@ -180,6 +250,13 @@
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "impactTree.nextUnreviewed",
+        "key": "alt+n",
+        "when": "impactTree.hasReview"
+      }
+    ],
     "configuration": {
       "title": "Impact Tree",
       "properties": {

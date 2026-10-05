@@ -437,6 +437,13 @@ test('the summary names a filter that narrows the tree and says nothing for all'
   assert.match(model.buildReviewSummary(result, null, counts, 'unreviewed').message, / · filter: unreviewed$/);
 });
 
+test('a filter that leaves nothing is explained by one message row', () => {
+  assert.deepEqual(model.buildEmptyFilterRow('attention'), { type: 'message', icon: 'pass', label: 'Nothing needs attention',
+    tooltip: 'Every change that needs attention is reviewed. Turn the filter off to see the rest.' });
+  assert.deepEqual(model.buildEmptyFilterRow('unreviewed'), { type: 'message', icon: 'pass', label: 'Everything is reviewed',
+    tooltip: 'Every change is reviewed. Turn the filter off to see them.' });
+});
+
 test('the next unreviewed row starts at the top, then follows display order', () => {
   const { rows, row, ticked, isReviewed } = walkRows();
   const next = (after, filter = 'all') => model.findNextUnreviewed(rows, { after, isReviewed, filter });

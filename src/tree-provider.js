@@ -129,8 +129,50 @@ function createTreeProvider(vscode, {
   };
   const _emitter = new vscode.EventEmitter();
 
-  /** @param {ProviderState} state */
-  const buildFiles = (state) => reviewTree.buildFileRows(state.result, { uriOf: uriFor, absPath: state.absPath });
+  // The filter the reviewer chose. Held for the window only: it is not persisted, so a new
+  // window opens on everything.
+  /** @type {import('./review-tree-model').ReviewFilter} */
+  let filter = 'all';
+  /** @param {TreeRow} row */
+  const isReviewed = (row) => checkedOf(row) === true;
+
+  // Cache: the file rows built from the shown result, and the parent of every row handed
+  // out under them. Owner: this provider. Key: the analysis id and the result object; a
+  // build depends on nothing else, because ticks are read at render time through
+  // `checkedOf`. Invalidation: replaced by the next read after either part of the key
+  // changes, so until then it holds the previous result; the parents are a WeakMap, so
+  // a row nobody holds anymore is not kept. Disposal: garbage with the provider; the rows
+  // hold no resource, and their decorations belong to the decoration provider.
+  /** @type {{ analysisId: number, result: any, rows: TreeRow[], decorations: DecorationRequest[], parents: WeakMap<TreeRow, TreeRow> }|null} */
+  let built = null;
+  /**
+   * The file rows of the shown result, built once per analysis and result.
+   * @param {ProviderState} state
+   */
+  function builtFor(state) {
+    const analysisId = getAnalysisId();
+    if (built && built.analysisId === analysisId && built.result === state.result) return built;
+    const made = reviewTree.buildFileRows(state.result, { uriOf: uriFor, absPath: state.absPath });
+    const parents = new WeakMap();
+    for (const file of made.rows) for (const row of file.rows || []) parents.set(row, file);
+    built = { analysisId, result: state.result, rows: made.rows, decorations: made.decorations, parents };
+    return built;
+  }
+  // The state of a review that is shown, or null while a placeholder row or nothing is.
+  const shownState = () => {
+    const state = getState();
+    return !state || !state.result || models.buildPlaceholderRows({ phase: getPhase(), busy: isBusy(), state }) ? null : state;
+  };
+  /**
+   * Remembers where rows came from, so `getParent` can answer for rows built on demand.
+   * @param {TreeRow} parent
+   * @param {TreeRow[]} children
+   * @returns {TreeRow[]} `children`.
+   */
+  const adopt = (parent, children) => {
+    for (const child of children) built?.parents.set(child, parent);
+    return children;
+  };
 
   /**
    * @param {ProviderState|null} state
@@ -141,13 +183,23 @@ function createTreeProvider(vscode, {
     if (placeholder) return placeholder;
     // A missing state got the placeholder above.
     const st = /** @type {ProviderState} */ (state);
-    const built = buildFiles(st);
+    const made = builtFor(st);
     scheduleDecorationFlush();
-    publishDecorations(analysisId, built.decorations);
+    publishDecorations(analysisId, made.decorations);
+    const kept = reviewTree.filterFileRows(made.rows, filter, isReviewed).map((e) => e.file);
     // Only the worst file starts open, so the first thing on screen is the thing to look at.
-    const files = built.rows.map((r, i) => (i === 0 && r.type === 'reviewFile' ? { ...r, expanded: true } : r));
-    return [...models.buildNoticeRows(st.result), ...files];
+    const files = kept.map((r, i) => (i === 0 && r.type === 'reviewFile' ? { ...r, expanded: true } : r));
+    const notices = models.buildNoticeRows(st.result);
+    if (filter !== 'all' && files.length === 0) return [...notices, reviewTree.buildEmptyFilterRow(filter)];
+    return [...notices, ...files];
   }
+
+  /**
+   * The rows of a file that the filter shows.
+   * @param {TreeRow} file
+   * @returns {TreeRow[]}
+   */
+  const visibleRows = (file) => reviewTree.filterFileRows([file], filter, isReviewed).flatMap((e) => e.rows);
 
   // The callers and tests row under a change, from the result: no query.
   /**
@@ -219,16 +271,28 @@ function createTreeProvider(vscode, {
     onDidChangeTreeData: _emitter.event,
     refresh() { _emitter.fire(); },
     /** @param {TreeRow} n */
-    getTreeItem: (n) => renderTreeItem(vscode, n, viewOf()),
+    getTreeItem(n) {
+      const item = renderTreeItem(vscode, n, viewOf());
+      const id = reviewTree.treeItemId(n);
+      if (id) item.id = id;
+      return item;
+    },
+    /**
+     * The row a row sits under, for the rows this provider handed out; undefined for a file
+     * row, and for a row of an analysis that is no longer shown.
+     * @param {TreeRow} n
+     * @returns {TreeRow|undefined}
+     */
+    getParent: (n) => built?.parents.get(n),
     /** @param {TreeRow} [node] */
     async getChildren(node) {
       const analysisId = getAnalysisId();
       if (!node) return rootRows(getState(), analysisId);
       switch (node.type) {
-        case 'reviewFile': return node.rows;
-        case 'finding': return impactRows(node, analysisId);
-        case 'caller': return node.cycle ? [] : callerRows(node, analysisId);
-        case 'callerFile': return node.callers;
+        case 'reviewFile': return adopt(node, visibleRows(node));
+        case 'finding': return adopt(node, impactRows(node, analysisId));
+        case 'caller': return node.cycle ? [] : adopt(node, await callerRows(node, analysisId));
+        case 'callerFile': return adopt(node, node.callers);
         // a file without a call graph, a deleted symbol, outside lines and messages
         default: return [];
       }
@@ -250,12 +314,40 @@ function createTreeProvider(vscode, {
      * @returns {{ message: string|undefined, badge: { value: number, tooltip: string }|undefined }}
      */
     summarize() {
-      const state = getState();
-      if (models.buildPlaceholderRows({ phase: getPhase(), busy: isBusy(), state }) || !state || !state.result) {
-        return { message: undefined, badge: undefined };
-      }
-      const counts = reviewTree.countReview(buildFiles(state).rows, (r) => checkedOf(r) === true);
-      return reviewTree.buildReviewSummary(state.result, state.source, counts);
+      const state = shownState();
+      if (!state) return { message: undefined, badge: undefined };
+      const counts = reviewTree.countReview(builtFor(state).rows, isReviewed);
+      return reviewTree.buildReviewSummary(state.result, state.source, counts, filter);
+    },
+    /**
+     * How far the shown review has got.
+     * @returns {{ total: number, left: number, attention: number }|null} Null when no review is shown.
+     */
+    reviewCounts() {
+      const state = shownState();
+      return state ? reviewTree.countReview(builtFor(state).rows, isReviewed) : null;
+    },
+    /** @returns {import('./review-tree-model').ReviewFilter} */
+    getFilter: () => filter,
+    /**
+     * Turns a filter on, turning the other off, or returns to all when it was on, and
+     * repaints the view.
+     * @param {'attention'|'unreviewed'} name
+     * @returns {void}
+     */
+    toggleFilter(name) {
+      filter = reviewTree.toggleFilter(filter, name);
+      _emitter.fire();
+    },
+    /**
+     * The first unreviewed row after `after` in the order the view shows, under the active
+     * filter; see `findNextUnreviewed`.
+     * @param {TreeRow|null} after A counting row or a file row, or null to start at the top.
+     * @returns {TreeRow|null} Null when no review is shown or nothing is left.
+     */
+    nextUnreviewed(after) {
+      const state = shownState();
+      return state ? reviewTree.findNextUnreviewed(builtFor(state).rows, { after, isReviewed, filter }) : null;
     },
   };
 }
