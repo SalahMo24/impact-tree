@@ -89,7 +89,7 @@
       },
       {
         "command": "impactTree.nextUnreviewed",
-        "title": "Impact Tree: Go to next unreviewed change (Alt+N, rebind in Keyboard Shortcuts)",
+        "title": "Impact Tree: Go to next unreviewed change",
         "icon": "$(arrow-down)"
       },
       {
@@ -191,27 +191,27 @@
         {
           "command": "impactTree.selectMode",
           "when": "view == impactTree.changes",
-          "group": "navigation@5"
+          "group": "1_mode@1"
         },
         {
           "command": "impactTree.setCheckpoint",
           "when": "view == impactTree.changes",
-          "group": "navigation@6"
+          "group": "1_mode@2"
         },
         {
           "command": "impactTree.showLegend",
           "when": "view == impactTree.changes",
-          "group": "navigation@7"
+          "group": "2_help@1"
         },
         {
           "command": "impactTree.showLog",
           "when": "view == impactTree.changes",
-          "group": "navigation@8"
+          "group": "2_help@2"
         },
         {
           "command": "impactTree.clearReviewed",
           "when": "view == impactTree.changes",
-          "group": "navigation@9"
+          "group": "3_progress@1"
         },
         {
           "command": "impactTree.refreshPullRequests",

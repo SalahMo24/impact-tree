@@ -47,7 +47,7 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
   const bar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
   bar.name = 'Impact Tree review progress';
   bar.command = 'impactTree.nextUnreviewed';
-  bar.tooltip = 'Go to the next unreviewed change';
+  bar.tooltip = 'Go to the next unreviewed change (rebind it in Keyboard Shortcuts)';
 
   // A context key is sent only when its value changes.
   /** @type {Map<string, unknown>} */

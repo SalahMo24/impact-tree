@@ -182,7 +182,15 @@ test('package.json contributes the commands, the keybinding and the palette gate
     assert.doesNotThrow(() => env.run(id), `${id} is registered`);
   }
   assert.deepEqual(contributes.keybindings, [{ command: 'impactTree.nextUnreviewed', key: 'alt+n', when: 'impactTree.hasReview' }]);
-  assert.match(contributes.commands.find((c) => c.command === 'impactTree.nextUnreviewed').title, /rebind.*Keyboard Shortcuts/i);
+  assert.equal(contributes.commands.find((c) => c.command === 'impactTree.nextUnreviewed').title, 'Impact Tree: Go to next unreviewed change');
+  assert.equal(env.seen.statusBar.tooltip, 'Go to the next unreviewed change (rebind it in Keyboard Shortcuts)');
+  // the title bar keeps refresh, the two filters and next; the rest is in the overflow menu
+  const changes = contributes.menus['view/title'].filter((m) => m.when.startsWith('view == impactTree.changes'));
+  const groupOf = (id) => changes.filter((m) => m.command === id).map((m) => m.group);
+  assert.deepEqual(changes.filter((m) => m.group.startsWith('navigation')).map((m) => m.command),
+    ['impactTree.refresh', 'impactTree.filterAttention', 'impactTree.filterAttentionOn', 'impactTree.filterUnreviewed', 'impactTree.filterUnreviewedOn', 'impactTree.nextUnreviewed']);
+  assert.deepEqual(['selectMode', 'setCheckpoint', 'showLegend', 'showLog', 'clearReviewed'].map((c) => groupOf(`impactTree.${c}`)[0]),
+    ['1_mode@1', '1_mode@2', '2_help@1', '2_help@2', '3_progress@1']);
   const palette = Object.fromEntries(contributes.menus.commandPalette.map((m) => [m.command, m.when]));
   for (const id of ['impactTree.filterAttention', 'impactTree.filterUnreviewed', 'impactTree.nextUnreviewed']) assert.equal(palette[id], 'impactTree.hasReview', id);
   for (const id of ['impactTree.filterAttentionOn', 'impactTree.filterUnreviewedOn']) assert.equal(palette[id], 'false', id);
