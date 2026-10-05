@@ -79,7 +79,8 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   // extension's status bar item.
   // `executed` the commands run through `executeCommand`, with their arguments.
   const seen = { warnings: [], errors: [], infos: [], log: [], status: [], modals: 0, analyze: [], remote: [],
-    signals: [], callerQueries: [], warmUps: [], contexts: {}, revealed: [], statusBar: null, executed: [] };
+    signals: [], callerQueries: [], warmUps: [], contexts: {}, revealed: [], statusBar: null, executed: [],
+    focus: 'editor', focusedRow: null, editorSpaces: 0 };
   const git = { fetches: [], checkouts: [], calls: [] };
   const holds = { fetch: gates(), modal: gates(), remote: gates(), analyze: gates(), callers: gates(), warmUp: gates() };
   const failures = new Map();
@@ -113,9 +114,12 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       // The view object is kept, so a test reads the message and badge the extension sets on it.
       createTreeView: (id, options) => {
         // A test sets `selection` as the user's selection; `reveal` records what was asked.
-        const view = { dispose() {}, selection: [], onDidChangeCheckboxState: (handler) => { captured.checkbox = handler; return disposable(); },
+        const view = { dispose() {}, visible: true, selection: [], onDidChangeCheckboxState: (handler) => { captured.checkbox = handler; return disposable(); },
           onDidChangeSelection: (handler) => { if (id === 'impactTree.changes') captured.selection.push(handler); return disposable(); },
-          reveal: async (row, options) => { seen.revealed.push({ row, options }); } };
+          reveal: async (row, options) => {
+            seen.revealed.push({ row, options });
+            if (options.focus) { seen.focus = 'tree'; seen.focusedRow = row; }
+          } };
         if (id === 'impactTree.changes') { captured.tree = options.treeDataProvider; captured.view = view; }
         if (id === 'impactTree.sources') captured.sources = options.treeDataProvider;
         return view;
@@ -245,6 +249,15 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       captured.checkbox({ items: [[node, state]] });
     },
     isTicked: (node) => captured.tree.getTreeItem(node).checkboxState === vscode.TreeItemCheckboxState.Checked,
+    // Model Space being delivered to the focused control: the tree's checkbox event,
+    // or a space typed into the editor. Native keyboard handling is VS Code's boundary.
+    pressSpace() {
+      if (seen.focus !== 'tree' || !seen.focusedRow) { seen.editorSpaces++; return; }
+      const item = captured.tree.getTreeItem(seen.focusedRow);
+      if (item.checkboxState === undefined) return;
+      const on = item.checkboxState !== vscode.TreeItemCheckboxState.Checked;
+      captured.checkbox({ items: [[seen.focusedRow, on ? vscode.TreeItemCheckboxState.Checked : vscode.TreeItemCheckboxState.Unchecked]] });
+    },
     tree: () => captured.tree,
     view: () => captured.view,
     // The change rows of every file the tree shows, in display order.
@@ -264,7 +277,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     // The user puts the cursor on a 1-based line of a document; `kind` is how it moved.
     moveCursor(uri, line, { kind = vscode.TextEditorSelectionChangeKind.Keyboard, active = true } = {}) {
       const editor = { document: { uri }, selection: { active: { line: line - 1, character: 0 } } };
-      if (active) vscode.window.activeTextEditor = editor;
+      if (active) { vscode.window.activeTextEditor = editor; seen.focus = 'editor'; }
       for (const handler of captured.cursor) handler({ textEditor: editor, selections: [editor.selection], kind });
     },
     // Opens the Details view as VS Code does: a fake webview that keeps the last HTML set and

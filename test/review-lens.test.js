@@ -153,9 +153,9 @@ test('a reviewed head-side document gets three lenses on the first line of each 
   assert.deepEqual(lenses.map((l) => [l.range.start, l.command.title, l.command.command, l.command.arguments]), [
     [at(9, 0), '⛔ 1 of 1 caller not updated', 'impactTree.showChange', ['finding:a.ts:bad:10']],
     [at(9, 0), 'Show callers', 'impactTree.showCallers', ['finding:a.ts:bad:10']],
-    [at(9, 0), 'Mark reviewed', 'impactTree.setReviewed', ['finding:a.ts:bad:10', true]],
+    [at(9, 0), 'Mark reviewed', 'impactTree.setReviewed', ['finding:a.ts:bad:10', true, env.tree().reviewVersion()]],
     [at(59, 0), '? callers unknown', 'impactTree.showChange', ['finding:a.ts:lost:60']],
-    [at(59, 0), 'Mark reviewed', 'impactTree.setReviewed', ['finding:a.ts:lost:60', true]],
+    [at(59, 0), 'Mark reviewed', 'impactTree.setReviewed', ['finding:a.ts:lost:60', true, env.tree().reviewVersion()]],
   ], '`reach` is level 3 and has none; `lost` has no callers, so no peek');
   assert.deepEqual(env.lensesFor(fileUri(env, 'b.ts')), [], 'b.ts is reviewed, but nothing in it needs attention');
 }));
@@ -222,7 +222,7 @@ test('the lens ticks its change on and off, and its title follows', () => withEn
   await env.run(tick().command, ...tick().arguments);
   assert.equal(env.isTicked(bad), true);
   assert.deepEqual(titles().slice(0, 3), ['⛔ 1 of 1 caller not updated', 'Show callers', '✓ Reviewed'], 'the lens stays');
-  assert.deepEqual(tick().arguments, ['finding:a.ts:bad:10', false], 'and now unticks');
+  assert.deepEqual(tick().arguments, ['finding:a.ts:bad:10', false, env.tree().reviewVersion()], 'and now unticks');
   assert.equal(env.seen.statusBar.text.split(' ')[1], '4', 'the view repainted');
   await env.run(tick().command, ...tick().arguments);
   assert.equal(env.isTicked(bad), false);
@@ -233,10 +233,64 @@ test('the tick command ignores what is not a change or not well formed', () => w
   useResult(env);
   await env.refresh();
   const [bad] = await rowsOf(env);
-  for (const args of [[], ['finding:a.ts:bad:10'], ['finding:a.ts:bad:10', 'true'], ['finding:a.ts:bad:10', 1], [5, true],
-    ['file:a.ts', true], ['finding:a.ts:nothing:1', true], [null, null]]) await env.run('impactTree.setReviewed', ...args);
+  const version = env.tree().reviewVersion();
+  for (const args of [[], ['finding:a.ts:bad:10'], ['finding:a.ts:bad:10', 'true', version], ['finding:a.ts:bad:10', 1, version], [5, true, version],
+    ['file:a.ts', true, version], ['finding:a.ts:nothing:1', true, version], [null, null, version],
+    ...[undefined, null, '1', true, NaN, Infinity, 1.5, version + 1].map(v => [treeItemId(bad), true, v])]) {
+    await env.run('impactTree.setReviewed', ...args);
+  }
   assert.equal(env.isTicked(bad), false);
   assert.equal(env.isTicked((await env.tree().getChildren())[0]), false, 'a file is not ticked this way');
+}));
+
+test('an old CodeLens tick cannot review changed content, during or after a replacement analysis', () => withEnv(async env => {
+  const file = path.join(env.dir, 'a.ts');
+  fs.writeFileSync(file, 'export function f() { return 1; }\n');
+  env.hooks.localResult = o => ({ ...localResult(o), fileStatus: { 'a.ts': 'added' }, allChanged: [
+    { ...finding('f', file, 16), startLine: 1, endLine: 1, throwsAdded: [], callerState: 'unknown', callersComplete: false },
+  ] });
+  await env.refresh();
+  const [oldRow] = await env.changeRows();
+  const tick = () => env.lensesFor(fileUri(env, 'a.ts')).find(l => l.command.command === 'impactTree.setReviewed').command;
+  const oldCommand = tick();
+  const oldVersion = env.tree().reviewVersion();
+  fs.writeFileSync(file, 'export function f() { return 2; }\n');
+  const gate = env.holds.analyze.next();
+  const refreshing = env.refresh();
+  await gate.reached;
+  assert.equal(env.tree().reviewVersion(), null, 'a placeholder has no actionable review');
+  await env.run(oldCommand.command, ...oldCommand.arguments);
+  assert.equal(env.isTicked(oldRow), false);
+  gate.release();
+  await refreshing;
+  const [newRow] = await env.changeRows();
+  assert.equal(treeItemId(newRow), treeItemId(oldRow));
+  assert.notEqual(env.tree().reviewVersion(), oldVersion);
+  await env.run(oldCommand.command, ...oldCommand.arguments);
+  assert.equal(env.isTicked(newRow), false, 'a stable tree id must not rebind an old tick to new content');
+  const newCommand = tick();
+  await env.run(newCommand.command, ...newCommand.arguments);
+  assert.equal(env.isTicked(newRow), true, 'a fresh lens can review the new content');
+  const untick = tick();
+  env.tree().toggleFilter('attention');
+  await env.run(untick.command, ...untick.arguments);
+  assert.equal(env.isTicked(newRow), false, 'ticks and filters do not invalidate the analysis');
+}));
+
+test('an old preview CodeLens tick cannot mark a row of another PR reviewed', () => withEnv(async env => {
+  useResult(env, { tierA: true });
+  await env.preview(pull(7));
+  const headUri = pr => env.vscode.Uri.from({ scheme: 'impacttree-pr', path: 'a.ts',
+    query: prQuery(previewResult(pull(pr)), 'head', { path: 'a.ts', status: 'modified' }) });
+  const oldCommand = env.lensesFor(headUri(7)).find(l => l.command.command === 'impactTree.setReviewed').command;
+  await env.preview(pull(8));
+  const [current] = await env.changeRows();
+  assert.equal(treeItemId(current), oldCommand.arguments[0], 'two PRs can show the same UI row id');
+  await env.run(oldCommand.command, ...oldCommand.arguments);
+  assert.equal(env.isTicked(current), false);
+  const fresh = env.lensesFor(headUri(8)).find(l => l.command.command === 'impactTree.setReviewed').command;
+  await env.run(fresh.command, ...fresh.arguments);
+  assert.equal(env.isTicked(current), true);
 }));
 
 test('showCallers at the cursor peeks one location per call site of the change\'s callers', () => withEnv(async (env) => {

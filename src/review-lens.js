@@ -115,13 +115,15 @@ function createReviewLens(vscode, { provider, getState, callerUri, positionOf, l
     provideCodeLenses(document) {
       const relPath = headPathOf(document);
       if (!relPath) return [];
+      const analysisId = provider.reviewVersion();
+      if (analysisId === null) return [];
       return lensPlan(provider.changeRowsOf(relPath), provider.isReviewed).flatMap((entry) => {
         const at = new vscode.Range(entry.line, 0, entry.line, 0);
         const titles = lensTitles(entry);
         return [
           new vscode.CodeLens(at, { title: titles.verdict, command: 'impactTree.showChange', arguments: [entry.id] }),
           ...(titles.callers ? [new vscode.CodeLens(at, { title: titles.callers, command: 'impactTree.showCallers', arguments: [entry.id] })] : []),
-          new vscode.CodeLens(at, { title: titles.tick, command: 'impactTree.setReviewed', arguments: [entry.id, !entry.reviewed] }),
+          new vscode.CodeLens(at, { title: titles.tick, command: 'impactTree.setReviewed', arguments: [entry.id, !entry.reviewed, analysisId] }),
         ];
       });
     },
@@ -172,10 +174,12 @@ function createReviewLens(vscode, { provider, getState, callerUri, positionOf, l
       new vscode.Position(row.finding.startLine - 1, 0), locations, 'peek');
   }
 
-  // A lens ticks the change it was drawn for, on or off, whatever the tree shows now.
-  /** @param {unknown} id @param {unknown} on */
-  function setReviewed(id, on) {
+  // Tree ids persist across analyses. A delayed click may tick only the analysis the
+  // lens was drawn for, even if a newer result has a row at exactly the same position.
+  /** @param {unknown} id @param {unknown} on @param {unknown} analysisId */
+  function setReviewed(id, on, analysisId) {
     if (typeof id !== 'string' || typeof on !== 'boolean') return;
+    if (!Number.isSafeInteger(analysisId) || analysisId !== provider.reviewVersion()) return;
     const row = provider.rowById(id);
     if (!row || row.type !== 'finding') return;
     provider.setChecked(row, on);

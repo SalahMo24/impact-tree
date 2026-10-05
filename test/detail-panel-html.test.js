@@ -4,6 +4,7 @@
 // safety (escaping, CSP, nonces) is checked on the raw HTML.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const vm = require('node:vm');
 const { buildFileRows, buildImpactRows, treeItemId } = require('../src/review-tree-model');
 const { buildDetailHtml, listCallerRows, describeOrigin, tidySignature } = require('../src/detail-panel-html');
 
@@ -278,6 +279,31 @@ test('the page script sends the row id with a tick, and only rewrites the header
   assert.match(script, /addEventListener\('message'/);
   assert.match(script, /\.textContent = /, 'set as text, never as HTML');
   assert.doesNotMatch(script, /innerHTML|outerHTML|insertAdjacentHTML/);
+});
+
+test('the generated page script attaches its render token to every action', () => {
+  const script = /<script[^>]*>([\s\S]*?)<\/script>/.exec(render(null, null))[1];
+  const sent = [], listeners = new Map();
+  class Element {
+    constructor(attributes) { this.attributes = attributes; }
+    closest() { return this; }
+    getAttribute(name) { return this.attributes[name] ?? null; }
+  }
+  vm.runInNewContext(script, {
+    Element, acquireVsCodeApi: () => ({ postMessage: message => sent.push(JSON.parse(JSON.stringify(message))) }),
+    window: { addEventListener() {} },
+    document: { addEventListener: (event, fn) => listeners.set(event, fn) },
+  });
+  for (const act of ['tick', 'next', 'peek', 'caller']) {
+    listeners.get('click')({ target: new Element({ 'data-act': act, 'data-id': 'row-id', 'data-on': 'true', 'data-index': '2' }),
+      preventDefault() {} });
+  }
+  assert.deepEqual(sent, [
+    { type: 'tick', id: 'row-id', on: true, token: NONCE },
+    { type: 'next', token: NONCE },
+    { type: 'showCallers', id: 'row-id', token: NONCE },
+    { type: 'openCaller', index: 2, token: NONCE },
+  ]);
 });
 
 test('the header names where the row came from; an unknown origin is a programming error', () => {

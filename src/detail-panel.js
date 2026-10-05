@@ -36,14 +36,16 @@ function headRelPath(uri, { result, rel }) {
 }
 
 /**
- * A message from the webview, checked: anything else it could send is dropped. A tick or
- * a callers peek names the tree id of the row its button or link was drawn for.
+ * A message from the currently rendered page. Its nonce also serves as an action token:
+ * an older page cannot act on a new selection or revision, even at the same tree id.
  * @param {unknown} message
+ * @param {string|null} token The current page's nonce; null when the view is disposed.
  * @returns {{ type: 'tick', id: string, on: boolean }|{ type: 'next' }|{ type: 'showCallers', id: string }|{ type: 'openCaller', index: number }|null}
  */
-function parseMessage(message) {
+function parseMessage(message, token) {
   if (!message || typeof message !== 'object') return null;
   const m = /** @type {Record<string, unknown>} */ (message);
+  if (token === null || m.token !== token) return null;
   if (m.type === 'tick' && typeof m.id === 'string' && typeof m.on === 'boolean') return { type: 'tick', id: m.id, on: m.on };
   if (m.type === 'next') return { type: 'next' };
   if (m.type === 'showCallers' && typeof m.id === 'string') return { type: 'showCallers', id: m.id };
@@ -68,7 +70,7 @@ function parseMessage(message) {
  * @param {any} vscode
  * @param {{
  *   provider: ReturnType<typeof import('./tree-provider').createTreeProvider>,
- *   view: { selection: readonly TreeRow[], reveal: (row: TreeRow, options: object) => PromiseLike<void>,
+ *   view: { visible: boolean, selection: readonly TreeRow[], reveal: (row: TreeRow, options: object) => PromiseLike<void>,
  *     onDidChangeSelection: (listener: (e: { selection: readonly TreeRow[] }) => void) => { dispose(): any } },
  *   getState: () => { result: any, rel: (file: string) => string }|null,
  *   lineOf: (file: string, offset: number) => number|null,
@@ -86,6 +88,10 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
   let shown = { id: null, origin: 'tree' };
   /** @type {string|null} */
   let revealedFromCursor = null;
+  // Owned by this panel; replaced on every full render, preserved for header-only updates,
+  // and cleared on disposal. It identifies the exact page whose actions are still valid.
+  /** @type {string|null} */
+  let renderToken = null;
 
   const currentRow = () => (shown.id ? provider.rowById(shown.id) : null);
   // The row a selected row stands for: itself when it has a tree id, else the change it sits under.
@@ -99,11 +105,14 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
     if (!webviewView) return;
     const row = currentRow();
     const state = getState();
-    webviewView.webview.html = buildDetailHtml(row, {
+    const nonce = crypto.randomBytes(16).toString('base64');
+    const html = buildDetailHtml(row, {
       result: state && state.result, isReviewed: provider.isReviewed,
       impactRows: row && row.type === 'finding' ? provider.impactRowsOf(row) : [],
-      nonce: crypto.randomBytes(16).toString('base64'), cspSource: webviewView.webview.cspSource, origin: shown.origin, lineOf,
+      nonce, cspSource: webviewView.webview.cspSource, origin: shown.origin, lineOf,
     });
+    renderToken = nonce;
+    webviewView.webview.html = html;
   }
   /** @param {string|null} id @param {string} origin */
   const show = (id, origin) => { shown = { id, origin }; render(); };
@@ -132,6 +141,9 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
   // selection away from the row just clicked.
   /** @param {{ textEditor: any, selections: readonly any[], kind?: number }} e */
   function onCursor(e) {
+    // reveal opens a hidden view, even with focus:false. Automatic following must not
+    // replace the reviewer's current sidebar or open a panel they have not chosen to use.
+    if (!view.visible || !webviewView?.visible) return;
     if (e.kind === vscode.TextEditorSelectionChangeKind.Command) return;
     if (e.textEditor !== vscode.window.activeTextEditor || !e.selections.length) return;
     const state = getState();
@@ -169,7 +181,7 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
 
   /** @param {unknown} message */
   async function onMessage(message) {
-    const m = parseMessage(message);
+    const m = parseMessage(message, renderToken);
     if (!m) return;
     if (m.type === 'next') { await vscode.commands.executeCommand('impactTree.nextUnreviewed'); return; }
     const row = currentRow();
@@ -190,7 +202,10 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
     if (caller) await vscode.commands.executeCommand('impactTree.openCaller', caller);
   }
 
-  const disposeView = () => { for (const s of viewSubscriptions) s.dispose(); viewSubscriptions = []; webviewView = null; };
+  const disposeView = () => {
+    for (const s of viewSubscriptions) s.dispose();
+    viewSubscriptions = []; webviewView = null; renderToken = null;
+  };
   const webviewProvider = {
     /** @param {any} resolved */
     resolveWebviewView(resolved) {

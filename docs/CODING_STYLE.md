@@ -493,6 +493,9 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      checkout is refused; a checkout waits for the analysis it cancels to settle.
      Replaced, cancelled and post-disposal runs publish nothing; lazy tree expansions
      and decorations check the analysis id they started under.
+   - Exists: Details actions carry the rendered page's nonce, which changes on a new
+     selection or repaint and is cleared on disposal. CodeLens ticks carry the owning
+     analysis id. Delayed actions cannot review newer content at a stable tree id.
    - Exists: cancellation reaching the engine. `analyze()` and `analyzeRemote()` take an
      `AbortSignal`, `mapLimit` stops scheduling once it is aborted, and both reject with
      `AnalysisCancelledError` (`src/engine/cancellation.js`). The editor's language
