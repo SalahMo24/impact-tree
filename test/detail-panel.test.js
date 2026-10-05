@@ -33,6 +33,8 @@ function useResult(env, { tierA = false } = {}) {
 // What the panel says, tags stripped.
 const textOf = (details) => details.webview.html.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/g, ' ')
   .replace(/<[^>]*>/g, ' ').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+// The tree id the panel's tick button names, as its script would send it.
+const tickId = (details) => /data-act="tick" data-id="([^"]*)"/.exec(details.webview.html)[1].replace(/&#39;/g, "'").replace(/&amp;/g, '&');
 const fileUri = (env, rel) => env.vscode.Uri.file(path.join(env.dir, rel));
 const rowsOf = async (env) => {
   const files = await env.tree().getChildren();
@@ -62,12 +64,40 @@ test('a cursor inside a change in a review diff shows that change and reveals it
   assert.equal(env.seen.revealed[0].row, a[0]);
   assert.deepEqual(env.seen.revealed[0].options, { select: true, focus: false });
 
-  env.moveCursor(fileUri(env, 'a.ts'), 12);
-  assert.match(textOf(details), /^at cursor, line 12 bad /, 'the header follows the line');
-  assert.equal(env.seen.revealed.length, 1, 'the same row is not revealed again');
   env.moveCursor(fileUri(env, 'a.ts'), 51);
   assert.match(textOf(details), /^at cursor, line 51 reach /);
   assert.equal(env.seen.revealed.at(-1).row, a[1]);
+}));
+
+test('a cursor moving inside the row shown only updates the header; the page is not reloaded', () => withEnv(async (env) => {
+  useResult(env);
+  await env.refresh();
+  const details = env.openDetails();
+  const { a } = await rowsOf(env);
+  env.moveCursor(fileUri(env, 'a.ts'), 11);
+  const loads = details.loads;
+  env.moveCursor(fileUri(env, 'a.ts'), 12);
+  assert.equal(details.loads, loads, 'the html is not set again');
+  assert.deepEqual(details.posted, [{ type: 'origin', text: 'at cursor, line 12' }]);
+  assert.equal(env.seen.revealed.length, 1, 'the same row is not revealed again');
+  env.moveCursor(fileUri(env, 'a.ts'), 12);
+  assert.equal(details.posted.length, 1, 'the same line posts nothing');
+
+  // a page hidden and shown again is rebuilt from the html, so it is painted afresh
+  details.setVisible(false);
+  details.setVisible(true);
+  assert.match(textOf(details), /^at cursor, line 12 bad /);
+
+  env.select([a[0]]);
+  assert.equal(details.posted.length, 1, 'the cursor reveal\'s own selection changes nothing');
+  env.select([a[1]]);
+  const reloaded = details.loads;
+  env.moveCursor(fileUri(env, 'a.ts'), 50);
+  assert.deepEqual(details.posted.at(-1), { type: 'origin', text: 'at cursor, line 50' }, 'from the tree to the cursor on the same row');
+  assert.equal(details.loads, reloaded);
+  env.tick(a[1], true);
+  assert.equal(details.loads, reloaded + 1, 'a tick changes the row\'s review state, so the page is rebuilt');
+  assert.match(textOf(details), /^at cursor, line 50 reach .*Untick/);
 }));
 
 test('a cursor between functions shows the file', () => withEnv(async (env) => {
@@ -167,15 +197,15 @@ test('the tick message ticks the row shown and repaints; next runs the command; 
   const details = env.openDetails();
   const { files, a } = await rowsOf(env);
   env.select([a[0]]);
-  await details.send({ type: 'tick', on: true });
+  await details.send({ type: 'tick', id: tickId(details), on: true });
   assert.equal(env.isTicked(a[0]), true);
   assert.match(textOf(details), /Untick Next unreviewed$/);
   assert.equal(env.seen.statusBar.text.split(' ')[1], '3', 'the status bar repainted too');
-  await details.send({ type: 'tick', on: false });
+  await details.send({ type: 'tick', id: tickId(details), on: false });
   assert.equal(env.isTicked(a[0]), false);
 
   env.select([files[0]]);
-  await details.send({ type: 'tick', on: true });
+  await details.send({ type: 'tick', id: tickId(details), on: true });
   assert.ok(a.every((r) => env.isTicked(r)), 'a file\'s button ticks its rows');
   assert.match(textOf(details), /0 left to review\. Untick file /);
 
@@ -190,6 +220,21 @@ test('the tick message ticks the row shown and repaints; next runs the command; 
   assert.equal(opened[0][1].file, path.join(env.dir, 'b.ts'));
 }));
 
+test('a tick drawn for another row than the one shown now is dropped', () => withEnv(async (env) => {
+  useResult(env);
+  await env.refresh();
+  const details = env.openDetails();
+  const { a } = await rowsOf(env);
+  env.select([a[0]]);
+  const drawnFor = tickId(details);
+  env.moveCursor(fileUri(env, 'a.ts'), 51);   // the panel moves on to `reach` before the click arrives
+  await details.send({ type: 'tick', id: drawnFor, on: true });
+  assert.equal(env.isTicked(a[0]), false);
+  assert.equal(env.isTicked(a[1]), false);
+  await details.send({ type: 'tick', id: tickId(details), on: true });
+  assert.equal(env.isTicked(a[1]), true);
+}));
+
 test('a malformed or unknown message is ignored', () => withEnv(async (env) => {
   useResult(env);
   await env.refresh();
@@ -197,7 +242,9 @@ test('a malformed or unknown message is ignored', () => withEnv(async (env) => {
   const { a } = await rowsOf(env);
   env.select([a[0]]);
   const before = env.seen.executed.length;
-  for (const message of [null, undefined, 'tick', 7, [], {}, { type: 'tick' }, { type: 'tick', on: 'true' }, { type: 'tick', on: 1 },
+  const id = tickId(details);
+  for (const message of [null, undefined, 'tick', 7, [], {}, { type: 'tick' }, { type: 'tick', on: true }, { type: 'tick', id: 5, on: true },
+    { type: 'tick', id, on: 'true' }, { type: 'tick', id, on: 1 }, { type: 'tick', id: `${id} `, on: true },
     { type: 'openCaller' }, { type: 'openCaller', index: 1 }, { type: 'openCaller', index: -1 }, { type: 'openCaller', index: 0.5 },
     { type: 'openCaller', index: '0' }, { type: 'run', command: 'workbench.action.quit' }]) {
     await details.send(message);

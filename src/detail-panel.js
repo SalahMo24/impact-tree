@@ -4,7 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { treeItemId } = require('./review-tree-model');
 const { prKey, parsePrAddress } = require('./pr-documents');
-const { buildDetailHtml, listCallerRows } = require('./detail-panel-html');
+const { buildDetailHtml, listCallerRows, describeOrigin } = require('./detail-panel-html');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 
@@ -36,14 +36,15 @@ function headRelPath(uri, { result, rel }) {
 }
 
 /**
- * A message from the webview, checked: anything else it could send is dropped.
+ * A message from the webview, checked: anything else it could send is dropped. A tick
+ * names the tree id of the row its button was drawn for.
  * @param {unknown} message
- * @returns {{ type: 'tick', on: boolean }|{ type: 'next' }|{ type: 'openCaller', index: number }|null}
+ * @returns {{ type: 'tick', id: string, on: boolean }|{ type: 'next' }|{ type: 'openCaller', index: number }|null}
  */
 function parseMessage(message) {
   if (!message || typeof message !== 'object') return null;
   const m = /** @type {Record<string, unknown>} */ (message);
-  if (m.type === 'tick' && typeof m.on === 'boolean') return { type: 'tick', on: m.on };
+  if (m.type === 'tick' && typeof m.id === 'string' && typeof m.on === 'boolean') return { type: 'tick', id: m.id, on: m.on };
   if (m.type === 'next') return { type: 'next' };
   if (m.type === 'openCaller' && Number.isSafeInteger(m.index) && Number(m.index) >= 0) return { type: 'openCaller', index: Number(m.index) };
   return null;
@@ -55,6 +56,10 @@ function parseMessage(message) {
  * What is shown is a tree id and an origin, not a row: the row is looked up again on each
  * paint, so a tick, a filter or a new analysis shows the current row, or the hint when the
  * shown review no longer has it.
+ *
+ * A cursor moving inside the row shown changes only the header's line, so the header is
+ * updated by a message to the page instead of a new document, which would reload it and
+ * flicker. A new row, a tick, a filter or a new analysis paints the whole document.
  *
  * Feedback loop: revealing the cursor's row selects it in the tree, and VS Code reports
  * that as a selection change. The id revealed is remembered, and a selection of exactly
@@ -101,6 +106,14 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
   }
   /** @param {string|null} id @param {string} origin */
   const show = (id, origin) => { shown = { id, origin }; render(); };
+  // The same row from another place: only the header's text changes.
+  /** @param {string} origin */
+  const moveOrigin = (origin) => {
+    shown = { id: shown.id, origin };
+    if (!webviewView) return;
+    Promise.resolve(webviewView.webview.postMessage({ type: 'origin', text: describeOrigin(origin) }))
+      .then(undefined, (/** @type {any} */ err) => log(`details: could not update the header: ${err && err.message}`));
+  };
 
   /** @param {{ selection: readonly TreeRow[] }} e */
   function onSelection(e) {
@@ -129,10 +142,11 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
     const id = row && treeItemId(row);
     if (!row || !id) return;
     const origin = `cursor:${line}`;
-    if (id === shown.id && origin === shown.origin) return;
-    const moved = id !== shown.id;
+    if (id === shown.id) {
+      if (origin !== shown.origin) moveOrigin(origin);
+      return;
+    }
     show(id, origin);
-    if (!moved) return;
     revealedFromCursor = id;
     // A row the filter hides cannot be revealed; the panel still shows it.
     Promise.resolve(view.reveal(row, { select: true, focus: false }))
@@ -146,7 +160,13 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
     if (m.type === 'next') { await vscode.commands.executeCommand('impactTree.nextUnreviewed'); return; }
     const row = currentRow();
     if (!row) return;
-    if (m.type === 'tick') { provider.setChecked(row, m.on); provider.refresh(); return; }
+    // A click that left the page before the panel moved on to another row ticks nothing.
+    if (m.type === 'tick') {
+      if (m.id !== shown.id) return;
+      provider.setChecked(row, m.on);
+      provider.refresh();
+      return;
+    }
     if (row.type !== 'finding') return;
     const caller = listCallerRows(provider.impactRowsOf(row))[m.index];
     if (caller) await vscode.commands.executeCommand('impactTree.openCaller', caller);
@@ -163,6 +183,8 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
         resolved.webview.onDidReceiveMessage((/** @type {unknown} */ m) => onMessage(m)
           .catch((/** @type {any} */ err) => log(`details: ${err && err.message}`))),
         resolved.onDidDispose(() => { if (webviewView === resolved) disposeView(); }),
+        // A page shown again is rebuilt from the last document, which may hold an older header.
+        resolved.onDidChangeVisibility(() => { if (resolved.visible) render(); }),
       ];
       render();
     },

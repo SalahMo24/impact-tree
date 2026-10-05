@@ -264,15 +264,23 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       if (active) vscode.window.activeTextEditor = editor;
       for (const handler of captured.cursor) handler({ textEditor: editor, selections: [editor.selection], kind });
     },
-    // Opens the Details view as VS Code does: a fake webview that keeps the last HTML set,
-    // and lets a test post a message as the page's script would.
+    // Opens the Details view as VS Code does: a fake webview that keeps the last HTML set and
+    // counts the sets (`loads`), records what the extension posts to the page (`posted`), and
+    // lets a test post a message as the page's script would, or hide and show the view.
     openDetails() {
-      const listeners = [];
-      const webview = { options: null, html: '', cspSource: 'vscode-webview://test',
-        onDidReceiveMessage: (handler) => { listeners.push(handler); return disposable(); }, postMessage: async () => true };
-      const webviewView = { webview, visible: true, onDidDispose: () => disposable(), onDidChangeVisibility: () => disposable() };
+      const listeners = [], shown = [];
+      let html = '';
+      const details = { loads: 0, posted: [] };
+      const webview = { options: null, cspSource: 'vscode-webview://test',
+        get html() { return html; }, set html(value) { html = value; details.loads++; },
+        onDidReceiveMessage: (handler) => { listeners.push(handler); return disposable(); },
+        postMessage: async (message) => { details.posted.push(message); return true; } };
+      const webviewView = { webview, visible: true, onDidDispose: () => disposable(),
+        onDidChangeVisibility: (handler) => { shown.push(handler); return disposable(); } };
       captured.webviews.get('impactTree.details').resolveWebviewView(webviewView, {}, { isCancellationRequested: false });
-      return { webview, send: (message) => Promise.all(listeners.map((handler) => handler(message))) };
+      return Object.assign(details, { webview,
+        send: (message) => Promise.all(listeners.map((handler) => handler(message))),
+        setVisible(visible) { webviewView.visible = visible; for (const handler of shown) handler(); } });
     },
     decorations: () => captured.decorations,
     failGit: (cmd, error) => failures.set(cmd, error),
