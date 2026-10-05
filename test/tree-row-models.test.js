@@ -93,6 +93,19 @@ test('the sentence keeps the facts the row cannot: stale count, missing callers,
   assert.match(verdictOf({ kinds, callerState: 'di', callers: [] }).sentence, /DI container/);
 });
 
+test('a body-only sentence agrees with how many callers are unchanged: none, one, several', () => {
+  const sentence = (callers) => verdictOf({ callers }).sentence;
+  const updated = (n) => callersOf(n, 'updated-at-call');
+  const lead = 'Only the body changed: the signature is the same, so callers still compile. ';
+  assert.equal(sentence(updated(1)), `${lead}Its caller was updated too; check it still gets the behaviour it relies on.`);
+  assert.equal(sentence(updated(3)), `${lead}All 3 callers were updated too; check they still get the behaviour they rely on.`);
+  assert.equal(sentence(callersOf(1)), `${lead}1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.`);
+  assert.equal(sentence([...callersOf(1), ...updated(2)]), `${lead}1 of 3 callers is unchanged, which is expected; check it still gets the behaviour it relies on.`);
+  assert.equal(sentence([...callersOf(2), ...updated(1)]), `${lead}2 of 3 callers are unchanged, which is expected; check they still get the behaviour they rely on.`);
+  assert.equal(sentence(callersOf(4)), `${lead}4 of 4 callers are unchanged, which is expected; check they still get the behaviour they rely on.`);
+  assert.match(verdictOf({ callers: updated(2), callersComplete: false }).sentence, /All 2 callers were updated too; .* More callers may be missing\.$/);
+});
+
 test('deleted symbols and outside-functions rows have fixed verdicts', () => {
   assert.deepEqual(models.classifyDeletedVerdict(), { level: 1, token: '−', text: 'deleted', sentence: models.classifyDeletedVerdict().sentence });
   assert.match(models.classifyDeletedVerdict().sentence, /removed/);

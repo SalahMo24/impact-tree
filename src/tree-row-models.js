@@ -121,8 +121,13 @@ function classifyBodyOnlyVerdict(change) {
     return { level: 4, token: '∅', text: 'no callers', sentence: 'Only the body changed, and nothing calls it in the code searched.' };
   }
   const untouched = callers.filter((/** @type {any} */ c) => c.callState !== 'updated-at-call').length;
+  // The check is about the unchanged callers when there are any, else about the updated ones.
+  const check = (/** @type {number} */ count) => (count === 1 ? 'check it still gets the behaviour it relies on' : 'check they still get the behaviour they rely on');
+  const which = untouched === 0
+    ? `${n === 1 ? 'Its caller was' : `All ${n} callers were`} updated too; ${check(n)}.`
+    : `${untouched} of ${n} caller${n === 1 ? '' : 's'} ${untouched === 1 ? 'is' : 'are'} unchanged, which is expected; ${check(untouched)}.`;
   return { level: 3, token: '●', text: `reaches ${n} caller${n === 1 ? '' : 's'}`,
-    sentence: `Only the body changed: the signature is the same, so callers still compile. ${untouched} of ${n} caller${n === 1 ? '' : 's'} ${untouched === 1 ? 'is' : 'are'} unchanged, which is expected; check they still get the behaviour they rely on.${mayBeMissing ? ' More callers may be missing.' : ''}` };
+    sentence: `Only the body changed: the signature is the same, so callers still compile. ${which}${mayBeMissing ? ' More callers may be missing.' : ''}` };
 }
 
 /**
