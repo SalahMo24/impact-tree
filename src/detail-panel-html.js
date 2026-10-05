@@ -59,6 +59,7 @@ body { color: var(--vscode-foreground); font-family: var(--vscode-font-family); 
 .origin { color: var(--vscode-descriptionForeground); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; margin: 6px 0 2px; }
 h3 { font-family: var(--vscode-editor-font-family); font-size: 13px; font-weight: 600; margin: 6px 0 2px; word-break: break-all; }
 h4 { color: var(--vscode-descriptionForeground); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; margin: 12px 0 4px; }
+h4 a { text-transform: none; letter-spacing: 0; margin-left: 6px; }
 .where { color: var(--vscode-descriptionForeground); word-break: break-all; }
 .verdict { margin: 10px 0; padding: 7px 9px; border-left: 3px solid var(--vscode-descriptionForeground); background: var(--vscode-textBlockQuote-background); }
 .verdict.lv0 { border-left-color: var(--vscode-editorError-foreground); }
@@ -104,6 +105,7 @@ document.addEventListener('click', (event) => {
   const act = el.getAttribute('data-act');
   if (act === 'tick') vscode.postMessage({ type: 'tick', id: el.getAttribute('data-id'), on: el.getAttribute('data-on') === 'true' });
   else if (act === 'next') vscode.postMessage({ type: 'next' });
+  else if (act === 'peek') vscode.postMessage({ type: 'showCallers', id: el.getAttribute('data-id') });
   else if (act === 'caller') vscode.postMessage({ type: 'openCaller', index: Number(el.getAttribute('data-index')) });
 });
 `;
@@ -137,10 +139,11 @@ const ROW_WORDS = { mark: 'Mark reviewed', untick: 'Untick' };
  * each caller its verdict counts as not updated says so: the same rule as the result's
  * `stale` list, a caller that is not a test and was not updated at the call.
  * @param {TreeRow[]} impactRows
- * @param {{ result: any, risky: boolean, lineOf: (file: string, offset: number) => number|null }} opts
+ * @param {{ result: any, risky: boolean, lineOf: (file: string, offset: number) => number|null, id: string|undefined }} opts
+ *   `id` is the change's tree id, which the "Show callers" link names.
  * @returns {string}
  */
-function callersHtml(impactRows, { result, risky, lineOf }) {
+function callersHtml(impactRows, { result, risky, lineOf, id }) {
   const callers = listCallerRows(impactRows);
   const notes = impactRows.filter((r) => r.type === 'message').slice(0, -1);
   if (!callers.length && !notes.length) return '';
@@ -155,7 +158,8 @@ function callersHtml(impactRows, { result, risky, lineOf }) {
       + `<td><a href="#" data-act="caller" data-index="${i}">${c.test ? '🧪 ' : ''}${escapeHtml(c.label)}</a></td><td class="where">${where}</td></tr>`;
   }).join('');
   const noteHtml = notes.map((n) => `<div class="note">${escapeHtml(n.label)}${n.tooltip ? `: ${escapeHtml(n.tooltip)}` : ''}</div>`).join('');
-  return `<h4>Callers (${callers.length})</h4>${preview}${rows ? `<table>${rows}</table>` : ''}${noteHtml}`;
+  const peek = callers.length ? ` <a href="#" data-act="peek" data-id="${escapeHtml(id)}">Show callers</a>` : '';
+  return `<h4>Callers (${callers.length})${peek}</h4>${preview}${rows ? `<table>${rows}</table>` : ''}${noteHtml}`;
 }
 
 /**
@@ -176,7 +180,7 @@ function changeHtml(row, { result, impactRows, lineOf }) {
   const throwsAdded = c.throwsAdded || [];
   if (throwsAdded.length) h += `<h4>New throw</h4>${throwsAdded.map((/** @type {string} */ t) => `<div class="sig new">+ throw ${escapeHtml(t)}</div>`).join('')}`;
   const risky = c.kinds.some((/** @type {{ id: string }} */ k) => k.id !== 'body');
-  h += callersHtml(impactRows, { result, risky, lineOf });
+  h += callersHtml(impactRows, { result, risky, lineOf, id: treeItemId(row) });
   // `buildImpactRows` ends with the one tests row.
   const tests = impactRows.at(-1);
   if (tests && tests.type === 'message') h += `<h4>Tests</h4><div>${escapeHtml(tests.label)}${tests.desc ? ` — ${escapeHtml(tests.desc)}` : ''}</div>`;

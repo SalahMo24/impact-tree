@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const { localResult, finding, previewResult, pull, withEnv } = require('./extension-env');
 const { prQuery } = require('../src/pr-documents');
+const { treeItemId } = require('../src/review-tree-model');
 
 const SITE = { start: 22, end: 25 };
 const caller = (file) => ({ file, pos: 7, label: 'user', test: false, callSites: [SITE], sites: 1,
@@ -59,7 +60,7 @@ test('a cursor inside a change in a review diff shows that change and reveals it
   const { a } = await rowsOf(env);
   env.moveCursor(fileUri(env, 'a.ts'), 11);
   assert.match(textOf(details), /^at cursor, line 11 bad a\.ts:10–12 Needs attention\. /);
-  assert.match(textOf(details), /Callers \(1\) ○ user b\.ts:3 /, 'the call site line, read from the file');
+  assert.match(textOf(details), /Callers \(1\) Show callers ○ user b\.ts:3 /, 'the call site line, read from the file');
   assert.equal(env.seen.revealed.length, 1);
   assert.equal(env.seen.revealed[0].row, a[0]);
   assert.deepEqual(env.seen.revealed[0].options, { select: true, focus: false });
@@ -270,4 +271,45 @@ test('the panel follows a new analysis, and shows the hint while there is no rev
   gate.release();
   await running;
   assert.match(textOf(details), /^selected in tree bad /, 'the same row of the new result');
+}));
+
+test('the Show callers message runs the command for the row shown; one drawn for another row, or malformed, does nothing', () => withEnv(async (env) => {
+  useResult(env);
+  await env.refresh();
+  const details = env.openDetails();
+  const { a } = await rowsOf(env);
+  env.select([a[0]]);
+  const peekId = () => /data-act="peek" data-id="([^"]*)"/.exec(details.webview.html)[1].replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+  const ran = () => env.seen.executed.filter(([name]) => name === 'impactTree.showCallers');
+  const id = peekId();
+  assert.equal(id, tickId(details), 'the id of the row shown');
+  await details.send({ type: 'showCallers', id });
+  assert.deepEqual(ran(), [['impactTree.showCallers', id]]);
+
+  for (const message of [{ type: 'showCallers' }, { type: 'showCallers', id: 5 }, { type: 'showCallers', id: null }, { type: 'showCallers', id: `${id} ` },
+    { type: 'showCallers', id: `finding:a.ts:reach:${a[1].pos}` }, { type: 'showCallers', index: 0 }]) await details.send(message);
+  assert.equal(ran().length, 1, 'only the row shown');
+
+  env.select([(await env.tree().getChildren())[2]]);   // a file without a call graph
+  await details.send({ type: 'showCallers', id });
+  assert.equal(ran().length, 1, 'the panel moved on to another row');
+  assert.doesNotMatch(details.webview.html, /data-act="peek"/, 'a file row has no callers link');
+}));
+
+test('showChange shows the change in the panel and reveals it in the tree; a bad id does nothing', () => withEnv(async (env) => {
+  useResult(env);
+  await env.refresh();
+  const details = env.openDetails();
+  const { a } = await rowsOf(env);
+  await env.run('impactTree.showChange', treeItemId(a[1]));
+  assert.match(textOf(details), /^selected in tree reach a\.ts:50–52 /);
+  assert.deepEqual(env.seen.revealed.map((r) => [r.row, r.options]), [[a[1], { select: true, focus: false }]]);
+  // the selection that reveal causes is the row already shown
+  const loads = details.loads;
+  env.select([a[1]]);
+  assert.equal(details.loads, loads, 'not painted twice');
+
+  for (const id of [undefined, null, 5, '', 'finding:a.ts:nothing:1']) await env.run('impactTree.showChange', id);
+  assert.equal(env.seen.revealed.length, 1);
+  assert.match(textOf(details), /^selected in tree reach /);
 }));

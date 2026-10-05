@@ -36,16 +36,17 @@ function headRelPath(uri, { result, rel }) {
 }
 
 /**
- * A message from the webview, checked: anything else it could send is dropped. A tick
- * names the tree id of the row its button was drawn for.
+ * A message from the webview, checked: anything else it could send is dropped. A tick or
+ * a callers peek names the tree id of the row its button or link was drawn for.
  * @param {unknown} message
- * @returns {{ type: 'tick', id: string, on: boolean }|{ type: 'next' }|{ type: 'openCaller', index: number }|null}
+ * @returns {{ type: 'tick', id: string, on: boolean }|{ type: 'next' }|{ type: 'showCallers', id: string }|{ type: 'openCaller', index: number }|null}
  */
 function parseMessage(message) {
   if (!message || typeof message !== 'object') return null;
   const m = /** @type {Record<string, unknown>} */ (message);
   if (m.type === 'tick' && typeof m.id === 'string' && typeof m.on === 'boolean') return { type: 'tick', id: m.id, on: m.on };
   if (m.type === 'next') return { type: 'next' };
+  if (m.type === 'showCallers' && typeof m.id === 'string') return { type: 'showCallers', id: m.id };
   if (m.type === 'openCaller' && Number.isSafeInteger(m.index) && Number(m.index) >= 0) return { type: 'openCaller', index: Number(m.index) };
   return null;
 }
@@ -153,6 +154,19 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
       .then(undefined, (/** @type {any} */ err) => log(`details: could not reveal ${id}: ${err && err.message}`));
   }
 
+  // A lens asks for a change to be explained: the panel shows it and the tree selects it, as
+  // if the reviewer had picked it there. The selection that reveal causes is the one already shown.
+  /** @param {unknown} id */
+  async function showChange(id) {
+    const row = typeof id === 'string' ? provider.rowById(id) : null;
+    if (!row || typeof id !== 'string') return;
+    show(id, 'tree');
+    revealedFromCursor = id;
+    // A row the filter hides cannot be revealed; the panel still shows it.
+    await Promise.resolve(view.reveal(row, { select: true, focus: false }))
+      .then(undefined, (/** @type {any} */ err) => log(`details: could not reveal ${id}: ${err && err.message}`));
+  }
+
   /** @param {unknown} message */
   async function onMessage(message) {
     const m = parseMessage(message);
@@ -165,6 +179,10 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
       if (m.id !== shown.id) return;
       provider.setChecked(row, m.on);
       provider.refresh();
+      return;
+    }
+    if (m.type === 'showCallers') {
+      if (m.id === shown.id) await vscode.commands.executeCommand('impactTree.showCallers', m.id);
       return;
     }
     if (row.type !== 'finding') return;
@@ -193,6 +211,7 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
   return {
     disposables: [
       vscode.window.registerWebviewViewProvider('impactTree.details', webviewProvider),
+      vscode.commands.registerCommand('impactTree.showChange', showChange),
       view.onDidChangeSelection(onSelection),
       provider.onDidChangeTreeData(render),
       vscode.window.onDidChangeTextEditorSelection(onCursor),

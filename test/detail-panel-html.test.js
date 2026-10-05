@@ -57,7 +57,7 @@ test('a change that breaks a caller: level word, sentence, location, signatures,
   assert.match(text, /^selected in tree Holder\.bad src\/a\.ts:10–19 /);
   assert.match(text, /Needs attention\. The required parameter changed, and 1 of 2 callers was not changed on the call line\./);
   assert.match(text, /Signature − \(a: string\) => void \+ \(a: string, b: number\) => void/);
-  assert.match(text, /Callers \(2\) ✓ alsoUses src\/other\.ts:51 ○ useIt src\/user\.ts:31 not updated Tests/, 'sorted as the tree sorts them, with the call-site line');
+  assert.match(text, /Callers \(2\) Show callers ✓ alsoUses src\/other\.ts:51 ○ useIt src\/user\.ts:31 not updated Tests/, 'sorted as the tree sorts them, with the call-site line');
   assert.match(text, /Tests Tested by spec\.test\.js/);
   assert.match(text, /Mark reviewed Next unreviewed$/);
 });
@@ -75,7 +75,7 @@ test('a risky change marks the callers its verdict counts as not updated; a body
   const result = resultOf({ allChanged: [risky, edited] });
   const text = textOf(render(findRow(result, 'risky'), result));
   assert.match(text, /Needs attention\. .*2 of 4 callers were not changed/);
-  assert.match(text, /Callers \(4\) △ edited src\/a\.ts:11 not updated ✓ updated src\/b\.ts:21 ○ left src\/c\.ts:31 not updated ○ 🧪 t\.test\.ts test\/t\.test\.ts:1 Tests/,
+  assert.match(text, /Callers \(4\) Show callers △ edited src\/a\.ts:11 not updated ✓ updated src\/b\.ts:21 ○ left src\/c\.ts:31 not updated ○ 🧪 t\.test\.ts test\/t\.test\.ts:1 Tests/,
     'a test caller is not counted, so it is not marked');
   assert.equal(text.match(/not updated/g).length, 2);
   const body = change('src/x.ts', 'body', 10, { callerState: 'resolved', callers });
@@ -138,7 +138,7 @@ test('an unfinished caller search is said under the callers, and a preview says 
   const local = resultOf({ allChanged: [c] });
   assert.match(textOf(render(findRow(local, 'f'), local)), /○ u src\/u\.ts:11 More callers may be missing: the server timed out/);
   const preview = resultOf({ allChanged: [c], tierA: true });
-  assert.match(textOf(render(findRow(preview, 'f'), preview)), /Callers \(1\) Preview: only callers in the pull request's own files are shown\./);
+  assert.match(textOf(render(findRow(preview, 'f'), preview)), /Callers \(1\) Show callers Preview: only callers in the pull request's own files are shown\./);
 });
 
 test('callers grouped by file in the tree are listed one by one, test callers marked', () => {
@@ -150,7 +150,7 @@ test('callers grouped by file in the tree are listed one by one, test callers ma
   assert.equal(impact[0].type, 'callerFile', 'the fixture groups two callers');
   assert.deepEqual(listCallerRows(impact).map((r) => r.label), ['one', 'two', 'a.test.ts']);
   const html = render(row, result);
-  assert.match(textOf(html), /Callers \(3\) ○ one src\/u\.ts:11 ✓ two src\/u\.ts:21 ○ 🧪 a\.test\.ts test\/a\.test\.ts:1 /);
+  assert.match(textOf(html), /Callers \(3\) Show callers ○ one src\/u\.ts:11 ✓ two src\/u\.ts:21 ○ 🧪 a\.test\.ts test\/a\.test\.ts:1 /);
   assert.deepEqual([...html.matchAll(/data-act="caller" data-index="(\d+)"/g)].map((m) => m[1]), ['0', '1', '2'], 'each caller is a link');
 });
 
@@ -288,4 +288,23 @@ test('the header names where the row came from; an unknown origin is a programmi
   assert.equal(describeOrigin('tree'), 'selected in tree');
   assert.throws(() => render(row, result, { origin: 'cursor:' }));
   assert.throws(() => buildDetailHtml(row, { result, isReviewed: () => false, impactRows: [], nonce: 'a"b', cspSource: CSP_SOURCE, origin: 'tree', lineOf }));
+});
+
+test('the callers heading offers "Show callers", naming the change, only when there are callers', () => {
+  const withCallers = change('src/a.ts', 'hasCallers', 10, { callerState: 'resolved', callers: [callerOf('src/u.ts', 'use', 100, true)] });
+  const without = change('src/a.ts', 'noCallers', 40);
+  const result = resultOf({ allChanged: [withCallers, without] });
+  const link = (label) => /<a href="#" data-act="peek" data-id="([^"]*)">Show callers<\/a>/.exec(render(findRow(result, label), result));
+  const row = findRow(result, 'hasCallers');
+  assert.equal(link('hasCallers')[1], treeItemId(row).replace(/&/g, '&amp;'), 'the id the extension checks against the row shown');
+  assert.equal(link('noCallers'), null);
+  assert.match(render(row, result), /data-act="peek"[^]*postMessage\(\{ type: 'showCallers'|postMessage\(\{ type: 'showCallers', id: el\.getAttribute\('data-id'\) \}\)/);
+});
+
+test('an id with markup in it cannot break out of the "Show callers" link', () => {
+  const hostile = change('src/a"><img src=x onerror=alert(1)>.ts', 'f', 10, { callerState: 'resolved', callers: [callerOf('src/u.ts', 'use', 100, true)] });
+  const result = resultOf({ allChanged: [hostile] });
+  const html = render(findRow(result, 'f'), result);
+  assert.doesNotMatch(html, /<img/);
+  assert.match(html, /data-act="peek" data-id="[^"<>]*"/);
 });

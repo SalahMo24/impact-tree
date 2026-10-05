@@ -378,6 +378,17 @@ function createTreeProvider(vscode, {
       return state ? reviewTree.findRowAtLine(builtFor(state).rows, relPath, line) : null;
     },
     /**
+     * The rows of a changed file in the shown review: its changes, deleted symbols and
+     * outside-functions row, in the order the tree shows them.
+     * @param {string} relPath Repo-relative path.
+     * @returns {TreeRow[]} Empty when no review is shown, or the file is not in it or has no call graph.
+     */
+    changeRowsOf(relPath) {
+      const state = shownState();
+      const file = state && builtFor(state).rows.find((f) => f.relPath === relPath);
+      return file && file.type === 'reviewFile' ? file.rows : [];
+    },
+    /**
      * The callers and tests row under a change row, as the tree shows them when it is expanded.
      * @param {TreeRow} row A change row.
      * @returns {TreeRow[]} Empty when no review is shown.
