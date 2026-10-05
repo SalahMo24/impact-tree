@@ -84,9 +84,9 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   const holds = { fetch: gates(), modal: gates(), remote: gates(), analyze: gates(), callers: gates(), warmUp: gates() };
   const failures = new Map();
   const hooks = { beforeCheckout: null, headOf: shaFor, remoteResult: (pr) => previewResult(pr), localResult: (o) => localResult(o),
-    warm: !changedSource, clearResolver: () => {} };
+    warm: !changedSource, clearResolver: () => {}, onCommand: null };
   const captured = { tree: null, view: null, decorations: null, checkbox: null, sources: null, webviews: new Map(),
-    selection: [], cursor: [] };
+    selection: [], cursor: [], lenses: null };
   let fetchHead = null, quickPick = null;
 
   const disposable = () => ({ dispose() {} });
@@ -94,7 +94,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     update: async () => {} };
   const vscode = { ...baseStub, ConfigurationTarget: { Workspace: 2 },
     Position: class { constructor(line, character) { this.line = line; this.character = character; } },
-    Range: class { constructor(...args) { this.args = args; } },
+    Range: class { constructor(...args) { this.args = args; [this.start, this.end] = [{ line: args[0], character: args[1] }, { line: args[2], character: args[3] }]; } },
     OverviewRulerLane: { Center: 2 },
     // Unlike the shared stub's, this one delivers events, so a test can see a view refresh.
     EventEmitter: class {
@@ -102,8 +102,10 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
         const listeners = [];
         this.event = (listener) => { listeners.push(listener); return disposable(); };
         this.fire = (value) => { for (const listener of listeners) listener(value); };
+        this.dispose = () => { listeners.length = 0; };
       }
     },
+    languages: { registerCodeLensProvider: (selector, provider) => { captured.lenses = { selector, provider }; return disposable(); } },
     authentication: { getSession: async () => null },
     window: {
       createOutputChannel: () => ({ appendLine: (m) => seen.log.push(m), dispose() {}, show() {} }),
@@ -144,6 +146,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       executeCommand: async (name, ...args) => {
         if (name === 'setContext') { seen.contexts[args[0]] = args[1]; return undefined; }
         seen.executed.push([name, ...args]);
+        if (hooks.onCommand) await hooks.onCommand(name, ...args);
         return [];
       } },
     env: { openExternal: async () => {} },
@@ -282,6 +285,9 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
         send: (message) => Promise.all(listeners.map((handler) => handler(message))),
         setVisible(visible) { webviewView.visible = visible; for (const handler of shown) handler(); } });
     },
+    // The CodeLens provider the extension registered, and the lenses it gives for a document.
+    lensProvider: () => captured.lenses,
+    lensesFor: (uri) => captured.lenses.provider.provideCodeLenses({ uri }),
     decorations: () => captured.decorations,
     failGit: (cmd, error) => failures.set(cmd, error),
     moveFetchHead: (sha) => { fetchHead = sha; },

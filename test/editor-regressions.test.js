@@ -25,6 +25,7 @@ test('editor commands refresh the selected PR, preserve preview documents, and r
   const stub = { ...baseStub, ConfigurationTarget: { Workspace: 2 },
     Position: class { constructor(line, character) { this.line = line; this.character = character; } },
     Range: class { constructor(...args) { this.args = args; } },
+    languages: { registerCodeLensProvider: disposable },
     authentication: { getSession: async () => ({ accessToken: 'test' }) },
     window: {
       createOutputChannel: () => ({ appendLine() {}, dispose() {}, show() {} }),

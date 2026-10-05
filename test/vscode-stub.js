@@ -16,6 +16,8 @@ function uri(scheme, fsPath, query, fragment) {
 
 const vscodeStub = {
   MarkdownString: class { constructor(v) { this.value = v; } },
+  CodeLens: class { constructor(range, command) { this.range = range; this.command = command; } },
+  Location: class { constructor(uri, range) { this.uri = uri; this.range = range; } },
   ThemeColor: class { constructor(id) { this.id = id; } },
   Uri: {
     file: (p) => uri('file', p, '', ''),
@@ -31,7 +33,7 @@ const vscodeStub = {
     },
     from: ({ scheme, path: p, query }) => uri(scheme, p, query || '', ''),
   },
-  EventEmitter: class { constructor() { this.event = () => ({ dispose() {} }); } fire() {} },
+  EventEmitter: class { constructor() { this.event = () => ({ dispose() {} }); } fire() {} dispose() {} },
   TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
   TreeItemCheckboxState: { Unchecked: 0, Checked: 1 },
   StatusBarAlignment: { Left: 1, Right: 2 },

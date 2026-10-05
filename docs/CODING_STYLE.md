@@ -544,7 +544,8 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      grouping and renderer (`src/tree-provider.js`, `src/review-tree-model.js`,
      `src/tree-row-models.js`, `src/tree-grouping.js`, `src/tree-item-renderer.js`), the
      review navigation (`src/review-navigation.js`), and the detail panel and its HTML
-     builder (`src/detail-panel.js`, `src/detail-panel-html.js`).
+     builder (`src/detail-panel.js`, `src/detail-panel-html.js`), and the review lens and callers
+     peek (`src/review-lens.js`).
    - Planned: type-aware lint rules such as `no-floating-promises` (whether to add them
      before the review loop is an open decision), and enrolling the remaining modules.
 

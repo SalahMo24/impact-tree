@@ -181,7 +181,9 @@ test('package.json contributes the commands, the keybinding and the palette gate
     assert.ok(contributes.commands.some((c) => c.command === id && c.icon), `${id} is contributed with an icon`);
     assert.doesNotThrow(() => env.run(id), `${id} is registered`);
   }
-  assert.deepEqual(contributes.keybindings, [{ command: 'impactTree.nextUnreviewed', key: 'alt+n', when: 'impactTree.hasReview' }]);
+  // the review lens adds its own, ⇧⌥C for the callers peek (test/review-lens.test.js)
+  assert.deepEqual(contributes.keybindings.filter((k) => k.command !== 'impactTree.showCallers'),
+    [{ command: 'impactTree.nextUnreviewed', key: 'alt+n', when: 'impactTree.hasReview' }]);
   assert.equal(contributes.commands.find((c) => c.command === 'impactTree.nextUnreviewed').title, 'Impact Tree: Go to next unreviewed change');
   assert.equal(env.seen.statusBar.tooltip, 'Go to the next unreviewed change (rebind it in Keyboard Shortcuts)');
   // the title bar keeps refresh, the two filters and next; the rest is in the overflow menu

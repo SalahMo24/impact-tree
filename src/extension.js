@@ -4,7 +4,8 @@ const { MODES } = require('./engine/analyze');
 const { createTreeProvider } = require('./tree-provider');
 const { createReviewNavigation } = require('./review-navigation');
 const { createDetailPanel } = require('./detail-panel');
-const { readLineOfOffset } = require('./engine/textpos');
+const { createReviewLens } = require('./review-lens');
+const { readLineOfOffset, offsetToPosition } = require('./engine/textpos');
 const { createDecorationProvider } = require('./decorations');
 const { createReviewState } = require('./review-state');
 const { createGitHub, parseRemote } = require('./github');
@@ -136,6 +137,8 @@ function activate(context) {
   session.checkoutAndAnalyse = checkoutAndAnalyse;
 
   const openReview = createOpenReview(vscode, session);
+  const lens = createReviewLens(vscode, { provider, getState: () => owned.state, callerUri: openReview.callerUri, positionOf: offsetToPosition, log });
+  context.subscriptions.push(...lens.disposables);
 
   // Restore an existing session silently so a returning user sees their PRs without
   // being prompted; never pop a sign-in modal on startup.
