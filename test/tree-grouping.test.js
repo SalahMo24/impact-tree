@@ -16,9 +16,9 @@ const change = (relPath, label, start, end, extra = {}) => ({
 const factory = change('src/open-review.js', 'createOpenReview', 0, 1000);
 const inner = change('src/open-review.js', 'createOpenReview.baseUriFor', 100, 200);
 const innerMost = change('src/open-review.js', 'createOpenReview.baseUriFor.toUri', 120, 150);
-const sibling = change('src/open-review.js', 'createOpenReview.sameDoc', 300, 400, { callerState: 'unknown' });
+const sibling = change('src/open-review.js', 'createOpenReview.sameDoc', 300, 400, { callerState: 'unknown', kinds: [{ id: 'sig', label: 'signature' }] });
 const helper = change('src/open-review.js', 'sameUri', 1100, 1200);
-const stale = change('src/session.js', 'createSession', 0, 500, { staleCallers: 1, stale: [{ label: 'activate' }] });
+const stale = change('src/session.js', 'createSession', 0, 500, { staleCallers: 1, stale: [{ label: 'activate' }], kinds: [{ id: 'sig', label: 'signature' }] });
 const sessionHelper = change('src/session.js', 'reset', 600, 700);
 const lone = change('src/readiness.js', 'createReadiness', 0, 100);
 const finding = change('src/open-review.js', 'createOpenReview.rangesFor', 500, 600, { kinds: [{ id: 'sig', label: 'signature' }] });
@@ -76,7 +76,7 @@ test('a change declared inside another nests under it, apart from its callers, w
   const [inside] = await provider.getChildren(openReview);
   assert.equal(inside.type, 'insideGroup');
   assert.deepEqual((await provider.getChildren(inside)).map((n) => n.label), ['sameDoc', 'baseUriFor'], 'worst first');
-  assert.equal(provider.getTreeItem(openReview).description, '✓  ·  ? inside', 'a collapsed container shows the worst state inside it');
+  assert.equal(provider.getTreeItem(openReview).description, '●  ·  ? inside', 'a collapsed container shows the worst state inside it');
   const [, base] = await provider.getChildren(inside);
   const [baseInside] = await provider.getChildren(base);
   assert.deepEqual((await provider.getChildren(baseInside)).map((n) => n.label), ['toUri'], 'nearest container wins');

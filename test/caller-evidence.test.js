@@ -389,35 +389,37 @@ test('finding rows never read as fully updated when the caller search was incomp
 
   const complete = item({ callersComplete: true });
   assert.equal(complete.description, '✓');
-  assert.match(complete.tooltip.value, /all call sites updated/);
+  assert.match(complete.tooltip.value, /Every caller was updated/);
   const oldShape = item({});
   assert.equal(oldShape.description, '✓', 'a result without the field is read as complete');
-  assert.match(oldShape.tooltip.value, /all call sites updated/);
+  assert.match(oldShape.tooltip.value, /Every caller was updated/);
 
   const incomplete = item({ callersComplete: false, callersIncompleteReason: 'command-bus callers unavailable' });
   assert.equal(incomplete.description, '?');
-  assert.doesNotMatch(incomplete.tooltip.value, /all call sites updated/);
+  assert.doesNotMatch(incomplete.tooltip.value, /Every caller was updated/);
   assert.match(incomplete.tooltip.value, /callers found so far are updated, but more may be missing/);
   assert.match(incomplete.tooltip.value, /command-bus callers unavailable/);
   assert.equal(item({ callersComplete: false, callersIncompleteReason: null }).description, '?', 'a missing reason does not hide it');
 
-  const stale = item({ callersComplete: false, callersIncompleteReason: 'query-failed', staleCallers: 2, stale: [{ label: 'a' }, { label: 'b' }] });
+  const staleCallers = [{ label: 'a', callState: 'unchanged' }, { label: 'b', callState: 'unchanged' }];
+  const stale = item({ callersComplete: false, callersIncompleteReason: 'query-failed', staleCallers: 2, stale: staleCallers, callers: staleCallers });
   assert.equal(stale.description, '⛔');
-  assert.match(stale.tooltip.value, /2 call site\(s\) not updated/);
-  assert.match(stale.tooltip.value, /more callers may be missing/);
+  assert.match(stale.tooltip.value, /2 of 2 callers were not changed on the call line/);
+  assert.match(stale.tooltip.value, /More callers may be missing/);
   assert.match(stale.tooltip.value, /query-failed/);
   assert.doesNotMatch(item({ staleCallers: 2, stale: [{ label: 'a' }, { label: 'b' }], callersComplete: true }).tooltip.value, /may be missing/);
 
   // the other states already say they are not an answer; completeness does not rewrite them
-  assert.match(item({ callerState: 'none', callersComplete: true }).tooltip.value, /no callers found/);
-  assert.match(item({ callerState: 'unknown', callersComplete: false }).tooltip.value, /callers unknown/);
+  assert.match(item({ callerState: 'none', callersComplete: true }).tooltip.value, /Nothing calls it/);
+  assert.match(item({ callerState: 'unknown', callersComplete: false }).tooltip.value, /callers could not be found/);
 });
 
 test('an incomplete finding ranks as a warning inside a group, never as ok', async () => {
   const change = (label, extra) => ({ file: '/repo/src/x.js', relPath: 'src/x.js', label, namePos: label.length, start: label.length * 10, end: label.length * 10 + 5,
     startLine: 1, component: '(root)', kinds: [{ id: 'body', label: 'body' }], throwsAdded: [], callers: [], stale: [], staleCallers: 0,
     callerState: 'resolved', score: 1, ...extra });
-  const partial = change('partial', { callersComplete: false, callersIncompleteReason: 'query-failed' });
+  // a risky kind: a body-only change with callers leads with ●, so only a risky one can show the warning
+  const partial = change('partial', { kinds: [{ id: 'param', label: 'param' }], callersComplete: false, callersIncompleteReason: 'query-failed' });
   const fine = change('fine', { callersComplete: true });
   const result = { allChanged: [fine, partial], findings: [], deleted: [], warnings: [], unanalysable: [], otherFiles: [], untested: [],
     mode: 'working', base: { ref: 'HEAD', sha: '0' }, testReachComputed: true };
