@@ -4,8 +4,8 @@
 // safety (escaping, CSP, nonces) is checked on the raw HTML.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildFileRows, buildImpactRows } = require('../src/review-tree-model');
-const { buildDetailHtml, listCallerRows } = require('../src/detail-panel-html');
+const { buildFileRows, buildImpactRows, treeItemId } = require('../src/review-tree-model');
+const { buildDetailHtml, listCallerRows, describeOrigin, tidySignature } = require('../src/detail-panel-html');
 
 const uriOf = (file, pos) => (file ? `uri:${file}${pos == null ? '' : `#${pos}`}` : null);
 const rel = (f) => f.replace('/r/', '');
@@ -57,9 +57,42 @@ test('a change that breaks a caller: level word, sentence, location, signatures,
   assert.match(text, /^selected in tree Holder\.bad src\/a\.ts:10–19 /);
   assert.match(text, /Needs attention\. The required parameter changed, and 1 of 2 callers was not changed on the call line\./);
   assert.match(text, /Signature − \(a: string\) => void \+ \(a: string, b: number\) => void/);
-  assert.match(text, /Callers \(2\) ✓ alsoUses src\/other\.ts:51 ○ useIt src\/user\.ts:31 /, 'sorted as the tree sorts them, with the call-site line');
+  assert.match(text, /Callers \(2\) ✓ alsoUses src\/other\.ts:51 ○ useIt src\/user\.ts:31 not updated Tests/, 'sorted as the tree sorts them, with the call-site line');
   assert.match(text, /Tests Tested by spec\.test\.js/);
   assert.match(text, /Mark reviewed Next unreviewed$/);
+});
+
+test('a risky change marks the callers its verdict counts as not updated; a body-only change does not', () => {
+  const callers = [
+    callerOf('src/a.ts', 'edited', 100, false),
+    callerOf('src/b.ts', 'updated', 200, true),
+    callerOf('src/c.ts', 'left', 300, false),
+    callerOf('test/t.test.ts', 't.test.ts', 0, false, { test: true }),
+  ];
+  // `edited` is itself a changed symbol, so its call state is "changed, but not at the call"
+  const edited = change('src/a.ts', 'edited', 1, { namePos: 100 });
+  const risky = change('src/x.ts', 'risky', 10, { kinds: [PARAM], callerState: 'resolved', callers, staleCallers: 2 });
+  const result = resultOf({ allChanged: [risky, edited] });
+  const text = textOf(render(findRow(result, 'risky'), result));
+  assert.match(text, /Needs attention\. .*2 of 4 callers were not changed/);
+  assert.match(text, /Callers \(4\) △ edited src\/a\.ts:11 not updated ✓ updated src\/b\.ts:21 ○ left src\/c\.ts:31 not updated ○ 🧪 t\.test\.ts test\/t\.test\.ts:1 Tests/,
+    'a test caller is not counted, so it is not marked');
+  assert.equal(text.match(/not updated/g).length, 2);
+  const body = change('src/x.ts', 'body', 10, { callerState: 'resolved', callers });
+  const plain = resultOf({ allChanged: [body, edited] });
+  assert.doesNotMatch(textOf(render(findRow(plain, 'body'), plain)), /not updated/, 'unchanged callers are expected after a body-only change');
+});
+
+test('signatures are shown without the inferred-type placeholders, and escaped after tidying', () => {
+  const c = change('src/a.ts', 'f', 10, { kinds: [PARAM],
+    baseSig: 'async ({ owner }: ⟨inferred⟩, a: ⟨inferred⟩) => ⟨inferred⟩', headSig: '(a: ⟨inferred⟩, b: Map<string, number>) => ⟨inferred⟩' });
+  const result = resultOf({ allChanged: [c] });
+  const html = render(findRow(result, 'f'), result);
+  assert.match(textOf(html), /Signature − async \(\{ owner \}, a\) \+ \(a, b: Map<string, number>\) Tests/);
+  assert.ok(html.includes('(a, b: Map&lt;string, number&gt;)'), 'escaped after tidying');
+  assert.equal(c.headSig, '(a: ⟨inferred⟩, b: Map<string, number>) => ⟨inferred⟩', 'the result is not changed');
+  assert.equal(tidySignature('(a: string) => void'), '(a: string) => void', 'a written type stays');
+  assert.equal(tidySignature('() => ⟨inferred⟩'), '()');
 });
 
 test('each verdict level leads with its word', () => {
@@ -136,8 +169,9 @@ test('a reviewed change offers Untick; the tick button says what it will do', ()
   const row = findRow(result, 'f');
   const on = render(row, result, { isReviewed: (r) => r === row });
   assert.match(textOf(on), /Untick Next unreviewed$/);
-  assert.match(on, /data-act="tick" data-on="false"/);
-  assert.match(render(row, result), /data-act="tick" data-on="true"/);
+  const id = treeItemId(row);
+  assert.ok(on.includes(`data-act="tick" data-id="${id}" data-on="false"`), 'the button names the row it ticks');
+  assert.ok(render(row, result).includes(`data-act="tick" data-id="${id}" data-on="true"`));
 });
 
 test('a deleted symbol and an outside row get their shorter content', () => {
@@ -167,7 +201,7 @@ test('a file with a call graph: name, path, status, counts, and file-wide button
   assert.match(text, /^selected in tree a\.ts src\/a\.ts · modified 3 changes, 2 need attention, 2 left to review\. Mark file reviewed Next unreviewed$/);
   const all = render(file, result, { isReviewed: () => true });
   assert.match(textOf(all), /0 left to review\. Untick file Next unreviewed$/);
-  assert.match(all, /data-act="tick" data-on="false"/);
+  assert.match(all, /data-act="tick" data-id="file:src\/a\.ts" data-on="false"/);
   const one = resultOf({ allChanged: [change('src/b.ts', 'q', 10)] });
   assert.match(textOf(render(rowsOf(one)[0], one)), /1 change, 0 need attention, 1 left to review\./);
 });
@@ -238,10 +272,20 @@ test('colours come only from theme variables', () => {
   assert.match(css, /var\(--vscode-button-background\)/);
 });
 
+test('the page script sends the row id with a tick, and only rewrites the header text on an origin message', () => {
+  const script = /<script[^>]*>([\s\S]*?)<\/script>/.exec(render(null, null))[1];
+  assert.match(script, /type: 'tick', id: el\.getAttribute\('data-id'\)/);
+  assert.match(script, /addEventListener\('message'/);
+  assert.match(script, /\.textContent = /, 'set as text, never as HTML');
+  assert.doesNotMatch(script, /innerHTML|outerHTML|insertAdjacentHTML/);
+});
+
 test('the header names where the row came from; an unknown origin is a programming error', () => {
   const result = resultOf({ allChanged: [change('src/a.ts', 'f', 10)] });
   const row = findRow(result, 'f');
   assert.match(textOf(render(row, result, { origin: 'cursor:12' })), /^at cursor, line 12 f /);
+  assert.equal(describeOrigin('cursor:12'), 'at cursor, line 12');
+  assert.equal(describeOrigin('tree'), 'selected in tree');
   assert.throws(() => render(row, result, { origin: 'cursor:' }));
   assert.throws(() => buildDetailHtml(row, { result, isReviewed: () => false, impactRows: [], nonce: 'a"b', cspSource: CSP_SOURCE, origin: 'tree', lineOf }));
 });

@@ -2,6 +2,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const { classifyRowVerdict, CALL_STATE } = require('./tree-row-models');
+const { treeItemId } = require('./review-tree-model');
 
 // The detail panel's whole document, built from one row of the change tree. Pure: the
 // caller supplies everything that needs the editor or the disk (the ticks, the change's
@@ -36,6 +37,14 @@ const ENTITIES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ENTITIES[c]);
 
 /**
+ * A signature as a reader wants it: without the `: ⟨inferred⟩` and ` => ⟨inferred⟩` the
+ * analysis writes where no type was written. For display only; the result keeps them.
+ * @param {string} signature
+ * @returns {string}
+ */
+const tidySignature = (signature) => signature.replace(/: ⟨inferred⟩/g, '').replace(/ => ⟨inferred⟩/g, '');
+
+/**
  * The caller rows under a change, one per calling function: a file group (`callerFile`)
  * stands for the callers it holds. The panel numbers callers in this order, and a
  * webview's `openCaller` message names one by its index here.
@@ -67,6 +76,7 @@ td.st { width: 18px; text-align: center; }
 a { color: var(--vscode-textLink-foreground); text-decoration: none; cursor: pointer; }
 a:hover { color: var(--vscode-textLink-activeForeground); text-decoration: underline; }
 .note { color: var(--vscode-descriptionForeground); margin-top: 4px; }
+.stale { color: var(--vscode-editorError-foreground); white-space: nowrap; }
 .actions { margin-top: 12px; }
 button { font: inherit; border: 0; border-radius: 2px; padding: 4px 10px; margin: 0 6px 6px 0; cursor: pointer;
   color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
@@ -76,15 +86,23 @@ button.secondary:hover { background: var(--vscode-button-secondaryHoverBackgroun
 `;
 
 // Turns a click on a button or caller link into a message for the extension. The extension
-// validates every message, so this script decides nothing.
+// validates every message, so this script decides nothing. A tick names the row it was
+// drawn for, so the extension can drop one that arrives after the panel moved on. An
+// `origin` message from the extension rewrites the header's text, so a cursor moving
+// inside the row shown does not reload the page.
 const SCRIPT = `
 const vscode = acquireVsCodeApi();
+window.addEventListener('message', (event) => {
+  const data = event.data;
+  const header = document.querySelector('.origin');
+  if (header && data && data.type === 'origin' && typeof data.text === 'string') header.textContent = data.text;
+});
 document.addEventListener('click', (event) => {
   const el = event.target instanceof Element ? event.target.closest('[data-act]') : null;
   if (!el) return;
   event.preventDefault();
   const act = el.getAttribute('data-act');
-  if (act === 'tick') vscode.postMessage({ type: 'tick', on: el.getAttribute('data-on') === 'true' });
+  if (act === 'tick') vscode.postMessage({ type: 'tick', id: el.getAttribute('data-id'), on: el.getAttribute('data-on') === 'true' });
   else if (act === 'next') vscode.postMessage({ type: 'next' });
   else if (act === 'caller') vscode.postMessage({ type: 'openCaller', index: Number(el.getAttribute('data-index')) });
 });
@@ -104,22 +122,25 @@ function describeOrigin(origin) {
 
 /**
  * The tick and next buttons.
+ * @param {TreeRow} row The row the tick button ticks; it has a tree id.
  * @param {boolean} reviewed Whether what the tick button stands for is all ticked.
  * @param {{ mark: string, untick: string }} words
  * @returns {string}
  */
-const buttonsHtml = (reviewed, words) => `<div class="actions"><button data-act="tick" data-on="${!reviewed}">${reviewed ? words.untick : words.mark}</button>`
+const buttonsHtml = (row, reviewed, words) => `<div class="actions"><button data-act="tick" data-id="${escapeHtml(treeItemId(row))}" data-on="${!reviewed}">${reviewed ? words.untick : words.mark}</button>`
   + '<button class="secondary" data-act="next">Next unreviewed</button></div>';
 const ROW_WORDS = { mark: 'Mark reviewed', untick: 'Untick' };
 
 /**
  * The callers table of a change, with a note for each message row among the impact rows
- * other than the tests row (a caller search that did not finish).
+ * other than the tests row (a caller search that did not finish). When the change is risky,
+ * each caller its verdict counts as not updated says so: the same rule as the result's
+ * `stale` list, a caller that is not a test and was not updated at the call.
  * @param {TreeRow[]} impactRows
- * @param {{ result: any, lineOf: (file: string, offset: number) => number|null }} opts
+ * @param {{ result: any, risky: boolean, lineOf: (file: string, offset: number) => number|null }} opts
  * @returns {string}
  */
-function callersHtml(impactRows, { result, lineOf }) {
+function callersHtml(impactRows, { result, risky, lineOf }) {
   const callers = listCallerRows(impactRows);
   const notes = impactRows.filter((r) => r.type === 'message').slice(0, -1);
   if (!callers.length && !notes.length) return '';
@@ -128,7 +149,8 @@ function callersHtml(impactRows, { result, lineOf }) {
     const state = CALL_STATE[c.callState] || UNKNOWN_CALL_STATE;
     const offset = c.callSites && c.callSites[0] ? c.callSites[0].start : c.pos;
     const line = typeof offset === 'number' ? lineOf(c.file, offset) : null;
-    const where = `${escapeHtml(c.relPath ?? c.file)}${line == null ? '' : `:${line}`}`;
+    const stale = risky && !c.test && c.callState !== 'updated-at-call' ? ' <span class="stale">not updated</span>' : '';
+    const where = `${escapeHtml(c.relPath ?? c.file)}${line == null ? '' : `:${line}`}${stale}`;
     return `<tr><td class="st ${CALL_STATE_CLASS[c.callState] || 'lv1'}" title="${escapeHtml(state.text)}">${state.token}</td>`
       + `<td><a href="#" data-act="caller" data-index="${i}">${c.test ? '🧪 ' : ''}${escapeHtml(c.label)}</a></td><td class="where">${where}</td></tr>`;
   }).join('');
@@ -149,11 +171,12 @@ function changeHtml(row, { result, impactRows, lineOf }) {
   h += `<div class="verdict lv${v.level}"><b>${VERDICT_WORDS[v.level]}.</b> ${escapeHtml(v.sentence)}</div>`;
   // An added symbol has no signature before; a missing one is not a change.
   if (typeof c.baseSig === 'string' && typeof c.headSig === 'string' && c.baseSig !== c.headSig) {
-    h += `<h4>Signature</h4><div class="sig old">− ${escapeHtml(c.baseSig)}</div><div class="sig new">+ ${escapeHtml(c.headSig)}</div>`;
+    h += `<h4>Signature</h4><div class="sig old">− ${escapeHtml(tidySignature(c.baseSig))}</div><div class="sig new">+ ${escapeHtml(tidySignature(c.headSig))}</div>`;
   }
   const throwsAdded = c.throwsAdded || [];
   if (throwsAdded.length) h += `<h4>New throw</h4>${throwsAdded.map((/** @type {string} */ t) => `<div class="sig new">+ throw ${escapeHtml(t)}</div>`).join('')}`;
-  h += callersHtml(impactRows, { result, lineOf });
+  const risky = c.kinds.some((/** @type {{ id: string }} */ k) => k.id !== 'body');
+  h += callersHtml(impactRows, { result, risky, lineOf });
   // `buildImpactRows` ends with the one tests row.
   const tests = impactRows.at(-1);
   if (tests && tests.type === 'message') h += `<h4>Tests</h4><div>${escapeHtml(tests.label)}${tests.desc ? ` — ${escapeHtml(tests.desc)}` : ''}</div>`;
@@ -169,14 +192,14 @@ function changeHtml(row, { result, impactRows, lineOf }) {
 function fileHtml(row, isReviewed) {
   const head = `<h3>${escapeHtml(row.label)}</h3><div class="where">${escapeHtml(row.relPath)} · ${escapeHtml(row.status ?? 'changed')}</div>`;
   if (row.type === 'file') {
-    return `${head}<div class="verdict lv4">No call graph for this file (tests, config, docs). Read the diff and tick the file.</div>${buttonsHtml(isReviewed(row), ROW_WORDS)}`;
+    return `${head}<div class="verdict lv4">No call graph for this file (tests, config, docs). Read the diff and tick the file.</div>${buttonsHtml(row, isReviewed(row), ROW_WORDS)}`;
   }
   /** @type {TreeRow[]} */
   const rows = row.rows;
   const n = rows.length, k = row.attention || 0;
   const left = rows.filter((r) => !isReviewed(r)).length;
   const sums = `${n} change${n === 1 ? '' : 's'}, ${k} need${k === 1 ? 's' : ''} attention, ${left} left to review.`;
-  return `${head}<div class="verdict lv${row.level}">${sums}</div>${buttonsHtml(left === 0, { mark: 'Mark file reviewed', untick: 'Untick file' })}`;
+  return `${head}<div class="verdict lv${row.level}">${sums}</div>${buttonsHtml(row, left === 0, { mark: 'Mark file reviewed', untick: 'Untick file' })}`;
 }
 
 /**
@@ -193,7 +216,7 @@ function bodyHtml(row, { result, isReviewed, impactRows, lineOf }) {
   if (row.type === 'finding') h = changeHtml(row, { result, impactRows, lineOf });
   else if (row.type === 'deleted') h = `<h3>${escapeHtml(row.label)}</h3><div class="where">${escapeHtml(row.relPath)} · deleted</div><div class="verdict lv${v.level}">${escapeHtml(v.sentence)}</div>`;
   else h = `<h3>Outside functions</h3><div class="where">${escapeHtml(row.relPath)} · ${escapeHtml(v.text)}</div><div class="verdict lv${v.level}">${escapeHtml(v.sentence)}</div>`;
-  return h + buttonsHtml(isReviewed(row), ROW_WORDS);
+  return h + buttonsHtml(row, isReviewed(row), ROW_WORDS);
 }
 
 /**
@@ -224,4 +247,4 @@ function buildDetailHtml(row, { result, isReviewed, impactRows, nonce, cspSource
     + `<script nonce="${nonce}">${SCRIPT}</script></body></html>`;
 }
 
-module.exports = { buildDetailHtml, listCallerRows, escapeHtml, VERDICT_WORDS };
+module.exports = { buildDetailHtml, listCallerRows, describeOrigin, tidySignature, escapeHtml, VERDICT_WORDS };
