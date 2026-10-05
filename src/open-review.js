@@ -114,32 +114,45 @@ function createOpenReview(vscode, session) {
     }
   }
 
-  async function openCaller(node) {
-    const { offsetToPosition } = require('./engine/textpos');
-    const { callerOpen } = require('./review-open');
-    // land on the first call site, not the caller's own declaration -- the call is
-    // the thing the reviewer came to look at
-    const anchor = (node.callSites && node.callSites[0] && node.callSites[0].start) != null
-      ? node.callSites[0].start : node.pos;
-    const p = offsetToPosition(node.file, anchor) || { line: 0, character: 0 };
-    const sel = new vscode.Range(p.line, p.character, p.line, p.character);
+  // What opening a caller shows, and the address of the document its call lands in. A
+  // caller is diffed whenever the FILE differs from base, not just when this symbol changed:
+  // that is what surfaces "other changes in the file". Diffing a file identical to base would
+  // show two panes of the same content, so that case opens plain.
+  function planCaller(node) {
     const rel = session.state && session.state.rel ? session.state.rel(node.file) : null;
-    // Diff whenever the FILE differs from base, not just when this symbol changed --
-    // that is what surfaces "other changes in the file". Diffing a file identical to
-    // base would just show two panes of the same content, so that case opens plain.
     const always = vscode.workspace.getConfiguration('impactTree').get('alwaysDiffCallers', false);
     const fileChanged = !!(rel && session.state.changedPaths && session.state.changedPaths.has(rel));
+    const { callerOpen } = require('./review-open');
     const plan = callerOpen({
       tierA: session.isTierA(), rel, baseRel: session.state?.result?.basePaths?.[rel], status: session.state?.result?.fileStatus?.[rel], absPath: node.file, fileChanged, always,
       baseSha: session.state && session.state.result && session.state.result.base && session.state.result.base.sha,
       prNumber: session.state && session.state.result && session.state.result.prNumber,
       headSha: session.state?.result?.headSha,
     });
-    const toUri = (spec) => {
-      if (spec.scheme === 'file') return vscode.Uri.file(spec.path);
-      if (spec.scheme === 'impacttree-pr') return vscode.Uri.from({ scheme: 'impacttree-pr', path: spec.path, query: spec.query });
-      return vscode.Uri.from({ scheme: 'impacttree-base', path: spec.path, query: spec.query });
-    };
+    return { rel, plan };
+  }
+
+  function toUri(spec) {
+    if (spec.scheme === 'file') return vscode.Uri.file(spec.path);
+    if (spec.scheme === 'impacttree-pr') return vscode.Uri.from({ scheme: 'impacttree-pr', path: spec.path, query: spec.query });
+    return vscode.Uri.from({ scheme: 'impacttree-base', path: spec.path, query: spec.query });
+  }
+
+  // The document a caller opens in: the right side of its diff, else the plain editor's.
+  function callerUri(node) {
+    const { plan } = planCaller(node);
+    return toUri(plan.kind === 'diff' ? plan.right : plan.uri);
+  }
+
+  async function openCaller(node) {
+    const { offsetToPosition } = require('./engine/textpos');
+    // land on the first call site, not the caller's own declaration -- the call is
+    // the thing the reviewer came to look at
+    const anchor = (node.callSites && node.callSites[0] && node.callSites[0].start) != null
+      ? node.callSites[0].start : node.pos;
+    const p = offsetToPosition(node.file, anchor) || { line: 0, character: 0 };
+    const sel = new vscode.Range(p.line, p.character, p.line, p.character);
+    const { rel, plan } = planCaller(node);
     let opened;
     if (plan.kind === 'diff') {
       opened = toUri(plan.right);
@@ -154,7 +167,7 @@ function createOpenReview(vscode, session) {
     await highlight(node.file, node.callSites, opened);
   }
 
-  return { openChange, openFile, openCaller };
+  return { openChange, openFile, openCaller, callerUri };
 }
 
 module.exports = { createOpenReview };
