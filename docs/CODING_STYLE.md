@@ -542,7 +542,9 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      `src/engine/cancellation.js`, `src/engine/settings.js`, `src/engine/test-reach.js`,
      `src/github-request.js`, `src/github.js`, and the tree's provider, pure row models,
      grouping and renderer (`src/tree-provider.js`, `src/review-tree-model.js`,
-     `src/tree-row-models.js`, `src/tree-grouping.js`, `src/tree-item-renderer.js`).
+     `src/tree-row-models.js`, `src/tree-grouping.js`, `src/tree-item-renderer.js`), the
+     review navigation (`src/review-navigation.js`), and the detail panel and its HTML
+     builder (`src/detail-panel.js`, `src/detail-panel-html.js`).
    - Planned: type-aware lint rules such as `no-floating-promises` (whether to add them
      before the review loop is an open decision), and enrolling the remaining modules.
 

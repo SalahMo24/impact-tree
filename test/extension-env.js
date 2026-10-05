@@ -77,14 +77,16 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   // `contexts` holds the latest value of each context key the extension set; `revealed`
   // the rows the change view was asked to reveal, with their options; `statusBar` is the
   // extension's status bar item.
+  // `executed` the commands run through `executeCommand`, with their arguments.
   const seen = { warnings: [], errors: [], infos: [], log: [], status: [], modals: 0, analyze: [], remote: [],
-    signals: [], callerQueries: [], warmUps: [], contexts: {}, revealed: [], statusBar: null };
+    signals: [], callerQueries: [], warmUps: [], contexts: {}, revealed: [], statusBar: null, executed: [] };
   const git = { fetches: [], checkouts: [], calls: [] };
   const holds = { fetch: gates(), modal: gates(), remote: gates(), analyze: gates(), callers: gates(), warmUp: gates() };
   const failures = new Map();
   const hooks = { beforeCheckout: null, headOf: shaFor, remoteResult: (pr) => previewResult(pr), localResult: (o) => localResult(o),
     warm: !changedSource, clearResolver: () => {} };
-  const captured = { tree: null, view: null, decorations: null, checkbox: null, sources: null };
+  const captured = { tree: null, view: null, decorations: null, checkbox: null, sources: null, webviews: new Map(),
+    selection: [], cursor: [] };
   let fetchHead = null, quickPick = null;
 
   const disposable = () => ({ dispose() {} });
@@ -110,6 +112,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       createTreeView: (id, options) => {
         // A test sets `selection` as the user's selection; `reveal` records what was asked.
         const view = { dispose() {}, selection: [], onDidChangeCheckboxState: (handler) => { captured.checkbox = handler; return disposable(); },
+          onDidChangeSelection: (handler) => { if (id === 'impactTree.changes') captured.selection.push(handler); return disposable(); },
           reveal: async (row, options) => { seen.revealed.push({ row, options }); } };
         if (id === 'impactTree.changes') { captured.tree = options.treeDataProvider; captured.view = view; }
         if (id === 'impactTree.sources') captured.sources = options.treeDataProvider;
@@ -133,10 +136,14 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
         return seen.statusBar;
       },
       visibleTextEditors: [],
+      activeTextEditor: undefined,
+      onDidChangeTextEditorSelection: (handler) => { captured.cursor.push(handler); return disposable(); },
+      registerWebviewViewProvider: (id, provider) => { captured.webviews.set(id, provider); return disposable(); },
     },
     commands: { registerCommand: (name, fn) => { commands.set(name, fn); return disposable(); },
       executeCommand: async (name, ...args) => {
         if (name === 'setContext') { seen.contexts[args[0]] = args[1]; return undefined; }
+        seen.executed.push([name, ...args]);
         return [];
       } },
     env: { openExternal: async () => {} },
@@ -246,6 +253,35 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       return rows.filter((r) => r.type === 'finding');
     },
     sources: () => captured.sources,
+    // The user selects rows in the change view, as the view reports it.
+    select(rows) {
+      captured.view.selection = rows;
+      for (const handler of captured.selection) handler({ selection: rows });
+    },
+    // The user puts the cursor on a 1-based line of a document; `kind` is how it moved.
+    moveCursor(uri, line, { kind = vscode.TextEditorSelectionChangeKind.Keyboard, active = true } = {}) {
+      const editor = { document: { uri }, selection: { active: { line: line - 1, character: 0 } } };
+      if (active) vscode.window.activeTextEditor = editor;
+      for (const handler of captured.cursor) handler({ textEditor: editor, selections: [editor.selection], kind });
+    },
+    // Opens the Details view as VS Code does: a fake webview that keeps the last HTML set and
+    // counts the sets (`loads`), records what the extension posts to the page (`posted`), and
+    // lets a test post a message as the page's script would, or hide and show the view.
+    openDetails() {
+      const listeners = [], shown = [];
+      let html = '';
+      const details = { loads: 0, posted: [] };
+      const webview = { options: null, cspSource: 'vscode-webview://test',
+        get html() { return html; }, set html(value) { html = value; details.loads++; },
+        onDidReceiveMessage: (handler) => { listeners.push(handler); return disposable(); },
+        postMessage: async (message) => { details.posted.push(message); return true; } };
+      const webviewView = { webview, visible: true, onDidDispose: () => disposable(),
+        onDidChangeVisibility: (handler) => { shown.push(handler); return disposable(); } };
+      captured.webviews.get('impactTree.details').resolveWebviewView(webviewView, {}, { isCancellationRequested: false });
+      return Object.assign(details, { webview,
+        send: (message) => Promise.all(listeners.map((handler) => handler(message))),
+        setVisible(visible) { webviewView.visible = visible; for (const handler of shown) handler(); } });
+    },
     decorations: () => captured.decorations,
     failGit: (cmd, error) => failures.set(cmd, error),
     moveFetchHead: (sha) => { fetchHead = sha; },

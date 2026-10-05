@@ -3,6 +3,8 @@ const vscode = require('vscode');
 const { MODES } = require('./engine/analyze');
 const { createTreeProvider } = require('./tree-provider');
 const { createReviewNavigation } = require('./review-navigation');
+const { createDetailPanel } = require('./detail-panel');
+const { readLineOfOffset } = require('./engine/textpos');
 const { createDecorationProvider } = require('./decorations');
 const { createReviewState } = require('./review-state');
 const { createGitHub, parseRemote } = require('./github');
@@ -57,6 +59,8 @@ function activate(context) {
   context.subscriptions.push(view);
   const navigation = createReviewNavigation(vscode, { provider, view });
   context.subscriptions.push(...navigation.disposables);
+  const details = createDetailPanel(vscode, { provider, view, getState: () => owned.state, lineOf: readLineOfOffset, log });
+  context.subscriptions.push(...details.disposables);
   // The summary lives in the view's message and badge, and follows every repaint: a new
   // result, a phase change, a tick, a filter. So do the status bar and the context keys.
   const showSummary = () => {
