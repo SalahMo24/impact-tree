@@ -313,3 +313,28 @@ test('11. a throw from repoRoot() or resolver.clear() is a failed run, not an un
   await flush();
   assert.deepEqual(unhandled, []);
 });
+
+// The review store follows the analysis. The harness is not signed in to GitHub, so a load
+// the store starts fails with "not signed in", which it logs: that line proves the load
+// was attempted for the right PR, and that its failure is reported rather than hidden.
+test('12. the PR review store loads for PR reviews only, following each new analysis', async (t) => {
+  const failedLoads = (env) => env.seen.log.filter((m) => /review store: loading PR #7 failed: not signed in/.test(m));
+  await t.test('a local review starts no load', () => withEnv(async (env) => {
+    await env.refresh();
+    await flush();
+    assert.deepEqual(env.seen.log.filter((m) => /review store:/.test(m)), []);
+  }));
+  await t.test('a PR preview loads its PR, and Refresh loads it again', () => withEnv(async (env) => {
+    await env.preview({ ...pull(7), headSha: 'a'.repeat(40) });
+    await flush();
+    assert.equal(failedLoads(env).length, 1);
+    await env.refresh();
+    await flush();
+    assert.equal(failedLoads(env).length, 2);
+  }));
+  await t.test('a checkout loads the PR it checked out', () => withEnv(async (env) => {
+    await env.openPullRequest(pull(7), 'analyse');
+    await flush();
+    assert.equal(failedLoads(env).length, 1);
+  }));
+});

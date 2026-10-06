@@ -13,6 +13,7 @@ const { createSourcesProvider } = require('./sources-provider');
 const { createPrDocuments } = require('./pr-documents');
 const { createSession } = require('./session');
 const { createPrActions } = require('./pr-actions');
+const { createPullRequestReviewStore, reviewTargetOf } = require('./pr-review-store');
 const { createOpenReview } = require('./open-review');
 const { registerContentProviders } = require('./content-providers');
 const { registerCommands } = require('./commands');
@@ -95,6 +96,18 @@ function activate(context) {
       return parseRemote(url);
     } catch { return null; }
   };
+
+  // What GitHub says about the review of the PR being reviewed (threads, pending review,
+  // viewed state). It follows the analysis: every new run, checkout claim or refreshed PR
+  // source re-syncs it, so Refresh (which starts a new run) reloads it too. Local and
+  // agent reviews have no target, and it does no I/O for them. Disposed with the window.
+  const reviewStore = createPullRequestReviewStore({
+    gh, log,
+    getAnalysisId: owned.getAnalysisId,
+    getTarget: () => (owned.checkoutInProgress() != null ? null : reviewTargetOf(owned.state && owned.state.source, repoSlug)),
+  });
+  context.subscriptions.push(reviewStore, owned.onDidChangeAnalysis(() => reviewStore.sync()));
+  session.reviewStore = reviewStore;
 
   const sources = createSourcesProvider(vscode, {
     modes: MODES,
