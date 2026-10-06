@@ -198,3 +198,92 @@ Verification:
   resolves to its real caller, for example `registerCommands` → `activate`.
 - No live editor session was run. The editor path is covered by a stub resolver that
   answers "no callers", as the server's inferred project does for closed files.
+
+## Progressive review loading (2026-10-06)
+
+Local and checked-out PR reviews publish changed files and symbols before waiting
+for language-server warm-up or caller resolution. PR previews publish their pinned
+texts and changed rows before configuration/package lookups and caller indexing.
+The tree says **Resolving callers…** and pending symbols have explicitly incomplete
+caller coverage. Early rows are detached snapshots; late resolver mutations cannot
+change their verdicts. Review identity is configured at both publications, retaining
+checkboxes ticked while callers load. Replaced, cancelled and disposed runs cannot
+publish either stage.
+
+Language-provider commands have a 5-second wait deadline; warm-up has a 15-second
+total deadline, including an in-flight command. The editor API cannot cancel commands,
+so their eventual rejection/result is observed and dropped. At most 32 underlying
+commands remain outstanding across runs; timeouts do not free those admission slots.
+Failures/timeouts appear as incomplete caller evidence, including CQRS lookups.
+
+The editor's repository-wide module caller index now runs in a session-owned worker.
+Each prepare/query has a 30-second deadline and the worker has a 1 GiB old-generation
+heap limit. Source admission remains capped at 20,000 files and 1 MiB per file, with
+an additional 64 MiB aggregate limit. Exhaustion reports incomplete coverage. A
+completed index is reused only after the worker checks HEAD, compiler identity,
+source/config/package paths, sizes and nanosecond modification/change times. New
+analyses reset symbol hints. Cancellation terminates the worker; session disposal
+terminates it and rejects pending requests. The CLI retains its synchronous adapter.
+
+Read-only measurements on the Mylo worktree, using Node on this machine:
+
+- Git diff and changed-row preparation: **2.139 s**, 48 source files, 90 total paths
+  and 65 symbols. The benchmark aborted at the prepared callback before any caller
+  query; it excludes base fetch, editor warm-up, identity rendering and UI painting.
+- A cold module lookup: **14.942 s**, with 1,369 host timer ticks and a maximum
+  10-ms timer gap of **28 ms**. The previous synchronous scan blocked the host for
+  approximately 11.5 s. Cold indexing is moved off the host, not eliminated.
+- A second lookup with unchanged metadata: **464 ms**, retaining the same index.
+  Both searches retained the two found callers and marked eight oversized skipped
+  files as incomplete; the computed-require warning was retained.
+
+Verification: `test/loading.test.js` covers early opening/ticking, final checkbox
+retention, stale publication, real worker callers and cache invalidation, cancellation,
+worker/provider deadlines, late rejection and outstanding-provider admission. It runs
+in `npm test` and `test:smoke`. Lint/typecheck and the available test suite pass. The
+default recorded-fixture and target caller/tree checks skip because their target has
+no suitable diff or recorded fixtures. These measurements do not replace validation
+of the new build in a reloaded live Cursor session.
+
+## Targeted review progress updates
+
+Checkbox state belongs to the review store; an analysis result is unchanged by a
+mark. `tree-provider` now publishes an immutable review-progress notification with
+its analysis ID, affected row/file IDs and changed-function file paths. A checkbox
+gesture is applied as one batch against canonical rows of the displayed result;
+no-op gestures and rows from an older analysis publish nothing. Consumers do not
+receive the entire analysis object to diff.
+
+Tree repaint and full presentation invalidation are separate events. Progress
+refreshes each affected visible file once. A root refresh is required when a filter
+adds/removes a file or changes the empty-filter hint. The first file retains its
+canonical row object, and caller/message TreeItems have parent-scoped IDs so
+repeated expansion reads can preserve editor-owned expansion state. These IDs are
+UI identities; persisted review identities remain based on content.
+
+Details retains its document for progress, repeated selections and tree filters.
+A pure display model supplies both initial HTML and later button/count patches.
+Only a relevant changed ID computes that model; an unchanged model posts nothing.
+Patches update text/attributes and preserve DOM nodes, focus and scroll. New
+selection or analysis still builds a fresh document/token. Both patch delivery and
+actions validate the current token, and actions additionally check the owning
+analysis. A ready handshake resends current fields if progress happened before the
+browser installed its listener. Hiding/showing the webview can still reload it.
+
+Decoration registration compares badge, color and tooltip values. Changed URIs
+are deduplicated and flushed by one provider-owned timer per event-loop turn;
+unchanged decorations fire no event. CodeLens invalidation remains global because
+that is the editor API's contract, but function marks batch into one notification
+per turn. Plain-file marks and tree filters do not invalidate lenses. Disposal
+cancels both timers and releases provider-owned maps/emitters.
+
+`test/review-updates.test.js` exercises all three marking routes, group/no-op marks,
+filtered removal/restoration, canonical and child IDs, stale analysis rows,
+CodeLens/decoration batching and disposal, and the webview ready handshake. The
+Details harness executes the generated browser script against a small DOM adapter.
+In the controlled expanded-tree reproduction, an ordinary mark now causes zero
+Details document replacements, one affected-file tree event, and zero decoration
+events after initial decorations have settled. The characterization fixture's
+only changed expectations are decoration flush counts: 36 -> 1 for local states
+and 9 -> 1 for preview states. This verifies event behavior, not live pixel flicker
+or the separate intermittent loss of editor diff highlighting.

@@ -132,8 +132,10 @@ const resultOf = (outside) => ({
   mode: 'working', base: { ref: 'HEAD', sha: '0' }, testReachComputed: true, outside,
 });
 const viewOf = (outside, review = null) => {
+  // As in a session, this result snapshot remains stable until a new analysis.
+  const result = resultOf(outside);
   const provider = createTreeProvider(vscode, {
-    getState: () => ({ result: resultOf(outside), rowDetail: 'hover', rel: (f) => f.replace('/repo/', '') }),
+    getState: () => ({ result, rowDetail: 'hover', rel: (f) => f.replace('/repo/', '') }),
     resolver: { incomingWithStatus: async () => ({ callers: [], complete: true }) }, review,
   });
   const fileRow = async (relPath) => (await provider.getChildren()).find((r) => r.relPath === relPath);

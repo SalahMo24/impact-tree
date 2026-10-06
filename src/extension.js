@@ -19,7 +19,7 @@ const { registerCommands } = require('./commands');
 
 // Bumped whenever extension-side behaviour changes, so the exthost log proves which
 // build is actually loaded instead of us inferring it from timestamps.
-const BUILD = '0.1.0+correctness-and-perf';
+const BUILD = '0.1.0+targeted-review-updates';
 
 let session = null;
 let prDocuments = null;
@@ -55,6 +55,7 @@ function activate(context) {
     resolver: owned.treeResolver,
   });
   session.provider = provider;
+  context.subscriptions.push(provider, decorate);
   const view = vscode.window.createTreeView('impactTree.changes',
     { treeDataProvider: provider, showCollapseAll: true, manageCheckboxStateManually: true });
   context.subscriptions.push(view);
@@ -62,20 +63,20 @@ function activate(context) {
   context.subscriptions.push(...navigation.disposables);
   const details = createDetailPanel(vscode, { provider, view, getState: () => owned.state, lineOf: readLineOfOffset, log });
   context.subscriptions.push(...details.disposables);
-  // The summary lives in the view's message and badge, and follows every repaint: a new
-  // result, a phase change, a tick, a filter. So do the status bar and the context keys.
+  // Counts follow presentation and progress events, independently of tree repaint scope.
   const showSummary = () => {
     const { message, badge } = provider.summarize();
-    view.message = message;
-    view.badge = badge;
+    if (view.message !== message) view.message = message;
+    if (view.badge?.value !== badge?.value || view.badge?.tooltip !== badge?.tooltip) view.badge = badge;
     navigation.update();
   };
-  context.subscriptions.push(provider.onDidChangeTreeData(showSummary));
+  context.subscriptions.push(provider.onDidChangePresentation(showSummary), provider.onDidChangeReview(showSummary));
   showSummary();
   context.subscriptions.push(view.onDidChangeCheckboxState((e) => {
+    const started = Date.now();
     // A file's checkbox ticks its changes; a change's ticks only itself, not its callers.
-    for (const [node, state] of e.items) provider.setChecked(node, state === vscode.TreeItemCheckboxState.Checked);
-    provider.refresh();
+    provider.setCheckedBatch(e.items.map(([row, state]) => ({ row, on: state === vscode.TreeItemCheckboxState.Checked })));
+    log(`checkbox: ${e.items.length} row(s), analysis=${owned.getAnalysisId()}, ${Date.now() - started}ms`);
   }));
 
   // ---- source picker: local modes and open pull requests -------------------
@@ -136,7 +137,7 @@ function activate(context) {
   session.previewPullRequest = previewPullRequest;
   session.checkoutAndAnalyse = checkoutAndAnalyse;
 
-  const openReview = createOpenReview(vscode, session);
+  const openReview = createOpenReview(vscode, session, { log });
   const lens = createReviewLens(vscode, { provider, getState: () => owned.state, callerUri: openReview.callerUri, positionOf: offsetToPosition, log });
   context.subscriptions.push(...lens.disposables);
 
@@ -150,7 +151,7 @@ function activate(context) {
     ...registerCommands(vscode, {
       BUILD, session, openReview, sources, gh, loadPrs, context, log, out,
     }),
-    ...registerContentProviders(vscode, { prDocuments, repoRoot: () => session.repoRoot(), gh, repoSlug }),
+    ...registerContentProviders(vscode, { prDocuments, repoRoot: () => session.repoRoot(), gh, repoSlug, log }),
   );
 
   if (vscode.workspace.getConfiguration('impactTree').get('prewarm', true)) {

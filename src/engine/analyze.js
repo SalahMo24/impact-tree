@@ -354,6 +354,10 @@ function inferredProjectFiles(repo, git) {
  * @param {(ctx: {ts: object, componentDir: string, component: string, repoRoot: string}) => object|null} [opts.makeResolver]
  *   Editor resolver for this project. When omitted, a language service is created per project.
  *   Returning null skips the project.
+ * @param {(result: object) => Promise<void>|void} [opts.onPrepared] Publishes a detached
+ *   snapshot of changed rows before caller queries. Coverage is explicitly pending.
+ * @param {(ctx: {ts: object, repo: string, git: object}) => object} [opts.makeModuleCallers]
+ *   Editor-owned worker index; omitted for the CLI's synchronous index.
  * @param {AbortSignal} [opts.signal] Stops the run: no caller query starts once it is
  *   aborted. A query already running is awaited, because the resolvers' services are
  *   disposed when the run ends; the editor's language server cannot be told to stop, so
@@ -458,6 +462,7 @@ async function analyze(repo, opts = {}) {
   let workspaceGraph;
   // Shared by every project: the index it builds on first use covers the whole worktree.
   let moduleCallers = null;
+  const plans = [];
   let compIndex = 0;
   const report = opts.onProgress || (() => {});
   try {
@@ -477,7 +482,8 @@ async function analyze(repo, opts = {}) {
       if (!ok) continue;
 
       const S = makeSymbols(ts);
-      if (!moduleCallers) moduleCallers = createModuleCallers(ts, repo, git);
+      if (!moduleCallers) moduleCallers = opts.makeModuleCallers
+        ? opts.makeModuleCallers({ ts, repo, git }) : createModuleCallers(ts, repo, git);
       if (entry.config === null) {
         warnings.push(`${compFiles.length} changed file(s) have no tsconfig.json or jsconfig.json — analysed as one inferred JavaScript project, as the editor does; callers in other files come from static import and require() statements`);
       }
@@ -523,6 +529,18 @@ async function analyze(repo, opts = {}) {
       }
 
       for (const c of changed) moduleCallers.hint(c);
+      require('./pending-analysis').initialisePending(changed);
+      plans.push({ comp, changed, deleted, resolver });
+    }
+    if (opts.onPrepared) {
+      const pendingComponents = plans.map(({ comp, changed, deleted }) => ({
+        component: comp, changed, deleted, roots: seedRoots(changed), forest: [], stats: {},
+      }));
+      await opts.onPrepared(require('./pending-analysis').snapshot(makeResult(pendingComponents, true)));
+      throwIfCancelled(signal);
+    }
+    for (const { comp, changed, deleted, resolver } of plans) {
+      throwIfCancelled(signal);
       const changedKeys = changedSymbolKeys(changed);
       const deferReach = opts.deferTestReach === true;
       let done = 0;
@@ -619,59 +637,64 @@ async function analyze(repo, opts = {}) {
   }
   if (moduleCallers) warnings.push(...moduleCallers.notes());
   if (droppedUntracked) warnings.push(`${droppedUntracked} caller(s) in untracked files ignored — they are not part of the committed change`);
-  const all = components.flatMap((c) => c.changed);
-  const allChangedKeys = changedSymbolKeys(all);
-  // A caller may belong to a different component whose symbols were parsed later.
-  for (const c of all) {
-    for (const caller of c.callers) {
-      caller.callState = classifyCallerUpdateState({
-        callSiteUpdates: caller.callSiteUpdates, callerChanged: allChangedKeys.has(`${caller.file}#${caller.pos}`),
-      });
+  return makeResult(components, false);
+
+  function makeResult(components, callersPending) {
+    const all = components.flatMap((c) => c.changed);
+    const allChangedKeys = changedSymbolKeys(all);
+    // A caller may belong to a different component whose symbols were parsed later.
+    for (const c of all) {
+      for (const caller of c.callers) {
+        caller.callState = classifyCallerUpdateState({
+          callSiteUpdates: caller.callSiteUpdates, callerChanged: allChangedKeys.has(`${caller.file}#${caller.pos}`),
+        });
+      }
+      c.staleChangedElsewhere = c.stale.filter(caller => caller.callState === 'changed-elsewhere').length;
     }
-    c.staleChangedElsewhere = c.stale.filter(caller => caller.callState === 'changed-elsewhere').length;
+    const markTree = node => {
+      if (node.file != null && node.pos != null) node.changed = allChangedKeys.has(`${node.file}#${node.pos}`);
+      for (const child of node.children || []) markTree(child);
+    };
+    for (const component of components) for (const tree of component.forest) markTree(tree);
+    const nested = nestedIds(all);
+    for (const c of all) c.isRoot = !nested.has(`${c.file}#${c.namePos}`);
+    // Same rule as the Tier A path: a source file we analysed but which produced no
+    // changed callable still changed, and must stay visible somewhere in the view.
+    const withSymbols = new Set([
+      ...all.map((c) => c.relPath),
+      ...components.flatMap((c) => c.deleted).map((d) => d.relPath),
+    ]);
+    const analysedPaths = new Set(files.map((f) => f.path).filter((p2) => withSymbols.has(p2)));
+    const otherFiles = everything
+      .filter((f) => !analysedPaths.has(f.path))
+      .map((f) => ({ path: f.path, status: f.status, noCallable: withSymbols.has(f.path) ? undefined : true }));
+    const result = {
+      callersPending,
+      allChanged: all.slice().sort((a, b) => b.score - a.score || a.label.localeCompare(b.label)),
+      nestedCount: nested.size,
+      otherFiles,
+      mode: effectiveMode, requestedMode: mode, modeDesc: effectiveCfg.desc, dirtyCount: dirty.length, base, warnings, concurrency, reachDepth: depth,
+      changedFileCount: files.length,
+      changedPaths: files.map((f) => f.path),
+      fileStatus: Object.fromEntries(everything.map((f) => [f.path, f.status])),
+      basePaths: Object.fromEntries(everything.filter(f => f.oldPath).map(f => [f.path, f.oldPath])),
+      changedRanges,
+      outside,
+      baseTexts,
+      excludedCallerPaths: headRev !== null ? [...untracked] : [],
+      unanalysable: [...unanalysable].map(([component, count]) => ({ component, count })),
+      components,
+      findings: all.filter((c) => c.kinds.some((k) => k.id !== 'body')).sort((a, b) => b.score - a.score),
+      deleted: components.flatMap((c) => c.deleted),
+      untested: all.filter((c) => c.testState === 'uncovered'),
+      testUnknown: all.filter((c) => c.testState === 'unknown'),
+      testReachComputed: all.length === 0 || all.some((c) => c.testState !== 'not-computed'),
+      unknownCallers: all.filter((c) => c.callerState === 'unknown'),
+    };
+    // The editor expands rows lazily through its own resolver; it must add the same
+    // module callers. Not enumerable: it is a live object, not part of the JSON result.
+    Object.defineProperty(result, 'moduleCallers', { value: moduleCallers, enumerable: false });
+    return result;
   }
-  const markTree = node => {
-    if (node.file != null && node.pos != null) node.changed = allChangedKeys.has(`${node.file}#${node.pos}`);
-    for (const child of node.children || []) markTree(child);
-  };
-  for (const component of components) for (const tree of component.forest) markTree(tree);
-  const nested = nestedIds(all);
-  for (const c of all) c.isRoot = !nested.has(`${c.file}#${c.namePos}`);
-  // Same rule as the Tier A path: a source file we analysed but which produced no
-  // changed callable still changed, and must stay visible somewhere in the view.
-  const withSymbols = new Set([
-    ...all.map((c) => c.relPath),
-    ...components.flatMap((c) => c.deleted).map((d) => d.relPath),
-  ]);
-  const analysedPaths = new Set(files.map((f) => f.path).filter((p2) => withSymbols.has(p2)));
-  const otherFiles = everything
-    .filter((f) => !analysedPaths.has(f.path))
-    .map((f) => ({ path: f.path, status: f.status, noCallable: withSymbols.has(f.path) ? undefined : true }));
-  const result = {
-    allChanged: all.slice().sort((a, b) => b.score - a.score || a.label.localeCompare(b.label)),
-    nestedCount: nested.size,
-    otherFiles,
-    mode: effectiveMode, requestedMode: mode, modeDesc: effectiveCfg.desc, dirtyCount: dirty.length, base, warnings, concurrency, reachDepth: depth,
-    changedFileCount: files.length,
-    changedPaths: files.map((f) => f.path),
-    fileStatus: Object.fromEntries(everything.map((f) => [f.path, f.status])),
-    basePaths: Object.fromEntries(everything.filter(f => f.oldPath).map(f => [f.path, f.oldPath])),
-    changedRanges,
-    outside,
-    baseTexts,
-    excludedCallerPaths: headRev !== null ? [...untracked] : [],
-    unanalysable: [...unanalysable].map(([component, count]) => ({ component, count })),
-    components,
-    findings: all.filter((c) => c.kinds.some((k) => k.id !== 'body')).sort((a, b) => b.score - a.score),
-    deleted: components.flatMap((c) => c.deleted),
-    untested: all.filter((c) => c.testState === 'uncovered'),
-    testUnknown: all.filter((c) => c.testState === 'unknown'),
-    testReachComputed: all.length === 0 || all.some((c) => c.testState !== 'not-computed'),
-    unknownCallers: all.filter((c) => c.callerState === 'unknown'),
-  };
-  // The editor expands rows lazily through its own resolver; it must add the same
-  // module callers. Not enumerable: it is a live object, not part of the JSON result.
-  Object.defineProperty(result, 'moduleCallers', { value: moduleCallers, enumerable: false });
-  return result;
 }
 module.exports = { analyze, MODES, loadTypeScript, rangesFor, withoutUntrackedCallers };

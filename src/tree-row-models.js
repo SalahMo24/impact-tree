@@ -205,6 +205,9 @@ const buildReachScopeNote = (result) => `no test within ${result.reachDepth ? `$
  * @returns {TreeRow[]|null}
  */
 function buildPlaceholderRows({ phase, busy, state }) {
+  // A prepared result belongs to the current run and is safe to review while callers
+  // are loading. The session clears the previous result before starting Refresh.
+  if ((phase === 'analysing' || phase === 'preparing' || busy) && state?.result?.callersPending) return null;
   if (phase === 'starting' || phase === 'preparing') {
     return [{ type: 'message', label: 'Preparing…', icon: 'loading~spin',
       desc: 'indexing the workspace — this happens once per window' }];
@@ -230,6 +233,8 @@ function buildPlaceholderRows({ phase, busy, state }) {
 function buildNoticeRows(r) {
   /** @type {TreeRow[]} */
   const rows = [];
+  if (r.callersPending) rows.push({ type: 'message', label: 'Resolving callers…', icon: 'loading~spin',
+    desc: 'changed files are ready to review', tooltip: 'Caller analysis is still running. Empty caller lists are not final results.' });
   // Tier A cannot see a caller in a file the PR does not touch. Presenting a truncated
   // tree as if it were complete is the one failure mode that would make this feature
   // worse than useless, so it is stated on the face of it.

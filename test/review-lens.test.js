@@ -198,18 +198,21 @@ test('in a preview only the head side of the pull request has lenses', () => wit
   assert.deepEqual(env.lensesFor(fileUri(env, 'a.ts')), [], 'the worktree file is not the pull request');
 }));
 
-test('the lenses are asked again when ticks, the filter or the result change', () => withEnv(async (env) => {
+test('the lenses follow ticks and results; filtering the tree does not invalidate them', t => withEnv(async (env) => {
   useResult(env);
   await env.refresh();
   let fired = 0;
   env.lensProvider().provider.onDidChangeCodeLenses(() => { fired++; });
   const [bad] = await rowsOf(env);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   env.tick(bad, true);
-  assert.equal(fired, 1, 'a tick');
+  t.mock.timers.tick(1);
+  t.mock.timers.reset();
+  assert.equal(fired, 1, 'a batched tick');
   env.tree().toggleFilter('attention');
-  assert.equal(fired, 2, 'a filter');
+  assert.equal(fired, 1, 'a tree filter changes no lens data');
   await env.refresh();
-  assert.ok(fired >= 3, 'a new result');
+  assert.ok(fired >= 2, 'a new result');
 }));
 
 test('the lens ticks its change on and off, and its title follows', () => withEnv(async (env) => {

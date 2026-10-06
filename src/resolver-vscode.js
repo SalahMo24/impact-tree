@@ -4,6 +4,7 @@ const { isTestFile } = require('./engine/diff');
 const { offsetToPosition, positionToOffset } = require('./engine/textpos');
 const { makeCqrsEdges } = require('./engine/edges-cqrs');
 const { createInheritanceFilter } = require('./engine/inheritance');
+const { withDeadline } = require('./engine/deadline');
 
 // Reuses the editor's already-running language server: no second program, incremental
 // for free, and any language with a call-hierarchy provider works, not just TypeScript.
@@ -12,7 +13,24 @@ const { createInheritanceFilter } = require('./engine/inheritance');
 // editor to sync the document to the extension host, which Cursor rejects for many
 // files ("Documents above the size limit cannot be synchronized with extensions") and
 // which costs a round trip per caller. Offsets are converted from disk instead.
-function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trace = () => {}, filterInherited = true, repoRoot = null } = {}) {
+function createVscodeResolver({ retries = 4, retryDelayMs = 250, queryTimeoutMs = 5000, ts = null, trace = () => {}, filterInherited = true, repoRoot = null } = {}) {
+  // Five seconds per provider command admits ordinary warm queries (median 384 ms
+  // in the live review) but stops a 27–92 s server stall from gating caller results.
+  // The provider keeps running; only this bounded wait ends. Timed-out answers are
+  // incomplete and never cached. Warm-up has its own total elapsed-time budget.
+  if (!Number.isSafeInteger(queryTimeoutMs) || queryTimeoutMs < 1 || queryTimeoutMs > 120000) throw new RangeError('query timeout must be 1..120000 ms');
+  // A timed-out command still consumes a real provider request. Keep at most 32
+  // outstanding requests (the maximum analysis concurrency), across generations,
+  // until the underlying promises settle. Later queries report incomplete coverage
+  // rather than accumulate an unbounded queue behind a stalled language server.
+  let providerRequests = 0;
+  const requestProvider = async (name, ...args) => {
+    if (providerRequests >= 32) throw new Error('language server has 32 outstanding requests — retry when it responds');
+    providerRequests++;
+    try { return await vscode.commands.executeCommand(name, ...args); }
+    finally { providerRequests--; }
+  };
+  const command = (name, ...args) => withDeadline(() => requestProvider(name, ...args), queryTimeoutMs, name);
   // Retrying is only meaningful until the language server has proven it is up. Once ANY
   // query has succeeded, retrying unsupported symbols no longer helps. Preserve
   // their unknown state without paying the startup backoff on every query.
@@ -55,9 +73,9 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
       if (!p2) return null;
       let locs = [];
       try {
-        locs = await vscode.commands.executeCommand('vscode.executeDefinitionProvider',
+        locs = await command('vscode.executeDefinitionProvider',
           vscode.Uri.file(file), new vscode.Position(p2.line, p2.character)) || [];
-      } catch { return null; }
+      } catch (e) { throw new Error(`definition lookup failed: ${e.message}`); }
       const l = locs[0];
       if (!l) return null;
       const uri = l.uri || l.targetUri;
@@ -75,9 +93,9 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
       let locs = [];
       for (let attempt = 0; attempt < (serverWarm ? 1 : 5); attempt++) {
         try {
-          locs = await vscode.commands.executeCommand('vscode.executeReferenceProvider',
+          locs = await command('vscode.executeReferenceProvider',
             vscode.Uri.file(file), new vscode.Position(p2.line, p2.character)) || [];
-        } catch { locs = []; }
+        } catch (e) { throw new Error(`reference lookup failed: ${e.message}`); }
         if (locs.length) { serverWarm = true; break; }
         if (serverWarm) break;
         stats.warmupRetries++;
@@ -103,14 +121,14 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       let items;
       try {
-        items = await vscode.commands.executeCommand('vscode.prepareCallHierarchy', uri, position);
+        items = await command('vscode.prepareCallHierarchy', uri, position);
       } catch (e) {
         return { ready: false, calls: [], reason: e && e.message };
       }
       if (items && items.length) {
         serverWarm = true;
         try {
-          const calls = await vscode.commands.executeCommand('vscode.provideIncomingCalls', items[0]);
+          const calls = await command('vscode.provideIncomingCalls', items[0]);
           if (!Array.isArray(calls)) return { ready: false, calls: [], reason: 'no incoming-call result' };
           return { ready: true, calls, empty: calls.length === 0 };
         } catch (e) {
@@ -130,7 +148,8 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
   // seconds on a large one). Concurrent queries all block behind it and each reports the
   // full wait. Warming up explicitly means that cost is paid once, ideally before the
   // user asks for anything.
-  async function warmUp(file, pos, { timeoutMs = 120000 } = {}) {
+  async function warmUp(file, pos, { timeoutMs = 15000 } = {}) {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120000) throw new RangeError('warm-up timeout must be 1..120000 ms');
     if (serverWarm) return true;
     const started = Date.now();
     let attempt = 0;
@@ -138,8 +157,9 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
       const p2 = offsetToPosition(file, pos);
       if (!p2) return false;
       try {
-        const items = await vscode.commands.executeCommand('vscode.prepareCallHierarchy',
-          vscode.Uri.file(file), new vscode.Position(p2.line, p2.character));
+        const remaining = timeoutMs - (Date.now() - started);
+        const items = await withDeadline(() => requestProvider('vscode.prepareCallHierarchy',
+          vscode.Uri.file(file), new vscode.Position(p2.line, p2.character)), remaining, 'language-server warm-up');
         if (items && items.length) {
           serverWarm = true;
           stats.warmUpMs = Date.now() - started;
@@ -148,7 +168,8 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
         }
       } catch { /* server still starting */ }
       attempt++;
-      await sleep(Math.min(250 * attempt, 2000));
+      const remaining = timeoutMs - (Date.now() - started);
+      if (remaining > 0) await sleep(Math.min(250 * attempt, 2000, remaining));
     }
     trace(`language server did not warm within ${timeoutMs}ms`);
     return false;
@@ -251,7 +272,7 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, ts = null, trac
       // none after a successful reference query with no use outside the declaration.
       const p = offsetToPosition(file, pos);
       try {
-        const refs = await vscode.commands.executeCommand('vscode.executeReferenceProvider',
+        const refs = await command('vscode.executeReferenceProvider',
           vscode.Uri.file(file), new vscode.Position(p.line, p.character));
         if (!Array.isArray(refs)) return { state: 'unknown', reason: 'no reference result', callers: [], complete: false };
         const used = refs.some(r => {

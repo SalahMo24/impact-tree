@@ -328,7 +328,7 @@ test('a counting row has its file as parent before anything under it was expande
   assert.equal(provider.getParent(await fileAt('notes.md')), undefined);
 });
 
-test('tree item ids are unique over every level of the tree, and caller and tests rows have none', async () => {
+test('tree item ids are unique over every level, including parent-scoped caller and tests rows', async () => {
   const twinA = change('src/a.ts', 'twin', 10, { callerState: 'resolved', callers: [callerOf('src/u.ts', 'u', false), callerOf('src/v.ts', 'u', false)] });
   const twinB = change('src/a.ts', 'twin', 40, { callerState: 'resolved', callers: [callerOf('src/u.ts', 'u', false)] });
   const sample = sampleResult();
@@ -337,10 +337,8 @@ test('tree item ids are unique over every level of the tree, and caller and test
   const ids = [];
   const walk = async (row) => {
     const id = item(row).id;
-    if (['reviewFile', 'file', 'finding', 'deleted', 'outside'].includes(row.type)) {
-      assert.equal(typeof id, 'string', `${row.type} ${row.label}`);
-      ids.push(id);
-    } else assert.equal(id, undefined, `${row.type} ${row.label} has no id`);
+    assert.equal(typeof id, 'string', `${row.type} ${row.label}`);
+    ids.push(id);
     for (const child of await provider.getChildren(row)) await walk(child);
   };
   for (const top of await provider.getChildren()) await walk(top);
@@ -355,8 +353,8 @@ test('the built rows are shared by the root, getParent, the walk and the summary
     getState: () => ({ result: current, rel: (f) => f.replace('/r/', ''), absPath: (p) => `/r/${p}` }), resolver: {},
     review: memoryReview(), getAnalysisId: () => analysisId,
   });
-  // the first file is shown as an expanded copy, so the second is the one to compare
-  const second = async () => (await provider.getChildren())[1];
+  // Even the initially expanded file is the canonical parent object.
+  const second = async () => (await provider.getChildren())[0];
   const before = await second();
   provider.summarize();
   provider.nextUnreviewed(null);

@@ -243,3 +243,36 @@ test('the view message and badge follow a new result and every tick', () => with
   assert.deepEqual(env.view().badge, { value: 1, tooltip: '1 of 2 left to review' });
   assert.equal(env.isTicked(file), false, 'unticking a change unticks its file');
 }));
+
+test('checkbox refreshes preserve diff commands and diagnostics report the editor actually shown', () => withEnv(async (env) => {
+  const file = path.join(env.dir, 'a.ts');
+  require('fs').writeFileSync(file, 'export function one() { return 1; }\n');
+  env.hooks.localResult = (o) => localResult(o, { findings: [finding('one', file, 5)] });
+  env.vscode.window.tabGroups = { activeTabGroup: { activeTab: { input: null } } };
+  env.hooks.onCommand = (command, original, modified) => {
+    if (command === 'vscode.diff') env.vscode.window.tabGroups.activeTabGroup.activeTab.input = { original, modified };
+  };
+  await env.refresh();
+  const [row] = await env.changeRows();
+  for (const on of [true, false, true]) {
+    env.tick(row, on);
+    await env.run('impactTree.openChange', row);
+  }
+  const diffs = env.seen.executed.filter(([command]) => command === 'vscode.diff');
+  assert.equal(diffs.length, 3);
+  assert.ok(diffs.every(([, original, modified]) => original.scheme === 'impacttree-base' && modified.fsPath === file));
+  assert.equal(env.seen.log.filter((m) => /completed diff.*active=diff/.test(m)).length, 3);
+  assert.equal(env.seen.log.filter((m) => /checkbox: 1 row/.test(m)).length, 3);
+
+  // A successful command promise alone does not prove the diff is the active editor.
+  env.hooks.onCommand = () => {
+    env.vscode.window.tabGroups.activeTabGroup.activeTab.input = { uri: env.vscode.Uri.file(file) };
+  };
+  await env.run('impactTree.openChange', row);
+  assert.match(env.seen.log.at(-1), /completed diff.*active=file/);
+
+  const failure = new Error('editor refused the diff');
+  env.hooks.onCommand = (command) => { if (command === 'vscode.diff') throw failure; };
+  await assert.rejects(env.run('impactTree.openChange', row), (error) => error === failure);
+  assert.match(env.seen.log.at(-1), /failed diff: editor refused the diff/);
+}));

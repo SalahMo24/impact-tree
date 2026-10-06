@@ -43,25 +43,36 @@ function createPrActions(vscode, session, { log, gh, repoSlug, sources, prDocume
           const { clearVirtualText } = require('./engine/textpos');
           clearVirtualText();
 
+          const publish = (result) => {
+            const currentPr = result.pr || pr;
+            if (!session.completeAnalysisRun(run, {
+              result, repo, expansionResolver: result.resolver,
+              source: { kind: 'pr', pr: currentPr }, viewExtras: { prText: new Map(result.texts) },
+            })) return false;
+            prDocuments.add(result);
+            session.review.configure(`v2:${repo}:pr:${currentPr.number}`,
+              require('./review-identity').createReviewIdentity(ts, repo, require('./review-identity').previewRevisions(result)));
+            session.provider.refresh();
+            return true;
+          };
+
           const result = await analyzeRemote({
             ts, gh, slug: repoSlug(), pr, repoRoot: repo,
             maxFiles: cfg.get('tierA.maxFiles', 300),
             concurrency: cfg.get('concurrency', 8),
-            onProgress: (p2) => progress.report({
+            onPrepared: (pending) => {
+              if (publish(pending)) log(`tier A: changed files ready in ${Date.now() - t0}ms; caller analysis continues`);
+            },
+            onProgress: (p2) => { if (!run.signal.aborted) progress.report({
               message: p2.total ? `${p2.message} ${p2.done}/${p2.total}` : p2.message,
-            }),
-            trace: (m) => log(`  tierA · ${m}`),
+            }); },
+            trace: (m) => { if (!run.signal.aborted) log(`  tierA · ${m}`); },
             signal: run.signal,
           });
 
           pr = result.pr || pr;
           // Text for the diff views, keyed the way the content provider looks it up.
-          const prText = new Map();
-          for (const [rel, t] of result.texts) prText.set(rel, t);
-          if (!session.completeAnalysisRun(run, {
-            result, repo, expansionResolver: result.resolver, source: { kind: 'pr', pr }, viewExtras: { prText },
-          })) return;
-          prDocuments.add(result);
+          if (!publish(result)) return;
 
           log(`tier A: PR #${pr.number} ${result.changedFileCount} file(s), `
             + `${result.allChanged.length} changed symbol(s), ${result.findings.length} finding(s) `
@@ -72,8 +83,6 @@ function createPrActions(vscode, session, { log, gh, repoSlug, sources, prDocume
             log(`  indexed ${st.indexedFiles} PR file(s); ${st.unknownTarget || 0} symbol(s) not in the index`);
           }
 
-          session.review.configure(`v2:${repo}:pr:${pr.number}`,
-            require('./review-identity').createReviewIdentity(ts, repo, require('./review-identity').previewRevisions(result)));
           vscode.window.setStatusBarMessage(
             `Impact Tree: PR #${pr.number} preview — ${result.findings.length} finding(s), PR files only`, 8000);
         });

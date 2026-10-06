@@ -1,15 +1,18 @@
 'use strict';
 const path = require('path');
+const { throwIfCancelled, isAnalysisCancelled } = require('./cancellation');
 
 // Read only configuration from the pinned PR head. Callers still come exclusively
 // from PR files; a local checkout's tsconfig must never influence a remote preview.
 async function remoteOptions(ts, gh, slug, headSha, root, files, warnings, signal) {
   const cache = new Map(), configs = new Map();
   const load = (rel) => {
+    throwIfCancelled(signal);
     if (!cache.has(rel)) cache.set(rel, (async () => {
       let text;
       try { text = await gh.fileAtRef(slug, rel, headSha, { signal }); }
-      catch (e) { warnings.push(`${rel}: configuration unavailable — ${e.message}`); return null; }
+      catch (e) { if (isAnalysisCancelled(e)) throw e; warnings.push(`${rel}: configuration unavailable — ${e.message}`); return null; }
+      throwIfCancelled(signal);
       if (text == null) return null;
       const abs = path.join(root, rel);
       configs.set(abs, text);
@@ -20,6 +23,7 @@ async function remoteOptions(ts, gh, slug, headSha, root, files, warnings, signa
     return cache.get(rel);
   };
   const parents = async (rel, cfg, seen = new Set()) => {
+    throwIfCancelled(signal);
     if (seen.has(rel)) return;
     seen.add(rel);
     for (const ext of [].concat(cfg.extends || [])) {
@@ -38,6 +42,7 @@ async function remoteOptions(ts, gh, slug, headSha, root, files, warnings, signa
   let cursor = 0;
   await Promise.all(Array.from({ length: Math.min(8, files.length) }, async () => {
     while (cursor < files.length) {
+      throwIfCancelled(signal);
       const file = files[cursor++];
       let dir = path.posix.dirname(file);
       for (;;) {
@@ -81,14 +86,16 @@ async function remotePackages(gh, slug, headSha, root, files, warnings, signal) 
   let cursor = 0;
   await Promise.all(Array.from({length: Math.min(8, entries.length)}, async () => {
     while (cursor < entries.length) {
+      throwIfCancelled(signal);
       const file = entries[cursor++];
       try {
         const text = await gh.fileAtRef(slug, file, headSha, { signal });
+        throwIfCancelled(signal);
         if (text == null) continue;
         const data = JSON.parse(text);
         // An unnamed manifest still decides whether its `.ts` files are ES modules.
         if (data !== null && typeof data === 'object' && !Array.isArray(data)) packages.push({ dir: path.join(root, path.posix.dirname(file)), data });
-      } catch (e) { warnings.push(`${file}: package metadata unavailable — ${e.message}`); }
+      } catch (e) { if (isAnalysisCancelled(e)) throw e; warnings.push(`${file}: package metadata unavailable — ${e.message}`); }
     }
   }));
   return packages;
