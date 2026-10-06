@@ -168,8 +168,9 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
   /** @param {{ selection: readonly TreeRow[] }} e */
   function onSelection(e) {
     const picked = e.selection[0];
-    // A cleared selection says nothing about what to explain.
-    if (!picked) return;
+    // A cleared selection says nothing about what to explain, and a spacer has nothing to show:
+    // the panel stays on the row it had.
+    if (!picked || picked.type === 'spacer') return;
     if (revealedFromCursor !== null && treeItemId(picked) === revealedFromCursor) return;
     revealedFromCursor = null;
     const owner = ownerOf(picked);

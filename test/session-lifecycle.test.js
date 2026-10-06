@@ -40,7 +40,7 @@ test('1. a newer refresh replaces an older one, whose late result, decorations a
       await olderRun;
 
       assert.deepEqual((await env.changeRows()).map((n) => n.label), ['newer']);
-      assert.match(messageOf(env), /against newer-base /);
+      assert.match(messageOf(env), /^pr mode · ⛔ /);
       assert.equal(decorationAt(env, older[0].file, older[0].namePos), undefined, 'no decoration of the older result');
       assert.notEqual(decorationAt(env, newer.file, newer.namePos), undefined);
       assert.deepEqual(env.seen.errors, []);
@@ -61,7 +61,7 @@ test('2. selectMode during a run produces a result in the newly selected mode', 
       first.release();
       await running;
       assert.deepEqual(env.seen.analyze.map((a) => a.mode), [from, to]);
-      assert.match(messageOf(env), new RegExp(`^${to} mode against `), 'the view shows the selected mode');
+      assert.match(messageOf(env), new RegExp(`^${to} mode · `), 'the view shows the selected mode');
       assert.deepEqual(env.seen.errors, []);
     }));
   }
@@ -95,7 +95,7 @@ test('4. a local refresh during a PR preview gives a local result, and the rever
     await preview;
     assert.equal(env.seen.analyze.length, 1, 'the local analysis ran');
     assert.ok(!(await rootLabels(env)).some((l) => PREVIEW_ROW.test(l)), 'the preview did not take over the view');
-    assert.match(messageOf(env), /^pr mode against /);
+    assert.match(messageOf(env), /^pr mode · /);
     await env.refresh();
     assert.deepEqual(env.seen.remote, [7], 'Refresh now follows the local analysis');
     assert.deepEqual(env.seen.errors, []);
@@ -278,7 +278,7 @@ test('10. an older run\'s finally never changes the state of a newer run', async
 
       second.release();
       await newerRun;
-      assert.match(messageOf(env), /^branch mode against /);
+      assert.match(messageOf(env), /^branch mode · /);
       assert.deepEqual(env.seen.errors, []);
     }));
   }

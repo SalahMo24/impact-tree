@@ -60,11 +60,13 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
   };
 
   // The row the walk starts after: the selection when it is a counting row or a file row,
-  // else the change a caller or tests row sits under.
+  // else the change a caller or tests row sits under, or the last row of a spacer's file.
   /** @returns {TreeRow|null} */
   const startOfWalk = () => {
     /** @type {TreeRow|undefined} */
     let row = view.selection[0];
+    // A file's spacer stands for the end of the file it closes: the walk goes on after it.
+    if (row && row.type === 'spacer') row = provider.changeRowsOf(row.relPath).at(-1) || provider.getParent(row);
     while (row && treeItemId(row) === undefined) row = provider.getParent(row);
     return row || null;
   };

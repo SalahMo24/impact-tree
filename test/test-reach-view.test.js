@@ -31,7 +31,7 @@ async function rowsOf(result, rowDetail = 'inline') {
   });
   const file = (await provider.getChildren()).find((r) => r.type === 'reviewFile');
   const out = {};
-  for (const row of await provider.getChildren(file)) {
+  for (const row of (await provider.getChildren(file)).filter((r) => r.type !== 'spacer')) {
     const tests = (await provider.getChildren(row)).at(-1);
     out[row.label] = { item: provider.getTreeItem(row), tests, testsItem: provider.getTreeItem(tests) };
   }

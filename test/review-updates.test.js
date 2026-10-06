@@ -126,7 +126,7 @@ test('filtered progress refreshes the parent until root membership changes; Deta
   uiClock(t);
   env.tick(first, true);
   assert.deepEqual(events, [aFile]);
-  assert.deepEqual((await tree.getChildren(aFile)).map(r => r.label), ['second']);
+  assert.deepEqual((await tree.getChildren(aFile)).map(r => r.label), ['second', ''], 'the visible row, then the spacer');
   env.tick(second, true);
   assert.deepEqual(events, [aFile, undefined]);
   assert.ok(!(await tree.getChildren()).some(r => r === aFile));

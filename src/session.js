@@ -111,7 +111,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
       classifyCallSiteUpdates: classifyCallSiteUpdatesFor(result, repo),
       rel: (f) => path.relative(repo, f).split(path.sep).join('/'),
       absPath: (p2) => path.join(repo, p2),
-      iconMode: cfg.get('iconMode', 'file'),
+      iconMode: cfg.get('iconMode', 'symbol'),
       rowDetail: cfg.get('rowDetail', 'hover'),
       error: null,
       ...extra,

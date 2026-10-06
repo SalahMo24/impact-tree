@@ -54,13 +54,15 @@ function createDecorationProvider(vscode) {
       return Object.keys(deco).length ? deco : undefined;
     },
     // called as nodes are built; fire once per batch so VS Code re-renders
-    /** @param {any} uri @param {{ status?: string, tooltip?: string }} decoration */
-    register(uri, { status, tooltip }) {
+    // `tint: false` keeps the badge and tooltip but leaves the label's colour alone: a row
+    // that is not a file (a change inside one) shows the status letter without turning orange.
+    /** @param {any} uri @param {{ status?: string, tooltip?: string, tint?: boolean }} decoration */
+    register(uri, { status, tooltip, tint = true }) {
       if (disposed) return;
       const badge = STATUS_BADGE[status || ''];
       const next = {
         badge: badge || undefined,
-        color: STATUS_COLOR[status || ''] || undefined,
+        color: tint ? STATUS_COLOR[status || ''] || undefined : undefined,
         tooltip: badge ? `${STATUS_LABEL[status || '']}${tooltip ? ` — ${tooltip}` : ''}` : tooltip,
       };
       const previous = byKey.get(key(uri));

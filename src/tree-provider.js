@@ -84,7 +84,7 @@ function createTreeProvider(vscode, {
     const st = getState();
     return {
       rowDetail: (st && st.rowDetail) || 'hover',
-      iconMode: (st && st.iconMode) || 'file',
+      iconMode: (st && st.iconMode) || 'symbol',
       checkedOf,
     };
   };
@@ -118,9 +118,10 @@ function createTreeProvider(vscode, {
    * @param {any} uri
    * @param {string|undefined} status
    * @param {string} tooltip
+   * @param {boolean} [tint] False for the badge without the label colour.
    */
-  const mark = (analysisId, uri, status, tooltip) => {
-    if (decorate && uri && isCurrentAnalysis(analysisId)) decorate.register(uri, { status, tooltip });
+  const mark = (analysisId, uri, status, tooltip, tint = true) => {
+    if (decorate && uri && isCurrentAnalysis(analysisId)) decorate.register(uri, { status, tooltip, tint });
     return uri;
   };
   /**
@@ -128,7 +129,7 @@ function createTreeProvider(vscode, {
    * @param {DecorationRequest[]} requests
    */
   const publishDecorations = (analysisId, requests) => {
-    for (const d of requests) mark(analysisId, d.uri, d.status, d.tooltip);
+    for (const d of requests) mark(analysisId, d.uri, d.status, d.tooltip, d.tint);
   };
   let disposed = false;
   // One provider-owned timer batches all row reads in this event-loop turn. Disposal
@@ -226,6 +227,13 @@ function createTreeProvider(vscode, {
    * @returns {TreeRow[]}
    */
   const visibleRows = (file) => reviewTree.filterFileRows([file], filter, isReviewed).flatMap((e) => e.rows);
+  // The children of an open file: its visible rows and the gap after them, or nothing
+  // when the filter hides every row.
+  /** @param {TreeRow} file @returns {TreeRow[]} */
+  const fileChildren = (file) => {
+    const rows = visibleRows(file);
+    return rows.length ? [...rows, reviewTree.buildSpacerRow(file)] : rows;
+  };
 
   // The callers and tests row under a change, from the result: no query.
   /**
@@ -374,7 +382,7 @@ function createTreeProvider(vscode, {
       if (disposed) return [];
       if (!node) return rootRows(getState(), analysisId);
       switch (node.type) {
-        case 'reviewFile': return adopt(node, visibleRows(node));
+        case 'reviewFile': return adopt(node, fileChildren(node));
         case 'finding': return adopt(node, impactRows(node, analysisId));
         case 'caller': return node.cycle ? [] : adopt(node, await callerRows(node, analysisId));
         case 'callerFile': return adopt(node, node.callers);

@@ -431,8 +431,8 @@ test('toggling a filter turns it on, turns the other off, and a second toggle re
 test('the summary names a filter that narrows the tree and says nothing for all', () => {
   const result = { mode: 'branch', base: { ref: 'main' } };
   const counts = { total: 5, left: 3, attention: 1 };
-  assert.equal(model.buildReviewSummary(result, null, counts).message, 'branch mode against main · 1 need attention · 3 of 5 left');
-  assert.equal(model.buildReviewSummary(result, null, counts, 'all').message, 'branch mode against main · 1 need attention · 3 of 5 left');
+  assert.equal(model.buildReviewSummary(result, null, counts).message, 'branch mode · ⛔ 1 · 3 of 5 left');
+  assert.equal(model.buildReviewSummary(result, null, counts, 'all').message, 'branch mode · ⛔ 1 · 3 of 5 left');
   assert.match(model.buildReviewSummary(result, null, counts, 'attention').message, / · filter: needs attention$/);
   assert.match(model.buildReviewSummary(result, null, counts, 'unreviewed').message, / · filter: unreviewed$/);
 });
@@ -570,7 +570,9 @@ test('review ids of the new rows equal the ids the old tree gives the same symbo
     getState: () => ({ result, rel: (f) => f.replace(`${root}/`, ''), absPath: (p) => `${root}/${p}` }), resolver: {}, review,
   });
   const shown = [];
-  for (const top of await provider.getChildren()) shown.push(top, ...(top.type === 'reviewFile' ? await provider.getChildren(top) : []));
+  for (const top of await provider.getChildren()) {
+    shown.push(top, ...(top.type === 'reviewFile' ? (await provider.getChildren(top)).filter((r) => r.type !== 'spacer') : []));
+  }
   assert.deepEqual(shown.map((r) => [r.type, provider.getTreeItem(r).checkboxState]),
     [['reviewFile', 1], ['deleted', 1], ['finding', 1], ['outside', 1], ['file', 1]]);
 });

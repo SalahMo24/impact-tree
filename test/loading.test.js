@@ -38,7 +38,7 @@ test('local rows and diff commands are usable during warm-up; ticks survive fina
   const warm = env.holds.warmUp.next();
   const run = env.refresh();
   await warm.reached;
-  assert.match(env.view().message, /against main/);
+  assert.match(env.view().message, /^pr mode · ⛔ 1 · 1 of 1 left$/);
   assert.ok((await env.tree().getChildren()).some(row => row.label === 'Resolving callers…'));
   const [row] = await env.changeRows();
   env.tick(row, true);

@@ -43,7 +43,7 @@ const sendAction = (details, message) => details.send(pageAction(details, messag
 const fileUri = (env, rel) => env.vscode.Uri.file(path.join(env.dir, rel));
 const rowsOf = async (env) => {
   const files = await env.tree().getChildren();
-  return { files, a: await env.tree().getChildren(files[0]) };
+  return { files, a: (await env.tree().getChildren(files[0])).filter((r) => r.type !== 'spacer') };
 };
 
 test('the view is a webview under the change view, with scripts on and no local resources', () => withEnv(async (env) => {
@@ -158,6 +158,21 @@ test('in a preview only the pull request\'s head side is followed', () => withEn
   env.moveCursor(side('head'), 11);
   assert.match(textOf(details), /^at cursor, line 11 bad /);
   assert.match(textOf(details), /Preview: only callers in the pull request's own files are shown\./);
+}));
+
+test('selecting a file\'s spacer changes nothing in Details', () => withEnv(async (env) => {
+  useResult(env);
+  await env.refresh();
+  const details = env.openDetails();
+  const { files, a } = await rowsOf(env);
+  const spacer = (await env.tree().getChildren(files[0])).at(-1);
+  assert.equal(spacer.type, 'spacer');
+  env.select([a[1]]);
+  const shown = details.displayHtml;
+  env.select([spacer]);
+  assert.equal(details.displayHtml, shown, 'the previous row stays shown');
+  assert.match(textOf(details), /^selected in tree reach /);
+  assert.deepEqual(env.seen.revealed, []);
 }));
 
 test('a tree selection shows that row; a caller or tests row shows its change', () => withEnv(async (env) => {

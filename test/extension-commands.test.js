@@ -233,11 +233,11 @@ test('the view message and badge follow a new result and every tick', () => with
   env.hooks.localResult = (o) => localResult(o, { findings: [finding('one', a, 5), finding('two', a, 40)] });
   assert.equal(env.view().message, undefined, 'nothing is shown before an analysis');
   await env.refresh();
-  assert.equal(env.view().message, 'pr mode against main · 0 need attention · 2 of 2 left');
+  assert.equal(env.view().message, 'pr mode · ⛔ 0 · 2 of 2 left');
   assert.deepEqual(env.view().badge, { value: 2, tooltip: '2 of 2 left to review' });
   const [file] = (await env.tree().getChildren()).filter((r) => r.type === 'reviewFile');
   env.tick(file, true);
-  assert.equal(env.view().message, 'pr mode against main · 0 need attention · 0 of 2 left');
+  assert.equal(env.view().message, 'pr mode · ⛔ 0 · 0 of 2 left');
   assert.equal(env.view().badge, undefined);
   env.tick((await env.changeRows())[1], false);
   assert.deepEqual(env.view().badge, { value: 1, tooltip: '1 of 2 left to review' });
