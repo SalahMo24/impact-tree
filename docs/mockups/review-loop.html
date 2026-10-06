@@ -1,0 +1,1281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Impact Tree: review loop mockup</title>
+<style>
+  :root {
+    --bg: #1e1e1e; --side: #252526; --act: #333333; --title: #3c3c3c; --border: #3c3c3c;
+    --fg: #cccccc; --dim: #8b8b8b; --faint: #6a6a6a; --hover: #2a2d2e; --sel: #04395e; --focus: #007fd4;
+    --red: #f14c4c; --amber: #cca700; --green: #89d185; --blue: #3794ff; --purple: #b180d7;
+    --add-bg: rgba(155,185,85,.18); --del-bg: rgba(255,80,80,.18); --add-gut: rgba(155,185,85,.45); --del-gut: rgba(255,80,80,.45);
+    --mono: Menlo, Monaco, "SF Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #111; color: var(--fg); font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .page-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 8px 16px; background: #181818; border-bottom: 1px solid #000; }
+  .page-head h1 { font-size: 14px; margin: 0; font-weight: 600; }
+  .page-head .src { color: var(--dim); font-size: 12px; }
+  .tabs { display: flex; gap: 4px; margin-left: auto; }
+  .tabs button, .toggle { background: #2d2d2d; color: var(--fg); border: 1px solid #444; padding: 4px 10px; border-radius: 3px; cursor: pointer; font: inherit; font-size: 12px; }
+  .tabs button.on { background: #0e639c; border-color: #1177bb; }
+  .toggle.on { border-color: var(--focus); }
+  .screen { display: none; } .screen.on { display: block; }
+
+  /* window chrome */
+  .window { display: grid; grid-template-columns: 48px 380px 1fr; grid-template-rows: 1fr 22px; height: calc(100vh - 74px); min-height: 640px; }
+  .activity { background: var(--act); display: flex; flex-direction: column; align-items: center; padding-top: 8px; gap: 18px; color: var(--faint); font-size: 20px; }
+  .activity .on { color: #fff; border-left: 2px solid #fff; width: 100%; text-align: center; }
+  .sidebar { background: var(--side); display: flex; flex-direction: column; min-height: 0; border-right: 1px solid #1a1a1a; }
+  .pane-title { display: flex; align-items: center; height: 35px; padding: 0 8px 0 20px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: #bbb; }
+  .pane-title .actions { margin-left: auto; display: flex; gap: 2px; }
+  .icon-btn { background: none; border: 0; color: var(--fg); width: 24px; height: 22px; border-radius: 4px; cursor: pointer; font-size: 13px; position: relative; }
+  .icon-btn:hover { background: rgba(90,93,94,.31); }
+  .icon-btn.on { background: rgba(90,93,94,.5); outline: 1px solid var(--focus); }
+  .section-head { display: flex; align-items: center; height: 22px; padding-left: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; border-top: 1px solid #3c3c3c; cursor: pointer; }
+  .section-head .chev { width: 16px; text-align: center; }
+  .tree-pane { flex: 1 1 60%; min-height: 0; display: flex; flex-direction: column; }
+  .tree-message { padding: 4px 12px 8px 20px; color: var(--fg); font-size: 12px; }
+  .tree-message .meter { height: 3px; background: #3a3a3a; border-radius: 2px; margin-top: 5px; overflow: hidden; }
+  .tree-message .meter span { display: block; height: 100%; background: var(--green); }
+  .tree { overflow-y: auto; flex: 1; outline: none; }
+  .row { display: flex; align-items: center; height: 22px; padding-right: 8px; cursor: pointer; white-space: nowrap; position: relative; }
+  .row:hover { background: var(--hover); }
+  .row.spacer { cursor: default; } .row.spacer:hover { background: none; }
+  .row.sel { background: var(--sel); outline: 1px solid var(--focus); outline-offset: -1px; }
+  .row .twist { width: 16px; flex: none; text-align: center; color: #c5c5c5; font-size: 10px; }
+  .row .cb { width: 14px; height: 14px; flex: none; margin-right: 6px; border: 1px solid #6b6b6b; border-radius: 3px; background: #313131; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; color: #fff; }
+  .row .cb.on { background: #0e639c; border-color: #0e639c; }
+  .row .cb.part::after { content: ""; width: 7px; height: 2px; background: #ccc; }
+  .row .ico { width: 16px; flex: none; margin-right: 6px; text-align: center; font-size: 12px; }
+  .row .label { flex: none; }
+  .row .desc { color: var(--dim); margin-left: 6px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; min-width: 0; flex: 0 1 auto; }
+  .row .right { margin-left: auto; padding-left: 8px; display: flex; gap: 6px; align-items: center; flex: none; }
+  .row.done .label { color: var(--dim); }
+  .badge { font-size: 11px; color: var(--dim); }
+  .status-letter { font-size: 11px; width: 12px; text-align: center; }
+  .st-modified { color: #e2c08d; } .st-added { color: #73c991; } .st-deleted { color: #c74e39; }
+  .lead { font-weight: 600; margin-right: 4px; flex: none; }
+  .lv0 { color: var(--red); } .lv1 { color: var(--amber); } .lv2 { color: var(--green); } .lv3 { color: var(--blue); } .lv4 { color: var(--faint); }
+  .chip { font-size: 10.5px; padding: 0 5px; border-radius: 8px; border: 1px solid #555; color: #bbb; line-height: 15px; }
+  .chip.risk { border-color: rgba(241,76,76,.6); color: #f48771; }
+  .chip.untested { border-color: rgba(204,167,0,.5); color: #d7ba7d; }
+  .future { outline: 1px dashed var(--purple); outline-offset: 1px; border-radius: 3px; color: var(--purple); }
+  .future-row { color: var(--purple) !important; }
+
+  .detail-pane { flex: 0 1 40%; min-height: 120px; overflow-y: auto; border-top: 1px solid #3c3c3c; }
+  .detail { padding: 6px 14px 14px 20px; font-size: 12.5px; }
+  .detail h3 { font-size: 13px; margin: 6px 0 2px; font-family: var(--mono); font-weight: 600; }
+  .detail .where { color: var(--dim); font-size: 12px; }
+  .detail .verdict { margin: 10px 0; padding: 7px 9px; border-left: 3px solid var(--dim); background: rgba(255,255,255,.04); }
+  .detail .verdict.lv0 { border-color: var(--red); color: var(--fg); } .detail .verdict.lv1 { border-color: var(--amber); color: var(--fg); }
+  .detail .verdict.lv2 { border-color: var(--green); color: var(--fg); } .detail .verdict.lv3 { border-color: var(--blue); color: var(--fg); }
+  .detail .verdict.lv4 { color: var(--fg); }
+  .detail h4 { font-size: 11px; text-transform: uppercase; color: var(--dim); margin: 12px 0 4px; letter-spacing: .04em; }
+  .sig { font-family: var(--mono); font-size: 11.5px; padding: 2px 6px; white-space: pre-wrap; word-break: break-all; }
+  .sig.old { background: var(--del-bg); } .sig.new { background: var(--add-bg); }
+  .detail table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  .detail td { padding: 2px 4px; vertical-align: top; }
+  .detail td.st { width: 18px; text-align: center; }
+  .detail a { color: #3794ff; text-decoration: none; cursor: pointer; }
+  .btn { background: #0e639c; color: #fff; border: 0; padding: 4px 10px; border-radius: 2px; font: inherit; font-size: 12px; cursor: pointer; margin-right: 6px; }
+  .btn.sec { background: #3a3d41; }
+  .kbd { font-family: var(--mono); font-size: 10.5px; border: 1px solid #555; border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; color: #bbb; }
+
+  /* editor */
+  .editor { background: var(--bg); display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .editor-tabs { display: flex; background: var(--side); height: 35px; }
+  .editor-tab { padding: 0 14px; display: flex; align-items: center; gap: 6px; background: var(--bg); border-top: 1px solid var(--focus); font-size: 12.5px; }
+  .editor-tab .dim { color: var(--dim); }
+  .crumbs { padding: 2px 16px; color: var(--dim); font-size: 12px; height: 22px; }
+  .code { flex: 1; overflow: auto; font: 12px/18px var(--mono); padding-bottom: 40px; }
+  .ln { display: flex; white-space: pre; }
+  .ln .g { width: 44px; flex: none; text-align: right; padding-right: 8px; color: #6e7681; user-select: none; }
+  .ln .m { width: 14px; flex: none; color: #6e7681; user-select: none; }
+  .ln .s { padding-right: 20px; }
+  .ln.add { background: var(--add-bg); } .ln.add .m { color: var(--green); }
+  .ln.del { background: var(--del-bg); } .ln.del .m { color: var(--red); }
+  .ln.focus .g { color: #c6c6c6; }
+  .ln { cursor: text; }
+  .ln.cursor { box-shadow: inset 0 1px #3a3a3a, inset 0 -1px #3a3a3a; }
+  .ln.cursor .g { color: #fff; }
+  .ln.cursor .s::before { content: ''; border-left: 2px solid #aeafad; margin-right: -2px; }
+  .code:focus { outline: none; }
+  .follow { margin-left: auto; margin-right: 8px; font-weight: 400; text-transform: none; color: var(--dim); }
+  .hunk-gap { color: #6e7681; padding: 2px 0 2px 66px; background: rgba(55,148,255,.06); font-size: 11px; }
+  .lens { font: 11.5px/18px -apple-system, BlinkMacSystemFont, sans-serif; color: #999; padding-left: 66px; white-space: nowrap; }
+  .lens a { color: #999; cursor: pointer; } .lens a:hover { color: var(--blue); text-decoration: underline; }
+  .lens .sep { margin: 0 6px; color: #555; }
+  .peek { margin: 2px 0 6px 60px; border-top: 2px solid var(--blue); border-bottom: 2px solid var(--blue); background: #1b2733; display: grid; grid-template-columns: 1fr 260px; font-family: -apple-system, sans-serif; font-size: 12px; max-width: 980px; }
+  .peek-head { grid-column: 1 / 3; background: #1f3044; padding: 3px 10px; color: #ddd; display: flex; gap: 8px; }
+  .peek-head .dim { color: var(--dim); }
+  .peek-code { font: 12px/18px var(--mono); background: #1e1e1e; padding: 6px 0; min-height: 120px; }
+  .peek-code .hl { background: rgba(255, 213, 0, .15); }
+  .peek-list { background: #252526; border-left: 1px solid #333; max-height: 220px; overflow-y: auto; }
+  .peek-file { padding: 3px 8px; color: #ccc; font-weight: 600; }
+  .peek-item { padding: 2px 8px 2px 22px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .peek-item.on { background: var(--sel); }
+  .statusbar { grid-column: 1 / 4; background: #007acc; color: #fff; display: flex; align-items: center; gap: 14px; padding: 0 10px; font-size: 12px; }
+  .statusbar .r { margin-left: auto; display: flex; gap: 14px; }
+  .statusbar span { cursor: default; }
+
+  /* annotations */
+  .anno { display: none; position: absolute; z-index: 5; background: var(--purple); color: #111; font: 700 10px/16px sans-serif; width: 16px; height: 16px; border-radius: 50%; text-align: center; pointer-events: none; }
+  body.annotate .anno { display: inline-block; }
+  .notes { display: none; position: fixed; right: 14px; bottom: 34px; width: 430px; max-height: 60vh; overflow-y: auto; background: #2b2133; border: 1px solid var(--purple); border-radius: 6px; padding: 10px 14px; font-size: 12px; z-index: 10; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+  body.annotate .notes { display: block; }
+  .notes h4 { margin: 0 0 6px; color: #e0c8f5; }
+  .notes ol { padding-left: 18px; margin: 0; } .notes li { margin-bottom: 6px; }
+  .notes code { font-family: var(--mono); font-size: 11px; color: #e0c8f5; }
+
+  /* today + questions */
+  .doc { max-width: 1100px; margin: 0 auto; padding: 20px; }
+  .compare { display: grid; grid-template-columns: 420px 1fr; gap: 24px; }
+  .compare .sidebar { border: 1px solid #000; height: auto; max-height: calc(100vh - 120px); overflow-y: auto; }
+  .doc h2 { font-size: 16px; } .doc p, .doc li { color: #bbb; }
+  .doc .stat { font-size: 28px; font-weight: 600; color: var(--red); }
+  .q { background: #252526; border: 1px solid #3c3c3c; border-radius: 6px; padding: 12px 16px; margin-bottom: 12px; }
+  .q h3 { margin: 0 0 6px; font-size: 14px; }
+  .q .opt { margin: 4px 0 0 14px; color: #bbb; }
+  .q .rec { color: var(--green); } .q .alt { color: var(--dim); }
+  /* ---- review loop additions ---- */
+  .scenario { display: flex; gap: 6px; align-items: center; color: var(--dim); font-size: 12px; order: 3; flex-basis: 100%; }
+  .scenario .gap { width: 10px; }
+  .ln .g { position: relative; }
+  .ln .plus { position: absolute; left: 2px; top: 1px; width: 15px; height: 15px; line-height: 14px; text-align: center; border-radius: 3px; background: #0e639c; color: #fff; font-size: 12px; display: none; cursor: pointer; }
+  .ln:hover .plus { display: block; }
+  .thread { margin: 4px 0 8px 60px; max-width: 760px; border-top: 2px solid var(--blue); border-bottom: 2px solid var(--blue); background: #252526; font: 12.5px/1.45 -apple-system, BlinkMacSystemFont, sans-serif; cursor: default; }
+  .thread.resolved { border-color: #555; }
+  .thread.pending-only { border-color: var(--amber); }
+  .thread-head { display: flex; gap: 8px; align-items: center; padding: 4px 10px; background: #2d2d30; color: #ddd; font-size: 12px; }
+  .thread-head .dim { color: var(--dim); }
+  .thread-head .acts { margin-left: auto; display: flex; gap: 10px; }
+  .thread-head a, .thread a.lnk { color: #3794ff; cursor: pointer; }
+  .cmt { display: flex; gap: 8px; padding: 8px 10px 4px; }
+  .av { width: 22px; height: 22px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #111; }
+  .cmt .who { font-weight: 600; } .cmt .when { color: var(--dim); font-size: 11.5px; margin-left: 6px; }
+  .cmt .body { margin-top: 2px; white-space: pre-wrap; }
+  .cmt .body code { font-family: var(--mono); font-size: 11.5px; background: rgba(255,255,255,.07); padding: 0 3px; border-radius: 3px; }
+  .tag { font-size: 10.5px; padding: 0 6px; border-radius: 8px; line-height: 16px; border: 1px solid #555; color: #bbb; margin-left: 6px; }
+  .tag.pending { border-color: rgba(204,167,0,.7); color: #e2c08d; }
+  .tag.outdated { border-color: #666; color: var(--dim); }
+  .tag.resolved { border-color: rgba(137,209,133,.6); color: var(--green); }
+  .tag.unresolved { border-color: rgba(55,148,255,.6); color: #75beff; }
+  .composer { padding: 6px 10px 10px 40px; }
+  .composer textarea { width: 100%; min-height: 54px; resize: vertical; background: #1e1e1e; color: var(--fg); border: 1px solid #3c3c3c; border-radius: 2px; font: 12.5px/1.4 -apple-system, sans-serif; padding: 6px; }
+  .composer textarea:focus { outline: 1px solid var(--focus); }
+  .composer .row-btns { margin-top: 6px; display: flex; gap: 6px; align-items: center; }
+  .composer .hint { color: var(--dim); font-size: 11.5px; margin-left: auto; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn.warn { background: #8a5a00; }
+  .resolved-line { padding: 4px 10px; color: var(--dim); cursor: pointer; }
+  .file-comments { margin: 6px 0 8px 60px; }
+  .tcount { font-size: 11px; color: #75beff; }
+  .pcount { font-size: 11px; color: #e2c08d; }
+  .viewed { font-size: 11px; color: var(--dim); }
+  .viewed.ok { color: var(--green); } .viewed.changed { color: var(--amber); } .viewed.bad { color: var(--red); cursor: pointer; text-decoration: underline dotted; }
+  .detail .th { padding: 5px 8px; margin: 4px 0; background: rgba(255,255,255,.04); border-left: 3px solid #3794ff; cursor: pointer; }
+  .detail .th.resolved { border-left-color: #555; color: var(--dim); }
+  .detail .th.pending { border-left-color: var(--amber); }
+  .detail .th .first { color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .detail .th .meta { color: var(--dim); font-size: 11.5px; }
+  .detail .orig { font-family: var(--mono); font-size: 11.5px; background: var(--del-bg); padding: 2px 6px; margin-top: 4px; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+  .detail label { display: block; margin: 4px 0; cursor: pointer; }
+  .detail textarea { width: 100%; min-height: 70px; background: #1e1e1e; color: var(--fg); border: 1px solid #3c3c3c; border-radius: 2px; font: 12.5px/1.4 -apple-system, sans-serif; padding: 6px; resize: vertical; }
+  .guard { margin: 10px 0; padding: 8px 10px; border-left: 3px solid var(--amber); background: rgba(204,167,0,.08); }
+  .guard ul { margin: 4px 0 6px 16px; padding: 0; }
+  .guard.block { border-left-color: var(--red); background: rgba(241,76,76,.08); }
+  .err { color: #f48771; font-size: 12px; margin-top: 6px; }
+  .toast { position: fixed; right: 18px; bottom: 34px; width: 380px; background: #252526; border: 1px solid #454545; box-shadow: 0 6px 20px rgba(0,0,0,.55); border-radius: 4px; padding: 10px 12px; font-size: 12.5px; z-index: 20; display: none; }
+  .toast.on { display: block; }
+  .toast .ti { color: #3794ff; margin-right: 6px; }
+  .sb-review { cursor: pointer !important; padding: 0 6px; }
+  .sb-review.has { background: rgba(255,255,255,.15); border-radius: 3px; }
+  .invented { color: var(--amber); }
+  .detail-pane.tall { flex-basis: 70%; }
+  /* ---- walkthrough 2 additions ---- */
+  .seg { display: inline-flex; border: 1px solid #444; border-radius: 3px; overflow: hidden; }
+  .seg button { background: #2d2d2d; color: var(--fg); border: 0; border-right: 1px solid #444; padding: 4px 8px; cursor: pointer; font: inherit; font-size: 12px; }
+  .seg button:last-child { border-right: 0; }
+  .seg button.on { background: #0e639c; }
+  .row .ico.sym-method { color: #b180d7; } .row .ico.sym-function { color: #b180d7; } .row .ico.sym-outside { color: #c5c5c5; font-family: var(--mono); font-size: 11px; }
+  .row .ico.sym-deleted { color: var(--dim); }
+  .row .ico.ft { font: 700 9.5px/16px var(--mono); color: #519aba; }
+  .row .ico.ft.json { color: #cbcb41; } .row .ico.ft.md { color: #519aba; }
+  .row .label.st-added { color: #73c991; } .row .label.st-modified { color: #e2c08d; }
+  .detail-progress { position: sticky; top: 0; z-index: 2; background: var(--side); padding: 6px 14px 8px 20px; border-bottom: 1px solid #333; font-size: 12px; }
+  .detail-progress .meter { height: 4px; background: #3a3a3a; border-radius: 2px; margin-top: 5px; overflow: hidden; display: flex; }
+  .detail-progress .meter span { display: block; height: 100%; }
+  .detail-progress .meter .done { background: var(--green); }
+  .detail-progress .meter .att { background: var(--red); }
+  .detail-progress .nums { display: flex; gap: 10px; }
+  .detail-progress .nums .r { margin-left: auto; color: var(--dim); }
+  .editor-tabs .title-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; padding-right: 10px; position: relative; }
+  .gh-btn { background: #238636; color: #fff; border: 1px solid rgba(240,246,252,.1); border-radius: 6px; padding: 3px 12px; font: 600 12px/20px -apple-system, BlinkMacSystemFont, sans-serif; cursor: pointer; }
+  .gh-btn .n { background: rgba(255,255,255,.2); border-radius: 10px; padding: 0 6px; margin-left: 4px; font-weight: 500; }
+  .editor { position: relative; }
+  .gh-pop { position: absolute; right: 10px; top: 33px; width: 470px; background: #161b22; border: 1px solid #30363d; border-radius: 6px; box-shadow: 0 8px 24px rgba(1,4,9,.8); z-index: 15; font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #e6edf3; }
+  .gh-pop .hd { display: flex; align-items: center; padding: 8px 16px; border-bottom: 1px solid #30363d; font-weight: 600; }
+  .gh-pop .hd a { margin-left: auto; color: #7d8590; cursor: pointer; font-weight: 400; }
+  .gh-pop .bd { padding: 12px 16px; }
+  .gh-pop textarea { width: 100%; min-height: 96px; background: #0d1117; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px; padding: 8px; font: 14px/1.5 -apple-system, sans-serif; resize: vertical; }
+  .gh-pop .tabs-md { display: flex; gap: 2px; margin-bottom: 6px; font-size: 13px; }
+  .gh-pop .tabs-md span { padding: 2px 10px; border: 1px solid #30363d; border-bottom: 0; border-radius: 6px 6px 0 0; }
+  .gh-pop .tabs-md span.on { background: #0d1117; }
+  .gh-pop label { display: flex; gap: 8px; margin: 10px 0; cursor: pointer; }
+  .gh-pop label .t { font-weight: 600; } .gh-pop label .h { color: #7d8590; font-size: 12px; display: block; }
+  .gh-pop label.dis { opacity: .5; cursor: not-allowed; }
+  .gh-pop .ft { display: flex; align-items: center; gap: 8px; padding: 0 16px 14px; }
+  .gh-pop .ft .gh-btn { margin-left: auto; }
+  .gh-pop .ft .gh-btn:disabled { opacity: .5; cursor: not-allowed; }
+  .gh-pop .pend { color: #7d8590; font-size: 12px; }
+  .gh-pop .ours { outline: 1px dashed var(--purple); outline-offset: 3px; border-radius: 4px; margin: 12px 0 4px; font-size: 12.5px; }
+  .gh-pop .ours .why { color: var(--purple); font-size: 11px; }
+  .gh-pop .err { margin-top: 8px; }
+  .prx { font: 13px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; padding: 18px 28px 40px; max-width: 900px; }
+  .prx h2 { font-size: 20px; margin: 0 0 4px; font-weight: 600; }
+  .prx .meta { color: var(--dim); margin-bottom: 14px; }
+  .prx .state { background: #238636; color: #fff; border-radius: 10px; padding: 1px 9px; font-size: 12px; margin-right: 6px; }
+  .prx .desc-box { border: 1px solid #3c3c3c; border-radius: 4px; padding: 10px 12px; margin-bottom: 14px; color: #bbb; }
+  .prx .tl { border-left: 2px solid #3c3c3c; margin-left: 10px; padding-left: 14px; }
+  .prx .tl .ev { margin: 8px 0; color: #bbb; display: flex; align-items: center; gap: 6px; }
+  .prx .box { margin-top: 18px; }
+  .prx textarea { width: 100%; min-height: 80px; background: #1e1e1e; color: var(--fg); border: 1px solid #3c3c3c; border-radius: 2px; padding: 6px; font: 13px/1.4 -apple-system, sans-serif; }
+  .prx .btns { display: flex; gap: 6px; justify-content: flex-end; margin-top: 8px; }
+  .prx .pendlist { margin-top: 10px; color: var(--dim); }
+  .ctx-card { margin: 6px 0 2px; border: 1px solid #3c3c3c; border-radius: 4px; background: #1e1e1e; font-size: 12px; }
+  .ctx-card .h { padding: 3px 8px; border-bottom: 1px solid #333; color: #bbb; display: flex; gap: 8px; }
+  .ctx-card .h a { color: #3794ff; cursor: pointer; }
+  .ctx-card .h .x { margin-left: auto; color: var(--dim); cursor: pointer; }
+  .ctx-card .code1 { font: 11.5px/17px var(--mono); padding: 3px 8px; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+  .ctx-card .code1 .g { color: #6e7681; margin-right: 10px; }
+  .ctx-md { margin-top: 4px; color: var(--dim); font-size: 11.5px; }
+  .ctx-md pre { font: 11px/1.4 var(--mono); background: #1a1a1a; border: 1px solid #333; padding: 5px 7px; margin: 3px 0 0; white-space: pre-wrap; color: #bbb; }
+  .ctx-label { color: var(--purple); font-size: 11px; margin: 6px 0 0; }
+</style>
+</head>
+<body>
+<div class="page-head">
+  <h1>Impact Tree: review loop</h1>
+  <span class="src">Mockup. Code and analysis are real (<span id="srcline"></span>); <span class="invented">the review threads and authors are invented</span>.</span>
+  <div class="scenario">
+    Submit
+    <span class="seg" id="submitStyle" title="Where you finish the review">
+      <button data-style="panel">Details panel</button><button data-style="github">github.com style</button><button data-style="ext" class="on">PR extension style</button>
+    </span>
+    <span class="gap"></span>Tree
+    <span class="seg" id="treeStyle" title="The tree as the extension draws it today, or with the proposed clean-up">
+      <button data-tree="today">Today</button><button data-tree="proposed" class="on">Proposed</button>
+    </span>
+    <button class="toggle" id="deepToggle" title="Show the paths as a deep monorepo would have them, as in the screenshot from the extension">Monorepo paths</button>
+    <span class="gap"></span>Scenario
+    <button class="toggle" id="ownToggle" title="Pretend you opened the PR yourself">Your own PR</button>
+    <button class="toggle" id="failToggle" title="Make the next GitHub call fail">GitHub calls fail</button>
+    <button class="toggle" id="annoToggle" title="Number each piece and say which VS Code or GitHub API is behind it">Annotations</button>
+  </div>
+  <div class="tabs">
+    <button data-screen="proposed" class="on">Proposed</button>
+    <button data-screen="questions">Questions for the walkthrough</button>
+  </div>
+</div>
+
+<!-- ============================== PROPOSED ============================== -->
+<div class="screen on" id="screen-proposed">
+  <div class="window">
+    <div class="activity"><div>⎘</div><div>⌕</div><div>⑂</div><div class="on">⊶</div></div>
+    <div class="sidebar">
+      <div class="tree-pane">
+        <div class="pane-title" style="position:relative">
+          Impact Tree: Changes
+          <span class="anno" style="left:4px;top:2px">1</span>
+          <div class="actions">
+            <button class="icon-btn" title="Refresh">↻</button>
+            <button class="icon-btn" data-filter="attention" title="Show only what needs attention">⚠</button>
+            <button class="icon-btn" data-filter="unreviewed" title="Hide reviewed">◐</button>
+            <button class="icon-btn" data-filter="threads" title="Show only changes with unresolved threads">💬</button>
+            <button class="icon-btn" id="nextBtn" title="Next unreviewed (⌥N)">↓</button>
+            <button class="icon-btn" id="submitBtn" title="Submit review…">✓</button>
+          </div>
+        </div>
+        <div class="tree-message" id="treeMessage" style="position:relative"><span class="anno" style="left:2px;top:2px">2</span></div>
+        <div class="tree" id="tree" tabindex="0" style="position:relative"></div>
+      </div>
+      <div class="detail-pane" id="detailPane">
+        <div class="section-head" style="position:relative"><span class="chev">⌄</span><span id="paneTitle">Details</span><span class="follow" id="followNote"></span><span class="anno" style="left:70px;top:3px">6</span></div>
+        <div class="detail-progress" id="detailProgress" style="position:sticky"></div>
+        <div class="detail" id="detail"></div>
+      </div>
+    </div>
+    <div class="editor">
+      <div class="editor-tabs"><div class="editor-tab" id="editorTab"></div><div class="editor-tab" id="prTab" style="display:none;background:var(--side);border-top-color:transparent;cursor:pointer"></div>
+        <div class="title-actions" id="titleActions"></div></div>
+      <div class="gh-pop" id="ghPop" style="display:none"></div>
+      <div class="crumbs" id="crumbs"></div>
+      <div class="code" id="code" tabindex="0" style="position:relative"></div>
+    </div>
+    <div class="statusbar" style="position:relative">
+      <span>⑂ pr/15</span>
+      <div class="r">
+        <span id="sbReview" class="sb-review" title="Submit review…"></span>
+        <span class="anno" style="position:static">7</span>
+        <span id="sbProgress" title="Click: next unreviewed"></span>
+        <span id="sbCursor">Ln 1, Col 1</span><span>JavaScript</span>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+  <div class="notes" id="notes">
+    <h4>What each piece is, and what is behind it</h4>
+    <ol>
+      <li><b>View title.</b> R4's toggles plus two: a third filter, "Unresolved threads" (Q7), and "Submit review…". Both are <code>view/title</code> commands.</li>
+      <li><b>Summary line.</b> <code>TreeView.message</code> gains the unresolved thread count and your pending comments.</li>
+      <li><b>File rows.</b> 💬 counts the unresolved threads in the file. 👁 is GitHub's per-file "viewed" state, read from <code>viewerViewedState</code> and written with <code>markFileAsViewed</code> / <code>unmarkFileAsViewed</code> when the file's checkbox changes (proposal a). "Changed since viewed" is GitHub's <code>DISMISSED</code> state (Q5). A failed write shows on the row with a retry.</li>
+      <li><b>Change rows.</b> 💬 counts the unresolved threads whose line falls inside the change; ✎ counts your pending comments there.</li>
+      <li><b>Threads in the diff.</b> A <code>CommentController</code> on the review diff, the same widget the GitHub Pull Requests extension uses. <code>commentingRangeProvider</code> allows only lines GitHub accepts: lines in the diff's hunks, on either side. The buttons are <code>comments/commentThread/context</code> menu commands. Hover a line and click <b>+</b> to try it.</li>
+      <li><b>Details panel.</b> R5's panel gains a Threads section for the shown change or file, including outdated threads and file-level comments, which have no place in the diff. "Comment on this change" and "Comment about this caller" start a thread on the change's first line (Q6).</li>
+      <li><b>Status bar.</b> A second <code>StatusBarItem</code>: your pending comments and "Submit review…".</li>
+      <li><b>Submit.</b> Depends on the "Submit" switch at the top (Q1). <i>github.com style:</i> a "Review changes" button in the diff's title bar (<code>editor/title</code>) opens "Finish your review". VS Code has no popovers, so the real one is a small webview the button opens; the mockup draws it where github.com does. <i>PR extension style:</i> an editor tab with the PR's description, timeline and a comment box whose buttons are the review events. <i>Details panel:</i> the Details panel switches to the form. It lists your pending comments, takes the summary and the event (<code>COMMENT</code>, <code>APPROVE</code>, <code>REQUEST_CHANGES</code>), and warns before approving with work left (Q3). Sent with <code>submitPullRequestReview</code>; the pending review itself is GitHub's draft review (<code>addPullRequestReview</code>, <code>addPullRequestReviewThread</code>).</li>
+      <li><b>Notification.</b> <code>window.showInformationMessage</code> after a submit, or <code>showErrorMessage</code> with "Retry" when GitHub refuses. A failed call never drops your text: the draft stays where it was.</li>
+      <li><b>Progress meter.</b> <code>TreeView.message</code> is plain text: it cannot draw a bar, colour or a link. The meter goes at the top of the Details webview instead, which already repaints on every tick. Switch "Tree" to "Today" to compare.</li>
+    </ol>
+  </div>
+</div>
+
+<!-- ============================== QUESTIONS ============================== -->
+<div class="screen" id="screen-questions">
+  <div class="doc" id="questions"></div>
+</div>
+
+<script src="data.js"></script>
+<script>
+'use strict';
+const D = window.DATA;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// comment bodies: escaped, with `code` spans
+const md = (s) => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
+const base = (p) => p.split('/').pop();
+const dir = (p) => p.split('/').slice(0, -1).join('/');
+$('srcline').textContent = `PR #${D.number} against ${D.base.ref} @ ${D.base.sha}`;
+
+// ---------- verdicts (as R1 built them) ----------
+const VERDICT_WORDS = ['Needs attention', 'Risk unknown', 'Risk handled', 'Reaches callers', 'Quiet'];
+function verdictOf(c) {
+  const risky = c.kinds.filter((k) => k.id !== 'body');
+  const n = c.callers.length;
+  if (risky.length && c.staleCallers > 0) {
+    return { lv: 0, glyph: '⛔', text: `${c.staleCallers} of ${n} caller${n === 1 ? '' : 's'} not updated`,
+      sentence: `The ${risky.map((k) => k.label).join(', ')}, and ${c.staleCallers} of ${n} callers ${c.staleCallers === 1 ? 'was' : 'were'} not changed on the call line. Check that ${c.staleCallers === 1 ? 'it still works' : 'they still work'}.` };
+  }
+  if (risky.length && (!c.callersComplete || c.callerState === 'unknown')) {
+    return { lv: 1, glyph: '?', text: 'callers unknown', sentence: `The ${risky.map((k) => k.label).join(', ')}, but its callers could not be found. Check its users by hand.` };
+  }
+  if (risky.length) return { lv: 2, glyph: '✓', text: n ? 'all callers updated' : 'no callers', sentence: `The ${risky.map((k) => k.label).join(', ')}. ${n ? 'Every caller was updated on the call line.' : 'Nothing calls it in the code searched.'}` };
+  if (c.callerState === 'unknown' || (!c.callersComplete && n === 0)) return { lv: 3, glyph: '?', text: 'callers unknown', sentence: 'Only the body changed. Its callers could not be found.' };
+  if (n) return { lv: 3, glyph: '●', text: `reaches ${n} caller${n === 1 ? '' : 's'}`, sentence: 'Only the body changed: the signature is the same, so callers still compile. Check they still get the behaviour they rely on.' };
+  return { lv: 4, glyph: '∅', text: 'no callers', sentence: 'Only the body changed, and nothing calls it in the code searched.' };
+}
+
+// ---------- row model (as R2 built it) ----------
+const rows = new Map();
+const files = [];
+const addRow = (r) => { rows.set(r.id, r); return r; };
+function rangesText(ranges) {
+  const parts = ranges.map(([lo, hi]) => (lo === hi ? `${lo}` : `${lo}–${hi}`));
+  return `line${parts.length === 1 && !parts[0].includes('–') ? '' : 's'} ${parts.join(', ')}`;
+}
+const lineOf = (r) => (r.c ? r.c.startLine : r.d ? (r.d.startLine || 0) : r.o ? r.o.ranges[0][0] : 0);
+for (const p of Object.keys(D.fileStatus)) {
+  const kids = D.changes.filter((c) => c.relPath === p).map((c) => addRow({ id: `c:${p}:${c.label}`, type: 'change', file: p, c, v: verdictOf(c), counts: true }));
+  for (const d of D.deleted.filter((x) => x.relPath === p)) {
+    kids.push(addRow({ id: `d:${p}:${d.label}`, type: 'deleted', file: p, d, counts: true,
+      v: { lv: 1, glyph: '−', text: 'deleted', sentence: 'This symbol was removed. Its former callers were not searched, so check that nothing still uses it.' } }));
+  }
+  for (const o of D.outside.filter((x) => x.relPath === p)) {
+    kids.push(addRow({ id: `o:${p}`, type: 'outside', file: p, o, counts: true,
+      v: { lv: 4, glyph: '≡', text: rangesText(o.ranges), sentence: 'Changed lines that are not inside any function. They have no callers, so read them in the diff.' } }));
+  }
+  kids.sort((a, b) => a.v.lv - b.v.lv || (a.type === 'outside') - (b.type === 'outside') || lineOf(a) - lineOf(b));
+  const noGraph = kids.length === 0;
+  files.push(addRow({ id: `f:${p}`, type: 'file', file: p, kids, noGraph, counts: noGraph,
+    lv: noGraph ? 5 : Math.min(...kids.map((k) => k.v.lv)), attention: kids.filter((k) => k.v.lv <= 1).length }));
+}
+files.sort((a, b) => a.lv - b.lv || b.attention - a.attention || b.kids.length - a.kids.length || a.file.localeCompare(b.file));
+// counting rows in display order: file by file, worst first
+const counting = () => files.flatMap((f) => (f.noGraph ? [f] : f.kids));
+function rowAtLine(file, n) {
+  const f = rows.get(`f:${file}`);
+  if (!f || f.noGraph) return f;
+  const around = f.kids.filter((k) => k.type === 'change' && n >= k.c.startLine && n <= k.c.endLine)
+    .sort((a, b) => (a.c.endLine - a.c.startLine) - (b.c.endLine - b.c.startLine));
+  if (around.length) return around[0];
+  return f.kids.find((k) => k.type === 'outside' && k.o.ranges.some(([a, b]) => n >= a && n <= b)) || f;
+}
+
+// ---------- review threads (invented) ----------
+// side 'R' anchors on a head line (n), 'L' on a base line (o). `outdated` threads no longer
+// map onto the diff; `fileLevel` threads have no line.
+const ME = { login: 'you', name: 'You', color: '#75beff' };
+const PEOPLE = {
+  maria: { login: 'maria', name: 'Maria', color: '#d7ba7d' },
+  omar: { login: 'omar', name: 'Omar', color: '#89d185' },
+  salah: { login: 'salah', name: 'Salah (author)', color: '#c586c0' },
+  you: ME,
+};
+let tid = 0;
+const thread = (o) => ({ id: `t${++tid}`, resolved: false, outdated: false, fileLevel: false, side: 'R', ...o });
+const cm = (who, body, when, pending = false) => ({ who, body, when, pending });
+const state = {
+  filter: 'all', selected: null, expanded: new Set(), checked: new Set(), peekOpen: false, peekIdx: 0, cursor: null,
+  own: false, failing: false,
+  threads: [
+    thread({ file: 'src/engine/diff.js', line: 97, comments: [
+      cm('maria', '`hunks()` at diff.js:133 still calls this without `deletionsOut`. Intentional, or should it pass one?', '2 h ago'),
+      cm('salah', 'Intentional: hunks() never reads deletions. I will add a comment saying so.', '1 h ago'),
+    ] }),
+    thread({ file: 'src/github.js', line: 404, resolved: true, comments: [
+      cm('omar', 'Nice, keeping `cause` makes the error useful in the log.', 'yesterday'),
+    ] }),
+    thread({ file: 'src/engine/patch.js', side: 'L', line: 44, outdated: true, original: '    else { flush(); newLine++; }                      // context line, or an empty one', comments: [
+      cm('maria', 'Does this flush on blank lines too? Looks like it would split a hunk.', 'yesterday'),
+    ] }),
+    thread({ file: 'package.json', fileLevel: true, comments: [
+      cm('omar', 'Can the new test files run in CI as well, or only locally?', '3 h ago'),
+    ] }),
+  ],
+  draft: null, // { file, side, line, text, fileLevel }
+  replies: {}, // thread id -> reply text
+  viewed: new Map([['src/engine/patch.js', 'changed']]), // file -> 'viewed' | 'changed' | 'syncing' | 'failed'
+  panel: 'detail', // or 'submit'
+  submit: { event: 'COMMENT', body: '', anyway: false, error: null },
+  submitted: null,
+  submitStyle: 'ext', // 'panel' | 'github' | 'ext'
+  treeStyle: 'proposed', // 'today' | 'proposed'
+  pop: false, // github.com-style popover open
+  prTab: false, // PR extension-style overview tab open
+  prTabActive: false,
+};
+const HEAD_SHA = '3b7eac0';
+const REPO = 'SalahMo24/impact-tree';
+state.expanded.add(files[0].id);
+state.selected = files[0].kids[0].id;
+// patch.js was viewed before the latest push: its untouched rows keep their ticks
+for (const k of rows.get('f:src/engine/patch.js').kids.slice(2)) state.checked.add(k.id);
+
+const pendingComments = () => state.threads.flatMap((t) => t.comments.filter((c) => c.pending).map((c) => ({ t, c })));
+const hasPending = () => pendingComments().length > 0;
+const unresolved = (t) => !t.resolved;
+function threadsOf(r) {
+  if (!r) return [];
+  if (r.type === 'file') return state.threads.filter((t) => t.file === r.file);
+  if (r.type === 'change') return state.threads.filter((t) => t.file === r.file && !t.outdated && !t.fileLevel && t.side === 'R' && t.line >= r.c.startLine && t.line <= r.c.endLine);
+  if (r.type === 'outside') return state.threads.filter((t) => t.file === r.file && !t.outdated && !t.fileLevel && t.side === 'R' && r.o.ranges.some(([a, b]) => t.line >= a && t.line <= b));
+  return [];
+}
+const openCount = (r) => threadsOf(r).filter((t) => unresolved(t) && t.comments.some((c) => !c.pending)).length;
+const pendingCount = (r) => threadsOf(r).reduce((n, t) => n + t.comments.filter((c) => c.pending).length, 0);
+
+// ---------- ticks and "viewed" sync ----------
+const isChecked = (r) => (r.type === 'file' && !r.noGraph ? r.kids.every((k) => state.checked.has(k.id)) : state.checked.has(r.id));
+const isPartial = (r) => r.type === 'file' && !r.noGraph && !isChecked(r) && r.kids.some((k) => state.checked.has(k.id));
+const fileOf = (r) => rows.get(`f:${r.file}`);
+function toggleCheck(r) {
+  const f = fileOf(r);
+  const was = isChecked(f);
+  const on = !isChecked(r);
+  for (const t of (r.type === 'file' && !r.noGraph ? r.kids : [r])) (on ? state.checked.add(t.id) : state.checked.delete(t.id));
+  if (isChecked(f) !== was) syncViewed(f, isChecked(f));
+}
+// The file's checkbox is GitHub's "viewed": every change to it is written back (proposal a).
+function syncViewed(f, on) {
+  state.viewed.set(f.file, 'syncing');
+  setTimeout(() => {
+    if (state.failing) state.viewed.set(f.file, `failed-${on ? 'on' : 'off'}`);
+    else if (on) state.viewed.set(f.file, 'viewed'); else state.viewed.delete(f.file);
+    rerender();
+  }, 650);
+}
+function viewedHtml(f) {
+  const v = state.viewed.get(f.file);
+  if (!v) return '';
+  if (v === 'viewed') return '<span class="viewed ok" title="Marked viewed on GitHub">👁 viewed</span>';
+  if (v === 'syncing') return '<span class="viewed" title="Writing to GitHub">👁 …</span>';
+  if (v === 'changed') return '<span class="viewed changed" title="You marked this file viewed, then new commits changed it. Rows whose content is unchanged keep their ticks.">👁 changed</span>';
+  return `<span class="viewed bad" data-retry="${esc(f.file)}" title="GitHub refused the change. Your tick is kept locally. Click to retry.">⚠ viewed not synced · retry</span>`;
+}
+
+// ---------- filters ----------
+const passes = (k) => (state.filter !== 'attention' || (k.v.lv <= 1 && !state.checked.has(k.id)))
+  && (state.filter !== 'unreviewed' || !state.checked.has(k.id))
+  && (state.filter !== 'threads' || openCount(k) > 0);
+function visibleKids(f) { return f.kids.filter(passes); }
+function fileVisible(f) {
+  if (state.filter === 'all') return true;
+  if (f.noGraph) return state.filter === 'unreviewed' ? !isChecked(f) : state.filter === 'threads' ? openCount(f) > 0 : false;
+  return visibleKids(f).length > 0 || (state.filter === 'threads' && state.threads.some((t) => t.file === f.file && unresolved(t) && (t.outdated || t.fileLevel)));
+}
+
+// ---------- rendering ----------
+const flat = [];
+function render() { renderMessage(); renderTree(); renderProgress(); renderDetail(); renderEditor(); renderStatus(); renderTitleActions(); }
+// The meter a TreeView.message cannot draw: the top of the Details webview, which every
+// row selection already repaints.
+function renderProgress() {
+  const el = $('detailProgress');
+  el.style.display = state.treeStyle === 'today' ? 'none' : '';
+  if (state.treeStyle === 'today') return;
+  const all = counting();
+  const done = all.filter((r) => state.checked.has(r.id)).length;
+  const attention = all.filter((r) => r.v && r.v.lv <= 1 && !state.checked.has(r.id)).length;
+  const pct = (100 * done / all.length);
+  el.innerHTML = `<div class="nums"><span><b>${done}</b> of ${all.length} reviewed</span>${attention ? `<span class="lv0">⛔ ${attention} need attention</span>` : '<span class="lv2">nothing needs attention</span>'}<span class="r">${pct.toFixed(0)}%</span></div>
+    <div class="meter"><span class="done" style="width:${pct.toFixed(1)}%"></span></div><span class="anno" style="right:6px;top:4px">10</span>`;
+}
+function rerender() {
+  const code = $('code'); const top = code.scrollTop; const tree = $('tree'); const ttop = tree.scrollTop;
+  render(); code.scrollTop = top; tree.scrollTop = ttop;
+}
+function renderMessage() {
+  const all = counting();
+  const done = all.filter((r) => state.checked.has(r.id)).length;
+  const attention = all.filter((r) => r.v && r.v.lv <= 1 && !state.checked.has(r.id)).length;
+  const open = state.threads.filter((t) => unresolved(t) && t.comments.some((c) => !c.pending)).length;
+  const pend = pendingComments().length;
+  const filt = { all: '', attention: ' · filter: needs attention', unreviewed: ' · filter: unreviewed', threads: ' · filter: unresolved threads' }[state.filter];
+  // TreeView.message is plain text: no colour, no meter. Today's wording wraps in a
+  // narrow sidebar; the proposed one drops the base (it is in the Details header).
+  const text = state.treeStyle === 'today'
+    ? `PR #${D.number} against ${esc(D.base.ref)} · ${attention} need attention · ${all.length - done} of ${all.length} left · 💬 ${open} unresolved${pend ? ` · ✎ ${pend} pending` : ''}${filt}`
+    : `#${D.number} · ⛔ ${attention} · ${all.length - done} of ${all.length} left${open ? ` · 💬 ${open}` : ''}${pend ? ` · ✎ ${pend}` : ''}${filt}`;
+  $('treeMessage').innerHTML = `<span class="anno" style="left:2px;top:2px">2</span>${text}
+    ${state.submitted ? `<div style="margin-top:3px">✓ You ${state.submitted}</div>` : ''}`;
+  document.querySelectorAll('[data-filter]').forEach((b) => b.classList.toggle('on', b.dataset.filter === state.filter));
+}
+function cbHtml(r) {
+  if (!r.counts && r.type !== 'file') return '';
+  return `<span class="cb ${isChecked(r) ? 'on' : ''} ${isPartial(r) ? 'part' : ''}" data-cb="${esc(r.id)}">${isChecked(r) ? '✓' : ''}</span>`;
+}
+function rowHtml(r, depth, opts = {}) {
+  flat.push(r);
+  const twist = opts.expandable ? (state.expanded.has(r.id) ? '⌄' : '›') : '';
+  return `<div class="row ${state.selected === r.id ? 'sel' : ''} ${opts.done ? 'done' : ''}" data-id="${esc(r.id)}" style="padding-left:${4 + depth * 14}px">
+    <span class="twist">${twist}</span>${opts.cb ?? ''}${opts.body}</div>`;
+}
+const countsHtml = (r) => `${openCount(r) ? `<span class="tcount" title="Unresolved threads">💬 ${openCount(r)}</span>` : ''}${pendingCount(r) ? `<span class="pcount" title="Your pending comments">✎ ${pendingCount(r)}</span>` : ''}`;
+const SPACER = '<div class="row spacer" aria-hidden="true"></div>';
+function renderTree() {
+  flat.length = 0;
+  let h = '';
+  let annoFile = false; let annoChange = false;
+  for (const f of files) {
+    if (!fileVisible(f)) continue;
+    const st = D.fileStatus[f.file] || 'modified';
+    const worst = f.noGraph ? null : f.kids.reduce((w, k) => (k.v.lv < w.v.lv ? k : w));
+    const done = f.kids.filter((k) => state.checked.has(k.id)).length;
+    const attentionLeft = f.kids.filter((k) => k.v.lv <= 1 && !state.checked.has(k.id)).length;
+    let body;
+    if (state.treeStyle === 'today') {
+      // as the extension draws it: the whole folder first, so a narrow sidebar truncates
+      // everything after it
+      const right = `${countsHtml(f)}${viewedHtml(f)}`;
+      const desc = [shownDir(f.file), attentionLeft ? `${worst.v.glyph} ${attentionLeft}` : '', f.noGraph ? 'no call graph' : `${done}/${f.kids.length}`].filter(Boolean).join('  ·  ');
+      body = `${fileIcon(f.file)}<span class="label st-${st}">${esc(base(f.file))}</span><span class="desc">${esc(desc)}</span>
+        <span class="right">${right}<span class="status-letter st-${st}">${st[0].toUpperCase()}</span></span>`;
+    } else {
+      // proposed: one plain description, most useful first and the folder last, so
+      // truncation eats the folder; the git letter stays the row's only badge
+      const desc = [attentionLeft ? `${worst.v.glyph} ${attentionLeft}` : '', openCount(f) ? `💬 ${openCount(f)}` : '', pendingCount(f) ? `✎ ${pendingCount(f)}` : '',
+        f.noGraph ? '' : `${done}/${f.kids.length}`, lastDir(f.file)].filter(Boolean).join(' · ');
+      body = `${fileIcon(f.file)}<span class="label st-${st}">${esc(base(f.file))}</span><span class="desc">${esc(desc)}</span>
+        <span class="right">${viewedHtml(f)}<span class="status-letter st-${st}">${st[0].toUpperCase()}</span></span>`;
+    }
+    const open = !f.noGraph && state.expanded.has(f.id);
+    if (state.treeStyle === 'proposed' && open && h && !h.endsWith(SPACER)) h += SPACER;
+    h += rowHtml(f, 0, { expandable: !f.noGraph, cb: cbHtml(f), body, done: isChecked(f) });
+    if (!annoFile) { h += '<span class="anno" style="position:absolute;left:2px;margin-top:-20px">3</span>'; annoFile = true; }
+    if (f.noGraph || !state.expanded.has(f.id)) continue;
+    for (const k of visibleKids(f)) {
+      h += changeRowHtml(k);
+      if (!annoChange) { h += '<span class="anno" style="position:absolute;left:18px;margin-top:-20px">4</span>'; annoChange = true; }
+      if (k.type === 'change' && state.expanded.has(k.id)) h += impactRowsHtml(k);
+    }
+    // VS Code has no row margins: the gap is a whole empty row, so it goes only around
+    // an open file group, where it separates it from its neighbours (Q10)
+    if (state.treeStyle === 'proposed') h += SPACER;
+  }
+  if (!flat.length) h = `<div style="padding:10px 20px;color:var(--dim)">${state.filter === 'threads' ? 'No unresolved threads.' : 'Nothing matches this filter.'}</div>`;
+  $('tree').innerHTML = h;
+}
+const FT = { json: ['{ }', 'json'], md: ['M↓', 'md'], ts: ['TS', 'ts'] };
+function fileIcon(p) {
+  const [g, cls] = FT[p.split('.').pop()] || ['JS', 'js'];
+  return `<span class="ico ft ${cls}">${g}</span>`;
+}
+const lastDir = (p) => dir(p).split('/').pop();
+// "Monorepo paths" pretends the repo is nested the way the screenshot's is
+const DEEP = 'components/consumer/src/bound-context/onboarding-monitoring/application/';
+const shownDir = (p) => (state.deep ? DEEP : '') + dir(p);
+const containerOf = (label) => label.split('.').slice(0, -1).join('.');
+// "in X" earns its place only when the file's changes sit in more than one container
+const mixedContainers = (f) => new Set(f.kids.filter((k) => k.type === 'change').map((k) => containerOf(k.c.label))).size > 1;
+function changeRowHtml(k) {
+  const v = k.v;
+  const f = fileOf(k);
+  const today = state.treeStyle === 'today';
+  const st = D.fileStatus[k.file] || 'modified';
+  let name; let icon; let where = '';
+  if (k.type === 'change') {
+    const parts = k.c.label.split('.');
+    name = esc(parts.pop());
+    if (parts.length && (today || mixedContainers(f))) where = `in ${parts.join('.')}`;
+    icon = parts.length ? '<span class="ico sym-method" title="symbol-method">◈</span>' : '<span class="ico sym-function" title="symbol-function">ƒ</span>';
+  } else if (k.type === 'deleted') {
+    name = `<s>${esc(k.d.label.split('.').pop())}</s>`;
+    icon = '<span class="ico sym-deleted" title="trash">🗑</span>';
+  } else {
+    name = 'Outside functions';
+    icon = '<span class="ico sym-outside" title="symbol-namespace">{}</span>';
+  }
+  let body;
+  if (today) {
+    // today: the file-theme icon, the git colour and letter on every row (the row's
+    // resourceUri is the file's), and the verdict glyph after "in X"
+    const desc = [where, k.type === 'outside' ? v.text : v.glyph].filter(Boolean).join('  ·  ');
+    body = `${fileIcon(k.file)}<span class="label st-${st}">${name}</span><span class="desc">${esc(desc)}</span>
+      <span class="right">${countsHtml(k)}<span class="status-letter st-${st}">${st[0].toUpperCase()}</span></span>`;
+  } else {
+    // proposed: a symbol icon, no git badge, words only where something needs doing
+    const verdict = k.type === 'outside' ? v.text : v.lv <= 1 ? `${v.glyph} ${v.text}` : v.glyph;
+    const desc = [verdict, openCount(k) ? `💬 ${openCount(k)}` : '', pendingCount(k) ? `✎ ${pendingCount(k)}` : '', where].filter(Boolean).join(' · ');
+    body = `${icon}<span class="label">${name}</span><span class="desc">${esc(desc)}</span>
+      <span class="right"><span class="status-letter st-${st}">${st[0].toUpperCase()}</span></span>`;
+  }
+  return rowHtml(k, 1, { expandable: k.type === 'change' && k.c.callers.length > 0, cb: cbHtml(k), body, done: state.checked.has(k.id) });
+}
+const CALL = { 'updated-at-call': ['✓', 'lv2', 'updated at the call'], 'changed-elsewhere': ['△', 'lv1', 'changed, but not at the call'], unchanged: ['○', 'lv4', 'not changed'] };
+function impactRowsHtml(k) {
+  let h = '';
+  for (const [i, x] of k.c.callers.entries()) {
+    const [g, cls, words] = CALL[x.callState] || ['?', 'lv1', 'unknown'];
+    const r = addRow({ id: `${k.id}>caller:${i}`, type: 'caller', parent: k, x });
+    h += rowHtml(r, 2, { body: `<span class="ico ${cls}" title="${words}">${g}</span><span class="label">${x.test ? '🧪 ' : ''}${esc(x.label)}</span><span class="desc">${esc(base(x.relPath))}:${x.siteLine}</span>` });
+  }
+  return h;
+}
+
+// ---------- threads in the diff ----------
+const person = (who) => PEOPLE[who] || ME;
+const avatar = (who) => `<span class="av" style="background:${person(who).color}">${esc(person(who).name[0])}</span>`;
+function commentHtml(t, c, i) {
+  const mine = c.who === 'you';
+  return `<div class="cmt">${avatar(c.who)}<div style="flex:1"><span class="who">${esc(person(c.who).name)}</span><span class="when">${esc(c.when)}</span>${c.pending ? '<span class="tag pending">Pending</span>' : ''}
+    ${mine && c.pending ? `<a class="lnk" style="float:right;font-size:11.5px" data-del="${t.id}:${i}">Delete</a>` : ''}
+    <div class="body">${md(c.body)}</div>${c.context ? contextCardHtml(c.context, false) : ''}</div></div>`;
+}
+function threadHtml(t) {
+  const posted = t.comments.some((c) => !c.pending);
+  if (t.resolved && !state.replies[`open:${t.id}`]) {
+    return `<div class="thread resolved" data-thread="${t.id}"><div class="resolved-line" data-expand="${t.id}">▸ ${avatar(t.comments[0].who)} ${esc(person(t.comments[0].who).name)}: ${md(t.comments[0].body.slice(0, 70))}… <span class="tag resolved">Resolved</span></div></div>`;
+  }
+  const status = !posted ? '<span class="tag pending">Pending</span>' : t.resolved ? '<span class="tag resolved">Resolved</span>' : '<span class="tag unresolved">Unresolved</span>';
+  const reply = state.replies[t.id] ?? '';
+  return `<div class="thread ${t.resolved ? 'resolved' : ''} ${posted ? '' : 'pending-only'}" data-thread="${t.id}">
+    <div class="thread-head">${status}<span class="dim">${t.fileLevel ? 'File comment' : `${t.side === 'L' ? 'Old ' : ''}line ${t.line}`}${t.outdated ? ' · outdated' : ''}</span>
+      <span class="acts">${posted ? `<a data-resolve="${t.id}">${t.resolved ? 'Unresolve' : 'Resolve'}</a>` : ''}${t.resolved ? `<a data-collapse="${t.id}">Collapse</a>` : ''}</span></div>
+    ${t.comments.map((c, i) => commentHtml(t, c, i)).join('')}
+    ${posted ? `<div class="composer"><textarea data-reply="${t.id}" placeholder="Reply…">${esc(reply)}</textarea>
+      <div class="row-btns"><button class="btn" data-send-reply="${t.id}" ${reply.trim() ? '' : 'disabled'}>${hasPending() ? 'Add to review' : 'Reply'}</button>
+      <span class="hint">${hasPending() ? 'Goes into your pending review' : 'Posts now'}</span></div></div>` : ''}
+  </div>`;
+}
+function draftHtml() {
+  const d = state.draft;
+  const pend = hasPending();
+  return `<div class="thread pending-only" data-thread="draft"><div class="thread-head"><span class="tag pending">New comment</span><span class="dim">${d.fileLevel ? 'File comment' : `${d.side === 'L' ? 'Old ' : ''}line ${d.line}`}</span></div>
+    <div class="composer" style="padding-left:10px"><textarea id="draftText" placeholder="${d.context ? `What about ${esc(d.context.caller.label)}? (the caller's name, file and line are added below your text)` : 'Leave a comment'}">${esc(d.text || '')}</textarea>
+    ${d.context ? `<div class="ctx-label">Added after your text, about a caller of ${esc(d.context.change)}:</div>${contextCardHtml(d.context, true)}
+      <details class="ctx-md"><summary>Markdown sent to GitHub</summary><pre>${esc(contextMarkdown(d.context))}</pre></details>` : ''}
+    <div class="row-btns">
+      ${pend ? `<button class="btn" data-draft="review">Add review comment</button>`
+        : `<button class="btn" data-draft="review">Start review</button><button class="btn sec" data-draft="now">Comment now</button>`}
+      <button class="btn sec" data-draft="cancel">Cancel</button>
+      <span class="hint">${pend ? 'Added to your pending review' : '"Start review" keeps it private until you submit'}</span></div>
+    ${d.error ? `<div class="err">${esc(d.error)}</div>` : ''}</div></div>`;
+}
+
+// ---------- detail panel ----------
+const selectedRow = () => rows.get(state.selected) || null;
+const ownerOf = (r) => r && (r.parent || r);
+function threadSummaryHtml(t) {
+  const first = t.comments[0];
+  const posted = t.comments.some((c) => !c.pending);
+  const cls = !posted ? 'pending' : t.resolved ? 'resolved' : '';
+  const tag = !posted ? '<span class="tag pending">Pending</span>' : t.resolved ? '<span class="tag resolved">Resolved</span>' : '<span class="tag unresolved">Unresolved</span>';
+  return `<div class="th ${cls}" data-goto="${t.id}"><div class="first">${esc(person(first.who).name)}: ${md(first.body)}</div>
+    <div class="meta">${t.fileLevel ? 'file comment' : `${t.side === 'L' ? 'old ' : ''}line ${t.line}`} · ${t.comments.length} comment${t.comments.length === 1 ? '' : 's'} ${tag}${t.outdated ? '<span class="tag outdated">Outdated</span>' : ''}</div>
+    ${t.outdated ? `<div class="orig" title="The line this thread was left on, before the latest push">${esc(t.original)}</div>` : ''}</div>`;
+}
+function threadsSectionHtml(r, label) {
+  const list = threadsOf(r);
+  return `<h4>Threads (${list.length})</h4>${list.length ? list.map(threadSummaryHtml).join('') : '<div class="where">No threads yet.</div>'}
+    <div style="margin-top:6px"><button class="btn sec" data-comment="${esc(r.id)}">${label}</button></div>`;
+}
+function renderDetail() {
+  $('paneTitle').textContent = state.panel === 'submit' ? 'Submit review' : 'Details';
+  $('detailPane').classList.toggle('tall', state.panel === 'submit');
+  if (state.panel === 'submit') { renderSubmit(); return; }
+  const r = ownerOf(selectedRow());
+  if (!r) { $('detail').innerHTML = '<p class="where">Select a change in the tree, or put the cursor in a changed function.</p>'; return; }
+  if (r.type === 'file') {
+    const left = r.kids.filter((k) => !state.checked.has(k.id)).length;
+    $('detail').innerHTML = `<h3>${esc(base(r.file))}</h3><div class="where">${esc(r.file)} · ${esc(D.fileStatus[r.file])}</div>
+      <div class="verdict ${r.noGraph ? 'lv4' : `lv${r.lv}`}">${r.noGraph ? 'No call graph for this file. Read the diff and tick the file.'
+        : `${r.kids.length} changes, ${r.attention} need attention, ${left} left to review.`} Ticking ${r.noGraph ? 'it' : 'all of them'} marks the file viewed on GitHub.</div>
+      ${threadsSectionHtml(r, 'Comment on this file')}
+      <div style="margin-top:12px"><button class="btn" data-act="tick">${isChecked(r) ? 'Untick file' : 'Mark file reviewed'}</button><button class="btn sec" data-act="next">Next unreviewed</button></div>`;
+    return;
+  }
+  const v = r.v;
+  let h = '';
+  if (r.type === 'change') {
+    const c = r.c;
+    h += `<h3>${esc(c.label)}</h3><div class="where">${esc(c.relPath)}:${c.startLine}–${c.endLine}</div>`;
+    h += `<div class="verdict lv${v.lv}"><b>${VERDICT_WORDS[v.lv]}.</b> ${esc(v.sentence)}</div>`;
+    if (c.baseSig !== c.headSig) h += `<h4>Signature</h4><div class="sig old">− ${esc(c.baseSig)}</div><div class="sig new">+ ${esc(c.headSig)}</div>`;
+    if (c.callers.length) {
+      h += `<h4>Callers (${c.callers.length})</h4><table>${c.callers.map((x, i) => {
+        const [g, cls, words] = CALL[x.callState] || ['?', 'lv1', 'unknown'];
+        const stale = v.lv === 0 && !x.test && x.callState !== 'updated-at-call';
+        return `<tr><td class="st ${cls}" title="${words}">${g}</td><td>${x.test ? '🧪 ' : ''}${esc(x.label)}</td><td class="where">${esc(x.relPath)}:${x.siteLine}${stale ? ' <span class="lv0">not updated</span>' : ''}</td>
+          <td><a data-about-caller="${i}" title="${callInDiff(x) ? `This call is in the diff: comment on ${esc(base(x.relPath))}:${x.siteLine} directly.` : `GitHub cannot take a comment on ${esc(base(x.relPath))}:${x.siteLine}: that line is not in the diff. This comments on the change instead and adds the caller's name, file and line after your text.`}">💬</a></td></tr>`;
+      }).join('')}</table>`;
+    }
+    h += threadsSectionHtml(r, 'Comment on this change');
+  } else if (r.type === 'outside') {
+    h += `<h3>Outside functions</h3><div class="where">${esc(r.file)} · ${esc(v.text)}</div><div class="verdict lv4">${esc(v.sentence)}</div>${threadsSectionHtml(r, 'Comment on these lines')}`;
+  } else if (r.type === 'deleted') {
+    h += `<h3>${esc(r.d.label)}</h3><div class="where">${esc(r.file)} · deleted</div><div class="verdict lv1">${esc(v.sentence)}</div>`;
+  }
+  h += `<div style="margin-top:12px"><button class="btn" data-act="tick">${state.checked.has(r.id) ? 'Untick' : 'Mark reviewed'}</button><button class="btn sec" data-act="next">Next unreviewed</button></div>`;
+  $('detail').innerHTML = h;
+}
+
+// ---------- submit: three ways to finish a review (Q1) ----------
+function reviewLeft() {
+  const all = counting();
+  const left = all.filter((r) => !state.checked.has(r.id));
+  return { all, left, attention: left.filter((r) => r.v && r.v.lv <= 1),
+    open: state.threads.filter((t) => unresolved(t) && t.comments.some((c) => !c.pending)) };
+}
+const guardNeeded = () => { const { attention, open } = reviewLeft(); return attention.length + open.length > 0; };
+// The approve check (Q3). github.com has nothing like it; every style adds the same one.
+function guardHtml() {
+  const s = state.submit;
+  if (s.event !== 'APPROVE' || !guardNeeded()) return '';
+  const { all, left, attention, open } = reviewLeft();
+  return `<div class="guard"><b>Before you approve:</b><ul>
+    ${attention.length ? `<li><span class="lv0">${attention.length} change${attention.length === 1 ? '' : 's'} needing attention ${attention.length === 1 ? 'is' : 'are'} not reviewed:</span> ${attention.map((r) => `<a data-goto-row="${esc(r.id)}">${esc(r.c ? r.c.label : r.d ? r.d.label : base(r.file))}</a>`).join(', ')}</li>` : ''}
+    ${open.length ? `<li>${open.length} thread${open.length === 1 ? ' is' : 's are'} unresolved</li>` : ''}
+    <li>${left.length} of ${all.length} rows are not ticked</li></ul>
+    <label><input type="checkbox" id="anyway" ${s.anyway ? 'checked' : ''}> Approve anyway</label></div>`;
+}
+const approveBlocked = () => state.submit.event === 'APPROVE' && guardNeeded() && !state.submit.anyway;
+const pendingListHtml = (pend) => (pend.length ? pend.map(({ t, c }) => `<div class="th pending" data-goto="${t.id}"><div class="first">${md(c.body)}</div><div class="meta">${esc(base(t.file))}${t.fileLevel ? ' · file comment' : `:${t.line}`}${c.context ? ' · about a caller' : ''}</div></div>`).join('')
+  : '<div class="where">None. You can still approve, request changes or leave a summary.</div>');
+
+// (a) the Details panel turns into the form
+function renderSubmit() {
+  const s = state.submit;
+  const pend = pendingComments();
+  const ev = (val, label, help) => `<label><input type="radio" name="ev" value="${val}" ${s.event === val ? 'checked' : ''} ${state.own && val !== 'COMMENT' ? 'disabled' : ''}> <b>${label}</b> <span class="where">${help}</span></label>`;
+  const guard = guardHtml();
+  $('detail').innerHTML = `<div class="where" style="margin-bottom:8px"><a data-back>← Back to details</a></div>
+    <h4>Your pending comments (${pend.length})</h4>${pendingListHtml(pend)}
+    <h4>Summary</h4><textarea id="sumText" placeholder="Leave a summary (required for Request changes)">${esc(s.body)}</textarea>
+    <h4>Review</h4>
+    ${ev('COMMENT', 'Comment', 'feedback without approving')}
+    ${ev('APPROVE', 'Approve', 'ready to merge')}
+    ${ev('REQUEST_CHANGES', 'Request changes', 'must be addressed before merging')}
+    ${state.own ? '<div class="where" style="margin:4px 0 0 20px">GitHub does not let you approve or request changes on your own pull request.</div>' : ''}
+    ${guard}
+    ${s.error ? `<div class="err">${esc(s.error)}</div>` : ''}
+    <div style="margin-top:12px"><button class="btn ${guard ? 'warn' : ''}" data-submit ${approveBlocked() ? 'disabled' : ''}>Submit review</button>
+    ${pend.length ? '<button class="btn sec" data-discard>Discard pending review</button>' : ''}</div>
+    <span class="anno" style="position:relative;left:0;top:6px">8</span>`;
+}
+
+// (b) github.com: a button at the top right of the diff opens "Finish your review"
+function renderPop() {
+  const el = $('ghPop');
+  const on = state.submitStyle === 'github' && state.pop;
+  el.style.display = on ? '' : 'none';
+  if (!on) return;
+  const s = state.submit;
+  const pend = pendingComments();
+  const opt = (val, label, help) => {
+    const dis = state.own && val !== 'COMMENT';
+    return `<label class="${dis ? 'dis' : ''}" ${dis ? 'title="Pull request authors can\'t approve or request changes on their own pull request"' : ''}><input type="radio" name="ev" value="${val}" ${s.event === val ? 'checked' : ''} ${dis ? 'disabled' : ''}><span><span class="t">${label}</span><span class="h">${help}</span></span></label>`;
+  };
+  const guard = guardHtml();
+  el.innerHTML = `<div class="hd">Finish your review<a data-close-pop title="Close (your text is kept)">✕</a></div>
+    <div class="bd"><div class="tabs-md"><span class="on">Write</span><span>Preview</span></div>
+      <textarea id="sumText" placeholder="Leave a comment">${esc(s.body)}</textarea>
+      ${opt('COMMENT', 'Comment', 'Submit general feedback without explicit approval.')}
+      ${opt('APPROVE', 'Approve', 'Give your approval to merge these changes.')}
+      ${opt('REQUEST_CHANGES', 'Request changes', 'Submit feedback that must be addressed before merging.')}
+      ${guard ? `<div class="ours"><div class="why">Impact Tree adds this; github.com has no such check (Q3)</div>${guard}</div>` : ''}
+      ${s.error ? `<div class="err">${esc(s.error)}</div>` : ''}
+    </div>
+    <div class="ft"><span class="pend">${pend.length ? `${pend.length} pending comment${pend.length === 1 ? '' : 's'} · <a class="lnk" data-discard style="color:#7d8590;cursor:pointer;text-decoration:underline">discard</a>` : 'No pending comments'}</span>
+      <button class="gh-btn" data-submit ${approveBlocked() ? 'disabled' : ''}>Submit review</button></div>
+    <span class="anno" style="left:-8px;top:-8px">8</span>`;
+}
+
+// (c) the GitHub Pull Requests extension: an editor tab with the PR's description and
+// timeline, and a comment box whose buttons are the review events
+function prPageHtml() {
+  const s = state.submit;
+  const pend = pendingComments();
+  const guard = guardHtml();
+  const ev = (who, what, when) => `<div class="ev">${avatar(who)} <b>${esc(person(who).name)}</b> ${what} <span class="where">${esc(when)}</span></div>`;
+  return `<div class="prx"><h2>${esc(D.title)} <span style="color:var(--dim);font-weight:400">#${D.number}</span></h2>
+    <div class="meta"><span class="state">Open</span>salah wants to merge into <code>main</code> from <code>docs/t8-readiness</code></div>
+    <div class="desc-box">Fixes found while getting ready for T8: type-checks github.js and tree-provider.js, keys reviews by PR number, and adds the "outside functions" row.</div>
+    <div class="tl">
+      ${ev('omar', 'commented on <code>src/github.js</code>', 'yesterday')}
+      ${ev('maria', 'commented on <code>src/engine/diff.js</code>', '2 h ago')}
+      ${ev('salah', 'replied', '1 h ago')}
+      ${ev('omar', 'left a comment on <code>package.json</code>', '3 h ago')}
+      ${state.submitted ? ev('you', esc(state.submitted), 'just now') : ''}
+    </div>
+    <div class="box">
+      ${pend.length ? `<div class="pendlist">Your pending review has ${pend.length} comment${pend.length === 1 ? '' : 's'}:</div>${pendingListHtml(pend)}` : ''}
+      <textarea id="sumText" placeholder="Leave a comment">${esc(s.body)}</textarea>
+      ${guard}${s.error ? `<div class="err">${esc(s.error)}</div>` : ''}
+      <div class="btns">
+        ${pend.length ? '<button class="btn sec" data-discard style="margin-right:auto">Cancel review</button>' : ''}
+        <button class="btn sec" data-submit-ev="REQUEST_CHANGES" ${state.own ? 'disabled title="Not on your own pull request"' : ''}>Request Changes</button>
+        <button class="btn sec" data-submit-ev="APPROVE" ${state.own || approveBlocked() && s.event === 'APPROVE' ? 'disabled' : ''}>Approve</button>
+        <button class="btn" data-submit-ev="COMMENT">${pend.length ? 'Submit Review' : 'Comment'}</button>
+      </div>
+    </div><span class="anno" style="position:relative;left:0;top:6px">8</span></div>`;
+}
+
+function renderTitleActions() {
+  const pend = pendingComments().length;
+  $('titleActions').innerHTML = state.submitStyle === 'github'
+    ? `<button class="gh-btn" data-open-submit title="Finish your review">Review changes${pend ? `<span class="n">${pend}</span>` : ''} ▾</button>`
+    : state.submitStyle === 'ext'
+      ? `<button class="icon-btn" data-open-submit title="Open Pull Request #${D.number} (description, timeline, submit)" style="width:auto;padding:0 6px;font-size:12px">⧉ PR #${D.number}</button>`
+      : '';
+  const tab = $('prTab');
+  tab.style.display = state.submitStyle === 'ext' && state.prTab ? '' : 'none';
+  tab.innerHTML = `<span>Pull Request #${D.number}</span><span class="dim" data-close-pr title="Close">✕</span>`;
+  tab.style.background = state.prTabActive ? 'var(--bg)' : 'var(--side)';
+  tab.style.borderTopColor = state.prTabActive ? 'var(--focus)' : 'transparent';
+  $('editorTab').style.background = state.prTabActive ? 'var(--side)' : '';
+  $('editorTab').style.borderTopColor = state.prTabActive ? 'transparent' : '';
+  renderPop();
+}
+
+function submitReview() {
+  const s = state.submit;
+  const pend = pendingComments();
+  if (approveBlocked()) return rerender(); // shows the check
+  if (s.event === 'REQUEST_CHANGES' && !s.body.trim()) { s.error = 'GitHub needs a summary to request changes.'; return rerender(); }
+  if (s.event === 'COMMENT' && !s.body.trim() && !pend.length) { s.error = 'Add a summary or at least one comment.'; return rerender(); }
+  if (state.failing) { s.error = 'GitHub refused the review (simulated). Nothing was lost: your comments are still pending. Retry when the connection is back.'; return rerender(); }
+  for (const { c } of pend) { c.pending = false; c.when = 'just now'; }
+  const words = { COMMENT: 'commented', APPROVE: 'approved', REQUEST_CHANGES: 'requested changes' }[s.event];
+  state.submitted = `${words} with ${pend.length} comment${pend.length === 1 ? '' : 's'}`;
+  toast(`Review submitted: you ${state.submitted} on PR #${D.number}.`);
+  state.submit = { event: 'COMMENT', body: '', anyway: false, error: null };
+  state.panel = 'detail';
+  state.pop = false;
+  rerender();
+}
+function toast(msg) {
+  $('toast').innerHTML = `<span class="ti">ⓘ</span>${esc(msg)}<span class="anno" style="position:static;margin-left:6px">9</span>`;
+  $('toast').classList.add('on');
+  clearTimeout(toast.t); toast.t = setTimeout(() => $('toast').classList.remove('on'), 4500);
+}
+
+// ---------- editor ----------
+let editorFile = null;
+function renderEditor() {
+  const r = ownerOf(selectedRow());
+  const file = r ? r.file : files[0].file;
+  if (file !== editorFile) { editorFile = file; state.cursor = null; }
+  const atCursor = state.cursor != null ? rowAtLine(file, state.cursor) : null;
+  $('editorTab').innerHTML = `<span>${esc(base(file))}</span><span class="dim">(${esc(D.base.ref)} ↔ PR #${D.number})</span>`;
+  $('crumbs').textContent = `${file.split('/').join(' › ')}${r && r.c ? ` › ${r.c.label.split('.').join(' › ')}` : ''}`;
+  if (state.submitStyle === 'ext' && state.prTabActive) {
+    $('code').innerHTML = prPageHtml();
+    $('crumbs').textContent = `Pull Request #${D.number}`;
+    $('followNote').textContent = '';
+    return;
+  }
+  let lo = -Infinity; let hi = -Infinity;
+  if (r && r.type === 'change') { lo = r.c.startLine; hi = r.c.endLine; }
+  const fileRow = rows.get(`f:${file}`);
+  const lensAt = new Map();
+  for (const k of (fileRow ? fileRow.kids : [])) if (k.type === 'change' && k.v.lv <= 1) lensAt.set(k.c.startLine, k);
+  const here = state.threads.filter((t) => t.file === file && !t.outdated);
+  const at = (side, line) => here.filter((t) => !t.fileLevel && t.side === side && t.line === line);
+  const d = state.draft && state.draft.file === file ? state.draft : null;
+  let h = '<span class="anno" style="right:12px;top:6px">5</span>';
+  const fileThreads = here.filter((t) => t.fileLevel);
+  if (fileThreads.length || (d && d.fileLevel)) h += `<div class="file-comments">${fileThreads.map(threadHtml).join('')}${d && d.fileLevel ? draftHtml() : ''}</div>`;
+  let prevEnd = null;
+  for (const hk of D.diffs[file] || []) {
+    const first = hk.lines.find((l) => l.n != null);
+    h += `<div class="hunk-gap">${prevEnd ? `⋯ ${first ? first.n - prevEnd - 1 : ''} unchanged lines (no comments here: GitHub only takes comments on diff lines)` : ''} ${esc(hk.header.replace(/^@@[^@]*@@/, '').trim())}</div>`;
+    let lastHead = first ? first.n : 1;
+    for (const l of hk.lines) {
+      if (l.t !== '-' && lensAt.has(l.n)) h += lensHtml(lensAt.get(l.n));
+      const side = l.t === '-' ? 'L' : 'R';
+      const num = side === 'L' ? l.o : l.n;
+      const focus = l.n != null && l.n >= lo && l.n <= hi;
+      const caret = state.cursor != null && l.n === state.cursor;
+      h += `<div class="ln ${l.t === '+' ? 'add' : l.t === '-' ? 'del' : ''} ${focus ? 'focus' : ''} ${caret ? 'cursor' : ''}" data-at="${l.n ?? lastHead}"><span class="g"><span class="plus" data-plus="${side}:${num}" title="Comment on this line">+</span>${l.n ?? ''}</span><span class="m">${l.t === ' ' ? '' : l.t}</span><span class="s">${esc(l.s)}</span></div>`;
+      for (const t of at(side, num)) h += threadHtml(t);
+      if (d && !d.fileLevel && d.side === side && d.line === num) h += draftHtml();
+      if (l.t !== '-' && state.peekOpen && r && r.type === 'change' && l.n === r.c.startLine) h += peekHtml(r);
+      if (l.n != null) { prevEnd = l.n; lastHead = l.n; }
+    }
+  }
+  $('code').innerHTML = h;
+  $('sbCursor').textContent = `Ln ${state.cursor ?? 1}, Col 1`;
+  $('followNote').textContent = state.panel === 'submit' ? '' : atCursor ? `at cursor, line ${state.cursor}` : 'selected in tree';
+  if (state.reveal) {
+    const el = $('code').querySelector(`[data-thread="${state.reveal}"]`);
+    if (el) { el.scrollIntoView({ block: 'center' }); renderEditor.scrollTo = state.selected; }
+    state.reveal = null;
+  } else if (renderEditor.scrollTo !== state.selected) {
+    renderEditor.scrollTo = state.selected;
+    const target = $('code').querySelector('.lens.cur') || $('code').querySelector('.ln.focus');
+    if (target) { target.scrollIntoView({ block: 'start' }); $('code').scrollTop -= 40; } else $('code').scrollTop = 0;
+  }
+  const dt = $('draftText');
+  if (dt && state.focusDraft) { dt.focus(); state.focusDraft = false; }
+}
+function lensHtml(k) {
+  const cur = ownerOf(selectedRow()) === k;
+  return `<div class="lens ${cur ? 'cur' : ''}"><span class="lv${k.v.lv}">${k.v.glyph} ${esc(k.v.text)}</span><span class="sep">|</span>`
+    + `${k.c.callers.length ? `<a data-lens-peek="${esc(k.id)}">Show callers</a><span class="sep">|</span>` : ''}`
+    + `<a data-lens-tick="${esc(k.id)}">${state.checked.has(k.id) ? '✓ Reviewed' : 'Mark reviewed'}</a></div>`;
+}
+function peekHtml(k) {
+  const cs = k.c.callers;
+  const i = Math.min(state.peekIdx, cs.length - 1);
+  const x = cs[i];
+  const [g, cls, words] = CALL[x.callState] || ['?', 'lv1', 'unknown'];
+  return `<div class="peek"><div class="peek-head"><b>${esc(base(x.relPath))}</b><span class="dim">${esc(dir(x.relPath))}</span><span class="${cls}">${g} ${words}</span><span style="margin-left:auto" class="dim">Callers of ${esc(k.c.label)} — ${cs.length}</span></div>
+    <div class="peek-code"><div class="ln"><span class="g">${x.line}</span><span class="m"></span><span class="s" style="color:var(--dim)">… ${esc(x.label)}</span></div>
+      <div class="ln hl"><span class="g">${x.siteLine}</span><span class="m"></span><span class="s">${esc(x.siteText)}</span></div></div>
+    <div class="peek-list">${cs.map((y, j) => `<div class="peek-item ${j === i ? 'on' : ''}" data-peek="${j}"><span class="${(CALL[y.callState] || [])[1]}">${(CALL[y.callState] || ['?'])[0]}</span> ${esc(y.label)} <span style="color:var(--dim)">${esc(base(y.relPath))}:${y.siteLine}</span></div>`).join('')}</div></div>`;
+}
+function renderStatus() {
+  const all = counting();
+  const left = all.filter((r) => !state.checked.has(r.id)).length;
+  const attention = all.filter((r) => r.v && r.v.lv <= 1 && !state.checked.has(r.id)).length;
+  $('sbProgress').textContent = `⊶ ${left} left · ⛔ ${attention} · ⌥N next`;
+  const pend = pendingComments().length;
+  $('sbReview').textContent = pend ? `✎ ${pend} pending · Submit review…` : '✎ Review…';
+  $('sbReview').classList.toggle('has', pend > 0);
+}
+
+// ---------- behaviour ----------
+function select(id) { state.selected = id; state.cursor = null; state.peekOpen = false; state.peekIdx = 0; render(); }
+function moveCursor(n) {
+  state.cursor = n;
+  const r = rowAtLine(editorFile, n);
+  if (r && ownerOf(selectedRow()) !== r) { state.selected = r.id; state.peekOpen = false; if (r.type !== 'file') state.expanded.add(`f:${r.file}`); renderEditor.scrollTo = r.id; }
+  rerender();
+  const sel = $('tree').querySelector('.row.sel');
+  if (sel) sel.scrollIntoView({ block: 'nearest' });
+}
+function nextUnreviewed() {
+  for (const f of files) {
+    if (f.noGraph) { if (!state.checked.has(f.id)) return select(f.id); continue; }
+    const k = f.kids.find((x) => !state.checked.has(x.id));
+    if (k) { state.expanded.add(f.id); return select(k.id); }
+  }
+  toast('All reviewed.');
+}
+function startDraft(d) {
+  if (state.draft && (state.draft.text || '').trim() && !confirm('Discard the comment you are writing?')) return;
+  state.draft = { text: '', ...d };
+  state.focusDraft = true;
+  state.panel = 'detail';
+  rerender();
+  const el = $('code').querySelector('[data-thread="draft"]');
+  if (el) el.scrollIntoView({ block: 'center' });
+}
+// a comment on the change's first line, quoting what it is about
+function commentOnRow(r, quote = '', context = null) {
+  if (r.type === 'file') return startDraft({ file: r.file, fileLevel: true, text: quote });
+  const line = r.type === 'change' ? r.c.startLine : r.o.ranges[0][0];
+  state.selected = r.id;
+  startDraft({ file: r.file, side: 'R', line, text: quote, context });
+}
+// GitHub takes a comment only on a line of the diff: a call that is one gets the comment itself.
+const callInDiff = (x) => (D.diffs[x.relPath] || []).some((hk) => hk.lines.some((l) => l.t !== '-' && l.n === x.siteLine));
+const CALL_NOTE = { unchanged: 'not changed by this PR', 'changed-elsewhere': 'its function changed in this PR, but not this call' };
+// What is added after the reviewer's text: written by the extension, so every caller
+// comment names the same things in the same place. GitHub turns the permalink on its own
+// line into a snippet of the call.
+function contextMarkdown(ctx) {
+  const x = ctx.caller;
+  return `---\n**Caller outside this PR's diff:** \`${x.label}\`${x.test ? ' (a test)' : ''} in \`${x.relPath}\`, line ${x.siteLine}: ${CALL_NOTE[x.callState] || 'call state unknown'}.\n`
+    + `https://github.com/${REPO}/blob/${HEAD_SHA}/${x.relPath}#L${x.siteLine}`;
+}
+// How GitHub shows that block once posted
+function contextCardHtml(ctx, removable) {
+  const x = ctx.caller;
+  return `<div class="ctx-card"><div class="h"><span>Caller <b>${esc(x.label)}</b>${x.test ? ' 🧪' : ''}</span><a title="Open at ${HEAD_SHA}">${esc(x.relPath)}#L${x.siteLine}</a><span class="where">${esc(CALL_NOTE[x.callState] || '')}</span>
+    ${removable ? '<span class="x" data-drop-context title="Do not add this">✕</span>' : ''}</div>
+    <div class="code1"><span class="g">${x.siteLine}</span>${esc(x.siteText)}</div></div>`;
+}
+function postDraft(mode) {
+  const d = state.draft;
+  const text = ($('draftText') || {}).value || '';
+  if (!text.trim()) { d.error = 'Write something first.'; return rerender(); }
+  if (mode === 'now' && state.failing) { d.text = text; d.error = 'GitHub refused the comment (simulated). Your text is kept here; try again.'; return rerender(); }
+  state.threads.push(thread({ file: d.file, side: d.side || 'R', line: d.line, fileLevel: !!d.fileLevel,
+    comments: [{ ...cm('you', text, mode === 'now' ? 'just now' : 'pending', mode !== 'now'), context: d.context || null }] }));
+  state.draft = null;
+  if (mode === 'now') toast('Comment posted.');
+  rerender();
+}
+
+$('tree').addEventListener('click', (e) => {
+  const retry = e.target.closest('[data-retry]');
+  if (retry) { const f = rows.get(`f:${retry.dataset.retry}`); syncViewed(f, isChecked(f)); rerender(); return; }
+  const cb = e.target.closest('[data-cb]');
+  const row = e.target.closest('.row');
+  if (!row) return;
+  const r = rows.get(row.dataset.id);
+  if (cb) { toggleCheck(r); rerender(); return; }
+  if (e.target.closest('.twist') || r.type === 'file' || state.selected === r.id) state.expanded.has(r.id) ? state.expanded.delete(r.id) : state.expanded.add(r.id);
+  if (r.type === 'caller') { state.selected = r.parent.id; state.peekOpen = true; state.peekIdx = Number(r.id.split(':').pop()); render(); return; }
+  state.panel = 'detail';
+  select(r.id);
+});
+$('tree').addEventListener('keydown', (e) => {
+  const i = flat.findIndex((r) => r.id === state.selected);
+  if (e.key === 'ArrowDown' && flat[i + 1]) { e.preventDefault(); select(flat[i + 1].id); }
+  if (e.key === 'ArrowUp' && flat[i - 1]) { e.preventDefault(); select(flat[i - 1].id); }
+  if (e.key === ' ') { e.preventDefault(); toggleCheck(selectedRow()); rerender(); }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'TEXTAREA') return;
+  if (e.altKey && e.code === 'KeyN') { e.preventDefault(); nextUnreviewed(); }
+});
+document.querySelectorAll('[data-filter]').forEach((b) => b.addEventListener('click', () => { state.filter = state.filter === b.dataset.filter ? 'all' : b.dataset.filter; render(); }));
+$('nextBtn').addEventListener('click', nextUnreviewed);
+$('sbProgress').addEventListener('click', nextUnreviewed);
+function openSubmit() {
+  if (state.submitStyle === 'panel') state.panel = 'submit';
+  else if (state.submitStyle === 'github') state.pop = !state.pop;
+  else { state.prTab = true; state.prTabActive = true; }
+  rerender();
+}
+$('submitBtn').addEventListener('click', openSubmit);
+$('sbReview').addEventListener('click', openSubmit);
+
+$('detail').addEventListener('click', (e) => {
+  const t = e.target;
+  const r = ownerOf(selectedRow());
+  const c = t.closest('[data-comment]');
+  if (c) return commentOnRow(rows.get(c.dataset.comment));
+  const about = t.closest('[data-about-caller]');
+  if (about) {
+    const x = r.c.callers[Number(about.dataset.aboutCaller)];
+    if (callInDiff(x)) {
+      const at = rowAtLine(x.relPath, x.siteLine);
+      if (at) { state.selected = at.id; state.expanded.add(`f:${x.relPath}`); }
+      return startDraft({ file: x.relPath, side: 'R', line: x.siteLine });
+    }
+    return commentOnRow(r, '', { caller: x, change: r.c.label });
+  }
+  const act = t.closest('[data-act]');
+  if (act && act.dataset.act === 'tick') { toggleCheck(r); return rerender(); }
+  if (act && act.dataset.act === 'next') { if (!isChecked(r)) toggleCheck(r); return nextUnreviewed(); }
+});
+// The submit form's controls, wherever the chosen style puts them.
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (t.closest('[data-open-submit]')) return openSubmit();
+  if (t.closest('[data-close-pop]')) { state.pop = false; return rerender(); }
+  if (t.closest('[data-close-pr]')) { e.stopPropagation(); state.prTab = false; state.prTabActive = false; return rerender(); }
+  if (t.closest('#prTab')) { state.prTabActive = true; return rerender(); }
+  if (t.closest('#editorTab')) { if (state.prTabActive) { state.prTabActive = false; renderEditor.scrollTo = null; rerender(); } return; }
+  if (t.closest('[data-back]')) { state.panel = 'detail'; return rerender(); }
+  if (t.closest('[data-submit]')) return submitReview();
+  const evb = t.closest('[data-submit-ev]');
+  if (evb) {
+    if (state.submit.event !== evb.dataset.submitEv) { state.submit.event = evb.dataset.submitEv; state.submit.anyway = false; state.submit.error = null; }
+    return submitReview();
+  }
+  if (t.closest('[data-discard]')) {
+    if (!confirm('Delete all your pending comments?')) return;
+    for (const th of state.threads) th.comments = th.comments.filter((c) => !c.pending);
+    state.threads = state.threads.filter((th) => th.comments.length);
+    return rerender();
+  }
+  const goto = t.closest('[data-goto]');
+  if (goto) {
+    const th = state.threads.find((x) => x.id === goto.dataset.goto);
+    state.pop = false; state.prTabActive = false;
+    if (th.resolved) state.replies[`open:${th.id}`] = true;
+    const owner = th.fileLevel || th.outdated ? rows.get(`f:${th.file}`) : rowAtLine(th.file, th.line);
+    if (owner && ownerOf(selectedRow()) !== owner) { state.selected = owner.id; state.expanded.add(`f:${th.file}`); }
+    state.reveal = th.id;
+    return rerender();
+  }
+  const gotoRow = t.closest('[data-goto-row]');
+  if (gotoRow) { state.panel = 'detail'; state.pop = false; state.prTabActive = false; state.expanded.add(`f:${rows.get(gotoRow.dataset.gotoRow).file}`); return select(gotoRow.dataset.gotoRow); }
+});
+// github.com closes the popover on an outside click; the text stays for next time
+document.addEventListener('mousedown', (e) => {
+  if (state.pop && !e.target.closest('#ghPop,[data-open-submit]')) { state.pop = false; renderPop(); }
+});
+document.addEventListener('change', (e) => {
+  if (e.target.name === 'ev') { state.submit.event = e.target.value; state.submit.anyway = false; state.submit.error = null; rerender(); }
+  if (e.target.id === 'anyway') { state.submit.anyway = e.target.checked; rerender(); }
+});
+document.addEventListener('input', (e) => { if (e.target.id === 'sumText') { state.submit.body = e.target.value; state.submit.error = null; } });
+document.querySelectorAll('#submitStyle button').forEach((b) => b.addEventListener('click', () => {
+  state.submitStyle = b.dataset.style; state.pop = false; state.prTabActive = false; state.panel = 'detail';
+  document.querySelectorAll('#submitStyle button').forEach((x) => x.classList.toggle('on', x === b));
+  rerender();
+}));
+document.querySelectorAll('#treeStyle button').forEach((b) => b.addEventListener('click', () => {
+  state.treeStyle = b.dataset.tree;
+  document.querySelectorAll('#treeStyle button').forEach((x) => x.classList.toggle('on', x === b));
+  rerender();
+}));
+
+$('code').addEventListener('input', (e) => {
+  if (e.target.id === 'draftText') state.draft.text = e.target.value;
+  if (e.target.dataset.reply) {
+    state.replies[e.target.dataset.reply] = e.target.value;
+    const b = $('code').querySelector(`[data-send-reply="${e.target.dataset.reply}"]`);
+    if (b) b.disabled = !e.target.value.trim();
+  }
+});
+$('code').addEventListener('click', (e) => {
+  const t = e.target;
+  const plus = t.closest('[data-plus]');
+  if (plus) { const [side, line] = plus.dataset.plus.split(':'); return startDraft({ file: editorFile, side, line: Number(line) }); }
+  if (t.closest('[data-drop-context]')) { state.draft.context = null; return rerender(); }
+  const dr = t.closest('[data-draft]');
+  if (dr) { if (dr.dataset.draft === 'cancel') { state.draft = null; return rerender(); } return postDraft(dr.dataset.draft); }
+  const send = t.closest('[data-send-reply]');
+  if (send) {
+    const th = state.threads.find((x) => x.id === send.dataset.sendReply);
+    const text = state.replies[th.id] || '';
+    if (!hasPending() && state.failing) { toast('GitHub refused the reply (simulated). Your text is kept in the box.'); return; }
+    th.comments.push(cm('you', text, hasPending() ? 'pending' : 'just now', hasPending()));
+    delete state.replies[th.id];
+    return rerender();
+  }
+  const res = t.closest('[data-resolve]');
+  if (res) {
+    const th = state.threads.find((x) => x.id === res.dataset.resolve);
+    if (state.failing) { toast('GitHub refused to change the thread (simulated).'); return; }
+    th.resolved = !th.resolved; delete state.replies[`open:${th.id}`]; return rerender();
+  }
+  const ex = t.closest('[data-expand]');
+  if (ex) { state.replies[`open:${ex.dataset.expand}`] = true; return rerender(); }
+  const col = t.closest('[data-collapse]');
+  if (col) { delete state.replies[`open:${col.dataset.collapse}`]; return rerender(); }
+  const del = t.closest('[data-del]');
+  if (del) {
+    const [id, i] = del.dataset.del.split(':');
+    const th = state.threads.find((x) => x.id === id);
+    th.comments.splice(Number(i), 1);
+    if (!th.comments.length) state.threads = state.threads.filter((x) => x !== th);
+    return rerender();
+  }
+  const a = t.closest('[data-lens-peek],[data-lens-tick],[data-peek]');
+  if (!a) return;
+  if (a.dataset.lensPeek) { const same = state.selected === a.dataset.lensPeek && state.peekOpen; state.selected = a.dataset.lensPeek; state.peekOpen = !same; state.peekIdx = 0; rerender(); }
+  else if (a.dataset.lensTick) { toggleCheck(rows.get(a.dataset.lensTick)); rerender(); }
+  else if (a.dataset.peek) { state.peekIdx = Number(a.dataset.peek); rerender(); }
+});
+$('code').addEventListener('mousedown', (e) => {
+  if (e.target.closest('.thread,.peek,.plus')) return;
+  const ln = e.target.closest('.ln[data-at]');
+  if (ln) moveCursor(Number(ln.dataset.at));
+});
+$('ownToggle').addEventListener('click', () => {
+  state.own = !state.own; $('ownToggle').classList.toggle('on', state.own);
+  if (state.own) state.submit.event = 'COMMENT';
+  rerender();
+});
+$('failToggle').addEventListener('click', () => { state.failing = !state.failing; $('failToggle').classList.toggle('on', state.failing); });
+$('deepToggle').addEventListener('click', () => { state.deep = !state.deep; $('deepToggle').classList.toggle('on', state.deep); rerender(); });
+$('annoToggle').addEventListener('click', () => { document.body.classList.toggle('annotate'); $('annoToggle').classList.toggle('on'); });
+document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => {
+  document.querySelectorAll('.tabs button').forEach((x) => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('on', s.id === `screen-${b.dataset.screen}`));
+}));
+
+// ---------- questions ----------
+$('questions').innerHTML = `
+<h2>Questions to settle while walking the review loop on PR #${D.number}</h2>
+<p><b>Status 2026-10-07:</b> all questions are decided. Q1 is the PR extension style, Q6 adds generated caller context, Q10 is all six with the git letters kept plus gaps around open file groups, Q11 is the top of the Details webview, and the rest follow the recommendations.</p>
+<p>This mockup covers the first part of the review loop: reading and writing threads, a pending review, submitting it, and "viewed" sync. Suggested changes, the PR overview (description, timeline, checks), merging and GitHub Enterprise are left for a second part. The Proposed tab shows the option marked <span class="rec">recommended</span>. The threads and their authors are invented; the code and analysis are real.</p>
+<p><b>Try:</b> hover a diff line and click <b>+</b>; reply to Maria's thread on <code>allHunks</code>; click 💬 next to the caller <code>hunks</code> in the Details panel; tick every row of a file and watch 👁; open the review form ("Review changes" above the diff, ✓ above the tree, or the status bar) and pick Approve, then switch "Submit" to compare the three versions; switch "Tree" between Today and Proposed; turn on "GitHub calls fail" and try again; turn on "Your own PR".</p>
+${[
+  ['Q1. Where does "Submit review" live?',
+    'Three versions, switched with "Submit" at the top of the page. Each has the same approval check (Q3) and the same validation. <b>github.com style</b> (shown first): a green "Review changes" button with your pending count in the diff\'s title bar opens "Finish your review": a summary, the three events with GitHub\'s own wording, and Submit. It is the one reviewers already know. VS Code cannot float a popover from a title-bar button, so in the extension the button opens a small webview with the same content beside the diff, or the form moves into the Details panel. It shows only a count of pending comments, as github.com does. <b>PR extension style</b>: what the GitHub Pull Requests extension does. "PR #15" opens an editor tab with the description and timeline, and the comment box at the bottom has Request Changes / Approve / Comment buttons. It has the most room and gives a PR overview (part 2 of the loop), but it is away from the tree and the diff. <b>Details panel</b>: the panel under the tree turns into the form and lists your pending comments; it stays next to the tree but is narrow.',
+    ['<span class="rec">decided (2026-10-07), for now:</span> PR extension style, an editor tab with the description, timeline and the review buttons', '<span class="alt">considered:</span> github.com style (in the extension it would open in the Details panel or a small webview)', '<span class="alt">considered:</span> the Details panel form']],
+  ['Q2. What does a new comment do by default?',
+    'Proposed: like github.com. With no pending review the comment box offers "Start review" (primary: kept private until you submit) and "Comment now" (posts at once). Once a review is pending, every new comment and reply goes into it. A reply to a thread while nothing is pending posts at once.',
+    ['<span class="rec">decided:</span> Start review first, as github.com does', 'Comment now first, as a chat would']],
+  ['Q3. Should approving warn when work is left?',
+    'Proposed: choosing Approve while a change that needs attention is unticked, or a thread is unresolved, shows what is left (each item jumps to it) and needs an "Approve anyway" tick before Submit works. Comment and Request changes are never checked. This is the one place the review loop uses the impact analysis to protect the reviewer.',
+    ['<span class="rec">decided:</span> warn, and require "Approve anyway"', 'warn only', 'refuse to approve until it is done', 'no check']],
+  ['Q4. How do threads show in the tree?',
+    'Proposed: counts only. 💬 N on a file and on a change counts its unresolved threads (posted ones), and ✎ N counts your pending comments. The threads themselves are in the diff and in the Details panel. A thread is "in" a change when its line falls inside the change\'s lines.',
+    ['<span class="rec">decided:</span> counts on file and change rows', 'thread rows under each change, next to callers and tests (more navigable, much longer tree)']],
+  ['Q5. What happens when GitHub says a viewed file changed since?',
+    'GitHub resets "viewed" to "changed since viewed" when a push touches the file. Proposed: the file\'s checkbox follows: rows whose content changed lose their tick (their review ids depend on the content, which R1–R6 already do), rows that did not change keep it, and the file row shows "👁 changed" until all are ticked again, which marks it viewed again. In the mockup, patch.js is in this state.',
+    ['<span class="rec">decided:</span> keep unchanged rows ticked, flag the file', 'untick the whole file']],
+  ['Q6. How do you comment on a caller? (decided)',
+    'GitHub only takes comments on lines of the diff. <b>Decided:</b> 💬 next to a caller comments on the change, and the extension adds, after your text, a block naming the caller, its file and line, and whether this PR changed it, followed by a permalink to the call at the PR\'s head. GitHub draws a permalink on its own line as a snippet of the code, so the PR author sees the call without leaving the thread. You can remove the block before posting. When the call itself is in the diff, 💬 comments right on that line instead and adds nothing. Try 💬 next to <code>hunks</code> on <code>allHunks</code>.',
+    ['<span class="rec">decided:</span> comment on the change, with generated caller context after your text', '<span class="alt">dropped:</span> quoting the caller at the start of the text box (the reviewer could edit it away or get it wrong)']],
+  ['Q7. Should there be a filter for unresolved threads?',
+    'Proposed: a third toggle, 💬, next to "Needs attention" and "Unreviewed". It keeps files and changes with unresolved threads, including files whose only threads are outdated or file-level.',
+    ['<span class="rec">decided:</span> yes, a third toggle', 'no, the counts are enough']],
+  ['Q8. Where do outdated threads and file comments go?',
+    'An outdated thread no longer maps onto the diff (its line was changed by a later push). Proposed: it is listed in the Details panel of its file with an "Outdated" tag and the line it was left on; it is not drawn in the diff. File-level comments sit at the top of the file\'s diff and in its Details. Resolved threads in the diff collapse to one line.',
+    ['<span class="rec">decided:</span> panel only, with the original line', 'drawn at the nearest current line']],
+  ['Q9. What happens when a GitHub call fails?',
+    'Proposed: nothing you wrote is lost. A failed "Comment now" or reply keeps the text in its box with the error under it; a failed submit keeps every pending comment and says so; a failed "viewed" write keeps the tick locally and shows "viewed not synced · retry" on the file row. Turn on "GitHub calls fail" to see each case.',
+    ['<span class="rec">decided:</span> keep the text, show the error where it happened, offer retry', 'a single error notification']],
+  ['Q10. The tree looks cluttered. What changes?',
+    'Switch "Tree" between Today and Proposed. VS Code fixes the row height, indent and fonts, so the clean-up is about what each row says and draws. Each item below is something a <code>TreeItem</code> can do:<ol style="margin:6px 0 0 18px;color:#bbb"><li><b>Symbol icons on changes.</b> Today every row uses the file-type icon, because <code>impactTree.iconMode</code> defaults to "file" and change rows carry the file\'s URI. Proposed: <code>symbol-method</code> / <code>symbol-function</code> codicons on changes, <code>{}</code> on outside lines, the trash can on deleted symbols, and file icons only on files.</li><li><b>Git colour and letter on files only.</b> Today each change row repeats the file\'s "A" or "M" and its colour, because the row\'s decoration URI is the file\'s. Proposed: change rows get no git decoration; the colour is left for what needs attention.</li><li><b>Folder last, and only its last part.</b> Today the description starts with the full folder, so a deep monorepo path ("components/consumer/src/bound-context/…") truncates to "compo…" and hides everything after it. Proposed: what needs attention, threads and progress first, then the last folder; the full path is in the tooltip and the Details header.</li><li><b>"in Container" only when it tells files apart.</b> Today every method row says "in ClassifyStoredObmReasonsQueryHandler", which repeats the file name. Proposed: only when a file\'s changes sit in more than one container.</li><li><b>Words only where something needs doing.</b> Rows that need attention keep their words ("⛔ 1 of 3 callers not updated"); the rest show one glyph, with the words in the tooltip and the Details panel.</li><li><b>A one-line summary.</b> "#15 · ⛔ 3 · 68 of 71 left" instead of a message that wraps to two lines; the base branch moves to the Details header.</li></ol>',
+    ['<span class="rec">decided (2026-10-07):</span> all six, except item 2: change rows keep the git letter (A, M, U…) as today; only their label colour goes', '<span class="rec">added:</span> a gap around an open file group. VS Code has no row margins, so the gap is a whole empty row; it is placed only before and after an expanded file, so a list of closed files stays compact']],
+  ['Q11. Where does the progress bar go?',
+    'The progress bar in the first mockup cannot be built where it was drawn: <code>TreeView.message</code> is plain text (no bar, no colour), and VS Code\'s only bar on a view is the indeterminate "busy" line used while analysing. Proposed: a strip at the top of the Details webview, "3 of 71 reviewed · ⛔ 3 need attention · 4%" with a green bar, which stays at the top while the panel scrolls. The tree summary and the view badge keep the counts in text, and the status bar keeps "68 left".',
+    ['<span class="rec">decided (2026-10-07):</span> top of the Details webview', 'a separate small webview view above the tree (an extra pane just for a bar)', 'text only, as today']],
+].map(([h, p, opts]) => `<div class="q"><h3>${h}</h3><p>${p}</p>${opts.map((o, i) => `<div class="opt">• ${i ? '<span class="alt">alternative:</span> ' : ''}${o}</div>`).join('')}</div>`).join('')}
+<h2>Not in this part</h2>
+<p>Suggested changes (writing and applying), the PR overview (description, conversation timeline, CI checks, reviewers, labels), merging, GitHub Enterprise hosts, and comments on local agent changes (no GitHub) come in the second part of the review loop.</p>`;
+
+render();
+const hash = location.hash.slice(1).split(',');
+if (hash.includes('annotate')) $('annoToggle').click();
+if (hash.includes('questions')) document.querySelector('[data-screen="questions"]').click();
+if (hash.includes('deep')) $('deepToggle').click();
+for (const st of ['panel', 'github', 'ext']) if (hash.includes(`style-${st}`)) document.querySelector(`[data-style="${st}"]`).click();
+if (hash.includes('today')) document.querySelector('[data-tree="today"]').click();
+if (hash.includes('submit')) openSubmit();
+$('tree').focus();
+</script>
+</body>
+</html>
