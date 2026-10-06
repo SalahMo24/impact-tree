@@ -96,7 +96,7 @@ function createTreeProvider(vscode, {
   // is the one we register from the pull request.
   /**
    * @param {string} file
-   * @param {number|null} pos
+   * @param {number|string|null} pos An offset, or a name for a row that has none (`outside`).
    */
   const uriFor = (file, pos) => {
     if (!file) return null;

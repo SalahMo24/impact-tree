@@ -72,7 +72,7 @@
       "Store.old deleted"
      ],
      [
-      "file:///repo/src/store.ts",
+      "file:///repo/src/store.ts#outside",
       "modified",
       "src/store.ts"
      ],
@@ -729,7 +729,7 @@
      "description": "lines 1–2, deleted before line 41",
      "icon": "symbol-namespace",
      "label": "Outside functions",
-     "resourceUri": "uri:file:///repo/src/store.ts",
+     "resourceUri": "uri:file:///repo/src/store.ts#outside",
      "tooltip": {
       "markdown": "**Outside functions** — `src/store.ts`\n\nlines 1–2, deleted before line 41\n\n_Changed lines in no function: imports, constants, types, fields and the like._"
      }
@@ -1949,7 +1949,7 @@
       "Store.old deleted"
      ],
      [
-      "file:///repo/src/store.ts",
+      "file:///repo/src/store.ts#outside",
       "modified",
       "src/store.ts"
      ],
@@ -2600,7 +2600,7 @@
      "description": "lines 1–2, deleted before line 41",
      "icon": "symbol-namespace",
      "label": "Outside functions",
-     "resourceUri": "uri:file:///repo/src/store.ts",
+     "resourceUri": "uri:file:///repo/src/store.ts#outside",
      "tooltip": {
       "markdown": "**Outside functions** — `src/store.ts`\n\nlines 1–2, deleted before line 41\n\n_Changed lines in no function: imports, constants, types, fields and the like._"
      }
@@ -3803,7 +3803,7 @@
       "Store.old deleted"
      ],
      [
-      "file:///repo/src/store.ts",
+      "file:///repo/src/store.ts#outside",
       "modified",
       "src/store.ts"
      ],
@@ -4467,7 +4467,7 @@
      "description": "lines 1–2, deleted before line 41",
      "icon": "symbol-namespace",
      "label": "Outside functions",
-     "resourceUri": "uri:file:///repo/src/store.ts",
+     "resourceUri": "uri:file:///repo/src/store.ts#outside",
      "tooltip": {
       "markdown": "**Outside functions** — `src/store.ts`\n\nlines 1–2, deleted before line 41\n\n_Changed lines in no function: imports, constants, types, fields and the like._"
      }

@@ -138,7 +138,7 @@ test('a change differing only in colour is a new decoration value, and an unchan
   assert.equal(fired.length, 2, 'turning the colour on is a change');
 });
 
-test('the tree asks for the colour on file rows and not on change, outside and deleted rows', async () => {
+test('the tree asks for the colour on file rows and not on change, outside, deleted and caller rows', async () => {
   const { provider, decorated, files, fileAt } = viewOf(resultOf({
     allChanged: [change('src/a.ts', 'run', 1)], deleted: [{ label: 'gone', key: 'gone', relPath: 'src/a.ts', file: '/r/src/a.ts', namePos: 400, startLine: 40 }],
     outside: [{ file: '/r/src/a.ts', relPath: 'src/a.ts', ranges: [[1, 2]] }], otherFiles: [{ path: 'notes.md', status: 'added' }],
@@ -146,12 +146,23 @@ test('the tree asks for the colour on file rows and not on change, outside and d
   }));
   await provider.getChildren();
   const tintOf = (suffix) => decorated.filter((d) => d.uri.endsWith(suffix)).map((d) => d.tint ?? true);
-  assert.deepEqual(tintOf('/r/src/a.ts'), [false, true], 'the outside row is untinted, the file row tinted (same path, no fragment)');
+  assert.deepEqual(tintOf('/r/src/a.ts'), [true], 'only the file row decorates the bare file URI, with the colour');
+  assert.deepEqual(tintOf('/r/src/a.ts#outside'), [false], 'the outside row has its own URI, untinted');
   assert.deepEqual(tintOf('/r/src/a.ts#10'), [false], 'the change row');
   assert.deepEqual(tintOf('/r/src/a.ts#400'), [false], 'the deleted row');
   assert.deepEqual(tintOf('/r/notes.md'), [true], 'a file without a call graph');
   assert.equal((await files()).length, 2);
   await fileAt('src/a.ts');
+});
+
+test('a caller row keeps its badge but not the colour of its changed file', async () => {
+  const { provider, decorated, fileAt } = viewOf(resultOf({
+    allChanged: [stale('src/a.ts', 'bad', 10)], fileStatus: { 'src/a.ts': 'modified', 'src/user.ts': 'modified' },
+  }));
+  const [finding] = (await provider.getChildren(await fileAt('src/a.ts'))).filter((r) => r.type === 'finding');
+  await provider.getChildren(finding);
+  const caller = decorated.filter((d) => d.uri.endsWith('/r/src/user.ts#70'));
+  assert.deepEqual(caller.map((d) => [d.status, d.tint]), [['modified', false]]);
 });
 
 // ---- 3. the folder, last and one segment ------------------------------------------------

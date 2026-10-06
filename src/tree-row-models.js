@@ -17,9 +17,9 @@ const { classifyCallerUpdateState } = require('./engine/call-sites');
  * @typedef {{ uri: any, status: string|undefined, tooltip: string, tint?: boolean }} DecorationRequest
  */
 /**
- * Maps a file and an optional offset to the row's resource URI. Supplied by the
+ * Maps a file and an optional offset (or a name, for a row with none) to the row's resource URI. Supplied by the
  * provider, which knows whether the result is a PR preview.
- * @typedef {(file: string, pos: number|null) => any} ResourceUriOf
+ * @typedef {(file: string, pos: number|string|null) => any} ResourceUriOf
  */
 
 const LEGEND = [
@@ -328,7 +328,9 @@ function buildOutsideRows(outside, { result, uriOf }) {
   /** @type {DecorationRequest[]} */
   const decorations = [];
   const rows = outside.map((o) => {
-    const uri = uriOf(o.file, null);
+    // Its own fragment: the file row decorates the bare file URI with the colour, and two
+    // decorations on one URI would overwrite each other.
+    const uri = uriOf(o.file, 'outside');
     const status = getFileStatus(result, o.relPath);
     decorations.push({ uri, status, tooltip: o.relPath, tint: false });
     return {
@@ -426,7 +428,7 @@ function buildCallerRows(classified, { ancestry, reviewParent, changedKeys, rel,
     const callState = classifyCallerUpdateState({ callSiteUpdates, callerChanged: symChanged });
     const relPath = rel ? rel(c.file) : c.file;
     const uri = uriOf(c.file, c.pos);
-    decorations.push({ uri, status: getFileStatus(result, relPath), tooltip: relPath });
+    decorations.push({ uri, status: getFileStatus(result, relPath), tooltip: relPath, tint: false });
     return {
       type: 'caller', reviewParent, label: c.label, file: c.file, pos: c.pos, test: c.test,
       callSites: c.callSites || [], sites: c.sites,
