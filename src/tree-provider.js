@@ -544,6 +544,15 @@ function createTreeProvider(vscode, {
       return state ? reviewTree.countReview(builtFor(state).rows, isReviewed) : null;
     },
     /**
+     * The unreviewed rows that need attention, in display order, whatever the filter.
+     * @returns {TreeRow[]|null} Null when no review is shown, so "none left" is never
+     *   confused with "not known".
+     */
+    attentionLeft() {
+      const state = shownState();
+      return state ? reviewTree.listAttentionLeft(builtFor(state).rows, isReviewed) : null;
+    },
+    /**
      * What the Details progress strip shows: the review's source line and its counts.
      * @returns {{ line: string, total: number, left: number, attention: number }|null} Null
      *   when no review is shown or it has no counting rows.
