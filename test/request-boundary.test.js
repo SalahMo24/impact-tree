@@ -453,11 +453,13 @@ test('rate limits become GitHubRateLimitError with the reset time when given, an
     [withHeaders(429, { 'x-ratelimit-reset': resetSeconds }), 429, resetSeconds * 1000],
     [withHeaders(429, {}), 429, null],
     [withHeaders(429, { 'retry-after': 'soon' }), 429, null],
+    // a secondary rate limit: requests remain, but GitHub asks to wait
+    [withHeaders(403, { 'x-ratelimit-remaining': '4000', 'retry-after': '0' }), 403, 'now'],
   ];
   for (const [res, status, resetAt] of cases) {
     const gh = await client(async () => res);
     await assert.rejects(gh.graphql('{ x }'), (e) => e.name === 'GitHubRateLimitError'
-      && e.status === status && e.resetAt === resetAt);
+      && e.status === status && (resetAt === 'now' ? Math.abs(e.resetAt - Date.now()) < 5000 : e.resetAt === resetAt));
     assert.equal(gh.isSignedIn(), true);
   }
   const before = Date.now();
@@ -498,4 +500,12 @@ test('graphql honours the deadline, the size limit and the caller signal', async
     setImmediate(() => mid.abort());
   }));
   await assert.rejects(late.graphql('{ x }', {}, { signal: mid.signal }), { name: 'GitHubCancelledError' });
+});
+
+test('a GraphQL RATE_LIMITED error is a rate limit; other types are kept on the error', async () => {
+  const limited = await client(async () => json({ data: null, errors: [{ type: 'RATE_LIMITED', message: 'API rate limit exceeded' }] }));
+  await assert.rejects(limited.graphql('{ x }'), (e) => e.name === 'GitHubRateLimitError' && e.status === 200);
+  assert.equal(limited.isSignedIn(), true);
+  const missing = await client(async () => json({ data: { node: null }, errors: [{ type: 'NOT_FOUND', message: 'gone', path: ['node'] }] }));
+  await assert.rejects(missing.graphql('{ x }'), (e) => e.name === 'GitHubGraphQLError' && e.errors[0].type === 'NOT_FOUND');
 });

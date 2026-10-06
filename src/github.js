@@ -9,7 +9,7 @@
 // the deadline, cancellation and size limits documented beside DEFAULT_LIMITS there.
 
 const {
-  DEFAULT_LIMITS, fetchBounded, GitHubAuthError, GitHubResponseError, GitHubGraphQLError,
+  DEFAULT_LIMITS, fetchBounded, GitHubAuthError, GitHubResponseError, GitHubGraphQLError, GitHubRateLimitError,
 } = require('./github-request');
 
 /**
@@ -99,11 +99,12 @@ function checkPullRequest(p, endpoint) {
 const METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
 
 /**
- * One entry of a GraphQL `errors` array: a string `message` and an optional `path` of
- * field names and list indexes.
+ * One entry of a GraphQL `errors` array: a string `message`, an optional `path` of
+ * field names and list indexes, and GitHub's optional `type` (e.g. `RATE_LIMITED`,
+ * `NOT_FOUND`).
  * @param {unknown} e
  * @param {string} endpoint
- * @returns {{ message: string, path: (string|number)[]|null }}
+ * @returns {{ message: string, path: (string|number)[]|null, type: string|null }}
  */
 function checkGraphQLError(e, endpoint) {
   if (!isObject(e) || !isString(e.message)) {
@@ -113,7 +114,7 @@ function checkGraphQLError(e, endpoint) {
   if (path != null && !(Array.isArray(path) && path.every((p) => isString(p) || Number.isSafeInteger(p)))) {
     throw new GitHubResponseError(endpoint, 'an `errors` entry has a malformed `path`');
   }
-  return { message: e.message, path: path == null ? null : path };
+  return { message: e.message, path: path == null ? null : path, type: isString(e.type) ? e.type : null };
 }
 
 /**
@@ -248,6 +249,7 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
    * @param {{ signal?: AbortSignal }} [options]
    * @returns {Promise<Record<string, unknown>>} The envelope's `data` object.
    * @throws {GitHubGraphQLError} GitHub reported errors.
+   * @throws {GitHubRateLimitError} One of them was `RATE_LIMITED`.
    * @throws {GitHubResponseError} The envelope is not `{ data, errors? }`.
    */
   async function graphql(query, variables, { signal } = {}) {
@@ -261,7 +263,12 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
     const { errors, data } = envelope;
     if (errors != null) {
       if (!Array.isArray(errors)) throw new GitHubResponseError(endpoint, '`errors` is not a list');
-      if (errors.length > 0) throw new GitHubGraphQLError(endpoint, errors.map((e) => checkGraphQLError(e, endpoint)));
+      if (errors.length > 0) {
+        const checked = errors.map((e) => checkGraphQLError(e, endpoint));
+        // GraphQL reports its rate limit in a 200; callers handle it like the REST one.
+        if (checked.some((e) => e.type === 'RATE_LIMITED')) throw new GitHubRateLimitError(endpoint, 200, null);
+        throw new GitHubGraphQLError(endpoint, checked);
+      }
     }
     if (!isObject(data)) throw new GitHubResponseError(endpoint, 'no `data` object and no `errors`');
     return data;

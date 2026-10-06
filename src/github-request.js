@@ -80,8 +80,9 @@ class GitHubAuthError extends Error {
 }
 
 /**
- * GitHub refused because a rate limit is spent (429, or 403 with `x-ratelimit-remaining:
- * 0`). The token is fine, so the caller keeps its session.
+ * GitHub refused because a rate limit is spent: 429, a 403 with `x-ratelimit-remaining:
+ * 0` or with `retry-after` (a secondary limit), or a GraphQL `RATE_LIMITED` error. The
+ * token is fine, so the caller keeps its session.
  */
 class GitHubRateLimitError extends Error {
   /**
@@ -106,7 +107,7 @@ class GitHubRateLimitError extends Error {
 class GitHubGraphQLError extends Error {
   /**
    * @param {string} endpoint
-   * @param {{ message: string, path: (string|number)[]|null }[]} errors
+   * @param {{ message: string, path: (string|number)[]|null, type: string|null }[]} errors
    */
   constructor(endpoint, errors) {
     super(`GitHub GraphQL error on ${endpoint}: ${errors.map((e) => e.message).join('; ')}`);
@@ -182,7 +183,8 @@ function rateLimitResetAt(headers) {
  * @throws {GitHubTimeoutError} The deadline passed.
  * @throws {GitHubResponseTooLargeError} The body passed `maxBytes`.
  * @throws {GitHubAuthError} The status was 401.
- * @throws {GitHubRateLimitError} The status was 429, or 403 with no requests remaining.
+ * @throws {GitHubRateLimitError} The status was 429, or 403 with no requests remaining or
+ *   with `retry-after`.
  * @throws {GitHubHttpError} Any other unaccepted non-2xx status.
  */
 async function fetchBounded(fetchImpl, url, init, bounds) {
@@ -213,8 +215,9 @@ async function fetchBounded(fetchImpl, url, init, bounds) {
     if (cause) throw cause;
     if (res.status === 401) throw new GitHubAuthError(res.status);
     if (passStatuses.includes(res.status)) return { status: res.status, contentType: '', text: null };
-    const limited = res.status === 429
-      || (res.status === 403 && String(res.headers.get('x-ratelimit-remaining')).trim() === '0');
+    // A secondary rate limit is a 403 with `retry-after` and requests still remaining.
+    const limited = res.status === 429 || (res.status === 403
+      && (String(res.headers.get('x-ratelimit-remaining')).trim() === '0' || res.headers.get('retry-after') !== null));
     if (limited) throw new GitHubRateLimitError(endpoint, res.status, rateLimitResetAt(res.headers));
     if (!res.ok) throw new GitHubHttpError(endpoint, res.status);
     if (!res.body) throw new GitHubResponseError(endpoint, 'no response body');
