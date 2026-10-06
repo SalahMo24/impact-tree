@@ -368,10 +368,30 @@ function findNextUnreviewed(files, { after = null, isReviewed, filter }) {
 }
 
 /**
+ * What is reviewed: `PR #15`, or `<mode> mode` for a local review (with the mode it was
+ * asked for when the analysis fell back to another).
+ * @param {any} result
+ * @param {{ kind: string, pr?: { number: number } }|null|undefined} source The session's source.
+ * @returns {string}
+ */
+function describeReviewSubject(result, source) {
+  const pr = source && (source.kind === 'pr' || source.kind === 'checkout') && source.pr ? source.pr.number : null;
+  const asked = result.requestedMode && result.requestedMode !== result.mode ? ` (requested ${result.requestedMode})` : '';
+  return pr == null ? `${result.mode} mode${asked}` : `PR #${pr}`;
+}
+
+/**
+ * What a review is against, for the Details progress strip: `PR #15 against main`.
+ * @param {any} result
+ * @param {{ kind: string, pr?: { number: number } }|null|undefined} source The session's source.
+ * @returns {string}
+ */
+const describeReviewSource = (result, source) => `${describeReviewSubject(result, source)} against ${result.base.ref}`;
+
+/**
  * The view's message and badge for a shown result: what is reviewed, how many unreviewed
- * rows need attention, and how many are left; the base is named by the Details header. A PR (a preview or a checkout) is
- * named by its number; a local review by its mode, and the mode it was asked for when the
- * analysis fell back to another.
+ * rows need attention, and how many are left; the base is named by the Details progress
+ * strip. The review is named by `describeReviewSubject`.
  * @param {any} result
  * @param {{ kind: string, pr?: { number: number } }|null|undefined} source The session's source.
  * @param {{ total: number, left: number, attention: number }} counts From `countReview`.
@@ -380,9 +400,7 @@ function findNextUnreviewed(files, { after = null, isReviewed, filter }) {
  *   badge once nothing is left.
  */
 function buildReviewSummary(result, source, { total, left, attention }, filter = 'all') {
-  const pr = source && (source.kind === 'pr' || source.kind === 'checkout') && source.pr ? source.pr.number : null;
-  const asked = result.requestedMode && result.requestedMode !== result.mode ? ` (requested ${result.requestedMode})` : '';
-  const what = pr == null ? `${result.mode} mode${asked}` : `PR #${pr}`;
+  const what = describeReviewSubject(result, source);
   const named = filter === 'all' ? '' : ` · filter: ${FILTER_LABELS[filter]}`;
   return {
     message: `${what} · ⛔ ${attention} · ${left} of ${total} left${named}`,
@@ -415,6 +433,6 @@ function findRowAtLine(files, relPath, line) {
 const span = (row) => row.finding.endLine - row.finding.startLine;
 
 module.exports = {
-  buildFileRows, buildImpactRows, collectCountingRows, collectTickTargets, needsAttention, countReview, buildReviewSummary,
+  buildFileRows, buildImpactRows, collectCountingRows, collectTickTargets, needsAttention, countReview, describeReviewSource, buildReviewSummary,
   findRowAtLine, filterFileRows, toggleFilter, findNextUnreviewed, treeItemId, buildEmptyFilterRow, buildSpacerRow,
 };

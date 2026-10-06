@@ -420,6 +420,17 @@ function createTreeProvider(vscode, {
       return state ? reviewTree.countReview(builtFor(state).rows, isReviewed) : null;
     },
     /**
+     * What the Details progress strip shows: the review's source line and its counts.
+     * @returns {{ line: string, total: number, left: number, attention: number }|null} Null
+     *   when no review is shown or it has no counting rows.
+     */
+    reviewProgress() {
+      const state = shownState();
+      if (!state) return null;
+      const counts = reviewTree.countReview(builtFor(state).rows, isReviewed);
+      return counts.total ? { line: reviewTree.describeReviewSource(state.result, state.source), ...counts } : null;
+    },
+    /**
      * The analysis that owns actions drawn for the shown review. Stable across ticks and
      * filters; null while no result is shown. A later analysis invalidates old actions.
      * @returns {number|null}

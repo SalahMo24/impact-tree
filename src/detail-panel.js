@@ -4,7 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { treeItemId } = require('./review-tree-model');
 const { prKey, parsePrAddress } = require('./pr-documents');
-const { buildDetailHtml, listCallerRows, describeOrigin, reviewPresentation } = require('./detail-panel-html');
+const { buildDetailHtml, listCallerRows, describeOrigin, reviewPresentation, progressPresentation } = require('./detail-panel-html');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 
@@ -63,7 +63,8 @@ function parseMessage(message, token) {
  *
  * A cursor moving inside the row shown changes only the header's line, so the header is
  * updated by a message to the page instead of a new document, which would reload it and
- * flicker. Progress patches text and attributes; a new row or analysis paints the whole
+ * flicker. Progress patches text and attributes (the shown row's button and summary, and the
+ * progress strip, which any tick can change); a new row or analysis paints the whole
  * document. A tree filter changes neither the shown row nor its contents.
  *
  * Feedback loop: revealing the cursor's row selects it in the tree, and VS Code reports
@@ -99,6 +100,8 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
   // It covers progress only; the session remains authoritative for analysis content.
   /** @type {import('./detail-panel-html').ReviewPresentation|null} */
   let lastReview = null;
+  /** @type {import('./detail-panel-html').ProgressPresentation|null} */
+  let lastProgress = null;
   /** @type {number|null|undefined} */
   let renderedVersion;
 
@@ -120,10 +123,23 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
     post({ type: 'review', token: renderToken, model: next });
   }
 
+  // The strip counts every row, so any tick can change it, not only a tick of the shown row.
+  /** @param {boolean} [force] */
+  function patchProgress(force = false) {
+    if (!webviewView || renderedVersion !== provider.reviewVersion()) return;
+    const next = progressPresentation(provider.reviewProgress());
+    if (!next) return;
+    const same = lastProgress && Object.entries(next).every(([key, value]) => /** @type {any} */ (lastProgress)[key] === value);
+    if (!force && same) return;
+    lastProgress = next;
+    post({ type: 'progress', token: renderToken, model: next });
+  }
+
   /** @param {import('./tree-provider').ReviewProgress} event */
   function onProgress(event) {
-    if (event.analysisId !== renderedVersion || !shown.id || !event.changedIds.includes(shown.id)) return;
-    patchReview();
+    if (event.analysisId !== renderedVersion) return;
+    patchProgress();
+    if (shown.id && event.changedIds.includes(shown.id)) patchReview();
   }
 
   const currentRow = () => (shown.id ? provider.rowById(shown.id) : null);
@@ -138,15 +154,17 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
     if (!webviewView) return;
     const row = currentRow();
     const state = getState();
+    const progress = progressPresentation(provider.reviewProgress());
     const nonce = crypto.randomBytes(16).toString('base64');
     const html = buildDetailHtml(row, {
       result: state && state.result, isReviewed: provider.isReviewed,
       impactRows: row && row.type === 'finding' ? provider.impactRowsOf(row) : [],
-      nonce, cspSource: webviewView.webview.cspSource, origin: shown.origin, lineOf,
+      nonce, cspSource: webviewView.webview.cspSource, origin: shown.origin, lineOf, progress,
     });
     renderToken = nonce;
     renderedVersion = provider.reviewVersion();
     lastReview = reviewPresentation(row, provider.isReviewed);
+    lastProgress = progress;
     webviewView.webview.html = html;
   }
   /** @param {string|null} id @param {string} origin */
@@ -245,6 +263,7 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
     if (!m || renderedVersion !== provider.reviewVersion()) return;
     if (m.type === 'ready') {
       patchReview(true);
+      patchProgress(true);
       if (shown.id) post({ type: 'origin', token: renderToken, text: describeOrigin(shown.origin) });
       return;
     }
@@ -268,7 +287,7 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
 
   const disposeView = () => {
     for (const s of viewSubscriptions) s.dispose();
-    viewSubscriptions = []; webviewView = null; renderToken = null; lastReview = null; renderedVersion = undefined;
+    viewSubscriptions = []; webviewView = null; renderToken = null; lastReview = null; lastProgress = null; renderedVersion = undefined;
   };
   const webviewProvider = {
     /** @param {any} resolved */
