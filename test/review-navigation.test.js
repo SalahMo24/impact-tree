@@ -218,12 +218,14 @@ test('package.json contributes the commands, the keybinding and the palette gate
     [{ command: 'impactTree.nextUnreviewed', key: 'alt+n', when: 'impactTree.hasReview' }]);
   assert.equal(contributes.commands.find((c) => c.command === 'impactTree.nextUnreviewed').title, 'Impact Tree: Go to next unreviewed change');
   assert.equal(env.seen.statusBar.tooltip, 'Go to the next unreviewed change (rebind it in Keyboard Shortcuts)');
-  // the title bar keeps refresh, the three filters and next; the rest is in the overflow menu
+  // the title bar keeps refresh, the three filters, next and (for a PR review only)
+  // "Submit review…"; the rest is in the overflow menu
   const changes = contributes.menus['view/title'].filter((m) => m.when.startsWith('view == impactTree.changes'));
   const groupOf = (id) => changes.filter((m) => m.command === id).map((m) => m.group);
   assert.deepEqual(changes.filter((m) => m.group.startsWith('navigation')).map((m) => m.command),
     ['impactTree.refresh', 'impactTree.filterAttention', 'impactTree.filterAttentionOn', 'impactTree.filterUnreviewed', 'impactTree.filterUnreviewedOn',
-      'impactTree.filterThreads', 'impactTree.filterThreadsOn', 'impactTree.nextUnreviewed']);
+      'impactTree.filterThreads', 'impactTree.filterThreadsOn', 'impactTree.nextUnreviewed',
+      'impactTree.submitReview']);
   assert.deepEqual(['selectMode', 'setCheckpoint', 'showLegend', 'showLog', 'clearReviewed'].map((c) => groupOf(`impactTree.${c}`)[0]),
     ['1_mode@1', '1_mode@2', '2_help@1', '2_help@2', '3_progress@1']);
   const palette = Object.fromEntries(contributes.menus.commandPalette.map((m) => [m.command, m.when]));
@@ -245,6 +247,35 @@ test('package.json contributes the commands, the keybinding and the palette gate
     for (const pair of [/Attention/, /Unreviewed/, /Threads/]) assert.equal(names.filter((n) => pair.test(n)).length, 1, `${filter} ${pair}`);
   }
 }));
+
+test('the rows the approve check lists: unreviewed rows needing attention, in display order, whatever the filter', () => withEnv(async (env) => {
+  useResult(env);
+  assert.equal(env.tree().attentionLeft(), null, 'unknown while no review is shown');
+  await env.refresh();
+  const { rows } = await rowsOf(env);
+  assert.deepEqual(env.tree().attentionLeft(), [rows[0]]);
+  await env.run('impactTree.filterUnreviewed');
+  assert.deepEqual(env.tree().attentionLeft(), [rows[0]], 'a filter hides nothing from the check');
+  env.tick(rows[0], true);
+  assert.deepEqual(env.tree().attentionLeft(), []);
+}));
+
+test('going to a row by its tree id reveals it as next unreviewed does; an unknown id reveals nothing', async () => {
+  const { createReviewNavigation } = require('../src/review-navigation');
+  const { treeItemId } = require('../src/review-tree-model');
+  const row = { type: 'finding', label: 'bad', pos: 10, finding: { relPath: 'a.ts' } };
+  const revealed = [];
+  const vscode = { StatusBarAlignment: { Left: 1 }, window: { createStatusBarItem: () => ({ show() {}, hide() {}, dispose() {} }) },
+    commands: { registerCommand: () => ({ dispose() {} }), executeCommand: async () => undefined } };
+  const navigation = createReviewNavigation(vscode, {
+    provider: { rowById: (id) => (id === treeItemId(row) ? row : null) },
+    view: { selection: [], reveal: async (r, options) => { revealed.push({ r, options }); } },
+  });
+  assert.equal(await navigation.revealRow(treeItemId(row)), true);
+  assert.deepEqual(revealed, [{ r: row, options: { select: true, focus: true, expand: true } }]);
+  assert.equal(await navigation.revealRow('finding:gone:x:1'), false);
+  assert.equal(revealed.length, 1);
+});
 
 /** The first view/title entry of a command. */
 const title0 = (contributes, id) => contributes.menus['view/title'].find((m) => m.command === id);

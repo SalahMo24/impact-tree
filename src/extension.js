@@ -18,6 +18,7 @@ const { createViewedSync } = require('./viewed-sync');
 const { createOpenReview } = require('./open-review');
 const { threadsViewOf, NO_THREADS } = require('./review-threads');
 const { createReviewComments } = require('./review-comments');
+const { createPullRequestPanel } = require('./pr-overview-panel');
 const { registerContentProviders } = require('./content-providers');
 const { registerCommands } = require('./commands');
 
@@ -196,6 +197,12 @@ function activate(context) {
   const openReview = createOpenReview(vscode, session, { log });
   const lens = createReviewLens(vscode, { provider, getState: () => owned.state, callerUri: openReview.callerUri, positionOf: offsetToPosition, log });
   context.subscriptions.push(...lens.disposables);
+
+  // The Pull Request tab, the pending-review status bar item and the jump to a thread.
+  const pullRequestTab = createPullRequestPanel(vscode, {
+    store: reviewStore, provider, revealRow: navigation.revealRow, openFile: openReview.openFile, log,
+  });
+  context.subscriptions.push(...pullRequestTab.disposables);
 
   // Restore an existing session silently so a returning user sees their PRs without
   // being prompted; never pop a sign-in modal on startup.
