@@ -9,7 +9,7 @@
 // the deadline, cancellation and size limits documented beside DEFAULT_LIMITS there.
 
 const {
-  DEFAULT_LIMITS, fetchBounded, GitHubAuthError, GitHubResponseError,
+  DEFAULT_LIMITS, fetchBounded, GitHubAuthError, GitHubResponseError, GitHubGraphQLError,
 } = require('./github-request');
 
 /**
@@ -96,6 +96,26 @@ function checkPullRequest(p, endpoint) {
   return p;
 }
 
+const METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
+
+/**
+ * One entry of a GraphQL `errors` array: a string `message` and an optional `path` of
+ * field names and list indexes.
+ * @param {unknown} e
+ * @param {string} endpoint
+ * @returns {{ message: string, path: (string|number)[]|null }}
+ */
+function checkGraphQLError(e, endpoint) {
+  if (!isObject(e) || !isString(e.message)) {
+    throw new GitHubResponseError(endpoint, 'an `errors` entry has no string `message`');
+  }
+  const { path } = e;
+  if (path != null && !(Array.isArray(path) && path.every((p) => isString(p) || Number.isSafeInteger(p)))) {
+    throw new GitHubResponseError(endpoint, 'an `errors` entry has a malformed `path`');
+  }
+  return { message: e.message, path: path == null ? null : path };
+}
+
 /**
  * The tree row shows avatars at 16px, so ask for a small image (`s` is GitHub's size
  * parameter, in pixels; 32 stays sharp on high-DPI screens). Anything but an https URL
@@ -175,18 +195,26 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
    * @param {number} request.maxBytes
    * @param {AbortSignal} [request.signal]
    * @param {number[]} [request.passStatuses]
+   * @param {'GET'|'POST'|'PUT'|'PATCH'|'DELETE'} [request.method] Defaults to GET.
+   * @param {unknown} [request.body] Sent as JSON; only with a non-GET method. A write is
+   *   sent once: nothing here or below retries it.
    */
-  async function send({ url, endpoint, accept, maxBytes, signal, passStatuses }) {
+  async function send({ url, endpoint, accept, maxBytes, signal, passStatuses, method = 'GET', body }) {
+    if (!METHODS.has(method)) throw new TypeError(`unsupported HTTP method ${method}`);
+    if (body !== undefined && method === 'GET') throw new TypeError('a GET request cannot carry a body');
     if (!session) throw new Error('not signed in to GitHub');
     const client = fetchImpl || globalThis.fetch;
     if (typeof client !== 'function') throw new Error('this editor build has no global fetch — cannot reach the GitHub API');
     try {
       return await fetchBounded(client, url, {
+        method,
         headers: {
           Authorization: `Bearer ${session.accessToken}`,
           Accept: accept,
           'X-GitHub-Api-Version': '2022-11-28',
+          ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       }, { endpoint, deadlineMs: limits.requestTimeoutMs, maxBytes, signal, passStatuses });
     } catch (e) {
       // A revoked or under-scoped token looks identical to "no PRs" unless we say so.
@@ -197,17 +225,46 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
 
   /**
    * @param {string} pathname
-   * @param {{ signal?: AbortSignal }} [options]
+   * @param {{ signal?: AbortSignal, method?: 'GET'|'POST'|'PUT'|'PATCH'|'DELETE',
+   *   body?: unknown }} [options]
    * @returns {Promise<unknown>}
    */
-  async function api(pathname, { signal } = {}) {
+  async function api(pathname, { signal, method, body } = {}) {
     const res = await send({
       url: `https://api.github.com${pathname}`, endpoint: pathname,
       accept: 'application/vnd.github+json', maxBytes: limits.maxJsonBytes, signal,
+      method, body,
     });
     // No `passStatuses` here, so the body was read.
     try { return JSON.parse(/** @type {string} */ (res.text)); }
     catch { throw new GitHubResponseError(pathname, 'the body is not JSON'); }
+  }
+
+  /**
+   * Runs one GraphQL operation. The answer is complete or it is an error: a non-empty
+   * `errors` array rejects even when `data` came with it.
+   * @param {string} query
+   * @param {Record<string, unknown>} [variables]
+   * @param {{ signal?: AbortSignal }} [options]
+   * @returns {Promise<Record<string, unknown>>} The envelope's `data` object.
+   * @throws {GitHubGraphQLError} GitHub reported errors.
+   * @throws {GitHubResponseError} The envelope is not `{ data, errors? }`.
+   */
+  async function graphql(query, variables, { signal } = {}) {
+    if (!isString(query) || query.trim() === '') throw new TypeError('a GraphQL query must be a non-empty string');
+    if (variables != null && !isObject(variables)) throw new TypeError('GraphQL variables must be an object');
+    const endpoint = '/graphql';
+    const envelope = await api(endpoint, {
+      signal, method: 'POST', body: { query, variables: variables || {} },
+    });
+    if (!isObject(envelope)) throw new GitHubResponseError(endpoint, 'the answer is not an object');
+    const { errors, data } = envelope;
+    if (errors != null) {
+      if (!Array.isArray(errors)) throw new GitHubResponseError(endpoint, '`errors` is not a list');
+      if (errors.length > 0) throw new GitHubGraphQLError(endpoint, errors.map((e) => checkGraphQLError(e, endpoint)));
+    }
+    if (!isObject(data)) throw new GitHubResponseError(endpoint, 'no `data` object and no `errors`');
+    return data;
   }
 
   /**
@@ -408,7 +465,7 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
   }
 
   return {
-    signIn, isSignedIn, account, signOutLocally, listOpenPullRequests, listMyTeams,
+    signIn, isSignedIn, account, signOutLocally, graphql, listOpenPullRequests, listMyTeams,
     listPullRequestFiles, fileAtRef, parseRemote, getPullRequest, mergeBase,
   };
 }
