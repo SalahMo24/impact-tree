@@ -91,7 +91,11 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
       const counts = provider.reviewCounts();
       setContext('impactTree.filter', provider.getFilter());
       setContext('impactTree.hasReview', counts !== null);
-      if (counts) { bar.text = statusBarText(counts, platform); bar.show(); } else bar.hide();
+      if (counts) {
+        const text = statusBarText(counts, platform);
+        if (bar.text !== text) bar.text = text;
+        bar.show();
+      } else bar.hide();
     },
   };
 }

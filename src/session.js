@@ -77,6 +77,10 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
   const lifecycle = { state: 'starting', run: null, checkout: null, generation: 0 };
   // Every run begun and not yet released, current or not, so release can settle it.
   const records = new Map();
+  // Worker index belongs to this session. Completed runs may reuse it after the
+  // worker validates worktree metadata; cancellation and disposal terminate it.
+  let modulePool = null;
+  let moduleRepo = null;
   const disposed = () => lifecycle.state === 'disposed';
   const log = (m) => { if (!disposed()) logToChannel(m); };
 
@@ -124,7 +128,8 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
    * against the PR's base, until a request with another source replaces it.
    * @param {{ source: { kind: 'local' } | { kind: 'pr', pr: object } | { kind: 'checkout', pr: object, sha: string },
    *   stage: 'preparing'|'analysing' }} request
-   *   `stage` is the phase the run starts in; a local or checkout run prepares the language server first.
+   *   `stage` is the phase the run starts in. Local/checkout runs publish changed rows
+   *   before warming the language server and resolving their callers.
    * @returns {{ id: number, signal: AbortSignal } | null} The run's handle, or null when refused.
    *   The signal is aborted when the run is replaced, a checkout starts, or the session is disposed.
    */
@@ -147,7 +152,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
     lifecycle.run = record;
     lifecycle.state = stage;
     if (source.kind !== 'pr') session.resolverOverride = null;     // leaving a PR preview
-    session.state = { ...session.state, source };
+    session.state = { ...session.state, source, result: null, error: null };
     session.decorate.clear();
     session.provider.refresh();
     return handle;
@@ -164,7 +169,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
   }
 
   /**
-   * Publishes a finished run's result, but only while the run is still current. The
+   * Publishes a prepared or finished run's result, only while the run is current. The
    * caller performs its remaining publication (log lines, status bar, review identity)
    * only when this returns true, and synchronously, so nothing can replace the run in
    * between.
@@ -299,6 +304,15 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
     }
   }
 
+  function configureLocalReview(source, repo, result, base) {
+    if (!review) return;
+    const { makeGit } = require('./engine/git');
+    const { createReviewIdentity, localRevisions } = require('./review-identity');
+    const identity = createReviewIdentity(loadTypeScript(repo, repo), repo, localRevisions(repo, result, makeGit(repo)));
+    const { key, replaces } = reviewKeys(source, repo, result, base);
+    review.configure(key, identity, { migrateFrom: replaces });
+  }
+
   // Which review the result belongs to, and the key it replaces. A checked-out PR is
   // identified by its number alone: its worktree is a detached HEAD, which names no
   // branch, and a push must not start the review over (row ids carry the content, so a
@@ -330,11 +344,18 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
     session.resolver.clear();
     session.localResolver = null;
     const tStart = Date.now();
-    const report = (m) => { if (progress) progress.report({ message: m }); };
+    const report = (m) => { if (!run.signal.aborted && progress) progress.report({ message: m }); };
     // vscode.commands.executeCommand takes no cancellation token, so the language
     // server cannot be told to stop. The signal stops new queries; one already sent
     // finishes in the server and its answer is dropped with the cancelled run.
     const result = await analyze(repo, {
+      onPrepared: async (pending) => {
+        if (!completeAnalysisRun(run, { result: pending, repo, expansionResolver: null })) return;
+        configureLocalReview(source, repo, pending, base);
+        session.provider.refresh();
+        log(`changed files ready in ${Date.now() - tStart}ms; caller analysis continues`);
+        if (pending.allChanged.length) await untilCancelled(run.signal, session.ensureReady(progress));
+      },
       onProgress: (p2) => {
         if (p2.phase === 'component') report(`analysing ${p2.component}…`);
         else if (p2.total) report(`${p2.component}: resolving callers ${p2.done}/${p2.total}`);
@@ -347,19 +368,22 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
       concurrency: cfg.get('concurrency', 8),
       onDirty: 'fallback',                   // never blank the view because a file is edited
       makeResolver: () => session.resolver,
+      makeModuleCallers: ({ ts, git }) => {
+        if (!modulePool || moduleRepo !== repo) {
+          modulePool?.dispose();
+          moduleRepo = repo;
+          modulePool = require('./module-caller-pool').createModuleCallerPool(repo);
+        }
+        return modulePool.forAnalysis(ts, git, run.signal);
+      },
       signal: run.signal,
     });
+    throwIfCancelled(run.signal);
+    result.moduleCallers?.complete?.();
     const expansionResolver = withModuleCallers(session.resolver, result.moduleCallers);
     if (!completeAnalysisRun(run, { result, repo, expansionResolver })) return;
     logLocalRun(result, repo, tStart);
-    if (review) {
-      const { makeGit } = require('./engine/git');
-      const git = makeGit(repo);
-      const { createReviewIdentity, localRevisions } = require('./review-identity');
-      const identity = createReviewIdentity(loadTypeScript(repo, repo), repo, localRevisions(repo, result, git));
-      const { key, replaces } = reviewKeys(source, repo, result, base);
-      review.configure(key, identity, { migrateFrom: replaces });
-    }
+    configureLocalReview(source, repo, result, base);
     const stale = result.findings.reduce((n, f) => n + f.staleCallers, 0);
     vscode.window.setStatusBarMessage(
       `Impact Tree: ${result.findings.length} finding(s), ${stale} un-updated caller(s), base ${result.base.ref}`, 8000);
@@ -367,13 +391,13 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
 
   // Runs a local analysis of `source` in `mode`; never rejects.
   async function analyseLocally(source, mode) {
-    const run = beginAnalysisRun({ source, stage: 'preparing' });
+    const run = beginAnalysisRun({ source, stage: 'analysing' });
     if (!run) return;
     try {
       await vscode.window.withProgress(
         { location: { viewId: 'impactTree.changes' }, title: 'Impact Tree' },
         async (progress) => {
-          await untilCancelled(run.signal, session.ensureReady(progress));
+          session.ensureResolver();
           beginAnalysingStage(run);
           session.provider.refresh();
           await analyseLocalRun(run, source, mode, progress);
@@ -467,6 +491,8 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
     lifecycle.run = null;
     lifecycle.checkout = null;
     if (run) run.controller.abort();
+    modulePool?.dispose();
+    modulePool = null;
     session.resolver = null;
     session.localResolver = null;
     session.resolverOverride = null;
@@ -496,8 +522,9 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
     isCurrentAnalysis, getAnalysisId, beginCheckout, endCheckout, checkoutInProgress, isBusy, getPhase,
     prewarmInBackground, dispose, treeResolver,
   });
-  const { ensureReady } = createReadiness(vscode, session, { log });
+  const { ensureReady, ensureResolver } = createReadiness(vscode, session, { log });
   session.ensureReady = ensureReady;
+  session.ensureResolver = ensureResolver;
   return session;
 }
 

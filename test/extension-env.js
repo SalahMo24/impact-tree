@@ -9,6 +9,8 @@ const Module = require('module');
 const { execFileSync } = require('child_process');
 const { clearVirtualText } = require('../src/engine/textpos');
 
+const { createPage } = require('./webview-page');
+
 const SRC = path.resolve(__dirname, '../src');
 const baseStub = require('./vscode-stub');
 
@@ -191,9 +193,10 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     let resolved = null;
     try { resolved = Module._resolveFilename(name, parent); } catch { /* not a file module */ }
     if (resolved === path.join(SRC, 'engine/analyze-remote.js')) {
-      return { analyzeRemote: async ({ pr, signal }) => {
+      return { analyzeRemote: async ({ pr, signal, onPrepared }) => {
         seen.remote.push(pr.number);
         seen.signals.push(signal);
+        if (hooks.remotePrepared) await onPrepared(hooks.remotePrepared(pr));
         await holds.remote.enter(() => undefined);
         return hooks.remoteResult(pr);
       } };
@@ -202,6 +205,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       return { ...originalLoad.call(this, name, parent, ...rest), analyze: async (_repo, o) => {
         seen.analyze.push({ mode: o.mode, base: o.base });
         seen.signals.push(o.signal);
+        if (hooks.localPrepared) await o.onPrepared(hooks.localPrepared(o));
         await holds.analyze.enter(() => undefined);
         return hooks.localResult(o, seen.analyze.length);
       } };
@@ -288,12 +292,13 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     // lets a test post a message as the page's script would, or hide and show the view.
     openDetails() {
       const listeners = [], shown = [];
-      let html = '';
+      let html = '', page = null;
       const details = { loads: 0, posted: [] };
+      Object.defineProperty(details, 'displayHtml', { get: () => page ? page.html() : html });
       const webview = { options: null, cspSource: 'vscode-webview://test',
-        get html() { return html; }, set html(value) { html = value; details.loads++; },
+        get html() { return html; }, set html(value) { html = value; details.loads++; page = createPage(html); },
         onDidReceiveMessage: (handler) => { listeners.push(handler); return disposable(); },
-        postMessage: async (message) => { details.posted.push(message); return true; } };
+        postMessage: async (message) => { details.posted.push(message); if (page) page.receive(message); return true; } };
       const webviewView = { webview, visible: true, onDidDispose: () => disposable(),
         onDidChangeVisibility: (handler) => { shown.push(handler); return disposable(); } };
       captured.webviews.get('impactTree.details').resolveWebviewView(webviewView, {}, { isCancellationRequested: false });

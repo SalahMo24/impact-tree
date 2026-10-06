@@ -52,6 +52,8 @@ const normaliseStatus = (s) => {
  *   uses 300, one above 3000 warns and uses 3000.
  * @param {number} [args.concurrency] Parallel file fetches, 1..32; an invalid value warns and uses 8.
  * @param {(event: {phase: string, message: string, done?: number, total?: number}) => void} [args.onProgress]
+ * @param {(result: object) => Promise<void>|void} [args.onPrepared] Changed rows and pinned
+ *   diff texts, published before configuration fetching and caller analysis.
  * @param {(message: string) => void} [args.trace]
  * @param {AbortSignal} [args.signal]
  * @returns {Promise<object>} The same shape as analyze()'s result, with `tierA: true`; `outside`
@@ -60,7 +62,7 @@ const normaliseStatus = (s) => {
  */
 async function analyzeRemote({
   ts, gh, slug, pr, repoRoot,
-  maxFiles, concurrency, onProgress = () => {}, trace = () => {}, signal,
+  maxFiles, concurrency, onProgress = () => {}, onPrepared, trace = () => {}, signal,
 }) {
   if (!ts) throw new Error('Tier A needs TypeScript to parse the PR files');
   throwIfCancelled(signal);
@@ -186,13 +188,36 @@ async function analyzeRemote({
       + `-> ${r.changed.length} changed, ${r.deleted.length} deleted symbol(s)`);
   }
 
+  // A module file, a barrel, a const map of error codes: real changes with no changed
+  // callable. Analysing them yields nothing, and until now they then appeared nowhere
+  // at all -- a PR review tool that silently omits changed files is worse than one
+  // that shows them plainly, so they join the file list.
+  const withSymbols = new Set([...changed, ...deleted].map((c) => c.relPath));
+  const noCallable = usable
+    .filter((f) => !withSymbols.has(f.path))
+    .map((f) => ({ path: f.path, status: f.status, noCallable: true }));
+  if (noCallable.length) trace(`${noCallable.length} changed source file(s) have no changed callable`);
+  otherFiles.push(...noCallable);
+
+  // The fetched text is the only copy of these revisions we have; the diff views read
+  // it back rather than the worktree, which is on an unrelated branch.
+  const texts = new Map();
+  for (const f of usable) texts.set(f.path, { head: f.headText, base: f.baseText });
+
+  require('./pending-analysis').initialisePending(changed);
+  if (onPrepared) {
+    await onPrepared(require('./pending-analysis').snapshot(makeResult(true, null)));
+    throwIfCancelled(signal);
+  }
+
   // ---- callers, from the PR's own files only --------------------------------------
   trace(`total ${changed.length} changed symbol(s), ${deleted.length} deleted`);
   onProgress({ phase: 'index', message: `indexing ${usable.length} file(s)` });
-  const moduleOptions = await require('./remote-config').remoteOptions(
-    ts, gh, slug, pr.headSha, repoRoot, usable.map((f) => f.path), warnings, signal);
-  throwIfCancelled(signal);
-  const packages = await require('./remote-config').remotePackages(gh, slug, pr.headSha, repoRoot, usable.map(f => f.path), warnings, signal);
+  const config = require('./remote-config');
+  const [moduleOptions, packages] = await Promise.all([
+    config.remoteOptions(ts, gh, slug, pr.headSha, repoRoot, usable.map(f => f.path), warnings, signal),
+    config.remotePackages(gh, slug, pr.headSha, repoRoot, usable.map(f => f.path), warnings, signal),
+  ]);
   throwIfCancelled(signal);
   const idx = createSyntacticIndex(ts,
     usable.filter((f) => f.headText != null).map((f) => ({ path: abs(f.path), text: f.headText })),
@@ -238,59 +263,48 @@ async function analyzeRemote({
 
   throwIfCancelled(signal);
 
-  // ---- roots and nesting, same rules as the local path ----------------------------
-  const ranked = seedRoots(changed, changedKeys).sort((a, b) => b.score - a.score);
-  const nested = nestedIds(changed);
-  for (const c of changed) c.isRoot = !nested.has(`${c.file}#${c.namePos}`);
+  return makeResult(false, resolver);
 
-  // A module file, a barrel, a const map of error codes: real changes with no changed
-  // callable. Analysing them yields nothing, and until now they then appeared nowhere
-  // at all -- a PR review tool that silently omits changed files is worse than one
-  // that shows them plainly, so they join the file list.
-  const withSymbols = new Set([...changed, ...deleted].map((c) => c.relPath));
-  const noCallable = usable
-    .filter((f) => !withSymbols.has(f.path))
-    .map((f) => ({ path: f.path, status: f.status, noCallable: true }));
-  if (noCallable.length) trace(`${noCallable.length} changed source file(s) have no changed callable`);
-  otherFiles.push(...noCallable);
+  function makeResult(callersPending, resolver) {
+    // ---- roots and nesting, same rules as the local path ----------------------------
+    const ranked = seedRoots(changed, changedSymbolKeys(changed)).sort((a, b) => b.score - a.score);
+    const nested = nestedIds(changed);
+    for (const c of changed) c.isRoot = !nested.has(`${c.file}#${c.namePos}`);
 
-  // The fetched text is the only copy of these revisions we have; the diff views read
-  // it back rather than the worktree, which is on an unrelated branch.
-  const texts = new Map();
-  for (const f of usable) texts.set(f.path, { head: f.headText, base: f.baseText });
-
-  return {
-    tierA: true,
-    texts,
-    coverage: 'pr-files-only',
-    prNumber: pr.number,
-    headSha: pr.headSha,
-    pr,
-    allChanged: changed.slice().sort((a, b) => b.score - a.score || a.label.localeCompare(b.label)),
-    nestedCount: nested.size,
-    otherFiles,
-    mode: 'pr-preview',
-    requestedMode: 'pr-preview',
-    modeDesc: `PR #${pr.number} without a checkout`,
-    dirtyCount: 0,
-    base: { ref: pr.baseRef, sha: pr.mergeBaseSha },
-    warnings,
-    concurrency: workers,
-    changedFileCount: usable.length,
-    changedPaths: usable.map((f) => f.path),
-    fileStatus: Object.fromEntries(listed.files.map((f) => [f.path, normaliseStatus(f.status)])),
-    basePaths,
-    changedRanges,
-    outside,
-    unanalysable: [],
-    components: [{ component: 'pull request', changed, deleted, roots: ranked, forest: [], stats: resolver.stats() }],
-    findings: changed.filter((c) => c.kinds.some((k) => k.id !== 'body')).sort((a, b) => b.score - a.score),
-    deleted,
-    untested: [],
-    testReachComputed: false,
-    unknownCallers: changed.filter((c) => c.callerState === 'unknown'),
-    resolver,
-  };
+    return {
+      callersPending,
+      tierA: true,
+      texts,
+      coverage: 'pr-files-only',
+      prNumber: pr.number,
+      headSha: pr.headSha,
+      pr,
+      allChanged: changed.slice().sort((a, b) => b.score - a.score || a.label.localeCompare(b.label)),
+      nestedCount: nested.size,
+      otherFiles,
+      mode: 'pr-preview',
+      requestedMode: 'pr-preview',
+      modeDesc: `PR #${pr.number} without a checkout`,
+      dirtyCount: 0,
+      base: { ref: pr.baseRef, sha: pr.mergeBaseSha },
+      warnings,
+      concurrency: workers,
+      changedFileCount: usable.length,
+      changedPaths: usable.map((f) => f.path),
+      fileStatus: Object.fromEntries(listed.files.map((f) => [f.path, normaliseStatus(f.status)])),
+      basePaths,
+      changedRanges,
+      outside,
+      unanalysable: [],
+      components: [{ component: 'pull request', changed, deleted, roots: ranked, forest: [], stats: resolver ? resolver.stats() : {} }],
+      findings: changed.filter((c) => c.kinds.some((k) => k.id !== 'body')).sort((a, b) => b.score - a.score),
+      deleted,
+      untested: [],
+      testReachComputed: false,
+      unknownCallers: changed.filter((c) => c.callerState === 'unknown'),
+      resolver,
+    };
+  }
 }
 
 function listedContentId(f) {

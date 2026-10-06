@@ -231,6 +231,8 @@ async function renderTree({ state, resolver, review = null, getPhase, isBusy }) 
   };
   await visit(undefined, '', 0);
   await tick();
+  // One batch for the synchronous expansion walk; previously each read scheduled a
+  // global flush (36 for local states, 9 for preview states). Row content is unchanged.
   rows.push({ flushes: decorations.flushes() });
   return { summary: summarize(provider.summarize()), rows };
 }

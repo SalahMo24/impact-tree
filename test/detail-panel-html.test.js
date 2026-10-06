@@ -299,6 +299,7 @@ test('the generated page script attaches its render token to every action', () =
       preventDefault() {} });
   }
   assert.deepEqual(sent, [
+    { type: 'ready', token: NONCE },
     { type: 'tick', id: 'row-id', on: true, token: NONCE },
     { type: 'next', token: NONCE },
     { type: 'showCallers', id: 'row-id', token: NONCE },

@@ -49,6 +49,18 @@ function createReadiness(vscode, session, { log }) {
     return null;
   }
 
+  function ensureResolver() {
+    if (session.resolver) return session.resolver;
+    const repo = session.repoRoot();
+    let ts = null;
+    try { ts = loadTypeScript(repo, repo); }
+    catch (e) { log(`typescript not resolvable — CQRS edges disabled: ${e.message}`); }
+    session.resolver = createVscodeResolver({ ts, repoRoot: repo, trace: m => log(`  · ${m}`),
+      filterInherited: vscode.workspace.getConfiguration('impactTree').get('filterInheritedOverReports', true) });
+    log(`resolver created  cqrs=${ts ? 'on' : 'off'}`);
+    return session.resolver;
+  }
+
   // Resolves every prerequisite once: workspace, typescript, resolver, warm language
   // server. Concurrent callers share the same promise instead of racing. The session
   // owns `session.resolver` and `session.readyPromise` (see src/session.js); this module
@@ -59,21 +71,13 @@ function createReadiness(vscode, session, { log }) {
       const say = (m) => { if (progress) progress.report({ message: m }); log(`  · ${m}`); };
       const repo = session.repoRoot();
 
-      if (!session.resolver) {
-        say('loading typescript');
-        let ts = null;
-        try { ts = loadTypeScript(repo, repo); }
-        catch (e) { log(`typescript not resolvable — CQRS edges disabled: ${e.message}`); }
-        session.resolver = createVscodeResolver({ ts, repoRoot: repo, trace: (m) => log(`  · ${m}`),
-          filterInherited: vscode.workspace.getConfiguration('impactTree').get('filterInheritedOverReports', true) });
-        log(`resolver created  cqrs=${ts ? 'on' : 'off'}`);
-      }
+      const resolver = ensureResolver();
 
-      if (!session.resolver.isWarm()) {
+      if (!resolver.isWarm()) {
         say('indexing the workspace (first run only)');
         const t = await warmTarget(repo);
         if (t) {
-          const ok = await session.resolver.warmUp(t.file, t.pos);
+          const ok = await resolver.warmUp(t.file, t.pos);
           if (!ok) log('language server never warmed; results may be incomplete');
         } else {
           log('no changed TypeScript file to warm with — skipping warm-up');
@@ -90,7 +94,7 @@ function createReadiness(vscode, session, { log }) {
     return prepare;
   }
 
-  return { ensureReady, warmTarget };
+  return { ensureReady, ensureResolver, warmTarget };
 }
 
 module.exports = { createReadiness };

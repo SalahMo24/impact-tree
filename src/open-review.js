@@ -8,8 +8,34 @@ const { prQuery } = require('./pr-documents');
  *
  * @param {*} vscode
  * @param {object} session
+ * @param {{ log?: (message: string) => void }} [options]
  */
-function createOpenReview(vscode, session) {
+function createOpenReview(vscode, session, { log = () => {} } = {}) {
+  // Correlate clicks with the editor that actually opened. Only addresses and timings
+  // are logged; source text is never logged. The counter belongs to this activation.
+  let openId = 0;
+  async function trackOpen(kind, uri, open) {
+    const id = ++openId;
+    const started = Date.now();
+    log(`editor #${id}: request ${kind} ${uri.toString()}`);
+    try {
+      await open();
+      const input = vscode.window.tabGroups?.activeTabGroup?.activeTab?.input;
+      const activeKind = input?.original && input?.modified ? 'diff' : input?.uri ? 'file' : 'unknown';
+      const activeUri = input?.modified || input?.uri;
+      log(`editor #${id}: completed ${kind} in ${Date.now() - started}ms; active=${activeKind}${activeUri ? ` ${activeUri.toString()}` : ''}`);
+    } catch (e) {
+      log(`editor #${id}: failed ${kind}: ${e && e.message || 'unknown error'}`);
+      throw e;
+    }
+  }
+
+  function openDiff(left, right, title, options) {
+    log(`editor: base ${left.toString()}`);
+    return trackOpen('diff', right, () => vscode.commands.executeCommand('vscode.diff', left, right, title,
+      ...(options ? [options] : [])));
+  }
+
   let callSiteDecoration = null;
   function decorationType() {
     if (!callSiteDecoration) {
@@ -84,7 +110,7 @@ function createOpenReview(vscode, session) {
     const right = headUriFor(f.relPath, f.file);
     const sel = new vscode.Range(f.startLine - 1, 0, f.startLine - 1, 0);
     const rhs = session.isTierA() ? `PR #${session.state.result.prNumber}` : 'working';
-    await vscode.commands.executeCommand('vscode.diff', baseUriFor(f.relPath), right,
+    await openDiff(baseUriFor(f.relPath), right,
       `${path.basename(f.relPath)} (${String(session.state.result.base.sha).slice(0, 7)} ↔ ${rhs})`, { selection: sel });
   }
 
@@ -97,17 +123,18 @@ function createOpenReview(vscode, session) {
     try {
       if (!exists) {
         // deleted file: show the base revision alone
-        await vscode.window.showTextDocument(baseUriFor(rel), { preview: true });
+        const base = baseUriFor(rel);
+        await trackOpen('base-only (head missing)', base, () => vscode.window.showTextDocument(base, { preview: true }));
       } else if (inDiff || node.status) {
         // A row of changed lines (outside functions) opens at the first of them; a deletion
         // marker `N - 0.5` is the gap before line N.
         const first = node.ranges && node.ranges[0];
         const line = first ? Math.max(0, Math.ceil(first[0]) - 1) : null;
-        await vscode.commands.executeCommand('vscode.diff', baseUriFor(rel), abs,
+        await openDiff(baseUriFor(rel), abs,
           `${require('path').basename(rel)} (${String(session.state.result.base.sha).slice(0, 7)} ↔ ${session.isTierA() ? `PR #${session.state.result.prNumber}` : 'working'})`,
-          ...(line === null ? [] : [{ selection: new vscode.Range(line, 0, line, 0) }]));
+          line === null ? undefined : { selection: new vscode.Range(line, 0, line, 0) });
       } else {
-        await vscode.window.showTextDocument(abs);
+        await trackOpen('file (outside diff)', abs, () => vscode.window.showTextDocument(abs));
       }
     } catch (e) {
       vscode.window.showWarningMessage(`Impact Tree: cannot open ${rel} — ${e.message}`);
@@ -156,13 +183,15 @@ function createOpenReview(vscode, session) {
     let opened;
     if (plan.kind === 'diff') {
       opened = toUri(plan.right);
-      await vscode.commands.executeCommand('vscode.diff', toUri(plan.left), opened,
+      await openDiff(toUri(plan.left), opened,
         `${require('path').basename(rel)} (${String(session.state.result.base.sha).slice(0, 7)} ↔ ${plan.rhsName})`,
         { selection: sel });
     } else {
       opened = toUri(plan.uri);
-      try { await vscode.window.showTextDocument(opened, { selection: sel }); }
-      catch { await vscode.commands.executeCommand('vscode.open', opened, { selection: sel }); }
+      await trackOpen('file (unchanged caller)', opened, async () => {
+        try { await vscode.window.showTextDocument(opened, { selection: sel }); }
+        catch { await vscode.commands.executeCommand('vscode.open', opened, { selection: sel }); }
+      });
     }
     await highlight(node.file, node.callSites, opened);
   }

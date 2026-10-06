@@ -32,7 +32,7 @@ function useResult(env, { tierA = false } = {}) {
   else env.hooks.localResult = (o) => ({ ...localResult(o), ...parts });
 }
 // What the panel says, tags stripped.
-const textOf = (details) => details.webview.html.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/g, ' ')
+const textOf = (details) => details.displayHtml.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/g, ' ')
   .replace(/<[^>]*>/g, ' ').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 // The tree id the panel's tick button names, as its script would send it.
 const tickId = (details) => /data-act="tick" data-id="([^"]*)"/.exec(details.webview.html)[1].replace(/&#39;/g, "'").replace(/&amp;/g, '&');
@@ -83,7 +83,7 @@ test('a cursor moving inside the row shown only updates the header; the page is 
   const loads = details.loads;
   env.moveCursor(fileUri(env, 'a.ts'), 12);
   assert.equal(details.loads, loads, 'the html is not set again');
-  assert.deepEqual(details.posted, [{ type: 'origin', text: 'at cursor, line 12' }]);
+  assert.deepEqual(details.posted, [{ type: 'origin', token: pageAction(details, {}).token, text: 'at cursor, line 12' }]);
   assert.equal(env.seen.revealed.length, 1, 'the same row is not revealed again');
   env.moveCursor(fileUri(env, 'a.ts'), 12);
   assert.equal(details.posted.length, 1, 'the same line posts nothing');
@@ -98,10 +98,10 @@ test('a cursor moving inside the row shown only updates the header; the page is 
   env.select([a[1]]);
   const reloaded = details.loads;
   env.moveCursor(fileUri(env, 'a.ts'), 50);
-  assert.deepEqual(details.posted.at(-1), { type: 'origin', text: 'at cursor, line 50' }, 'from the tree to the cursor on the same row');
+  assert.deepEqual(details.posted.at(-1), { type: 'origin', token: pageAction(details, {}).token, text: 'at cursor, line 50' }, 'from the tree to the cursor on the same row');
   assert.equal(details.loads, reloaded);
   env.tick(a[1], true);
-  assert.equal(details.loads, reloaded + 1, 'a tick changes the row\'s review state, so the page is rebuilt');
+  assert.equal(details.loads, reloaded, 'a tick patches the review fields without reloading');
   assert.match(textOf(details), /^at cursor, line 50 reach .*Untick/);
 }));
 

@@ -69,8 +69,7 @@ function registerCommands(vscode, {
       const yes = await vscode.window.showWarningMessage(
         `Clear progress for this review? (${session.review.size()} item(s) marked)`, { modal: true }, 'Clear');
       if (yes !== 'Clear') return;
-      session.review.clear();
-      session.provider.refresh();
+      session.provider.clearReviewed();
     }),
 
     vscode.commands.registerCommand('impactTree.computeTestReach', async () => {

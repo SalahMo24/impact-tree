@@ -102,6 +102,18 @@ const noCallersMessage = (change) => `Impact Tree: No callers found for ${change
  */
 function createReviewLens(vscode, { provider, getState, callerUri, positionOf, log }) {
   const changed = new vscode.EventEmitter();
+  // This API invalidates the provider globally. Combine rapid marks in one turn;
+  // plain-file progress has no lenses. Full analysis changes cancel a queued mark.
+  /** @type {NodeJS.Timeout|null} */
+  let progressTimer = null;
+  const cancelProgress = () => {
+    if (progressTimer !== null) clearTimeout(progressTimer);
+    progressTimer = null;
+  };
+  const progressChanged = (/** @type {import('./tree-provider').ReviewProgress} */ event) => {
+    if (!event.filePaths.length || progressTimer !== null) return;
+    progressTimer = setTimeout(() => { progressTimer = null; changed.fire(); }, 0);
+  };
 
   /** @param {{ uri: any }} document @returns {string|null} The reviewed file the document is the head side of. */
   const headPathOf = (document) => {
@@ -183,13 +195,17 @@ function createReviewLens(vscode, { provider, getState, callerUri, positionOf, l
     const row = provider.rowById(id);
     if (!row || row.type !== 'finding') return;
     provider.setChecked(row, on);
-    provider.refresh();
   }
 
   return {
     disposables: [
       vscode.languages.registerCodeLensProvider([{ scheme: 'file' }, { scheme: 'impacttree-pr' }], lenses),
-      provider.onDidChangeTreeData(() => changed.fire()),
+      provider.onDidChangePresentation((/** @type {{ reason: string }} */ event) => {
+        if (event.reason === 'filter') return;
+        cancelProgress(); changed.fire();
+      }),
+      provider.onDidChangeReview(progressChanged),
+      { dispose: cancelProgress },
       vscode.commands.registerCommand('impactTree.showCallers', showCallers),
       vscode.commands.registerCommand('impactTree.setReviewed', setReviewed),
       changed,

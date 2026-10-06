@@ -89,8 +89,8 @@ button.secondary:hover { background: var(--vscode-button-secondaryHoverBackgroun
 // Turns a click on a button or caller link into a message for the extension. The extension
 // validates every message, so this script decides nothing. Every action carries this
 // page's nonce, so a delayed click cannot act on another row or analysis. An
-// `origin` message from the extension rewrites the header's text, so a cursor moving
-// inside the row shown does not reload the page.
+// `origin` and `review` messages patch text/attributes without reloading the page.
+// The ready handshake recovers any update sent before this script installed its listener.
 /** @param {string} token The validated base64 nonce of this rendered page. */
 const script = (token) => `
 const vscode = acquireVsCodeApi();
@@ -99,7 +99,16 @@ const postMessage = (message) => vscode.postMessage({ ...message, token });
 window.addEventListener('message', (event) => {
   const data = event.data;
   const header = document.querySelector('.origin');
-  if (header && data && data.type === 'origin' && typeof data.text === 'string') header.textContent = data.text;
+  if (header && data && data.token === token && data.type === 'origin' && typeof data.text === 'string') header.textContent = data.text;
+  if (!data || data.type !== 'review' || data.token !== token) return;
+  const button = document.querySelector('[data-act="tick"]');
+  const model = data.model;
+  if (!button || !model || model.id !== button.getAttribute('data-id') || typeof model.reviewed !== 'boolean'
+      || typeof model.buttonText !== 'string' || !(model.summaryText === null || typeof model.summaryText === 'string')) return;
+  button.textContent = model.buttonText;
+  button.setAttribute('data-on', String(!model.reviewed));
+  const summary = document.querySelector('[data-review-summary]');
+  if (summary && model.summaryText !== null) summary.textContent = model.summaryText;
 });
 document.addEventListener('click', (event) => {
   const el = event.target instanceof Element ? event.target.closest('[data-act]') : null;
@@ -111,6 +120,7 @@ document.addEventListener('click', (event) => {
   else if (act === 'peek') postMessage({ type: 'showCallers', id: el.getAttribute('data-id') });
   else if (act === 'caller') postMessage({ type: 'openCaller', index: Number(el.getAttribute('data-index')) });
 });
+postMessage({ type: 'ready' });
 `;
 
 /**
@@ -125,16 +135,35 @@ function describeOrigin(origin) {
   return `at cursor, line ${at[1]}`;
 }
 
-/**
- * The tick and next buttons.
- * @param {TreeRow} row The row the tick button ticks; it has a tree id.
- * @param {boolean} reviewed Whether what the tick button stands for is all ticked.
- * @param {{ mark: string, untick: string }} words
- * @returns {string}
- */
-const buttonsHtml = (row, reviewed, words) => `<div class="actions"><button data-act="tick" data-id="${escapeHtml(treeItemId(row))}" data-on="${!reviewed}">${reviewed ? words.untick : words.mark}</button>`
-  + '<button class="secondary" data-act="next">Next unreviewed</button></div>';
+/** @param {ReviewPresentation|null} model The fields shared with progress patches. */
+function buttonsHtml(model) {
+  assert.ok(model, 'a row with review actions must have a tree identity');
+  return `<div class="actions"><button data-act="tick" data-id="${escapeHtml(model.id)}" data-on="${!model.reviewed}">${escapeHtml(model.buttonText)}</button>`
+    + '<button class="secondary" data-act="next">Next unreviewed</button></div>';
+}
 const ROW_WORDS = { mark: 'Mark reviewed', untick: 'Untick' };
+
+/**
+ * Only the fields progress can change in an existing document. Pure, shared by the
+ * initial HTML and its later patches; selection/analysis changes still replace HTML.
+ * @typedef {{ id: string, reviewed: boolean, buttonText: string, summaryText: string|null }} ReviewPresentation
+ * @param {TreeRow|null} row
+ * @param {(row: TreeRow) => boolean} isReviewed
+ * @returns {ReviewPresentation|null}
+ */
+function reviewPresentation(row, isReviewed) {
+  const id = row && treeItemId(row);
+  if (!row || !id) return null;
+  const reviewed = isReviewed(row);
+  const words = row.type === 'reviewFile' ? { mark: 'Mark file reviewed', untick: 'Untick file' } : ROW_WORDS;
+  let summaryText = null;
+  if (row.type === 'reviewFile') {
+    const count = row.rows.length, attention = row.attention || 0;
+    const left = row.rows.filter((/** @type {TreeRow} */ r) => !isReviewed(r)).length;
+    summaryText = `${count} change${count === 1 ? '' : 's'}, ${attention} need${attention === 1 ? 's' : ''} attention, ${left} left to review.`;
+  }
+  return { id, reviewed, buttonText: reviewed ? words.untick : words.mark, summaryText };
+}
 
 /**
  * The callers table of a change, with a note for each message row among the impact rows
@@ -199,14 +228,11 @@ function changeHtml(row, { result, impactRows, lineOf }) {
 function fileHtml(row, isReviewed) {
   const head = `<h3>${escapeHtml(row.label)}</h3><div class="where">${escapeHtml(row.relPath)} · ${escapeHtml(row.status ?? 'changed')}</div>`;
   if (row.type === 'file') {
-    return `${head}<div class="verdict lv4">No call graph for this file (tests, config, docs). Read the diff and tick the file.</div>${buttonsHtml(row, isReviewed(row), ROW_WORDS)}`;
+    return `${head}<div class="verdict lv4">No call graph for this file (tests, config, docs). Read the diff and tick the file.</div>${buttonsHtml(reviewPresentation(row, isReviewed))}`;
   }
-  /** @type {TreeRow[]} */
-  const rows = row.rows;
-  const n = rows.length, k = row.attention || 0;
-  const left = rows.filter((r) => !isReviewed(r)).length;
-  const sums = `${n} change${n === 1 ? '' : 's'}, ${k} need${k === 1 ? 's' : ''} attention, ${left} left to review.`;
-  return `${head}<div class="verdict lv${row.level}">${sums}</div>${buttonsHtml(row, left === 0, { mark: 'Mark file reviewed', untick: 'Untick file' })}`;
+  const model = reviewPresentation(row, isReviewed);
+  assert.ok(model, 'a file shown in Details must have a tree identity');
+  return `${head}<div class="verdict lv${row.level}" data-review-summary>${model.summaryText}</div>${buttonsHtml(model)}`;
 }
 
 /**
@@ -223,7 +249,7 @@ function bodyHtml(row, { result, isReviewed, impactRows, lineOf }) {
   if (row.type === 'finding') h = changeHtml(row, { result, impactRows, lineOf });
   else if (row.type === 'deleted') h = `<h3>${escapeHtml(row.label)}</h3><div class="where">${escapeHtml(row.relPath)} · deleted</div><div class="verdict lv${v.level}">${escapeHtml(v.sentence)}</div>`;
   else h = `<h3>Outside functions</h3><div class="where">${escapeHtml(row.relPath)} · ${escapeHtml(v.text)}</div><div class="verdict lv${v.level}">${escapeHtml(v.sentence)}</div>`;
-  return h + buttonsHtml(row, isReviewed(row), ROW_WORDS);
+  return h + buttonsHtml(reviewPresentation(row, isReviewed));
 }
 
 /**
@@ -254,4 +280,4 @@ function buildDetailHtml(row, { result, isReviewed, impactRows, nonce, cspSource
     + `<script nonce="${nonce}">${script(nonce)}</script></body></html>`;
 }
 
-module.exports = { buildDetailHtml, listCallerRows, describeOrigin, tidySignature, escapeHtml, VERDICT_WORDS };
+module.exports = { reviewPresentation, buildDetailHtml, listCallerRows, describeOrigin, tidySignature, escapeHtml, VERDICT_WORDS };

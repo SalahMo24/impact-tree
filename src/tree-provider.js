@@ -29,6 +29,12 @@ const { renderTreeItem } = require('./tree-item-renderer');
  * }} CallerResolver
  */
 
+/**
+ * Review progress is separate from analysis/filter invalidation. IDs include changed
+ * counting rows and their file parents; filePaths includes only changed functions.
+ * @typedef {{ readonly analysisId: number, readonly changedIds: readonly string[], readonly filePaths: readonly string[] }} ReviewProgress
+ */
+
 // The view is file first: one row per changed file, worst first, holding that file's
 // changes; under a change, its callers and what is known of its tests. A caller row
 // resolves its own callers on expand. That laziness is the whole reason the extension
@@ -124,11 +130,18 @@ function createTreeProvider(vscode, {
   const publishDecorations = (analysisId, requests) => {
     for (const d of requests) mark(analysisId, d.uri, d.status, d.tooltip);
   };
+  let disposed = false;
+  // One provider-owned timer batches all row reads in this event-loop turn. Disposal
+  // cancels it; the decoration provider filters unchanged values and scopes the event.
+  /** @type {NodeJS.Timeout|null} */
+  let decorationTimer = null;
   const scheduleDecorationFlush = () => {
-    if (decorate) setTimeout(() => decorate.flush(), 0);
+    if (disposed || !decorate || decorationTimer !== null) return;
+    decorationTimer = setTimeout(() => { decorationTimer = null; decorate.flush(); }, 0);
   };
   const _emitter = new vscode.EventEmitter();
-
+  const presentation = new vscode.EventEmitter();
+  const progress = new vscode.EventEmitter();
   // The filter the reviewer chose. Held for the window only: it is not persisted, so a new
   // window opens on everything.
   /** @type {import('./review-tree-model').ReviewFilter} */
@@ -142,8 +155,9 @@ function createTreeProvider(vscode, {
   // `checkedOf`. Invalidation: replaced by the next read after either part of the key
   // changes, so until then it holds the previous result; the parents are a WeakMap, so
   // a row nobody holds anymore is not kept. Disposal: garbage with the provider; the rows
-  // hold no resource, and their decorations belong to the decoration provider.
-  /** @type {{ analysisId: number, result: any, rows: TreeRow[], decorations: DecorationRequest[], parents: WeakMap<TreeRow, TreeRow> }|null} */
+  // hold no resource, and their decorations belong to the decoration provider. Rows
+  // handed to consumers are borrowed: only this provider may change their UI metadata.
+  /** @type {{ analysisId: number, result: any, rows: TreeRow[], decorations: DecorationRequest[], parents: WeakMap<TreeRow, TreeRow>, childIds: WeakMap<TreeRow, string> }|null} */
   let built = null;
   /**
    * The file rows of the shown result, built once per analysis and result.
@@ -155,7 +169,7 @@ function createTreeProvider(vscode, {
     const made = reviewTree.buildFileRows(state.result, { uriOf: uriFor, absPath: state.absPath });
     const parents = new WeakMap();
     for (const file of made.rows) for (const row of file.rows || []) parents.set(row, file);
-    built = { analysisId, result: state.result, rows: made.rows, decorations: made.decorations, parents };
+    built = { analysisId, result: state.result, rows: made.rows, decorations: made.decorations, parents, childIds: new WeakMap() };
     return built;
   }
   // The state of a review that is shown, or null while a placeholder row or nothing is.
@@ -170,7 +184,16 @@ function createTreeProvider(vscode, {
    * @returns {TreeRow[]} `children`.
    */
   const adopt = (parent, children) => {
-    for (const child of children) built?.parents.set(child, parent);
+    const parentId = reviewTree.treeItemId(parent) || built?.childIds.get(parent);
+    for (const [index, child] of children.entries()) {
+      built?.parents.set(child, parent);
+      // Caller/message identities are scoped to their parent: the same caller can
+      // occur under several changes. Position and sibling index distinguish repeats.
+      if (parentId && !reviewTree.treeItemId(child)) {
+        const key = JSON.stringify([child.type, child.file || child.relPath || '', child.pos ?? null, index]);
+        built?.childIds.set(child, `${parentId}/child:${key}`);
+      }
+    }
     return children;
   };
 
@@ -188,7 +211,10 @@ function createTreeProvider(vscode, {
     publishDecorations(analysisId, made.decorations);
     const kept = reviewTree.filterFileRows(made.rows, filter, isReviewed).map((e) => e.file);
     // Only the worst file starts open, so the first thing on screen is the thing to look at.
-    const files = kept.map((r, i) => (i === 0 && r.type === 'reviewFile' ? { ...r, expanded: true } : r));
+    // These rows are provider-owned. Keep the canonical objects so getParent,
+    // actions and subsequent reads all refer to the same file, including the first.
+    const files = kept;
+    for (const [index, file] of files.entries()) file.expanded = index === 0 && file.type === 'reviewFile';
     const notices = models.buildNoticeRows(st.result);
     if (filter !== 'all' && files.length === 0) return [...notices, reviewTree.buildEmptyFilterRow(filter)];
     return [...notices, ...files];
@@ -267,13 +293,71 @@ function createTreeProvider(vscode, {
     return grouped;
   }
 
+  /**
+   * Full presentation invalidation, reserved for analysis, phase and filter changes.
+   * @param {'analysis'|'filter'} [reason]
+   */
+  function refresh(reason = 'analysis') {
+    if (disposed) return;
+    _emitter.fire();
+    presentation.fire({ reason });
+  }
+
+  /**
+   * Applies one checkbox gesture against canonical rows of the shown result. Work and
+   * temporary maps are bounded by its materialized counting rows. Old analysis rows
+   * and no-op marks publish nothing. The batch persists at most once per boolean value.
+   * @param {Array<{ row: TreeRow, on: boolean }>} changes
+   */
+  function setCheckedBatch(changes) {
+    const state = shownState();
+    if (disposed || !state || !review) return;
+    const current = builtFor(state);
+    const rootsBefore = reviewTree.filterFileRows(current.rows, filter, isReviewed).map((e) => e.file);
+    const canonical = new Set(current.rows.flatMap((file) => [file, ...(file.rows || [])]));
+    /** @type {Map<TreeRow, boolean>} */
+    const requested = new Map();
+    for (const { row, on } of changes) {
+      if (!canonical.has(row)) continue;
+      for (const target of reviewTree.collectTickTargets(row)) requested.set(target, on);
+    }
+    const changed = [...requested].filter(([row, on]) => idOf(row) && isReviewed(row) !== on);
+    if (!changed.length) return;
+    for (const on of [true, false]) {
+      const ids = changed.filter((entry) => entry[1] === on).map(([row]) => idOf(row)).filter(Boolean);
+      if (ids.length) review.setAll(ids, on);
+    }
+    const files = new Set(changed.map(([row]) => current.parents.get(row) || row));
+    const ids = [...new Set([...changed.map(([row]) => row), ...files].map(reviewTree.treeItemId).filter(Boolean))];
+    /** @type {ReviewProgress} */
+    const event = Object.freeze({ analysisId: current.analysisId, changedIds: Object.freeze(/** @type {string[]} */ (ids)),
+      filePaths: Object.freeze([...new Set(changed.filter(([row]) => row.type === 'finding').map(([row]) => row.finding.relPath))]) });
+    progress.fire(event);
+    if (disposed || !isCurrentAnalysis(current.analysisId) || getState()?.result !== current.result) return;
+    const rootsAfter = reviewTree.filterFileRows(current.rows, filter, isReviewed).map((e) => e.file);
+    if (rootsBefore.length !== rootsAfter.length || rootsBefore.some((row, i) => row !== rootsAfter[i])) {
+      _emitter.fire(); // A file appeared/disappeared, including the empty-filter hint.
+      return;
+    }
+    for (const file of files) if (rootsAfter.includes(file)) _emitter.fire(file);
+  }
+
   return {
     onDidChangeTreeData: _emitter.event,
-    refresh() { _emitter.fire(); },
+    onDidChangePresentation: presentation.event,
+    onDidChangeReview: progress.event,
+    refresh,
+    dispose() {
+      disposed = true;
+      if (decorationTimer !== null) clearTimeout(decorationTimer);
+      decorationTimer = null;
+      built = null;
+      _emitter.dispose(); presentation.dispose(); progress.dispose();
+    },
     /** @param {TreeRow} n */
     getTreeItem(n) {
       const item = renderTreeItem(vscode, n, viewOf());
-      const id = reviewTree.treeItemId(n);
+      const id = reviewTree.treeItemId(n) || built?.childIds.get(n);
       if (id) item.id = id;
       return item;
     },
@@ -287,6 +371,7 @@ function createTreeProvider(vscode, {
     /** @param {TreeRow} [node] */
     async getChildren(node) {
       const analysisId = getAnalysisId();
+      if (disposed) return [];
       if (!node) return rootRows(getState(), analysisId);
       switch (node.type) {
         case 'reviewFile': return adopt(node, visibleRows(node));
@@ -297,16 +382,15 @@ function createTreeProvider(vscode, {
         default: return [];
       }
     },
-    /**
-     * Ticks or unticks what a row's checkbox stands for: a file's rows, or the row itself.
-     * A row without a checkbox changes nothing. The caller refreshes the view.
-     * @param {TreeRow} row
-     * @param {boolean} on
-     * @returns {void}
-     */
-    setChecked(row, on) {
-      const ids = tickIdsOf(row);
-      if (review && ids.length) review.setAll(ids, on);
+    /** @param {TreeRow} row @param {boolean} on */
+    setChecked(row, on) { setCheckedBatch([{ row, on }]); },
+    setCheckedBatch,
+    clearReviewed() {
+      if (disposed) return;
+      const state = shownState();
+      if (state) setCheckedBatch(reviewTree.collectCountingRows(builtFor(state).rows).map((row) => ({ row, on: false })));
+      // Also discard stored identities for content no longer in the displayed result.
+      review?.clear();
     },
     /**
      * The view's message and badge for what the tree shows: none while a placeholder row
@@ -343,7 +427,7 @@ function createTreeProvider(vscode, {
      */
     toggleFilter(name) {
       filter = reviewTree.toggleFilter(filter, name);
-      _emitter.fire();
+      refresh('filter');
     },
     /**
      * The first unreviewed row after `after` in the order the view shows, under the active

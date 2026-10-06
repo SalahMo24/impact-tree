@@ -15,6 +15,9 @@ const { createSyntacticResolver } = require('./resolver-syntactic');
 // the count, and adds a warning to the analysis result.
 const MAX_FILES = 20000;
 const MAX_FILE_BYTES = 1024 * 1024;
+// Aggregate source bytes admitted per index. 64 MiB covers the measured 43 MiB
+// monorepo; larger inputs are skipped with incomplete coverage rather than retained.
+const MAX_TOTAL_BYTES = 64 * 1024 * 1024;
 
 // A `require()` whose argument is not a string literal cannot be followed statically.
 const COMPUTED_REQUIRE = /\brequire\s*\(\s*(?!['"`]|\))/;
@@ -82,6 +85,7 @@ function createModuleCallers(ts, repo, git) {
     const packages = [];
     let skipped = 0;
     let computedRequires = 0;
+    let sourceBytes = 0;
     for (const rel of listed) {
       const abs = path.join(repo, rel);
       if (path.basename(rel) === 'package.json') {
@@ -95,8 +99,10 @@ function createModuleCallers(ts, repo, git) {
       if (sources.length >= MAX_FILES) { skipped++; continue; }
       let text;
       try {
-        if (fs.statSync(abs).size > MAX_FILE_BYTES) { skipped++; continue; }
+        const bytes = fs.statSync(abs).size;
+        if (bytes > MAX_FILE_BYTES || sourceBytes + bytes > MAX_TOTAL_BYTES) { skipped++; continue; }
         text = fs.readFileSync(abs, 'utf8');
+        sourceBytes += Buffer.byteLength(text);
       } catch { continue; }   // listed by git but deleted in the worktree
       if (COMPUTED_REQUIRE.test(text)) computedRequires++;
       sources.push({ path: abs, text });
@@ -104,7 +110,7 @@ function createModuleCallers(ts, repo, git) {
     const idx = createSyntacticIndex(ts, sources, { baseDirs: [repo], packages });
     built = {
       resolver: createSyntacticResolver(idx, { isTestPath: (f) => isTestFile(repo, f), hints }),
-      incomplete: skipped ? `${skipped} file(s) were not indexed (over ${MAX_FILES} files or ${MAX_FILE_BYTES / 1024} KB)` : null,
+      incomplete: skipped ? `${skipped} file(s) were not indexed (over ${MAX_FILES} files, ${MAX_FILE_BYTES / 1024} KB per file or ${MAX_TOTAL_BYTES / 1024 / 1024} MiB total)` : null,
       computedRequires,
       indexed: sources.length,
     };
@@ -125,6 +131,9 @@ function createModuleCallers(ts, repo, git) {
   return {
     appliesTo,
     incomingWithStatus,
+    // Worker reuse retains only the syntax index. Symbol anchors and applicability
+    // belong to a run and must be forgotten even when source metadata is unchanged.
+    resetHints() { hints.clear(); kinds.clear(); },
     /** Tell the index how the symbol collector anchors a changed symbol. */
     hint(c) {
       hints.set(`${c.file}#${c.namePos}`, {

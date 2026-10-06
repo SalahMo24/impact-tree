@@ -4,7 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { treeItemId } = require('./review-tree-model');
 const { prKey, parsePrAddress } = require('./pr-documents');
-const { buildDetailHtml, listCallerRows, describeOrigin } = require('./detail-panel-html');
+const { buildDetailHtml, listCallerRows, describeOrigin, reviewPresentation } = require('./detail-panel-html');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 
@@ -40,7 +40,7 @@ function headRelPath(uri, { result, rel }) {
  * an older page cannot act on a new selection or revision, even at the same tree id.
  * @param {unknown} message
  * @param {string|null} token The current page's nonce; null when the view is disposed.
- * @returns {{ type: 'tick', id: string, on: boolean }|{ type: 'next' }|{ type: 'showCallers', id: string }|{ type: 'openCaller', index: number }|null}
+ * @returns {{ type: 'tick', id: string, on: boolean }|{ type: 'next' }|{ type: 'ready' }|{ type: 'showCallers', id: string }|{ type: 'openCaller', index: number }|null}
  */
 function parseMessage(message, token) {
   if (!message || typeof message !== 'object') return null;
@@ -48,6 +48,7 @@ function parseMessage(message, token) {
   if (token === null || m.token !== token) return null;
   if (m.type === 'tick' && typeof m.id === 'string' && typeof m.on === 'boolean') return { type: 'tick', id: m.id, on: m.on };
   if (m.type === 'next') return { type: 'next' };
+  if (m.type === 'ready') return { type: 'ready' };
   if (m.type === 'showCallers' && typeof m.id === 'string') return { type: 'showCallers', id: m.id };
   if (m.type === 'openCaller' && Number.isSafeInteger(m.index) && Number(m.index) >= 0) return { type: 'openCaller', index: Number(m.index) };
   return null;
@@ -62,7 +63,8 @@ function parseMessage(message, token) {
  *
  * A cursor moving inside the row shown changes only the header's line, so the header is
  * updated by a message to the page instead of a new document, which would reload it and
- * flicker. A new row, a tick, a filter or a new analysis paints the whole document.
+ * flicker. Progress patches text and attributes; a new row or analysis paints the whole
+ * document. A tree filter changes neither the shown row nor its contents.
  *
  * Feedback loop: revealing the cursor's row selects it in the tree, and VS Code reports
  * that as a selection change. The id revealed is remembered, and a selection of exactly
@@ -93,6 +95,36 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
   // and cleared on disposal. It identifies the exact page whose actions are still valid.
   /** @type {string|null} */
   let renderToken = null;
+  // Panel-owned display model, replaced on render/patch and cleared on disposal.
+  // It covers progress only; the session remains authoritative for analysis content.
+  /** @type {import('./detail-panel-html').ReviewPresentation|null} */
+  let lastReview = null;
+  /** @type {number|null|undefined} */
+  let renderedVersion;
+
+  /** @param {object} message */
+  const post = (message) => {
+    if (!webviewView) return;
+    Promise.resolve(webviewView.webview.postMessage(message))
+      .then(undefined, (/** @type {any} */ err) => log(`details: could not update the page: ${err && err.message}`));
+  };
+
+  /** @param {boolean} [force] */
+  function patchReview(force = false) {
+    if (!webviewView || renderedVersion !== provider.reviewVersion()) return;
+    const next = reviewPresentation(currentRow(), provider.isReviewed);
+    if (!next) return;
+    if (!force && lastReview && next.id === lastReview.id && next.reviewed === lastReview.reviewed
+        && next.buttonText === lastReview.buttonText && next.summaryText === lastReview.summaryText) return;
+    lastReview = next;
+    post({ type: 'review', token: renderToken, model: next });
+  }
+
+  /** @param {import('./tree-provider').ReviewProgress} event */
+  function onProgress(event) {
+    if (event.analysisId !== renderedVersion || !shown.id || !event.changedIds.includes(shown.id)) return;
+    patchReview();
+  }
 
   const currentRow = () => (shown.id ? provider.rowById(shown.id) : null);
   // The row a selected row stands for: itself when it has a tree id, else the change it sits under.
@@ -113,17 +145,24 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
       nonce, cspSource: webviewView.webview.cspSource, origin: shown.origin, lineOf,
     });
     renderToken = nonce;
+    renderedVersion = provider.reviewVersion();
+    lastReview = reviewPresentation(row, provider.isReviewed);
     webviewView.webview.html = html;
   }
   /** @param {string|null} id @param {string} origin */
-  const show = (id, origin) => { shown = { id, origin }; render(); };
+  const show = (id, origin) => {
+    if (id === shown.id && renderedVersion === provider.reviewVersion()) {
+      if (origin !== shown.origin) moveOrigin(origin);
+      return;
+    }
+    shown = { id, origin };
+    render();
+  };
   // The same row from another place: only the header's text changes.
   /** @param {string} origin */
   const moveOrigin = (origin) => {
     shown = { id: shown.id, origin };
-    if (!webviewView) return;
-    Promise.resolve(webviewView.webview.postMessage({ type: 'origin', text: describeOrigin(origin) }))
-      .then(undefined, (/** @type {any} */ err) => log(`details: could not update the header: ${err && err.message}`));
+    post({ type: 'origin', token: renderToken, text: describeOrigin(origin) });
   };
 
   /** @param {{ selection: readonly TreeRow[] }} e */
@@ -202,7 +241,12 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
   /** @param {unknown} message */
   async function onMessage(message) {
     const m = parseMessage(message, renderToken);
-    if (!m) return;
+    if (!m || renderedVersion !== provider.reviewVersion()) return;
+    if (m.type === 'ready') {
+      patchReview(true);
+      if (shown.id) post({ type: 'origin', token: renderToken, text: describeOrigin(shown.origin) });
+      return;
+    }
     if (m.type === 'next') { await vscode.commands.executeCommand('impactTree.nextUnreviewed'); return; }
     const row = currentRow();
     if (!row) return;
@@ -210,7 +254,6 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
     if (m.type === 'tick') {
       if (m.id !== shown.id) return;
       provider.setChecked(row, m.on);
-      provider.refresh();
       return;
     }
     if (m.type === 'showCallers') {
@@ -224,7 +267,7 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
 
   const disposeView = () => {
     for (const s of viewSubscriptions) s.dispose();
-    viewSubscriptions = []; webviewView = null; renderToken = null;
+    viewSubscriptions = []; webviewView = null; renderToken = null; lastReview = null; renderedVersion = undefined;
   };
   const webviewProvider = {
     /** @param {any} resolved */
@@ -249,7 +292,8 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
       vscode.commands.registerCommand('impactTree.showChange', showChange),
       view.onDidChangeSelection(onSelection),
       view.onDidChangeVisibility(onTreeVisible),
-      provider.onDidChangeTreeData(render),
+      provider.onDidChangePresentation((/** @type {{ reason: string }} */ event) => { if (event.reason !== 'filter') render(); }),
+      provider.onDidChangeReview(onProgress),
       vscode.window.onDidChangeTextEditorSelection(onCursor),
       { dispose: disposeView },
     ],
