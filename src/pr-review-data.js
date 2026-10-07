@@ -47,7 +47,7 @@ const THREAD_FIELDS = `
     totalCount
     pageInfo { hasNextPage }
     nodes {
-      id databaseId author { ${AUTHOR_FIELDS} } body createdAt state viewerDidAuthor url
+      id databaseId author { ${AUTHOR_FIELDS} } body createdAt state viewerDidAuthor url diffHunk
     }
   }`;
 
@@ -131,6 +131,9 @@ const FILES_PAGE_QUERY = `query ImpactTreeReviewFiles($owner: String!, $name: St
  * @property {boolean} canResolve
  * @property {boolean} canUnresolve
  * @property {boolean} canReply
+ * @property {string|null} originalCode The line the thread was written on, as it read then:
+ *   the last line of the first comment's `diffHunk`, without its diff marker. Null when the
+ *   hunk is empty (a file-level thread) or has no line after its header.
  * @property {ReviewComment[]} comments Oldest first, at most `COMMENTS_PER_THREAD`.
  * @property {string[]} [incomplete] Present only when comments were left unread.
  *
@@ -249,12 +252,28 @@ function connection(raw, what) {
 }
 
 /**
+ * The commented line of a review comment's `diffHunk`: GitHub ends the hunk at the line
+ * the comment is on, so it is the last line, read without its ` `, `+` or `-` marker.
+ * Pure.
+ * @param {string} diffHunk
+ * @returns {string|null} Null for an empty hunk or one that is only its `@@` header.
+ */
+function commentedLineOf(diffHunk) {
+  const lines = diffHunk.replace(/\r\n/g, '\n').split('\n');
+  while (lines.length && lines[lines.length - 1] === '') lines.pop();
+  const last = lines[lines.length - 1];
+  if (last === undefined || last.startsWith('@@')) return null;
+  return /^[ +-]/.test(last) ? last.slice(1) : last;
+}
+
+/**
  * @param {unknown} raw
  * @param {string} what
  * @returns {ReviewComment}
  */
 function normaliseComment(raw, what) {
   const c = object(raw, what);
+  str(c.diffHunk, `${what}.diffHunk`);
   if (c.databaseId != null && !Number.isSafeInteger(c.databaseId)) bad(`${what}.databaseId is not an integer`);
   return {
     id: str(c.id, `${what}.id`),
@@ -291,6 +310,8 @@ function normaliseThread(raw) {
   const hasMore = bool(object(comments.pageInfo, `${what}.comments.pageInfo`).hasNextPage, `${what}.comments.pageInfo.hasNextPage`);
   if (!Array.isArray(comments.nodes)) bad(`${what}.comments.nodes is not a list`);
   const nodes = comments.nodes.map((n, i) => normaliseComment(n, `${what} comment ${i}`));
+  // Validated as a string by `normaliseComment`.
+  const firstHunk = comments.nodes.length ? /** @type {string} */ (/** @type {Record<string, unknown>} */ (comments.nodes[0]).diffHunk) : '';
 
   /** @type {ReviewThread} */
   const thread = {
@@ -306,6 +327,7 @@ function normaliseThread(raw) {
     canResolve: bool(t.viewerCanResolve, `${what}.viewerCanResolve`),
     canUnresolve: bool(t.viewerCanUnresolve, `${what}.viewerCanUnresolve`),
     canReply: bool(t.viewerCanReply, `${what}.viewerCanReply`),
+    originalCode: commentedLineOf(firstHunk),
     comments: nodes,
   };
   if (hasMore || total > nodes.length) {
@@ -542,6 +564,6 @@ function pendingCount(threads) {
 module.exports = {
   DEFAULT_BUDGETS, MAX_BUDGET, PAGE_SIZE, COMMENTS_PER_THREAD, TIMELINE_WINDOW,
   REVIEW_QUERY, THREADS_PAGE_QUERY, FILES_PAGE_QUERY,
-  loadPullRequestReview, normaliseFirstPage, normaliseThread,
+  loadPullRequestReview, normaliseFirstPage, normaliseThread, commentedLineOf,
   threadsForRange, threadsForFile, openCount, pendingCount,
 };

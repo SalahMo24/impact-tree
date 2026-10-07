@@ -8,12 +8,15 @@
 // scans. A file row says what needs attention, then its progress, then its last folder
 // segment; a change row says where it is declared (only when that tells it apart from
 // its siblings), then its verdict, then "no test". A sidebar truncates from the right, so
-// the least important part comes last and the full path is in the tooltip.
+// the least important part comes last and the full path is in the tooltip. The review
+// threads of a pull request add `💬 N` (unresolved) and `✎ N` (your pending comments):
+// after the attention glyph on a file row, after the verdict on a change row.
 const path = require('path');
 const {
   CALL_STATE, classifyChangeVerdict, classifyDeletedVerdict, classifyWorstRowVerdict,
 } = require('./tree-row-models');
 const { needsAttention } = require('./review-tree-model');
+const { describeThreadCounts } = require('./review-threads');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 /**
@@ -23,10 +26,21 @@ const { needsAttention } = require('./review-tree-model');
  * - `iconMode`: 'file' for the file-type glyph, 'symbol' for a symbol-kind icon on change rows;
  *   file rows always show the file-type glyph.
  * - `checkedOf(row)`: whether the row's review checkbox is ticked, or null for no checkbox.
+ * - `threadCountsOf(row)`: the row's review thread counts, or null when none are known
+ *   (no pull request review, or its threads are not loaded): then nothing is shown.
  * @typedef {{
  *   rowDetail: string, iconMode: string, checkedOf: (row: TreeRow) => boolean|null,
+ *   threadCountsOf?: (row: TreeRow) => import('./review-threads').ThreadCounts|null,
  * }} TreeView
  */
+
+/**
+ * The thread counts a row's description shows (`💬 N`, `✎ N`), none when unknown.
+ * @param {TreeRow} row
+ * @param {TreeView} view
+ * @returns {string[]}
+ */
+const threadParts = (row, view) => describeThreadCounts(view.threadCountsOf ? view.threadCountsOf(row) : null);
 
 /**
  * @param {string} label
@@ -80,10 +94,11 @@ function applyCheckbox(vscode, item, row, view) {
  * @param {string|null|undefined} container
  * @param {string} verdict The glyph, or the glyph and words.
  * @param {TreeRow|null} change A change row, for its `scopeNote` and `reachReason`; null for a deleted row.
+ * @param {string[]} [threads] The row's thread counts, shown right after the verdict.
  * @returns {string}
  */
-const describeChangeRow = (container, verdict, change) => [
-  container ? `in ${container}` : null, verdict,
+const describeChangeRow = (container, verdict, change, threads = []) => [
+  container ? `in ${container}` : null, verdict, ...threads,
   change && change.scopeNote ? 'no test' : null, change && change.reachReason ? 'tests ?' : null,
 ].filter(Boolean).join('  ·  ');
 
@@ -123,6 +138,7 @@ function renderReviewFileItem(vscode, n, view) {
   const attention = left.filter(needsAttention);
   item.description = [
     attention.length ? `${classifyWorstRowVerdict(attention).token} ${attention.length}` : null,
+    ...threadParts(n, view),
     `${rows.length - left.length}/${rows.length}`,
     lastFolder(n.relPath),
   ].filter(Boolean).join('  ·  ');
@@ -154,7 +170,7 @@ function renderFileItem(vscode, n, view) {
     item.label = n.label || path.basename(n.relPath);
     item.iconPath = vscode.ThemeIcon.File;
   }
-  item.description = ['no call graph', lastFolder(n.relPath)].filter(Boolean).join('  ·  ');
+  item.description = [...threadParts(n, view), 'no call graph', lastFolder(n.relPath)].filter(Boolean).join('  ·  ');
   item.tooltip = new vscode.MarkdownString([
     `**${path.basename(n.relPath)}**`, '', `_${n.status}_`, '', `\`${n.relPath}\``, '',
     '_No call graph (tests, config, docs): read the diff and tick the file._',
@@ -197,7 +213,7 @@ function renderPlainItem(vscode, item, n, view) {
     case 'outside':
       item.collapsibleState = vscode.TreeItemCollapsibleState.None;
       // The file row it sits under names the file.
-      item.description = n.desc;
+      item.description = [n.desc, ...threadParts(n, view)].filter(Boolean).join('  ·  ');
       item.iconPath = new vscode.ThemeIcon('symbol-namespace');
       item.tooltip = new vscode.MarkdownString([
         `**Outside functions** — \`${n.relPath}\``, '', n.desc, '',
@@ -264,7 +280,7 @@ function renderChangeItem(vscode, item, n, view) {
   item.description = describeChangeRow(containerToShow(n),
     rowDesc(st.token, `${st.token}  ${st.text}${qual}${kinds.length ? '  ·  ' + kinds.join(', ') : ''}`,
       needsAttention(n) ? `${st.token}  ${st.text}` : st.token),
-    n);
+    n, threadParts(n, view));
   item.iconPath = rowIcon(f.label, f);
   item.tooltip = new vscode.MarkdownString(buildChangeTooltipLines(n, st, kinds).join('\n'));
   item.contextValue = 'finding';

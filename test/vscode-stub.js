@@ -38,6 +38,10 @@ const vscodeStub = {
   TreeItemCheckboxState: { Unchecked: 0, Checked: 1 },
   StatusBarAlignment: { Left: 1, Right: 2 },
   TextEditorSelectionChangeKind: { Keyboard: 1, Mouse: 2, Command: 3 },
+  // The comments API's enums, with VS Code's values.
+  CommentMode: { Editing: 0, Preview: 1 },
+  CommentThreadCollapsibleState: { Collapsed: 0, Expanded: 1 },
+  CommentThreadState: { Unresolved: 0, Resolved: 1 },
   ThemeIcon: Object.assign(
     class { constructor(id) { this.id = id; } },
     { File: { id: '__file__' }, Folder: { id: '__folder__' } }),

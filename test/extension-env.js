@@ -54,12 +54,62 @@ const previewResult = (pr) => ({ tierA: true, pr, prNumber: pr.number, headSha: 
   mode: 'pr-preview', changedFileCount: 0, findings: [], warnings: [], allChanged: [], changedPaths: [], otherFiles: [], changedRanges: {},
   deleted: [], unanalysable: [], untested: [], texts: new Map(), resolver: null });
 
+// VS Code's comments API (`vscode.comments`), as much of it as the extension uses. A
+// controller keeps every thread created through it, by the extension or by the user
+// starting a comment (`startDraft`, which is what VS Code does when "+" is clicked: an
+// empty thread of the controller over the picked lines). A thread's fields are plain,
+// writable properties, as on the real object; disposing the controller disposes its
+// threads. `submit` plays a comment box's button: the box holds the text, the button runs
+// its command with `{ thread, text }`, and the box is cleared only when the command
+// completes, so a command that rejects leaves the text in the box.
+function createCommentsApi() {
+  const controllers = [];
+  const api = {
+    createCommentController(id, label) {
+      const controller = {
+        id, label, options: undefined, commentingRangeProvider: undefined, threads: [], disposed: false,
+        createCommentThread(uri, range, comments) {
+          const thread = {
+            uri, range, comments, collapsibleState: undefined, canReply: true, contextValue: undefined,
+            label: undefined, state: undefined, disposed: false, input: '',
+            dispose() { this.disposed = true; },
+          };
+          controller.threads.push(thread);
+          return thread;
+        },
+        dispose() {
+          this.disposed = true;
+          for (const thread of this.threads) thread.dispose();
+        },
+      };
+      controllers.push(controller);
+      return controller;
+    },
+  };
+  return {
+    api, controllers,
+    /** The live (not disposed) threads of a controller on a document. */
+    threadsOn: (controller, uri) => controller.threads.filter((t) => !t.disposed && t.uri.toString() === uri.toString()),
+    startDraft: (controller, uri, range) => controller.createCommentThread(uri, range, []),
+    async submit(runCommand, command, thread, text) {
+      thread.input = text;
+      try {
+        await runCommand(command, { thread, text });
+      } catch (error) {
+        return { sent: false, error };
+      }
+      thread.input = '';
+      return { sent: true };
+    },
+  };
+}
+
 // Loads a fresh extension against a clean temp git repo. Only the edges are faked:
 // the two analysers, the editor's language-server resolver, and the network-facing
 // async git calls (fetch, rev-parse of FETCH_HEAD, checkout), so the worktree itself
 // never moves. `changedSource` puts a committed TypeScript change on a feature branch,
 // which is what readiness needs before it will warm the language server.
-function createEnv({ prewarm = false, changedSource = false, memento = new Map(), signIn = null } = {}) {
+function createEnv({ prewarm = false, changedSource = false, memento = new Map(), signIn = null, graphql = null } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-ext-commands-'));
   const sh = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
   sh('init', '-q', '--initial-branch=main'); sh('config', 'user.name', 'Test'); sh('config', 'user.email', 'test@example.com');
@@ -91,6 +141,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   const captured = { tree: null, view: null, decorations: null, checkbox: null, sources: null, webviews: new Map(),
     selection: [], cursor: [], treeVisibility: [], lenses: null };
   let fetchHead = null, quickPick = null;
+  const comments = createCommentsApi();
 
   const disposable = () => ({ dispose() {} });
   const cfg = { get: (name, fallback) => ({ prewarm, analyseOnStartup: false, fetchBase: false })[name] ?? fallback,
@@ -157,8 +208,10 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
         return [];
       } },
     env: { openExternal: async () => {} },
+    comments: comments.api,
     workspace: { workspaceFolders: [{ uri: baseStub.Uri.file(dir) }], getConfiguration: () => cfg,
-      registerTextDocumentContentProvider: disposable },
+      registerTextDocumentContentProvider: disposable,
+      textDocuments: [], onDidOpenTextDocument: disposable, onDidCloseTextDocument: disposable },
   };
 
   const fakeRawAsync = async (args, _opts, realRawAsync) => {
@@ -225,10 +278,11 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
         },
       }) };
     }
-    // The silent sign-in at startup, replaced when a test needs it to fail in a way the real one cannot.
-    if (signIn && resolved === path.join(SRC, 'github.js')) {
+    // The silent sign-in at startup, replaced when a test needs it to fail in a way the real
+    // one cannot; GitHub's GraphQL endpoint, replaced when a test answers it (the review store).
+    if ((signIn || graphql) && resolved === path.join(SRC, 'github.js')) {
       const real = originalLoad.call(this, name, parent, ...rest);
-      return { ...real, createGitHub: (...args) => ({ ...real.createGitHub(...args), signIn }) };
+      return { ...real, createGitHub: (...args) => ({ ...real.createGitHub(...args), ...(signIn ? { signIn } : {}), ...(graphql ? { graphql } : {}) }) };
     }
     if (resolved === path.join(SRC, 'engine/git.js')) {
       const real = originalLoad.call(this, name, parent, ...rest);
@@ -247,7 +301,9 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
 
   const run = (name, ...args) => commands.get(name)(...args);
   return {
-    seen, git, holds, hooks, vscode, dir, memento, run,
+    seen, git, holds, hooks, vscode, dir, memento, run, comments,
+    /** The comment controller the extension created with this id. */
+    commentController: (id) => comments.controllers.find((c) => c.id === id),
     // The user ticks or unticks a row, as the tree view reports it.
     tick(node, on) {
       const state = on ? vscode.TreeItemCheckboxState.Checked : vscode.TreeItemCheckboxState.Unchecked;
@@ -338,4 +394,4 @@ async function withEnv(fn, options) {
 
 const refusals = (env, pattern) => env.seen.warnings.filter((w) => pattern.test(w));
 
-module.exports = { deferred, gates, shaFor, pull, localResult, finding, previewResult, createEnv, withEnv, refusals };
+module.exports = { deferred, gates, shaFor, pull, localResult, finding, previewResult, createEnv, withEnv, refusals, createCommentsApi };

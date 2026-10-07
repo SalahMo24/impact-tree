@@ -15,6 +15,8 @@ const { createSession } = require('./session');
 const { createPrActions } = require('./pr-actions');
 const { createPullRequestReviewStore, reviewTargetOf } = require('./pr-review-store');
 const { createOpenReview } = require('./open-review');
+const { threadsViewOf, NO_THREADS } = require('./review-threads');
+const { createReviewComments } = require('./review-comments');
 const { registerContentProviders } = require('./content-providers');
 const { registerCommands } = require('./commands');
 
@@ -45,7 +47,10 @@ function activate(context) {
   const decorate = createDecorationProvider(vscode);
   session.decorate = decorate;
   context.subscriptions.push(vscode.window.registerFileDecorationProvider(decorate));
+  // The review store is created below, once GitHub is; until then no review has threads.
+  let reviewStore = null;
   const provider = createTreeProvider(vscode, {
+    getThreads: () => (reviewStore ? threadsViewOf(reviewStore.getState()) : NO_THREADS),
     decorate,
     review,
     isBusy: owned.isBusy,
@@ -62,7 +67,10 @@ function activate(context) {
   context.subscriptions.push(view);
   const navigation = createReviewNavigation(vscode, { provider, view });
   context.subscriptions.push(...navigation.disposables);
-  const details = createDetailPanel(vscode, { provider, view, getState: () => owned.state, lineOf: readLineOfOffset, log });
+  // Details starts comments and opens threads through the review comments, created below.
+  let reviewComments = null;
+  const details = createDetailPanel(vscode, { provider, view, getState: () => owned.state, lineOf: readLineOfOffset, log,
+    reviewActions: () => reviewComments });
   context.subscriptions.push(...details.disposables);
   // Counts follow presentation and progress events, independently of tree repaint scope.
   const showSummary = () => {
@@ -71,7 +79,8 @@ function activate(context) {
     if (view.badge?.value !== badge?.value || view.badge?.tooltip !== badge?.tooltip) view.badge = badge;
     navigation.update();
   };
-  context.subscriptions.push(provider.onDidChangePresentation(showSummary), provider.onDidChangeReview(showSummary));
+  context.subscriptions.push(provider.onDidChangePresentation(showSummary), provider.onDidChangeReview(showSummary),
+    provider.onDidChangeThreads(showSummary));
   showSummary();
   context.subscriptions.push(view.onDidChangeCheckboxState((e) => {
     const started = Date.now();
@@ -101,13 +110,36 @@ function activate(context) {
   // viewed state). It follows the analysis: every new run, checkout claim or refreshed PR
   // source re-syncs it, so Refresh (which starts a new run) reloads it too. Local and
   // agent reviews have no target, and it does no I/O for them. Disposed with the window.
-  const reviewStore = createPullRequestReviewStore({
+  reviewStore = createPullRequestReviewStore({
     gh, log,
     getAnalysisId: owned.getAnalysisId,
     getTarget: () => (owned.checkoutInProgress() != null ? null : reviewTargetOf(owned.state && owned.state.source, repoSlug)),
   });
-  context.subscriptions.push(reviewStore, owned.onDidChangeAnalysis(() => reviewStore.sync()));
+  context.subscriptions.push(reviewStore, owned.onDidChangeAnalysis(() => reviewStore.sync()),
+    // Counts in the tree: only the file rows of the paths named are repainted.
+    reviewStore.onDidChange(({ paths }) => provider.threadsChanged(paths)));
   session.reviewStore = reviewStore;
+
+  // The store's threads in the review diff, and commenting there. Follows the store, and
+  // the analysis for where the pull request is shown; disposed with the window.
+  reviewComments = createReviewComments(vscode, {
+    store: reviewStore, log,
+    // openReview is created below; these run only on a click, after activation.
+    headUri: (relPath) => openReview.headUri(relPath),
+    openDiff: (relPath, line) => openReview.openFile({ relPath, ranges: line === null ? [] : [[line, line]] }),
+    getSession: () => ({ source: owned.state && owned.state.source, result: (owned.state && owned.state.result) || null }),
+    repoRoot: () => owned.repoRoot(),
+    readHead: () => {
+      const { makeGit } = require('./engine/git');
+      return makeGit(owned.repoRoot()).rawAsync(['rev-parse', '--verify', 'HEAD^{commit}'], { timeoutMs: 10000 })
+        .then((out) => out.trim() || null, (e) => { log(`review comments: reading HEAD failed: ${e.message}`); return null; });
+    },
+    contextEvents: [
+      owned.onDidChangeAnalysis,
+      (listener) => provider.onDidChangePresentation((e) => { if (e.reason !== 'filter') listener(); }),
+    ],
+  });
+  context.subscriptions.push(reviewComments);
 
   const sources = createSourcesProvider(vscode, {
     modes: MODES,

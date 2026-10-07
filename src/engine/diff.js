@@ -1,6 +1,7 @@
 'use strict';
 const path = require('path');
 const fs = require('fs');
+const { changeOfHeader } = require('./diff-lines');
 
 // Flags every diff we parse must carry. A user's `diff.external` (difftastic) or a
 // textconv driver replaces git's own output and left us with no hunks at all, and
@@ -93,8 +94,10 @@ function unquote(p) {
 // paired by -M across the whole diff, so a renamed file's ranges are its real edits
 // rather than the whole file reading as added. When `deletionsOut` is given, each file's
 // removed base ranges are added to it as `{ at, oldStart, oldEnd, newEnd? }`, keyed by
-// path like the ranges. Replacements also name their final new-side line.
-function allHunks(git, baseSha, headRev, pathspecs, deletionsOut) {
+// path like the ranges. Replacements also name their final new-side line. When
+// `changesOut` is given, each file's hunk headers are added to it as
+// `{ oldStart, oldCount, newStart, newCount }` (see engine/diff-lines.js).
+function allHunks(git, baseSha, headRev, pathspecs, deletionsOut, changesOut) {
   const out = git.raw([...PLAIN, 'diff', ...DIFF_FLAGS, '-M', '--unified=0', baseSha, ...(headRev ? [headRev] : []),
     '--', ...(pathspecs || [])]);
   const byPath = {};
@@ -114,6 +117,7 @@ function allHunks(git, baseSha, headRev, pathspecs, deletionsOut) {
       cur = p === '/dev/null' ? null : p.replace(/^b\//, '');
       if (cur && !byPath[cur]) byPath[cur] = [];
       if (cur && deletionsOut && !deletionsOut[cur]) deletionsOut[cur] = [];
+      if (cur && changesOut && !changesOut[cur]) changesOut[cur] = [];
       continue;
     }
     const m = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/.exec(l);
@@ -122,6 +126,7 @@ function allHunks(git, baseSha, headRev, pathspecs, deletionsOut) {
     if (cur) byPath[cur].push(rangeOfHeader(l));
     const deletion = cur && deletionsOut ? deletionOfHeader(l) : null;
     if (deletion) deletionsOut[cur].push(deletion);
+    if (cur && changesOut) changesOut[cur].push(changeOfHeader(l));
   }
   return byPath;
 }

@@ -15,7 +15,7 @@
   "main": "./src/extension.js",
   "scripts": {
     "analyze": "node --max-old-space-size=8192 src/cli.js",
-    "test": "node test/loading.test.js && node test/scope.test.js && node test/local-symbols.test.js && node test/local-diff.test.js && node test/local-programs.test.js && node test/syntax-regressions.test.js && node test/remote-regressions.test.js && node test/editor-regressions.test.js && node test/review-identity-regressions.test.js && node test/engine-regressions.test.js && node test/call-site-classifier.test.js && node test/caller-evidence.test.js && node test/extension-commands.test.js && node test/cancellation.test.js && node test/request-boundary.test.js && node test/session-lifecycle.test.js && node test/review-key.test.js && node test/load-typescript.test.js && node test/base-ref.test.js && node test/sources.test.js && node test/pr-groups.test.js && node test/tier-a-view.test.js && node test/tree-grouping.test.js && node test/tree-characterization.test.js && node test/tree-grouping-rules.test.js && node test/tree-row-models.test.js && node test/review-tree-model.test.js && node test/review-tree-view.test.js && node test/tree-cleanup.test.js && node test/review-updates.test.js && node test/review-navigation.test.js && node test/detail-panel-html.test.js && node test/detail-panel.test.js && node test/review-lens.test.js && node test/pr-review-data.test.js && node test/pr-review-store.test.js && node test/outside-functions.test.js && node test/test-reach.test.js && node test/test-reach-view.test.js && node test/syntactic-index.test.js && node test/inheritance.test.js && node test/tier-a.test.js && node test/preview-retention.test.js && node --max-old-space-size=8192 test/languages.test.js && node --max-old-space-size=8192 test/textpos.test.js && node --max-old-space-size=8192 test/callsites.test.js && node --max-old-space-size=8192 test/run-fixtures.js && node --max-old-space-size=8192 test/tree-smoke.js",
+    "test": "node test/loading.test.js && node test/scope.test.js && node test/local-symbols.test.js && node test/local-diff.test.js && node test/local-programs.test.js && node test/syntax-regressions.test.js && node test/remote-regressions.test.js && node test/editor-regressions.test.js && node test/review-identity-regressions.test.js && node test/engine-regressions.test.js && node test/call-site-classifier.test.js && node test/caller-evidence.test.js && node test/extension-commands.test.js && node test/cancellation.test.js && node test/request-boundary.test.js && node test/session-lifecycle.test.js && node test/review-key.test.js && node test/load-typescript.test.js && node test/base-ref.test.js && node test/sources.test.js && node test/pr-groups.test.js && node test/tier-a-view.test.js && node test/tree-grouping.test.js && node test/tree-characterization.test.js && node test/tree-grouping-rules.test.js && node test/tree-row-models.test.js && node test/review-tree-model.test.js && node test/review-tree-view.test.js && node test/tree-cleanup.test.js && node test/review-updates.test.js && node test/review-navigation.test.js && node test/detail-panel-html.test.js && node test/detail-panel.test.js && node test/review-lens.test.js && node test/pr-review-data.test.js && node test/pr-review-store.test.js && node test/diff-lines.test.js && node test/review-comments.test.js && node test/review-threads.test.js && node test/review-threads-details.test.js && node test/outside-functions.test.js && node test/test-reach.test.js && node test/test-reach-view.test.js && node test/syntactic-index.test.js && node test/inheritance.test.js && node test/tier-a.test.js && node test/preview-retention.test.js && node --max-old-space-size=8192 test/languages.test.js && node --max-old-space-size=8192 test/textpos.test.js && node --max-old-space-size=8192 test/callsites.test.js && node --max-old-space-size=8192 test/run-fixtures.js && node --max-old-space-size=8192 test/tree-smoke.js",
     "record": "node --max-old-space-size=8192 test/record-fixture.js",
     "test:fixtures": "node --max-old-space-size=8192 test/run-fixtures.js",
     "test:tree": "node --max-old-space-size=8192 test/tree-smoke.js",
@@ -92,6 +92,16 @@
         "command": "impactTree.filterUnreviewedOn",
         "title": "Impact Tree: Show reviewed changes again (now hiding them)",
         "icon": "$(circle-large-filled)"
+      },
+      {
+        "command": "impactTree.filterThreads",
+        "title": "Impact Tree: Show only unresolved threads",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "impactTree.filterThreadsOn",
+        "title": "Impact Tree: Show everything (now showing only unresolved threads)",
+        "icon": "$(comment-unresolved)"
       },
       {
         "command": "impactTree.nextUnreviewed",
@@ -172,6 +182,46 @@
         "command": "impactTree.openPullRequest",
         "title": "Open pull request",
         "category": "Impact Tree"
+      },
+      {
+        "command": "impactTree.review.startReview",
+        "title": "Start review"
+      },
+      {
+        "command": "impactTree.review.commentNow",
+        "title": "Comment now"
+      },
+      {
+        "command": "impactTree.review.addReviewComment",
+        "title": "Add review comment"
+      },
+      {
+        "command": "impactTree.review.reply",
+        "title": "Reply"
+      },
+      {
+        "command": "impactTree.review.replyToReview",
+        "title": "Add to review"
+      },
+      {
+        "command": "impactTree.review.resolve",
+        "title": "Resolve conversation",
+        "icon": "$(check)"
+      },
+      {
+        "command": "impactTree.review.unresolve",
+        "title": "Unresolve conversation",
+        "icon": "$(issue-reopened)"
+      },
+      {
+        "command": "impactTree.review.deletePendingComment",
+        "title": "Delete pending comment",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "impactTree.review.removeCallerContext",
+        "title": "Remove caller context",
+        "icon": "$(close)"
       }
     ],
     "menus": {
@@ -199,6 +249,16 @@
         {
           "command": "impactTree.filterUnreviewedOn",
           "when": "view == impactTree.changes && impactTree.filter == unreviewed",
+          "group": "navigation@3"
+        },
+        {
+          "command": "impactTree.filterThreads",
+          "when": "view == impactTree.changes && impactTree.filter != threads && impactTree.hasReviewThreads",
+          "group": "navigation@3"
+        },
+        {
+          "command": "impactTree.filterThreadsOn",
+          "when": "view == impactTree.changes && impactTree.filter == threads",
           "group": "navigation@3"
         },
         {
@@ -255,6 +315,14 @@
           "when": "false"
         },
         {
+          "command": "impactTree.filterThreads",
+          "when": "impactTree.hasReviewThreads"
+        },
+        {
+          "command": "impactTree.filterThreadsOn",
+          "when": "false"
+        },
+        {
           "command": "impactTree.nextUnreviewed",
           "when": "impactTree.hasReview"
         },
@@ -277,6 +345,93 @@
         {
           "command": "impactTree.setReviewed",
           "when": "false"
+        },
+        {
+          "command": "impactTree.review.startReview",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.review.commentNow",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.review.addReviewComment",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.review.reply",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.review.replyToReview",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.review.resolve",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.review.unresolve",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.review.deletePendingComment",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.review.removeCallerContext",
+          "when": "false"
+        }
+      ],
+      "comments/commentThread/context": [
+        {
+          "command": "impactTree.review.startReview",
+          "group": "inline@1",
+          "when": "commentController == impactTree.review && commentThreadIsEmpty && !impactTree.reviewPending"
+        },
+        {
+          "command": "impactTree.review.commentNow",
+          "group": "inline@2",
+          "when": "commentController == impactTree.review && commentThreadIsEmpty && !impactTree.reviewPending"
+        },
+        {
+          "command": "impactTree.review.addReviewComment",
+          "group": "inline@1",
+          "when": "commentController == impactTree.review && commentThreadIsEmpty && impactTree.reviewPending"
+        },
+        {
+          "command": "impactTree.review.reply",
+          "group": "inline@1",
+          "when": "commentController == impactTree.review && !commentThreadIsEmpty && commentThread =~ /\\bcanReply\\b/ && !impactTree.reviewPending"
+        },
+        {
+          "command": "impactTree.review.replyToReview",
+          "group": "inline@1",
+          "when": "commentController == impactTree.review && !commentThreadIsEmpty && commentThread =~ /\\bcanReply\\b/ && impactTree.reviewPending"
+        }
+      ],
+      "comments/commentThread/title": [
+        {
+          "command": "impactTree.review.resolve",
+          "group": "inline@1",
+          "when": "commentController == impactTree.review && commentThread =~ /\\bcanResolve\\b/"
+        },
+        {
+          "command": "impactTree.review.unresolve",
+          "group": "inline@1",
+          "when": "commentController == impactTree.review && commentThread =~ /\\bcanUnresolve\\b/"
+        },
+        {
+          "command": "impactTree.review.removeCallerContext",
+          "group": "inline@1",
+          "when": "commentController == impactTree.review && commentThread =~ /\\bcallerContext\\b/"
+        }
+      ],
+      "comments/comment/title": [
+        {
+          "command": "impactTree.review.deletePendingComment",
+          "group": "inline@1",
+          "when": "commentController == impactTree.review && comment =~ /\\bpendingMine\\b/"
         }
       ],
       "view/item/context": [

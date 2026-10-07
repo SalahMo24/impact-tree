@@ -275,18 +275,28 @@ function countReview(files, isReviewed) {
 
 /**
  * The filters of the change view: everything, only the unreviewed rows that need
- * attention, or only the unreviewed rows.
- * @typedef {'all'|'attention'|'unreviewed'} ReviewFilter
+ * attention, only the unreviewed rows, or only the rows with unresolved review threads.
+ * @typedef {'all'|'attention'|'unreviewed'|'threads'} ReviewFilter
  */
 
+/**
+ * How many unresolved posted threads a row has (`openCount` over its threads), or null
+ * when that is not known (no review threads, or not loaded). The `threads` filter keeps
+ * nothing whose count is not known.
+ * @typedef {(row: TreeRow) => number|null} OpenThreadsOf
+ */
+
+/** @type {OpenThreadsOf} */
+const NO_THREAD_COUNTS = () => null;
+
 // What the view's message calls each filter that narrows the tree.
-const FILTER_LABELS = { attention: 'needs attention', unreviewed: 'unreviewed' };
+const FILTER_LABELS = { attention: 'needs attention', unreviewed: 'unreviewed', threads: 'unresolved threads' };
 
 /**
  * The filter after the reviewer toggles `name`: that one on, or all when it was already on.
- * There is one value, so turning one filter on turns the other off.
+ * There is one value, so turning one filter on turns the others off.
  * @param {ReviewFilter} current
- * @param {'attention'|'unreviewed'} name
+ * @param {'attention'|'unreviewed'|'threads'} name
  * @returns {ReviewFilter}
  */
 const toggleFilter = (current, name) => (current === name ? 'all' : name);
@@ -296,42 +306,65 @@ const toggleFilter = (current, name) => (current === name ? 'all' : name);
  * @param {TreeRow} row A counting row.
  * @param {ReviewFilter} filter
  * @param {(row: TreeRow) => boolean} isReviewed
+ * @param {OpenThreadsOf} openThreadsOf
  * @returns {boolean}
  */
-function passesFilter(row, filter, isReviewed) {
+function passesFilter(row, filter, isReviewed, openThreadsOf) {
   if (filter === 'attention') return needsAttention(row) && !isReviewed(row);
   if (filter === 'unreviewed') return !isReviewed(row);
+  if (filter === 'threads') return (openThreadsOf(row) ?? 0) > 0;
   return true;
 }
 
 /**
  * The files that pass a filter, each with the counting rows that do, in display order. A
  * file is kept when at least one of its counting rows passes; a file without a call graph
- * is its own counting row and never needs attention. Each `file` is the row given, not a
+ * is its own counting row and never needs attention. Under `threads`, a file is also kept
+ * when it has unresolved threads that sit on none of its rows (outdated, file-level or on
+ * the base side), with only the rows that have some. Each `file` is the row given, not a
  * copy: its checkbox and counts stand for all its rows, not only the visible ones. Caller
  * and tests rows are not counting rows and are not filtered.
  * @param {TreeRow[]} files The rows from `buildFileRows`.
  * @param {ReviewFilter} filter
  * @param {(row: TreeRow) => boolean} isReviewed Whether a counting row is ticked.
+ * @param {OpenThreadsOf} [openThreadsOf] Read only by the `threads` filter.
  * @returns {Array<{ file: TreeRow, rows: TreeRow[] }>}
  */
-function filterFileRows(files, filter, isReviewed) {
+function filterFileRows(files, filter, isReviewed, openThreadsOf = NO_THREAD_COUNTS) {
   return files
-    .map((file) => ({ file, rows: collectCountingRows([file]).filter((r) => passesFilter(r, filter, isReviewed)) }))
-    .filter((e) => e.rows.length > 0);
+    .map((file) => ({ file, rows: collectCountingRows([file]).filter((r) => passesFilter(r, filter, isReviewed, openThreadsOf)) }))
+    .filter((e) => e.rows.length > 0 || (filter === 'threads' && (openThreadsOf(e.file) ?? 0) > 0));
 }
 
 /**
  * The one row shown in place of an empty tree when a filter leaves nothing, so a tree that
- * is empty because everything is reviewed does not look broken.
- * @param {'attention'|'unreviewed'} filter
+ * is empty because everything is reviewed does not look broken. Under `threads`, an empty
+ * tree says whether that is because there are none, or because they are not known.
+ * @param {'attention'|'unreviewed'|'threads'} filter
+ * @param {'none'|'loading'|'failed'|'ready'} [threads] What is known of the review threads.
  * @returns {TreeRow}
  */
-const buildEmptyFilterRow = (filter) => (filter === 'attention'
-  ? { type: 'message', icon: 'pass', label: 'Nothing needs attention',
-    tooltip: 'Every change that needs attention is reviewed. Turn the filter off to see the rest.' }
-  : { type: 'message', icon: 'pass', label: 'Everything is reviewed',
-    tooltip: 'Every change is reviewed. Turn the filter off to see them.' });
+function buildEmptyFilterRow(filter, threads = 'ready') {
+  if (filter === 'attention') {
+    return { type: 'message', icon: 'pass', label: 'Nothing needs attention',
+      tooltip: 'Every change that needs attention is reviewed. Turn the filter off to see the rest.' };
+  }
+  if (filter === 'unreviewed') {
+    return { type: 'message', icon: 'pass', label: 'Everything is reviewed',
+      tooltip: 'Every change is reviewed. Turn the filter off to see them.' };
+  }
+  if (threads === 'loading') return { type: 'message', icon: 'loading~spin', label: 'Loading the review threads…' };
+  if (threads === 'failed') {
+    return { type: 'message', icon: 'warning', label: 'The review threads could not be loaded',
+      tooltip: 'This does not mean there are none. Refresh to try again, or turn the filter off.' };
+  }
+  if (threads === 'none') {
+    return { type: 'message', icon: 'info', label: 'This review has no pull request threads',
+      tooltip: 'Only a review of a GitHub pull request has review threads. Turn the filter off to see the changes.' };
+  }
+  return { type: 'message', icon: 'pass', label: 'No unresolved threads',
+    tooltip: 'No file of this pull request has an unresolved thread. Turn the filter off to see the changes.' };
+}
 
 /**
  * The id a row has in the tree view, which keeps a row's expansion across a refresh and
@@ -354,15 +387,15 @@ function treeItemId(row) {
  * applied. The walk wraps once to the top, so it may end at `after` itself when that is the
  * only row left. A row the filter hides still marks the place to start from.
  * @param {TreeRow[]} files The rows from `buildFileRows`.
- * @param {{ after?: TreeRow|null, isReviewed: (row: TreeRow) => boolean, filter: ReviewFilter }} opts
+ * @param {{ after?: TreeRow|null, isReviewed: (row: TreeRow) => boolean, filter: ReviewFilter, openThreadsOf?: OpenThreadsOf }} opts
  *   `after` is a counting row or a file row; a file row stands just before its own rows.
  *   Without it, or when it is not among `files`, the walk starts at the top.
  * @returns {TreeRow|null} Null when no row is left.
  */
-function findNextUnreviewed(files, { after = null, isReviewed, filter }) {
+function findNextUnreviewed(files, { after = null, isReviewed, filter, openThreadsOf = NO_THREAD_COUNTS }) {
   /** @type {TreeRow[]} */
   const order = files.flatMap((f) => (f.type === 'reviewFile' ? [f, ...f.rows] : [f]));
-  const shown = new Set(filterFileRows(files, filter, isReviewed).flatMap((e) => e.rows).filter((r) => !isReviewed(r)));
+  const shown = new Set(filterFileRows(files, filter, isReviewed, openThreadsOf).flatMap((e) => e.rows).filter((r) => !isReviewed(r)));
   const here = after ? order.findIndex((r) => treeItemId(r) === treeItemId(after)) : -1;
   return [...order.slice(here + 1), ...order.slice(0, here + 1)].find((r) => shown.has(r)) || null;
 }
@@ -396,14 +429,16 @@ const describeReviewSource = (result, source) => `${describeReviewSubject(result
  * @param {{ kind: string, pr?: { number: number } }|null|undefined} source The session's source.
  * @param {{ total: number, left: number, attention: number }} counts From `countReview`.
  * @param {ReviewFilter} [filter] The active filter; the message names it when it narrows the tree.
+ * @param {string} [threads] What the review threads add before the filter's name
+ *   (`threadsMessageSuffix`); nothing by default.
  * @returns {{ message: string, badge: { value: number, tooltip: string }|undefined }} No
  *   badge once nothing is left.
  */
-function buildReviewSummary(result, source, { total, left, attention }, filter = 'all') {
+function buildReviewSummary(result, source, { total, left, attention }, filter = 'all', threads = '') {
   const what = describeReviewSubject(result, source);
   const named = filter === 'all' ? '' : ` · filter: ${FILTER_LABELS[filter]}`;
   return {
-    message: `${what} · ⛔ ${attention} · ${left} of ${total} left${named}`,
+    message: `${what} · ⛔ ${attention} · ${left} of ${total} left${threads}${named}`,
     badge: left > 0 ? { value: left, tooltip: `${left} of ${total} left to review` } : undefined,
   };
 }

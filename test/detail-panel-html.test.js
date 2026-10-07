@@ -359,3 +359,26 @@ test('the progress strip escapes its source line', () => {
   assert.doesNotMatch(html, /<img/);
   assert.match(textOf(html), /^<img src=x> against "m"/);
 });
+
+test('the Threads section escapes GitHub\'s text, needs no inline style, and its buttons name the thread or row', () => {
+  const caller = callerOf('src/user.ts', 'user', 40, false);
+  const c = change('src/a.ts', 'run', 10, { callers: [caller], callerState: 'resolved' });
+  const result = resultOf({ allChanged: [c] });
+  const [file] = buildFileRows(result, { uriOf }).rows;
+  const row = file.rows[0];
+  const impactRows = buildImpactRows(row, { result, uriOf, rel }).rows;
+  const threads = { title: 'Threads (1)', note: null, action: { target: 'change', label: 'Comment on this change' },
+    threads: [{ id: 'T_"1', author: 'eve<script>', firstLine: '<img src=x onerror=alert(1)>', location: 'line 12', commentCount: 2,
+      status: 'Unresolved', outdated: true, originalCode: '  if (a < b) {' }] };
+  const html = buildDetailHtml(row, { result, isReviewed: () => false, impactRows, nonce: NONCE, cspSource: CSP_SOURCE,
+    origin: 'tree', lineOf: () => 3, threads });
+  assert.doesNotMatch(html, /<img|<script>alert|eve<script>/);
+  assert.match(html, /data-act="thread" data-id="T_&quot;1"/);
+  assert.match(html, /<div class="orig"[^>]*> {2}if \(a &lt; b\) \{<\/div>/);
+  assert.match(html, new RegExp(`data-act="comment" data-id="${treeItemId(row).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/'/g, '&#39;')}"`));
+  assert.match(html, /data-act="caller-comment" data-index="0"/, 'a comment per caller while threads are loaded');
+  assert.match(textOf(html), /Threads \(1\) eve<script>: <img src=x onerror=alert\(1\)> line 12 · 2 comments Unresolved Outdated if \(a < b\) \{ Comment on this change/);
+  assert.doesNotMatch(html, /<[^>]*\s(?:style|on[a-z]+)=/, 'no inline style or handler attribute in any tag');
+  const without = buildDetailHtml(row, { result, isReviewed: () => false, impactRows, nonce: NONCE, cspSource: CSP_SOURCE, origin: 'tree', lineOf: () => 3 });
+  assert.doesNotMatch(without, /Threads|data-act="caller-comment"/, 'a review without threads shows neither');
+});

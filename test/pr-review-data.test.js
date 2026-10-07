@@ -16,7 +16,7 @@ const TARGET = { owner: 'o', name: 'r', number: 7 };
 const comment = (id, over = {}) => ({
   id: `C_${id}`, databaseId: 1000 + id, author: { login: 'bob', avatarUrl: 'https://a/bob' },
   body: `body ${id}`, createdAt: '2026-01-02T03:04:05Z', state: 'SUBMITTED', viewerDidAuthor: false,
-  url: `https://github.com/o/r/pull/7#discussion_r${id}`, ...over,
+  url: `https://github.com/o/r/pull/7#discussion_r${id}`, diffHunk: '@@ -9,2 +9,2 @@\n context\n+const x = 1;', ...over,
 });
 
 const thread = (id, over = {}) => ({
@@ -92,7 +92,7 @@ test('normalises every field of the pull request, thread, comment, review, file 
   assert.deepEqual({ ...t, comments: undefined }, {
     id: 'T_1', path: 'src/a.js', side: 'RIGHT', line: 12, originalLine: 11, startLine: 10,
     isResolved: true, isOutdated: false, fileLevel: false,
-    canResolve: false, canUnresolve: true, canReply: false, comments: undefined,
+    canResolve: false, canUnresolve: true, canReply: false, originalCode: 'const x = 1;', comments: undefined,
   });
   assert.deepEqual(t.comments[0], {
     id: 'C_1', databaseId: 1001, author: { login: 'bob', avatarUrl: 'https://a/bob' }, body: 'body 1',
@@ -134,6 +134,22 @@ test('file-level and outdated threads have no line; a file-level thread says so'
   assert.equal(threads[1].line, null);
   assert.equal(threads[1].startLine, null);
   assert.equal(threads[1].originalLine, 25);
+});
+
+test('a thread keeps the line it was written on: the last line of its first comment\'s diffHunk', async () => {
+  const hunk = (text) => ({ comments: { totalCount: 2, pageInfo: { hasNextPage: false },
+    nodes: [comment(1, { diffHunk: text }), comment(2, { diffHunk: '@@ -1 +1 @@\n+not the first comment' })] } });
+  const gh = fakeClient([envelope(pullRequest({
+    reviewThreads: page([
+      thread(1, { isOutdated: true, line: null, originalLine: 41, ...hunk('@@ -40,3 +40,4 @@ class A\n   a();\n-  b();\n+  return c(x);\n') }),
+      thread(2, { diffSide: 'LEFT', ...hunk('@@ -8,2 +8,1 @@\r\n keep\r\n-  removed();') }),
+      thread(3, { ...hunk('@@ -3,1 +3,1 @@\n   unchanged context') }),
+      thread(4, { subjectType: 'FILE', line: null, ...hunk('') }),
+      thread(5, { ...hunk('@@ -1,0 +1,0 @@') }),
+    ]),
+  }))]);
+  const { threads } = await loadPullRequestReview(gh, TARGET);
+  assert.deepEqual(threads.map((t) => t.originalCode), ['  return c(x);', '  removed();', '  unchanged context', null, null]);
 });
 
 test('threads and files are paged separately by cursor', async () => {
@@ -229,6 +245,8 @@ test('malformed nodes are a GitHubResponseError', async () => {
     'string boolean': (pr) => { pr.reviewThreads.nodes[0].isResolved = 'false'; },
     'unknown comment state': (pr) => { pr.reviewThreads.nodes[0].comments.nodes[0].state = 'DRAFT'; },
     'comment without body': (pr) => { delete pr.reviewThreads.nodes[0].comments.nodes[0].body; },
+    'comment without diffHunk': (pr) => { delete pr.reviewThreads.nodes[0].comments.nodes[0].diffHunk; },
+    'diffHunk not a string': (pr) => { pr.reviewThreads.nodes[0].comments.nodes[0].diffHunk = null; },
     'author without login': (pr) => { pr.reviewThreads.nodes[0].comments.nodes[0].author = {}; },
     'threads not a list': (pr) => { pr.reviewThreads.nodes = {}; },
     'more pages without cursor': (pr) => { pr.reviewThreads.pageInfo = { hasNextPage: true, endCursor: null }; },
