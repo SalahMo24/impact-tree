@@ -49,8 +49,10 @@ test('editor commands refresh the selected PR, preserve preview documents, and r
         return commands.get(name)?.(...args);
       },
     },
+    comments: require('./extension-env').createCommentsApi().api,
     workspace: { workspaceFolders: [{ uri: baseStub.Uri.file(dir) }], getConfiguration: () => cfg,
-      registerTextDocumentContentProvider: (scheme, p) => { providers.set(scheme, p); return disposable(); } },
+      registerTextDocumentContentProvider: (scheme, p) => { providers.set(scheme, p); return disposable(); },
+      textDocuments: [], onDidOpenTextDocument: disposable, onDidCloseTextDocument: disposable },
   };
   const context = () => ({ subscriptions: [], workspaceState: { get: (k) => state.get(k), update: async (k,v) => state.set(k,v) } });
   try {

@@ -15,6 +15,7 @@ const { createSession } = require('./session');
 const { createPrActions } = require('./pr-actions');
 const { createPullRequestReviewStore, reviewTargetOf } = require('./pr-review-store');
 const { createOpenReview } = require('./open-review');
+const { createReviewComments } = require('./review-comments');
 const { registerContentProviders } = require('./content-providers');
 const { registerCommands } = require('./commands');
 
@@ -108,6 +109,24 @@ function activate(context) {
   });
   context.subscriptions.push(reviewStore, owned.onDidChangeAnalysis(() => reviewStore.sync()));
   session.reviewStore = reviewStore;
+
+  // The store's threads in the review diff, and commenting there. Follows the store, and
+  // the analysis for where the pull request is shown; disposed with the window.
+  const reviewComments = createReviewComments(vscode, {
+    store: reviewStore, log,
+    getSession: () => ({ source: owned.state && owned.state.source, result: (owned.state && owned.state.result) || null }),
+    repoRoot: () => owned.repoRoot(),
+    readHead: () => {
+      const { makeGit } = require('./engine/git');
+      return makeGit(owned.repoRoot()).rawAsync(['rev-parse', '--verify', 'HEAD^{commit}'], { timeoutMs: 10000 })
+        .then((out) => out.trim() || null, (e) => { log(`review comments: reading HEAD failed: ${e.message}`); return null; });
+    },
+    contextEvents: [
+      owned.onDidChangeAnalysis,
+      (listener) => provider.onDidChangePresentation((e) => { if (e.reason !== 'filter') listener(); }),
+    ],
+  });
+  context.subscriptions.push(reviewComments);
 
   const sources = createSourcesProvider(vscode, {
     modes: MODES,
