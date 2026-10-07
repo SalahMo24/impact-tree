@@ -78,6 +78,14 @@ a { color: var(--vscode-textLink-foreground); text-decoration: none; cursor: poi
 a:hover { color: var(--vscode-textLink-activeForeground); text-decoration: underline; }
 .note { color: var(--vscode-descriptionForeground); margin-top: 4px; }
 .stale { color: var(--vscode-editorError-foreground); white-space: nowrap; }
+.progress { position: sticky; top: 0; z-index: 1; margin: 0 -6px 6px -8px; padding: 6px 6px 8px 8px; font-size: 12px;
+  background: var(--vscode-sideBar-background); border-bottom: 1px solid var(--vscode-panel-border); }
+.progress .nums { display: flex; gap: 10px; }
+.progress .pct { margin-left: auto; color: var(--vscode-descriptionForeground); }
+.progress progress { display: block; width: 100%; height: 4px; margin-top: 5px; border: 0; border-radius: 2px; overflow: hidden;
+  appearance: none; background: var(--vscode-widget-border, var(--vscode-panel-border)); }
+.progress progress::-webkit-progress-bar { background: var(--vscode-widget-border, var(--vscode-panel-border)); }
+.progress progress::-webkit-progress-value { background: var(--vscode-testing-iconPassed); }
 .actions { margin-top: 12px; }
 button { font: inherit; border: 0; border-radius: 2px; padding: 4px 10px; margin: 0 6px 6px 0; cursor: pointer;
   color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
@@ -96,8 +104,23 @@ const script = (token) => `
 const vscode = acquireVsCodeApi();
 const token = ${JSON.stringify(token)};
 const postMessage = (message) => vscode.postMessage({ ...message, token });
+const setText = (selector, text) => { const el = document.querySelector(selector); if (el) el.textContent = text; };
+const patchProgress = (m) => {
+  const ok = m && typeof m.line === 'string' && typeof m.countText === 'string' && typeof m.attentionText === 'string'
+    && typeof m.percentText === 'string' && Number.isSafeInteger(m.reviewed) && Number.isSafeInteger(m.total)
+    && m.reviewed >= 0 && m.total > 0 && m.reviewed <= m.total && (m.attentionClass === 'lv0' || m.attentionClass === 'lv2');
+  if (!ok) return;
+  setText('[data-progress-line]', m.line);
+  setText('[data-progress-count]', m.countText);
+  setText('[data-progress-percent]', m.percentText);
+  const attention = document.querySelector('[data-progress-attention]');
+  if (attention) { attention.textContent = m.attentionText; attention.setAttribute('class', m.attentionClass); }
+  const meter = document.querySelector('[data-progress-meter]');
+  if (meter) { meter.setAttribute('max', String(m.total)); meter.setAttribute('value', String(m.reviewed)); meter.textContent = m.percentText; }
+};
 window.addEventListener('message', (event) => {
   const data = event.data;
+  if (data && data.token === token && data.type === 'progress') { patchProgress(data.model); return; }
   const header = document.querySelector('.origin');
   if (header && data && data.token === token && data.type === 'origin' && typeof data.text === 'string') header.textContent = data.text;
   if (!data || data.type !== 'review' || data.token !== token) return;
@@ -133,6 +156,37 @@ function describeOrigin(origin) {
   const at = /^cursor:([1-9]\d*)$/.exec(origin);
   assert.ok(at, `detail panel origin must be 'tree' or 'cursor:<line>', got ${JSON.stringify(origin)}`);
   return `at cursor, line ${at[1]}`;
+}
+
+/**
+ * The review's progress strip, as text and numbers. Pure, shared by the initial HTML and
+ * its later patches, so the page never formats anything itself.
+ * @typedef {{ line: string, reviewed: number, total: number, countText: string, attentionText: string,
+ *   attentionClass: 'lv0'|'lv2', percentText: string }} ProgressPresentation
+ * @param {{ line: string, total: number, left: number, attention: number }|null} progress `line`
+ *   names the source (`PR #15 against main`); the counts are from `countReview`.
+ * @returns {ProgressPresentation|null} Null when there is nothing to count.
+ */
+function progressPresentation(progress) {
+  if (!progress || progress.total <= 0) return null;
+  const reviewed = progress.total - progress.left;
+  return {
+    line: progress.line, reviewed, total: progress.total,
+    countText: `${reviewed} of ${progress.total} reviewed`,
+    attentionText: progress.attention ? `⛔ ${progress.attention} need attention` : 'nothing needs attention',
+    attentionClass: progress.attention ? 'lv0' : 'lv2',
+    percentText: `${Math.round((100 * reviewed) / progress.total)}%`,
+  };
+}
+
+/** @param {ProgressPresentation|null} model @returns {string} The strip, or nothing. */
+function progressHtml(model) {
+  if (!model) return '';
+  return `<div class="progress"><div class="where" data-progress-line>${escapeHtml(model.line)}</div>`
+    + `<div class="nums"><span data-progress-count>${escapeHtml(model.countText)}</span>`
+    + `<span class="${model.attentionClass}" data-progress-attention>${escapeHtml(model.attentionText)}</span>`
+    + `<span class="pct" data-progress-percent>${escapeHtml(model.percentText)}</span></div>`
+    + `<progress max="${model.total}" value="${model.reviewed}" data-progress-meter>${escapeHtml(model.percentText)}</progress></div>`;
 }
 
 /** @param {ReviewPresentation|null} model The fields shared with progress patches. */
@@ -261,14 +315,16 @@ function bodyHtml(row, { result, isReviewed, impactRows, lineOf }) {
  *   result: any, isReviewed: (row: TreeRow) => boolean, impactRows: TreeRow[],
  *   nonce: string, cspSource: string, origin: string,
  *   lineOf: (file: string, offset: number) => number|null,
+ *   progress?: ProgressPresentation|null,
  * }} opts `result` is the shown result. `isReviewed` says whether a counting row is ticked.
  *   `impactRows` are `buildImpactRows`'s rows for a change row (ignored otherwise).
  *   `nonce` is base64 and fresh per document; `cspSource` is the webview's. `origin` is
  *   `'tree'` or `'cursor:<line>'` (1-based). `lineOf` gives the 1-based line of an offset
- *   in a file, or null when it cannot be read.
+ *   in a file, or null when it cannot be read. `progress` is the strip above the row; none
+ *   when absent or null.
  * @returns {string} The whole HTML document.
  */
-function buildDetailHtml(row, { result, isReviewed, impactRows, nonce, cspSource, origin, lineOf }) {
+function buildDetailHtml(row, { result, isReviewed, impactRows, nonce, cspSource, origin, lineOf, progress = null }) {
   assert.match(nonce, /^[A-Za-z0-9+/=]+$/, 'the nonce must be base64 so it cannot break out of the CSP');
   const header = row ? `<div class="origin">${describeOrigin(origin)}</div>` : '';
   const csp = `default-src 'none'; style-src ${escapeHtml(cspSource)} 'nonce-${nonce}'; script-src 'nonce-${nonce}';`;
@@ -276,8 +332,8 @@ function buildDetailHtml(row, { result, isReviewed, impactRows, nonce, cspSource
     + `<meta http-equiv="Content-Security-Policy" content="${csp}">`
     + '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
     + `<style nonce="${nonce}">${STYLE}</style></head>`
-    + `<body>${header}${bodyHtml(row, { result, isReviewed, impactRows, lineOf })}`
+    + `<body>${progressHtml(progress)}${header}${bodyHtml(row, { result, isReviewed, impactRows, lineOf })}`
     + `<script nonce="${nonce}">${script(nonce)}</script></body></html>`;
 }
 
-module.exports = { reviewPresentation, buildDetailHtml, listCallerRows, describeOrigin, tidySignature, escapeHtml, VERDICT_WORDS };
+module.exports = { reviewPresentation, progressPresentation, buildDetailHtml, listCallerRows, describeOrigin, tidySignature, escapeHtml, VERDICT_WORDS };

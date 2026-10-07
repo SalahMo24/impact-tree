@@ -31,8 +31,11 @@ function useResult(env, { tierA = false } = {}) {
   if (tierA) env.hooks.remoteResult = (pr) => ({ ...previewResult(pr), ...parts });
   else env.hooks.localResult = (o) => ({ ...localResult(o), ...parts });
 }
-// What the panel says, tags stripped.
-const textOf = (details) => details.displayHtml.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/g, ' ')
+// The progress strip above the row, tags stripped.
+const stripTextOf = (details) => /<div class="progress">[\s\S]*?<\/progress><\/div>/.exec(details.displayHtml)?.[0]
+  .replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() ?? null;
+// What the panel says about the row, tags stripped; the strip is tested on its own.
+const textOf = (details) => details.displayHtml.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>|<div class="progress">[\s\S]*?<\/progress><\/div>/g, ' ')
   .replace(/<[^>]*>/g, ' ').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 // The tree id the panel's tick button names, as its script would send it.
 const tickId = (details) => /data-act="tick" data-id="([^"]*)"/.exec(details.webview.html)[1].replace(/&#39;/g, "'").replace(/&amp;/g, '&');
@@ -143,6 +146,20 @@ test('a cursor in any other editor, on the base side or in a file the review doe
   assert.equal(textOf(details), NOT_FOLLOWED, 'a selection set by a command, such as opening a diff from the tree');
   env.moveCursor(fileUri(env, 'a.ts'), 11, { kind: undefined });
   assert.match(textOf(details), /^at cursor, line 11 bad /, 'an event that does not say how the cursor moved still counts');
+}));
+
+test('the strip names a pull request and its base, and shows with nothing selected', () => withEnv(async (env) => {
+  useResult(env, { tierA: true });
+  await env.preview(pull(7));
+  const details = env.openDetails();
+  assert.equal(textOf(details), NOT_FOLLOWED);
+  assert.equal(stripTextOf(details), 'PR #7 against main 0 of 4 reviewed ⛔ 1 need attention 0% 0%');
+}));
+
+test('the strip of a local review names its mode', () => withEnv(async (env) => {
+  useResult(env);
+  await env.refresh();
+  assert.equal(stripTextOf(env.openDetails()), 'pr mode against main 0 of 4 reviewed ⛔ 1 need attention 0% 0%');
 }));
 
 test('in a preview only the pull request\'s head side is followed', () => withEnv(async (env) => {

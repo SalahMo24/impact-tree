@@ -374,3 +374,138 @@ test('analyzeRemote hands its signal to every GitHub call, including the configu
   }
   assert.ok(seen.fileAtRef.length > 2, 'file fetches and the tsconfig/package.json reads all carry it');
 });
+
+// ---- GraphQL and writes (L1) ------------------------------------------------------
+// A response with chosen headers; `streamed` only knows content-type.
+function withHeaders(status, headers, data = {}) {
+  const { res } = streamed([JSON.stringify(data)], { status });
+  const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), String(v)]));
+  res.headers = { get: (n) => (n.toLowerCase() === 'content-type' ? 'application/json' : lower[n.toLowerCase()] ?? null) };
+  return res;
+}
+
+test('graphql POSTs the query and variables as JSON to /graphql with auth headers', async () => {
+  const calls = [];
+  const gh = await client(async (url, init) => { calls.push({ url, init }); return json({ data: { viewer: { login: 'me' } } }); });
+  const data = await gh.graphql('query($n:Int!){ x(n:$n) }', { n: 3 });
+  assert.deepEqual(data, { viewer: { login: 'me' } });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'https://api.github.com/graphql');
+  assert.equal(calls[0].init.method, 'POST');
+  assert.deepEqual(JSON.parse(calls[0].init.body), { query: 'query($n:Int!){ x(n:$n) }', variables: { n: 3 } });
+  assert.equal(calls[0].init.headers['Content-Type'], 'application/json');
+  assert.equal(calls[0].init.headers.Authorization, 'Bearer secret-token');
+});
+
+test('reads stay GET with no body and no content type', async () => {
+  const calls = [];
+  const gh = await client(async (url, init) => { calls.push(init); return json(pr(1)); });
+  await gh.getPullRequest(SLUG, 1);
+  assert.equal(calls[0].method, 'GET');
+  assert.equal(calls[0].body, undefined);
+  assert.equal(calls[0].headers['Content-Type'], undefined);
+});
+
+test('graphql errors reject with messages and paths, with or without partial data', async () => {
+  const errors = [{ message: 'boom', path: ['repository', 'pullRequest', 0] }, { message: 'second' }];
+  for (const envelope of [{ errors }, { data: { repository: null }, errors }]) {
+    const gh = await client(async () => json(envelope));
+    await assert.rejects(gh.graphql('{ x }'), (e) => e.name === 'GitHubGraphQLError'
+      && JSON.stringify(e.messages) === '["boom","second"]'
+      && JSON.stringify(e.errors[0].path) === '["repository","pullRequest",0]' && e.errors[1].path === null
+      && e.message.includes('boom'));
+  }
+});
+
+test('a graphql answer that is not a valid envelope is a response error', async () => {
+  for (const body of [[], 'x', { data: null }, {}, { data: {}, errors: 'bad' }, { errors: [{ nope: 1 }] }, { errors: [{ message: 'm', path: [{}] }] }]) {
+    const gh = await client(async () => json(body));
+    await assert.rejects(gh.graphql('{ x }'), { name: 'GitHubResponseError' }, JSON.stringify(body));
+  }
+  const gh = await client(async () => json({ data: {}, errors: [] }));
+  assert.deepEqual(await gh.graphql('{ x }'), {}, 'an empty errors array is not an error');
+});
+
+test('graphql rejects bad arguments before sending anything', async () => {
+  let sent = 0;
+  const gh = await client(async () => { sent++; return json({ data: {} }); });
+  await assert.rejects(gh.graphql(''), TypeError);
+  await assert.rejects(gh.graphql('{ x }', [1]), TypeError);
+  assert.equal(sent, 0);
+});
+
+test('graphql 401 signs out; plain 403 stays an HTTP error and keeps the session', async () => {
+  const unauthorised = await client(async () => json({}, 401));
+  await assert.rejects(unauthorised.graphql('{ x }'), { name: 'GitHubAuthError' });
+  assert.equal(unauthorised.isSignedIn(), false);
+  const forbidden = await client(async () => withHeaders(403, { 'x-ratelimit-remaining': '4999' }));
+  await assert.rejects(forbidden.graphql('{ x }'), (e) => e.name === 'GitHubHttpError' && e.status === 403);
+  assert.equal(forbidden.isSignedIn(), true);
+  const bare = await client(async () => withHeaders(403, {}));
+  await assert.rejects(bare.graphql('{ x }'), { name: 'GitHubHttpError' });
+});
+
+test('rate limits become GitHubRateLimitError with the reset time when given, and keep the session', async () => {
+  const resetSeconds = 1893456000;
+  const cases = [
+    [withHeaders(403, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': resetSeconds }), 403, resetSeconds * 1000],
+    [withHeaders(403, { 'x-ratelimit-remaining': '0' }), 403, null],
+    [withHeaders(429, { 'x-ratelimit-reset': resetSeconds }), 429, resetSeconds * 1000],
+    [withHeaders(429, {}), 429, null],
+    [withHeaders(429, { 'retry-after': 'soon' }), 429, null],
+    // a secondary rate limit: requests remain, but GitHub asks to wait
+    [withHeaders(403, { 'x-ratelimit-remaining': '4000', 'retry-after': '0' }), 403, 'now'],
+  ];
+  for (const [res, status, resetAt] of cases) {
+    const gh = await client(async () => res);
+    await assert.rejects(gh.graphql('{ x }'), (e) => e.name === 'GitHubRateLimitError'
+      && e.status === status && (resetAt === 'now' ? Math.abs(e.resetAt - Date.now()) < 5000 : e.resetAt === resetAt));
+    assert.equal(gh.isSignedIn(), true);
+  }
+  const before = Date.now();
+  const gh = await client(async () => withHeaders(429, { 'retry-after': '60' }));
+  await assert.rejects(gh.graphql('{ x }'), (e) => e.name === 'GitHubRateLimitError'
+    && e.resetAt >= before + 60000 && e.resetAt <= Date.now() + 60000);
+  const rest = await client(async () => withHeaders(429, { 'retry-after': '5', 'x-ratelimit-reset': resetSeconds }));
+  await assert.rejects(rest.getPullRequest(SLUG, 1), (e) => e.name === 'GitHubRateLimitError' && e.resetAt < resetSeconds * 1000);
+});
+
+test('a rate-limited request is sent once, never retried', async () => {
+  let sent = 0;
+  const gh = await client(async () => { sent++; return withHeaders(429, { 'retry-after': '0' }); });
+  await assert.rejects(gh.graphql('mutation { x }'), { name: 'GitHubRateLimitError' });
+  assert.equal(sent, 1);
+});
+
+test('graphql honours the deadline, the size limit and the caller signal', async () => {
+  const slow = await client(() => new Promise(() => {}), { requestTimeoutMs: 20 });
+  await assert.rejects(slow.graphql('{ x }'), (e) => e.name === 'GitHubTimeoutError' && e.message.includes('/graphql'));
+
+  const { res, read } = streamed(['{"data":{"a":"', 'x'.repeat(50), '"}}']);
+  const big = await client(async () => res, { maxJsonBytes: 20 });
+  await assert.rejects(big.graphql('{ x }'), { name: 'GitHubResponseTooLargeError' });
+  assert.equal(read.cancelled, true);
+
+  let sent = 0;
+  const controller = new AbortController();
+  controller.abort();
+  const gh = await client(async () => { sent++; return json({ data: {} }); });
+  await assert.rejects(gh.graphql('{ x }', {}, { signal: controller.signal }),
+    (e) => e.name === 'GitHubCancelledError' && isAnalysisCancelled(e));
+  assert.equal(sent, 0);
+
+  const mid = new AbortController();
+  const late = await client((_, init) => new Promise((_, reject) => {
+    init.signal.addEventListener('abort', () => reject(new Error('aborted')));
+    setImmediate(() => mid.abort());
+  }));
+  await assert.rejects(late.graphql('{ x }', {}, { signal: mid.signal }), { name: 'GitHubCancelledError' });
+});
+
+test('a GraphQL RATE_LIMITED error is a rate limit; other types are kept on the error', async () => {
+  const limited = await client(async () => json({ data: null, errors: [{ type: 'RATE_LIMITED', message: 'API rate limit exceeded' }] }));
+  await assert.rejects(limited.graphql('{ x }'), (e) => e.name === 'GitHubRateLimitError' && e.status === 200);
+  assert.equal(limited.isSignedIn(), true);
+  const missing = await client(async () => json({ data: { node: null }, errors: [{ type: 'NOT_FOUND', message: 'gone', path: ['node'] }] }));
+  await assert.rejects(missing.graphql('{ x }'), (e) => e.name === 'GitHubGraphQLError' && e.errors[0].type === 'NOT_FOUND');
+});

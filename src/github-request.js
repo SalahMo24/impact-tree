@@ -19,8 +19,12 @@ const { AnalysisCancelledError } = require('./engine/cancellation');
  *   Exhaustion: the body is cancelled and the call rejects with
  *   `GitHubResponseTooLargeError`. A PR preview reports that file as "fetch failed —
  *   skipped" and stays visibly incomplete.
- * - `maxJsonBytes`: bytes, default 10 MiB. The response to any JSON API call; enforced
- *   and exhausted the same way as `maxFileBytes`.
+ * - `maxJsonBytes`: bytes, default 10 MiB. The response to any JSON API call, including
+ *   GraphQL queries and the response to a write (POST/PUT/PATCH/DELETE); enforced and
+ *   exhausted the same way as `maxFileBytes`. `requestTimeoutMs` covers writes and
+ *   GraphQL too. Requests are never retried: a read fails with the typed error and a
+ *   write must not be sent twice, so the caller decides. A rate limit rejects at once
+ *   with `GitHubRateLimitError`; the extension never sleeps until the reset.
  * - `maxPullRequestPages`: pages of 100, default 10 (1,000 pull requests). Enforced by
  *   `listOpenPullRequests`. Exhaustion: the list is returned truncated, and says so
  *   only when one more page proves that there were more.
@@ -75,6 +79,44 @@ class GitHubAuthError extends Error {
   }
 }
 
+/**
+ * GitHub refused because a rate limit is spent: 429, a 403 with `x-ratelimit-remaining:
+ * 0` or with `retry-after` (a secondary limit), or a GraphQL `RATE_LIMITED` error. The
+ * token is fine, so the caller keeps its session.
+ */
+class GitHubRateLimitError extends Error {
+  /**
+   * @param {string} endpoint
+   * @param {number} status
+   * @param {number|null} resetAt Epoch milliseconds when requests may resume, or null
+   *   when GitHub sent neither `retry-after` nor `x-ratelimit-reset`.
+   */
+  constructor(endpoint, status, resetAt) {
+    super(`GitHub rate limit reached on ${endpoint} (${status})`
+      + (resetAt === null ? '' : `; resets at ${new Date(resetAt).toISOString()}`));
+    this.name = 'GitHubRateLimitError';
+    this.status = status;
+    this.resetAt = resetAt;
+  }
+}
+
+/**
+ * A GraphQL answer carried a non-empty `errors` array. Raised even when `data` is also
+ * present, so partial data is never used as if it were complete.
+ */
+class GitHubGraphQLError extends Error {
+  /**
+   * @param {string} endpoint
+   * @param {{ message: string, path: (string|number)[]|null, type: string|null }[]} errors
+   */
+  constructor(endpoint, errors) {
+    super(`GitHub GraphQL error on ${endpoint}: ${errors.map((e) => e.message).join('; ')}`);
+    this.name = 'GitHubGraphQLError';
+    this.errors = errors;
+    this.messages = errors.map((e) => e.message);
+  }
+}
+
 /** GitHub answered with a status the caller did not expect. */
 class GitHubHttpError extends Error {
   /** @param {string} endpoint @param {number} status */
@@ -95,6 +137,25 @@ class GitHubResponseError extends Error {
 }
 
 /**
+ * When a rate limit lifts, in epoch milliseconds: `retry-after` (seconds from now) wins
+ * over `x-ratelimit-reset` (epoch seconds). Headers that are not whole numbers are
+ * ignored rather than trusted.
+ * @param {{ get: (name: string) => string|null }} headers
+ * @returns {number|null}
+ */
+function rateLimitResetAt(headers) {
+  /** @param {string} name */
+  const whole = (name) => {
+    const raw = headers.get(name);
+    return raw !== null && /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : null;
+  };
+  const retryAfter = whole('retry-after');
+  if (retryAfter !== null) return Date.now() + retryAfter * 1000;
+  const reset = whole('x-ratelimit-reset');
+  return reset !== null ? reset * 1000 : null;
+}
+
+/**
  * @typedef {object} BoundedResponse
  * @property {number} status
  * @property {string} contentType Lower-cased `content-type`, or an empty string.
@@ -108,7 +169,8 @@ class GitHubResponseError extends Error {
  * body was already arriving.
  * @param {typeof fetch} fetchImpl
  * @param {string} url
- * @param {RequestInit} init Must not carry its own `signal`.
+ * @param {RequestInit} init Method, headers and body pass through unchanged; must not
+ *   carry its own `signal`. The request is sent once whatever the method.
  * @param {object} bounds
  * @param {string} bounds.endpoint Names the request in errors; carries no credentials.
  * @param {number} bounds.deadlineMs
@@ -121,6 +183,8 @@ class GitHubResponseError extends Error {
  * @throws {GitHubTimeoutError} The deadline passed.
  * @throws {GitHubResponseTooLargeError} The body passed `maxBytes`.
  * @throws {GitHubAuthError} The status was 401.
+ * @throws {GitHubRateLimitError} The status was 429, or 403 with no requests remaining or
+ *   with `retry-after`.
  * @throws {GitHubHttpError} Any other unaccepted non-2xx status.
  */
 async function fetchBounded(fetchImpl, url, init, bounds) {
@@ -151,6 +215,10 @@ async function fetchBounded(fetchImpl, url, init, bounds) {
     if (cause) throw cause;
     if (res.status === 401) throw new GitHubAuthError(res.status);
     if (passStatuses.includes(res.status)) return { status: res.status, contentType: '', text: null };
+    // A secondary rate limit is a 403 with `retry-after` and requests still remaining.
+    const limited = res.status === 429 || (res.status === 403
+      && (String(res.headers.get('x-ratelimit-remaining')).trim() === '0' || res.headers.get('retry-after') !== null));
+    if (limited) throw new GitHubRateLimitError(endpoint, res.status, rateLimitResetAt(res.headers));
     if (!res.ok) throw new GitHubHttpError(endpoint, res.status);
     if (!res.body) throw new GitHubResponseError(endpoint, 'no response body');
 
@@ -187,4 +255,5 @@ module.exports = {
   DEFAULT_LIMITS, fetchBounded,
   GitHubTimeoutError, GitHubCancelledError, GitHubResponseTooLargeError,
   GitHubAuthError, GitHubHttpError, GitHubResponseError,
+  GitHubRateLimitError, GitHubGraphQLError,
 };

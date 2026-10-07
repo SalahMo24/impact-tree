@@ -19,16 +19,24 @@ function createPage(html, send) {
     ['.origin', /<div class="origin">([^]*?)<\/div>/],
     ['[data-act="tick"]', /<button data-act="tick"([^]*?)>([^]*?)<\/button>/],
     ['[data-review-summary]', /<div class="verdict [^"]*" data-review-summary>([^]*?)<\/div>/],
+    ['[data-progress-line]', /<div class="where" data-progress-line>([^]*?)<\/div>/],
+    ['[data-progress-count]', /<span data-progress-count>([^]*?)<\/span>/],
+    ['[data-progress-attention]', /<span class="([^"]*)" data-progress-attention>([^]*?)<\/span>/],
+    ['[data-progress-percent]', /<span class="pct" data-progress-percent>([^]*?)<\/span>/],
+    ['[data-progress-meter]', /<progress([^>]*)>([^]*?)<\/progress>/],
   ];
+  // Patterns that capture attributes (or a class) first and the text second.
+  const attributed = new Set(['[data-act="tick"]', '[data-progress-attention]', '[data-progress-meter]']);
   for (const [selector, pattern] of matches) {
     const match = pattern.exec(html);
     if (!match) continue;
     const attributes = {};
-    if (selector === '[data-act="tick"]') {
+    if (selector === '[data-progress-attention]') attributes.class = match[1];
+    else if (attributed.has(selector)) {
       for (const attr of match[1].matchAll(/([\w-]+)="([^"]*)"/g)) attributes[attr[1]] = decode(attr[2]);
-      attributes['data-act'] = 'tick';
     }
-    nodes.set(selector, new Element(attributes, decode(match[selector === '[data-act="tick"]' ? 2 : 1])));
+    if (selector === '[data-act="tick"]') attributes['data-act'] = 'tick';
+    nodes.set(selector, new Element(attributes, decode(match[attributed.has(selector) ? 2 : 1])));
   }
   const messages = new Map(), clicks = new Map(), sent = [];
   const script = /<script[^>]*>([^]*?)<\/script>/.exec(html)[1];

@@ -6,7 +6,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const { buildFileRows, buildImpactRows, treeItemId } = require('../src/review-tree-model');
-const { buildDetailHtml, listCallerRows, describeOrigin, tidySignature } = require('../src/detail-panel-html');
+const { buildDetailHtml, listCallerRows, describeOrigin, tidySignature, progressPresentation } = require('../src/detail-panel-html');
 
 const uriOf = (file, pos) => (file ? `uri:${file}${pos == null ? '' : `#${pos}`}` : null);
 const rel = (f) => f.replace('/r/', '');
@@ -334,4 +334,28 @@ test('an id with markup in it cannot break out of the "Show callers" link', () =
   const html = render(findRow(result, 'f'), result);
   assert.doesNotMatch(html, /<img/);
   assert.match(html, /data-act="peek" data-id="[^"<>]*"/);
+});
+
+test('the progress strip names the source, counts, attention and percentage, and drives a <progress> element', () => {
+  const strip = (progress) => buildDetailHtml(null, { result: null, isReviewed: () => false, impactRows: [], nonce: NONCE,
+    cspSource: CSP_SOURCE, origin: 'tree', lineOf, progress: progressPresentation(progress) });
+  const html = strip({ line: 'PR #15 against main', total: 8, left: 5, attention: 2 });
+  assert.match(textOf(html), /^PR #15 against main 3 of 8 reviewed ⛔ 2 need attention 38% 38% Select a change/);
+  assert.match(html, /<progress max="8" value="3" data-progress-meter>/);
+  assert.match(textOf(strip({ line: 'x', total: 2, left: 0, attention: 0 })), /2 of 2 reviewed nothing needs attention 100%/);
+  assert.doesNotMatch(html, /\sstyle="/, 'the meter is styled by the nonce stylesheet, not inline');
+  assert.match(/<style[^>]*>([\s\S]*?)<\/style>/.exec(html)[1], /\.progress\s*\{[^}]*position: sticky; top: 0/);
+});
+
+test('there is no strip without counting rows', () => {
+  assert.equal(progressPresentation(null), null);
+  assert.equal(progressPresentation({ line: 'x', total: 0, left: 0, attention: 0 }), null);
+  assert.doesNotMatch(render(null, null).replace(/<script[\s\S]*?<\/script>/, ''), /<progress|data-progress/);
+});
+
+test('the progress strip escapes its source line', () => {
+  const html = buildDetailHtml(null, { result: null, isReviewed: () => false, impactRows: [], nonce: NONCE, cspSource: CSP_SOURCE,
+    origin: 'tree', lineOf, progress: progressPresentation({ line: '<img src=x> against "m"', total: 1, left: 1, attention: 0 }) });
+  assert.doesNotMatch(html, /<img/);
+  assert.match(textOf(html), /^<img src=x> against "m"/);
 });
