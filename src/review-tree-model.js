@@ -274,6 +274,15 @@ function countReview(files, isReviewed) {
 }
 
 /**
+ * The unreviewed rows that need attention, in the order the tree shows them (the order
+ * `buildFileRows` gives, whatever the filter). These are what the approve check lists.
+ * @param {TreeRow[]} files The rows from `buildFileRows`.
+ * @param {(row: TreeRow) => boolean} isReviewed Whether a counting row is ticked.
+ * @returns {TreeRow[]}
+ */
+const listAttentionLeft = (files, isReviewed) => collectCountingRows(files).filter((r) => !isReviewed(r) && needsAttention(r));
+
+/**
  * The filters of the change view: everything, only the unreviewed rows that need
  * attention, only the unreviewed rows, or only the rows with unresolved review threads.
  * @typedef {'all'|'attention'|'unreviewed'|'threads'} ReviewFilter
@@ -468,6 +477,6 @@ function findRowAtLine(files, relPath, line) {
 const span = (row) => row.finding.endLine - row.finding.startLine;
 
 module.exports = {
-  buildFileRows, buildImpactRows, collectCountingRows, collectTickTargets, needsAttention, countReview, describeReviewSource, buildReviewSummary,
+  buildFileRows, buildImpactRows, collectCountingRows, collectTickTargets, needsAttention, countReview, listAttentionLeft, describeReviewSource, buildReviewSummary,
   findRowAtLine, filterFileRows, toggleFilter, findNextUnreviewed, treeItemId, buildEmptyFilterRow, buildSpacerRow,
 };

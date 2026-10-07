@@ -9,7 +9,7 @@ const Module = require('module');
 const { execFileSync } = require('child_process');
 const { clearVirtualText } = require('../src/engine/textpos');
 
-const { createPage } = require('./webview-page');
+const { createPage, createFormPage } = require('./webview-page');
 
 const SRC = path.resolve(__dirname, '../src');
 const baseStub = require('./vscode-stub');
@@ -104,6 +104,51 @@ function createCommentsApi() {
   };
 }
 
+// A webview panel as VS Code gives one: options split onto the webview, `html` kept and
+// run through the form-page DOM (so the page's own script runs and its messages reach the
+// extension), and `dispose()` firing onDidDispose once, as closing the tab does. Setting
+// `html` after disposal throws, as VS Code does. `send` delivers a message as the page
+// would; `posted` records what the extension posted to the page.
+function fakeWebviewPanel(viewType, title, showOptions, options = {}) {
+  const disposable = () => ({ dispose() {} });
+  const received = [], disposed = [];
+  let html = '';
+  const panel = {
+    viewType, title, showOptions, options, viewColumn: 1, visible: true, active: true, disposed: false, reveals: 0, loads: 0,
+    posted: [], page: null,
+    webview: {
+      options: { enableScripts: options.enableScripts, localResourceRoots: options.localResourceRoots },
+      cspSource: 'vscode-webview://test',
+      get html() { return html; },
+      set html(value) {
+        if (panel.disposed) throw new Error('Webview is disposed');
+        html = value; panel.loads++;
+        panel.page = createFormPage(html, (message) => { for (const handler of [...received]) handler(message); });
+      },
+      // Delivered later, as VS Code does, to whichever document is loaded by then.
+      postMessage: async (message) => {
+        if (panel.disposed) return false;
+        panel.posted.push(message);
+        await null;
+        if (panel.page && !panel.disposed) panel.page.receive(message);
+        return true;
+      },
+      onDidReceiveMessage: (handler) => { received.push(handler); return { dispose() { const i = received.indexOf(handler); if (i >= 0) received.splice(i, 1); } }; },
+    },
+    reveal() { panel.reveals++; panel.visible = true; panel.active = true; },
+    onDidDispose: (handler) => { disposed.push(handler); return disposable(); },
+    onDidChangeViewState: () => disposable(),
+    send: (message) => Promise.all(received.map((handler) => handler(message))),
+    listeners: () => received.length,
+    dispose() {
+      if (panel.disposed) return;
+      panel.disposed = true; panel.visible = false;
+      for (const handler of disposed.splice(0)) handler();
+    },
+  };
+  return panel;
+}
+
 // Loads a fresh extension against a clean temp git repo. Only the edges are faked:
 // the two analysers, the editor's language-server resolver, and the network-facing
 // async git calls (fetch, rev-parse of FETCH_HEAD, checkout), so the worktree itself
@@ -130,8 +175,10 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   // the rows the change view was asked to reveal, with their options; `statusBar` is the
   // extension's status bar item.
   // `executed` the commands run through `executeCommand`, with their arguments.
+  // `statusBars` every status bar item created, in order (`statusBar` is the first, the
+  // review progress); `panels` every webview panel created, in order.
   const seen = { warnings: [], errors: [], infos: [], log: [], status: [], modals: 0, analyze: [], remote: [],
-    signals: [], callerQueries: [], warmUps: [], contexts: {}, revealed: [], statusBar: null, executed: [],
+    signals: [], callerQueries: [], warmUps: [], contexts: {}, revealed: [], statusBar: null, statusBars: [], panels: [], executed: [],
     focus: 'editor', focusedRow: null, editorSpaces: 0 };
   const git = { fetches: [], checkouts: [], calls: [] };
   const holds = { fetch: gates(), modal: gates(), remote: gates(), analyze: gates(), callers: gates(), warmUp: gates() };
@@ -146,7 +193,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   const disposable = () => ({ dispose() {} });
   const cfg = { get: (name, fallback) => ({ prewarm, analyseOnStartup: false, fetchBase: false })[name] ?? fallback,
     update: async () => {} };
-  const vscode = { ...baseStub, ConfigurationTarget: { Workspace: 2 },
+  const vscode = { ...baseStub, ConfigurationTarget: { Workspace: 2 }, ViewColumn: { Active: -1, Beside: -2, One: 1 },
     Position: class { constructor(line, character) { this.line = line; this.character = character; } },
     Range: class { constructor(...args) { this.args = args; [this.start, this.end] = [{ line: args[0], character: args[1] }, { line: args[2], character: args[3] }]; } },
     OverviewRulerLane: { Center: 2 },
@@ -192,8 +239,16 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       showInformationMessage: (m) => seen.infos.push(m),
       setStatusBarMessage: (m) => seen.status.push(m),
       createStatusBarItem: (alignment, priority) => {
-        seen.statusBar = { alignment, priority, text: '', visible: false, show() { this.visible = true; }, hide() { this.visible = false; }, dispose() {} };
-        return seen.statusBar;
+        const item = { alignment, priority, text: '', visible: false, disposed: false,
+          show() { this.visible = true; }, hide() { this.visible = false; }, dispose() { this.disposed = true; this.visible = false; } };
+        seen.statusBars.push(item);
+        if (!seen.statusBar) seen.statusBar = item;
+        return item;
+      },
+      createWebviewPanel: (...args) => {
+        const panel = fakeWebviewPanel(...args);
+        seen.panels.push(panel);
+        return panel;
       },
       visibleTextEditors: [],
       activeTextEditor: undefined,
@@ -279,7 +334,8 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       }) };
     }
     // The silent sign-in at startup, replaced when a test needs it to fail in a way the real
-    // one cannot; GitHub's GraphQL endpoint, replaced when a test answers it (the review store).
+    // one cannot; GitHub's GraphQL endpoint, replaced when a test answers it (the review store
+    // reads and writes through it).
     if ((signIn || graphql) && resolved === path.join(SRC, 'github.js')) {
       const real = originalLoad.call(this, name, parent, ...rest);
       return { ...real, createGitHub: (...args) => ({ ...real.createGitHub(...args), ...(signIn ? { signIn } : {}), ...(graphql ? { graphql } : {}) }) };
@@ -394,4 +450,4 @@ async function withEnv(fn, options) {
 
 const refusals = (env, pattern) => env.seen.warnings.filter((w) => pattern.test(w));
 
-module.exports = { deferred, gates, shaFor, pull, localResult, finding, previewResult, createEnv, withEnv, refusals, createCommentsApi };
+module.exports = { fakeWebviewPanel, deferred, gates, shaFor, pull, localResult, finding, previewResult, createEnv, withEnv, refusals, createCommentsApi };

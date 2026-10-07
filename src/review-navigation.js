@@ -40,9 +40,9 @@ const nothingLeftText = (filter) => (filter === 'attention' ? 'Impact Tree: noth
  *   view: { selection: readonly TreeRow[], reveal: (row: TreeRow, options: object) => PromiseLike<void> },
  *   platform?: string,
  * }} deps `view` is the change view the provider feeds.
- * @returns {{ disposables: Array<{ dispose(): any }>, update: () => void }} `update` shows the
- *   provider's current state in the status bar and the context keys; call it whenever the
- *   view repaints.
+ * @returns {{ disposables: Array<{ dispose(): any }>, update: () => void, revealRow: (id: string) => Promise<boolean> }}
+ *   `update` shows the provider's current state in the status bar and the context keys; call
+ *   it whenever the view repaints. `revealRow` goes to a row by its tree id.
  */
 function createReviewNavigation(vscode, { provider, view, platform = process.platform }) {
   const bar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
@@ -71,11 +71,25 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
     while (row && treeItemId(row) === undefined) row = provider.getParent(row);
     return row || null;
   };
+  // Going to a row: selected, focused and expanded, as "next unreviewed" lands on one.
+  /** @param {TreeRow} row */
+  const goTo = (row) => view.reveal(row, { select: true, focus: true, expand: true });
   const nextUnreviewed = async () => {
     if (!provider.reviewCounts()) return;
     const row = provider.nextUnreviewed(startOfWalk());
     if (!row) { vscode.window.showInformationMessage(nothingLeftText(provider.getFilter())); return; }
-    await view.reveal(row, { select: true, focus: true, expand: true });
+    await goTo(row);
+  };
+  /**
+   * Goes to the shown review's row with this tree id, as "next unreviewed" does.
+   * @param {string} id A `treeItemId`.
+   * @returns {Promise<boolean>} False when no shown row has the id (a newer analysis).
+   */
+  const revealRow = async (id) => {
+    const row = provider.rowById(id);
+    if (!row) return false;
+    await goTo(row);
+    return true;
   };
 
   /** @param {'attention'|'unreviewed'|'threads'} name */
@@ -91,6 +105,7 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
       on('impactTree.filterThreads', toggle('threads')), on('impactTree.filterThreadsOn', toggle('threads')),
       on('impactTree.nextUnreviewed', nextUnreviewed),
     ],
+    revealRow,
     update() {
       const counts = provider.reviewCounts();
       setContext('impactTree.filter', provider.getFilter());

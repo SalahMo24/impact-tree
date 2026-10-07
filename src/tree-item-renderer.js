@@ -28,9 +28,12 @@ const { describeThreadCounts } = require('./review-threads');
  * - `checkedOf(row)`: whether the row's review checkbox is ticked, or null for no checkbox.
  * - `threadCountsOf(row)`: the row's review thread counts, or null when none are known
  *   (no pull request review, or its threads are not loaded): then nothing is shown.
+ * - `viewedOf(relPath, allTicked)`: where a file stands with GitHub's "viewed" mark, see
+ *   `ViewedNote`; absent for a view that has no GitHub review.
  * @typedef {{
  *   rowDetail: string, iconMode: string, checkedOf: (row: TreeRow) => boolean|null,
  *   threadCountsOf?: (row: TreeRow) => import('./review-threads').ThreadCounts|null,
+ *   viewedOf?: (relPath: string, allTicked: boolean) => ViewedNote|null,
  * }} TreeView
  */
 
@@ -41,6 +44,33 @@ const { describeThreadCounts } = require('./review-threads');
  * @returns {string[]}
  */
 const threadParts = (row, view) => describeThreadCounts(view.threadCountsOf ? view.threadCountsOf(row) : null);
+
+/**
+ * What a file row says about GitHub's "viewed" mark; nothing when in sync.
+ * - `changed`: GitHub dropped its mark because the file changed after it, and some rows are unticked.
+ * - `syncing`: a write is queued or in flight.
+ * - `failed`: the last write failed; the row offers Retry.
+ * @typedef {'changed'|'syncing'|'failed'} ViewedNote
+ */
+
+const VIEWED_TEXT = Object.freeze({ changed: '👁 changed', syncing: '👁 …', failed: 'viewed not synced' });
+const VIEWED_TOOLTIP = Object.freeze({
+  changed: 'GitHub no longer shows this file as viewed because it changed after you viewed it. Tick the remaining rows to mark it viewed again.',
+  syncing: 'Updating the viewed mark on GitHub.',
+  failed: 'The viewed mark could not be written to GitHub. Your ticks are kept; use Retry to send it again.',
+});
+
+/**
+ * The viewed note of a file row, its description part and tooltip line.
+ * @param {TreeView} view
+ * @param {string} relPath
+ * @param {boolean} allTicked
+ * @returns {{ note: ViewedNote, text: string, tooltip: string }|null}
+ */
+function viewedNote(view, relPath, allTicked) {
+  const note = view.viewedOf ? view.viewedOf(relPath, allTicked) : null;
+  return note ? { note, text: VIEWED_TEXT[note], tooltip: VIEWED_TOOLTIP[note] } : null;
+}
 
 /**
  * @param {string} label
@@ -136,17 +166,21 @@ function renderReviewFileItem(vscode, n, view) {
   const rows = n.rows;
   const left = rows.filter((r) => !view.checkedOf(r));
   const attention = left.filter(needsAttention);
+  const viewed = viewedNote(view, n.relPath, left.length === 0);
   item.description = [
     attention.length ? `${classifyWorstRowVerdict(attention).token} ${attention.length}` : null,
     ...threadParts(n, view),
     `${rows.length - left.length}/${rows.length}`,
+    viewed && viewed.text,
     lastFolder(n.relPath),
   ].filter(Boolean).join('  ·  ');
   item.tooltip = new vscode.MarkdownString([
     `**${n.relPath}**`, ...(n.status ? ['', `_${n.status}_`] : []), '',
     `${rows.length} change${rows.length === 1 ? '' : 's'}, ${attention.length} need${attention.length === 1 ? 's' : ''} attention, ${left.length} left to review`,
+    ...(viewed ? ['', `_${viewed.tooltip}_`] : []),
   ].join('\n'));
-  item.contextValue = 'reviewFile';
+  // The failed note makes Retry available through the context value (package.json `when`).
+  item.contextValue = viewed && viewed.note === 'failed' ? 'reviewFileViewedFailed' : 'reviewFile';
   applyCheckbox(vscode, item, n, view);
   item.command = { command: 'impactTree.openFile', title: 'Open diff', arguments: [n] };
   return item;
@@ -170,11 +204,14 @@ function renderFileItem(vscode, n, view) {
     item.label = n.label || path.basename(n.relPath);
     item.iconPath = vscode.ThemeIcon.File;
   }
-  item.description = [...threadParts(n, view), 'no call graph', lastFolder(n.relPath)].filter(Boolean).join('  ·  ');
+  const viewed = viewedNote(view, n.relPath, view.checkedOf(n) === true);
+  item.description = [...threadParts(n, view), 'no call graph', viewed && viewed.text, lastFolder(n.relPath)].filter(Boolean).join('  ·  ');
   item.tooltip = new vscode.MarkdownString([
     `**${path.basename(n.relPath)}**`, '', `_${n.status}_`, '', `\`${n.relPath}\``, '',
     '_No call graph (tests, config, docs): read the diff and tick the file._',
+    ...(viewed ? ['', `_${viewed.tooltip}_`] : []),
   ].join('\n'));
+  if (viewed && viewed.note === 'failed') item.contextValue = 'fileViewedFailed';
   applyCheckbox(vscode, item, n, view);
   item.command = { command: 'impactTree.openFile', title: 'Open diff', arguments: [n] };
   return item;

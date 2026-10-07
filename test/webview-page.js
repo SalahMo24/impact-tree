@@ -61,4 +61,74 @@ function createPage(html, send) {
     },
   };
 }
-module.exports = { createPage };
+// A second small DOM boundary, for pages whose script finds its elements by attribute
+// (`[data-el="summary"]`, `[data-act]`) and reads form state: the Pull Request tab. Every
+// start tag with a `data-el` or `data-act` attribute becomes an element; a textarea's text
+// is its value, an input's `checked` attribute its checked state. Timers are manual: the
+// test runs them with `runTimers()`, so a debounce is exercised without waiting.
+function createFormPage(html, send) {
+  class Element {
+    constructor(tag, attributes, text) {
+      this.tagName = tag; this.attributes = attributes; this.textContent = text;
+      this.value = tag === 'textarea' ? text : (attributes.value ?? '');
+      this.checked = 'checked' in attributes;
+    }
+    getAttribute(name) { return name in this.attributes ? this.attributes[name] : null; }
+    setAttribute(name, value) { this.attributes[name] = String(value); }
+    removeAttribute(name) { delete this.attributes[name]; }
+    hasAttribute(name) { return name in this.attributes; }
+    matches(selector) {
+      const parts = [...selector.matchAll(/\[([\w-]+)(?:="([^"]*)")?\]/g)];
+      return parts.length > 0 && parts.every(([, name, value]) => this.hasAttribute(name) && (value === undefined || this.attributes[name] === value));
+    }
+    closest(selector) { return this.matches(selector) ? this : null; }
+  }
+  const elements = [];
+  for (const match of html.matchAll(/<(\w+)((?:\s+[\w-]+(?:="[^"]*")?)*)\s*>/g)) {
+    const attributes = {};
+    for (const attr of match[2].matchAll(/([\w-]+)(?:="([^"]*)")?/g)) attributes[attr[1]] = attr[2] === undefined ? '' : decode(attr[2]);
+    if (!('data-el' in attributes) && !('data-act' in attributes)) continue;
+    const tag = match[1];
+    const start = match.index + match[0].length;
+    // Text up to the first closing tag of the same name: exact for the leaf elements read.
+    const text = tag === 'input' ? '' : decode(html.slice(start, html.indexOf(`</${tag}>`, start)).replace(/<[^>]*>/g, ''));
+    elements.push(new Element(tag, attributes, text));
+  }
+  const listeners = { input: [], change: [], click: [], message: [] };
+  const timers = new Map();
+  let timerId = 0;
+  const sent = [];
+  const script = /<script[^>]*>([^]*?)<\/script>/.exec(html)[1];
+  vm.runInNewContext(script, {
+    Element,
+    acquireVsCodeApi: () => ({ postMessage: (message) => { sent.push(JSON.parse(JSON.stringify(message))); if (send) send(message); } }),
+    window: { addEventListener: (event, handler) => listeners[event].push(handler) },
+    document: {
+      querySelector: (selector) => elements.find((e) => e.matches(selector)) || null,
+      addEventListener: (event, handler) => listeners[event].push(handler),
+    },
+    setTimeout: (fn) => { timers.set(++timerId, fn); return timerId; },
+    clearTimeout: (id) => { timers.delete(id); },
+  });
+  const find = (name) => {
+    const found = elements.find((e) => e.attributes['data-el'] === name);
+    if (!found) throw new Error(`no element data-el="${name}" on the page`);
+    return found;
+  };
+  const fire = (event, target) => { for (const handler of listeners[event]) handler({ target, preventDefault() {} }); };
+  return {
+    sent,
+    el: (name) => elements.find((e) => e.attributes['data-el'] === name) || null,
+    all: (selector) => elements.filter((e) => e.matches(selector)),
+    // The reviewer types: the value changes and an input event fires.
+    type(name, text) { const target = find(name); target.value = text; fire('input', target); },
+    // The reviewer ticks or unticks a checkbox.
+    setChecked(name, on) { const target = find(name); target.checked = on; fire('change', target); },
+    click(target) { fire('click', typeof target === 'string' ? find(target) : target); },
+    receive(data) { for (const handler of listeners.message) handler({ data }); },
+    pendingTimers: () => timers.size,
+    runTimers() { const due = [...timers.values()]; timers.clear(); for (const fn of due) fn(); },
+  };
+}
+
+module.exports = { createPage, createFormPage };

@@ -442,8 +442,11 @@ test('the contributions: a keybinding in a review editor, a context menu on chan
   const { contributes } = require('../package.json');
   assert.deepEqual(contributes.keybindings.filter((k) => k.command === 'impactTree.showCallers'),
     [{ command: 'impactTree.showCallers', key: 'shift+alt+c', when: 'editorTextFocus && impactTree.hasReview' }]);
-  assert.deepEqual(contributes.menus['view/item/context'].map((m) => [m.command, m.when]),
-    [['impactTree.showCallers', 'view == impactTree.changes && viewItem == finding']]);
+  assert.deepEqual(contributes.menus['view/item/context'].map((m) => [m.command, m.when, m.group]), [
+    ['impactTree.showCallers', 'view == impactTree.changes && viewItem == finding', 'navigation@1'],
+    ['impactTree.retryViewedSync', 'view == impactTree.changes && viewItem =~ /ViewedFailed$/', 'inline'],
+  ]);
+  assert.equal(contributes.menus.commandPalette.find((m) => m.command === 'impactTree.retryViewedSync').when, 'false');
   const declared = new Set(contributes.commands.map((c) => c.command));
   const palette = new Map(contributes.menus.commandPalette.map((m) => [m.command, m.when]));
   for (const id of ['impactTree.showCallers', 'impactTree.showChange', 'impactTree.setReviewed']) assert.ok(declared.has(id), id);
