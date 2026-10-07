@@ -11,8 +11,11 @@ const path = require('path');
 
 const baseStub = require('./vscode-stub');
 const { createCommentsApi, withEnv } = require('./extension-env');
-const { commentingContextOf, documentSide, commentableLines, acceptsComment, threadSpecsFor } = require('../src/review-comments-model');
-const { createReviewComments, COMMANDS, PENDING_CONTEXT_KEY, CONTROLLER_ID } = require('../src/review-comments');
+const {
+  commentingContextOf, documentSide, commentableLines, acceptsComment, threadSpecsFor,
+  rowCommentPlace, chooseCommentLine, callerContextBlock, withCallerContext, callerDraftLabel,
+} = require('../src/review-comments-model');
+const { createReviewComments, COMMANDS, PENDING_CONTEXT_KEY, CONTROLLER_ID, FILE_COMMENT_LABEL } = require('../src/review-comments');
 const { createPullRequestReviewStore } = require('../src/pr-review-store');
 const { prQuery } = require('../src/pr-documents');
 
@@ -201,7 +204,7 @@ function fakeStore(initial) {
     onDidChange(listener) { listeners.add(listener); return { dispose: () => listeners.delete(listener) }; },
     publish(next, paths = null) { state = next; for (const l of [...listeners]) l({ paths }); },
     listenerCount: () => listeners.size,
-    addComment: mutation('addComment'), reply: mutation('reply'), setResolved: mutation('setResolved'),
+    addComment: mutation('addComment'), addFileComment: mutation('addFileComment'), reply: mutation('reply'), setResolved: mutation('setResolved'),
     deletePendingComment: mutation('deletePendingComment'),
   };
 }
@@ -213,14 +216,18 @@ function setup({ state = ready(reviewModel({ threads: [thread(1)] })), source = 
   const heads = { value: head, reads: 0 };
   const contextListeners = new Set();
   const docs = open.map((uri) => editor.open(uri));
+  // The review diffs opened to start a comment, as (path, line).
+  const opened = [];
   const comments = createReviewComments(editor.vscode, {
     store, getSession: () => session, repoRoot: () => REPO,
     readHead: async () => { heads.reads++; return heads.value; },
     contextEvents: [(listener) => { contextListeners.add(listener); return { dispose: () => contextListeners.delete(listener) }; }],
+    headUri: (relPath) => (session.source.kind === 'checkout' ? fileDoc(relPath) : prDoc(relPath, 'head', session.result)),
+    openDiff: async (relPath, line) => { opened.push([relPath, line]); },
   });
   const controller = editor.comments.controllers[0];
   return {
-    editor, store, session, heads, comments, controller, docs,
+    editor, store, session, heads, comments, controller, docs, opened,
     idle: () => comments.whenIdle(),
     contextChanged() { for (const l of contextListeners) l(); },
     threadsOn: (uri) => editor.comments.threadsOn(controller, uri),
@@ -619,3 +626,137 @@ test('the extension creates the review controller, and a local review gets no co
   const contributed = require('../package.json').contributes.commands.map((c) => c.command);
   for (const command of Object.values(COMMANDS)) assert.ok(contributed.includes(command), command);
 }));
+
+// ---- starting a comment from the tree or Details (L5) -----------------------------------
+
+const changeRow = (startLine, endLine, relPath = 'src/a.ts') => ({ type: 'finding', finding: { relPath, startLine, endLine } });
+const outsideRow = (ranges, relPath = 'src/a.ts') => ({ type: 'outside', relPath, ranges });
+const CALLER = { label: 'Loader.read', test: false, relPath: 'src/user.ts', siteLine: 88, callState: 'unchanged' };
+
+test('a row\'s comment starts on its first line when the diff shows it, else on the nearest line of the row it shows', () => {
+  const spans = [[10, 17], [40, 46]];
+  const line = (row) => chooseCommentLine(spans, rowCommentPlace(row));
+  assert.deepEqual(line(changeRow(12, 30)), { line: 12 }, 'the first line');
+  assert.deepEqual(line(changeRow(20, 42)), { line: 40 }, 'the nearest commentable line inside the change');
+  assert.deepEqual(line(changeRow(5, 11)), { line: 10 });
+  assert.deepEqual(chooseCommentLine([[20, 25], [35, 40]], { relPath: 'x', preferred: 30, ranges: [[20, 40]] }), { line: 25 },
+    'equally near: the earlier');
+  assert.deepEqual(line(outsideRow([[1, 3], [44, 50]])), { line: 44 }, 'an outside row: from any of its ranges');
+  assert.deepEqual(rowCommentPlace(outsideRow([[4.5, 4.5], [9, 9]])), { relPath: 'src/a.ts', preferred: 5, ranges: [[5, 5], [9, 9]] },
+    'a deletion marker stands for the line after the gap');
+  assert.deepEqual(line(changeRow(20, 30)),
+    { problem: 'lines 20–30 of src/a.ts are not in the pull request\'s diff, where GitHub takes comments; comment on the file instead' });
+  assert.deepEqual(chooseCommentLine(spans, rowCommentPlace(outsideRow([[3, 3]]))),
+    { problem: 'line 3 of src/a.ts is not in the pull request\'s diff, where GitHub takes comments; comment on the file instead' });
+  assert.equal(rowCommentPlace({ type: 'deleted', relPath: 'src/a.ts' }), null);
+});
+
+test('the block about a caller outside the diff, exactly', () => {
+  const target = { owner: 'o', name: 'r', headOid: HEAD };
+  assert.equal(callerContextBlock(CALLER, target),
+    '\n\n---\n**Caller outside this PR\'s diff:** `Loader.read` in `src/user.ts`, line 88: not changed by this PR.\n'
+    + `https://github.com/o/r/blob/${HEAD}/src/user.ts#L88`);
+  assert.equal(withCallerContext('Is this still right?  \n', { ...CALLER, test: true, callState: 'changed-elsewhere' }, target),
+    'Is this still right?\n\n---\n**Caller outside this PR\'s diff:** `Loader.read` (a test) in `src/user.ts`, line 88: '
+    + `its function changed in this PR, but not this call.\nhttps://github.com/o/r/blob/${HEAD}/src/user.ts#L88`);
+  for (const callState of [null, undefined, 'weird']) {
+    assert.match(callerContextBlock({ ...CALLER, callState }, target), /line 88: call state unknown\.\n/);
+  }
+  assert.match(callerContextBlock({ ...CALLER, relPath: 'src/a b#.ts' }, target), /blob\/a{40}\/src\/a%20b%23\.ts#L88$/, 'the path is a URL path');
+  assert.equal(callerDraftLabel(CALLER), 'About caller Loader.read (src/user.ts:88) — added after your text · remove');
+});
+
+test('Comment on this change opens the head-side diff and adds an empty draft at the line it chose', async () => {
+  const env = setup();
+  await env.idle();
+  const draft = await env.comments.commentOnRow(changeRow(20, 42));
+  assert.deepEqual(env.opened, [['src/a.ts', 40]]);
+  assert.equal(draft.uri.toString(), prDoc('src/a.ts', 'head').toString());
+  assert.deepEqual([draft.range.start.line, draft.range.end.line, draft.comments.length, draft.canReply], [39, 39, 0, true]);
+  assert.equal(draft.label, undefined);
+  assert.equal(draft.collapsibleState, baseStub.CommentThreadCollapsibleState.Expanded);
+  assert.deepEqual(await env.submit(COMMANDS.startReview, draft, 'why?'), { sent: true });
+  assert.deepEqual(env.store.calls, [{ name: 'addComment', input: { path: 'src/a.ts', side: 'RIGHT', line: 40, body: 'why?', mode: 'startReview' } }]);
+});
+
+test('a row with no line in the diff, or a review whose threads are not loaded, is refused with the reason', async () => {
+  const env = setup();
+  await env.idle();
+  assert.equal(await env.comments.commentOnRow(changeRow(20, 30)), null);
+  assert.deepEqual(env.editor.seen.warnings, ['Impact Tree: cannot comment here: lines 20–30 of src/a.ts are not in the pull request\'s diff, '
+    + 'where GitHub takes comments; comment on the file instead.']);
+  const loading = setup({ state: { kind: 'loading', target: TARGET, previous: null } });
+  await loading.idle();
+  assert.equal(await loading.comments.commentOnRow(changeRow(12, 14)), null);
+  assert.match(loading.editor.seen.warnings[0], /the review threads are not loaded yet/);
+  const local = setup({ state: { kind: 'none' }, source: { kind: 'local' }, result: { mode: 'pr' } });
+  await local.idle();
+  assert.equal(await local.comments.commentOnRow(changeRow(12, 14)), null);
+  assert.match(local.editor.seen.warnings[0], /only on the pull request under review/);
+  for (const e of [env, loading, local]) {
+    assert.deepEqual(e.opened, [], 'no diff opened');
+    assert.equal(e.controller.threads.length, 0, 'no draft');
+  }
+});
+
+test('Comment on this file adds a "File comment" draft on line 1 whose submit sends a file-level comment', async () => {
+  const env = setup();
+  await env.idle();
+  const draft = await env.comments.commentOnRow({ type: 'reviewFile', relPath: 'src/b.ts' });
+  assert.deepEqual(env.opened, [['src/b.ts', 1]]);
+  assert.deepEqual([draft.label, draft.range.start.line], [FILE_COMMENT_LABEL, 0]);
+  assert.deepEqual(await env.submit(COMMANDS.addToReview, draft, 'overall: fine'), { sent: true });
+  assert.deepEqual(env.store.calls, [{ name: 'addFileComment', input: { path: 'src/b.ts', body: 'overall: fine', mode: 'addToReview' } }]);
+  assert.equal(draft.disposed, true);
+  // A file without hunks still takes a file comment.
+  const plain = await env.comments.commentOnRow({ type: 'file', relPath: 'docs/x.md' });
+  env.store.answers.addFileComment = [{ ok: false, error: new Error('timeout') }];
+  const failed = await env.submit(COMMANDS.startReview, plain, 'keep me');
+  assert.equal(failed.sent, false);
+  assert.equal(plain.input, 'keep me');
+  assert.deepEqual(env.editor.seen.errors, ['Impact Tree: could not start a review with this comment on docs/x.md — timeout. Your text is still in the comment box.']);
+});
+
+test('a caller whose call line is in the diff is commented on at that line, with nothing added', async () => {
+  const env = setup();
+  await env.idle();
+  const draft = await env.comments.commentOnCaller(changeRow(12, 14), { ...CALLER, relPath: 'src/b.ts', siteLine: 7 });
+  assert.deepEqual(env.opened, [['src/b.ts', 7]]);
+  assert.equal(draft.label, undefined);
+  assert.equal(draft.contextValue, '');
+  await env.submit(COMMANDS.commentNow, draft, 'this call too');
+  assert.deepEqual(env.store.calls[0].input, { path: 'src/b.ts', side: 'RIGHT', line: 7, body: 'this call too', mode: 'commentNow' });
+});
+
+test('a caller outside the diff is commented on the change, with its block added after the text unless removed', async () => {
+  const env = setup();
+  await env.idle();
+  const draft = await env.comments.commentOnCaller(changeRow(12, 14), CALLER);
+  assert.deepEqual(env.opened, [['src/a.ts', 12]], 'the change\'s first line');
+  assert.equal(draft.label, callerDraftLabel(CALLER));
+  assert.equal(draft.contextValue, 'callerContext');
+  await env.submit(COMMANDS.startReview, draft, 'Does this still work for the loader?');
+  assert.equal(env.store.calls[0].input.body, 'Does this still work for the loader?\n\n---\n'
+    + '**Caller outside this PR\'s diff:** `Loader.read` in `src/user.ts`, line 88: not changed by this PR.\n'
+    + `https://github.com/o/r/blob/${HEAD}/src/user.ts#L88`);
+
+  const second = await env.comments.commentOnCaller(changeRow(12, 14), CALLER);
+  await env.editor.run(COMMANDS.removeCallerContext, second);
+  assert.equal(second.label, undefined, 'the label goes with it');
+  assert.equal(second.contextValue, '');
+  await env.submit(COMMANDS.startReview, second, 'just this');
+  assert.equal(env.store.calls[1].input.body, 'just this');
+  const menus = require('../package.json').contributes.menus['comments/commentThread/title'];
+  assert.ok(menus.some((m) => m.command === COMMANDS.removeCallerContext && m.when.includes('commentThread =~ /\\bcallerContext\\b/')));
+});
+
+test('revealing a thread opens its file at its head line, or the file for an outdated, file-level or base-side one', async () => {
+  const m = reviewModel({ threads: [thread(1), thread(2, { isOutdated: true, line: null }), thread(3, { side: 'LEFT', line: 9 }),
+    thread(4, { path: 'src/b.ts', fileLevel: true, line: null })] });
+  const env = setup({ state: ready(m) });
+  await env.idle();
+  for (const id of ['T_1', 'T_2', 'T_3', 'T_4']) assert.equal(await env.comments.revealThread(id), true);
+  assert.deepEqual(env.opened, [['src/a.ts', 12], ['src/a.ts', null], ['src/a.ts', null], ['src/b.ts', null]]);
+  assert.equal(await env.comments.revealThread('T_gone'), false);
+  assert.match(env.editor.seen.warnings[0], /not in the loaded review/);
+});

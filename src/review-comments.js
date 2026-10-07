@@ -15,9 +15,19 @@
 // keeps its VS Code object (and with it an open reply box), and is only updated when what
 // it shows changed. A new context (another pull request, a new result, a checkout moving)
 // redraws every open document.
+//
+// A comment can also be started from the tree or Details (L5). VS Code's API cannot fill a
+// comment box, so these open the file's review diff and add an empty draft thread there,
+// on the line the comment is about. A draft remembers what it is for: a file comment (its
+// submit sends a file-level thread), or a comment about a caller whose call is not in the
+// diff (its submit appends a block naming the caller; the thread's label says so, and its
+// title action drops it).
 
 const { reviewDataOf } = require('./pr-review-store');
-const { commentingContextOf, documentSide, commentableLines, acceptsComment, threadSpecsFor } = require('./review-comments-model');
+const {
+  commentingContextOf, documentSide, commentableLines, acceptsComment, threadSpecsFor,
+  rowCommentPlace, chooseCommentLine, withCallerContext, callerDraftLabel,
+} = require('./review-comments-model');
 
 const CONTROLLER_ID = 'impactTree.review';
 /** Set while the viewer has a pending review, so a new comment offers "Add review comment". */
@@ -31,7 +41,10 @@ const COMMANDS = Object.freeze({
   resolve: 'impactTree.review.resolve',
   unresolve: 'impactTree.review.unresolve',
   deletePending: 'impactTree.review.deletePendingComment',
+  removeCallerContext: 'impactTree.review.removeCallerContext',
 });
+/** The label of a draft whose submit sends a file-level comment. */
+const FILE_COMMENT_LABEL = 'File comment';
 
 /**
  * A comment or reply that was not sent. The command rejects with it after the reason has
@@ -54,8 +67,15 @@ const isObject = (v) => typeof v === 'object' && v !== null;
  * @typedef {import('./review-comments-model').ThreadSpec} ThreadSpec
  * @typedef {import('./review-comments-model').CommentSpec} CommentSpec
  * @typedef {Pick<import('./pr-review-store').PullRequestReviewStore,
- *   'getState'|'onDidChange'|'addComment'|'reply'|'setResolved'|'deletePendingComment'>} ReviewStore
+ *   'getState'|'onDidChange'|'addComment'|'addFileComment'|'reply'|'setResolved'|'deletePendingComment'>} ReviewStore
  * @typedef {{ dispose(): any }} Disposable
+ * @typedef {import('./review-comments-model').CallerContext} CallerContext
+ *
+ * @typedef {object} Draft What a draft thread started from the tree or Details is for.
+ * @property {string} relPath The file it is on.
+ * @property {boolean} fileLevel Its submit sends a file-level comment.
+ * @property {CallerContext|null} callerContext The caller its submit adds a block about;
+ *   null once removed.
  *
  * @typedef {object} ReviewCommentsDeps
  * @property {ReviewStore} store
@@ -67,6 +87,11 @@ const isObject = (v) => typeof v === 'object' && v !== null;
  * @property {Array<(listener: () => void) => Disposable>} contextEvents Fired when the
  *   session's analysis, source or shown result may have changed.
  * @property {(message: string) => void} [log]
+ * @property {(relPath: string) => any} [headUri] The address of a changed file's head side
+ *   in the review diff (the document a draft is added to). Without it, and `openDiff`,
+ *   comments cannot be started from the tree or Details.
+ * @property {(relPath: string, line: number|null) => Promise<void>} [openDiff] Opens a
+ *   changed file's review diff at a 1-based head line, or at its start for null.
  */
 
 /**
@@ -77,10 +102,14 @@ const isObject = (v) => typeof v === 'object' && v !== null;
  * HEAD read publishes nothing afterwards.
  * @param {any} vscode
  * @param {ReviewCommentsDeps} deps
- * @returns {{ dispose(): void, whenIdle(): Promise<void> }} `whenIdle` settles once no
- *   draw is pending.
+ * @returns {{ dispose(): void, whenIdle(): Promise<void>, commentOnRow: (row: any) => Promise<any>,
+ *   commentOnCaller: (row: any, caller: CallerContext) => Promise<any>, revealThread: (threadId: unknown) => Promise<boolean> }}
+ *   `whenIdle` settles once no draw is pending. `commentOnRow` starts a draft on a change,
+ *   outside or file row; `commentOnCaller` one about a caller of a change; each resolves to
+ *   the draft thread, or null when it could not be started (the reason is shown).
+ *   `revealThread` opens a thread's file in the review diff at its line.
  */
-function createReviewComments(vscode, { store, getSession, repoRoot, readHead, contextEvents, log = () => {} }) {
+function createReviewComments(vscode, { store, getSession, repoRoot, readHead, contextEvents, log = () => {}, headUri, openDiff }) {
   let disposed = false;
   const controller = vscode.comments.createCommentController(CONTROLLER_ID, 'Impact Tree review');
   controller.options = { placeHolder: 'Leave a comment (Markdown)', prompt: 'Reply' };
@@ -94,6 +123,10 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
   const threadIds = new WeakMap();
   /** @type {WeakMap<object, string>} */
   const commentIds = new WeakMap();
+  // Drafts started from the tree or Details, by their thread. A draft the reviewer starts
+  // with "+" is not here, and is sent as a plain line comment.
+  /** @type {WeakMap<object, Draft>} */
+  const drafts = new WeakMap();
 
   // What an earlier result of a checkout said about its base side, for the re-analysis.
   /** @type {{ headOid: string, baseSha: string, headPathOf: Record<string, string> }|null} */
@@ -353,7 +386,41 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
   };
 
   /**
-   * A new thread from the comment box of a range the reviewer picked.
+   * What is sent for the text of a box: the text, and after it the caller block when the
+   * box is a draft about a caller (the block's permalink is at the reviewed head commit).
+   * @param {any} thread
+   * @param {string} text
+   * @param {string} what What is being sent, for the failure.
+   * @returns {string}
+   */
+  function bodyFor(thread, text, what) {
+    const draft = drafts.get(thread);
+    if (!draft || !draft.callerContext) return text;
+    const state = store.getState();
+    if (state.kind === 'none' || !state.target) notSent(what, 'no pull request is under review');
+    return withCallerContext(text, draft.callerContext, state.target);
+  }
+
+  /**
+   * A file comment from its draft: on the same file of the pull request under review.
+   * @param {'startReview'|'commentNow'|'addToReview'} mode
+   * @param {any} thread
+   * @param {Draft} draft
+   * @param {string} text
+   * @param {string} what
+   */
+  async function addFileComment(mode, thread, draft, text, what) {
+    const ctx = await contextNow();
+    const at = ctx && documentSide(thread.uri, ctx);
+    if (!ctx || !at || at.path !== draft.relPath) notSent(what, 'this document is not a side of the pull request under review');
+    const result = await store.addFileComment({ path: draft.relPath, body: bodyFor(thread, text, what), mode });
+    if (!result.ok) notSent(`${what} on ${draft.relPath}`, result.error.message);
+    thread.dispose();
+  }
+
+  /**
+   * A new thread from the comment box of a range the reviewer picked, or of a draft
+   * started from the tree or Details.
    * @param {'startReview'|'commentNow'|'addToReview'} mode
    * @param {unknown} arg VS Code's `CommentReply`: the new (empty) thread and the text.
    */
@@ -362,6 +429,8 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
     if (!reply || isBlank(reply.text)) return;
     const { thread, text } = reply;
     const what = { startReview: 'start a review with this comment', commentNow: 'post this comment', addToReview: 'add this comment to your review' }[mode];
+    const draft = drafts.get(thread);
+    if (draft && draft.fileLevel) { await addFileComment(mode, thread, draft, text, what); return; }
     if (!thread.range) notSent(what, 'it is not on a line');
     const startLine = thread.range.start.line + 1, line = thread.range.end.line + 1;
     const where = startLine === line ? `line ${line}` : `lines ${startLine}–${line}`;
@@ -371,7 +440,8 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
     if (!acceptsComment(ctx, at, startLine, line)) {
       notSent(what, `${where} of ${at.path}${at.side === 'LEFT' ? ' (base)' : ''} are not all in one hunk of the pull request's diff, where GitHub takes comments`);
     }
-    const result = await store.addComment({ path: at.path, side: at.side, line, ...(startLine < line ? { startLine } : {}), body: text, mode });
+    const body = bodyFor(thread, text, what);
+    const result = await store.addComment({ path: at.path, side: at.side, line, ...(startLine < line ? { startLine } : {}), body, mode });
     if (!result.ok) notSent(`${what} on ${at.path} ${where}`, result.error.message);
     // The store has reloaded, so the thread is drawn from GitHub's data; the draft goes.
     thread.dispose();
@@ -385,8 +455,122 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
     const what = data && data.pendingReview ? 'add this reply to your review' : 'post this reply';
     const threadId = threadIds.get(r.thread);
     if (!threadId) notSent(what, 'the thread is no longer shown; refresh and try again');
-    const result = await store.reply({ threadId, body: r.text });
+    const result = await store.reply({ threadId, body: bodyFor(r.thread, r.text, what) });
     if (!result.ok) notSent(what, result.error.message);
+  }
+
+  /** @param {unknown} arg The draft thread, from its title action. */
+  function removeCallerContext(arg) {
+    const thread = threadOf(arg);
+    const draft = isObject(thread) ? drafts.get(thread) : undefined;
+    if (!draft || !draft.callerContext) return;
+    draft.callerContext = null;
+    thread.label = undefined;
+    thread.contextValue = '';
+  }
+
+  // ---- starting a comment from the tree or Details ----------------------------------------
+
+  /** @param {string} message */
+  const tell = (message) => own(vscode.window.showWarningMessage(`Impact Tree: ${message}`), 'showing a warning');
+
+  /**
+   * The context a draft can be started in, or null after saying why not.
+   * @returns {Promise<CommentingContext|null>}
+   */
+  async function draftContext() {
+    if (!headUri || !openDiff) { tell('comments cannot be started here.'); return null; }
+    const ctx = await contextNow();
+    if (disposed) return null;
+    if (!ctx) { tell('comments can be started only on the pull request under review, as previewed or checked out at its head.'); return null; }
+    if (!reviewDataOf(store.getState())) { tell('the review threads are not loaded yet, so a comment cannot be started.'); return null; }
+    return ctx;
+  }
+
+  /**
+   * The head side of a file of the pull request, as a document address and its side.
+   * @param {CommentingContext} ctx
+   * @param {string} relPath
+   */
+  function headOf(ctx, relPath) {
+    const uri = /** @type {(relPath: string) => any} */ (headUri)(relPath);
+    const at = documentSide(uri, ctx);
+    return at && at.side === 'RIGHT' && at.path === relPath ? { uri, at } : null;
+  }
+
+  /**
+   * Opens the file's review diff at `line` and adds an empty draft thread there.
+   * @param {any} uri
+   * @param {number} line 1-based.
+   * @param {Draft} draft
+   * @param {string|undefined} label
+   */
+  async function openDraft(uri, line, draft, label) {
+    await /** @type {(relPath: string, line: number|null) => Promise<void>} */ (openDiff)(draft.relPath, line);
+    if (disposed) return null;
+    const thread = controller.createCommentThread(uri, new vscode.Range(line - 1, 0, line - 1, 0), []);
+    drafts.set(thread, draft);
+    thread.canReply = true;
+    thread.label = label;
+    thread.contextValue = draft.callerContext ? 'callerContext' : '';
+    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    return thread;
+  }
+
+  /**
+   * Starts a draft for a row: a file comment on line 1 of a file row, or a line comment on
+   * a change's or outside row's line (`chooseCommentLine`).
+   * @param {any} row
+   * @param {CallerContext|null} [callerContext] The caller the comment is about.
+   * @returns {Promise<any>} The draft thread, or null.
+   */
+  async function commentOnRow(row, callerContext = null) {
+    const fileLevel = isObject(row) && (row.type === 'reviewFile' || row.type === 'file');
+    const place = fileLevel ? null : isObject(row) ? rowCommentPlace(/** @type {any} */ (row)) : null;
+    if (!fileLevel && !place) return null;
+    const relPath = fileLevel ? row.relPath : /** @type {import('./review-comments-model').CommentPlace} */ (place).relPath;
+    const ctx = await draftContext();
+    if (!ctx) return null;
+    const head = headOf(ctx, relPath);
+    if (!head) { tell(`${relPath} is not shown as part of the pull request under review.`); return null; }
+    if (fileLevel) return openDraft(head.uri, 1, { relPath, fileLevel: true, callerContext: null }, FILE_COMMENT_LABEL);
+    if (!head.at.exact || !ctx.diffLines) { tell(`the lines GitHub's diff of ${relPath} shows are not known for this result, so a comment cannot be placed.`); return null; }
+    const choice = chooseCommentLine(commentableLines(ctx, head.at, Number.MAX_SAFE_INTEGER), /** @type {import('./review-comments-model').CommentPlace} */ (place));
+    if ('problem' in choice) { tell(`cannot comment here: ${choice.problem}.`); return null; }
+    return openDraft(head.uri, choice.line, { relPath, fileLevel: false, callerContext },
+      callerContext ? callerDraftLabel(callerContext) : undefined);
+  }
+
+  /**
+   * Starts a comment about a caller of a change. A call on a line GitHub's diff shows is
+   * commented on directly; any other is commented on the change, with the caller's block
+   * added after the text.
+   * @param {any} row The change row the caller is under.
+   * @param {CallerContext} caller
+   * @returns {Promise<any>} The draft thread, or null.
+   */
+  async function commentOnCaller(row, caller) {
+    const ctx = await draftContext();
+    if (!ctx) return null;
+    const head = headOf(ctx, caller.relPath);
+    if (head && acceptsComment(ctx, head.at, caller.siteLine, caller.siteLine)) {
+      return openDraft(head.uri, caller.siteLine, { relPath: caller.relPath, fileLevel: false, callerContext: null }, undefined);
+    }
+    return commentOnRow(row, caller);
+  }
+
+  /**
+   * Opens a thread's file in the review diff, at its line when it has one on the head
+   * side; a file-level, outdated or base-side thread opens the file's diff.
+   * @param {unknown} threadId
+   * @returns {Promise<boolean>} False when the thread is not in the loaded review.
+   */
+  async function revealThread(threadId) {
+    const data = reviewDataOf(store.getState());
+    const thread = typeof threadId === 'string' && data ? data.threads.find((t) => t.id === threadId) : undefined;
+    if (!thread || !openDiff) { tell('that thread is not in the loaded review any more.'); return false; }
+    await openDiff(thread.path, thread.side === 'RIGHT' ? thread.line : null);
+    return true;
   }
 
   /** @param {boolean} resolved @param {unknown} arg */
@@ -424,6 +608,7 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
     vscode.commands.registerCommand(COMMANDS.resolve, (/** @type {unknown} */ arg) => setResolved(true, arg)),
     vscode.commands.registerCommand(COMMANDS.unresolve, (/** @type {unknown} */ arg) => setResolved(false, arg)),
     vscode.commands.registerCommand(COMMANDS.deletePending, deletePending),
+    vscode.commands.registerCommand(COMMANDS.removeCallerContext, removeCallerContext),
   ];
 
   showPendingKey();
@@ -440,7 +625,10 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
     async whenIdle() {
       while (drawing) await drawing;
     },
+    commentOnRow: (/** @type {any} */ row) => commentOnRow(row),
+    commentOnCaller,
+    revealThread,
   };
 }
 
-module.exports = { createReviewComments, CommentNotSentError, CONTROLLER_ID, PENDING_CONTEXT_KEY, COMMANDS };
+module.exports = { createReviewComments, CommentNotSentError, CONTROLLER_ID, PENDING_CONTEXT_KEY, COMMANDS, FILE_COMMENT_LABEL };

@@ -218,4 +218,111 @@ function threadSpecsFor(model, relPath, side) {
     .sort((a, b) => a.line - b.line || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
-module.exports = { commentingContextOf, documentSide, commentableLines, acceptsComment, threadSpecsFor };
+// ---- starting a comment from the tree or Details ------------------------------------------
+
+/**
+ * @typedef {{ relPath: string, preferred: number, ranges: Array<[number, number]> }} CommentPlace
+ *   Where a row's comment goes: `preferred` is the line it starts on when it can, `ranges`
+ *   the row's head lines (1-based, inclusive) a nearer line may be taken from.
+ */
+
+/**
+ * Where a "Comment on this change / these lines" button starts its comment: a change's
+ * first line, or the first line of an outside row's first range. A deletion marker
+ * (`N - 0.5`, the gap before line N) stands for line N, the line the diff shows after it.
+ * @param {{ type: string, relPath?: string, finding?: { relPath: string, startLine: number, endLine: number }, ranges?: number[][] }} row
+ * @returns {CommentPlace|null} Null for any other row.
+ */
+function rowCommentPlace(row) {
+  if (row.type === 'finding' && row.finding) {
+    const { relPath, startLine, endLine } = row.finding;
+    return { relPath, preferred: startLine, ranges: [[startLine, endLine]] };
+  }
+  if (row.type === 'outside' && row.relPath && row.ranges && row.ranges.length) {
+    /** @type {Array<[number, number]>} */
+    const ranges = row.ranges.map(([lo, hi]) => [Math.ceil(lo), Math.max(Math.ceil(lo), Math.floor(hi))]);
+    return { relPath: row.relPath, preferred: ranges[0][0], ranges };
+  }
+  return null;
+}
+
+/**
+ * The line a comment on a row is started on: its preferred line when the diff shows it,
+ * else the commentable line inside the row's ranges nearest to it (the earlier of two
+ * equally near). Work is bounded by ranges × spans, not by line counts.
+ * @param {Array<[number, number]>} spans The head lines GitHub's diff shows (`commentableLines`).
+ * @param {CommentPlace} place
+ * @returns {{ line: number } | { problem: string }}
+ */
+function chooseCommentLine(spans, { relPath, preferred, ranges }) {
+  /** @type {number|null} */
+  let best = null;
+  for (const [lo, hi] of ranges) {
+    for (const [a, b] of spans) {
+      const from = Math.max(lo, a), to = Math.min(hi, b);
+      if (from > to) continue;
+      const line = Math.min(Math.max(preferred, from), to);
+      if (best === null || Math.abs(line - preferred) < Math.abs(best - preferred)
+        || (Math.abs(line - preferred) === Math.abs(best - preferred) && line < best)) best = line;
+    }
+  }
+  if (best !== null) return { line: best };
+  const one = ranges.length === 1 && ranges[0][0] === ranges[0][1];
+  const where = ranges.map(([lo, hi]) => (lo === hi ? `${lo}` : `${lo}–${hi}`)).join(', ');
+  return { problem: `${one ? 'line' : 'lines'} ${where} of ${relPath} ${one ? 'is' : 'are'} not in the pull request's diff, where GitHub takes comments; comment on the file instead` };
+}
+
+/**
+ * @typedef {object} CallerContext A caller a comment is about, whose call is not on a line
+ *   of the pull request's diff.
+ * @property {string} label The caller's name.
+ * @property {boolean} test The caller is a test.
+ * @property {string} relPath Repository-relative path of its file.
+ * @property {number} siteLine 1-based line of the call.
+ * @property {string|null|undefined} callState `unchanged`, `changed-elsewhere`, `updated-at-call`, or unknown.
+ */
+
+/** @type {Record<string, string>} */
+const CALL_NOTES = {
+  unchanged: 'not changed by this PR',
+  'changed-elsewhere': 'its function changed in this PR, but not this call',
+  'updated-at-call': 'this call was changed by this PR',
+};
+
+/**
+ * The block the extension adds after the reviewer's text for a caller outside the diff:
+ * what the caller is, where its call is and what the pull request did to it, and a
+ * permalink at the reviewed head commit on its own line (GitHub shows such a link as a
+ * snippet of the code). Pure; its exact text is part of the contract.
+ * @param {CallerContext} caller
+ * @param {{ owner: string, name: string, headOid: string }} target The review store's target.
+ * @returns {string} Starts with a blank line, so it follows the text as its own block.
+ */
+function callerContextBlock(caller, { owner, name, headOid }) {
+  const note = (caller.callState && CALL_NOTES[caller.callState]) || 'call state unknown';
+  const urlPath = caller.relPath.split('/').map(encodeURIComponent).join('/');
+  return `\n\n---\n**Caller outside this PR's diff:** \`${caller.label}\`${caller.test ? ' (a test)' : ''} in \`${caller.relPath}\`, line ${caller.siteLine}: ${note}.\n`
+    + `https://github.com/${owner}/${name}/blob/${headOid}/${urlPath}#L${caller.siteLine}`;
+}
+
+/**
+ * The comment body sent for a draft about a caller: the reviewer's text, then the block.
+ * @param {string} text
+ * @param {CallerContext} caller
+ * @param {{ owner: string, name: string, headOid: string }} target
+ * @returns {string}
+ */
+const withCallerContext = (text, caller, target) => `${text.trimEnd()}${callerContextBlock(caller, target)}`;
+
+/**
+ * The label of a draft about a caller, saying what will be added and that it can be removed
+ * (the thread's title action).
+ * @param {CallerContext} caller
+ * @returns {string}
+ */
+const callerDraftLabel = (caller) => `About caller ${caller.label} (${caller.relPath}:${caller.siteLine}) — added after your text · remove`;
+
+module.exports = {
+  commentingContextOf, documentSide, commentableLines, acceptsComment, threadSpecsFor,
+  rowCommentPlace, chooseCommentLine, callerContextBlock, withCallerContext, callerDraftLabel,
+};

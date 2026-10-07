@@ -196,7 +196,11 @@ function createOpenReview(vscode, session, { log = () => {} } = {}) {
     await highlight(node.file, node.callSites, opened);
   }
 
-  return { openChange, openFile, openCaller, callerUri };
+  // The head side of a changed file as the review diff shows it: the document a comment
+  // on it is drawn on.
+  const headUri = (relPath) => headUriFor(relPath);
+
+  return { openChange, openFile, openCaller, callerUri, headUri };
 }
 
 module.exports = { createOpenReview };
