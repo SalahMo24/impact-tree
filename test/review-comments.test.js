@@ -520,7 +520,7 @@ test('dispose disposes the controller, its threads and its subscriptions, and a 
 
 // GitHub-shaped answers, as the L2 normaliser reads them.
 const rawComment = (id, over = {}) => ({ id: `C_${id}`, databaseId: id, author: { login: 'bob', avatarUrl: null }, body: `body ${id}`,
-  createdAt: '2026-01-02T03:04:05Z', state: 'SUBMITTED', viewerDidAuthor: false, url: `https://x/${id}`, ...over });
+  createdAt: '2026-01-02T03:04:05Z', state: 'SUBMITTED', viewerDidAuthor: false, url: `https://x/${id}`, diffHunk: '', ...over });
 const rawThread = (id, comments, over = {}) => ({ id: `T_${id}`, isResolved: false, isOutdated: false, path: 'src/a.ts', line: 12,
   originalLine: 12, startLine: null, originalStartLine: null, diffSide: 'RIGHT', subjectType: 'LINE',
   viewerCanResolve: true, viewerCanUnresolve: false, viewerCanReply: true,
