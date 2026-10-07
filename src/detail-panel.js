@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const { treeItemId } = require('./review-tree-model');
 const { prKey, parsePrAddress } = require('./pr-documents');
 const { buildDetailHtml, listCallerRows, describeOrigin, reviewPresentation, progressPresentation } = require('./detail-panel-html');
+const { buildThreadSection } = require('./review-threads');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 
@@ -40,7 +41,9 @@ function headRelPath(uri, { result, rel }) {
  * an older page cannot act on a new selection or revision, even at the same tree id.
  * @param {unknown} message
  * @param {string|null} token The current page's nonce; null when the view is disposed.
- * @returns {{ type: 'tick', id: string, on: boolean }|{ type: 'next' }|{ type: 'ready' }|{ type: 'showCallers', id: string }|{ type: 'openCaller', index: number }|null}
+ * @returns {{ type: 'tick', id: string, on: boolean }|{ type: 'next' }|{ type: 'ready' }|{ type: 'showCallers', id: string }
+ *   |{ type: 'openCaller', index: number }|{ type: 'revealThread', id: string }|{ type: 'comment', id: string }
+ *   |{ type: 'commentCaller', index: number }|null}
  */
 function parseMessage(message, token) {
   if (!message || typeof message !== 'object') return null;
@@ -51,8 +54,20 @@ function parseMessage(message, token) {
   if (m.type === 'ready') return { type: 'ready' };
   if (m.type === 'showCallers' && typeof m.id === 'string') return { type: 'showCallers', id: m.id };
   if (m.type === 'openCaller' && Number.isSafeInteger(m.index) && Number(m.index) >= 0) return { type: 'openCaller', index: Number(m.index) };
+  if (m.type === 'revealThread' && typeof m.id === 'string' && m.id !== '') return { type: 'revealThread', id: m.id };
+  if (m.type === 'comment' && typeof m.id === 'string') return { type: 'comment', id: m.id };
+  if (m.type === 'commentCaller' && Number.isSafeInteger(m.index) && Number(m.index) >= 0) return { type: 'commentCaller', index: Number(m.index) };
   return null;
 }
+
+/**
+ * What Details asks of the review comments (`createReviewComments`).
+ * @typedef {{
+ *   commentOnRow: (row: TreeRow) => Promise<unknown>,
+ *   commentOnCaller: (row: TreeRow, caller: import('./review-comments-model').CallerContext) => Promise<unknown>,
+ *   revealThread: (threadId: string) => Promise<boolean>,
+ * }} ReviewActions
+ */
 
 /**
  * Registers the Details view and makes it follow the tree and the cursor.
@@ -79,11 +94,13 @@ function parseMessage(message, token) {
  *   getState: () => { result: any, rel: (file: string) => string }|null,
  *   lineOf: (file: string, offset: number) => number|null,
  *   log: (message: string) => void,
+ *   reviewActions?: () => ReviewActions|null,
  * }} deps `view` is the change view; `getState` the session state; `lineOf` the 1-based
- *   line of an offset in a file, or null when unreadable.
+ *   line of an offset in a file, or null when unreadable. `reviewActions` starts comments
+ *   and opens threads; without it the Threads section's buttons do nothing.
  * @returns {{ disposables: Array<{ dispose(): any }> }}
  */
-function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
+function createDetailPanel(vscode, { provider, view, getState, lineOf, log, reviewActions = () => null }) {
   /** @type {any} */
   let webviewView = null;
   /** @type {Array<{ dispose(): any }>} */
@@ -104,6 +121,9 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
   let lastProgress = null;
   /** @type {number|null|undefined} */
   let renderedVersion;
+  // The Threads section the page shows, as JSON: a thread change repaints only when it differs.
+  /** @type {string|null} */
+  let lastThreads = null;
 
   /** @param {object} message */
   const post = (message) => {
@@ -143,6 +163,14 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
   }
 
   const currentRow = () => (shown.id ? provider.rowById(shown.id) : null);
+  /** @param {TreeRow|null} row */
+  const threadSectionOf = (row) => buildThreadSection(row, provider.threadsView(), (row && provider.threadsOfRow(row)) || []);
+
+  // The review threads changed: the page is rebuilt only when its Threads section did.
+  function onThreads() {
+    if (!webviewView || renderedVersion !== provider.reviewVersion()) return;
+    if (JSON.stringify(threadSectionOf(currentRow())) !== lastThreads) render();
+  }
   // The row a selected row stands for: itself when it has a tree id, else the change it sits under.
   /** @param {TreeRow|undefined} row @returns {TreeRow|null} */
   const ownerOf = (row) => {
@@ -156,11 +184,13 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
     const state = getState();
     const progress = progressPresentation(provider.reviewProgress());
     const nonce = crypto.randomBytes(16).toString('base64');
+    const threads = threadSectionOf(row);
     const html = buildDetailHtml(row, {
       result: state && state.result, isReviewed: provider.isReviewed,
       impactRows: row && row.type === 'finding' ? provider.impactRowsOf(row) : [],
-      nonce, cspSource: webviewView.webview.cspSource, origin: shown.origin, lineOf, progress,
+      nonce, cspSource: webviewView.webview.cspSource, origin: shown.origin, lineOf, progress, threads,
     });
+    lastThreads = JSON.stringify(threads);
     renderToken = nonce;
     renderedVersion = provider.reviewVersion();
     lastReview = reviewPresentation(row, provider.isReviewed);
@@ -280,14 +310,49 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
       if (m.id === shown.id) await vscode.commands.executeCommand('impactTree.showCallers', m.id);
       return;
     }
+    if (m.type === 'revealThread' || m.type === 'comment' || m.type === 'commentCaller') { await onReviewAction(m, row); return; }
     if (row.type !== 'finding') return;
     const caller = listCallerRows(provider.impactRowsOf(row))[m.index];
     if (caller) await vscode.commands.executeCommand('impactTree.openCaller', caller);
   }
 
+  /**
+   * A thread or comment button of the shown row. Only a thread the shown section lists is
+   * opened, and only the shown row is commented on.
+   * @param {{ type: 'revealThread', id: string }|{ type: 'comment', id: string }|{ type: 'commentCaller', index: number }} m
+   * @param {TreeRow} row The shown row.
+   */
+  async function onReviewAction(m, row) {
+    const actions = reviewActions();
+    const section = threadSectionOf(row);
+    if (!actions || !section) return;
+    if (m.type === 'revealThread') {
+      if (section.threads.some((t) => t.id === m.id)) await actions.revealThread(m.id);
+      return;
+    }
+    if (!section.action) return;
+    if (m.type === 'comment') {
+      if (m.id === shown.id) await actions.commentOnRow(row);
+      return;
+    }
+    if (row.type !== 'finding') return;
+    const caller = listCallerRows(provider.impactRowsOf(row))[m.index];
+    const state = getState();
+    if (!caller || !state) return;
+    const offset = caller.callSites && caller.callSites[0] ? caller.callSites[0].start : caller.pos;
+    const siteLine = typeof offset === 'number' ? lineOf(caller.file, offset) : null;
+    const relPath = caller.relPath ?? state.rel(caller.file);
+    if (siteLine == null || !relPath) {
+      vscode.window.showWarningMessage(`Impact Tree: the line of ${caller.label}'s call could not be read, so a comment about it cannot be started.`);
+      return;
+    }
+    await actions.commentOnCaller(row, { label: caller.label, test: !!caller.test, relPath, siteLine, callState: caller.callState });
+  }
+
   const disposeView = () => {
     for (const s of viewSubscriptions) s.dispose();
     viewSubscriptions = []; webviewView = null; renderToken = null; lastReview = null; lastProgress = null; renderedVersion = undefined;
+    lastThreads = null;
   };
   const webviewProvider = {
     /** @param {any} resolved */
@@ -314,6 +379,7 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log }) {
       view.onDidChangeVisibility(onTreeVisible),
       provider.onDidChangePresentation((/** @type {{ reason: string }} */ event) => { if (event.reason !== 'filter') render(); }),
       provider.onDidChangeReview(onProgress),
+      provider.onDidChangeThreads(onThreads),
       vscode.window.onDidChangeTextEditorSelection(onCursor),
       { dispose: disposeView },
     ],

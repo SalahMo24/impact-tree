@@ -92,6 +92,15 @@ button { font: inherit; border: 0; border-radius: 2px; padding: 4px 10px; margin
 button:hover { background: var(--vscode-button-hoverBackground); }
 button.secondary { color: var(--vscode-button-secondaryForeground); background: var(--vscode-button-secondaryBackground); }
 button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+.th { margin: 4px 0; padding: 4px 6px; border-left: 2px solid var(--vscode-editorWarning-foreground); cursor: pointer; }
+.th:hover { background: var(--vscode-list-hoverBackground); }
+.th.resolved { border-left-color: var(--vscode-descriptionForeground); }
+.th.pending { border-left-color: var(--vscode-editorInfo-foreground); }
+.th .first { word-break: break-word; }
+.th .meta { color: var(--vscode-descriptionForeground); font-size: 11px; }
+.th .orig { font-family: var(--vscode-editor-font-family); font-size: 11px; white-space: pre; overflow: hidden; text-overflow: ellipsis;
+  background: var(--vscode-diffEditor-removedTextBackground); padding: 1px 4px; margin-top: 2px; }
+.tag { font-size: 10px; border: 1px solid var(--vscode-descriptionForeground); border-radius: 3px; padding: 0 3px; margin-left: 4px; }
 `;
 
 // Turns a click on a button or caller link into a message for the extension. The extension
@@ -142,6 +151,9 @@ document.addEventListener('click', (event) => {
   else if (act === 'next') postMessage({ type: 'next' });
   else if (act === 'peek') postMessage({ type: 'showCallers', id: el.getAttribute('data-id') });
   else if (act === 'caller') postMessage({ type: 'openCaller', index: Number(el.getAttribute('data-index')) });
+  else if (act === 'thread') postMessage({ type: 'revealThread', id: el.getAttribute('data-id') });
+  else if (act === 'comment') postMessage({ type: 'comment', id: el.getAttribute('data-id') });
+  else if (act === 'caller-comment') postMessage({ type: 'commentCaller', index: Number(el.getAttribute('data-index')) });
 });
 postMessage({ type: 'ready' });
 `;
@@ -220,16 +232,43 @@ function reviewPresentation(row, isReviewed) {
 }
 
 /**
+ * The Threads section of a row: each thread (author and first line, where, how many
+ * comments, its status; an outdated one with the line it was written on) opens it in
+ * the review diff; the button starts a comment on the row.
+ * @param {import('./review-threads').ThreadSection|null} section
+ * @param {string|undefined} id The row's tree id, which the comment button names.
+ * @returns {string}
+ */
+function threadsHtml(section, id) {
+  if (!section) return '';
+  const list = section.threads.map((t) => {
+    const cls = t.status === 'Pending' ? ' pending' : t.status === 'Resolved' ? ' resolved' : '';
+    const comments = `${t.commentCount} comment${t.commentCount === 1 ? '' : 's'}`;
+    const orig = t.outdated && t.originalCode !== null
+      ? `<div class="orig" title="The line this thread was written on">${escapeHtml(t.originalCode)}</div>` : '';
+    return `<div class="th${cls}" data-act="thread" data-id="${escapeHtml(t.id)}" title="Open in the review diff">`
+      + `<div class="first">${escapeHtml(t.author)}: ${escapeHtml(t.firstLine)}</div>`
+      + `<div class="meta">${escapeHtml(t.location)} · ${comments}<span class="tag">${t.status}</span>${t.outdated ? '<span class="tag">Outdated</span>' : ''}</div>`
+      + `${orig}</div>`;
+  }).join('');
+  const note = section.note ? `<div class="note">${escapeHtml(section.note)}</div>` : '';
+  const action = section.action && id
+    ? `<div class="actions"><button class="secondary" data-act="comment" data-id="${escapeHtml(id)}">${escapeHtml(section.action.label)}</button></div>` : '';
+  return `<h4>${escapeHtml(section.title)}</h4>${list}${note}${action}`;
+}
+
+/**
  * The callers table of a change, with a note for each message row among the impact rows
  * other than the tests row (a caller search that did not finish). When the change is risky,
  * each caller its verdict counts as not updated says so: the same rule as the result's
  * `stale` list, a caller that is not a test and was not updated at the call.
  * @param {TreeRow[]} impactRows
- * @param {{ result: any, risky: boolean, lineOf: (file: string, offset: number) => number|null, id: string|undefined }} opts
- *   `id` is the change's tree id, which the "Show callers" link names.
+ * @param {{ result: any, risky: boolean, lineOf: (file: string, offset: number) => number|null, id: string|undefined,
+ *   commenting?: boolean }} opts `id` is the change's tree id, which the "Show callers" link
+ *   names. `commenting` adds a 💬 per caller that starts a comment about it.
  * @returns {string}
  */
-function callersHtml(impactRows, { result, risky, lineOf, id }) {
+function callersHtml(impactRows, { result, risky, lineOf, id, commenting = false }) {
   const callers = listCallerRows(impactRows);
   const notes = impactRows.filter((r) => r.type === 'message').slice(0, -1);
   if (!callers.length && !notes.length) return '';
@@ -240,8 +279,11 @@ function callersHtml(impactRows, { result, risky, lineOf, id }) {
     const line = typeof offset === 'number' ? lineOf(c.file, offset) : null;
     const stale = risky && !c.test && c.callState !== 'updated-at-call' ? ' <span class="stale">not updated</span>' : '';
     const where = `${escapeHtml(c.relPath ?? c.file)}${line == null ? '' : `:${line}`}${stale}`;
+    const comment = commenting && line != null
+      ? `<td><a href="#" data-act="caller-comment" data-index="${i}" title="Comment about this call: on its line when the pull request's diff shows it, else on this change with the caller named after your text">💬</a></td>`
+      : commenting ? '<td></td>' : '';
     return `<tr><td class="st ${CALL_STATE_CLASS[c.callState] || 'lv1'}" title="${escapeHtml(state.text)}">${state.token}</td>`
-      + `<td><a href="#" data-act="caller" data-index="${i}">${c.test ? '🧪 ' : ''}${escapeHtml(c.label)}</a></td><td class="where">${where}</td></tr>`;
+      + `<td><a href="#" data-act="caller" data-index="${i}">${c.test ? '🧪 ' : ''}${escapeHtml(c.label)}</a></td><td class="where">${where}</td>${comment}</tr>`;
   }).join('');
   const noteHtml = notes.map((n) => `<div class="note">${escapeHtml(n.label)}${n.tooltip ? `: ${escapeHtml(n.tooltip)}` : ''}</div>`).join('');
   const peek = callers.length ? ` <a href="#" data-act="peek" data-id="${escapeHtml(id)}">Show callers</a>` : '';
@@ -251,10 +293,10 @@ function callersHtml(impactRows, { result, risky, lineOf, id }) {
 /**
  * The body of a change row: location, verdict, signature, new throws, callers, tests.
  * @param {TreeRow} row A `finding` row.
- * @param {{ result: any, impactRows: TreeRow[], lineOf: (file: string, offset: number) => number|null }} opts
+ * @param {{ result: any, impactRows: TreeRow[], lineOf: (file: string, offset: number) => number|null, commenting: boolean }} opts
  * @returns {string}
  */
-function changeHtml(row, { result, impactRows, lineOf }) {
+function changeHtml(row, { result, impactRows, lineOf, commenting }) {
   const c = row.finding;
   const v = classifyRowVerdict(row);
   let h = `<h3>${escapeHtml(c.label)}</h3><div class="where">${escapeHtml(c.relPath)}:${c.startLine}–${c.endLine}</div>`;
@@ -266,7 +308,7 @@ function changeHtml(row, { result, impactRows, lineOf }) {
   const throwsAdded = c.throwsAdded || [];
   if (throwsAdded.length) h += `<h4>New throw</h4>${throwsAdded.map((/** @type {string} */ t) => `<div class="sig new">+ throw ${escapeHtml(t)}</div>`).join('')}`;
   const risky = c.kinds.some((/** @type {{ id: string }} */ k) => k.id !== 'body');
-  h += callersHtml(impactRows, { result, risky, lineOf, id: treeItemId(row) });
+  h += callersHtml(impactRows, { result, risky, lineOf, id: treeItemId(row), commenting });
   // `buildImpactRows` ends with the one tests row.
   const tests = impactRows.at(-1);
   if (tests && tests.type === 'message') h += `<h4>Tests</h4><div>${escapeHtml(tests.label)}${tests.desc ? ` — ${escapeHtml(tests.desc)}` : ''}</div>`;
@@ -277,33 +319,36 @@ function changeHtml(row, { result, impactRows, lineOf }) {
  * The body of a file row: a file with a call graph sums up its rows; one without says so.
  * @param {TreeRow} row A `reviewFile` or `file` row.
  * @param {(row: TreeRow) => boolean} isReviewed
+ * @param {string} threads The Threads section's HTML, or nothing.
  * @returns {string}
  */
-function fileHtml(row, isReviewed) {
+function fileHtml(row, isReviewed, threads) {
   const head = `<h3>${escapeHtml(row.label)}</h3><div class="where">${escapeHtml(row.relPath)} · ${escapeHtml(row.status ?? 'changed')}</div>`;
   if (row.type === 'file') {
-    return `${head}<div class="verdict lv4">No call graph for this file (tests, config, docs). Read the diff and tick the file.</div>${buttonsHtml(reviewPresentation(row, isReviewed))}`;
+    return `${head}<div class="verdict lv4">No call graph for this file (tests, config, docs). Read the diff and tick the file.</div>${threads}${buttonsHtml(reviewPresentation(row, isReviewed))}`;
   }
   const model = reviewPresentation(row, isReviewed);
   assert.ok(model, 'a file shown in Details must have a tree identity');
-  return `${head}<div class="verdict lv${row.level}" data-review-summary>${model.summaryText}</div>${buttonsHtml(model)}`;
+  return `${head}<div class="verdict lv${row.level}" data-review-summary>${model.summaryText}</div>${threads}${buttonsHtml(model)}`;
 }
 
 /**
  * The body for one row, or the hint when there is none.
  * @param {TreeRow|null} row
- * @param {{ result: any, isReviewed: (row: TreeRow) => boolean, impactRows: TreeRow[], lineOf: (file: string, offset: number) => number|null }} opts
+ * @param {{ result: any, isReviewed: (row: TreeRow) => boolean, impactRows: TreeRow[], lineOf: (file: string, offset: number) => number|null,
+ *   threads: import('./review-threads').ThreadSection|null }} opts
  * @returns {string}
  */
-function bodyHtml(row, { result, isReviewed, impactRows, lineOf }) {
+function bodyHtml(row, { result, isReviewed, impactRows, lineOf, threads }) {
   if (!row) return `<p class="where">${NO_ROW_HINT}</p>`;
-  if (row.type === 'reviewFile' || row.type === 'file') return fileHtml(row, isReviewed);
+  const section = threadsHtml(threads, treeItemId(row));
+  if (row.type === 'reviewFile' || row.type === 'file') return fileHtml(row, isReviewed, section);
   const v = classifyRowVerdict(row);
   let h;
-  if (row.type === 'finding') h = changeHtml(row, { result, impactRows, lineOf });
+  if (row.type === 'finding') h = changeHtml(row, { result, impactRows, lineOf, commenting: !!(threads && threads.action) });
   else if (row.type === 'deleted') h = `<h3>${escapeHtml(row.label)}</h3><div class="where">${escapeHtml(row.relPath)} · deleted</div><div class="verdict lv${v.level}">${escapeHtml(v.sentence)}</div>`;
   else h = `<h3>Outside functions</h3><div class="where">${escapeHtml(row.relPath)} · ${escapeHtml(v.text)}</div><div class="verdict lv${v.level}">${escapeHtml(v.sentence)}</div>`;
-  return h + buttonsHtml(reviewPresentation(row, isReviewed));
+  return h + section + buttonsHtml(reviewPresentation(row, isReviewed));
 }
 
 /**
@@ -316,15 +361,17 @@ function bodyHtml(row, { result, isReviewed, impactRows, lineOf }) {
  *   nonce: string, cspSource: string, origin: string,
  *   lineOf: (file: string, offset: number) => number|null,
  *   progress?: ProgressPresentation|null,
+ *   threads?: import('./review-threads').ThreadSection|null,
  * }} opts `result` is the shown result. `isReviewed` says whether a counting row is ticked.
  *   `impactRows` are `buildImpactRows`'s rows for a change row (ignored otherwise).
  *   `nonce` is base64 and fresh per document; `cspSource` is the webview's. `origin` is
  *   `'tree'` or `'cursor:<line>'` (1-based). `lineOf` gives the 1-based line of an offset
  *   in a file, or null when it cannot be read. `progress` is the strip above the row; none
- *   when absent or null.
+ *   when absent or null. `threads` is the row's Threads section (`buildThreadSection`);
+ *   none when absent or null, and then callers offer no comment either.
  * @returns {string} The whole HTML document.
  */
-function buildDetailHtml(row, { result, isReviewed, impactRows, nonce, cspSource, origin, lineOf, progress = null }) {
+function buildDetailHtml(row, { result, isReviewed, impactRows, nonce, cspSource, origin, lineOf, progress = null, threads = null }) {
   assert.match(nonce, /^[A-Za-z0-9+/=]+$/, 'the nonce must be base64 so it cannot break out of the CSP');
   const header = row ? `<div class="origin">${describeOrigin(origin)}</div>` : '';
   const csp = `default-src 'none'; style-src ${escapeHtml(cspSource)} 'nonce-${nonce}'; script-src 'nonce-${nonce}';`;
@@ -332,7 +379,7 @@ function buildDetailHtml(row, { result, isReviewed, impactRows, nonce, cspSource
     + `<meta http-equiv="Content-Security-Policy" content="${csp}">`
     + '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
     + `<style nonce="${nonce}">${STYLE}</style></head>`
-    + `<body>${progressHtml(progress)}${header}${bodyHtml(row, { result, isReviewed, impactRows, lineOf })}`
+    + `<body>${progressHtml(progress)}${header}${bodyHtml(row, { result, isReviewed, impactRows, lineOf, threads })}`
     + `<script nonce="${nonce}">${script(nonce)}</script></body></html>`;
 }
 

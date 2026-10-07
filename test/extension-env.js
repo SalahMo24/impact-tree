@@ -109,7 +109,7 @@ function createCommentsApi() {
 // async git calls (fetch, rev-parse of FETCH_HEAD, checkout), so the worktree itself
 // never moves. `changedSource` puts a committed TypeScript change on a feature branch,
 // which is what readiness needs before it will warm the language server.
-function createEnv({ prewarm = false, changedSource = false, memento = new Map(), signIn = null } = {}) {
+function createEnv({ prewarm = false, changedSource = false, memento = new Map(), signIn = null, graphql = null } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-ext-commands-'));
   const sh = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
   sh('init', '-q', '--initial-branch=main'); sh('config', 'user.name', 'Test'); sh('config', 'user.email', 'test@example.com');
@@ -278,10 +278,11 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
         },
       }) };
     }
-    // The silent sign-in at startup, replaced when a test needs it to fail in a way the real one cannot.
-    if (signIn && resolved === path.join(SRC, 'github.js')) {
+    // The silent sign-in at startup, replaced when a test needs it to fail in a way the real
+    // one cannot; GitHub's GraphQL endpoint, replaced when a test answers it (the review store).
+    if ((signIn || graphql) && resolved === path.join(SRC, 'github.js')) {
       const real = originalLoad.call(this, name, parent, ...rest);
-      return { ...real, createGitHub: (...args) => ({ ...real.createGitHub(...args), signIn }) };
+      return { ...real, createGitHub: (...args) => ({ ...real.createGitHub(...args), ...(signIn ? { signIn } : {}), ...(graphql ? { graphql } : {}) }) };
     }
     if (resolved === path.join(SRC, 'engine/git.js')) {
       const real = originalLoad.call(this, name, parent, ...rest);

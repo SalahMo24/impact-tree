@@ -67,7 +67,10 @@ function activate(context) {
   context.subscriptions.push(view);
   const navigation = createReviewNavigation(vscode, { provider, view });
   context.subscriptions.push(...navigation.disposables);
-  const details = createDetailPanel(vscode, { provider, view, getState: () => owned.state, lineOf: readLineOfOffset, log });
+  // Details starts comments and opens threads through the review comments, created below.
+  let reviewComments = null;
+  const details = createDetailPanel(vscode, { provider, view, getState: () => owned.state, lineOf: readLineOfOffset, log,
+    reviewActions: () => reviewComments });
   context.subscriptions.push(...details.disposables);
   // Counts follow presentation and progress events, independently of tree repaint scope.
   const showSummary = () => {
@@ -119,8 +122,11 @@ function activate(context) {
 
   // The store's threads in the review diff, and commenting there. Follows the store, and
   // the analysis for where the pull request is shown; disposed with the window.
-  const reviewComments = createReviewComments(vscode, {
+  reviewComments = createReviewComments(vscode, {
     store: reviewStore, log,
+    // openReview is created below; these run only on a click, after activation.
+    headUri: (relPath) => openReview.headUri(relPath),
+    openDiff: (relPath, line) => openReview.openFile({ relPath, ranges: line === null ? [] : [[line, line]] }),
     getSession: () => ({ source: owned.state && owned.state.source, result: (owned.state && owned.state.result) || null }),
     repoRoot: () => owned.repoRoot(),
     readHead: () => {
