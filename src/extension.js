@@ -200,7 +200,7 @@ function activate(context) {
 
   // The Pull Request tab, the pending-review status bar item and the jump to a thread.
   const pullRequestTab = createPullRequestPanel(vscode, {
-    store: reviewStore, provider, revealRow: navigation.revealRow, openFile: openReview.openFile, log,
+    store: reviewStore, provider, revealRow: navigation.revealRow, revealThread: reviewComments.revealThread, log,
   });
   context.subscriptions.push(...pullRequestTab.disposables);
 

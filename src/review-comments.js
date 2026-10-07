@@ -563,13 +563,20 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
    * Opens a thread's file in the review diff, at its line when it has one on the head
    * side; a file-level, outdated or base-side thread opens the file's diff.
    * @param {unknown} threadId
-   * @returns {Promise<boolean>} False when the thread is not in the loaded review.
+   * @returns {Promise<boolean>} False, after saying why, when the thread is not in the
+   *   loaded review or its file cannot be opened.
    */
   async function revealThread(threadId) {
     const data = reviewDataOf(store.getState());
     const thread = typeof threadId === 'string' && data ? data.threads.find((t) => t.id === threadId) : undefined;
     if (!thread || !openDiff) { tell('that thread is not in the loaded review any more.'); return false; }
-    await openDiff(thread.path, thread.side === 'RIGHT' ? thread.line : null);
+    try {
+      await openDiff(thread.path, thread.side === 'RIGHT' ? thread.line : null);
+    } catch (e) {
+      log(`review comments: could not open ${thread.path}: ${/** @type {Error} */ (e).message}`);
+      tell(`cannot open ${thread.path}: ${/** @type {Error} */ (e).message}`);
+      return false;
+    }
     return true;
   }
 

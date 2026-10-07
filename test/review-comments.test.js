@@ -218,16 +218,17 @@ function setup({ state = ready(reviewModel({ threads: [thread(1)] })), source = 
   const docs = open.map((uri) => editor.open(uri));
   // The review diffs opened to start a comment, as (path, line).
   const opened = [];
+  const failures = { open: null };
   const comments = createReviewComments(editor.vscode, {
     store, getSession: () => session, repoRoot: () => REPO,
     readHead: async () => { heads.reads++; return heads.value; },
     contextEvents: [(listener) => { contextListeners.add(listener); return { dispose: () => contextListeners.delete(listener) }; }],
     headUri: (relPath) => (session.source.kind === 'checkout' ? fileDoc(relPath) : prDoc(relPath, 'head', session.result)),
-    openDiff: async (relPath, line) => { opened.push([relPath, line]); },
+    openDiff: async (relPath, line) => { if (failures.open) throw failures.open; opened.push([relPath, line]); },
   });
   const controller = editor.comments.controllers[0];
   return {
-    editor, store, session, heads, comments, controller, docs, opened,
+    editor, store, session, heads, comments, controller, docs, opened, failures,
     idle: () => comments.whenIdle(),
     contextChanged() { for (const l of contextListeners) l(); },
     threadsOn: (uri) => editor.comments.threadsOn(controller, uri),
@@ -759,4 +760,7 @@ test('revealing a thread opens its file at its head line, or the file for an out
   assert.deepEqual(env.opened, [['src/a.ts', 12], ['src/a.ts', null], ['src/a.ts', null], ['src/b.ts', null]]);
   assert.equal(await env.comments.revealThread('T_gone'), false);
   assert.match(env.editor.seen.warnings[0], /not in the loaded review/);
+  env.failures.open = new Error('no such file');
+  assert.equal(await env.comments.revealThread('T_1'), false, 'a file that cannot be opened is not a reveal');
+  assert.match(env.editor.seen.warnings[1], /cannot open src\/a\.ts: no such file/);
 });

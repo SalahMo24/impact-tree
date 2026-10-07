@@ -86,10 +86,8 @@ function parseMessage(message, token) {
  * Commands:
  * - `impactTree.showPullRequest` and `impactTree.submitReview` open the tab, or reveal it.
  * - `impactTree.revealReviewThread(threadId: string)` opens the file of a thread of the
- *   loaded review in the review diff, at the thread's line when it has one on the head
- *   side; a file-level, outdated or base-side thread opens the file's diff. Resolves to
- *   false when the thread is not in the loaded review. (The thread itself is drawn in the
- *   diff by the comment controller, L4.)
+ *   loaded review in the review diff (`revealThread`, the comment controller's, which
+ *   Details uses too). Resolves to false when the thread is not in the loaded review.
  *
  * Ownership: the module owns the tab (at most one), its subscriptions, the drafts and
  * the status bar item; the returned disposables end all of them. The tab owns its message
@@ -103,13 +101,13 @@ function parseMessage(message, token) {
  *     onDidChangeReview: (listener: (e: any) => void) => { dispose(): any },
  *     onDidChangePresentation: (listener: (e: any) => void) => { dispose(): any } },
  *   revealRow: (id: string) => Promise<boolean>,
- *   openFile: (node: { relPath: string, ranges: number[][] }) => Promise<void>,
+ *   revealThread: (threadId: unknown) => Promise<boolean>,
  *   log: (message: string) => void,
  * }} deps `provider` is the change tree's; `revealRow` goes to a tree row by id;
- *   `openFile` opens a changed file's review diff at its first range's 1-based line.
+ *   `revealThread` opens a thread of the loaded review in the review diff, saying why when it cannot.
  * @returns {{ disposables: Array<{ dispose(): any }>, open: () => void }}
  */
-function createPullRequestPanel(vscode, { store, provider, revealRow, openFile, log }) {
+function createPullRequestPanel(vscode, { store, provider, revealRow, revealThread, log }) {
   let disposed = false;
   /** @type {OpenPanel|null} */
   let current = null;
@@ -300,30 +298,6 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, openFile, 
         if (!await revealRow(m.rowId)) vscode.window.showInformationMessage('Impact Tree: that change is not in the tree any more.');
         return;
     }
-  }
-
-  /**
-   * @param {unknown} threadId
-   * @returns {Promise<boolean>}
-   */
-  async function revealThread(threadId) {
-    if (!isId(threadId)) return false;
-    const data = reviewDataOf(store.getState());
-    const thread = data && data.threads.find((t) => t.id === threadId);
-    if (!thread) {
-      vscode.window.showInformationMessage('Impact Tree: that thread is not in the loaded review any more.');
-      return false;
-    }
-    // `line` is null for file-level and outdated threads; a LEFT line is on the base side.
-    const line = thread.side === 'RIGHT' ? thread.line : null;
-    try {
-      await openFile({ relPath: thread.path, ranges: line === null ? [] : [[line, line]] });
-    } catch (e) {
-      log(`pull request tab: could not open ${thread.path}: ${/** @type {Error} */ (e).message}`);
-      vscode.window.showWarningMessage(`Impact Tree: cannot open ${thread.path}: ${/** @type {Error} */ (e).message}`);
-      return false;
-    }
-    return true;
   }
 
   const repaint = () => { if (!disposed) render(); };

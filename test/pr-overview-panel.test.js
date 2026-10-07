@@ -96,7 +96,7 @@ function setup(initial = ready(), { modalAnswer = 'Cancel review' } = {}) {
   const created = createPullRequestPanel(vscode, {
     store, provider, log: (m) => seen.log.push(m),
     revealRow: async (id) => { seen.revealedRows.push(id); return rows.result; },
-    openFile: async (node) => { seen.opened.push(node); },
+    revealThread: async (id) => { seen.opened.push(id); return id !== 'T_gone'; },
   });
   const panel = () => seen.panels.at(-1);
   const page = () => panel().page;
@@ -404,7 +404,7 @@ test('the tab closes when the pull request review ends or moves to another pull 
 
 // ---- links --------------------------------------------------------------------------
 
-test('a pending comment jumps to its thread: the command opens the file at the thread\'s line', async () => {
+test('a pending comment jumps to its thread through the comment controller\'s reveal', async () => {
   const threads = [
     thread(1, {}, [comment(1, { pending: true, mine: true })]),
     thread(2, { path: 'b.js', side: 'LEFT', line: 4 }, [comment(2, { pending: true, mine: true })]),
@@ -415,12 +415,8 @@ test('a pending comment jumps to its thread: the command opens the file at the t
   for (const link of env.page().all('[data-act="revealThread"]')) env.page().click(link);
   await settle();
   assert.deepEqual(env.seen.executed.map((e) => e[1]), ['T_1', 'T_2', 'T_3']);
-  assert.deepEqual(env.seen.opened, [
-    { relPath: 'src/a.js', ranges: [[10, 10]] }, { relPath: 'b.js', ranges: [] }, { relPath: 'c.js', ranges: [] },
-  ]);
-  assert.equal(await env.run('impactTree.revealReviewThread', 'T_gone'), false);
-  assert.equal(await env.run('impactTree.revealReviewThread', 42), false);
-  assert.equal(env.seen.opened.length, 3);
+  assert.deepEqual(env.seen.opened, ['T_1', 'T_2', 'T_3']);
+  assert.equal(await env.run('impactTree.revealReviewThread', 'T_gone'), false, 'its answer is the command\'s');
   env.dispose();
 });
 
