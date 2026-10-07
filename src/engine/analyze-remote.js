@@ -17,6 +17,7 @@ const { changedSymbolsIn, changedSymbolKeys } = require('./changed-symbols');
 const { createSyntacticIndex } = require('./syntactic-index');
 const { createSyntacticResolver } = require('./resolver-syntactic');
 const { hunkRangesFromPatch, hunkDeletionsFromPatch } = require('./patch');
+const { diffLinesFromPatch } = require('./diff-lines');
 const { isSourcePath, isTestPath, isTestFile } = require('./diff');
 const { seedRoots, nestedIds } = require('./forest');
 const { registerVirtualText, readLineOfOffset } = require('./textpos');
@@ -57,7 +58,9 @@ const normaliseStatus = (s) => {
  * @param {(message: string) => void} [args.trace]
  * @param {AbortSignal} [args.signal]
  * @returns {Promise<object>} The same shape as analyze()'s result, with `tierA: true`; `outside`
- *   (see analyze()) is computed from the PR's patch and fetched texts.
+ *   (see analyze()) is computed from the PR's patch and fetched texts. `diffLines` comes
+ *   from GitHub's patches as they are, for every listed file with a patch, tests and
+ *   non-source files included.
  * @throws {import('./cancellation').AnalysisCancelledError} `signal` was aborted. No result is returned.
  */
 async function analyzeRemote({
@@ -103,9 +106,12 @@ async function analyzeRemote({
   // Every tab needs the pre-rename base path, including docs/config-only previews
   // whose files are fetched on demand rather than parsed by this analysis.
   const basePaths = Object.fromEntries(listed.files.filter((f) => f.oldPath && f.oldPath !== f.path).map((f) => [f.path, f.oldPath]));
+  // The lines of GitHub's own hunks, where review comments can go, for every listed file
+  // GitHub gave a patch for (none for a binary file or one too large to diff).
+  const diffLines = Object.fromEntries(listed.files.filter((f) => f.patch).map((f) => [f.path, diffLinesFromPatch(f.patch)]));
 
   if (!sourceFiles.length) {
-    return emptyResult(pr, listed, otherFiles, warnings, workers, basePaths);
+    return { ...emptyResult(pr, listed, otherFiles, warnings, workers, basePaths), diffLines };
   }
 
   // ---- fetch head and base text -------------------------------------------------
@@ -294,6 +300,7 @@ async function analyzeRemote({
       fileStatus: Object.fromEntries(listed.files.map((f) => [f.path, normaliseStatus(f.status)])),
       basePaths,
       changedRanges,
+      diffLines,
       outside,
       unanalysable: [],
       components: [{ component: 'pull request', changed, deleted, roots: ranked, forest: [], stats: resolver ? resolver.stats() : {} }],

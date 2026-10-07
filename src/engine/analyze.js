@@ -18,6 +18,7 @@ const { mapLimit } = require('./concurrency');
 const { validateConcurrency, validateReachDepth } = require('./settings');
 const { throwIfCancelled } = require('./cancellation');
 const { walkTestReach, DEFAULT_REACH_BUDGET } = require('./test-reach');
+const { diffLinesFromChanges } = require('./diff-lines');
 
 // Prefer the project's own TypeScript so analysis matches what the editor sees; fall
 // back to the repo root, then to whatever this extension was installed with.
@@ -74,13 +75,13 @@ function loadTypeScript(repo, projectDir) {
 // One `git diff` for every file, split only so a huge PR stays under the OS argument
 // limit. A rename's two paths always travel in the same chunk: git can only pair them
 // when both are in the pathspec.
-function rangesFor(git, baseSha, headRev, files, { maxChars = 60000, deletionsOut } = {}) {
+function rangesFor(git, baseSha, headRev, files, { maxChars = 60000, deletionsOut, changesOut } = {}) {
   const groups = files.map((f) => (f.oldPath && f.oldPath !== f.path ? [f.oldPath, f.path] : [f.path]));
   const out = {};
   let chunk = [], size = 0;
   const flush = () => {
     if (!chunk.length) return;
-    Object.assign(out, allHunks(git, baseSha, headRev, chunk, deletionsOut));
+    Object.assign(out, allHunks(git, baseSha, headRev, chunk, deletionsOut, changesOut));
     chunk = []; size = 0;
   };
   for (const g of groups) {
@@ -326,6 +327,12 @@ function inferredProjectFiles(repo, git) {
  * changed or deleted symbol has no entry: it is in `otherFiles` with `noCallable`.
  * A replacement that removes outside text but adds only callable lines is represented
  * by a deletion marker before its added lines, even when that gap is inside a callable.
+ * `diffLines` holds, for each tracked changed source path, the lines GitHub's diff of the
+ * same two commits shows on each side (hunks with three lines of context), widened from
+ * this run's `--unified=0` diff; see `engine/diff-lines.js`. It matches GitHub's only for
+ * a commit diffed against the merge base (`pr` mode on a clean worktree); in a mode that
+ * includes uncommitted work it describes that work instead. Paths outside a project and
+ * untracked ones have none.
  * `baseTexts` holds the base-side text of every changed source path that existed at
  * the base, keyed by its base path (`basePaths` maps a rename).
  *
@@ -376,6 +383,7 @@ function inferredProjectFiles(repo, git) {
  *   fileStatus: Record<string, string>,
  *   basePaths: Record<string, string>,
  *   changedRanges: Record<string, Array<[number, number]>>,
+ *   diffLines: Record<string, import('./diff-lines').DiffLines>,
  *   outside: Array<{file: string, relPath: string, ranges: Array<[number, number]>}>,
  *   baseTexts: Map<string, string|null>,
  *   excludedCallerPaths: string[],
@@ -437,10 +445,14 @@ async function analyze(repo, opts = {}) {
   const changedRanges = {};
   const tracked = files.filter((f) => !f.untracked);
   const deletions = {};
-  const ranges = tracked.length ? rangesFor(git, base.sha, headRev, tracked, { deletionsOut: deletions }) : {};
+  const hunkHeaders = {};
+  const ranges = tracked.length ? rangesFor(git, base.sha, headRev, tracked, { deletionsOut: deletions, changesOut: hunkHeaders }) : {};
   for (const f of files) {
     changedRanges[f.path] = f.untracked ? wholeFileRange(path.join(repo, f.path)) : (ranges[f.path] || []);
   }
+  // The lines GitHub's diff of the same commits shows, where review comments can go.
+  const diffLines = Object.fromEntries(tracked.filter((f) => hunkHeaders[f.path])
+    .map((f) => [f.path, diffLinesFromChanges(hunkHeaders[f.path], f.status)]));
   // every base-side blob in one process, not a `git show` per file. Changed tests and
   // sources outside a project are included: review identities need their base side too.
   const baseTexts = git.showMany(base.sha, everything
@@ -679,6 +691,7 @@ async function analyze(repo, opts = {}) {
       fileStatus: Object.fromEntries(everything.map((f) => [f.path, f.status])),
       basePaths: Object.fromEntries(everything.filter(f => f.oldPath).map(f => [f.path, f.oldPath])),
       changedRanges,
+      diffLines,
       outside,
       baseTexts,
       excludedCallerPaths: headRev !== null ? [...untracked] : [],
