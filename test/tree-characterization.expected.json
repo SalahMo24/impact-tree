@@ -5,7 +5,7 @@
     "tooltip": "11 of 16 left to review",
     "value": 11
    },
-   "message": "branch mode (requested pr) against origin/main · 5 need attention · 11 of 16 left"
+   "message": "branch mode (requested pr) · ⛔ 5 · 11 of 16 left"
   },
   "rows": [
    {
@@ -72,7 +72,7 @@
       "Store.old deleted"
      ],
      [
-      "file:///repo/src/store.ts",
+      "file:///repo/src/store.ts#outside",
       "modified",
       "src/store.ts"
      ],
@@ -166,7 +166,7 @@
       "status": "modified",
       "tooltip": "src/store.ts"
      },
-     "description": "src  ·  ⛔ 3  ·  1/5",
+     "description": "⛔ 3  ·  1/5  ·  src",
      "icon": "__file__",
      "label": "store.ts",
      "resourceUri": "uri:file:///repo/src/store.ts",
@@ -192,7 +192,7 @@
       "status": "modified",
       "tooltip": "src/store.ts:10"
      },
-     "description": "in Store  ·  ⛔",
+     "description": "⛔  2 of 3 callers not updated (1 edited nearby)",
      "icon": "__file__",
      "label": "save",
      "resourceUri": "uri:file:///repo/src/store.ts#100",
@@ -523,7 +523,7 @@
       "status": "modified",
       "tooltip": "src/store.ts:30"
      },
-     "description": "in Store  ·  ?  ·  tests ?",
+     "description": "?  callers unknown  ·  tests ?",
      "icon": "__file__",
      "label": "load",
      "resourceUri": "uri:file:///repo/src/store.ts#300",
@@ -663,7 +663,7 @@
       "status": "modified",
       "tooltip": "src/store.ts:50"
      },
-     "description": "in Store  ·  ?  ·  tests ?",
+     "description": "?  callers unknown  ·  tests ?",
      "icon": "__file__",
      "label": "inner",
      "resourceUri": "uri:file:///repo/src/store.ts#500",
@@ -700,7 +700,7 @@
       "status": "modified",
       "tooltip": "Store.old deleted"
      },
-     "description": "in Store  ·  −",
+     "description": "−  deleted",
      "icon": "trash",
      "label": "old",
      "resourceUri": "uri:file:///repo/src/store.ts#700",
@@ -729,10 +729,19 @@
      "description": "lines 1–2, deleted before line 41",
      "icon": "symbol-namespace",
      "label": "Outside functions",
-     "resourceUri": "uri:file:///repo/src/store.ts",
+     "resourceUri": "uri:file:///repo/src/store.ts#outside",
      "tooltip": {
       "markdown": "**Outside functions** — `src/store.ts`\n\nlines 1–2, deleted before line 41\n\n_Changed lines in no function: imports, constants, types, fields and the like._"
      }
+    }
+   },
+   {
+    "at": "/2:store.ts/5:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
     }
    },
    {
@@ -752,7 +761,7 @@
       "status": "modified",
       "tooltip": "src/big.ts"
      },
-     "description": "src  ·  ⛔ 1  ·  0/1",
+     "description": "⛔ 1  ·  0/1  ·  src",
      "icon": "__file__",
      "label": "big.ts",
      "resourceUri": "uri:file:///repo/src/big.ts",
@@ -778,7 +787,7 @@
       "status": "modified",
       "tooltip": "src/big.ts:1"
      },
-     "description": "⛔",
+     "description": "⛔  11 of 11 callers not updated",
      "icon": "__file__",
      "label": "Big",
      "resourceUri": "uri:file:///repo/src/big.ts#10",
@@ -1158,6 +1167,15 @@
     }
    },
    {
+    "at": "/3:big.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/4:util.ts",
     "item": {
      "checkbox": 0,
@@ -1174,7 +1192,7 @@
       "status": "modified",
       "tooltip": "src/api/util.ts"
      },
-     "description": "src/api  ·  ? 1  ·  0/1",
+     "description": "? 1  ·  0/1  ·  api",
      "icon": "__file__",
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/api/util.ts",
@@ -1200,7 +1218,7 @@
       "status": "modified",
       "tooltip": "src/api/util.ts:5"
      },
-     "description": "?  ·  no test",
+     "description": "?  DI-constructed  ·  no test",
      "icon": "__file__",
      "label": "helper  ‹api›",
      "resourceUri": "uri:file:///repo/src/api/util.ts#50",
@@ -1220,6 +1238,15 @@
     }
    },
    {
+    "at": "/4:util.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/5:util.ts",
     "item": {
      "checkbox": 0,
@@ -1236,7 +1263,7 @@
       "status": "modified",
       "tooltip": "src/web/util.ts"
      },
-     "description": "src/web  ·  0/1",
+     "description": "0/1  ·  web",
      "icon": "__file__",
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/web/util.ts",
@@ -1282,6 +1309,15 @@
     }
    },
    {
+    "at": "/5:util.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/6:open.ts",
     "item": {
      "checkbox": 1,
@@ -1298,7 +1334,7 @@
       "status": "added",
       "tooltip": "src/open.ts"
      },
-     "description": "src  ·  3/3",
+     "description": "3/3  ·  src",
      "icon": "__file__",
      "label": "open.ts",
      "resourceUri": "uri:file:///repo/src/open.ts",
@@ -1497,6 +1533,15 @@
     }
    },
    {
+    "at": "/6:open.ts/3:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/7:ready.ts",
     "item": {
      "checkbox": 0,
@@ -1513,7 +1558,7 @@
       "status": "modified",
       "tooltip": "src/ready.ts"
      },
-     "description": "src  ·  0/1",
+     "description": "0/1  ·  src",
      "icon": "__file__",
      "label": "ready.ts",
      "resourceUri": "uri:file:///repo/src/ready.ts",
@@ -1605,6 +1650,15 @@
     }
    },
    {
+    "at": "/7:ready.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/8:use.ts",
     "item": {
      "checkbox": 0,
@@ -1621,7 +1675,7 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "src  ·  0/1",
+     "description": "0/1  ·  src",
      "icon": "__file__",
      "label": "use.ts",
      "resourceUri": "uri:file:///repo/src/use.ts",
@@ -1737,6 +1791,15 @@
     }
    },
    {
+    "at": "/8:use.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/9:y.json",
     "item": {
      "checkbox": 0,
@@ -1752,7 +1815,7 @@
       "status": "renamed",
       "tooltip": "config/x/y.json"
      },
-     "description": "config/x  ·  no call graph",
+     "description": "no call graph  ·  x",
      "label": "y.json",
      "resourceUri": "uri:file:///repo/config/x/y.json",
      "tooltip": {
@@ -1776,7 +1839,7 @@
       "status": "modified",
       "tooltip": "docs/a.md"
      },
-     "description": "docs  ·  no call graph",
+     "description": "no call graph  ·  docs",
      "label": "a.md",
      "resourceUri": "uri:file:///repo/docs/a.md",
      "tooltip": {
@@ -1819,7 +1882,7 @@
     "tooltip": "16 of 16 left to review",
     "value": 16
    },
-   "message": "branch mode (requested pr) against origin/main · 6 need attention · 16 of 16 left"
+   "message": "branch mode (requested pr) · ⛔ 6 · 16 of 16 left"
   },
   "rows": [
    {
@@ -1886,7 +1949,7 @@
       "Store.old deleted"
      ],
      [
-      "file:///repo/src/store.ts",
+      "file:///repo/src/store.ts#outside",
       "modified",
       "src/store.ts"
      ],
@@ -1979,7 +2042,7 @@
       "status": "modified",
       "tooltip": "src/store.ts"
      },
-     "description": "src  ·  ⛔ 4  ·  0/5",
+     "description": "⛔ 4  ·  0/5  ·  src",
      "icon": "__file__",
      "label": "store.ts",
      "resourceUri": "uri:file:///repo/src/store.ts",
@@ -2004,7 +2067,7 @@
       "status": "modified",
       "tooltip": "src/store.ts:10"
      },
-     "description": "in Store  ·  ⛔  2 of 3 callers not updated (1 edited nearby)  ·  param",
+     "description": "⛔  2 of 3 callers not updated (1 edited nearby)  ·  param",
      "icon": "symbol-method",
      "label": "save",
      "resourceUri": "uri:file:///repo/src/store.ts#100",
@@ -2334,7 +2397,7 @@
       "status": "modified",
       "tooltip": "src/store.ts:30"
      },
-     "description": "in Store  ·  ?  callers unknown  ·  optional param  ·  tests ?",
+     "description": "?  callers unknown  ·  optional param  ·  tests ?",
      "icon": "symbol-method",
      "label": "load",
      "resourceUri": "uri:file:///repo/src/store.ts#300",
@@ -2473,7 +2536,7 @@
       "status": "modified",
       "tooltip": "src/store.ts:50"
      },
-     "description": "in Store  ·  ?  callers unknown  ·  sig  ·  tests ?",
+     "description": "?  callers unknown  ·  sig  ·  tests ?",
      "icon": "symbol-method",
      "label": "inner",
      "resourceUri": "uri:file:///repo/src/store.ts#500",
@@ -2509,7 +2572,7 @@
       "status": "modified",
       "tooltip": "Store.old deleted"
      },
-     "description": "in Store  ·  −  deleted",
+     "description": "−  deleted",
      "icon": "trash",
      "label": "old",
      "resourceUri": "uri:file:///repo/src/store.ts#700",
@@ -2537,10 +2600,19 @@
      "description": "lines 1–2, deleted before line 41",
      "icon": "symbol-namespace",
      "label": "Outside functions",
-     "resourceUri": "uri:file:///repo/src/store.ts",
+     "resourceUri": "uri:file:///repo/src/store.ts#outside",
      "tooltip": {
       "markdown": "**Outside functions** — `src/store.ts`\n\nlines 1–2, deleted before line 41\n\n_Changed lines in no function: imports, constants, types, fields and the like._"
      }
+    }
+   },
+   {
+    "at": "/2:store.ts/5:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
     }
    },
    {
@@ -2559,7 +2631,7 @@
       "status": "modified",
       "tooltip": "src/big.ts"
      },
-     "description": "src  ·  ⛔ 1  ·  0/1",
+     "description": "⛔ 1  ·  0/1  ·  src",
      "icon": "__file__",
      "label": "big.ts",
      "resourceUri": "uri:file:///repo/src/big.ts",
@@ -2670,7 +2742,7 @@
       "tooltip": "src/use.ts"
      },
      "description": "○  11 callers  ·  11 call sites",
-     "icon": "symbol-method",
+     "icon": "__file__",
      "label": "use.ts",
      "resourceUri": "uri:file:///repo/src/use.ts",
      "tooltip": {
@@ -2964,6 +3036,15 @@
     }
    },
    {
+    "at": "/3:big.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/4:util.ts",
     "item": {
      "collapsible": 1,
@@ -2979,7 +3060,7 @@
       "status": "modified",
       "tooltip": "src/api/util.ts"
      },
-     "description": "src/api  ·  ? 1  ·  0/1",
+     "description": "? 1  ·  0/1  ·  api",
      "icon": "__file__",
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/api/util.ts",
@@ -3024,6 +3105,15 @@
     }
    },
    {
+    "at": "/4:util.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/5:util.ts",
     "item": {
      "collapsible": 1,
@@ -3039,7 +3129,7 @@
       "status": "modified",
       "tooltip": "src/web/util.ts"
      },
-     "description": "src/web  ·  0/1",
+     "description": "0/1  ·  web",
      "icon": "__file__",
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/web/util.ts",
@@ -3084,6 +3174,15 @@
     }
    },
    {
+    "at": "/5:util.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/6:open.ts",
     "item": {
      "collapsible": 1,
@@ -3099,7 +3198,7 @@
       "status": "added",
       "tooltip": "src/open.ts"
      },
-     "description": "src  ·  0/3",
+     "description": "0/3  ·  src",
      "icon": "__file__",
      "label": "open.ts",
      "resourceUri": "uri:file:///repo/src/open.ts",
@@ -3295,6 +3394,15 @@
     }
    },
    {
+    "at": "/6:open.ts/3:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/7:ready.ts",
     "item": {
      "collapsible": 1,
@@ -3310,7 +3418,7 @@
       "status": "modified",
       "tooltip": "src/ready.ts"
      },
-     "description": "src  ·  0/1",
+     "description": "0/1  ·  src",
      "icon": "__file__",
      "label": "ready.ts",
      "resourceUri": "uri:file:///repo/src/ready.ts",
@@ -3401,6 +3509,15 @@
     }
    },
    {
+    "at": "/7:ready.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/8:use.ts",
     "item": {
      "collapsible": 1,
@@ -3416,7 +3533,7 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "src  ·  0/1",
+     "description": "0/1  ·  src",
      "icon": "__file__",
      "label": "use.ts",
      "resourceUri": "uri:file:///repo/src/use.ts",
@@ -3531,6 +3648,15 @@
     }
    },
    {
+    "at": "/8:use.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/9:y.json",
     "item": {
      "collapsible": 0,
@@ -3545,7 +3671,7 @@
       "status": "renamed",
       "tooltip": "config/x/y.json"
      },
-     "description": "config/x  ·  no call graph",
+     "description": "no call graph  ·  x",
      "label": "y.json",
      "resourceUri": "uri:file:///repo/config/x/y.json",
      "tooltip": {
@@ -3568,7 +3694,7 @@
       "status": "modified",
       "tooltip": "docs/a.md"
      },
-     "description": "docs  ·  no call graph",
+     "description": "no call graph  ·  docs",
      "label": "a.md",
      "resourceUri": "uri:file:///repo/docs/a.md",
      "tooltip": {
@@ -3610,7 +3736,7 @@
     "tooltip": "16 of 16 left to review",
     "value": 16
    },
-   "message": "branch mode (requested pr) against origin/main · 6 need attention · 16 of 16 left"
+   "message": "branch mode (requested pr) · ⛔ 6 · 16 of 16 left"
   },
   "rows": [
    {
@@ -3677,7 +3803,7 @@
       "Store.old deleted"
      ],
      [
-      "file:///repo/src/store.ts",
+      "file:///repo/src/store.ts#outside",
       "modified",
       "src/store.ts"
      ],
@@ -3770,7 +3896,7 @@
       "status": "modified",
       "tooltip": "src/store.ts"
      },
-     "description": "src  ·  ⛔ 4  ·  0/5",
+     "description": "⛔ 4  ·  0/5  ·  src",
      "icon": "__file__",
      "label": "store.ts",
      "resourceUri": "uri:file:///repo/src/store.ts",
@@ -3795,8 +3921,8 @@
       "status": "modified",
       "tooltip": "src/store.ts:10"
      },
-     "description": "in Store  ·  ⛔",
-     "icon": "__file__",
+     "description": "⛔  2 of 3 callers not updated (1 edited nearby)",
+     "icon": "symbol-method",
      "label": "save",
      "resourceUri": "uri:file:///repo/src/store.ts#100",
      "tooltip": {
@@ -3841,7 +3967,7 @@
       "tooltip": "src/app.ts"
      },
      "description": "○",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "main",
      "resourceUri": "uri:file:///repo/src/app.ts#7",
      "tooltip": {
@@ -3876,7 +4002,7 @@
       "tooltip": "src/use.ts"
      },
      "description": "△",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
      "tooltip": {
@@ -3966,7 +4092,7 @@
       "tooltip": "src/use.ts"
      },
      "description": "△",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
      "tooltip": {
@@ -4006,7 +4132,7 @@
       "tooltip": "src/app.ts"
      },
      "description": "○",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "main",
      "resourceUri": "uri:file:///repo/src/app.ts#7",
      "tooltip": {
@@ -4130,8 +4256,8 @@
       "status": "modified",
       "tooltip": "src/store.ts:30"
      },
-     "description": "in Store  ·  ?",
-     "icon": "__file__",
+     "description": "?  callers unknown",
+     "icon": "symbol-method",
      "label": "load",
      "resourceUri": "uri:file:///repo/src/store.ts#300",
      "tooltip": {
@@ -4166,7 +4292,7 @@
       "tooltip": "src/use.ts"
      },
      "description": "✓",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "loader",
      "resourceUri": "uri:file:///repo/src/use.ts#120",
      "tooltip": {
@@ -4201,7 +4327,7 @@
       "tooltip": "src/boot.ts"
      },
      "description": "○",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "boot",
      "resourceUri": "uri:file:///repo/src/boot.ts#1",
      "tooltip": {
@@ -4273,8 +4399,8 @@
       "status": "modified",
       "tooltip": "src/store.ts:50"
      },
-     "description": "in Store  ·  ?",
-     "icon": "__file__",
+     "description": "?  callers unknown",
+     "icon": "symbol-method",
      "label": "inner",
      "resourceUri": "uri:file:///repo/src/store.ts#500",
      "tooltip": {
@@ -4313,7 +4439,7 @@
       "status": "modified",
       "tooltip": "Store.old deleted"
      },
-     "description": "in Store  ·  −",
+     "description": "−  deleted",
      "icon": "trash",
      "label": "old",
      "resourceUri": "uri:file:///repo/src/store.ts#700",
@@ -4341,10 +4467,19 @@
      "description": "lines 1–2, deleted before line 41",
      "icon": "symbol-namespace",
      "label": "Outside functions",
-     "resourceUri": "uri:file:///repo/src/store.ts",
+     "resourceUri": "uri:file:///repo/src/store.ts#outside",
      "tooltip": {
       "markdown": "**Outside functions** — `src/store.ts`\n\nlines 1–2, deleted before line 41\n\n_Changed lines in no function: imports, constants, types, fields and the like._"
      }
+    }
+   },
+   {
+    "at": "/2:store.ts/5:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
     }
    },
    {
@@ -4363,7 +4498,7 @@
       "status": "modified",
       "tooltip": "src/big.ts"
      },
-     "description": "src  ·  ⛔ 1  ·  0/1",
+     "description": "⛔ 1  ·  0/1  ·  src",
      "icon": "__file__",
      "label": "big.ts",
      "resourceUri": "uri:file:///repo/src/big.ts",
@@ -4388,8 +4523,8 @@
       "status": "modified",
       "tooltip": "src/big.ts:1"
      },
-     "description": "⛔",
-     "icon": "__file__",
+     "description": "⛔  11 of 11 callers not updated",
+     "icon": "symbol-constructor",
      "label": "Big",
      "resourceUri": "uri:file:///repo/src/big.ts#10",
      "tooltip": {
@@ -4499,7 +4634,7 @@
       "tooltip": "src/use.ts"
      },
      "description": "○",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "caller0",
      "resourceUri": "uri:file:///repo/src/use.ts#1000",
      "tooltip": {
@@ -4524,7 +4659,7 @@
       "tooltip": "src/use.ts"
      },
      "description": "○",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "caller1",
      "resourceUri": "uri:file:///repo/src/use.ts#1010",
      "tooltip": {
@@ -4549,7 +4684,7 @@
       "tooltip": "src/use.ts"
      },
      "description": "○",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "caller10",
      "resourceUri": "uri:file:///repo/src/use.ts#1100",
      "tooltip": {
@@ -4574,7 +4709,7 @@
       "tooltip": "src/use.ts"
      },
      "description": "○",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "caller2",
      "resourceUri": "uri:file:///repo/src/use.ts#1020",
      "tooltip": {
@@ -4599,7 +4734,7 @@
       "tooltip": "src/use.ts"
      },
      "description": "○",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "caller3",
      "resourceUri": "uri:file:///repo/src/use.ts#1030",
      "tooltip": {
@@ -4624,7 +4759,7 @@
       "tooltip": "src/use.ts"
      },
      "description": "○",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "caller4",
      "resourceUri": "uri:file:///repo/src/use.ts#1040",
      "tooltip": {
@@ -4649,7 +4784,7 @@
       "tooltip": "src/use.ts"
      },
      "description": "○",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "caller5",
      "resourceUri": "uri:file:///repo/src/use.ts#1050",
      "tooltip": {
@@ -4674,7 +4809,7 @@
       "tooltip": "src/use.ts"
      },
      "description": "○",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "caller6",
      "resourceUri": "uri:file:///repo/src/use.ts#1060",
      "tooltip": {
@@ -4699,7 +4834,7 @@
       "tooltip": "src/use.ts"
      },
      "description": "○",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "caller7",
      "resourceUri": "uri:file:///repo/src/use.ts#1070",
      "tooltip": {
@@ -4724,7 +4859,7 @@
       "tooltip": "src/use.ts"
      },
      "description": "○",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "caller8",
      "resourceUri": "uri:file:///repo/src/use.ts#1080",
      "tooltip": {
@@ -4749,7 +4884,7 @@
       "tooltip": "src/use.ts"
      },
      "description": "○",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "caller9",
      "resourceUri": "uri:file:///repo/src/use.ts#1090",
      "tooltip": {
@@ -4773,6 +4908,15 @@
     }
    },
    {
+    "at": "/3:big.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/4:util.ts",
     "item": {
      "collapsible": 1,
@@ -4788,7 +4932,7 @@
       "status": "modified",
       "tooltip": "src/api/util.ts"
      },
-     "description": "src/api  ·  ? 1  ·  0/1",
+     "description": "? 1  ·  0/1  ·  api",
      "icon": "__file__",
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/api/util.ts",
@@ -4813,8 +4957,8 @@
       "status": "modified",
       "tooltip": "src/api/util.ts:5"
      },
-     "description": "?",
-     "icon": "__file__",
+     "description": "?  DI-constructed",
+     "icon": "symbol-function",
      "label": "helper  ‹api›",
      "resourceUri": "uri:file:///repo/src/api/util.ts#50",
      "tooltip": {
@@ -4838,6 +4982,15 @@
     }
    },
    {
+    "at": "/4:util.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/5:util.ts",
     "item": {
      "collapsible": 1,
@@ -4853,7 +5006,7 @@
       "status": "modified",
       "tooltip": "src/web/util.ts"
      },
-     "description": "src/web  ·  0/1",
+     "description": "0/1  ·  web",
      "icon": "__file__",
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/web/util.ts",
@@ -4879,7 +5032,7 @@
       "tooltip": "src/web/util.ts:5"
      },
      "description": "✓",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "helper  ‹web›",
      "resourceUri": "uri:file:///repo/src/web/util.ts#50",
      "tooltip": {
@@ -4903,6 +5056,15 @@
     }
    },
    {
+    "at": "/5:util.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/6:open.ts",
     "item": {
      "collapsible": 1,
@@ -4918,7 +5080,7 @@
       "status": "added",
       "tooltip": "src/open.ts"
      },
-     "description": "src  ·  0/3",
+     "description": "0/3  ·  src",
      "icon": "__file__",
      "label": "open.ts",
      "resourceUri": "uri:file:///repo/src/open.ts",
@@ -4944,7 +5106,7 @@
       "tooltip": "src/open.ts:10"
      },
      "description": "●",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "createOpen",
      "resourceUri": "uri:file:///repo/src/open.ts#100",
      "tooltip": {
@@ -4979,7 +5141,7 @@
       "tooltip": "src/boot.ts"
      },
      "description": "✓",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "boot",
      "resourceUri": "uri:file:///repo/src/boot.ts#1",
      "tooltip": {
@@ -5030,7 +5192,7 @@
       "tooltip": "src/open.ts:20"
      },
      "description": "in createOpen  ·  ●",
-     "icon": "__file__",
+     "icon": "symbol-method",
      "label": "uriFor",
      "resourceUri": "uri:file:///repo/src/open.ts#200",
      "tooltip": {
@@ -5065,7 +5227,7 @@
       "tooltip": "src/open.ts"
      },
      "description": "△",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "createOpen",
      "resourceUri": "uri:file:///repo/src/open.ts#100",
      "tooltip": {
@@ -5105,7 +5267,7 @@
       "tooltip": "src/open.ts:60"
      },
      "description": "∅",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "sameUri",
      "resourceUri": "uri:file:///repo/src/open.ts#600",
      "tooltip": {
@@ -5129,6 +5291,15 @@
     }
    },
    {
+    "at": "/6:open.ts/3:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/7:ready.ts",
     "item": {
      "collapsible": 1,
@@ -5144,7 +5315,7 @@
       "status": "modified",
       "tooltip": "src/ready.ts"
      },
-     "description": "src  ·  0/1",
+     "description": "0/1  ·  src",
      "icon": "__file__",
      "label": "ready.ts",
      "resourceUri": "uri:file:///repo/src/ready.ts",
@@ -5170,7 +5341,7 @@
       "tooltip": "src/ready.ts:3"
      },
      "description": "●",
-     "icon": "__file__",
+     "icon": "symbol-variable",
      "label": "READY",
      "resourceUri": "uri:file:///repo/src/ready.ts#30",
      "tooltip": {
@@ -5205,7 +5376,7 @@
       "tooltip": "src/boot.ts"
      },
      "description": "○",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "boot",
      "resourceUri": "uri:file:///repo/src/boot.ts#1",
      "tooltip": {
@@ -5240,6 +5411,15 @@
     }
    },
    {
+    "at": "/7:ready.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/8:use.ts",
     "item": {
      "collapsible": 1,
@@ -5255,7 +5435,7 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "src  ·  0/1",
+     "description": "0/1  ·  src",
      "icon": "__file__",
      "label": "use.ts",
      "resourceUri": "uri:file:///repo/src/use.ts",
@@ -5281,7 +5461,7 @@
       "tooltip": "src/use.ts"
      },
      "description": "●",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
      "tooltip": {
@@ -5316,7 +5496,7 @@
       "tooltip": "src/app.ts"
      },
      "description": "○",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "main",
      "resourceUri": "uri:file:///repo/src/app.ts#7",
      "tooltip": {
@@ -5375,6 +5555,15 @@
     }
    },
    {
+    "at": "/8:use.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/9:y.json",
     "item": {
      "collapsible": 0,
@@ -5389,7 +5578,7 @@
       "status": "renamed",
       "tooltip": "config/x/y.json"
      },
-     "description": "config/x  ·  no call graph",
+     "description": "no call graph  ·  x",
      "label": "y.json",
      "resourceUri": "uri:file:///repo/config/x/y.json",
      "tooltip": {
@@ -5412,7 +5601,7 @@
       "status": "modified",
       "tooltip": "docs/a.md"
      },
-     "description": "docs  ·  no call graph",
+     "description": "no call graph  ·  docs",
      "label": "a.md",
      "resourceUri": "uri:file:///repo/docs/a.md",
      "tooltip": {
@@ -5454,7 +5643,7 @@
     "tooltip": "5 of 6 left to review",
     "value": 5
    },
-   "message": "PR #7 against main · 2 need attention · 5 of 6 left"
+   "message": "PR #7 · ⛔ 2 · 5 of 6 left"
   },
   "rows": [
    {
@@ -5535,7 +5724,7 @@
       "status": "modified",
       "tooltip": "src/service.ts"
      },
-     "description": "src  ·  ⛔ 1  ·  0/2",
+     "description": "⛔ 1  ·  0/2  ·  src",
      "icon": "__file__",
      "label": "service.ts",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha",
@@ -5561,8 +5750,8 @@
       "status": "modified",
       "tooltip": "src/service.ts:12"
      },
-     "description": "in Service  ·  ⛔",
-     "icon": "__file__",
+     "description": "⛔  1 of 2 callers not updated",
+     "icon": "symbol-method",
      "label": "run",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#120",
      "tooltip": {
@@ -5627,7 +5816,7 @@
       "tooltip": "src/caller.ts"
      },
      "description": "○",
-     "icon": "__file__",
+     "icon": "symbol-method",
      "label": "Caller.go",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha#40",
      "tooltip": {
@@ -5662,7 +5851,7 @@
       "tooltip": "src/main.ts"
      },
      "description": "○",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "main",
      "resourceUri": "uri:impacttree-pr:///src/main.ts?side=head&revision=7%3Aheadsha%3Abasesha#3",
      "tooltip": {
@@ -5709,7 +5898,7 @@
       "tooltip": "src/caller.ts"
      },
      "description": "✓",
-     "icon": "__file__",
+     "icon": "symbol-method",
      "label": "Caller.stop",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha#60",
      "tooltip": {
@@ -5755,8 +5944,8 @@
       "status": "modified",
       "tooltip": "src/service.ts:30"
      },
-     "description": "in Service  ·  ●",
-     "icon": "__file__",
+     "description": "●",
+     "icon": "symbol-method",
      "label": "idle",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#300",
      "tooltip": {
@@ -5791,7 +5980,7 @@
       "tooltip": "src/caller.ts"
      },
      "description": "○",
-     "icon": "__file__",
+     "icon": "symbol-method",
      "label": "Caller.go",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha#40",
      "tooltip": {
@@ -5826,7 +6015,7 @@
       "tooltip": "src/main.ts"
      },
      "description": "○",
-     "icon": "__file__",
+     "icon": "symbol-function",
      "label": "main",
      "resourceUri": "uri:impacttree-pr:///src/main.ts?side=head&revision=7%3Aheadsha%3Abasesha#3",
      "tooltip": {
@@ -5867,6 +6056,15 @@
     }
    },
    {
+    "at": "/1:service.ts/2:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/2:gone.ts",
     "item": {
      "checkbox": 0,
@@ -5883,7 +6081,7 @@
       "status": "deleted",
       "tooltip": "src/gone.ts"
      },
-     "description": "src  ·  − 1  ·  0/1",
+     "description": "− 1  ·  0/1  ·  src",
      "icon": "__file__",
      "label": "gone.ts",
      "resourceUri": "uri:impacttree-pr:///src/gone.ts?side=head&revision=7%3Aheadsha%3Abasesha",
@@ -5909,13 +6107,22 @@
       "status": "deleted",
       "tooltip": "legacy deleted"
      },
-     "description": "−",
+     "description": "−  deleted",
      "icon": "trash",
      "label": "legacy",
      "resourceUri": "uri:impacttree-pr:///src/gone.ts?side=head&revision=7%3Aheadsha%3Abasesha#1",
      "tooltip": {
       "markdown": "✕ **legacy**\n\nThis symbol was removed. Its former callers were not searched, so check that nothing still uses it, including dynamic users.\n\n`src/gone.ts`"
      }
+    }
+   },
+   {
+    "at": "/2:gone.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
     }
    },
    {
@@ -5935,7 +6142,7 @@
       "status": "added",
       "tooltip": "src/caller.ts"
      },
-     "description": "src  ·  0/1",
+     "description": "0/1  ·  src",
      "icon": "__file__",
      "label": "caller.ts",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha",
@@ -5961,8 +6168,8 @@
       "status": "added",
       "tooltip": "src/caller.ts"
      },
-     "description": "in Caller  ·  ∅",
-     "icon": "__file__",
+     "description": "∅",
+     "icon": "symbol-method",
      "label": "stop",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha#60",
      "tooltip": {
@@ -5981,6 +6188,15 @@
     }
    },
    {
+    "at": "/3:caller.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/4:new.md",
     "item": {
      "checkbox": 1,
@@ -5996,7 +6212,7 @@
       "status": "added",
       "tooltip": "docs/new.md"
      },
-     "description": "docs  ·  no call graph",
+     "description": "no call graph  ·  docs",
      "icon": "__file__",
      "label": "new.md",
      "resourceUri": "uri:impacttree-pr:///docs/new.md?side=head&revision=7%3Aheadsha%3Abasesha",
@@ -6021,7 +6237,7 @@
       "status": "renamed",
       "tooltip": "docs/sub/moved.md"
      },
-     "description": "docs/sub  ·  no call graph",
+     "description": "no call graph  ·  sub",
      "icon": "__file__",
      "label": "moved.md",
      "resourceUri": "uri:impacttree-pr:///docs/sub/moved.md?side=head&revision=7%3Aheadsha%3Abasesha",
@@ -6041,7 +6257,7 @@
     "tooltip": "6 of 6 left to review",
     "value": 6
    },
-   "message": "PR #7 against main · 2 need attention · 6 of 6 left"
+   "message": "PR #7 · ⛔ 2 · 6 of 6 left"
   },
   "rows": [
    {
@@ -6121,7 +6337,7 @@
       "status": "modified",
       "tooltip": "src/service.ts"
      },
-     "description": "src  ·  ⛔ 1  ·  0/2",
+     "description": "⛔ 1  ·  0/2  ·  src",
      "icon": "__file__",
      "label": "service.ts",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha",
@@ -6146,7 +6362,7 @@
       "status": "modified",
       "tooltip": "src/service.ts:12"
      },
-     "description": "in Service  ·  ⛔  1 of 2 callers not updated  ·  param",
+     "description": "⛔  1 of 2 callers not updated  ·  param",
      "icon": "symbol-method",
      "label": "run",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#120",
@@ -6187,7 +6403,7 @@
       "tooltip": "src/caller.ts"
      },
      "description": "○  2 callers  ·  2 call sites",
-     "icon": "symbol-method",
+     "icon": "__file__",
      "label": "caller.ts",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
@@ -6339,7 +6555,7 @@
       "status": "modified",
       "tooltip": "src/service.ts:30"
      },
-     "description": "in Service  ·  ●  reaches 1 caller",
+     "description": "●  reaches 1 caller",
      "icon": "symbol-method",
      "label": "idle",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#300",
@@ -6451,6 +6667,15 @@
     }
    },
    {
+    "at": "/1:service.ts/2:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/2:gone.ts",
     "item": {
      "collapsible": 1,
@@ -6466,7 +6691,7 @@
       "status": "deleted",
       "tooltip": "src/gone.ts"
      },
-     "description": "src  ·  − 1  ·  0/1",
+     "description": "− 1  ·  0/1  ·  src",
      "icon": "__file__",
      "label": "gone.ts",
      "resourceUri": "uri:impacttree-pr:///src/gone.ts?side=head&revision=7%3Aheadsha%3Abasesha",
@@ -6501,6 +6726,15 @@
     }
    },
    {
+    "at": "/2:gone.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/3:caller.ts",
     "item": {
      "collapsible": 1,
@@ -6516,7 +6750,7 @@
       "status": "added",
       "tooltip": "src/caller.ts"
      },
-     "description": "src  ·  0/1",
+     "description": "0/1  ·  src",
      "icon": "__file__",
      "label": "caller.ts",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha",
@@ -6541,7 +6775,7 @@
       "status": "added",
       "tooltip": "src/caller.ts"
      },
-     "description": "in Caller  ·  ∅  no callers",
+     "description": "∅  no callers",
      "icon": "symbol-method",
      "label": "stop",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha#60",
@@ -6561,6 +6795,15 @@
     }
    },
    {
+    "at": "/3:caller.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
     "at": "/4:new.md",
     "item": {
      "collapsible": 0,
@@ -6575,7 +6818,7 @@
       "status": "added",
       "tooltip": "docs/new.md"
      },
-     "description": "docs  ·  no call graph",
+     "description": "no call graph  ·  docs",
      "icon": "__file__",
      "label": "new.md",
      "resourceUri": "uri:impacttree-pr:///docs/new.md?side=head&revision=7%3Aheadsha%3Abasesha",
@@ -6599,7 +6842,7 @@
       "status": "renamed",
       "tooltip": "docs/sub/moved.md"
      },
-     "description": "docs/sub  ·  no call graph",
+     "description": "no call graph  ·  sub",
      "icon": "__file__",
      "label": "moved.md",
      "resourceUri": "uri:impacttree-pr:///docs/sub/moved.md?side=head&revision=7%3Aheadsha%3Abasesha",

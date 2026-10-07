@@ -28,7 +28,7 @@ function useResult(env) {
 async function shown(env) {
   const out = [];
   for (const top of await env.tree().getChildren()) {
-    out.push(top.label, ...(top.type === 'reviewFile' ? (await env.tree().getChildren(top)).map((r) => `  ${r.label}`) : []));
+    out.push(top.label, ...(top.type === 'reviewFile' ? (await env.tree().getChildren(top)).filter((r) => r.type !== 'spacer').map((r) => `  ${r.label}`) : []));
   }
   return out;
 }
@@ -78,12 +78,12 @@ test('the filter commands narrow the tree, name the filter and set the context k
   useResult(env);
   await env.refresh();
   assert.deepEqual(await shown(env), ALL);
-  assert.equal(env.view().message, 'pr mode against main · 1 need attention · 4 of 4 left');
+  assert.equal(env.view().message, 'pr mode · ⛔ 1 · 4 of 4 left');
 
   env.run('impactTree.filterAttention');
   assert.equal(env.seen.contexts['impactTree.filter'], 'attention');
   assert.deepEqual(await shown(env), ['a.ts', '  bad'], 'only the rows that need attention, and only their files');
-  assert.equal(env.view().message, 'pr mode against main · 1 need attention · 4 of 4 left · filter: needs attention');
+  assert.equal(env.view().message, 'pr mode · ⛔ 1 · 4 of 4 left · filter: needs attention');
 
   env.run('impactTree.filterUnreviewed');
   assert.equal(env.seen.contexts['impactTree.filter'], 'unreviewed', 'one turns the other off');
@@ -127,6 +127,20 @@ test('next unreviewed reveals and selects the first row, then the one after the 
   env.view().selection = [b[0]];
   await env.run('impactTree.nextUnreviewed');
   assert.equal(env.seen.revealed[3].row, files[2], 'a file without a call graph is the row to review');
+}));
+
+test('next unreviewed from a file\'s spacer goes on after that file, never onto a spacer', () => withEnv(async (env) => {
+  useResult(env);
+  await env.refresh();
+  const { files, rows, b } = await rowsOf(env);
+  const spacer = rows.at(-1);
+  assert.equal(spacer.type, 'spacer');
+  env.view().selection = [spacer];
+  await env.run('impactTree.nextUnreviewed');
+  assert.equal(env.seen.revealed[0].row, b[0], 'the first row of the next file, not the top of this one');
+  env.view().selection = [b.at(-1)];
+  await env.run('impactTree.nextUnreviewed');
+  assert.equal(env.seen.revealed[1].row, files[2]);
 }));
 
 test('a selected caller or tests row counts as the change it sits under', () => withEnv(async (env) => {

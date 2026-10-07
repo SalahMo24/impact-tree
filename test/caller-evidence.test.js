@@ -388,22 +388,22 @@ test('finding rows never read as fully updated when the caller search was incomp
   const item = (finding) => provider.getTreeItem(row(finding));
 
   const complete = item({ callersComplete: true });
-  assert.equal(complete.description, '✓');
+  assert.equal(complete.description, '✓', 'a row that needs nothing shows the glyph alone');
   assert.match(complete.tooltip.value, /Every caller was updated/);
   const oldShape = item({});
   assert.equal(oldShape.description, '✓', 'a result without the field is read as complete');
   assert.match(oldShape.tooltip.value, /Every caller was updated/);
 
   const incomplete = item({ callersComplete: false, callersIncompleteReason: 'command-bus callers unavailable' });
-  assert.equal(incomplete.description, '?');
+  assert.equal(incomplete.description, '?  callers unknown', 'a risky change with unknown callers needs attention, so it says why');
   assert.doesNotMatch(incomplete.tooltip.value, /Every caller was updated/);
   assert.match(incomplete.tooltip.value, /callers found so far are updated, but more may be missing/);
   assert.match(incomplete.tooltip.value, /command-bus callers unavailable/);
-  assert.equal(item({ callersComplete: false, callersIncompleteReason: null }).description, '?', 'a missing reason does not hide it');
+  assert.equal(item({ callersComplete: false, callersIncompleteReason: null }).description, '?  callers unknown', 'a missing reason does not hide it');
 
   const staleCallers = [{ label: 'a', callState: 'unchanged' }, { label: 'b', callState: 'unchanged' }];
   const stale = item({ callersComplete: false, callersIncompleteReason: 'query-failed', staleCallers: 2, stale: staleCallers, callers: staleCallers });
-  assert.equal(stale.description, '⛔');
+  assert.equal(stale.description, '⛔  2 of 2 callers not updated — more may be missing');
   assert.match(stale.tooltip.value, /2 of 2 callers were not changed on the call line/);
   assert.match(stale.tooltip.value, /More callers may be missing/);
   assert.match(stale.tooltip.value, /query-failed/);
@@ -430,6 +430,6 @@ test('an incomplete finding ranks as needing attention in its file, never as ok'
     resolver: { incomingWithStatus: async () => ({ callers: [], complete: true }) } });
   const [fileRow] = await provider.getChildren();
   assert.equal(fileRow.type, 'reviewFile');
-  assert.match(provider.getTreeItem(fileRow).description, /  ·  \? 1  ·  /, 'the file counts it as needing attention');
-  assert.deepEqual((await provider.getChildren(fileRow)).map((r) => r.label), ['partial', 'fine'], 'and ranks it first');
+  assert.match(provider.getTreeItem(fileRow).description, /^\? 1  ·  /, 'the file counts it as needing attention');
+  assert.deepEqual((await provider.getChildren(fileRow)).filter((r) => r.type !== 'spacer').map((r) => r.label), ['partial', 'fine'], 'and ranks it first');
 });

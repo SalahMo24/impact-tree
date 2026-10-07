@@ -12,16 +12,19 @@ const { classifyCallerUpdateState } = require('./engine/call-sites');
 // fields are a contract with those consumers, not just with the renderer.
 
 /** @typedef {{ type: string, label: string, [key: string]: any }} TreeRow */
-/** @typedef {{ uri: any, status: string|undefined, tooltip: string }} DecorationRequest */
 /**
- * Maps a file and an optional offset to the row's resource URI. Supplied by the
+ * A badge for a row's resource URI. `tint: false` asks for the badge without the label colour.
+ * @typedef {{ uri: any, status: string|undefined, tooltip: string, tint?: boolean }} DecorationRequest
+ */
+/**
+ * Maps a file and an optional offset (or a name, for a row with none) to the row's resource URI. Supplied by the
  * provider, which knows whether the result is a PR preview.
- * @typedef {(file: string, pos: number|null) => any} ResourceUriOf
+ * @typedef {(file: string, pos: number|string|null) => any} ResourceUriOf
  */
 
 const LEGEND = [
-  ['file', 'Icon = file type', 'from your file-icon theme, on code rows and file rows alike'],
-  ['symbol-method', 'impactTree.iconMode = "symbol"', 'switch code rows to method/function icons instead'],
+  ['file', 'Icon = file type', 'from your file-icon theme, on file rows whatever impactTree.iconMode says'],
+  ['symbol-method', 'Icon = symbol kind', 'method, function, constructor or variable on change rows; impactTree.iconMode = "file" shows the file glyph instead'],
   ['tag', 'Badge M / A / D / R', 'git status against the review base, not HEAD — hover for the word'],
   ['error', '⛔  a signature or throw change whose callers were NOT updated', 'review these first'],
   ['pass', '✓  signature or throw change, all callers updated', 'every caller found was changed on the call line'],
@@ -290,7 +293,7 @@ function buildChangeRows(changes, { result, uriOf }) {
   const decorations = [];
   const rows = changes.map((c) => {
     const uri = uriOf(c.file, c.namePos);
-    decorations.push({ uri, status: getFileStatus(result, c.relPath), tooltip: `${c.relPath}:${c.startLine}` });
+    decorations.push({ uri, status: getFileStatus(result, c.relPath), tooltip: `${c.relPath}:${c.startLine}`, tint: false });
     return {
       type: 'finding', label: c.label, finding: c, file: c.file, pos: c.namePos, score: c.score,
       ambiguous: (seen.get(c.label) || 0) > 1, decorationUri: uri, ...describeTestReach(c, result),
@@ -325,9 +328,11 @@ function buildOutsideRows(outside, { result, uriOf }) {
   /** @type {DecorationRequest[]} */
   const decorations = [];
   const rows = outside.map((o) => {
-    const uri = uriOf(o.file, null);
+    // Its own fragment: the file row decorates the bare file URI with the colour, and two
+    // decorations on one URI would overwrite each other.
+    const uri = uriOf(o.file, 'outside');
     const status = getFileStatus(result, o.relPath);
-    decorations.push({ uri, status, tooltip: o.relPath });
+    decorations.push({ uri, status, tooltip: o.relPath, tint: false });
     return {
       type: 'outside', label: 'Outside functions', file: o.file, relPath: o.relPath, ranges: o.ranges,
       status, desc: describeOutsideRanges(o.ranges), decorationUri: uri,
@@ -347,7 +352,7 @@ function buildDeletedRows(deleted, { result, uriOf }) {
   const decorations = [];
   const rows = deleted.map((d) => {
     const uri = uriOf(d.file, d.namePos);
-    decorations.push({ uri, status: getFileStatus(result, d.relPath) || 'deleted', tooltip: `${d.label} deleted` });
+    decorations.push({ uri, status: getFileStatus(result, d.relPath) || 'deleted', tooltip: `${d.label} deleted`, tint: false });
     return { type: 'deleted', label: d.label, key: d.key, relPath: d.relPath, file: d.file, decorationUri: uri };
   });
   return { rows, decorations };
@@ -423,7 +428,7 @@ function buildCallerRows(classified, { ancestry, reviewParent, changedKeys, rel,
     const callState = classifyCallerUpdateState({ callSiteUpdates, callerChanged: symChanged });
     const relPath = rel ? rel(c.file) : c.file;
     const uri = uriOf(c.file, c.pos);
-    decorations.push({ uri, status: getFileStatus(result, relPath), tooltip: relPath });
+    decorations.push({ uri, status: getFileStatus(result, relPath), tooltip: relPath, tint: false });
     return {
       type: 'caller', reviewParent, label: c.label, file: c.file, pos: c.pos, test: c.test,
       callSites: c.callSites || [], sites: c.sites,

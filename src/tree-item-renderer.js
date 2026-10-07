@@ -5,9 +5,10 @@
 // store, no decorations. The provider supplies review progress through `view`.
 //
 // Layout rule: a row's description is short and in a fixed order, so a column of rows
-// scans. A file row names its folder, then what needs attention, then its progress; a
-// change row says where it is declared, then its verdict, then "no test". Paths are
-// reduced to a basename: a sidebar truncates from the right.
+// scans. A file row says what needs attention, then its progress, then its last folder
+// segment; a change row says where it is declared (only when that tells it apart from
+// its siblings), then its verdict, then "no test". A sidebar truncates from the right, so
+// the least important part comes last and the full path is in the tooltip.
 const path = require('path');
 const {
   CALL_STATE, classifyChangeVerdict, classifyDeletedVerdict, classifyWorstRowVerdict,
@@ -19,7 +20,8 @@ const { needsAttention } = require('./review-tree-model');
  * What a row's rendering depends on besides the row.
  * - `rowDetail`: 'hover' keeps a change row to its name and one verdict glyph, with the
  *   verdict's words and the change kinds in the tooltip; 'inline' shows them on the row.
- * - `iconMode`: 'file' for the file-type glyph, 'symbol' for a symbol-kind icon.
+ * - `iconMode`: 'file' for the file-type glyph, 'symbol' for a symbol-kind icon on change rows;
+ *   file rows always show the file-type glyph.
  * - `checkedOf(row)`: whether the row's review checkbox is ticked, or null for no checkbox.
  * @typedef {{
  *   rowDetail: string, iconMode: string, checkedOf: (row: TreeRow) => boolean|null,
@@ -45,8 +47,10 @@ function symbolIcon(label, sym) {
  */
 function renderHelpers(vscode, view) {
   return {
-    // 'hover' keeps the single state glyph in the row so the column is still scannable.
-    rowDesc: (/** @type {string} */ token, /** @type {string} */ full) => (view.rowDetail === 'inline' ? full : token),
+    // 'hover' keeps the single state glyph in the row so the column is still scannable;
+    // `words` is what a row that needs doing shows in its place.
+    rowDesc: (/** @type {string} */ token, /** @type {string} */ full, /** @type {string} */ words = token) => (
+      view.rowDetail === 'inline' ? full : words),
     // VS Code infers a folder glyph for any expandable row with a resourceUri;
     // ThemeIcon.File overrides that and resolves the row against the file-icon theme.
     rowIcon: (/** @type {string} */ label, /** @type {any} */ sym) => (view.iconMode === 'symbol'
@@ -84,6 +88,24 @@ const describeChangeRow = (container, verdict, change) => [
 ].filter(Boolean).join('  ·  ');
 
 /**
+ * The name of the symbol a change or deleted row is declared in, when it tells the row
+ * apart: its file has changes in more than one container, or its name is shared.
+ * @param {TreeRow} n
+ * @returns {string|null}
+ */
+const containerToShow = (n) => (n.showContainer || n.ambiguous ? n.container ?? null : null);
+
+/**
+ * The last segment of a file's folder, or null at the repo root.
+ * @param {string} relPath
+ * @returns {string|null}
+ */
+function lastFolder(relPath) {
+  const folder = path.basename(path.dirname(relPath));
+  return folder === '.' || folder === '' ? null : folder;
+}
+
+/**
  * A changed file with a call graph. Its checkbox is ticked when all its rows are; its
  * description counts the rows that still need attention and how many are done.
  * @param {any} vscode
@@ -99,11 +121,10 @@ function renderReviewFileItem(vscode, n, view) {
   const rows = n.rows;
   const left = rows.filter((r) => !view.checkedOf(r));
   const attention = left.filter(needsAttention);
-  const folder = path.dirname(n.relPath);
   item.description = [
-    folder === '.' ? null : folder,
     attention.length ? `${classifyWorstRowVerdict(attention).token} ${attention.length}` : null,
     `${rows.length - left.length}/${rows.length}`,
+    lastFolder(n.relPath),
   ].filter(Boolean).join('  ·  ');
   item.tooltip = new vscode.MarkdownString([
     `**${n.relPath}**`, ...(n.status ? ['', `_${n.status}_`] : []), '',
@@ -133,8 +154,7 @@ function renderFileItem(vscode, n, view) {
     item.label = n.label || path.basename(n.relPath);
     item.iconPath = vscode.ThemeIcon.File;
   }
-  const folder = path.dirname(n.relPath);
-  item.description = [folder === '.' ? null : folder, 'no call graph'].filter(Boolean).join('  ·  ');
+  item.description = ['no call graph', lastFolder(n.relPath)].filter(Boolean).join('  ·  ');
   item.tooltip = new vscode.MarkdownString([
     `**${path.basename(n.relPath)}**`, '', `_${n.status}_`, '', `\`${n.relPath}\``, '',
     '_No call graph (tests, config, docs): read the diff and tick the file._',
@@ -165,7 +185,8 @@ function renderPlainItem(vscode, item, n, view) {
       item.collapsibleState = vscode.TreeItemCollapsibleState.None;
       // VS Code cannot strike a tree label through, so the icon says it is gone.
       item.label = n.name;
-      item.description = describeChangeRow(n.container, renderHelpers(vscode, view).rowDesc(st.token, `${st.token}  ${st.text}`), null);
+      const words = `${st.token}  ${st.text}`;
+      item.description = describeChangeRow(containerToShow(n), renderHelpers(vscode, view).rowDesc(st.token, words, needsAttention(n) ? words : st.token), null);
       item.iconPath = new vscode.ThemeIcon('trash');  // semantics beat decoration here
       item.tooltip = new vscode.MarkdownString([`✕ **${n.label}**`, '', st.sentence, '', `\`${n.relPath}\``].join('\n'));
       item.contextValue = 'deleted';
@@ -240,8 +261,9 @@ function renderChangeItem(vscode, item, n, view) {
   const kinds = f.kinds.filter((/** @type {any} */ k) => k.id !== 'body').map((/** @type {any} */ k) => k.short || k.label);
   const qual = n.ambiguous ? `  ·  ${f.component}` : '';
   item.label = n.ambiguous ? `${n.name}  ‹${f.component}›` : n.name;
-  item.description = describeChangeRow(n.container,
-    rowDesc(st.token, `${st.token}  ${st.text}${qual}${kinds.length ? '  ·  ' + kinds.join(', ') : ''}`),
+  item.description = describeChangeRow(containerToShow(n),
+    rowDesc(st.token, `${st.token}  ${st.text}${qual}${kinds.length ? '  ·  ' + kinds.join(', ') : ''}`,
+      needsAttention(n) ? `${st.token}  ${st.text}` : st.token),
     n);
   item.iconPath = rowIcon(f.label, f);
   item.tooltip = new vscode.MarkdownString(buildChangeTooltipLines(n, st, kinds).join('\n'));
@@ -260,13 +282,13 @@ function renderChangeItem(vscode, item, n, view) {
  * @param {TreeView} view
  */
 function renderCallerFileItem(vscode, item, n, view) {
-  const { rowDesc, rowIcon } = renderHelpers(vscode, view);
+  const { rowDesc } = renderHelpers(vscode, view);
   const cs = CALL_STATE[n.callState] || CALL_STATE.unchanged;
   const tok = n.test ? '🧪' : cs.token;
   const fns = n.callers.length;
   item.description = rowDesc(tok,
     `${tok}  ${fns} caller${fns === 1 ? '' : 's'}  ·  ${n.sites} call site${n.sites === 1 ? '' : 's'}`);
-  item.iconPath = rowIcon(n.label, null);
+  item.iconPath = vscode.ThemeIcon.File;  // a file, whatever iconMode says
   item.tooltip = new vscode.MarkdownString([
     `**${n.relPath}**`, '',
     `${fns} function${fns === 1 ? '' : 's'} in this file call the change, across ${n.sites} call site${n.sites === 1 ? '' : 's'}:`,
@@ -317,6 +339,17 @@ function renderCallerItem(vscode, item, n, view) {
 }
 
 /**
+ * The gap that closes an open file group: nothing to read, tick or open.
+ * @param {any} vscode
+ * @returns {any}
+ */
+function renderSpacerItem(vscode) {
+  const item = new vscode.TreeItem('', vscode.TreeItemCollapsibleState.None);
+  item.contextValue = 'spacer';
+  return item;
+}
+
+/**
  * Renders one row as a TreeItem. Every expandable row starts collapsed, except a file row
  * the provider marks `expanded`.
  * @param {any} vscode The vscode module (or a stand-in with the same constructors).
@@ -327,6 +360,7 @@ function renderCallerItem(vscode, item, n, view) {
 function renderTreeItem(vscode, n, view) {
   if (n.type === 'reviewFile') return renderReviewFileItem(vscode, n, view);
   if (n.type === 'file') return renderFileItem(vscode, n, view);
+  if (n.type === 'spacer') return renderSpacerItem(vscode);
   const collapsible = n.type === 'message' || n.cycle
     ? vscode.TreeItemCollapsibleState.None
     : vscode.TreeItemCollapsibleState.Collapsed;

@@ -146,7 +146,7 @@ const OUT_A = { file: '/repo/src/a.ts', relPath: 'src/a.ts', ranges: [[1, 4], [2
 test('"Outside functions" is the last row of its file and opens at the first range', async () => {
   const { provider, fileRow } = viewOf([OUT_A]);
   const file = await fileRow('src/a.ts');
-  const rows = await provider.getChildren(file);
+  const rows = (await provider.getChildren(file)).filter((r) => r.type !== 'spacer');
   assert.deepEqual(rows.map((r) => r.label), ['one', 'two', 'Outside functions']);
   const item = provider.getTreeItem(rows[2]);
   assert.equal(item.description, 'lines 1–4, 22', 'its file row names the file');
@@ -154,13 +154,13 @@ test('"Outside functions" is the last row of its file and opens at the first ran
   assert.deepEqual(await provider.getChildren(rows[2]), []);
   assert.equal(item.command.command, 'impactTree.openFile');
   assert.deepEqual(item.command.arguments[0].ranges[0], [1, 4]);
-  assert.match(provider.getTreeItem(file).description, /0\/3$/, 'it counts as one of the file\'s changes');
-  assert.deepEqual(await provider.getChildren(await fileRow('src/b.ts')).then((r) => r.map((x) => x.label)), ['solo']);
+  assert.match(provider.getTreeItem(file).description, /0\/3/, 'it counts as one of the file\'s changes');
+  assert.deepEqual(await provider.getChildren(await fileRow('src/b.ts')).then((r) => r.map((x) => x.label)), ['solo', ''], 'and the spacer closes the group');
 });
 
 test('a pure deletion reads as the line it was removed before', async () => {
   const { provider, fileRow } = viewOf([{ ...OUT_A, ranges: [[6.5, 6.5]] }]);
-  const rows = await provider.getChildren(await fileRow('src/a.ts'));
+  const rows = (await provider.getChildren(await fileRow('src/a.ts'))).filter((r) => r.type !== 'spacer');
   assert.equal(provider.getTreeItem(rows.at(-1)).description, 'deleted before line 7');
   assert.equal(models.describeOutsideRanges([[1, 1], [6.5, 6.5], [9, 12]]), 'lines 1, 9–12, deleted before line 7');
 });

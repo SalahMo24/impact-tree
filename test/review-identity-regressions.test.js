@@ -50,7 +50,7 @@ test('preview documents hold only the current revision, and paths with punctuati
 async function countingRowsOf(provider) {
   const rows = [];
   for (const top of await provider.getChildren()) {
-    if (top.type === 'reviewFile') rows.push(...await provider.getChildren(top));
+    if (top.type === 'reviewFile') rows.push(...(await provider.getChildren(top)).filter((r) => r.type !== 'spacer'));
     else if (top.type === 'file') rows.push(top);
   }
   return rows;

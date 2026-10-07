@@ -58,6 +58,19 @@ const toEntry = (row, relPath, line) => ({
 const compareEntries = (a, b) => a.level - b.level || Number(a.isOutside) - Number(b.isOutside) || a.line - b.line;
 
 /**
+ * The rows with `showContainer` set on each change and deleted row when the file's such
+ * rows sit in more than one container, the top level counting as one. Only then does a
+ * container name tell rows apart.
+ * @param {TreeRow[]} rows One file's rows.
+ * @returns {TreeRow[]} Copies of the rows that carry a container; the others as given.
+ */
+function markMixedContainers(rows) {
+  const named = (/** @type {TreeRow} */ r) => r.type === 'finding' || r.type === 'deleted';
+  const mixed = new Set(rows.filter(named).map((r) => r.container ?? null)).size > 1;
+  return rows.map((r) => (named(r) ? { ...r, showContainer: mixed } : r));
+}
+
+/**
  * The file row of a path that has rows.
  * @param {any} result
  * @param {string} relPath
@@ -66,7 +79,7 @@ const compareEntries = (a, b) => a.level - b.level || Number(a.isOutside) - Numb
  * @returns {{ file: TreeRow, decoration: DecorationRequest }}
  */
 function buildReviewFileRow(result, relPath, entries, uriOf) {
-  const rows = entries.map((e) => e.row);
+  const rows = markMixedContainers(entries.map((e) => e.row));
   const file = rows[0].file;
   const uri = uriOf(file, null);
   const status = models.getFileStatus(result, relPath);
@@ -222,6 +235,15 @@ const collectCountingRows = (files) => files.flatMap((f) => (f.type === 'reviewF
 const COUNTING_TYPES = new Set(['finding', 'deleted', 'outside', 'file']);
 
 /**
+ * The gap closing an expanded file group. It is a child row only so that it shows while
+ * the file is open; it is not a counting row, has no review identity of its own, and
+ * is not among the file's `rows`.
+ * @param {TreeRow} file A `reviewFile` row.
+ * @returns {TreeRow}
+ */
+const buildSpacerRow = (file) => ({ type: 'spacer', label: '', relPath: file.relPath });
+
+/**
  * The counting rows a checkbox on `row` stands for. A `reviewFile`'s checkbox is derived
  * from its rows, so it stands for all of them; a counting row stands for itself; any other
  * row (a caller, a message, a tests row) has no checkbox and stands for nothing.
@@ -313,13 +335,14 @@ const buildEmptyFilterRow = (filter) => (filter === 'attention'
 
 /**
  * The id a row has in the tree view, which keeps a row's expansion across a refresh and
- * lets the view reveal it. Only file rows and counting rows have one: caller, caller-file
+ * lets the view reveal it. Only file rows, counting rows and a file's spacer have one: caller, caller-file
  * and tests rows can repeat under several parents, and an id is unique in a tree.
  * @param {TreeRow} row
  * @returns {string|undefined}
  */
 function treeItemId(row) {
   if (row.type === 'reviewFile') return `file:${row.relPath}`;
+  if (row.type === 'spacer') return `spacer:${row.relPath}`;
   if (!COUNTING_TYPES.has(row.type)) return undefined;
   const relPath = row.relPath ?? row.finding?.relPath;
   // a deleted symbol has no position, so its key stands in
@@ -345,8 +368,8 @@ function findNextUnreviewed(files, { after = null, isReviewed, filter }) {
 }
 
 /**
- * The view's message and badge for a shown result: what is reviewed against what, how many
- * unreviewed rows need attention, and how many are left. A PR (a preview or a checkout) is
+ * The view's message and badge for a shown result: what is reviewed, how many unreviewed
+ * rows need attention, and how many are left; the base is named by the Details header. A PR (a preview or a checkout) is
  * named by its number; a local review by its mode, and the mode it was asked for when the
  * analysis fell back to another.
  * @param {any} result
@@ -362,7 +385,7 @@ function buildReviewSummary(result, source, { total, left, attention }, filter =
   const what = pr == null ? `${result.mode} mode${asked}` : `PR #${pr}`;
   const named = filter === 'all' ? '' : ` · filter: ${FILTER_LABELS[filter]}`;
   return {
-    message: `${what} against ${result.base.ref} · ${attention} need attention · ${left} of ${total} left${named}`,
+    message: `${what} · ⛔ ${attention} · ${left} of ${total} left${named}`,
     badge: left > 0 ? { value: left, tooltip: `${left} of ${total} left to review` } : undefined,
   };
 }
@@ -393,5 +416,5 @@ const span = (row) => row.finding.endLine - row.finding.startLine;
 
 module.exports = {
   buildFileRows, buildImpactRows, collectCountingRows, collectTickTargets, needsAttention, countReview, buildReviewSummary,
-  findRowAtLine, filterFileRows, toggleFilter, findNextUnreviewed, treeItemId, buildEmptyFilterRow,
+  findRowAtLine, filterFileRows, toggleFilter, findNextUnreviewed, treeItemId, buildEmptyFilterRow, buildSpacerRow,
 };
