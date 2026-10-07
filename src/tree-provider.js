@@ -62,13 +62,16 @@ const threadsModel = require('./review-threads');
  *   review?: ReturnType<typeof import('./review-state').createReviewState>|null,
  *   getAnalysisId?: () => number, isCurrentAnalysis?: (analysisId: number) => boolean,
  *   getThreads?: () => import('./review-threads').ThreadsView,
+ *   viewedOf?: (relPath: string, allTicked: boolean) => import('./tree-item-renderer').ViewedNote|null,
  * }} deps `getThreads` is what is known of the review threads of the pull request under
  *   review (`threadsViewOf` of the review store); a review without one has none. Call
- *   `threadsChanged` whenever its answer may have changed.
+ *   `threadsChanged` whenever its answer may have changed. `viewedOf` says what a file row
+ *   shows about GitHub's viewed mark; read at render time.
  */
 function createTreeProvider(vscode, {
   getState, resolver, isBusy = () => false, decorate = null, getPhase = () => 'ready', review = null,
   getAnalysisId = () => 0, isCurrentAnalysis = () => true, getThreads = () => threadsModel.NO_THREADS,
+  viewedOf = () => null,
 }) {
   /** @param {TreeRow} n */
   const idOf = (n) => review?.id ? review.id(n) : nodeId(n);
@@ -91,6 +94,7 @@ function createTreeProvider(vscode, {
       iconMode: (st && st.iconMode) || 'symbol',
       checkedOf,
       threadCountsOf,
+      viewedOf,
     };
   };
   // file:///path#offset — unique per symbol so decorations do not collide, while the
@@ -439,7 +443,30 @@ function createTreeProvider(vscode, {
     threadEvents.fire({ paths });
   }
 
+  /**
+   * Repaints the named files, and only those, when the filter shows them. For a change in
+   * what a file row says that is not a tick (its viewed note).
+   * @param {Iterable<string>} relPaths
+   */
+  function refreshFiles(relPaths) {
+    const state = shownState();
+    if (disposed || !state) return;
+    const wanted = new Set(relPaths);
+    const shown = reviewTree.filterFileRows(builtFor(state).rows, filter, isReviewed, openThreadsOf).map((e) => e.file);
+    for (const file of shown) if (wanted.has(file.relPath)) _emitter.fire(file);
+  }
+
   return {
+    refreshFiles,
+    /**
+     * The file rows of the shown review: a `reviewFile` per file with a call graph, a
+     * `file` row per file without. Canonical rows (as `setCheckedBatch` accepts them).
+     * @returns {TreeRow[]} Empty when no review is shown.
+     */
+    fileRows() {
+      const state = shownState();
+      return state ? builtFor(state).rows : [];
+    },
     onDidChangeTreeData: _emitter.event,
     onDidChangePresentation: presentation.event,
     onDidChangeReview: progress.event,

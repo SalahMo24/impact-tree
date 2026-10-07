@@ -14,6 +14,7 @@ const { createPrDocuments } = require('./pr-documents');
 const { createSession } = require('./session');
 const { createPrActions } = require('./pr-actions');
 const { createPullRequestReviewStore, reviewTargetOf } = require('./pr-review-store');
+const { createViewedSync } = require('./viewed-sync');
 const { createOpenReview } = require('./open-review');
 const { threadsViewOf, NO_THREADS } = require('./review-threads');
 const { createReviewComments } = require('./review-comments');
@@ -49,9 +50,13 @@ function activate(context) {
   context.subscriptions.push(vscode.window.registerFileDecorationProvider(decorate));
   // The review store is created below, once GitHub is; until then no review has threads.
   let reviewStore = null;
+  // Created once the review store exists; a file row asks it what to say about GitHub's viewed mark.
+  /** @type {ReturnType<typeof createViewedSync>|null} */
+  let viewedSync = null;
   const provider = createTreeProvider(vscode, {
     getThreads: () => (reviewStore ? threadsViewOf(reviewStore.getState()) : NO_THREADS),
     decorate,
+    viewedOf: (relPath, allTicked) => (viewedSync ? viewedSync.statusOf(relPath, allTicked) : null),
     review,
     isBusy: owned.isBusy,
     getPhase: owned.getPhase,
@@ -119,6 +124,12 @@ function activate(context) {
     // Counts in the tree: only the file rows of the paths named are repainted.
     reviewStore.onDidChange(({ paths }) => provider.threadsChanged(paths)));
   session.reviewStore = reviewStore;
+  // Ticks and GitHub's viewed marks follow each other (L6). Registered after the store so
+  // its own disposal comes first; it reads the store's state, so it holds no target itself.
+  viewedSync = createViewedSync({ provider, store: reviewStore, isCurrentAnalysis: owned.isCurrentAnalysis, log });
+  const viewed = viewedSync;
+  context.subscriptions.push(viewed, vscode.commands.registerCommand('impactTree.retryViewedSync',
+    (row) => { if (row && typeof row.relPath === 'string') viewed.retry(row.relPath); }));
 
   // The store's threads in the review diff, and commenting there. Follows the store, and
   // the analysis for where the pull request is shown; disposed with the window.
