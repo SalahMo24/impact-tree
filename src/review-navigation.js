@@ -4,7 +4,7 @@ const { treeItemId } = require('./review-tree-model');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 
-// Walking a review without the mouse: the two filter toggles, "next unreviewed", and the
+// Walking a review without the mouse: the three filter toggles, "next unreviewed", and the
 // status bar item that shows how much is left. The state lives in the provider (the filter,
 // the ticks); this module only connects it to commands, context keys and the status bar.
 
@@ -29,7 +29,8 @@ const statusBarText = ({ left, attention }, platform) => `$(checklist) ${left} l
  * @param {import('./review-tree-model').ReviewFilter} filter
  * @returns {string}
  */
-const nothingLeftText = (filter) => (filter === 'attention' ? 'Impact Tree: nothing left needs attention' : 'Impact Tree: all reviewed');
+const nothingLeftText = (filter) => (filter === 'attention' ? 'Impact Tree: nothing left needs attention'
+  : filter === 'threads' ? 'Impact Tree: nothing left with unresolved threads' : 'Impact Tree: all reviewed');
 
 /**
  * Registers the review commands and the status bar item.
@@ -77,7 +78,7 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
     await view.reveal(row, { select: true, focus: true, expand: true });
   };
 
-  /** @param {'attention'|'unreviewed'} name */
+  /** @param {'attention'|'unreviewed'|'threads'} name */
   const toggle = (name) => () => provider.toggleFilter(name);
   const on = (/** @type {string} */ id, /** @type {() => any} */ fn) => vscode.commands.registerCommand(id, fn);
   return {
@@ -87,12 +88,15 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
       // cannot show on/off by itself, so package.json shows the one that matches the filter.
       on('impactTree.filterAttention', toggle('attention')), on('impactTree.filterAttentionOn', toggle('attention')),
       on('impactTree.filterUnreviewed', toggle('unreviewed')), on('impactTree.filterUnreviewedOn', toggle('unreviewed')),
+      on('impactTree.filterThreads', toggle('threads')), on('impactTree.filterThreadsOn', toggle('threads')),
       on('impactTree.nextUnreviewed', nextUnreviewed),
     ],
     update() {
       const counts = provider.reviewCounts();
       setContext('impactTree.filter', provider.getFilter());
       setContext('impactTree.hasReview', counts !== null);
+      // The threads filter is offered only once a pull request's threads are loaded.
+      setContext('impactTree.hasReviewThreads', counts !== null && provider.threadsView().status === 'ready');
       if (counts) {
         const text = statusBarText(counts, platform);
         if (bar.text !== text) bar.text = text;

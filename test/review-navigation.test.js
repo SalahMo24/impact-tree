@@ -207,7 +207,8 @@ test('next unreviewed with no review shown does nothing', () => withEnv(async (e
 
 test('package.json contributes the commands, the keybinding and the palette gates', () => withEnv(async (env) => {
   const { contributes } = require('../package.json');
-  const mine = ['filterAttention', 'filterAttentionOn', 'filterUnreviewed', 'filterUnreviewedOn', 'nextUnreviewed'].map((c) => `impactTree.${c}`);
+  const mine = ['filterAttention', 'filterAttentionOn', 'filterUnreviewed', 'filterUnreviewedOn', 'filterThreads', 'filterThreadsOn', 'nextUnreviewed']
+    .map((c) => `impactTree.${c}`);
   for (const id of mine) {
     assert.ok(contributes.commands.some((c) => c.command === id && c.icon), `${id} is contributed with an icon`);
     assert.doesNotThrow(() => env.run(id), `${id} is registered`);
@@ -217,25 +218,33 @@ test('package.json contributes the commands, the keybinding and the palette gate
     [{ command: 'impactTree.nextUnreviewed', key: 'alt+n', when: 'impactTree.hasReview' }]);
   assert.equal(contributes.commands.find((c) => c.command === 'impactTree.nextUnreviewed').title, 'Impact Tree: Go to next unreviewed change');
   assert.equal(env.seen.statusBar.tooltip, 'Go to the next unreviewed change (rebind it in Keyboard Shortcuts)');
-  // the title bar keeps refresh, the two filters and next; the rest is in the overflow menu
+  // the title bar keeps refresh, the three filters and next; the rest is in the overflow menu
   const changes = contributes.menus['view/title'].filter((m) => m.when.startsWith('view == impactTree.changes'));
   const groupOf = (id) => changes.filter((m) => m.command === id).map((m) => m.group);
   assert.deepEqual(changes.filter((m) => m.group.startsWith('navigation')).map((m) => m.command),
-    ['impactTree.refresh', 'impactTree.filterAttention', 'impactTree.filterAttentionOn', 'impactTree.filterUnreviewed', 'impactTree.filterUnreviewedOn', 'impactTree.nextUnreviewed']);
+    ['impactTree.refresh', 'impactTree.filterAttention', 'impactTree.filterAttentionOn', 'impactTree.filterUnreviewed', 'impactTree.filterUnreviewedOn',
+      'impactTree.filterThreads', 'impactTree.filterThreadsOn', 'impactTree.nextUnreviewed']);
   assert.deepEqual(['selectMode', 'setCheckpoint', 'showLegend', 'showLog', 'clearReviewed'].map((c) => groupOf(`impactTree.${c}`)[0]),
     ['1_mode@1', '1_mode@2', '2_help@1', '2_help@2', '3_progress@1']);
   const palette = Object.fromEntries(contributes.menus.commandPalette.map((m) => [m.command, m.when]));
   for (const id of ['impactTree.filterAttention', 'impactTree.filterUnreviewed', 'impactTree.nextUnreviewed']) assert.equal(palette[id], 'impactTree.hasReview', id);
-  for (const id of ['impactTree.filterAttentionOn', 'impactTree.filterUnreviewedOn']) assert.equal(palette[id], 'false', id);
+  for (const id of ['impactTree.filterAttentionOn', 'impactTree.filterUnreviewedOn', 'impactTree.filterThreadsOn']) assert.equal(palette[id], 'false', id);
+  // the threads filter is offered only once a pull request's threads are loaded
+  assert.equal(palette['impactTree.filterThreads'], 'impactTree.hasReviewThreads');
+  assert.match(title0(contributes, 'impactTree.filterThreads').when, /&& impactTree\.hasReviewThreads$/);
+  assert.doesNotMatch(title0(contributes, 'impactTree.filterThreadsOn').when, /hasReviewThreads/, 'a filter that is on can always be turned off');
   // in the view title, exactly one command of each pair matches each value of the key
   const title = contributes.menus['view/title'].filter((m) => /impactTree\.filter/.test(m.command));
   const matches = (when, filter) => {
     const [, op, value] = /impactTree\.filter (==|!=) (\w+)/.exec(when);
     return op === '==' ? filter === value : filter !== value;
   };
-  for (const filter of ['all', 'attention', 'unreviewed']) {
+  for (const filter of ['all', 'attention', 'unreviewed', 'threads']) {
     const names = title.filter((m) => matches(m.when, filter)).map((m) => m.command);
-    assert.equal(names.length, 2, `${filter}: ${names}`);
-    assert.equal(names.filter((n) => /Attention/.test(n)).length, 1, filter);
+    assert.equal(names.length, 3, `${filter}: ${names}`);
+    for (const pair of [/Attention/, /Unreviewed/, /Threads/]) assert.equal(names.filter((n) => pair.test(n)).length, 1, `${filter} ${pair}`);
   }
 }));
+
+/** The first view/title entry of a command. */
+const title0 = (contributes, id) => contributes.menus['view/title'].find((m) => m.command === id);

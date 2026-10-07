@@ -6,6 +6,7 @@ const models = require('./tree-row-models');
 const reviewTree = require('./review-tree-model');
 const { groupCallerRowsByFile } = require('./tree-grouping');
 const { renderTreeItem } = require('./tree-item-renderer');
+const threadsModel = require('./review-threads');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 /** @typedef {import('./tree-row-models').DecorationRequest} DecorationRequest */
@@ -60,11 +61,14 @@ const { renderTreeItem } = require('./tree-item-renderer');
  *   getPhase?: () => string,
  *   review?: ReturnType<typeof import('./review-state').createReviewState>|null,
  *   getAnalysisId?: () => number, isCurrentAnalysis?: (analysisId: number) => boolean,
- * }} deps
+ *   getThreads?: () => import('./review-threads').ThreadsView,
+ * }} deps `getThreads` is what is known of the review threads of the pull request under
+ *   review (`threadsViewOf` of the review store); a review without one has none. Call
+ *   `threadsChanged` whenever its answer may have changed.
  */
 function createTreeProvider(vscode, {
   getState, resolver, isBusy = () => false, decorate = null, getPhase = () => 'ready', review = null,
-  getAnalysisId = () => 0, isCurrentAnalysis = () => true,
+  getAnalysisId = () => 0, isCurrentAnalysis = () => true, getThreads = () => threadsModel.NO_THREADS,
 }) {
   /** @param {TreeRow} n */
   const idOf = (n) => review?.id ? review.id(n) : nodeId(n);
@@ -86,6 +90,7 @@ function createTreeProvider(vscode, {
       rowDetail: (st && st.rowDetail) || 'hover',
       iconMode: (st && st.iconMode) || 'symbol',
       checkedOf,
+      threadCountsOf,
     };
   };
   // file:///path#offset — unique per symbol so decorations do not collide, while the
@@ -143,6 +148,15 @@ function createTreeProvider(vscode, {
   const _emitter = new vscode.EventEmitter();
   const presentation = new vscode.EventEmitter();
   const progress = new vscode.EventEmitter();
+  const threadEvents = new vscode.EventEmitter();
+  // The file rows the view was last given at the root, so a thread change can tell whether
+  // the `threads` filter now shows other files. Null until the root is read.
+  /** @type {TreeRow[]|null} */
+  let shownRoots = null;
+  // What was known of the threads when the rows were last painted for them: a change of
+  // it (loaded, failed, dropped) changes every row's counts.
+  /** @type {string} */
+  let paintedThreads = getThreads().status;
   // The filter the reviewer chose. Held for the window only: it is not persisted, so a new
   // window opens on everything.
   /** @type {import('./review-tree-model').ReviewFilter} */
@@ -160,6 +174,45 @@ function createTreeProvider(vscode, {
   // handed to consumers are borrowed: only this provider may change their UI metadata.
   /** @type {{ analysisId: number, result: any, rows: TreeRow[], decorations: DecorationRequest[], parents: WeakMap<TreeRow, TreeRow>, childIds: WeakMap<TreeRow, string> }|null} */
   let built = null;
+  // Cache: which row each review thread belongs to, per file. Owner: this provider. Key:
+  // the file rows (`built`) and the threads array the store's model holds; the store
+  // replaces the model on every load, so a new array is new data. Invalidation: dropped
+  // when either part of the key changes; files are filled in on first read. Disposal:
+  // garbage with the provider.
+  /** @type {{ rows: TreeRow[], threads: readonly import('./pr-review-data').ReviewThread[], byFile: Map<TreeRow, Map<TreeRow, import('./pr-review-data').ReviewThread[]>> }|null} */
+  let threadIndex = null;
+  /**
+   * The review threads of a row of the shown result: for a file row every thread of its
+   * path, for a change or outside row those on its lines (`assignFileThreads`).
+   * @param {TreeRow} row
+   * @returns {import('./pr-review-data').ReviewThread[]|null} Null when the threads are not
+   *   known (no pull request review, loading, failed) or the row is not of the shown result.
+   */
+  function threadsOfRow(row) {
+    const view = getThreads();
+    const state = shownState();
+    if (view.status !== 'ready' || !state) return null;
+    const current = builtFor(state);
+    const file = current.parents.get(row) || row;
+    if (!current.rows.includes(file)) return null;
+    if (!threadIndex || threadIndex.rows !== current.rows || threadIndex.threads !== view.threads) {
+      threadIndex = { rows: current.rows, threads: view.threads, byFile: new Map() };
+    }
+    let rows = threadIndex.byFile.get(file);
+    if (!rows) {
+      rows = threadsModel.assignFileThreads(file, view.threads);
+      threadIndex.byFile.set(file, rows);
+    }
+    return rows.get(row) || [];
+  }
+  /** @param {TreeRow} row @returns {import('./review-threads').ThreadCounts|null} */
+  function threadCountsOf(row) {
+    const threads = threadsOfRow(row);
+    return threads ? threadsModel.countThreads(threads) : null;
+  }
+  /** @type {import('./review-tree-model').OpenThreadsOf} */
+  const openThreadsOf = (row) => { const counts = threadCountsOf(row); return counts ? counts.open : null; };
+
   /**
    * The file rows of the shown result, built once per analysis and result.
    * @param {ProviderState} state
@@ -210,14 +263,15 @@ function createTreeProvider(vscode, {
     const made = builtFor(st);
     scheduleDecorationFlush();
     publishDecorations(analysisId, made.decorations);
-    const kept = reviewTree.filterFileRows(made.rows, filter, isReviewed).map((e) => e.file);
+    const kept = reviewTree.filterFileRows(made.rows, filter, isReviewed, openThreadsOf).map((e) => e.file);
+    shownRoots = kept;
     // Only the worst file starts open, so the first thing on screen is the thing to look at.
     // These rows are provider-owned. Keep the canonical objects so getParent,
     // actions and subsequent reads all refer to the same file, including the first.
     const files = kept;
     for (const [index, file] of files.entries()) file.expanded = index === 0 && file.type === 'reviewFile';
     const notices = models.buildNoticeRows(st.result);
-    if (filter !== 'all' && files.length === 0) return [...notices, reviewTree.buildEmptyFilterRow(filter)];
+    if (filter !== 'all' && files.length === 0) return [...notices, reviewTree.buildEmptyFilterRow(filter, getThreads().status)];
     return [...notices, ...files];
   }
 
@@ -226,7 +280,7 @@ function createTreeProvider(vscode, {
    * @param {TreeRow} file
    * @returns {TreeRow[]}
    */
-  const visibleRows = (file) => reviewTree.filterFileRows([file], filter, isReviewed).flatMap((e) => e.rows);
+  const visibleRows = (file) => reviewTree.filterFileRows([file], filter, isReviewed, openThreadsOf).flatMap((e) => e.rows);
   // The children of an open file: its visible rows and the gap after them, or nothing
   // when the filter hides every row.
   /** @param {TreeRow} file @returns {TreeRow[]} */
@@ -321,7 +375,7 @@ function createTreeProvider(vscode, {
     const state = shownState();
     if (disposed || !state || !review) return;
     const current = builtFor(state);
-    const rootsBefore = reviewTree.filterFileRows(current.rows, filter, isReviewed).map((e) => e.file);
+    const rootsBefore = reviewTree.filterFileRows(current.rows, filter, isReviewed, openThreadsOf).map((e) => e.file);
     const canonical = new Set(current.rows.flatMap((file) => [file, ...(file.rows || [])]));
     /** @type {Map<TreeRow, boolean>} */
     const requested = new Map();
@@ -342,7 +396,7 @@ function createTreeProvider(vscode, {
       filePaths: Object.freeze([...new Set(changed.filter(([row]) => row.type === 'finding').map(([row]) => row.finding.relPath))]) });
     progress.fire(event);
     if (disposed || !isCurrentAnalysis(current.analysisId) || getState()?.result !== current.result) return;
-    const rootsAfter = reviewTree.filterFileRows(current.rows, filter, isReviewed).map((e) => e.file);
+    const rootsAfter = reviewTree.filterFileRows(current.rows, filter, isReviewed, openThreadsOf).map((e) => e.file);
     if (rootsBefore.length !== rootsAfter.length || rootsBefore.some((row, i) => row !== rootsAfter[i])) {
       _emitter.fire(); // A file appeared/disappeared, including the empty-filter hint.
       return;
@@ -350,17 +404,60 @@ function createTreeProvider(vscode, {
     for (const file of files) if (rootsAfter.includes(file)) _emitter.fire(file);
   }
 
+  /**
+   * Repaints what a change of the review threads affects, never through `refresh()`: the
+   * file rows of the named paths (each repaints its rows), or every shown file row when
+   * the change names none or what is known changed (loaded, failed, dropped). Only when the
+   * `threads` filter now shows other files is the root repainted, as a tick does. A review
+   * that stops having threads turns the `threads` filter off.
+   * @param {readonly string[]|null} paths Repository-relative paths whose threads changed;
+   *   null when all may have.
+   * @returns {void}
+   */
+  function threadsChanged(paths) {
+    if (disposed) return;
+    const status = getThreads().status;
+    const all = paths === null || status !== paintedThreads;
+    paintedThreads = status;
+    if (status === 'none' && filter === 'threads') {
+      filter = 'all';
+      refresh('filter');
+      threadEvents.fire({ paths });
+      return;
+    }
+    const state = shownState();
+    if (state) {
+      const current = builtFor(state);
+      const roots = reviewTree.filterFileRows(current.rows, filter, isReviewed, openThreadsOf).map((e) => e.file);
+      if (shownRoots && (roots.length !== shownRoots.length || roots.some((row, i) => row !== /** @type {TreeRow[]} */ (shownRoots)[i]))) {
+        _emitter.fire(); // the `threads` filter shows other files
+      } else {
+        const named = new Set(paths || []);
+        for (const file of roots) if (all || named.has(file.relPath)) _emitter.fire(file);
+      }
+    }
+    threadEvents.fire({ paths });
+  }
+
   return {
     onDidChangeTreeData: _emitter.event,
     onDidChangePresentation: presentation.event,
     onDidChangeReview: progress.event,
+    /** Fires `{ paths }` after `threadsChanged` repainted the rows. */
+    onDidChangeThreads: threadEvents.event,
     refresh,
+    threadsChanged,
+    /** @returns {import('./review-threads').ThreadsView} */
+    threadsView: () => getThreads(),
+    threadsOfRow,
     dispose() {
       disposed = true;
       if (decorationTimer !== null) clearTimeout(decorationTimer);
       decorationTimer = null;
       built = null;
-      _emitter.dispose(); presentation.dispose(); progress.dispose();
+      threadIndex = null;
+      shownRoots = null;
+      _emitter.dispose(); presentation.dispose(); progress.dispose(); threadEvents.dispose();
     },
     /** @param {TreeRow} n */
     getTreeItem(n) {
@@ -409,7 +506,7 @@ function createTreeProvider(vscode, {
       const state = shownState();
       if (!state) return { message: undefined, badge: undefined };
       const counts = reviewTree.countReview(builtFor(state).rows, isReviewed);
-      return reviewTree.buildReviewSummary(state.result, state.source, counts, filter);
+      return reviewTree.buildReviewSummary(state.result, state.source, counts, filter, threadsModel.threadsMessageSuffix(getThreads()));
     },
     /**
      * How far the shown review has got.
@@ -439,9 +536,9 @@ function createTreeProvider(vscode, {
     /** @returns {import('./review-tree-model').ReviewFilter} */
     getFilter: () => filter,
     /**
-     * Turns a filter on, turning the other off, or returns to all when it was on, and
+     * Turns a filter on, turning the others off, or returns to all when it was on, and
      * repaints the view.
-     * @param {'attention'|'unreviewed'} name
+     * @param {'attention'|'unreviewed'|'threads'} name
      * @returns {void}
      */
     toggleFilter(name) {
@@ -456,7 +553,7 @@ function createTreeProvider(vscode, {
      */
     nextUnreviewed(after) {
       const state = shownState();
-      return state ? reviewTree.findNextUnreviewed(builtFor(state).rows, { after, isReviewed, filter }) : null;
+      return state ? reviewTree.findNextUnreviewed(builtFor(state).rows, { after, isReviewed, filter, openThreadsOf }) : null;
     },
     /**
      * Whether a counting row is ticked.
