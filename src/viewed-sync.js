@@ -11,7 +11,7 @@
 // tick events and the review store to it, owns the write queue and repaints.
 //
 // Decisions that are easy to get wrong, recorded here because tests and UI depend on them:
-// - Writes are driven by local ticks only. A load never writes. So a file that is fully
+// - Writes are driven by local ticks only. A load only resumes queued writes. So a file that is fully
 //   ticked locally while GitHub says UNVIEWED (or DISMISSED) is left alone after a load:
 //   writing there would make two devices fight over the mark. The next local tick decides.
 // - GitHub never destroys local progress. `VIEWED` adds ticks; `UNVIEWED` and `DISMISSED`
@@ -196,7 +196,7 @@ function createViewedSync({ provider, store, isCurrentAnalysis = () => true, log
 
   /** Sends the next write if none is in flight. Settled files drop out without a write. */
   function pump() {
-    if (disposed || writing) return;
+    if (disposed || writing || store.getState().kind !== 'ready') return;
     /** @type {string[]} */
     const settled = [];
     while (queue.length) {
@@ -233,7 +233,11 @@ function createViewedSync({ provider, store, isCurrentAnalysis = () => true, log
     if (!result.ok) log(`viewed sync: marking ${path} ${records.get(path)?.sent ? 'viewed' : 'unviewed'} failed: ${result.error.message}`);
     const record = records.get(path);
     if (record) {
-      const next = finishWrite(record, result.ok, githubOf(path));
+      const ready = store.getState().kind === 'ready';
+      // A successful mutation may be followed by a failed reload. Its sent value is
+      // still known; the preserved pre-write model must not cancel a newer desire.
+      const github = ready ? githubOf(path) : result.ok ? (record.sent ? 'VIEWED' : 'UNVIEWED') : undefined;
+      const next = !ready && !result.ok ? { ...record, sent: null, failed: true } : finishWrite(record, result.ok, github);
       if (!next) records.delete(path); else records.set(path, next);
       if (next && !next.failed) enqueue(path);
       provider.refreshFiles([path]);
@@ -253,7 +257,7 @@ function createViewedSync({ provider, store, isCurrentAnalysis = () => true, log
       const record = recordWant(records.get(path), allTicked(file));
       records.set(path, record);
       if (record.sent === null) {
-        if (nextWrite(record, githubOf(path)) === null) records.delete(path); else enqueue(path);
+        if (store.getState().kind === 'ready' && nextWrite(record, githubOf(path)) === null) records.delete(path); else enqueue(path);
         pump();   // a free lane takes the first file at once, so it does not count against the queue
       }
     }
@@ -269,7 +273,7 @@ function createViewedSync({ provider, store, isCurrentAnalysis = () => true, log
     if (disposed) return;
     resetIfRetargeted();
     const model = modelOf();
-    if (!active() || !model) { seen = null; return; }
+    if (!active() || !model || store.getState().kind !== 'ready') { seen = null; return; }
     /** @type {Array<{ row: TreeRow, on: boolean }>} */
     const ticks = [];
     const repaint = new Set();
@@ -289,6 +293,7 @@ function createViewedSync({ provider, store, isCurrentAnalysis = () => true, log
     // A tick repaints its own file; the rest are repainted here.
     for (const { row } of ticks) repaint.delete(row.relPath);
     if (repaint.size) provider.refreshFiles(repaint);
+    pump();
   }
 
   key = targetKey();

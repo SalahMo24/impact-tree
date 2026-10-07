@@ -60,6 +60,7 @@ function fakeStore({ target = TARGET, github = {} } = {}) {
       emitter.fire({ paths: [call.path] });
       call.resolve({ ok: true });
     },
+    failReload() { state = { kind: 'failed', target: state.target, previous: { viewed }, error: new Error('reload failed') }; emitter.fire({ paths: [] }); },
     fail(call, message = 'boom') { call.resolve({ ok: false, error: new Error(message) }); },
     retarget(target) { state = target ? { kind: 'loading', target, previous: null } : { kind: 'none' }; emitter.fire({ paths: null }); },
     githubOf: (path) => viewed.get(path),
@@ -465,4 +466,33 @@ test('core: noteFor ranks failed, then syncing, then changed', () => {
   assert.equal(noteFor(undefined, 'DISMISSED', true), null);
   assert.equal(noteFor(undefined, 'VIEWED', false), null);
   assert.equal(noteFor(undefined, undefined, false), null);
+});
+
+
+test('an unmark superseding a mark survives a failed reload and sends after refresh', async () => {
+  const v = setup(twoFiles()); v.make();
+  const file = await v.file('src/a.ts');
+  v.provider.setChecked(file, true);
+  const mark = v.fake.calls[0];
+  v.provider.setChecked(file, false);
+  v.fake.failReload(); mark.resolve({ ok: true }); await flush();
+  assert.equal(v.fake.calls.length, 1, 'no mutation uses the preserved pre-write model');
+  v.fake.load({ 'src/a.ts': 'VIEWED' }); await flush();
+  assert.equal(v.fake.calls.length, 2);
+  assert.equal(v.fake.calls[1].viewed, false, 'the newer local desire is not lost');
+  assert.equal(v.provider.isReviewed(file), false);
+});
+
+
+test('a local unmark after a failed reload waits for fresh state instead of settling against stale data', async () => {
+  const v = setup(twoFiles()); v.make();
+  const file = await v.file('src/a.ts');
+  v.provider.setChecked(file, true);
+  v.fake.failReload(); v.fake.calls[0].resolve({ ok: true }); await flush();
+  v.provider.setChecked(file, false);
+  assert.equal(v.fake.calls.length, 1);
+  v.fake.load({ 'src/a.ts': 'VIEWED' }); await flush();
+  assert.equal(v.fake.calls.length, 2);
+  assert.equal(v.fake.calls[1].viewed, false);
+  assert.equal(v.provider.isReviewed(file), false);
 });

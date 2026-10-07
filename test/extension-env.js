@@ -92,6 +92,7 @@ function createCommentsApi() {
     threadsOn: (controller, uri) => controller.threads.filter((t) => !t.disposed && t.uri.toString() === uri.toString()),
     startDraft: (controller, uri, range) => controller.createCommentThread(uri, range, []),
     async submit(runCommand, command, thread, text) {
+      if (thread.disposed) return { sent: false, error: new Error('The comment thread is disposed') };
       thread.input = text;
       try {
         await runCommand(command, { thread, text });
@@ -113,6 +114,7 @@ function fakeWebviewPanel(viewType, title, showOptions, options = {}) {
   const disposable = () => ({ dispose() {} });
   const received = [], disposed = [];
   let html = '';
+  const state = { value: null };
   const panel = {
     viewType, title, showOptions, options, viewColumn: 1, visible: true, active: true, disposed: false, reveals: 0, loads: 0,
     posted: [], page: null,
@@ -123,7 +125,7 @@ function fakeWebviewPanel(viewType, title, showOptions, options = {}) {
       set html(value) {
         if (panel.disposed) throw new Error('Webview is disposed');
         html = value; panel.loads++;
-        panel.page = createFormPage(html, (message) => { for (const handler of [...received]) handler(message); });
+        panel.page = createFormPage(html, (message) => { for (const handler of [...received]) handler(message); }, state);
       },
       // Delivered later, as VS Code does, to whichever document is loaded by then.
       postMessage: async (message) => {

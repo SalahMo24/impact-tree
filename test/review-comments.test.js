@@ -764,3 +764,33 @@ test('revealing a thread opens its file at its head line, or the file for an out
   assert.equal(await env.comments.revealThread('T_1'), false, 'a file that cannot be opened is not a reveal');
   assert.match(env.editor.seen.warnings[1], /cannot open src\/a\.ts: no such file/);
 });
+
+
+test('switching checkout PRs removes native drafts despite identical file URIs and diff spans', async () => {
+  const env = setup({ source: checkoutSource(), result: checkoutResult(), open: [fileDoc('src/a.ts')] });
+  await env.idle();
+  const draft = env.draft(env.docs[0].uri, 12);
+  const nextTarget = { ...TARGET, number: 8, headOid: OTHER_HEAD };
+  const model = reviewModel(); model.pr = { ...model.pr, number: 8, headRefOid: OTHER_HEAD };
+  env.session.source = { kind: 'checkout', pr: { number: 8 }, sha: OTHER_HEAD };
+  env.heads.value = OTHER_HEAD;
+  env.store.publish({ kind: 'ready', target: nextTarget, model });
+  await env.idle();
+  assert.equal(draft.disposed, true, 'native draft is removed from the editor on target change');
+  assert.equal(env.controller.disposed, true);
+  assert.equal((await env.submit(COMMANDS.startReview, draft, 'for the earlier PR')).sent, false);
+  assert.equal(env.store.calls.length, 0);
+  env.comments.dispose();
+});
+
+test('editing a checkout after opening a draft refuses submission and keeps the text', async () => {
+  const env = setup({ source: checkoutSource(), result: checkoutResult(), open: [fileDoc('src/a.ts')] });
+  await env.idle();
+  const draft = env.draft(env.docs[0].uri, 12);
+  env.docs[0].isDirty = true;
+  const outcome = await env.submit(COMMANDS.startReview, draft, 'about the edited content');
+  assert.equal(outcome.sent, false);
+  assert.equal(draft.input, 'about the edited content');
+  assert.equal(env.store.calls.length, 0);
+  env.comments.dispose();
+});
