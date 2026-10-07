@@ -67,6 +67,9 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
     provider: null,
     previewPullRequest: null,
     checkoutAndAnalyse: null,
+    // The PR review store (src/pr-review-store.js). Set and disposed by extension.js,
+    // which owns it; kept here only so later consumers can reach it.
+    reviewStore: null,
   };
 
   // The one lifecycle record. `run` is the current analysis's private record and
@@ -83,6 +86,25 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
   let moduleRepo = null;
   const disposed = () => lifecycle.state === 'disposed';
   const log = (m) => { if (!disposed()) logToChannel(m); };
+
+  // Listeners told that the analysis generation, its source, or the checkout claim
+  // changed, so state keyed on "what is being reviewed" (the PR review store) can follow.
+  // Owner: this session; each subscription's dispose removes it, and dispose() clears all.
+  const analysisListeners = new Set();
+  function notifyAnalysisChanged() {
+    for (const listener of [...analysisListeners]) {
+      try { listener(); } catch (e) { log(`an analysis listener failed: ${e && e.message}`); }
+    }
+  }
+  /**
+   * @param {() => void} listener Called synchronously after the change; reads the session.
+   * @returns {{ dispose: () => void }}
+   */
+  function onDidChangeAnalysis(listener) {
+    if (disposed()) return { dispose() {} };
+    analysisListeners.add(listener);
+    return { dispose: () => analysisListeners.delete(listener) };
+  }
 
   function repoRoot() {
     const f = vscode.workspace.workspaceFolders;
@@ -155,6 +177,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
     session.state = { ...session.state, source, result: null, error: null };
     session.decorate.clear();
     session.provider.refresh();
+    notifyAnalysisChanged();
     return handle;
   }
 
@@ -185,6 +208,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
     else session.localResolver = expansionResolver;
     if (source) session.state = { ...session.state, source };
     viewStateFromResult(result, repo, viewExtras);
+    if (source) notifyAnalysisChanged();     // a refreshed PR may have a new head commit
     return true;
   }
 
@@ -253,6 +277,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
     lifecycle.state = 'checkingOut';
     lifecycle.generation++;          // the worktree is about to move under the shown result
     session.provider.refresh();
+    notifyAnalysisChanged();
     if (pending.length) {
       log(`checking out PR #${prNumber} — waiting for outstanding analyses`);
       for (const record of pending) record.controller.abort();
@@ -498,6 +523,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
     session.resolverOverride = null;
     session.readyPromise = null;
     session.state = null;
+    analysisListeners.clear();
   }
 
   // Lets an expanded row say its caller query failed rather than show no callers.
@@ -520,7 +546,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
     repoRoot, isTierA, viewStateFromResult, refresh, analyseCheckedOutPr, refreshWithTestReach, setCheckpoint,
     beginAnalysisRun, beginAnalysingStage, completeAnalysisRun, failAnalysisRun, releaseAnalysisRunResources,
     isCurrentAnalysis, getAnalysisId, beginCheckout, endCheckout, checkoutInProgress, isBusy, getPhase,
-    prewarmInBackground, dispose, treeResolver,
+    prewarmInBackground, dispose, treeResolver, onDidChangeAnalysis,
   });
   const { ensureReady, ensureResolver } = createReadiness(vscode, session, { log });
   session.ensureReady = ensureReady;
