@@ -35,7 +35,7 @@ const page = (nodes) => ({ nodes, pageInfo: { hasNextPage: false, endCursor: nul
 function answer({ number = 7, threads = [thread(1)], pending = null, files = [{ path: 'src/a.js', viewerViewedState: 'UNVIEWED' }], viewerDidAuthor = false } = {}) {
   return { repository: { pullRequest: {
     id: `PR_${number}`, number, title: 't', body: 'b', url: 'https://x', state: 'OPEN', author: null,
-    viewerDidAuthor, headRefOid: HEAD, baseRefOid: 'c'.repeat(40), headRefName: 'f', baseRefName: 'main',
+    viewerDidAuthor, headRefOid: number === 8 ? OTHER.headOid : HEAD, baseRefOid: 'c'.repeat(40), headRefName: 'f', baseRefName: 'main',
     reviewThreads: page(threads),
     reviews: { nodes: pending ? [pending] : [] },
     files: page(files),
@@ -577,4 +577,40 @@ test('reviewTargetOf: PR previews and checkouts have a target, local reviews non
   assert.deepEqual(reviewTargetOf({ kind: 'pr', pr }, slug), TARGET);
   assert.deepEqual(reviewTargetOf({ kind: 'checkout', pr, sha: 'd'.repeat(40) }, slug), { ...TARGET, headOid: 'd'.repeat(40) });
   assert.throws(() => reviewTargetOf({ kind: 'pr', pr }, () => null), /not a GitHub repository/);
+});
+
+
+test('a pushed head cannot publish review locations for the old analysis', async () => {
+  const { gh, store } = await ready();
+  const refresh = store.refresh();
+  const fixture = answer(); fixture.repository.pullRequest.headRefOid = 'b'.repeat(40);
+  (await gh.call(1)).resolve(fixture); await refresh;
+  assert.equal(store.getState().kind, 'failed');
+  assert.equal(store.getState().error.code, 'stale');
+  const refused = await store.addComment({ path: 'src/a.js', side: 'RIGHT', line: 10, body: 'x', mode: 'startReview' });
+  assert.equal(refused.ok, false);
+  assert.equal(gh.calls.length, 2);
+  store.dispose();
+});
+
+test('a failed post-write reload blocks the next mutation until a fresh load succeeds', async () => {
+  const { gh, store } = await ready();
+  const mark = store.setViewed({ path: 'src/a.js', viewed: true });
+  (await gh.call(1)).resolve({ markFileAsViewed: { pullRequest: { id: 'PR_7' } } });
+  (await gh.call(2)).reject(new Error('reload failed'));
+  assert.equal((await mark).ok, true);
+  const undo = await store.setViewed({ path: 'src/a.js', viewed: false });
+  assert.equal(undo.ok, false);
+  assert.equal(undo.error.code, 'not-ready');
+  assert.equal(gh.calls.length, 3, 'stale UNVIEWED data cannot turn an unmark into success');
+  const refresh = store.refresh();
+  (await gh.call(3)).resolve(answer({ files: [{ path: 'src/a.js', viewerViewedState: 'VIEWED' }] }));
+  await refresh;
+  const retry = store.setViewed({ path: 'src/a.js', viewed: false });
+  const write = await gh.call(4);
+  assert.equal(write.name, 'ImpactTreeUnmarkViewed');
+  write.resolve({ unmarkFileAsViewed: { pullRequest: { id: 'PR_7' } } });
+  (await gh.call(5)).resolve(answer());
+  assert.equal((await retry).ok, true);
+  store.dispose();
 });

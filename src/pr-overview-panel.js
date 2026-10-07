@@ -33,7 +33,7 @@ const MAX_DRAFTS = 20;
 
 /**
  * @typedef {{ type: 'submit', event: ReviewEvent, body: string, approveAnyway: boolean }
- *   | { type: 'discard' } | { type: 'retry' } | { type: 'ready' }
+ *   | { type: 'discard' } | { type: 'retry' } | { type: 'ready', body?: string }
  *   | { type: 'revealThread', threadId: string } | { type: 'revealRow', rowId: string }
  *   | { type: 'draft', body: string }} PageMessage
  */
@@ -60,7 +60,7 @@ function parseMessage(message, token) {
       return { type: 'submit', event: /** @type {ReviewEvent} */ (m.event), body: m.body, approveAnyway: m.approveAnyway };
     case 'discard': return { type: 'discard' };
     case 'retry': return { type: 'retry' };
-    case 'ready': return { type: 'ready' };
+    case 'ready': return m.body === undefined ? { type: 'ready' } : isBody(m.body) ? { type: 'ready', body: m.body } : null;
     case 'revealThread': return isId(m.threadId) ? { type: 'revealThread', threadId: m.threadId } : null;
     case 'revealRow': return isId(m.rowId) ? { type: 'revealRow', rowId: m.rowId } : null;
     case 'draft': return isBody(m.body) ? { type: 'draft', body: m.body } : null;
@@ -73,6 +73,7 @@ function parseMessage(message, token) {
  * @property {any} panel The `WebviewPanel`.
  * @property {number} number The pull request it shows; the tab closes when this stops being the one under review.
  * @property {string|null} token The rendered page's nonce; null once the tab is closed.
+ * @property {string} draftKey Webview state identity, replaced when submitted text is cleared.
  * @property {string|null} renderedKey The page model last rendered, without the draft.
  * @property {string|null} error The last submit or discard failure, shown in the page.
  * @property {null|'submit'|'discard'} busy
@@ -146,7 +147,7 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, revealThre
     const nonce = crypto.randomBytes(16).toString('base64');
     open.token = nonce;
     open.renderedKey = key;
-    open.panel.webview.html = buildPullRequestHtml(model, { nonce, cspSource: open.panel.webview.cspSource });
+    open.panel.webview.html = buildPullRequestHtml(model, { nonce, cspSource: open.panel.webview.cspSource, draftKey: open.draftKey });
   }
 
   /** @param {OpenPanel} open @param {object} message */
@@ -202,7 +203,7 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, revealThre
     const panel = vscode.window.createWebviewPanel(VIEW_TYPE, `Pull Request #${number}`, vscode.ViewColumn.Active,
       { enableScripts: true, localResourceRoots: [], retainContextWhenHidden: false });
     /** @type {OpenPanel} */
-    const opened = { panel, number, token: null, renderedKey: null, error: null, busy: null, subscriptions: [] };
+    const opened = { panel, number, draftKey: crypto.randomBytes(16).toString('base64'), token: null, renderedKey: null, error: null, busy: null, subscriptions: [] };
     current = opened;
     opened.subscriptions = [
       panel.webview.onDidReceiveMessage((/** @type {unknown} */ m) => onMessage(opened, m)
@@ -247,7 +248,10 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, revealThre
     if (result.ok) {
       vscode.window.showInformationMessage(submittedMessage(m.event, owner.number));
       // A draft typed while the review was sent is not the one that was submitted.
-      if ((drafts.get(owner.number) ?? '') === m.body) drafts.delete(owner.number);
+      if ((drafts.get(owner.number) ?? '') === m.body) {
+        drafts.delete(owner.number);
+        owner.draftKey = crypto.randomBytes(16).toString('base64');
+      }
     } else {
       owner.error = `The review was not submitted: ${result.error.message}`;
       vscode.window.showErrorMessage(`Impact Tree: ${owner.error}`);
@@ -288,7 +292,9 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, revealThre
     const m = parseMessage(raw, owner.token);
     if (!m) return;
     switch (m.type) {
-      case 'ready': post(owner, { type: 'draft', body: drafts.get(owner.number) ?? '' }); return;
+      case 'ready':
+        if (m.body !== undefined) keepDraft(owner.number, m.body);
+        post(owner, { type: 'draft', body: drafts.get(owner.number) ?? '' }); return;
       case 'draft': keepDraft(owner.number, m.body); return;
       case 'submit': await submit(owner, m); return;
       case 'discard': await discard(owner); return;

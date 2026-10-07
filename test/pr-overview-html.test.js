@@ -251,7 +251,7 @@ const lastSent = (p) => p.sent.at(-1);
 
 test('page: says ready once, with its token', () => {
   const p = page(ready());
-  assert.deepEqual(p.sent, [{ type: 'ready', token: NONCE }]);
+  assert.deepEqual(p.sent, [{ type: 'ready', body: '', token: NONCE }]);
 });
 
 test('page: typing a summary enables Request Changes and Comment and hides their reasons; clearing it undoes that', () => {
@@ -295,12 +295,12 @@ test('page: own pull request keeps Approve and Request Changes disabled whatever
   assert.equal(lastSent(p).event, 'COMMENT');
 });
 
-test('page: the draft is sent once after typing pauses, and a submit cancels the pending send', () => {
+test('page: each input saves the draft immediately and submit sends the current text', () => {
   const p = page(ready());
   p.type('summary', 'a');
   p.type('summary', 'ab');
-  assert.equal(p.pendingTimers(), 1, 'one debounce timer');
-  assert.equal(p.sent.length, 1);
+  assert.equal(p.pendingTimers(), 0);
+  assert.equal(p.sent.length, 3);
   p.runTimers();
   assert.deepEqual(lastSent(p), { type: 'draft', body: 'ab', token: NONCE });
   p.type('summary', 'abc');
@@ -329,4 +329,21 @@ test('page: links and buttons send reveal, retry and discard messages', () => {
   const failed = createFormPage(html({ kind: 'failed', target: TARGET, error: new Error('x'), previous: null }));
   failed.click(failed.all('[data-act="retry"]')[0]);
   assert.deepEqual(lastSent(failed), { type: 'retry', token: NONCE });
+});
+
+
+test('webview state recovers typing whose IPC message was overtaken by a repaint', () => {
+  const state = { value: null };
+  const model = pageModelOf(ready(), { attentionLeft: [], counts: { total: 1, left: 0 }, draft: '', error: null, busy: null });
+  const doc = buildPullRequestHtml(model, { nonce: NONCE, cspSource: 'vscode-webview://test', draftKey: 'draft-one' });
+  const first = createFormPage(doc, undefined, state);
+  first.type('summary', 'latest text');
+  const next = createFormPage(doc, undefined, state);
+  assert.equal(next.el('summary').value, 'latest text');
+  assert.equal(lastSent(next).body, 'latest text', 'ready recovers the extension copy');
+  next.type('summary', 'new typing');
+  next.receive({ type: 'draft', token: NONCE, body: 'old handshake' });
+  assert.equal(next.el('summary').value, 'new typing');
+  const cleared = createFormPage(buildPullRequestHtml(model, { nonce: NONCE, cspSource: 'vscode-webview://test', draftKey: 'after-submit' }), undefined, state);
+  assert.equal(cleared.el('summary').value, '', 'successful submit uses a new draft identity');
 });

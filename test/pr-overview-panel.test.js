@@ -563,3 +563,15 @@ test('package.json declares the commands, the tree-title entry and their when cl
   assert.ok(pkg.contributes.commands.find((c) => c.command === 'impactTree.submitReview').icon);
   assert.equal(pkg.contributes.menus.commandPalette.find((m) => m.command === 'impactTree.revealReviewThread').when, 'false');
 });
+
+
+test('typing immediately before a store repaint preserves the summary without a debounce wait', async () => {
+  const env = setup(); env.open();
+  env.page().type('summary', 'unsaved last words');
+  env.store.set(ready(reviewModel({ title: 'changed while typing' })));
+  await settle();
+  assert.equal(env.page().el('summary').value, 'unsaved last words');
+  env.panel().dispose(); env.open(); await settle();
+  assert.equal(env.page().el('summary').value, 'unsaved last words');
+  env.dispose();
+});

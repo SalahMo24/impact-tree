@@ -269,15 +269,15 @@ button[disabled] { opacity: .5; cursor: default; }
 `;
 
 // The page's behaviour: applies `buttonRules` as the reviewer types or ticks "Approve
-// anyway", keeps the extension's copy of the summary (debounced), and turns clicks into
+// anyway", keeps the summary in webview state and the extension, and turns clicks into
 // messages. The extension validates every message and decides everything that matters,
 // including the approve check; this script only mirrors the rules up front. Every message
 // carries this page's nonce, so a click on an older page acts on nothing.
-const DRAFT_DEBOUNCE_MS = 300;
-/** @param {string} token The validated base64 nonce of this rendered page. */
-const script = (token) => `
+/** @param {string} token The validated base64 nonce. @param {string} draftKey The kept draft identity. */
+const script = (token, draftKey) => `
 const vscode = acquireVsCodeApi();
 const token = ${JSON.stringify(token)};
+const draftKey = ${JSON.stringify(draftKey)};
 const post = (message) => vscode.postMessage({ ...message, token });
 const el = (name) => document.querySelector('[data-el="' + name + '"]');
 ${buttonRules.toString()}
@@ -304,13 +304,16 @@ const update = () => {
     }
   }
 };
-let draftTimer = null;
-const sendDraft = () => { draftTimer = null; const summary = el('summary'); if (summary) post({ type: 'draft', body: summary.value }); };
+let edited = false;
+const saveDraft = () => { const summary = el('summary'); if (summary) vscode.setState({ draftKey, body: summary.value }); };
+const saved = vscode.getState();
+if (el('summary') && saved && saved.draftKey === draftKey && typeof saved.body === 'string') el('summary').value = saved.body;
 document.addEventListener('input', (event) => {
   if (event.target !== el('summary')) return;
   update();
-  if (draftTimer !== null) clearTimeout(draftTimer);
-  draftTimer = setTimeout(sendDraft, ${DRAFT_DEBOUNCE_MS});
+  edited = true;
+  saveDraft();
+  post({ type: 'draft', body: el('summary').value });
 });
 document.addEventListener('change', (event) => { if (event.target === el('anyway')) update(); });
 document.addEventListener('click', (event) => {
@@ -320,7 +323,7 @@ document.addEventListener('click', (event) => {
   const act = target.getAttribute('data-act');
   if (act === 'submit') {
     if (target.hasAttribute('disabled')) return;
-    if (draftTimer !== null) { clearTimeout(draftTimer); draftTimer = null; }
+    saveDraft();
     post({ type: 'submit', event: target.getAttribute('data-event'), body: el('summary').value, approveAnyway: facts().approveAnyway });
   } else if (act === 'discard') { if (!target.hasAttribute('disabled')) post({ type: 'discard' }); }
   else if (act === 'revealThread') post({ type: 'revealThread', threadId: target.getAttribute('data-thread') });
@@ -329,12 +332,12 @@ document.addEventListener('click', (event) => {
 });
 window.addEventListener('message', (event) => {
   const data = event.data;
-  if (!data || data.token !== token || data.type !== 'draft' || typeof data.body !== 'string') return;
+  if (edited || !data || data.token !== token || data.type !== 'draft' || typeof data.body !== 'string') return;
   const summary = el('summary');
-  if (summary && summary.value !== data.body) { summary.value = data.body; update(); }
+  if (summary && summary.value !== data.body) { summary.value = data.body; saveDraft(); update(); }
 });
 update();
-post({ type: 'ready' });
+post(el('summary') ? { type: 'ready', body: el('summary').value } : { type: 'ready' });
 `;
 
 /** @param {string|null} loadError @returns {string} */
@@ -437,20 +440,20 @@ function bodyHtml(model) {
 /**
  * The Pull Request tab's document.
  * @param {PageModel} model From `pageModelOf`.
- * @param {{ nonce: string, cspSource: string }} opts `nonce` is base64 and fresh per document.
+ * @param {{ nonce: string, cspSource: string, draftKey?: string }} opts `nonce` is base64 and fresh per document.
  * @returns {string}
  */
-function buildPullRequestHtml(model, { nonce, cspSource }) {
+function buildPullRequestHtml(model, { nonce, cspSource, draftKey = nonce }) {
   assert.match(nonce, /^[A-Za-z0-9+/=]+$/, 'the nonce must be base64 so it cannot break out of the CSP');
   const csp = `default-src 'none'; style-src ${escapeHtml(cspSource)} 'nonce-${nonce}'; script-src 'nonce-${nonce}';`;
   return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'
     + `<meta http-equiv="Content-Security-Policy" content="${csp}">`
     + '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
     + `<style nonce="${nonce}">${STYLE}</style></head>`
-    + `<body><main>${bodyHtml(model)}</main><script nonce="${nonce}">${script(nonce)}</script></body></html>`;
+    + `<body><main>${bodyHtml(model)}</main><script nonce="${nonce}">${script(nonce, draftKey)}</script></body></html>`;
 }
 
 module.exports = {
   buildPullRequestHtml, pageModelOf, buttonRules, pendingStatusOf, submittedMessage, firstLineOf, formatWhen,
-  DRAFT_DEBOUNCE_MS, OWN_PR_REASON,
+  OWN_PR_REASON,
 };

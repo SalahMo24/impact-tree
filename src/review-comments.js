@@ -111,8 +111,18 @@ const isObject = (v) => typeof v === 'object' && v !== null;
  */
 function createReviewComments(vscode, { store, getSession, repoRoot, readHead, contextEvents, log = () => {}, headUri, openDiff }) {
   let disposed = false;
-  const controller = vscode.comments.createCommentController(CONTROLLER_ID, 'Impact Tree review');
-  controller.options = { placeHolder: 'Leave a comment (Markdown)', prompt: 'Reply' };
+  const makeController = () => {
+    const next = vscode.comments.createCommentController(CONTROLLER_ID, 'Impact Tree review');
+    next.options = { placeHolder: 'Leave a comment (Markdown)', prompt: 'Reply' };
+    return next;
+  };
+  let controller = makeController();
+  const targetKey = () => {
+    const state = store.getState();
+    const t = state.kind === 'none' ? null : state.target;
+    return t ? `${t.owner}/${t.name}#${t.number}@${t.headOid}` : null;
+  };
+  let controllerKey = targetKey();
 
   // Drawn threads by document (its URI string), then by thread id. `resolved` is what the
   // thread was last drawn as, so only a change of it collapses or expands the thread.
@@ -306,6 +316,18 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
   /** @param {{ all?: boolean, paths?: string[], uris?: string[] }} request */
   function want({ all = false, paths = [], uris = [] }) {
     if (disposed) return;
+    const nextKey = targetKey();
+    if (nextKey !== controllerKey && controllerKey !== null) {
+      // Disposing the controller also removes drafts created by VS Code's '+' action,
+      // which are not exposed to us until submission. File URIs alone cannot own them.
+      controller.dispose();
+      drawn.clear();
+      retainedBase = null;
+      controller = makeController();
+      shownKey = null;
+      all = true;
+    }
+    controllerKey = nextKey;
     wanted.all = wanted.all || all;
     for (const p of paths) wanted.paths.add(p);
     for (const u of uris) wanted.uris.add(u);
@@ -410,8 +432,10 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
    * @param {string} what
    */
   async function addFileComment(mode, thread, draft, text, what) {
+    const forTarget = targetKey();
     const ctx = await contextNow();
     const at = ctx && documentSide(thread.uri, ctx);
+    if (forTarget !== targetKey()) notSent(what, 'the pull request changed while this comment was being sent');
     if (!ctx || !at || at.path !== draft.relPath) notSent(what, 'this document is not a side of the pull request under review');
     const result = await store.addFileComment({ path: draft.relPath, body: bodyFor(thread, text, what), mode });
     if (!result.ok) notSent(`${what} on ${draft.relPath}`, result.error.message);
@@ -428,6 +452,7 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
     const reply = replyOf(arg);
     if (!reply || isBlank(reply.text)) return;
     const { thread, text } = reply;
+    const forTarget = targetKey();
     const what = { startReview: 'start a review with this comment', commentNow: 'post this comment', addToReview: 'add this comment to your review' }[mode];
     const draft = drafts.get(thread);
     if (draft && draft.fileLevel) { await addFileComment(mode, thread, draft, text, what); return; }
@@ -436,6 +461,9 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
     const where = startLine === line ? `line ${line}` : `lines ${startLine}–${line}`;
     const ctx = await contextNow();
     const at = ctx && documentSide(thread.uri, ctx);
+    if (forTarget !== targetKey()) notSent(what, 'the pull request changed while this comment was being sent');
+    const document = (vscode.workspace.textDocuments || []).find((/** @type {any} */ d) => d.uri.toString() === thread.uri.toString());
+    if (thread.uri.scheme === 'file' && (!document || document.isDirty)) notSent(what, 'the checkout document has unsaved changes');
     if (!ctx || !at) notSent(what, 'this document is not a side of the pull request under review');
     if (!acceptsComment(ctx, at, startLine, line)) {
       notSent(what, `${where} of ${at.path}${at.side === 'LEFT' ? ' (base)' : ''} are not all in one hunk of the pull request's diff, where GitHub takes comments`);
@@ -506,8 +534,10 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
    * @param {string|undefined} label
    */
   async function openDraft(uri, line, draft, label) {
+    const owner = controller;
+    const forTarget = targetKey();
     await /** @type {(relPath: string, line: number|null) => Promise<void>} */ (openDiff)(draft.relPath, line);
-    if (disposed) return null;
+    if (disposed || owner !== controller || forTarget !== targetKey()) return null;
     const thread = controller.createCommentThread(uri, new vscode.Range(line - 1, 0, line - 1, 0), []);
     drafts.set(thread, draft);
     thread.canReply = true;

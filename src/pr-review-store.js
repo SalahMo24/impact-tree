@@ -586,7 +586,7 @@ function createPullRequestReviewStore({ gh, getTarget, getAnalysisId, log: logLi
    */
   function refusal(job) {
     if (job.key !== keyOf(target)) return failed(new ReviewStoreError('stale', 'the pull request under review changed before this could be sent'));
-    if (!reviewDataOf(state)) return failed(new ReviewStoreError('not-ready', 'the review data is not loaded'));
+    if (state.kind !== 'ready') return failed(new ReviewStoreError('not-ready', 'refresh the review data before sending another change'));
     return null;
   }
 
@@ -614,6 +614,9 @@ function createPullRequestReviewStore({ gh, getTarget, getAnalysisId, log: logLi
     busy = null;
     // The analysis moved on without a sync() yet: publish nothing; the sync will reload.
     if (getAnalysisId() !== forAnalysis || !target) { pump(); return; }
+    if ('model' in outcome && (outcome.model.pr.number !== target.number || outcome.model.pr.headRefOid !== target.headOid)) {
+      outcome = { error: new ReviewStoreError('stale', 'the pull request head changed; refresh the analysis before reviewing it') };
+    }
     if ('error' in outcome) {
       log(`review store: loading PR #${target.number} failed: ${outcome.error.message}`);
       setState({ kind: 'failed', target, error: outcome.error, previous: reviewDataOf(state) });

@@ -66,7 +66,7 @@ function createPage(html, send) {
 // start tag with a `data-el` or `data-act` attribute becomes an element; a textarea's text
 // is its value, an input's `checked` attribute its checked state. Timers are manual: the
 // test runs them with `runTimers()`, so a debounce is exercised without waiting.
-function createFormPage(html, send) {
+function createFormPage(html, send, state = { value: null }) {
   class Element {
     constructor(tag, attributes, text) {
       this.tagName = tag; this.attributes = attributes; this.textContent = text;
@@ -101,7 +101,7 @@ function createFormPage(html, send) {
   const script = /<script[^>]*>([^]*?)<\/script>/.exec(html)[1];
   vm.runInNewContext(script, {
     Element,
-    acquireVsCodeApi: () => ({ postMessage: (message) => { sent.push(JSON.parse(JSON.stringify(message))); if (send) send(message); } }),
+    acquireVsCodeApi: () => ({ getState: () => state.value, setState: (value) => { state.value = value; }, postMessage: (message) => { sent.push(JSON.parse(JSON.stringify(message))); if (send) send(message); } }),
     window: { addEventListener: (event, handler) => listeners[event].push(handler) },
     document: {
       querySelector: (selector) => elements.find((e) => e.matches(selector)) || null,
