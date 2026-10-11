@@ -440,10 +440,16 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
     if (rec.decls.has(local)) return { file, name: local, pos: rec.decls.get(local).pos };
     const imp = rec.imports.get(local);
     if (imp) return exportTargetWalk(resolveModule(file, imp.module, { mode: imp.mode }), imp.imported, seen);
+    // An explicit local export that is not a callable declaration is conclusive.
+    if (rec.exports.has(name)) return null;
+    // Named and namespace re-exports override `export *` regardless of statement order, and
+    // are conclusive: a namespace is not a callable declaration, so it yields no target.
+    const explicit = rec.reExports.find((re) => re.namespace === name || (re.names && Object.hasOwn(re.names, name)));
+    if (explicit) return explicit.namespace ? null
+      : exportTargetWalk(resolveModule(file, explicit.module, { mode: explicit.mode }), explicit.names[name], seen);
     for (const re of rec.reExports) {
-      if (re.namespace) continue;
-      if (re.names && !Object.hasOwn(re.names, name)) continue;
-      const hit = exportTargetWalk(resolveModule(file, re.module, { mode: re.mode }), re.names ? re.names[name] : name, seen);
+      if (re.namespace || re.names) continue;
+      const hit = exportTargetWalk(resolveModule(file, re.module, { mode: re.mode }), name, seen);
       if (hit) return hit;
     }
     return null;

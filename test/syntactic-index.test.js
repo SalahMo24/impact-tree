@@ -443,6 +443,46 @@ console.log('\n▸ explicit exports override a namespace from export *');
     check('an explicit namespace export still reaches its member', labels(got).join(',') === 'consumer', JSON.stringify(labels(got)));
   }
 }
+console.log('\n▸ explicit exports take precedence over export * for call targets');
+{
+  const a = 'export function foo() { return 1; }\n';
+  const b = 'export function foo() { return 2; }\nexport function bar() { return 3; }\n';
+  const files = {
+    'src/a.ts': a,
+    'src/b.ts': b,
+    'src/c.ts': 'export function foo() { return 4; }\n',
+    'src/use.ts': "import { foo } from './barrel'; export function consumer() { return foo(); }\n",
+  };
+  const ta = { file: f('src/a.ts'), className: null, name: 'foo', pos: posOf(a, 'foo()') };
+  const tb = { file: f('src/b.ts'), className: null, name: 'foo', pos: posOf(b, 'foo()') };
+  const tbar = { file: f('src/b.ts'), className: null, name: 'bar', pos: posOf(b, 'bar()') };
+  const star = "export * from './a';";
+  const orders = (explicit) => [`${star}\n${explicit}\n`, `${explicit}\n${star}\n`];
+  for (const barrel of orders("export { foo } from './b';")) {
+    const idx = build({ ...files, 'src/barrel.ts': barrel });
+    check(`named re-export wins, target b: ${JSON.stringify(barrel)}`, labels(idx.callersOf(tb)).join(',') === 'consumer', JSON.stringify(labels(idx.callersOf(tb))));
+    check(`named re-export wins, star target gets nothing: ${JSON.stringify(barrel)}`, idx.callersOf(ta).length === 0, JSON.stringify(labels(idx.callersOf(ta))));
+  }
+  for (const barrel of orders("export { bar as foo } from './b';")) {
+    const idx = build({ ...files, 'src/barrel.ts': barrel });
+    check(`renamed re-export wins: ${JSON.stringify(barrel)}`, labels(idx.callersOf(tbar)).join(',') === 'consumer', JSON.stringify(labels(idx.callersOf(tbar))));
+    check(`renamed re-export hides the star: ${JSON.stringify(barrel)}`, idx.callersOf(ta).length === 0 && idx.callersOf(tb).length === 0, JSON.stringify(labels(idx.callersOf(ta))));
+  }
+  for (const barrel of orders("export * as foo from './c';")) {
+    const idx = build({ ...files, 'src/barrel.ts': barrel });
+    check(`namespace re-export is conclusive: ${JSON.stringify(barrel)}`, idx.callersOf(ta).length === 0, JSON.stringify(labels(idx.callersOf(ta))));
+  }
+  for (const barrel of orders('export const foo = { x: 1 };')) {
+    const idx = build({ ...files, 'src/barrel.ts': barrel });
+    check(`explicit non-callable export blocks the star: ${JSON.stringify(barrel)}`, idx.callersOf(ta).length === 0, JSON.stringify(labels(idx.callersOf(ta))));
+  }
+  for (const barrel of orders('export function foo() { return 5; }')) {
+    const idx = build({ ...files, 'src/barrel.ts': barrel });
+    check(`local declaration blocks the star: ${JSON.stringify(barrel)}`, idx.callersOf(ta).length === 0, JSON.stringify(labels(idx.callersOf(ta))));
+  }
+  const idx = build({ ...files, 'src/barrel.ts': `${star}\n` });
+  check('a bare export * still resolves', labels(idx.callersOf(ta)).join(',') === 'consumer', JSON.stringify(labels(idx.callersOf(ta))));
+}
 pending = pending.then(async () => {
   console.log('\n▸ an unresolved handled command keeps caller coverage incomplete');
   const handler = "import { CommandHandler } from '@nestjs/cqrs'; import { DoThing as Alias } from './missing-barrel';\n@CommandHandler(Alias) export class Handler { execute(c: Alias) {} other() {} }\n";
