@@ -3,9 +3,10 @@ const fs = require('fs');
 const path = require('path');
 const { makeGit, resolveBaseAsync } = require('./git');
 const {
-  changedFiles, untrackedFiles, worktreeFiles, allHunks, wholeFileRange, isTestPath, isSourcePath,
+  changedFiles, untrackedFiles, worktreeFiles, allHunks, hunkDiffArgs, wholeFileRange, isTestPath, isSourcePath,
   projectRootOf, projectConfigIn, clearProjectCache, projectLabel, INFERRED_PROJECT,
 } = require('./diff');
+const { batchPaths } = require('./cmdline');
 const { makeSymbols } = require('./symbols');
 const { score } = require('./signature');
 const { changedSymbolsIn, changedSymbolKeys } = require('./changed-symbols');
@@ -72,24 +73,15 @@ function loadTypeScript(repo, projectDir) {
     + (rejected.length ? `. Rejected: ${rejected.join(', ')} (no classic compiler API)` : ''));
 }
 
-// One `git diff` for every file, split only so a huge PR stays under the OS argument
-// limit. A rename's two paths always travel in the same chunk: git can only pair them
-// when both are in the pathspec.
-function rangesFor(git, baseSha, headRev, files, { maxChars = 60000, deletionsOut, changesOut } = {}) {
+// One `git diff` for every file, split only so a huge PR stays under the OS command-line
+// limit (Windows: 32,767 characters for the whole line). A rename's two paths always
+// travel in the same batch: git can only pair them when both are in the pathspec.
+function rangesFor(git, baseSha, headRev, files, { maxChars, deletionsOut, changesOut } = {}) {
   const groups = files.map((f) => (f.oldPath && f.oldPath !== f.path ? [f.oldPath, f.path] : [f.path]));
   const out = {};
-  let chunk = [], size = 0;
-  const flush = () => {
-    if (!chunk.length) return;
-    Object.assign(out, allHunks(git, baseSha, headRev, chunk, deletionsOut, changesOut));
-    chunk = []; size = 0;
-  };
-  for (const g of groups) {
-    const len = g.reduce((n, p) => n + p.length + 1, 0);
-    if (chunk.length && size + len > maxChars) flush();
-    chunk.push(...g); size += len;
+  for (const batch of batchPaths(hunkDiffArgs(baseSha, headRev), groups, maxChars)) {
+    Object.assign(out, allHunks(git, baseSha, headRev, batch, deletionsOut, changesOut));
   }
-  flush();
   return out;
 }
 
