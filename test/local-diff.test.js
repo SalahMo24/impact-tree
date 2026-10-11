@@ -10,7 +10,6 @@ const { changedFiles, allHunks, hunks, isTestPath, isTestFile } = require('../sr
 const { nestedIds, seedRoots } = require('../src/engine/forest');
 
 const h = createLocalHarness();
-if (!h) process.exit(0);
 const {
   TMP, TSCONFIG, TARGET_V1, TARGET_V2, since, J,
   run, write, mkRepo, commit, headOf, byLabel, callStates, check, finish,

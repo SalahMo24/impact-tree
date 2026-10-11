@@ -9,7 +9,6 @@ const { changedSymbolsIn } = require('../src/engine/changed-symbols');
 const { makeSymbols } = require('../src/engine/symbols');
 
 const h = createLocalHarness();
-if (!h) process.exit(0);
 const {
   ts, TSCONFIG, TARGET_V1, TARGET_V2, since, J,
   write, mkRepo, headOf, byLabel, callStates, S, parse, check, finish,

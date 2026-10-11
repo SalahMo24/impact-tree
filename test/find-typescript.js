@@ -31,6 +31,29 @@ function findTypeScript() {
   return null;
 }
 
+// A prerequisite the suite cannot run without (not a by-design skip): in CI it fails the
+// run -- a green build that silently ran nothing is the worst outcome -- and locally it
+// says plainly what did not run. Returns the reason text for suites that skip per-test.
+function missingPrerequisite(suite, what) {
+  const reason = `${what} — ${suite} checks did NOT run`;
+  if (process.env.CI) {
+    console.error(`  FAIL ${reason} (CI is set: a missing prerequisite fails the run)`);
+    process.exit(1);
+  }
+  console.log(`  SKIP ${reason}`);
+  console.log('        (install typescript next to this project or in the target repo; CI would fail here)');
+  return reason;
+}
+
+// The typescript module, or -- when it is missing -- a CI failure, or locally an
+// explained exit 0 for suites that cannot run a single check without it.
+function requireTypeScript(suite) {
+  const ts = findTypeScript();
+  if (ts) return ts;
+  missingPrerequisite(suite, 'no typescript resolvable');
+  return process.exit(0);
+}
+
 // First directory that actually contains a typescript install -- useful when a test
 // needs a real project directory rather than just the compiler.
 function findProjectWithTypeScript() {
@@ -63,4 +86,4 @@ function findSampleFile(re, { limit = 20000 } = {}) {
   return null;
 }
 
-module.exports = { findTypeScript, findProjectWithTypeScript, findSampleFile };
+module.exports = { findTypeScript, requireTypeScript, missingPrerequisite, findProjectWithTypeScript, findSampleFile };
