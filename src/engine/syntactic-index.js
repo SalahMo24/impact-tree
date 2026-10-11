@@ -559,6 +559,10 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
     const inheritsTarget = (file, ownerClass) => !!targetKey && !!ownerClass && supertypesOf(classKey(file, ownerClass)).has(targetKey);
     const handler = targetKey && handlerCommand.get(targetKey);
     const commands = handler && target.name === handler.method ? handler.commands : [];
+    // An unresolved decorator argument can hide dispatches even when their commands
+    // resolve (or use another alias). Keep any known callers, but never call this complete.
+    const unresolvedCommands = commands.filter((cmd) => !cmd.decl).map((cmd) => cmd.name);
+    if (unresolvedCommands.length) incompleteReason = `handled command(s) ${unresolvedCommands.join(', ')} could not be resolved to a declaration for '${target.className}'`;
 
     for (const rec of byFile.values()) {
       for (const c of rec.calls) {
