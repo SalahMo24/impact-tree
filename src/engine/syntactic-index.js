@@ -402,8 +402,23 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
     return hit;
   };
 
+  // Cache: `exportTarget` and `namespaceOf` answers, by file then exported name, "not found"
+  // included. Owner: this index. Key: only the two arguments, because the resolvers read
+  // nothing else that changes (the sources and resolver options are fixed at construction).
+  // Only whole lookups are stored; the recursive steps carry a `seen` set that can cut a
+  // cycle short, so their answers depend on the path taken and must not be reused.
+  // Invalidation: none, because the index is immutable. Disposal: with the index.
+  const memoised = (walk) => {
+    const byFileName = new Map();
+    return (file, name) => {
+      let names = byFileName.get(file);
+      if (!names) byFileName.set(file, names = new Map());
+      if (!names.has(name)) names.set(name, walk(file, name, new Set()));
+      return names.get(name);
+    };
+  };
   // Export resolution stays inside the fetched source set.
-  const exportTarget = (file, name, seen = new Set()) => {
+  const exportTargetWalk = (file, name, seen) => {
     const key = `${file}#${name}`;
     if (seen.has(key)) return null;
     seen.add(key);
@@ -412,20 +427,21 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
     const local = rec.exports.get(name) || name;
     if (rec.decls.has(local)) return { file, name: local, pos: rec.decls.get(local).pos };
     const imp = rec.imports.get(local);
-    if (imp) return exportTarget(resolveModule(file, imp.module, { mode: imp.mode }), imp.imported, seen);
+    if (imp) return exportTargetWalk(resolveModule(file, imp.module, { mode: imp.mode }), imp.imported, seen);
     for (const re of rec.reExports) {
       if (re.namespace) continue;
       if (re.names && !Object.hasOwn(re.names, name)) continue;
-      const hit = exportTarget(resolveModule(file, re.module, { mode: re.mode }), re.names ? re.names[name] : name, seen);
+      const hit = exportTargetWalk(resolveModule(file, re.module, { mode: re.mode }), re.names ? re.names[name] : name, seen);
       if (hit) return hit;
     }
     return null;
   };
+  const exportTarget = memoised(exportTargetWalk);
   // The module a name exported from `file` is a namespace of: `export * as ns from './x'`,
   // or an `import * as ns` that is exported, possibly through further barrels. `file` is
   // null when the namespace's module is outside the source set, so its members cannot be
   // followed; the caller must report that, not treat the member as absent.
-  const namespaceOf = (file, name, seen = new Set()) => {
+  const namespaceOfWalk = (file, name, seen) => {
     const key = `${file}#${name}`;
     if (seen.has(key)) return null;
     seen.add(key);
@@ -434,15 +450,16 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
     const via = (imp) => ({ file: resolveModule(file, imp.module, { mode: imp.mode }), module: imp.module });
     const local = rec.exports.get(name) || name;
     const imp = !rec.decls.has(local) && rec.imports.get(local);
-    if (imp) return imp.imported === '*' ? via(imp) : namespaceOf(resolveModule(file, imp.module, { mode: imp.mode }), imp.imported, seen);
+    if (imp) return imp.imported === '*' ? via(imp) : namespaceOfWalk(resolveModule(file, imp.module, { mode: imp.mode }), imp.imported, seen);
     for (const re of rec.reExports) {
       if (re.namespace) { if (re.namespace === name) return via(re); continue; }
       if (re.names && !Object.hasOwn(re.names, name)) continue;
-      const hit = namespaceOf(resolveModule(file, re.module, { mode: re.mode }), re.names ? re.names[name] : name, seen);
+      const hit = namespaceOfWalk(resolveModule(file, re.module, { mode: re.mode }), re.names ? re.names[name] : name, seen);
       if (hit) return hit;
     }
     return null;
   };
+  const namespaceOf = memoised(namespaceOfWalk);
   const declarationFor = (rec, name, lexicalBinding = null) => {
     const importFor = local => lexicalBinding ? rec.bindingImports.get(lexicalBinding) : rec.imports.get(local);
     if (name && name.includes('.')) {
@@ -625,12 +642,18 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
   // Calls `callersOf` had to skip for want of a receiver it could classify, that could still
   // be calls to `target`: only a member call named like the target qualifies. A skipped call
   // with any other name cannot reach it, so counting those would make every search incomplete.
+  // Cache: count of unclassifiable member calls by call name, built on first use. Owner,
+  // key-completeness, invalidation and disposal as for `resolveCache`: it is a pure function
+  // of the immutable parsed files.
+  let unresolvedByName = null;
   function unresolvedCallsTo(target) {
-    let n = 0;
-    for (const rec of byFile.values()) {
-      for (const c of rec.calls) if (c.receiver && c.receiver.kind === 'unknown' && c.name === target.name) n++;
+    if (!unresolvedByName) {
+      unresolvedByName = new Map();
+      for (const rec of byFile.values()) {
+        for (const c of rec.calls) if (c.receiver && c.receiver.kind === 'unknown') unresolvedByName.set(c.name, (unresolvedByName.get(c.name) || 0) + 1);
+      }
     }
-    return n;
+    return unresolvedByName.get(target.name) || 0;
   }
 
   // (file, pos) -> { className, name } for a declaration, so a resolver can answer

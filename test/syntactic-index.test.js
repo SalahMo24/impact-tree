@@ -364,6 +364,57 @@ console.log('\n▸ overloads: callers attach to the implementation, not a signat
   const method = idx.callersOf({ file: f('src/lib.ts'), className: 'Box', name: 'get', pos: posOf(lib, 'get(a: any)') });
   check('a method overload is called once from each file', labels(method).join(',') === 'Box.inside,crossMethod', JSON.stringify(labels(method)));
 }
+console.log('\n▸ barrel-heavy repository: caller queries stay fast and give the same answers');
+{
+  // 200 modules of 10 functions, one `export *` barrel each, a root barrel over all of them,
+  // and consumers calling through it by name, by alias, through a namespace import and
+  // through a re-exported namespace. Generation is deterministic.
+  const files = {};
+  for (let i = 0; i < 200; i++) {
+    const fns = Array.from({ length: 10 }, (_, j) => `export function f${i}_${j}() { return ${j}; }`);
+    files[`src/m${i}.ts`] = `${fns.join('\n')}\nfunction h${i}() { return 1; }\nexport { h${i} as pub${i} };\n`;
+    files[`src/b${i}.ts`] = `export * from './m${i}';\n`;
+  }
+  files['src/all.ts'] = Array.from({ length: 200 }, (_, i) => `export * from './b${i}';`).join('\n') + "\nexport * as lib from './b7';\n";
+  for (let k = 0; k < 40; k++) {
+    const named = Array.from({ length: 20 }, (_, n) => `f${(k * 5 + n * 7) % 200}_${n % 10}`);
+    const aliased = Array.from({ length: 10 }, (_, n) => `f${(k * 3 + n * 11) % 200}_${(n + 3) % 10} as a${n}`);
+    const pubs = Array.from({ length: 5 }, (_, n) => `pub${(k + n * 13) % 200}`);
+    const body = [
+      ...named.map((n) => `${n}();`),
+      ...aliased.map((n) => `${n.split(' as ')[1]}();`),
+      ...pubs.map((n) => `${n}();`),
+      ...Array.from({ length: 20 }, (_, n) => `NS.f${(k * 9 + n * 5) % 200}_${(n * 3) % 10}();`),
+      'lib.f7_1(); lib.f7_2();',
+      'unknown.f1_1();',
+    ];
+    files[`src/u${k}.ts`] = [
+      `import { ${[...named, ...aliased, ...pubs].join(', ')}, lib } from './all';`,
+      "import * as NS from './all';",
+      `export function user${k}() {\n  ${body.join('\n  ')}\n}`, '',
+    ].join('\n');
+  }
+  const idx = build(files);
+  const targets = [];
+  for (let i = 0; i < 200; i += 4) {
+    targets.push({ file: f(`src/m${i}.ts`), className: null, name: `f${i}_${i % 10}` });
+    targets.push({ file: f(`src/m${i}.ts`), className: null, name: `h${i}` });
+  }
+  targets.push({ file: f('src/m7.ts'), className: null, name: 'f7_1' });
+  const started = process.hrtime.bigint();
+  const rows = targets.map((t) => ({ t: t.name, ...idx.callersOfWithStatus(t), unresolved: idx.unresolvedCallsTo(t) }));
+  const ms = Number(process.hrtime.bigint() - started) / 1e6;
+  const signature = require('crypto').createHash('sha1').update(JSON.stringify(rows)).digest('hex');
+  if (process.env.PRINT_BARREL_SIGNATURE) console.log(`  signature ${signature} in ${ms.toFixed(0)} ms (${rows.reduce((n, r) => n + r.callers.length, 0)} callers)`);
+  // The signature is a SHA-1 over every result of the queries above, recorded from the code
+  // before the optimisation (which re-resolved every call), so it pins the answers without
+  // a second resolver to maintain in the test.
+  check('answers are identical to the unoptimised resolution', signature === '353caecf6c3e56d225d9b5a20f55b3f4cb46a68f', signature);
+  check('the fixture exercises barrels, aliases and namespaces', rows.find((r) => r.t === 'f7_1').callers.length >= 2
+    && rows.reduce((n, r) => n + r.callers.length, 0) > 20, `${rows.reduce((n, r) => n + r.callers.length, 0)} callers`);
+  // Generous for CI: the optimised run takes ~0.2 s here and the unoptimised one ~15 s, so 5 s separates them with a wide margin on both sides.
+  check('queries finish within the time budget', ms < 5000, `${ms.toFixed(0)} ms`);
+}
 pending.then(() => {
   console.log(fail ? `\n${fail} failure(s)` : '\nall syntactic-index checks passed');
   process.exit(fail ? 1 : 0);
