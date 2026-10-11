@@ -1,6 +1,6 @@
 'use strict';
 // Manual retained-heap/refresh benchmark, outside the correctness suite:
-//   node --expose-gc test/measure-cqrs-cache.js [synthetic|/path/to/repo]
+//   node --expose-gc test/measure-cqrs-cache.js [synthetic|handlers|/path/to/repo]
 // Each of three generations touches 100 different files. Provider responses are
 // immediate empty call hierarchies: this measures editor-side parsing/cache costs,
 // excluding the language server. Same-generation probes use another position to
@@ -29,13 +29,18 @@ const rounded = (n) => Math.round(n * 100) / 100;
 
 async function measure() {
   assert.equal(typeof global.gc, 'function', 'run with node --expose-gc');
-  const synthetic = !process.argv[2] || process.argv[2] === 'synthetic';
+  const workload = process.argv[2] || 'synthetic';
+  const synthetic = workload === 'synthetic' || workload === 'handlers';
   const repo = synthetic ? fs.mkdtempSync(path.join(os.tmpdir(), 'impact-cqrs-memory-')) : fs.realpathSync(process.argv[2]);
   let resolver;
   try {
     let files;
     if (synthetic) {
-      const text = Array.from({ length: 300 }, (_, i) => `export function fn${i}(a: number) { return a + ${i}; }`).join('\n');
+      const ordinary = Array.from({ length: 300 }, (_, i) => `export function fn${i}(a: number) { return a + ${i}; }`).join('\n');
+      // Same ordinary source, with real decorators to exercise the parsing fallback.
+      // Queries at positions 0/1 are outside execute(), so no provider dispatch
+      // lookup is needed; correctness of that lookup belongs to the regression suite.
+      const text = workload === 'handlers' ? `@CommandHandler(Command) class Handler { execute() {} }\n${ordinary}` : ordinary;
       files = Array.from({ length: FILES_PER_GENERATION * GENERATIONS }, (_, i) => path.join(repo, `source${i}.ts`));
       for (const file of files) fs.writeFileSync(file, text);
     } else {
@@ -74,18 +79,22 @@ async function measure() {
     };
     for (let i = 0; i < GENERATIONS; i++) {
       const group = files.slice(i * FILES_PER_GENERATION, (i + 1) * FILES_PER_GENERATION);
+      const beforeCold = parses;
       const coldMs = await query(group, 0);
+      const coldParses = parses - beforeCold;
+      const beforeWarm = parses;
       const warmMs = await query(group, 1);
+      const warmParses = parses - beforeWarm;
       const populatedHeapMiB = await heapMiB() - baseline;
       resolver.clear();
       const afterClearHeapMiB = await heapMiB() - baseline;
       const previousParses = parses;
       const refreshMs = await query(group, 0);
-      rows.push({ generation: i + 1, coldMs: rounded(coldMs), warmMs: rounded(warmMs), refreshMs: rounded(refreshMs),
+      rows.push({ generation: i + 1, coldMs: rounded(coldMs), warmMs: rounded(warmMs), refreshMs: rounded(refreshMs), coldParses, warmParses,
         populatedHeapMiB: rounded(populatedHeapMiB), afterClearHeapMiB: rounded(afterClearHeapMiB), refreshParses: parses - previousParses });
       resolver.clear();
     }
-    console.log(JSON.stringify({ node: process.version, arch: process.arch, workload: synthetic ? 'synthetic' : repo,
+    console.log(JSON.stringify({ node: process.version, arch: process.arch, workload: synthetic ? workload : repo,
       files: files.length, sourceMiB: rounded(sourceBytes / (1024 * 1024)), rows }));
   } finally {
     resolver = null;

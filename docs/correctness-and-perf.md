@@ -225,24 +225,12 @@ source/config/package paths, sizes and nanosecond modification/change times. New
 analyses reset symbol hints. Cancellation terminates the worker; session disposal
 terminates it and rejects pending requests. The CLI retains its synchronous adapter.
 
-Read-only measurements on the Mylo worktree, using Node on this machine:
-
-- Git diff and changed-row preparation: **2.139 s**, 48 source files, 90 total paths
-  and 65 symbols. The benchmark aborted at the prepared callback before any caller
-  query; it excludes base fetch, editor warm-up, identity rendering and UI painting.
-- A cold module lookup: **14.942 s**, with 1,369 host timer ticks and a maximum
-  10-ms timer gap of **28 ms**. The previous synchronous scan blocked the host for
-  approximately 11.5 s. Cold indexing is moved off the host, not eliminated.
-- A second lookup with unchanged metadata: **464 ms**, retaining the same index.
-  Both searches retained the two found callers and marked eight oversized skipped
-  files as incomplete; the computed-require warning was retained.
-
 Verification: `test/loading.test.js` covers early opening/ticking, final checkbox
 retention, stale publication, real worker callers and cache invalidation, cancellation,
 worker/provider deadlines, late rejection and outstanding-provider admission. It runs
 in `npm test` and `test:smoke`. Lint/typecheck and the available test suite pass. The
 default recorded-fixture and target caller/tree checks skip because their target has
-no suitable diff or recorded fixtures. These measurements do not replace validation
+no suitable diff or recorded fixtures. These checks do not replace validation
 of the new build in a reloaded live Cursor session.
 
 ## Targeted review progress updates
@@ -358,3 +346,99 @@ Validation before and after:
 Recommendation: retain this narrowly scoped change. It removes the demonstrated
 cross-refresh AST accumulation, preserves checked CQRS behavior, and has a measured
 refresh parsing cost. The two existing external validation failures remain open.
+
+## Rejecting irrelevant CQRS handler files before parsing (2026-10-11)
+
+Baseline: `67ae82cf0ccc0b39896911ef0fdd4c2065c874eb`, after the cache-lifetime fix
+above. Both editor and CLI caller queries ask the shared CQRS helper whether a
+symbol is a handler. Previously, even a file with no supported decorator name was
+parsed and traversed for that check, then traversed again for extra callers.
+
+The helper now skips handler parsing only when all three names recognized by the
+existing exact matcher (`CommandHandler`, `QueryHandler`, `EventsHandler`) are
+absent from the source. This is a necessary-condition check, not a new decorator
+parser: names in comments, strings, imports or unsupported expressions still fall
+back to the existing AST path. The list is shared with the exact matcher to avoid
+two independently maintained sets of supported decorators.
+
+Skipped entries retain only file metadata and a null AST, under the helper's
+existing lifetime and mtime/size invalidation. A construction or enclosing-callable
+lookup still parses the file, including one previously rejected as a handler.
+Failed reads are not stored as negative checks. No source text is retained for a
+negative entry. Source admission limits, matching/coverage rules, provider calls,
+analysis ownership, reviewed identities and checkpoints are unchanged.
+
+Measurements use the same manual harness for both implementations, Node 22.18.0
+arm64, a 512 MiB old-space limit, and the pinned T3 revision/workloads documented
+above. The harness now records cold/warm parser admissions and adds `handlers`:
+the synthetic ordinary source with a real command-handler decorator in every file.
+Its queries remain outside the handler method, isolating the parsing fallback;
+actual dispatch resolution is verified by the correctness suite.
+
+After separate five-process before/after runs, a second comparison alternated
+versions within five pairs for each workload, rotating workload order, with no
+validation suites running concurrently. Only the shared CQRS helper was substituted
+with its saved baseline module in the before process; the benchmark/editor adapter
+were identical. The table reports first-generation medians from that alternating
+comparison. Heap is the populated increase over process baseline after forced GC,
+before clearing the current generation; it is not whole-extension memory.
+
+| Measurement, first 100 files | Before | After |
+| --- | --- | --- |
+| T3 CQRS parser admissions, cold / warm / after refresh | 100 / 0 / 100 | 0 / 0 / 0 |
+| T3 populated heap | 8.41 MiB | 0.34 MiB |
+| T3 cold query batch | 114.26 ms | 27.22 ms |
+| T3 same-generation query batch | 6.35 ms | 2.34 ms |
+| T3 query batch after refresh | 59.45 ms | 4.24 ms |
+| Ordinary synthetic populated heap | 66.14 MiB | 0.53 MiB |
+| Ordinary synthetic cold query batch | 250.46 ms | 28.28 ms |
+| Handler-containing control parser admissions, cold / warm / after refresh | 100 / 0 / 100 | 100 / 0 / 100 |
+| Handler-containing control populated heap | 66.47 MiB | 66.47 MiB |
+
+Handler-containing timing was noisy: alternating cold medians were 250.51 / 244.24
+ms and warm medians 18.48 / 18.43 ms, while refresh medians were 156.77 / 176.34 ms.
+To investigate that refresh difference, a separate shared-process experiment used
+20 alternating pairs after warming both helpers, each parsing the same 100
+handler-containing files with 300 functions per file. Its median was 161.57 / 166.46
+ms, mean 177.71 / 175.16 ms, and ranges 139.65–241.77 / 143.72–252.06 ms. These
+samples do not establish a consistent handler-file speed change; no speedup is
+claimed for the fallback. The extra name scan is additional work on candidate
+files. Timings are not CI assertions.
+
+Reproduce workloads with `node --expose-gc --max-old-space-size=512
+test/measure-cqrs-cache.js synthetic`, `handlers`, or the T3 clone path. Use the same
+benchmark revision when comparing implementations. The host-side harness excludes
+language-server indexing and other analysis work. Removing synchronous parsing
+reduces host work; editor responsiveness and low-spec hardware performance were not
+measured by this harness.
+
+Validation before and after:
+
+- Full `npm test`, lint, typecheck and the 15-test smoke suite passed. Default
+  callsite/tree checks skipped on the empty diff; no recorded fixtures were present.
+- The two new parser-admission regressions failed before the optimization and
+  passed after. Other focused checks passed on both. The prior lifetime regression
+  now uses a handler-containing file that must still allocate an AST, preserving
+  that regression's purpose rather than requiring unnecessary ordinary-file parsing.
+- The eight CQRS tests cover ordinary language-server callers, negative-entry
+  promotion for dispatches, all three decorators, comments/whitespace, Unicode
+  positions, multiple commands, false positives, same-size edits, missing files,
+  deletion/recreation, test filtering, incomplete recovery and obsolete queries.
+- Direct comparison with the original helper checked 1,152 handler/coverage queries
+  over 64 deterministic syntax fixtures, with zero differences.
+- Review/checkpoint, editor, loading and CQRS suites: 53 tests passed, zero skips.
+- Additional live VS Code controls used real definition, reference and incoming-call
+  providers to check all three handler decorators, ordinary callers, nested dispatch
+  owners, test filtering, initial/cached/refreshed results, decorator edits and
+  obsolete queries completing after a refresh. Those controls passed before and
+  after. The later focused regression run passed 70 tests, with zero skips.
+- Nonempty T3 `HEAD~20` callsite validation: 427 exact locations, zero mismatches,
+  with byte-identical output. The #12954 snapshot mismatch and nonempty tree-smoke
+  `ranges.filter` exception documented above remain unchanged; both complete logs
+  are byte-identical. PR #12745 local/preview checks passed on both versions.
+- Changed tests/benchmark passed ESLint; `git diff --check` passed.
+
+Recommendation: keep the optimization. It removes demonstrated unnecessary AST
+allocations and traversal for irrelevant files, with substantially less populated
+heap and faster isolated ordinary-file queries. Candidate files retain the existing
+parsing path; its measured latency variation remains a limitation of this evaluation.
