@@ -415,6 +415,68 @@ console.log('\n▸ barrel-heavy repository: caller queries stay fast and give th
   // Generous for CI: the optimised run takes ~0.2 s here and the unoptimised one ~15 s, so 5 s separates them with a wide margin on both sides.
   check('queries finish within the time budget', ms < 5000, `${ms.toFixed(0)} ms`);
 }
+console.log('\n▸ explicit exports override a namespace from export *');
+{
+  const a = 'export function f() { return 1; }\n';
+  const files = {
+    'src/a.ts': a,
+    'src/b.ts': "export * as ns from './a';\n",
+    'src/object.ts': 'export const object = { f() { return 2; } };\n',
+    'src/use.ts': "import { ns } from './outer'; export function consumer() { return ns.f(); }\n",
+  };
+  const target = { file: f('src/a.ts'), className: null, name: 'f', pos: posOf(a, 'f()') };
+  const explicit = [
+    'export const ns = { f() { return 2; } };',
+    'const object = { f() { return 2; } }; export { object as ns };',
+    'export function ns() {}',
+    'export class ns { static f() { return 2; } }',
+    'export const { ns } = { ns: { f() { return 2; } } };',
+    "export { object as ns } from './object';",
+  ];
+  for (const statement of explicit) {
+    for (const outer of [`export * from './b';\n${statement}`, `${statement}\nexport * from './b';`]) {
+      const got = build({ ...files, 'src/outer.ts': outer }).callersOf(target);
+      check(`the explicit export blocks the unrelated namespace: ${outer}`, got.length === 0, JSON.stringify(labels(got)));
+    }
+  }
+  for (const statement of ["export { ns } from './b';", "import * as local from './a'; export { local as ns };"]) {
+    const got = build({ ...files, 'src/outer.ts': statement }).callersOf(target);
+    check('an explicit namespace export still reaches its member', labels(got).join(',') === 'consumer', JSON.stringify(labels(got)));
+  }
+}
+pending = pending.then(async () => {
+  console.log('\n▸ an unresolved handled command keeps caller coverage incomplete');
+  const handler = "import { CommandHandler } from '@nestjs/cqrs'; import { DoThing as Alias } from './missing-barrel';\n@CommandHandler(Alias) export class Handler { execute(c: Alias) {} other() {} }\n";
+  const files = {
+    'src/cmd.ts': 'export class DoThing {}\n',
+    'src/handler.ts': handler,
+    'src/api.ts': "import { DoThing } from './cmd'; export function dispatch() { bus.execute(new DoThing()); }\n",
+    'src/direct.ts': "import { Handler } from './handler'; export function direct(h: Handler) { h.execute(null); }\n",
+  };
+  const target = { file: f('src/handler.ts'), className: 'Handler', name: 'execute', pos: posOf(handler, 'execute(') };
+  const idx = build(files);
+  const got = idx.callersOfWithStatus(target);
+  check('the uncertain dispatch is not invented, and the direct caller survives', labels(got.callers).join(',') === 'direct', JSON.stringify(labels(got.callers)));
+  check('a resolved dispatch cannot conceal the unresolved handled command', /DoThing.*could not be resolved/.test(got.incompleteReason || ''), String(got.incompleteReason));
+  const resolver = createSyntacticResolver(idx);
+  for (let i = 0; i < 2; i++) {
+    const answer = await resolver.callerState(target.file, target.pos);
+    check(`the resolver preserves known callers and incomplete coverage, query ${i + 1}`,
+      answer.state === 'resolved' && answer.complete === false && /DoThing/.test(answer.reason || '') && labels(answer.callers).join(',') === 'direct', JSON.stringify(answer));
+  }
+  const empty = build({ 'src/handler.ts': handler }).callersOfWithStatus(target);
+  check('the unresolved command is reported even without a matching construction', empty.callers.length === 0 && !!empty.incompleteReason, JSON.stringify(empty));
+  const other = idx.callersOfWithStatus({ ...target, name: 'other', pos: posOf(handler, 'other(') });
+  check('another handler method does not inherit the command lookup failure', other.incompleteReason == null, String(other.incompleteReason));
+
+  const events = "import { Known } from './known'; import { Missing } from './missing-barrel';\n@EventsHandler(Known, Missing) export class Handler { handle(event: unknown) {} }\n";
+  const mixed = build({
+    'src/known.ts': 'export class Known {}\n',
+    'src/handler.ts': events,
+    'src/api.ts': "import { Known } from './known'; export function dispatchKnown() { bus.publish(new Known()); }\n",
+  }).callersOfWithStatus({ ...target, name: 'handle', pos: posOf(events, 'handle(') });
+  check('resolved commands still contribute callers when another command is unresolved', labels(mixed.callers).join(',') === 'dispatchKnown' && /Missing/.test(mixed.incompleteReason || ''), JSON.stringify(mixed));
+});
 pending.then(() => {
   console.log(fail ? `\n${fail} failure(s)` : '\nall syntactic-index checks passed');
   process.exit(fail ? 1 : 0);
