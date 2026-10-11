@@ -33,7 +33,8 @@ function createSyntacticResolver(idx, { isTestPath = () => false, hints = new Ma
     const sym = hints.get(`${file}#${pos}`) || idx.symbolAt(file, pos);
     if (!sym) { stats.unknownTarget++; return { callers: [], complete: false, reason: 'symbol not found in the PR index' }; } // not cached: may resolve later
 
-    const rows = idx.callersOf({ file, className: sym.className, name: sym.name, pos })
+    const found = idx.callersOfWithStatus({ file, className: sym.className, name: sym.name, pos });
+    const rows = found.callers
       .map((c) => ({
         label: c.label,
         file: c.file,
@@ -46,6 +47,8 @@ function createSyntacticResolver(idx, { isTestPath = () => false, hints = new Ma
       .filter((c) => withTests || !c.test);
 
     if (!rows.length) stats.resolvedEmpty++;
+    // Not cached when incomplete: a cache hit answers `complete: true`.
+    if (found.incompleteReason) return { callers: rows, complete: false, reason: found.incompleteReason };
     cache.set(key, rows);
     return { callers: rows, complete: true };
   }
