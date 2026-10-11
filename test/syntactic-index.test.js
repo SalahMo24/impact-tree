@@ -364,6 +364,35 @@ console.log('\n▸ overloads: callers attach to the implementation, not a signat
   const method = idx.callersOf({ file: f('src/lib.ts'), className: 'Box', name: 'get', pos: posOf(lib, 'get(a: any)') });
   check('a method overload is called once from each file', labels(method).join(',') === 'Box.inside,crossMethod', JSON.stringify(labels(method)));
 }
+console.log('\n▸ explicit exports override a namespace from export *');
+{
+  const a = 'export function f() { return 1; }\n';
+  const files = {
+    'src/a.ts': a,
+    'src/b.ts': "export * as ns from './a';\n",
+    'src/object.ts': 'export const object = { f() { return 2; } };\n',
+    'src/use.ts': "import { ns } from './outer'; export function consumer() { return ns.f(); }\n",
+  };
+  const target = { file: f('src/a.ts'), className: null, name: 'f', pos: posOf(a, 'f()') };
+  const explicit = [
+    'export const ns = { f() { return 2; } };',
+    'const object = { f() { return 2; } }; export { object as ns };',
+    'export function ns() {}',
+    'export class ns { static f() { return 2; } }',
+    'export const { ns } = { ns: { f() { return 2; } } };',
+    "export { object as ns } from './object';",
+  ];
+  for (const statement of explicit) {
+    for (const outer of [`export * from './b';\n${statement}`, `${statement}\nexport * from './b';`]) {
+      const got = build({ ...files, 'src/outer.ts': outer }).callersOf(target);
+      check(`the explicit export blocks the unrelated namespace: ${outer}`, got.length === 0, JSON.stringify(labels(got)));
+    }
+  }
+  for (const statement of ["export { ns } from './b';", "import * as local from './a'; export { local as ns };"]) {
+    const got = build({ ...files, 'src/outer.ts': statement }).callersOf(target);
+    check('an explicit namespace export still reaches its member', labels(got).join(',') === 'consumer', JSON.stringify(labels(got)));
+  }
+}
 pending.then(() => {
   console.log(fail ? `\n${fail} failure(s)` : '\nall syntactic-index checks passed');
   process.exit(fail ? 1 : 0);
