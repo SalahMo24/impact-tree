@@ -132,6 +132,29 @@ console.log('\n▸ CQRS severed edge');
   check('and it is marked as a cqrs edge', got[0] && got[0].via === 'cqrs');
 }
 
+console.log('\n▸ CQRS matches by declaration, not bare class name');
+{
+  const files = {
+    'src/a/cmd.ts': 'export class CreateUserCommand {}\n',
+    'src/b/cmd.ts': 'export class CreateUserCommand {}\n',
+    'src/a/handler.ts': "import { CommandHandler } from '@nestjs/cqrs';\nimport { CreateUserCommand } from './cmd';\n@CommandHandler(CreateUserCommand)\nexport class AHandler { async execute(c: CreateUserCommand) {} }\n",
+    'src/b/handler.ts': "import { CommandHandler } from '@nestjs/cqrs';\nimport { CreateUserCommand } from './cmd';\n@CommandHandler(CreateUserCommand)\nexport class BHandler { async execute(c: CreateUserCommand) {} }\n",
+    'src/a/api.ts': "import { CreateUserCommand } from './cmd';\nexport class ApiA { post() { this.bus.execute(new CreateUserCommand()); } }\n",
+    'src/b/api.ts': "import { CreateUserCommand } from './cmd';\nexport class ApiB { post() { this.bus.execute(new CreateUserCommand()); } }\n",
+    'src/c/api.ts': "import { CreateUserCommand } from '@acme/commands';\nexport class ApiC { post() { this.bus.execute(new CreateUserCommand()); } }\n",
+  };
+  const idx = build(files);
+  const of = (cls, file) => idx.callersOfWithStatus({ file: f(file), className: cls, name: 'execute' });
+  const a = of('AHandler', 'src/a/handler.ts');
+  const b = of('BHandler', 'src/b/handler.ts');
+  check('a dispatch reaches only the handler of the command it names (a)',
+    labels(a.callers).includes('ApiA.post') && !labels(a.callers).includes('ApiB.post'), JSON.stringify(labels(a.callers)));
+  check('a dispatch reaches only the handler of the command it names (b)',
+    labels(b.callers).includes('ApiB.post') && !labels(b.callers).includes('ApiA.post'), JSON.stringify(labels(b.callers)));
+  check('a dispatch of an unresolvable class is not matched by name', !labels(a.callers).includes('ApiC.post') && !labels(b.callers).includes('ApiC.post'));
+  check('and the handler search is reported incomplete', !!a.incompleteReason && !!b.incompleteReason, String(a.incompleteReason));
+}
+
 console.log('\n▸ arrow attribution');
 {
   const files = {

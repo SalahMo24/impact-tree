@@ -483,7 +483,15 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
   for (const rec of byFile.values()) {
     for (const e of rec.implementsEdges) link(classKeyFor(rec, e.iface), classKey(rec.file, e.cls));
     for (const e of rec.extendsEdges) link(classKeyFor(rec, e.parent), classKey(rec.file, e.child));
-    for (const [cls, cmd] of rec.handlerFor) handlerCommand.set(classKey(rec.file, cls), cmd);
+    // Each handled command is resolved to its declaration here, in the handler's own file.
+    // `decl` is null for one outside the source set; `name` is then what a dispatch of an
+    // unresolvable class is compared with (the exported name, so an alias still meets it).
+    for (const [cls, h] of rec.handlerFor) {
+      handlerCommand.set(classKey(rec.file, cls), {
+        method: h.method,
+        commands: h.commands.map((local) => ({ decl: declarationFor(rec, local), name: rec.imports.get(local)?.imported ?? local })),
+      });
+    }
   }
   const closure = (start, table, cache) => {
     if (cache.has(start)) return cache.get(start);
@@ -536,7 +544,15 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
 
     for (const rec of byFile.values()) {
       for (const c of rec.calls) {
-        if (commands.length && c.receiver && c.receiver.kind === 'new' && commands.includes(c.receiver.typeName)) {
+        // A dispatch reaches a handler through the declaration of the command class, never its bare
+        // name. One whose class cannot be resolved might still be this handler's command.
+        const dispatched = commands.length && c.receiver && c.receiver.kind === 'new'
+          ? declarationFor(rec, c.receiver.typeName, c.receiver.binding) : null;
+        if (commands.length && c.receiver && c.receiver.kind === 'new' && !dispatched) {
+          const name = (c.receiver.binding ? rec.bindingImports.get(c.receiver.binding) : rec.imports.get(c.receiver.typeName))?.imported ?? c.receiver.typeName;
+          if (commands.some((cmd) => cmd.name === name)) incompleteReason ||= `command '${c.receiver.typeName}' dispatched in ${rec.file} could not be resolved to a declaration, so it may be handled by '${target.className}'`;
+        }
+        if (dispatched && commands.some((cmd) => cmd.decl?.file === dispatched.file && cmd.decl.name === dispatched.name)) {
           if (c.owner) {
             const id2 = `${rec.file}#${c.owner.pos}`;
             if (!out.has(id2)) out.set(id2, { file: rec.file, label: c.owner.label, pos: c.owner.pos, via: 'cqrs', callSites: [] });
