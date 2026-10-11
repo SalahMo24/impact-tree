@@ -121,10 +121,13 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
       if (ts.isImportDeclaration(node)) { recordImport(node); return; }
       if (ts.isExportDeclaration(node) && node.moduleSpecifier) {
         // A barrel re-export is why `import { X } from '../index'` resolves to a file
-        // that does not declare X. Following it is pure syntax.
+        // that does not declare X. Following it is pure syntax. `export * as ns from './x'`
+        // exports one name, `ns`, bound to the module namespace; it re-exports none of
+        // `./x`'s own names, so it is neither `export *` nor a named re-export.
         reExports.push({
           module: node.moduleSpecifier.text,
           mode: modeAt(sf, node.moduleSpecifier),
+          namespace: node.exportClause && ts.isNamespaceExport(node.exportClause) ? node.exportClause.name.text : null,
           names: node.exportClause && ts.isNamedExports(node.exportClause)
             ? Object.fromEntries(node.exportClause.elements.map((el) => [el.name.text, (el.propertyName || el.name).text])) : null,   // null = export *
         });
@@ -411,8 +414,31 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
     const imp = rec.imports.get(local);
     if (imp) return exportTarget(resolveModule(file, imp.module, { mode: imp.mode }), imp.imported, seen);
     for (const re of rec.reExports) {
+      if (re.namespace) continue;
       if (re.names && !Object.hasOwn(re.names, name)) continue;
       const hit = exportTarget(resolveModule(file, re.module, { mode: re.mode }), re.names ? re.names[name] : name, seen);
+      if (hit) return hit;
+    }
+    return null;
+  };
+  // The module a name exported from `file` is a namespace of: `export * as ns from './x'`,
+  // or an `import * as ns` that is exported, possibly through further barrels. `file` is
+  // null when the namespace's module is outside the source set, so its members cannot be
+  // followed; the caller must report that, not treat the member as absent.
+  const namespaceOf = (file, name, seen = new Set()) => {
+    const key = `${file}#${name}`;
+    if (seen.has(key)) return null;
+    seen.add(key);
+    const rec = byFile.get(file);
+    if (!rec) return null;
+    const via = (imp) => ({ file: resolveModule(file, imp.module, { mode: imp.mode }), module: imp.module });
+    const local = rec.exports.get(name) || name;
+    const imp = !rec.decls.has(local) && rec.imports.get(local);
+    if (imp) return imp.imported === '*' ? via(imp) : namespaceOf(resolveModule(file, imp.module, { mode: imp.mode }), imp.imported, seen);
+    for (const re of rec.reExports) {
+      if (re.namespace) { if (re.namespace === name) return via(re); continue; }
+      if (re.names && !Object.hasOwn(re.names, name)) continue;
+      const hit = namespaceOf(resolveModule(file, re.module, { mode: re.mode }), re.names ? re.names[name] : name, seen);
       if (hit) return hit;
     }
     return null;
@@ -492,8 +518,12 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
 
   // --- reverse lookup ---------------------------------------------------------
   // target: { file, className, name } -> [{ file, label, pos }]
-  function callersOf(target) {
+  // `callersOfWithStatus` also says when a call that could reach the target went through
+  // a namespace that could not be followed: the list is then possibly short.
+  function callersOf(target) { return callersOfWithStatus(target).callers; }
+  function callersOfWithStatus(target) {
     const out = new Map();
+    let incompleteReason = null;
     const targetKey = target.className ? classKey(target.file, target.className) : null;
     const subs = targetKey ? subtypesOf(targetKey) : new Set();
     const supers = targetKey ? supertypesOf(targetKey) : new Set();
@@ -522,7 +552,12 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
         const receiverImport = c.receiver?.kind === 'ident'
           && (c.receiver.binding ? rec.bindingImports.get(c.receiver.binding) : rec.imports.get(c.receiver.name));
         const ns = receiverImport && !c.receiver.name.includes('.') ? receiverImport : null;
+        // `import { ns } from './barrel'` where the barrel has `export * as ns from './x'`.
+        const reExported = ns && ns.imported !== '*' && c.name === target.name
+          ? namespaceOf(resolveModule(rec.file, ns.module, { mode: ns.mode }), ns.imported) : null;
+        if (reExported && !reExported.file) incompleteReason ||= `namespace '${ns.imported}' re-exports '${reExported.module}', which is outside the indexed files`;
         const namespaceTarget = ns?.imported === '*' ? exportTarget(resolveModule(rec.file, ns.module, { mode: ns.mode }), c.name)
+          : reExported?.file ? exportTarget(reExported.file, c.name)
           : c.receiver?.kind === 'require' ? exportTarget(resolveModule(rec.file, c.receiver.module, { mode: ts.ModuleKind.CommonJS }), c.name)
             : null;
         if (c.name !== target.name && bareTarget?.name !== target.name && namespaceTarget?.name !== target.name) continue;
@@ -568,7 +603,7 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
         out.get(id).callSites.push({ start: c.pos, end: c.pos + String(c.name).length });
       }
     }
-    return [...out.values()];
+    return { callers: [...out.values()], incompleteReason };
   }
 
   // (file, pos) -> { className, name } for a declaration, so a resolver can answer
@@ -587,7 +622,7 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
   const symbolAt = (file, pos) => symbolIndex.get(`${file}#${pos}`) || null;
 
   return {
-    byFile, texts, callersOf, symbolAt, resolveModule,
+    byFile, texts, callersOf, callersOfWithStatus, symbolAt, resolveModule,
     classKey, subtypesOf, supertypesOf, handlerCommand, size: byFile.size,
   };
 }

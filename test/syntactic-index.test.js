@@ -11,6 +11,7 @@ const ts = findTypeScript();
 if (!ts) { console.log('  SKIP no typescript resolvable — syntactic-index checks did NOT run'); process.exit(0); }
 
 const { createSyntacticIndex } = require('../src/engine/syntactic-index');
+const { createSyntacticResolver } = require('../src/engine/resolver-syntactic');
 
 const R = '/proj';
 const f = (p) => path.join(R, p);
@@ -282,5 +283,41 @@ console.log('\n▸ call sites vs callers');
   check('and it is labelled by file name', top[0] && top[0].label === 'top.ts', top[0] && top[0].label);
 }
 
-console.log(fail ? `\n${fail} failure(s)` : '\nall syntactic-index checks passed');
-process.exit(fail ? 1 : 0);
+let pending = Promise.resolve();
+console.log('\n▸ `export * as ns` is a namespace, not `export *`');
+{
+  const a = 'export function f() { return 1; }\n';
+  const files = {
+    'src/a.ts': a,
+    'src/b.ts': "export * as ns from './a';\n",
+    'src/c.ts': "import { f } from './b';\nexport function viaName() { return f(); }\n",
+    'src/d.ts': "import { ns } from './b';\nexport function viaNamespace() { return ns.f(); }\n",
+  };
+  const idx = build(files);
+  const target = { file: f('src/a.ts'), className: null, name: 'f', pos: posOf(a, 'f()') };
+  const got = idx.callersOf(target);
+  check('`f` is not exported by the barrel, so importing it by name is no caller',
+    !labels(got).includes('viaName'), JSON.stringify(labels(got)));
+  check('`ns.f()` through the barrel resolves to the declaration',
+    labels(got).join(',') === 'viaNamespace', JSON.stringify(labels(got)));
+
+  // A namespace whose module is outside the source set cannot be followed. The caller
+  // search for `f` is then incomplete, never a finished search that found nothing.
+  const open = build({
+    'src/a.ts': a,
+    'src/b.ts': "export * as ns from 'not-in-the-source-set';\n",
+    'src/d.ts': files['src/d.ts'],
+  });
+  const resolver = createSyntacticResolver(open);
+  pending = resolver.incomingWithStatus(f('src/a.ts'), target.pos).then((ans) => {
+    check('an unfollowable namespace member makes the search incomplete',
+      ans.complete === false && /namespace/.test(ans.reason || ''), JSON.stringify(ans));
+    const unrelated = build({ ...files, 'src/e.ts': "import { ns } from './b';\nexport function g() { return ns.other(); }\n" });
+    check('a call that cannot be the target does not make a followable search incomplete',
+      unrelated.callersOfWithStatus(target).incompleteReason == null);
+  });
+}
+pending.then(() => {
+  console.log(fail ? `\n${fail} failure(s)` : '\nall syntactic-index checks passed');
+  process.exit(fail ? 1 : 0);
+});
