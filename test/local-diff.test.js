@@ -134,5 +134,15 @@ const {
     check('isTestFile uses the relative path', !isTestFile('/x/tests/app', '/x/tests/app/src/a.ts') && isTestFile('/x/app', '/x/app/tests/a.ts'));
     check('isTestPath accepts Windows separators', isTestPath('src\\__tests__\\a.ts'));
   }
+  console.log('▸ callers of an overloaded function attach to the changed implementation');
+  {
+    const lib = (v) => `export function pick(a: string): string;\nexport function pick(a: number): number;\nexport function pick(a: any): any {\n  return a${v};\n}\nexport function sameFile() {\n  return pick(1);\n}\n`;
+    const repo = mkRepo({ 'tsconfig.json': TSCONFIG, 'src/lib.ts': lib(''), 'src/use.ts': "import { pick } from './lib';\nexport function crossFile() {\n  return pick('x');\n}\n" });
+    const base = headOf(repo);
+    write(repo, { 'src/lib.ts': lib(' + 0') });
+    const r = await analyze(repo, since(base));
+    const row = byLabel(r, 'pick');
+    check('each caller once, none on a signature', !!row && J(callStates(row).map((s) => s.replace(/\[.*/, '')).sort()) === J(['crossFile', 'sameFile']), row && J(callStates(row)));
+  }
   finish();
 })().catch((e) => { console.error(e); process.exit(1); });

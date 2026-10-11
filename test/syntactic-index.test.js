@@ -317,6 +317,30 @@ console.log('\n▸ `export * as ns` is a namespace, not `export *`');
       unrelated.callersOfWithStatus(target).incompleteReason == null);
   });
 }
+console.log('\n▸ overloads: callers attach to the implementation, not a signature');
+{
+  const lib = [
+    'export function pick(a: string): string;',
+    'export function pick(a: number): number;',
+    'export function pick(a: any): any { return a; }',
+    'export function sameFile() { return pick(1); }',
+    'export class Box {',
+    '  get(a: string): string;',
+    '  get(a: number): number;',
+    '  get(a: any): any { return a; }',
+    '  inside() { return this.get(1); }',
+    '}',
+    '',
+  ].join('\n');
+  const idx = build({
+    'src/lib.ts': lib,
+    'src/use.ts': "import { pick, Box } from './lib';\nexport function crossFile() { return pick('x'); }\nexport function crossMethod(b: Box) { return b.get(2); }\n",
+  });
+  const fn = idx.callersOf({ file: f('src/lib.ts'), className: null, name: 'pick', pos: posOf(lib, 'pick(a: any)') });
+  check('a function overload is called once from each file', labels(fn).join(',') === 'crossFile,sameFile', JSON.stringify(labels(fn)));
+  const method = idx.callersOf({ file: f('src/lib.ts'), className: 'Box', name: 'get', pos: posOf(lib, 'get(a: any)') });
+  check('a method overload is called once from each file', labels(method).join(',') === 'Box.inside,crossMethod', JSON.stringify(labels(method)));
+}
 pending.then(() => {
   console.log(fail ? `\n${fail} failure(s)` : '\nall syntactic-index checks passed');
   process.exit(fail ? 1 : 0);
