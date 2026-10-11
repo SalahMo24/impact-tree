@@ -78,7 +78,7 @@ const assertOutside = (result, s, name) => {
   return got[0];
 };
 
-test('local analysis reports changed lines outside every callable', { skip: !h && 'typescript not resolvable' }, async () => {
+test('local analysis reports changed lines outside every callable', async () => {
   for (const [name, s] of Object.entries(SCENARIOS)) {
     const dir = h.mkRepo({ 'tsconfig.json': h.TSCONFIG, [FILE]: s.base });
     const base = h.headOf(dir);
@@ -89,7 +89,7 @@ test('local analysis reports changed lines outside every callable', { skip: !h &
   }
 });
 
-test('a file whose only changed lines are imports, with no changed callable, is a file without a call graph', { skip: !h && 'typescript not resolvable' }, async () => {
+test('a file whose only changed lines are imports, with no changed callable, is a file without a call graph', async () => {
   const dir = h.mkRepo({ 'tsconfig.json': h.TSCONFIG, [FILE]: "import { a } from './a';\nexport function f() {}\n" });
   const base = h.headOf(dir);
   h.write(dir, { [FILE]: "import { a } from './a';\nimport { b } from './b';\nexport function f() {}\n" });
@@ -100,7 +100,7 @@ test('a file whose only changed lines are imports, with no changed callable, is 
 });
 
 // The PR preview gets the same texts and the diff git itself computes for them.
-test('a PR preview reports the same outside ranges as a local run', { skip: !h && 'typescript not resolvable' }, async () => {
+test('a PR preview reports the same outside ranges as a local run', async () => {
   for (const [name, s] of Object.entries(SCENARIOS)) {
     const dir = h.mkRepo({ 'tsconfig.json': h.TSCONFIG, [FILE]: s.base });
     const base = h.headOf(dir);
@@ -230,7 +230,7 @@ test('outside hashes preserve blank lines in literal values on both sides', () =
   }
 });
 
-test('a blank line inserted in a template value clears its reviewed outside row', { skip: !h && 'typescript not resolvable' }, async () => {
+test('a blank line inserted in a template value clears its reviewed outside row', async () => {
   const baseText = 'export const MESSAGE = `hello\nworld`;\nexport function f() { return 0; }\n';
   const head = baseText.replace('hello', 'hi').replace('return 0', 'return 1');
   const dir = h.mkRepo({ 'tsconfig.json': h.TSCONFIG, [FILE]: baseText });
@@ -279,7 +279,7 @@ test('a tick on the row survives a function edit and is lost by an import edit, 
   clearVirtualText();
 });
 
-test('a local identity is content-based too', { skip: !h && 'typescript not resolvable' }, async () => {
+test('a local identity is content-based too', async () => {
   const dir = h.mkRepo({ 'tsconfig.json': h.TSCONFIG, [FILE]: SCENARIOS[FIRST].base });
   const base = h.headOf(dir);
   const { makeGit } = require('../src/engine/git');

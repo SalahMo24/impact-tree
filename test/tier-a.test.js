@@ -5,9 +5,8 @@
 // syntactic index and resolver without a network or a checkout.
 const path = require('path');
 
-const { findTypeScript } = require('./find-typescript');
-const ts = findTypeScript();
-if (!ts) { console.log('  SKIP no typescript resolvable — tier A checks did NOT run'); process.exit(0); }
+const { requireTypeScript } = require('./find-typescript');
+const ts = requireTypeScript('tier A');
 
 const { analyzeRemote } = require('../src/engine/analyze-remote');
 const { hunkRangesFromPatch } = require('../src/engine/patch');

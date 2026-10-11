@@ -11,7 +11,7 @@ const { isAnalysisCancelled } = require('../src/engine/cancellation');
 const { createSourcesProvider } = require('../src/sources-provider');
 const { analyzeRemote } = require('../src/engine/analyze-remote');
 const { clearVirtualText } = require('../src/engine/textpos');
-const { findTypeScript } = require('./find-typescript');
+const { findTypeScript, missingPrerequisite } = require('./find-typescript');
 
 // A test written against code that ignores the seam must fail, not reach api.github.com.
 global.fetch = () => { throw new Error('the real network was reached'); };
@@ -328,7 +328,8 @@ test('the sources view warns when the open-PR list was truncated, and only then'
 
 // ---- PR preview -------------------------------------------------------------------
 const ts = findTypeScript();
-test('a file that is too large or too slow is skipped with the fetch-failed warning, and the preview stays incomplete', { skip: !ts && 'no typescript resolvable' }, async () => {
+const tsSkip = !ts && missingPrerequisite('PR preview', 'no typescript resolvable');
+test('a file that is too large or too slow is skipped with the fetch-failed warning, and the preview stays incomplete', { skip: tsSkip }, async () => {
   const files = ['small.ts', 'huge.ts', 'slow.ts'];
   const fetchImpl = async (url) => {
     const u = new URL(url);
@@ -353,7 +354,7 @@ test('a file that is too large or too slow is skipped with the fetch-failed warn
   } finally { clearVirtualText(); }
 });
 
-test('analyzeRemote hands its signal to every GitHub call, including the configuration reads', { skip: !ts && 'no typescript resolvable' }, async () => {
+test('analyzeRemote hands its signal to every GitHub call, including the configuration reads', { skip: tsSkip }, async () => {
   const controller = new AbortController();
   const seen = {};
   const note = (name) => (...args) => { (seen[name] = seen[name] || []).push(args[args.length - 1]); };

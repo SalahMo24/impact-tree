@@ -11,7 +11,6 @@ const { projectRootOf } = require('../src/engine/diff');
 const textpos = require('../src/engine/textpos');
 
 const h = createLocalHarness();
-if (!h) process.exit(0);
 const {
   ts, TS_DIR, TMP, TSCONFIG, TARGET_V1, TARGET_V2, fast, since, J,
   run, write, linkTs, mkRepo, commit, headOf, byLabel, callStates, check, finish, uniq,
@@ -158,7 +157,7 @@ const {
     const r2 = await resolveBaseAsync(makeGit(sb), 'main', { fetch: true });
     check('async fetch does too', r2.sha === tip2 && r2.notes.some((n) => n.startsWith('fetched')), J(r2.notes));
     const r3 = await resolveBaseAsync(makeGit(sb), 'no-such-branch', { fetch: true, allowLocal: true }).catch((e) => e);
-    check('a failed fetch is reported, not thrown as a fetch error', r3 instanceof Error ? /cannot resolve/.test(r3.message) : true, r3 && r3.message);
+    check('a failed fetch is reported, not thrown as a fetch error', r3 instanceof Error && /^cannot resolve base ref 'no-such-branch'/.test(r3.message), r3 && r3.message);
   }
 
   console.log('▸ batched blob reads');

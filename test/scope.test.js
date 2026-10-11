@@ -10,12 +10,8 @@ const fs = require('fs');
 const path = require('path');
 
 // This check needs a TypeScript install but not a target repo.
-const { findTypeScript } = require('./find-typescript');
-const ts = findTypeScript();
-if (!ts) {
-  console.log('  SKIP no typescript resolvable — scope check did NOT run');
-  process.exit(0);
-}
+const { requireTypeScript } = require('./find-typescript');
+const ts = requireTypeScript('scope');
 
 const AMBIENT = new Set([
   'require', 'module', 'exports', '__dirname', '__filename', 'process', 'console',

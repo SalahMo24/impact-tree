@@ -5,7 +5,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { findTypeScript } = require('./find-typescript');
+const { requireTypeScript } = require('./find-typescript');
 
 const J = JSON.stringify;
 const TSCONFIG = J({ compilerOptions: { target: 'es2020', module: 'commonjs', strict: false, experimentalDecorators: true }, include: ['src'] });
@@ -15,11 +15,7 @@ const fast = { skipForest: true, deferTestReach: true };
 const since = (base, extra = {}) => ({ mode: 'checkpoint', checkpoint: base, ...fast, ...extra });
 
 function createLocalHarness() {
-  const ts = findTypeScript();
-  if (!ts) {
-    console.log('  SKIP no typescript resolvable — local analysis checks did NOT run');
-    return null;
-  }
+  const ts = requireTypeScript('local analysis');
   const TS_DIR = path.dirname(require.resolve('typescript/package.json', { paths: [path.dirname(require.resolve('./find-typescript'))] }));
   const { makeSymbols } = require('../src/engine/symbols');
   const TMP = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-local-')));

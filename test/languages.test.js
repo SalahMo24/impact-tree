@@ -28,9 +28,8 @@ for (const [p, src, tst] of [
 check('SOURCE_EXT is exported for reuse', SOURCE_EXT instanceof RegExp);
 
 console.log('▸ JSX parsing hazard');
-const { findTypeScript, findSampleFile } = require('./find-typescript');
-const ts = findTypeScript();
-if (!ts) { console.log('  SKIP no typescript resolvable — language checks did NOT run'); process.exit(0); }
+const { requireTypeScript, findSampleFile } = require('./find-typescript');
+const ts = requireTypeScript('language');
 const jsx = 'export const Card = ({ title }) => <div className="c">{title}</div>;\nexport function Badge() { return <span/>; }\n';
 const countJsx = (sf) => { let n = 0; const v = (x) => { if (ts.isJsxElement(x) || ts.isJsxSelfClosingElement(x)) n++; ts.forEachChild(x, v); }; ts.forEachChild(sf, v); return n; };
 const asTsx = ts.createSourceFile('C.tsx', jsx, ts.ScriptTarget.ES2021, true);

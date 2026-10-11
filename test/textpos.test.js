@@ -8,9 +8,8 @@ const path = require('path');
 const { offsetToPosition, positionToOffset } = require('../src/engine/textpos');
 
 const repo = require('./target-repo')();
-const { findTypeScript } = require('./find-typescript');
-const ts = findTypeScript();
-if (!ts) { console.log('  SKIP no typescript resolvable — textpos checks did NOT run'); process.exit(0); }
+const { requireTypeScript } = require('./find-typescript');
+const ts = requireTypeScript('textpos');
 let fail = 0;
 const check = (n, ok, extra = '') => { console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${n}${extra ? ' — ' + extra : ''}`); if (!ok) fail++; };
 

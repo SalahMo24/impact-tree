@@ -7,9 +7,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { findTypeScript } = require('./find-typescript');
-const ts = findTypeScript();
-if (!ts) { console.log('  SKIP no typescript resolvable — inheritance checks did NOT run'); process.exit(0); }
+const { requireTypeScript } = require('./find-typescript');
+const ts = requireTypeScript('inheritance');
 
 const { createInheritanceFilter } = require('../src/engine/inheritance');
 

@@ -6,9 +6,8 @@
 const path = require('path');
 const fs = require('fs');
 
-const { findTypeScript } = require('./find-typescript');
-const ts = findTypeScript();
-if (!ts) { console.log('  SKIP no typescript resolvable — syntactic-index checks did NOT run'); process.exit(0); }
+const { requireTypeScript } = require('./find-typescript');
+const ts = requireTypeScript('syntactic-index');
 
 const { createSyntacticIndex } = require('../src/engine/syntactic-index');
 
