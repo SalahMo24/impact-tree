@@ -157,7 +157,8 @@ const pr = { number: 7, headSha: 'headsha', baseSha: 'basesha', mergeBaseSha: 'b
     return r.changedPaths.every((p2) => shown.has(p2));
   })());
   check('only source files are analysed', r.changedFileCount === 2, String(r.changedFileCount));
-  check('test reach is not claimed', r.testReachComputed === false && r.untested.length === 0);
+  // No test file is in this PR; tests elsewhere cannot be seen, so nothing is ever 'uncovered'.
+  check('test reach is never claimed complete', r.untested.length === 0 && r.allChanged.every((c) => c.testState === 'unknown' && c.testReachIncompleteReason));
 
   console.log('\n▸ fetching');
   check('one file-list request', calls.files === 1);

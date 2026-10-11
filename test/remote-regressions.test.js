@@ -128,3 +128,61 @@ test('remote analysis resolves every symbol whatever impactTree.concurrency hold
   }
   clearVirtualText();
 });
+
+// A preview reads the PR's own files only, so the test callers it can show are test files
+// the PR itself changed. Tests elsewhere in the repository cannot be known.
+const previewWithTests = ({ testFiles, failTestFetch = false }) => {
+  const modified = (p) => ({ path: p, oldPath: p, status: 'modified', patch: '@@ -1 +1 @@\n-old\n+new' });
+  const texts = {
+    'lib/target.ts@base': 'export function target() { return 0; }\n',
+    'lib/target.ts@head': 'export function target(required: string) { return 1; }\n',
+    'test/target.test.ts@head': "import { target } from '../lib/target'; export function checksTarget() { target('x'); }\n",
+  };
+  const fetched = [];
+  const gh = {
+    listPullRequestFiles: async () => ({ total: 1 + testFiles.length, files: ['lib/target.ts', ...testFiles].map(modified) }),
+    fileAtRef: async (_, p, ref) => {
+      fetched.push(`${p}@${ref}`);
+      if (failTestFetch && p.startsWith('test/')) throw new Error('502 bad gateway');
+      return texts[`${p}@${ref}`] ?? null;
+    },
+  };
+  return { fetched, run: () => analyzeRemote({ ts, gh, slug: {}, pr: { number: 3, headSha: 'head', mergeBaseSha: 'base' }, repoRoot: root }) };
+};
+
+test('a test file changed in the PR shows as a test caller of a changed function', async () => {
+  clearVirtualText();
+  const { fetched, run } = previewWithTests({ testFiles: ['test/target.test.ts'] });
+  const r = await run();
+  const target = r.allChanged.find((c) => c.label === 'target');
+  assert.deepEqual(target.callers.map((c) => [c.label, c.test]), [['checksTarget', true]]);
+  assert.equal(target.testState, 'covered');
+  assert.deepEqual(target.tests, ['checksTarget']);
+  assert.equal(r.testReachComputed, true);
+  assert.deepEqual(target.stale, [], 'a test caller is never a stale production caller');
+  assert.equal(r.allChanged.some((c) => c.relPath.startsWith('test/')), false, 'test files stay out of the changed symbols, as locally');
+  assert.deepEqual(fetched.filter((f) => /\.test\.ts@/.test(f)), ['test/target.test.ts@head'], 'head only: a test file is read, never diffed');
+  clearVirtualText();
+});
+
+test('a preview with no test in the PR says test reach is limited, never that there are no tests', async () => {
+  clearVirtualText();
+  const { run } = previewWithTests({ testFiles: [] });
+  const r = await run();
+  const target = r.allChanged.find((c) => c.label === 'target');
+  assert.equal(target.testState, 'unknown');
+  assert.match(target.testReachIncompleteReason, /only the pull request's own files/);
+  assert.deepEqual(r.untested, []);
+  clearVirtualText();
+});
+
+test('a PR test file that cannot be fetched is reported and keeps test reach limited', async () => {
+  clearVirtualText();
+  const { run } = previewWithTests({ testFiles: ['test/target.test.ts'], failTestFetch: true });
+  const r = await run();
+  const target = r.allChanged.find((c) => c.label === 'target');
+  assert.equal(target.testState, 'unknown');
+  assert.match(target.testReachIncompleteReason, /1 test file\(s\) in the PR could not be fetched/);
+  assert.ok(r.warnings.some((w) => /test\/target\.test\.ts.*502/.test(w)), r.warnings.join(' | '));
+  clearVirtualText();
+});

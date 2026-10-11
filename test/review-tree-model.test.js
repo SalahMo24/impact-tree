@@ -337,6 +337,17 @@ test('a PR preview states that tests are not searched, and offers no command tha
   }
 });
 
+test('a computed PR preview names its test caller, or says test reach is limited and why', () => {
+  const covered = testsRows(impactOf(change('src/a.js', 'a', { testState: 'covered', tests: ['checksA'] }), { tierA: true }).rows);
+  assert.equal(covered.length, 1);
+  assert.equal(covered[0].label, 'Tested by checksA');
+  const reason = 'a preview reads only the pull request\'s own files, so tests outside it are not searched';
+  const limited = testsRows(impactOf(change('src/a.js', 'a', { testState: 'unknown', testReachIncompleteReason: reason }), { tierA: true }).rows);
+  assert.equal(limited.length, 1);
+  assert.equal(limited[0].label, 'Test reach unknown');
+  assert.equal(limited[0].desc, reason);
+});
+
 test('there is exactly one tests row, after the callers', () => {
   const callers = [callerOf('src/u.js', 'u', 1)];
   for (const state of ['covered', 'uncovered', 'unknown']) {
