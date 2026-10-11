@@ -232,22 +232,26 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
   // `cache` above. Key: file#position; it holds callers with and without tests, which
   // `withCqrs` filters per call, so the test flag is not part of the key.
   const cqrsCache = new Map();
-  // Returns { callers, failed }; `failed` is true when any underlying query threw.
+  // Returns { callers, failed, reason }; `failed` is true when any underlying query threw or
+  // a command's handler lookup found nothing, and `reason` then says which.
   async function withCqrs(file, pos, withTests) {
     // for a handler's execute(), the interface-derived callers are all false positives
     const handler = cqrs.isHandlerExecute(file, pos);
     const { callers: base, failed: hierarchyFailed } = handler ? { callers: [], failed: false } : incomingSync(file, pos, withTests);
     const key = `${file}#${pos}`;
-    let extra = cqrsCache.get(key);
+    let found = cqrsCache.get(key);
     let failed = hierarchyFailed;
-    if (extra === undefined) {
+    let reason = hierarchyFailed ? 'query-failed' : undefined;
+    if (found === undefined) {
       try {
-        extra = await cqrs.extraCallers(file, pos);
-        cqrsCache.set(key, extra);
-        stats.cqrsEdges += extra.length;
-      } catch { extra = []; failed = true; }
+        found = await cqrs.extraCallers(file, pos);
+        if (!found.unresolved.length) cqrsCache.set(key, found); // a failed lookup is retried, not remembered
+        stats.cqrsEdges += found.callers.length;
+      } catch { found = { callers: [], unresolved: [] }; failed = true; reason = 'query-failed'; }
     }
-    if (!extra.length) return { callers: base, failed };
+    const { callers: extra, unresolved } = found;
+    if (unresolved.length) { failed = true; reason = reason || `command lookup failed for ${unresolved.join(', ')}`; }
+    if (!extra.length) return { callers: base, failed, reason };
     if (handler) stats.cqrsSuppressed = (stats.cqrsSuppressed || 0) + 1;
     const seen = new Set(base.map((c) => `${c.file}#${c.pos}`));
     const merged = base.slice();
@@ -256,7 +260,7 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
       if (!withTests && e.test) continue;
       merged.push(e);
     }
-    return { callers: merged, failed };
+    return { callers: merged, failed, reason };
   }
 
   return {
@@ -264,18 +268,18 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
     async incoming(file, pos, withTests = true) { return (await withCqrs(file, pos, withTests)).callers; },
     /** @returns {Promise<import('./caller-contract').CallerState>} */
     async callerState(file, pos, { isConstructor = false } = {}) {
-      const { callers, failed } = await withCqrs(file, pos, true);
+      const { callers, failed, reason } = await withCqrs(file, pos, true);
       // A service that threw may have hidden callers, so even a found list is incomplete.
       if (callers.length) {
         return failed
-          ? { state: 'resolved', callers, complete: false, reason: 'query-failed' }
+          ? { state: 'resolved', callers, complete: false, reason: reason || 'query-failed' }
           : { state: 'resolved', callers, complete: true };
       }
       // No tsconfig includes this file, so no query could have found a caller. "none"
       // there claimed a function nobody calls; the truth is we did not look.
       if (!inProgram(file)) return { state: 'unknown', reason: 'not-in-program', callers: [], complete: false };
       // A query that threw saw nothing; "no callers" would be a claim we cannot back.
-      if (failed) return { state: 'unknown', reason: 'query-failed', callers: [], complete: false };
+      if (failed) return { state: 'unknown', reason: reason || 'query-failed', callers: [], complete: false };
       // A constructor with no `new X()` site is instantiated by the DI container.
       if (isConstructor) return { state: 'di', callers: [], complete: true };
       const refs = referenceCount(file, pos);

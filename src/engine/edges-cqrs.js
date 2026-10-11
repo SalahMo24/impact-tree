@@ -103,13 +103,16 @@ function makeCqrsEdges(ts, { definitionAt, referencesTo, isTestPath, trace = () 
 
   return {
     name: 'cqrs',
-    // extra incoming edges for a handler's execute(): the dispatch sites of its command
+    // extra incoming edges for a handler's execute(): the dispatch sites of its command.
+    // `unresolved` names each command whose class could not be located: its dispatch sites
+    // were not searched, so `callers` may be missing some.
     async extraCallers(file, offset) {
       const commands = handledCommand(file, offset);
       const combined = new Map();
+      const unresolved = [];
       for (const cmd of commands) {
         const def = await definitionAt(file, cmd.pos);
-        if (!def) { trace(`cqrs ${cmd.name}: definitionAt returned nothing`); continue; }
+        if (!def) { trace(`cqrs ${cmd.name}: definitionAt returned nothing`); unresolved.push(cmd.name); continue; }
         const refs = await referencesTo(def.file, def.offset);
         trace(`cqrs ${cmd.name}: def ${require('path').basename(def.file)}@${def.offset}, ${refs.length} reference(s)`);
         const out = new Map();
@@ -135,7 +138,7 @@ function makeCqrsEdges(ts, { definitionAt, referencesTo, isTestPath, trace = () 
           else combined.set(id, row);
         }
       }
-      return [...combined.values()];
+      return { callers: [...combined.values()], unresolved };
     },
     // `execute` on a handler resolves through ICommandHandler.execute, so the call
     // hierarchy hands back every bus.execute() site in the codebase -- 82 of them here.

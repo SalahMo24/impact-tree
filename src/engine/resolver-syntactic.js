@@ -9,7 +9,7 @@
 // reviewer to opposite conclusions.
 
 function createSyntacticResolver(idx, { isTestPath = () => false, hints = new Map() } = {}) {
-  // Cache: caller rows by target. Owner: this resolver, built for one PR preview and held
+  // Cache: caller answers by target. Owner: this resolver, built for one PR preview and held
   // by the session as `resolverOverride` until another analysis replaces it. Key: target
   // file#position and whether tests were searched; the index and the hints are immutable,
   // so the file set (the preview's revision) is part of the owner's context, not the key.
@@ -19,12 +19,13 @@ function createSyntacticResolver(idx, { isTestPath = () => false, hints = new Ma
   const cache = new Map();
   const stats = { incomingCalls: 0, cacheHits: 0, resolvedEmpty: 0, unknownTarget: 0 };
 
-  // `complete: false` means the symbol could not be located in the index, so no caller
-  // search ran for it. That is not the same answer as a search that found nothing.
+  // `complete: false` means the search did not finish: the symbol could not be located in
+  // the index, or calls that may target it were skipped because their receiver could not be
+  // resolved. Neither is the same answer as a search that found nothing.
   /** @returns {Promise<import('./caller-contract').CallerAnswer>} */
   async function incomingWithStatus(file, pos, withTests = true) {
     const key = `${withTests ? 'A' : 'P'}${file}#${pos}`;
-    if (cache.has(key)) { stats.cacheHits++; return { callers: cache.get(key), complete: true }; }
+    if (cache.has(key)) { stats.cacheHits++; return cache.get(key); }
     stats.incomingCalls++;
 
     // Changed-symbol positions come from the symbol collector, whose anchor for a
@@ -47,10 +48,18 @@ function createSyntacticResolver(idx, { isTestPath = () => false, hints = new Ma
       .filter((c) => withTests || !c.test);
 
     if (!rows.length) stats.resolvedEmpty++;
-    // Not cached when incomplete: a cache hit answers `complete: true`.
-    if (found.incompleteReason) return { callers: rows, complete: false, reason: found.incompleteReason };
-    cache.set(key, rows);
-    return { callers: rows, complete: true };
+    // The index and hints are immutable, so an incomplete answer is as stable as a complete
+    // one and is cached whole.
+    const skipped = idx.unresolvedCallsTo({ name: sym.name });
+    const reasons = [
+      ...(found.incompleteReason ? [found.incompleteReason] : []),
+      ...(skipped ? [`${skipped} call(s) named ${sym.name} on a receiver that could not be resolved`] : []),
+    ];
+    const answer = reasons.length
+      ? { callers: rows, complete: false, reason: reasons.join('; ') }
+      : { callers: rows, complete: true };
+    cache.set(key, answer);
+    return answer;
   }
 
   async function incoming(file, pos, withTests = true) {

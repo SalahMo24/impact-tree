@@ -217,6 +217,36 @@ test('TypeScript resolver: callerState says whether every service answered', asy
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('TypeScript resolver: a command whose handler lookup failed makes the callers incomplete', async () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-ts-cqrs-')));
+  try {
+    const files = {
+      'tsconfig.json': '{"include":["*.ts"]}',
+      'cmds.ts': 'export class FirstCommand {}\nexport class SecondCommand {}\n',
+      'handler.ts': "import { FirstCommand, SecondCommand } from './cmds';\n"
+        + 'declare function CommandHandler(...c: unknown[]): ClassDecorator;\n'
+        + '@CommandHandler(FirstCommand, SecondCommand)\nexport class Handler { async execute() {} }\n',
+      'bus.ts': "import { FirstCommand } from './cmds';\nexport function dispatch(bus: any) { return bus.execute(new FirstCommand()); }\n",
+    };
+    for (const [f, text] of Object.entries(files)) fs.writeFileSync(path.join(dir, f), text);
+    const file = path.join(dir, 'handler.ts');
+    const at = files['handler.ts'].indexOf('execute');
+    // The real compiler, except that no definition is found for SecondCommand.
+    const blind = { ...ts, createLanguageService: (...a) => {
+      const ls = ts.createLanguageService(...a);
+      const real = ls.getDefinitionAtPosition.bind(ls);
+      ls.getDefinitionAtPosition = (f, offset) => (f === file && files['handler.ts'].startsWith('SecondCommand', offset) ? undefined : real(f, offset));
+      return ls;
+    } };
+    const resolver = createTsResolver(blind, dir, { filterInherited: false });
+    const state = await resolver.callerState(file, at);
+    assert.deepEqual(state.callers.map((c) => c.label), ['dispatch'], 'the command that resolved still yields its dispatch site');
+    assert.deepEqual([state.state, state.complete], ['resolved', false]);
+    assert.match(state.reason, /SecondCommand/, 'the reason names the command that could not be looked up');
+    resolver.dispose();
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('syntactic resolver: callerState passes the index answer through, scoped to the PR files', async () => {
   const idx = createSyntacticIndex(ts, [
     { path: '/review/t.ts', text: 'export function target() {}\nexport class Svc { constructor() {} }\nexport function lonely() {}' },
@@ -253,7 +283,7 @@ test('editor resolver: callerState keeps the completeness of the answer', async 
     } } };
   const fakeCqrs = new Module(cqrsId); fakeCqrs.loaded = true;
   fakeCqrs.exports = { makeCqrsEdges: () => ({ isHandlerExecute: () => false,
-    extraCallers: async () => { if (cqrsFails) throw new Error('index unavailable'); return []; } }) };
+    extraCallers: async () => { if (cqrsFails) throw new Error('index unavailable'); return { callers: [], unresolved: [] }; } }) };
   require.cache[cqrsId] = fakeCqrs;
   try {
     await withVscodeModule(stub, async () => {
@@ -377,6 +407,34 @@ test('PR preview records whether each symbol\'s callers are complete', async () 
     if (realSyntactic) require.cache[id] = realSyntactic; else delete require.cache[id];
     delete require.cache[remoteId];
   }
+});
+
+test('PR preview: skipped calls that could target the symbol make its callers incomplete', async () => {
+  clearVirtualText();
+  const { analyzeRemote } = require('../src/engine/analyze-remote');
+  const texts = {
+    'lib/t.ts': ['export function target() {}', 'export function other() {}', ''].join('\n'),
+    'lib/use.ts': ["import { target } from './t';", 'export function direct() { return target(); }', ''].join('\n'),
+    // `load().target()` has a receiver the index cannot classify, and the member is named
+    // like the symbol: that call may be a caller we skipped. `.filter` matches nothing here.
+    'lib/chain.ts': 'export function chained(load: () => any) { return load().target(); }\n',
+    'lib/noise.ts': 'export function noisy(load: () => any) { return load().filter(); }\n',
+  };
+  const gh = {
+    listPullRequestFiles: async () => ({ total: 4, files: Object.keys(texts).map((p) => ({ path: p, oldPath: p, status: 'modified', patch: '@@ -1,2 +1,2 @@\n-a\n-b\n+a\n+b' })) }),
+    fileAtRef: async (_, p) => texts[p] ?? null,
+  };
+  try {
+    const r = await analyzeRemote({ ts, gh, slug: {}, pr: { number: 2, headSha: 'head', mergeBaseSha: 'base' }, repoRoot: REMOTE_ROOT });
+    const of = (label) => r.allChanged.find((c) => c.label === label);
+    const target = of('target');
+    assert.deepEqual(target.callers.map((c) => c.label), ['direct'], 'a caller was found');
+    assert.deepEqual([target.callerState, target.callersComplete], ['resolved', false]);
+    assert.match(target.callersIncompleteReason, /receiver/, 'and the row says why it is incomplete');
+    const other = of('other');
+    assert.deepEqual([other.callersComplete, other.callersIncompleteReason], [false, 'pr-files-only'],
+      'unknown receivers named something else do not change another symbol\'s answer');
+  } finally { clearVirtualText(); }
 });
 
 // ---- caller completeness: what the finding row claims ----------------------------------
