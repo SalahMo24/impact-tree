@@ -144,7 +144,12 @@ const check = (name, cond, extra = '') => {
   const deletedNodes = [];
   const outsideNodes = [];
   for (const f of graphFiles) {
-    const rows = await provider.getChildren(f);
+    const children = await provider.getChildren(f);
+    // An expanded file ends in one spacer row (41c383e): not a counting row, no verdict.
+    check(`${f.relPath} ends in exactly one spacer, which is not among its counting rows`,
+      children.length > 0 && children.at(-1).type === 'spacer' && children.filter((r) => r.type === 'spacer').length === 1
+      && children.slice(0, -1).length === f.rows.length);
+    const rows = children.filter((r) => r.type !== 'spacer');
     check(`rows of ${f.relPath} go worst first`, rows.every((r, i) => i === 0 || classifyRowVerdict(rows[i - 1]).level <= classifyRowVerdict(r).level));
     changeNodes.push(...rows.filter((r) => r.type === 'finding'));
     deletedNodes.push(...rows.filter((r) => r.type === 'deleted'));
@@ -167,7 +172,13 @@ const check = (name, cond, extra = '') => {
   const exts = [...new Set(fileRows.map((f) => path.extname(f.relPath) || '(none)'))];
   check('multiple file types present to theme', exts.length > 1, exts.join(' '));
   const firstItem = provider.getTreeItem(graphFiles[0]);
-  check('a file row shows its progress', /\d+\/\d+$/.test(String(firstItem.description)), String(firstItem.description));
+  // The description reads: attention, progress, then the last folder (41c383e puts the least
+  // important part last, since a sidebar truncates from the right).
+  const progressAt = String(firstItem.description).split('  ·  ').findIndex((p) => /^\d+\/\d+$/.test(p));
+  check('a file row shows its progress', progressAt >= 0, String(firstItem.description));
+  check('a file row names its last folder after the progress',
+    path.dirname(graphFiles[0].relPath) === '.' || String(firstItem.description).endsWith(`  ·  ${path.basename(path.dirname(graphFiles[0].relPath))}`),
+    String(firstItem.description));
   check('a file row keeps the file icon though it expands', firstItem.iconPath === vscodeStub.ThemeIcon.File);
   // monorepos legitimately contain two same-named symbols in different projects
   const dupLabels = changeNodes.filter((n) => n.ambiguous);
@@ -180,7 +191,11 @@ const check = (name, cond, extra = '') => {
   check('legend distinguishes call-updated from changed-elsewhere',
     LEGEND.some(([, label]) => /callers updated/i.test(label)) && LEGEND.some(([, label]) => /NOT on the call line/i.test(label)));
   const summary = provider.summarize();
-  check('the summary is the view message', /need attention · \d+ of \d+ left$/.test(String(summary.message)), String(summary.message));
+  // `<mode> mode · ⛔ <attention> · <left> of <total> left` (41c383e); the numbers must be the counts.
+  const counts = provider.reviewCounts();
+  check('the summary is the view message',
+    summary.message === `${result.mode} mode · ⛔ ${counts.attention} · ${counts.left} of ${counts.total} left`, String(summary.message));
+  check('the summary counts every counting row', counts.total === fileRows.length - graphFiles.length + graphFiles.reduce((n, f) => n + f.rows.length, 0), `${counts.total}`);
 
   console.log('▸ decorations (git badge + severity colour)');
   check('decorations registered for rows', decorate._size() > 0, `${decorate._size()} entries`);
@@ -196,8 +211,12 @@ const check = (name, cond, extra = '') => {
       const d = decorate.provideFileDecoration(n.decorationUri);
       return d && d.color ? d.color.id : null;
     }).filter(Boolean);
-    check('git palette restored on sparse rows',
-      colours.length > 0 && colours.every((c) => c.startsWith('gitDecoration.')), [...new Set(colours)].join(', '));
+    // Symbol rows keep the git letter without the label colour (41c383e, 0848e1a); the file row
+    // that holds them carries the git palette.
+    check('symbol rows are not tinted', colours.length === 0, [...new Set(colours)].join(', '));
+    const fileColours = graphFiles.map((f) => (decorate.provideFileDecoration(f.decorationUri) || {}).color).filter(Boolean).map((c) => c.id);
+    check('file rows carry the git palette',
+      fileColours.length > 0 && fileColours.every((c) => c.startsWith('gitDecoration.')), [...new Set(fileColours)].join(', '));
     const tips = changeNodes.map((n) => (decorate.provideFileDecoration(n.decorationUri) || {}).tooltip).filter(Boolean);
     check('badge spells out the status on hover', tips.some((t) => /^(Added|Modified|Deleted|Renamed)/.test(t)), tips[0] || 'none');
     const uris = new Set(changeNodes.map((n) => n.decorationUri.toString()));
@@ -208,8 +227,17 @@ const check = (name, cond, extra = '') => {
   const worst = changeNodes[0];
   const item = provider.getTreeItem(worst);
   check('change row labelled with its own name', String(item.label).startsWith(worst.name), String(item.label));
-  check('hover mode: row keeps where it is, the verdict glyph and "no test" only',
-    /^(in \S+ {2}· {2})?[⛔✓∅●?]( {2}· {2}no test)?$/u.test(String(item.description)), String(item.description));
+  // A row that needs attention (level 0 or 1) shows its verdict in words even in hover mode, every
+  // other row only the glyph (41c383e); both keep "no test" / "tests ?" after it.
+  const hoverBad = changeNodes.filter((n) => {
+    const d = String(provider.getTreeItem(n).description);
+    const tail = '(  ·  (no test|tests \\?))*$';
+    return !(classifyRowVerdict(n).level <= 1
+      ? new RegExp(`^(in .+  ·  )?[⛔✓∅●?]  \\S.*${tail}`, 'u').test(d)
+      : new RegExp(`^(in .+  ·  )?[⛔✓∅●?]${tail}`, 'u').test(d));
+  });
+  check('hover mode: row keeps where it is, the verdict glyph (words only when it needs attention) and "no test"',
+    hoverBad.length === 0, hoverBad.slice(0, 2).map((n) => provider.getTreeItem(n).description).join(' | ') || String(item.description));
   check('hover mode: tooltip carries the verdict sentence and the location',
     item.tooltip.value.includes(`${worst.finding.relPath}:${worst.finding.startLine}`));
   check('hover mode: tooltip lists the stale callers',
@@ -221,8 +249,12 @@ const check = (name, cond, extra = '') => {
   const itemInline = provider.getTreeItem(worst);
   check('inline mode shows the verdict in words', String(itemInline.description).length > String(item.description).length, String(itemInline.description));
   state.rowDetail = 'hover';
-  check('change row uses ThemeIcon.File so the icon theme resolves the extension',
-    item.iconPath === vscodeStub.ThemeIcon.File, item.iconPath && item.iconPath.id);
+  // The default icon mode is 'symbol' (41c383e); 'file' keeps the file-type glyph so the theme resolves the extension.
+  check('change row shows a symbol-kind icon by default', /^symbol-/.test(item.iconPath && item.iconPath.id), item.iconPath && item.iconPath.id);
+  state.iconMode = 'file';
+  check('iconMode="file" gives change rows ThemeIcon.File so the icon theme resolves the extension',
+    provider.getTreeItem(worst).iconPath === vscodeStub.ThemeIcon.File);
+  delete state.iconMode;
   check('change row still carries resourceUri for the theme to match on', !!item.resourceUri);
 
   console.log('▸ impact rows (from the result)');
@@ -254,13 +286,13 @@ const check = (name, cond, extra = '') => {
   check('hover mode: caller row keeps the state glyph only', /^[✓△○↑🧪]$/u.test(String(ci.description)), String(ci.description));
   check('hover mode: caller tooltip has state and path',
     /call updated|not changed|changed, but not at the call|test/.test(ci.tooltip.value) && /\.tsx?/.test(ci.tooltip.value));
-  check('caller row uses ThemeIcon.File (or beaker for tests)',
-    ci.iconPath === vscodeStub.ThemeIcon.File || /^(beaker|issue-reopened)$/.test(ci.iconPath.id), ci.iconPath && ci.iconPath.id);
-  state.iconMode = 'symbol';
+  check('caller row shows a symbol-kind icon by default (or beaker for tests)',
+    /^(symbol-.*|beaker|issue-reopened)$/.test(ci.iconPath.id), ci.iconPath && ci.iconPath.id);
+  state.iconMode = 'file';
   const symbolRow = callerKids.find((c) => !c.test && !c.cycle) || worst;
   const ci2 = provider.getTreeItem(symbolRow);
-  check('iconMode="symbol" switches code rows back to symbol icons', !!ci2.iconPath && /^symbol-/.test(ci2.iconPath.id), ci2.iconPath && ci2.iconPath.id);
-  state.iconMode = 'file';
+  check('iconMode="file" switches code rows to the file-type glyph', ci2.iconPath === vscodeStub.ThemeIcon.File, ci2.iconPath && ci2.iconPath.id);
+  delete state.iconMode;
 
   console.log('▸ lazy expansion of a caller');
   const beforeLazy = resolver.stats().incomingCalls;
@@ -277,7 +309,7 @@ const check = (name, cond, extra = '') => {
   console.log('▸ review state');
   {
     const file = graphFiles[0];
-    const rows = await provider.getChildren(file);
+    const rows = (await provider.getChildren(file)).filter((r) => r.type !== 'spacer');
     const left = () => Number(/(\d+) of \d+ left$/.exec(provider.summarize().message)[1]);
     const start = left();
     check('a file starts unchecked', provider.getTreeItem(file).checkboxState === vscodeStub.TreeItemCheckboxState.Unchecked);
