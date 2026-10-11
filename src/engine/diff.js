@@ -93,6 +93,9 @@ function unquote(p) {
   return Buffer.from(bytes).toString('utf8');
 }
 
+// The command `allHunks` runs, minus the pathspecs: callers sizing a batch need it whole.
+const hunkDiffArgs = (baseSha, headRev) => [...PLAIN, 'diff', ...DIFF_FLAGS, '-M', '--unified=0', baseSha, ...(headRev ? [headRev] : []), '--'];
+
 // Every file's ranges from ONE `git diff`, instead of a process per file. Renames are
 // paired by -M across the whole diff, so a renamed file's ranges are its real edits
 // rather than the whole file reading as added. When `deletionsOut` is given, each file's
@@ -101,8 +104,7 @@ function unquote(p) {
 // `changesOut` is given, each file's hunk headers are added to it as
 // `{ oldStart, oldCount, newStart, newCount }` (see engine/diff-lines.js).
 function allHunks(git, baseSha, headRev, pathspecs, deletionsOut, changesOut) {
-  const out = git.raw([...PLAIN, 'diff', ...DIFF_FLAGS, '-M', '--unified=0', baseSha, ...(headRev ? [headRev] : []),
-    '--', ...(pathspecs || [])]);
+  const out = git.raw([...hunkDiffArgs(baseSha, headRev), ...(pathspecs || [])]);
   const byPath = {};
   let cur = null;
   // Body lines are skipped by count, not by content: an added line reading `++ x`
@@ -206,7 +208,7 @@ const projectLabel = (root) => (root === '' ? '(root)' : root);
 const INFERRED_PROJECT = '(inferred)';
 
 module.exports = {
-  changedFiles, untrackedFiles, worktreeFiles, projectConfigIn, INFERRED_PROJECT, hunks, allHunks, rangeOfHeader, wholeFileRange,
+  changedFiles, untrackedFiles, worktreeFiles, projectConfigIn, INFERRED_PROJECT, hunks, allHunks, hunkDiffArgs, rangeOfHeader, wholeFileRange,
   isTestPath, isTestFile, isSourcePath, SOURCE_EXT,
   projectRootOf, clearProjectCache, projectLabel, rel: (repo, f) => path.relative(repo, f),
 };

@@ -57,6 +57,34 @@ const {
     check('chunking for a huge PR keeps a rename\'s two paths together', J(chunked) === J(perFile) && diffCalls > 1, `${diffCalls} chunks, ${J(chunked['src/moved.ts'])}`);
   }
 
+  console.log('▸ command-line length');
+  {
+    // Windows' CreateProcess refuses a command line over 32,767 characters. 5,000 long
+    // paths in one pathspec list is ~750k, and the old 60,000-character batches were
+    // still above the limit.
+    const WIN_LIMIT = 32767;
+    const files = {};
+    for (let i = 0; i < 5000; i++) files[`src/${'long-directory-name-'.repeat(5)}${i % 50}/${'f'.repeat(30)}-${i}.ts`] = `export const v${i} = 1;\n`;
+    const repo = mkRepo({ 'tsconfig.json': TSCONFIG, ...files });
+    const base = headOf(repo);
+    write(repo, Object.fromEntries(Object.keys(files).map((p, i) => [p, `export const v${i} = 2;\n`])));
+    commit(repo);
+    const real = makeGit(repo);
+    const list = changedFiles(real, base, 'HEAD', null);
+    const lines = [];
+    const recording = { ...real, raw: (args, o) => { if (args.includes('diff')) lines.push(['git', ...args]); return real.raw(args, o); } };
+    const bounded = rangesFor(recording, base, 'HEAD', list);
+    // Windows quotes an argument that has a space or a quote; count every one as quoted.
+    const cmdLen = (argv) => argv.reduce((n, a) => n + a.length + 3, 0);
+    const longest = Math.max(...lines.map(cmdLen));
+    check('5,000 long paths split across several diffs', list.length === 5000 && lines.length > 1, `${list.length} files, ${lines.length} commands`);
+    check('every command line stays under the Windows limit', longest < WIN_LIMIT, `longest ${longest}`);
+    // every file is changed, so a diff with no pathspec is the unbounded reference
+    const reference = allHunks(real, base, 'HEAD', null);
+    check('batched output equals one unbounded run', J(Object.keys(bounded).sort()) === J(Object.keys(reference).sort())
+      && J(bounded) === J(Object.fromEntries(Object.keys(bounded).map((k) => [k, reference[k]]))), `${Object.keys(bounded).length} vs ${Object.keys(reference).length} files`);
+  }
+
   console.log('▸ paths and user git config');
   {
     const repo = mkRepo({ 'tsconfig.json': TSCONFIG, 'src/café.ts': 'export function f() {\n  return 1;\n}\n', 'src/plain.ts': 'export function g() {\n  return 1;\n}\n' });
