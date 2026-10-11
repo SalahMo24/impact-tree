@@ -65,7 +65,7 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, queryTimeoutMs 
 
   // Same CQRS logic as the CLI, but definition/reference come from the editor's server
   // instead of our own program.
-  const cqrs = ts && makeCqrsEdges(ts, {
+  const cqrsProviders = {
     isTestPath,
     trace,
     async definitionAt(file, offset) {
@@ -109,7 +109,13 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, queryTimeoutMs 
       }
       return out;
     },
-  });
+  };
+  // Owner: one editor analysis generation. The helper's parsed-file cache is
+  // replaced by clear(), alongside caller answers and inheritance data. Each query
+  // captures its helper, so an obsolete provider completion can only populate its
+  // old cache; that cache is released when the last obsolete query settles. Source
+  // mtime/size checks and same-generation reuse remain in makeCqrsEdges.
+  let cqrs = ts && makeCqrsEdges(ts, cqrsProviders);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   async function query(file, pos) {
@@ -180,13 +186,14 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, queryTimeoutMs 
   /** @returns {Promise<import('./engine/caller-contract').CallerAnswer>} */
   async function incomingWithStatus(file, pos, withTests = true) {
     const startedGeneration = generation;
+    const queryCqrs = cqrs;
     const key = `${withTests ? 'A' : 'P'}${file}#${pos}`;
     if (cache.has(key)) { stats.cacheHits++; return { callers: cache.get(key), complete: true }; }
     const t = Date.now();
     stats.incomingCalls++;
     // a handler's execute() resolves through ICommandHandler.execute, so the call
     // hierarchy returns every bus.execute() site; none of them reach this handler
-    const isHandler = !!(cqrs && cqrs.isHandlerExecute(file, pos));
+    const isHandler = !!(queryCqrs && queryCqrs.isHandlerExecute(file, pos));
     if (isHandler) stats.cqrsSuppressed++;
     const { ready, calls, reason, empty } = isHandler ? { ready: true, calls: [] } : await query(file, pos);
     if (startedGeneration !== generation) return staleAnswer();
@@ -232,10 +239,10 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, queryTimeoutMs 
       }
     }
     let cqrsFailure = null;
-    if (cqrs) {
+    if (queryCqrs) {
       let extra = [];
       try {
-        const found = await cqrs.extraCallers(file, pos);
+        const found = await queryCqrs.extraCallers(file, pos);
         extra = found.callers;
         if (found.unresolved.length) cqrsFailure = `no definition found for ${found.unresolved.join(', ')}`;
       } catch (e) { cqrsFailure = (e && e.message) || 'lookup failed'; }
@@ -310,6 +317,7 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, queryTimeoutMs 
       cache.clear();
       queryStates.clear();
       inherited?.clear();
+      cqrs = ts && makeCqrsEdges(ts, cqrsProviders);
       for (const key of Object.keys(stats)) delete stats[key];
       Object.assign(stats, initialStats());
     },
