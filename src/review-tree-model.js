@@ -198,18 +198,19 @@ function buildImpactRows(changeRow, { result, uriOf, rel = null }) {
 
 /**
  * The one row saying what is known about tests reaching a change. A state the result
- * does not define is not an answer, so it reads as unknown. A PR preview never searches
- * tests and cannot run the walk, so its row says so and offers no command.
+ * does not define is not an answer, so it reads as unknown. A PR preview searches only the
+ * test files the PR changed, so it never reads as untested; one with no result to search
+ * says tests are not searched and offers no command.
  * @param {any} change
  * @param {any} result
  * @returns {TreeRow}
  */
 function buildTestsRow(change, result) {
-  if (result.tierA) {
+  if (!result.testReachComputed) {
+    if (!result.tierA) return models.buildComputeTestReachRow();
     return { type: 'message', icon: 'beaker', label: 'Tests are not searched in a PR preview',
       tooltip: 'A preview reads only the pull request\'s own files. Check out the PR to see which tests reach this change.' };
   }
-  if (!result.testReachComputed) return models.buildComputeTestReachRow();
   const state = change.testState;
   if (state === 'covered') {
     const tests = change.tests || [];
