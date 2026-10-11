@@ -178,6 +178,18 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
       }
 
       const modifiers = (ts.getModifiers ? ts.getModifiers(node) : node.modifiers) || [];
+      // Explicit exports take precedence over export *. Retain even object-valued or
+      // destructured bindings, which are not callable declarations in `decls`.
+      if (node.parent === sf && modifiers.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)) {
+        const bindings = ts.isVariableStatement(node) ? node.declarationList.declarations.map((d) => d.name) : node.name ? [node.name] : [];
+        while (bindings.length) {
+          const binding = bindings.pop();
+          if (ts.isIdentifier(binding)) exports.set(binding.text, binding.text);
+          else if (ts.isObjectBindingPattern(binding) || ts.isArrayBindingPattern(binding)) {
+            for (const el of binding.elements) if (!ts.isOmittedExpression(el)) bindings.push(el.name);
+          }
+        }
+      }
       if (modifiers.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword)) {
         exports.set('default', node.name?.text || 'default');
         if (!node.name) decls.set('default', { kind: 'function', pos: node.getStart(sf) });
@@ -433,12 +445,18 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
     if (!rec) return null;
     const via = (imp) => ({ file: resolveModule(file, imp.module, { mode: imp.mode }), module: imp.module });
     const local = rec.exports.get(name) || name;
-    const imp = !rec.decls.has(local) && rec.imports.get(local);
+    if (rec.decls.has(local)) return null;
+    const imp = rec.imports.get(local);
     if (imp) return imp.imported === '*' ? via(imp) : namespaceOf(resolveModule(file, imp.module, { mode: imp.mode }), imp.imported, seen);
+    if (rec.exports.has(name)) return null;
+    // Named re-exports also override stars, regardless of statement order. A named
+    // non-namespace is a conclusive answer: do not fall through to an unrelated star.
+    const explicit = rec.reExports.find((re) => re.namespace === name || (re.names && Object.hasOwn(re.names, name)));
+    if (explicit) return explicit.namespace ? via(explicit)
+      : namespaceOf(resolveModule(file, explicit.module, { mode: explicit.mode }), explicit.names[name], seen);
     for (const re of rec.reExports) {
-      if (re.namespace) { if (re.namespace === name) return via(re); continue; }
-      if (re.names && !Object.hasOwn(re.names, name)) continue;
-      const hit = namespaceOf(resolveModule(file, re.module, { mode: re.mode }), re.names ? re.names[name] : name, seen);
+      if (re.namespace || re.names) continue;
+      const hit = namespaceOf(resolveModule(file, re.module, { mode: re.mode }), name, seen);
       if (hit) return hit;
     }
     return null;
