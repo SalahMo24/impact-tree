@@ -11,22 +11,31 @@ const fs = require('fs');
 // TypeScript LanguageService, the extension supplies VS Code's definition/reference
 // providers (which reuse the editor's already-warm server).
 
-const HANDLER_DECORATORS = /^@(CommandHandler|QueryHandler|EventsHandler)$/;
+const HANDLER_DECORATORS = ['CommandHandler', 'QueryHandler', 'EventsHandler'];
 
 function makeCqrsEdges(ts, { definitionAt, referencesTo, isTestPath, trace = () => {} }) {
-  // Owner: this helper. Key: file path with mtime/size checked on each read. The
-  // CLI owns a helper per project resolver; the editor owns one per analysis
-  // generation and replaces it on clear(). Parsed ASTs are released with the
+  // Owner: this helper. Entries hold an AST or a negative handler check (sf: null),
+  // never the text of a skipped file. Key: file path with mtime/size checked on
+  // each read. The CLI owns a helper per project resolver; the editor owns one per
+  // analysis generation and replaces it on clear(). Parsed ASTs are released with the
   // helper, after any provider queries still using it settle.
   const parsed = new Map();
-  function sourceOf(file) {
+  function sourceOf(file, { handlerOnly = false } = {}) {
     let st;
     try { st = fs.statSync(file); } catch { return null; }
     const key = `${st.mtimeMs}:${st.size}`;
     const hit = parsed.get(file);
-    if (hit && hit.key === key) return hit.sf;
+    if (hit && hit.key === key && (hit.sf || handlerOnly)) return hit.sf;
     let text;
     try { text = fs.readFileSync(file, 'utf8'); } catch { return null; }
+    // The exact decorator matcher below requires one of these literal names in
+    // the source. Presence (even in a comment/string) falls back to parsing; only
+    // absence skips it. A construction/owner lookup still needs an AST, so it
+    // must rebuild a negative handler entry rather than treating it as no source.
+    if (handlerOnly && !HANDLER_DECORATORS.some((name) => text.includes(name))) {
+      parsed.set(file, { key, sf: null });
+      return null;
+    }
     const sf = ts.createSourceFile(file, text, ts.ScriptTarget.ES2021, true);
     parsed.set(file, { key, sf });
     return sf;
@@ -34,7 +43,7 @@ function makeCqrsEdges(ts, { definitionAt, referencesTo, isTestPath, trace = () 
 
   // The handler method -> the command class it handles, and where that class is named.
   function handledCommand(file, offset) {
-    const sf = sourceOf(file);
+    const sf = sourceOf(file, { handlerOnly: true });
     if (!sf) return [];
     const found = [];
     const visit = (node) => {
@@ -42,7 +51,7 @@ function makeCqrsEdges(ts, { definitionAt, referencesTo, isTestPath, trace = () 
         for (const d of (ts.getDecorators ? ts.getDecorators(node) : node.decorators) || []) {
           const e = d.expression;
           if (!ts.isCallExpression(e)) continue;
-          if (!HANDLER_DECORATORS.test(`@${e.expression.getText(sf)}`)) continue;
+          if (!HANDLER_DECORATORS.includes(e.expression.getText(sf))) continue;
           const method = e.expression.getText(sf) === 'EventsHandler' ? 'handle' : 'execute';
           const member = node.members.find((m) => ts.isMethodDeclaration(m) && m.name?.getText(sf) === method
             && m.name.getStart(sf) <= offset && offset <= m.name.getEnd());

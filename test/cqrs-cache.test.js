@@ -7,6 +7,7 @@ const path = require('path');
 const Module = require('module');
 const ts = require('typescript');
 const { makeSymbols } = require('../src/engine/symbols');
+const { makeCqrsEdges } = require('../src/engine/edges-cqrs');
 const { offsetToPosition, positionToOffset, _clear: clearTextPositions } = require('../src/engine/textpos');
 
 const deferred = () => {
@@ -26,6 +27,7 @@ async function withResolver(run) {
     'caller.ts': 'function dispatch() { const nested = () => bus.execute(new Primary()); bus.execute(new Primary()); bus.execute(new Secondary()); }',
     'caller.test.ts': 'function checks() { bus.execute(new Primary()); }',
     'ordinary.ts': 'export function unrelated() {}',
+    'normal.ts': 'function normal() { unrelated(); }',
   };
   for (const [rel, text] of Object.entries(files)) fs.writeFileSync(path.join(repo, rel), text);
   const absolute = (rel) => path.join(repo, rel);
@@ -41,11 +43,12 @@ async function withResolver(run) {
     return { uri: { fsPath: absolute(rel) }, range: { start, end } };
   };
   let references = null;
+  let incomingCalls = [];
   let failDefinition = false;
   const stub = { ...require('./vscode-stub'), Position: class { constructor(line, character) { Object.assign(this, { line, character }); } },
     commands: { async executeCommand(name, uri, position) {
       if (name === 'vscode.prepareCallHierarchy') return [{}];
-      if (name === 'vscode.provideIncomingCalls') return [];
+      if (name === 'vscode.provideIncomingCalls') return incomingCalls;
       const pos = positionToOffset(uri.fsPath, position.line, position.character);
       const word = fs.readFileSync(uri.fsPath, 'utf8').slice(pos).match(/^\w+/)?.[0];
       if (name === 'vscode.executeDefinitionProvider') {
@@ -71,7 +74,8 @@ async function withResolver(run) {
     Module._load = function (name, ...args) { return name === 'vscode' ? stub : originalLoad.call(this, name, ...args); };
     delete require.cache[resolverPath];
     const resolver = require('../src/resolver-vscode').createVscodeResolver({ ts: compiler, repoRoot: repo, filterInherited: false });
-    await run({ resolver, absolute, posOf, parses,
+    await run({ resolver, absolute, posOf, parses, location,
+      setIncomingCalls: (calls) => { incomingCalls = calls; },
       setReferences: (fn) => { references = fn; }, failDefinitions: (on) => { failDefinition = on; } });
   } finally {
     Module._load = originalLoad;
@@ -82,16 +86,106 @@ async function withResolver(run) {
   }
 }
 
-test('refresh releases ordinary parsed files while preserving same-generation reuse', async () => {
-  await withResolver(async ({ resolver, absolute, parses }) => {
-    const file = absolute('ordinary.ts');
-    const before = await resolver.incomingWithStatus(file, 16);
+test('refresh releases handler-containing parsed files while preserving same-generation reuse', async () => {
+  await withResolver(async ({ resolver, absolute, posOf, parses }) => {
+    // Handler-containing source must still be parsed even for a non-entry method.
+    const file = absolute('handler.ts'), pos = posOf('Handler.helper');
+    const before = await resolver.incomingWithStatus(file, pos);
     assert.deepEqual(before, { callers: [], complete: true });
-    assert.deepEqual(await resolver.incomingWithStatus(file, 16, false), before);
+    assert.deepEqual(await resolver.incomingWithStatus(file, pos, false), before);
     assert.equal(parses.get(file), 1, 'both test scopes reuse the same parsed file');
     resolver.clear();
-    assert.deepEqual(await resolver.incomingWithStatus(file, 16), before);
+    assert.deepEqual(await resolver.incomingWithStatus(file, pos), before);
     assert.equal(parses.get(file), 2, 'a new generation rebuilds the released file');
+  });
+});
+
+test('ordinary caller queries keep language-server callers without admitting CQRS ASTs', async () => {
+  await withResolver(async ({ resolver, absolute, parses, location, setIncomingCalls }) => {
+    const declaration = location('normal.ts', 9, 6);
+    const call = location('normal.ts', 20, 11);
+    setIncomingCalls([{ from: { uri: declaration.uri, name: 'normal', selectionRange: declaration.range }, fromRanges: [call.range] }]);
+    const file = absolute('ordinary.ts');
+    const expected = { callers: [{ label: 'normal', file: absolute('normal.ts'), pos: 9, test: false, sites: 1,
+      callSites: [{ start: 20, end: 31 }] }], complete: true };
+    assert.deepEqual(await resolver.incomingWithStatus(file, 16), expected);
+    assert.deepEqual(await resolver.incomingWithStatus(file, 16, false), expected);
+    resolver.clear();
+    assert.deepEqual(await resolver.incomingWithStatus(file, 16), expected);
+    assert.equal(parses.get(file) || 0, 0, 'ordinary queries do not allocate CQRS syntax trees');
+  });
+});
+
+test('a file skipped as a handler is still parsed when it contains command dispatches', async () => {
+  await withResolver(async ({ resolver, absolute, posOf, parses }) => {
+    const file = absolute('caller.ts');
+    assert.deepEqual(await resolver.incomingWithStatus(file, 9), { callers: [], complete: true });
+    assert.equal(parses.get(file) || 0, 0);
+    const found = await resolver.incomingWithStatus(absolute('handler.ts'), posOf('Handler.execute'));
+    assert.equal(found.complete, true);
+    assert.deepEqual(found.callers.map((c) => [c.label, c.sites]), [['nested', 1], ['dispatch', 1], ['checks', 1]]);
+    assert.equal(parses.get(file), 1, 'dispatch lookup must not reuse a negative handler check as an absent AST');
+  });
+});
+
+// Exercise the shared helper directly as well as the editor adapter above. File
+// metadata changes are controlled explicitly, without sleeps or filesystem timing.
+async function withEdges(run) {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'impact-cqrs-handler-check-'));
+  const file = path.join(repo, 'source.ts');
+  let stamp = 1700000000;
+  const edges = makeCqrsEdges(ts, { definitionAt: async () => null, referencesTo: async () => [], isTestPath: () => false });
+  const write = (text) => { fs.writeFileSync(file, text); fs.utimesSync(file, ++stamp, stamp); };
+  try { await run({ edges, file, write }); }
+  finally { fs.rmSync(repo, { recursive: true, force: true }); }
+}
+
+test('all supported decorators keep whitespace, comments, Unicode offsets and multiple commands', async () => {
+  await withEdges(async ({ edges, file, write }) => {
+    for (const [decorator, method] of [['CommandHandler', 'execute'], ['QueryHandler', 'execute'], ['EventsHandler', 'handle']]) {
+      const text = `// 😀\n@ /* annotation */ ${decorator}\n(Primary, Secondary)\nclass Handler { ${method}() {} helper() {} }`;
+      write(text);
+      const pos = text.indexOf(`${method}()`);
+      assert.deepEqual(edges._handledCommand(file, pos), ['Primary', 'Secondary'].map((name) => ({ name, pos: text.indexOf(name) })));
+      assert.equal(edges.isHandlerExecute(file, pos), true);
+      assert.deepEqual(await edges.extraCallers(file, pos), { callers: [], unresolved: ['Primary', 'Secondary'] });
+      assert.equal(edges.isHandlerExecute(file, text.indexOf('helper()')), false);
+    }
+  });
+});
+
+test('decorator names in comments, strings, imports and unsupported forms do not invent handlers', async () => {
+  await withEdges(async ({ edges, file, write }) => {
+    for (const prefix of ['// @CommandHandler(Primary)\n', 'const example = "@QueryHandler(Primary)";\n',
+      'import { EventsHandler } from "@nestjs/cqrs";\n', '@namespace.CommandHandler(Primary)\n', '@CommandHandlerExtra(Primary)\n']) {
+      const text = `${prefix}class Handler { execute() {} handle() {} }`;
+      write(text);
+      for (const method of ['execute', 'handle']) {
+        const pos = text.indexOf(`${method}()`);
+        assert.equal(edges.isHandlerExecute(file, pos), false);
+        assert.deepEqual(await edges.extraCallers(file, pos), { callers: [], unresolved: [] });
+      }
+    }
+  });
+});
+
+test('handler detection is rechecked after same-size edits, deletion and recreation', async () => {
+  await withEdges(async ({ edges, file, write }) => {
+    const ordinary = '@OtherDecorator(Primary) class Handler { execute() {} }';
+    const handler = '@CommandHandler(Primary) class Handler { execute() {} }';
+    assert.equal(ordinary.length, handler.length);
+    assert.equal(edges.isHandlerExecute(file, 0), false, 'an unreadable file is not cached as permanently negative');
+    for (const text of [ordinary, handler, ordinary, handler]) {
+      write(text);
+      const pos = text.indexOf('execute()');
+      const expected = text === handler;
+      assert.equal(edges.isHandlerExecute(file, pos), expected);
+      assert.deepEqual(await edges.extraCallers(file, pos), { callers: [], unresolved: expected ? ['Primary'] : [] });
+    }
+    fs.unlinkSync(file);
+    assert.equal(edges.isHandlerExecute(file, handler.indexOf('execute()')), false);
+    write(handler);
+    assert.equal(edges.isHandlerExecute(file, handler.indexOf('execute()')), true);
   });
 });
 
