@@ -14,6 +14,10 @@ const fs = require('fs');
 const HANDLER_DECORATORS = /^@(CommandHandler|QueryHandler|EventsHandler)$/;
 
 function makeCqrsEdges(ts, { definitionAt, referencesTo, isTestPath, trace = () => {} }) {
+  // Owner: this helper. Key: file path with mtime/size checked on each read. The
+  // CLI owns a helper per project resolver; the editor owns one per analysis
+  // generation and replaces it on clear(). Parsed ASTs are released with the
+  // helper, after any provider queries still using it settle.
   const parsed = new Map();
   function sourceOf(file) {
     let st;

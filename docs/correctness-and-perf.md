@@ -287,3 +287,74 @@ events after initial decorations have settled. The characterization fixture's
 only changed expectations are decoration flush counts: 36 -> 1 for local states
 and 9 -> 1 for preview states. This verifies event behavior, not live pixel flicker
 or the separate intermittent loss of editor diff highlighting.
+
+## CQRS parsed-file lifetime across editor refreshes (2026-10-11)
+
+The editor resolver kept one CQRS helper for the whole window. Its parsed-file
+map retained full syntax trees for every queried file, including ordinary files
+checked for handler decorators. Clearing caller answers on refresh did not release
+that map, so visiting different files across analyses accumulated ASTs.
+
+The editor now creates a helper per analysis generation. A query captures its
+generation's helper before awaiting any provider. Refresh replaces the current
+helper; an obsolete query can finish using its own cache, and the existing
+generation check rejects its answer. Its ASTs become collectible when the last
+query using that helper settles. This avoids allowing late provider completions to
+populate the new generation's cache. The parser, CQRS matching rules, file metadata
+checks, provider admission limits, and same-generation reuse are unchanged. The
+CLI still creates helpers per project resolver. There is no new size cap within a
+single generation; this change addresses retention across refreshes only.
+
+Measured from baseline `681c75ef48c981e7f50c16b61680f9ebfa353aa4`, Node 22.18.0,
+arm64, five fresh processes per workload and version, each under a 512 MiB old-space
+limit. Each process queries three disjoint groups of 100 files. Heap is the increase
+over process baseline, measured after an event-loop turn and forced GC. The real
+workload is the first 300 eligible tracked T3 Code source files (excluding `.d.ts`,
+at most 128 KiB each), at `9a609a4e444ba739d6fcd607769d68b679b0bcc5`.
+The synthetic workload contains 300 named functions per file. Immediate empty
+editor-provider responses isolate host parsing and cache costs; these numbers do
+not measure language-server indexing, a live editor, or low-spec hardware.
+
+| Measurement, median | Before | After |
+| --- | --- | --- |
+| T3 source admitted, 300 files | 0.76 MiB | 0.76 MiB |
+| T3 retained heap after clearing generation 1 / 2 / 3 | 8.38 / 13.79 / 21.56 MiB | 1.77 / 2.21 / 2.56 MiB |
+| T3 populated heap in generation 3 | 21.62 MiB | 10.17 MiB |
+| T3 cold query batch, first 100 files | 71.66 ms | 71.03 ms |
+| T3 same-generation query batch, 100 files | 4.65 ms | 4.34 ms |
+| T3 query batch after refresh, same 100 files | 4.52 ms | 34.31 ms |
+| Synthetic source admitted, 300 files | 4.49 MiB | 4.49 MiB |
+| Synthetic retained heap after clearing generation 1 / 2 / 3 | 66.07 / 131.01 / 195.95 MiB | 1.45 / 1.77 / 0.18 MiB |
+| Synthetic populated heap in generation 3 | 196.01 MiB | 64.87 MiB |
+| Synthetic query batch after refresh, same 100 files | 19.72 ms | 118.59 ms |
+
+Reproduce with `node --expose-gc --max-old-space-size=512
+test/measure-cqrs-cache.js synthetic` or replace `synthetic` with the T3 clone path.
+The script is a manual benchmark, outside `npm test`; timings and GC are not CI
+assertions. The memory benefit costs reparsing after refresh: about 30 ms per 100
+T3 files in this isolated workload. Residual heap includes line-position data and
+runtime allocations; the measurement is not an assertion of zero total retention.
+
+Validation before and after:
+
+- Full `npm test`, lint, and typecheck passed. Default target-dependent call-site
+  and tree cases skipped on the empty diff against `main`; no recorded fixtures
+  were present. The separate nonempty-range checks below were also run.
+- `IMPACT_TREE_BASE=HEAD~20` call-site validation checked 427 locations with zero
+  mismatches on both versions; its output was byte-identical.
+- The new `test/cqrs-cache.test.js` lifetime and obsolete-query tests failed against
+  the original implementation and passed after the change. Its independent
+  behavior check passed on both, covering command/event dispatches, nested callers,
+  multiple sites, test filtering, non-entry methods, and incomplete lookup recovery.
+- Pinned T3 PR #12745 local/preview checks passed on both versions. The snapshot
+  suite then failed on #12954: `resolveScopedSettingsTargets` was classified
+  `changed-elsewhere`, where the existing check expects `updated-at-call`.
+- The nonempty-range tree smoke failed on both versions with an outside-row
+  `ranges.filter` exception in `describeOutsideRanges`. Both failing suites' full
+  outputs were byte-identical before and after; their expectations were not changed.
+- New test/benchmark files passed ESLint, and `git diff --check` passed. No live
+  Extension Development Host acceptance run was performed.
+
+Recommendation: retain this narrowly scoped change. It removes the demonstrated
+cross-refresh AST accumulation, preserves checked CQRS behavior, and has a measured
+refresh parsing cost. The two existing external validation failures remain open.
