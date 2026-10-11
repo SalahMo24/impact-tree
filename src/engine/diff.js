@@ -8,7 +8,10 @@ const { changeOfHeader } = require('./diff-lines');
 // `core.quotePath` turns `café.ts` into `"caf\303\251.ts"`, which then fails every
 // extension check.
 const PLAIN = ['-c', 'core.quotePath=false', '-c', 'diff.noprefix=false', '-c', 'diff.mnemonicPrefix=false'];
-const DIFF_FLAGS = ['--no-ext-diff', '--no-textconv', '--no-color'];
+// Every `git diff` the engine runs spreads this. `diff.interHunkContext` would fuse nearby hunks
+// (unchanged lines read as changed) and `diff.srcPrefix`/`diff.dstPrefix` replace the `a/` `b/`
+// the header parser expects, so all three are pinned here; a new diff call cannot forget them.
+const DIFF_FLAGS = ['--no-ext-diff', '--no-textconv', '--no-color', '--inter-hunk-context=0', '--src-prefix=a/', '--dst-prefix=b/'];
 
 // -M turns a move into R<score>\told\tnew instead of delete + add. -z so a path with a
 // tab, newline or quote in it survives intact.
