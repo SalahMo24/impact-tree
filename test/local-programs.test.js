@@ -221,6 +221,35 @@ const {
     resolver.dispose();
   }
 
+  {
+    // TypeScript reports the real path of a workspace package linked into node_modules, so
+    // the project lookup must see through a symlinked repo root. Finding the caller end to
+    // end through such a root is still a known gap (issue #36): the two programs name the
+    // linked file differently.
+    const real = mkRepo({
+      'lib/package.json': '{"name":"@w/lib","main":"api.ts","types":"api.ts"}',
+      'lib/tsconfig.json': '{"include":["*.ts"]}',
+      'app/tsconfig.json': '{"include":["*.ts"]}',
+      'lib/api.ts': 'export function target(){return 1;}\n',
+      'app/use.ts': "import {target} from '@w/lib'; export function caller(){return target();}\n",
+    });
+    fs.mkdirSync(path.join(real, 'app/node_modules/@w'), { recursive: true });
+    fs.symlinkSync(path.join(real, 'lib'), path.join(real, 'app/node_modules/@w/lib'), 'dir');
+    const link = path.join(TMP, uniq('link'));
+    fs.symlinkSync(real, link, 'dir');
+    const { workspaceProjects } = require('../src/engine/workspace-projects');
+    const graph = workspaceProjects(ts, link);
+    check('consumers are reported under the opened path', J(graph.consumers(path.join(link, 'lib/tsconfig.json'))) === J([path.join(link, 'app/tsconfig.json')]), J(graph.consumers(path.join(link, 'lib/tsconfig.json'))));
+  }
+
+  {
+    // TypeScript file names use `/`; Windows project dirs use `\\`.
+    let ok = true, detail = '';
+    try { execFileSync(process.execPath, [path.join(__dirname, 'windows-workspace-projects.js')], { encoding: 'utf8', stdio: 'pipe' }); }
+    catch (e) { ok = false; detail = String(e.stderr || e.message).split('\n').slice(0, 6).join(' | '); }
+    check('project owner lookup matches forward-slash files against Windows dirs', ok, detail);
+  }
+
   console.log('▸ projects without a tsconfig, and CommonJS modules');
   const CJS_TARGET = (n) => `function registerCommands(x) {\n  return [x, ${n}];\n}\nmodule.exports = { registerCommands };\n`;
   const CJS_CALLERS = {

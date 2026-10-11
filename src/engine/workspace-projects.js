@@ -4,6 +4,17 @@ const path = require('path');
 const { projectConfigIn } = require('./diff');
 const { JSCONFIG_DEFAULTS } = require('./resolver-ts');
 
+// One spelling per file: TypeScript reports real paths with `/` separators, while the
+// repo may be opened through a symlink and, on Windows, with `\\` and any drive case.
+// A path that does not exist (deleted, virtual) keeps its lexical form; any other
+// failure to resolve it propagates rather than silently dropping the file.
+function canonical(file) {
+  let real = file;
+  try { real = fs.realpathSync(file); } catch (e) { if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') throw e; }
+  const resolved = path.resolve(real);
+  return path.sep === '\\' ? resolved.toLowerCase() : resolved;
+}
+
 // Reverse import edges let a query include consumers whose files did not change.
 // This is rebuilt per analysis, so edits to imports/configuration cannot go stale.
 function workspaceProjects(ts, repo) {
@@ -17,7 +28,11 @@ function workspaceProjects(ts, repo) {
     const parsed = ts.parseJsonConfigFileContent(raw.config || {}, ts.sys, path.dirname(config), existing, config);
     return { config, dir: path.dirname(config), parsed };
   }).sort((a,b) => b.dir.length - a.dir.length);
-  const owner = file => projects.find(p => file.startsWith(p.dir + path.sep));
+  // Files repeat across projects and imports, so each is resolved against the disk once per build.
+  const spelled = new Map();
+  const canon = file => { if (!spelled.has(file)) spelled.set(file, canonical(file)); return spelled.get(file); };
+  for (const p of projects) p.prefix = canon(p.dir) + path.sep;
+  const owner = file => { const c = canon(file); return projects.find(p => c.startsWith(p.prefix)); };
   const reverse = new Map(projects.map(p => [p.config, new Set()]));
   const edge = (consumer, file) => {
     const dependency = owner(file);
