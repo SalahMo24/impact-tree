@@ -52,10 +52,14 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
     const reExports = [];
     const visit = (n) => {
       if (ts.isExportDeclaration(n) && n.moduleSpecifier) {
+        const clause = n.exportClause;
+        // `namespace`: the one name `export * as ns` exposes. `names`: exported name ->
+        // name in the source module (`export { A as B }` maps B to A). Neither: `export *`.
         reExports.push({
           module: n.moduleSpecifier.text,
-          names: n.exportClause && ts.isNamedExports(n.exportClause)
-            ? n.exportClause.elements.map((el) => el.name.text) : null,   // null = export *
+          namespace: clause && ts.isNamespaceExport(clause) ? clause.name.text : null,
+          names: clause && ts.isNamedExports(clause)
+            ? new Map(clause.elements.map((el) => [el.name.text, (el.propertyName || el.name).text])) : null,
         });
         return;
       }
@@ -154,7 +158,9 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
   };
 
   // Where is `name` declared, starting from `file`? Follows the import and then any
-  // barrel hops -- an index.ts almost never declares what it re-exports.
+  // barrel hops -- an index.ts almost never declares what it re-exports. The answer is
+  // { file, name }: `name` there is the declared name, which differs from the asked one
+  // when a barrel renames (`export { Base as Renamed }`).
   const declCache = new Map();
   function fileDeclaring(file, name) {
     const ck = `${file}#${name}`;
@@ -162,7 +168,7 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
     declCache.set(ck, null);                       // guard against re-export cycles
     const rec = parse(file);
     if (!rec) return null;
-    if (rec.classes.has(name)) { declCache.set(ck, file); return file; }
+    if (rec.classes.has(name)) { const d = { file, name }; declCache.set(ck, d); return d; }
     const mod = rec.imports.get(name);
     if (!mod) return null;
     const f = resolveFrom(file, mod);
@@ -172,13 +178,26 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
     return found;
   }
 
+  // A null result means "not found", and every caller treats it as "inheritance unknown":
+  // ancestorsOf stops climbing, ancestorDeclares skips the ancestor, and isSiblingDispatch
+  // and heritageKnown keep the edge. So the depth limit below can only keep an edge, never
+  // drop one.
   function declaringVia(file, name, depth) {
     if (depth > 4) return null;
     const rec = parse(file);
     if (!rec) return null;
-    if (rec.classes.has(name)) return file;
+    if (rec.classes.has(name)) return { file, name };
+    // Explicit exports override `export *` whatever the statement order, and are conclusive:
+    // an `export * as name` exposes a namespace, not a class, and an unresolvable named
+    // re-export must not fall through to an unrelated star.
+    const explicit = rec.reExports.find((re) => re.namespace === name || (re.names && re.names.has(name)));
+    if (explicit) {
+      if (explicit.namespace) return null;
+      const f2 = resolveFrom(file, explicit.module);
+      return f2 ? declaringVia(f2, explicit.names.get(name), depth + 1) : null;
+    }
     for (const re of rec.reExports) {
-      if (re.names && !re.names.includes(name)) continue;
+      if (re.namespace || re.names) continue;
       const f2 = resolveFrom(file, re.module);
       if (!f2) continue;
       const hit = declaringVia(f2, name, depth + 1);
@@ -201,9 +220,9 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
     for (const parent of entry.heritage) {
       if (out.has(parent)) continue;
       out.add(parent);
-      const pf = fileDeclaring(file, parent);
-      if (!pf) continue;
-      for (const g of ancestorsOf(pf, parent, depth + 1)) out.add(g);
+      const pd = fileDeclaring(file, parent);
+      if (!pd) continue;
+      for (const g of ancestorsOf(pd.file, pd.name, depth + 1)) out.add(g);
     }
     return out;
   }
@@ -215,17 +234,17 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
     const entry = parse(file)?.classes.get(name);
     if (!entry) return false;
     return entry.heritage.every((parent) => {
-      const f = fileDeclaring(file, parent);
-      return f && heritageKnown(f, parent, seen);
+      const d = fileDeclaring(file, parent);
+      return d && heritageKnown(d.file, d.name, seen);
     });
   }
 
   function ancestorDeclares(file, className, method) {
     for (const a of ancestorsOf(file, className)) {
-      const af = fileDeclaring(file, a);
-      if (!af) continue;
-      const rec = parse(af);
-      const entry = rec && rec.classes.get(a);
+      const ad = fileDeclaring(file, a);
+      if (!ad) continue;
+      const rec = parse(ad.file);
+      const entry = rec && rec.classes.get(ad.name);
       if (entry && entry.methods.has(method)) return true;
     }
     return false;
@@ -338,10 +357,10 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
       if (!t) return false;                                  // unreadable -> keep
       if (t === target.className) return false;
       if (targetAncestors.has(t)) return false;              // typed as the port
-      const tf = fileDeclaring(caller.file, t);
-      if (!tf) return false;                                 // cannot judge -> keep
-      if (ancestorsOf(tf, t).has(target.className)) return false;   // a subclass
-      if (!heritageKnown(tf, t) || !heritageKnown(target.file, target.className)) return false;
+      const td = fileDeclaring(caller.file, t);
+      if (!td) return false;                                 // cannot judge -> keep
+      if (ancestorsOf(td.file, td.name).has(target.className)) return false;   // a subclass
+      if (!heritageKnown(td.file, td.name) || !heritageKnown(target.file, target.className)) return false;
       unrelated++;
     }
     return unrelated > 0;

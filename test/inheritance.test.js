@@ -147,6 +147,63 @@ console.log('\n▸ filterCallers reports what it removed');
     `${dropped} dropped, kept ${kept.map((k) => k.label).join(',')}`);
 }
 
+console.log('\n▸ re-export forms through a barrel');
+{
+  // `T extends Foo`, where Foo is reached through `barrel.ts`. `foo-with.ts` declares a Foo
+  // that has `save`; `foo-without.ts` declares one that does not. Which one T inherits
+  // from decides whether `save` overrides anything, and so whether a sibling-dispatch
+  // caller is dropped.
+  const scenario = (tag, barrel, files) => {
+    for (const [rel, text] of Object.entries(files)) write(`${tag}/${rel}`, text);
+    write(`${tag}/barrel.ts`, barrel);
+    const t = write(`${tag}/t.ts`, "import { Foo } from './barrel';\nexport class T extends Foo { async save(x: unknown) {} }\n");
+    write(`${tag}/unrelated.ts`, 'export class Unrelated { async save(x: unknown) {} }\n');
+    const c = write(`${tag}/caller.ts`,
+      "import { Unrelated } from './unrelated';\nexport class K {\n  constructor(private readonly u: Unrelated) {}\n  go() { return this.u.save(1); }\n}\n");
+    const f = createInheritanceFilter(ts, { trace: () => {} });
+    return {
+      declares: f.ancestorDeclares(t, 'T', 'save'),
+      dropped: f.isSiblingDispatch({ file: t, className: 'T', name: 'save' },
+        { file: c, callSites: [siteOf(c, 'this.u.save', 'save')] }),
+    };
+  };
+  const withSave = 'export class Foo { async save(x: unknown) {} }\n';
+  const withoutSave = 'export class Foo { async other() {} }\n';
+
+  // `export * as ns` exports only `ns`; Foo is really the later `export *` one.
+  const ns = scenario('ns',
+    "export * as ns from './foo-with';\nexport * from './foo-without';\n",
+    { 'foo-with.ts': withSave, 'foo-without.ts': withoutSave });
+  check('`export * as ns` does not expose the module\'s classes', ns.declares === false && ns.dropped === false,
+    `declares=${ns.declares} dropped=${ns.dropped}`);
+
+  // `export { Base as Foo }` must look up Base in the source module.
+  const rn = scenario('rename', "export { Base as Foo } from './m';\n",
+    { 'm.ts': 'export class Base { async save(x: unknown) {} }\n' });
+  check('a renamed re-export is followed under its original name', rn.declares === true && rn.dropped === true,
+    `declares=${rn.declares} dropped=${rn.dropped}`);
+
+  // An explicit named re-export beats `export *` whichever comes first.
+  const starFirst = scenario('prec-star-first',
+    "export * from './foo-with';\nexport { Foo } from './foo-without';\n",
+    { 'foo-with.ts': withSave, 'foo-without.ts': withoutSave });
+  check('a named re-export wins over an earlier `export *`', starFirst.declares === false && starFirst.dropped === false,
+    `declares=${starFirst.declares} dropped=${starFirst.dropped}`);
+  const starLast = scenario('prec-star-last',
+    "export { Foo } from './foo-without';\nexport * from './foo-with';\n",
+    { 'foo-with.ts': withSave, 'foo-without.ts': withoutSave });
+  check('a named re-export wins over a later `export *`', starLast.declares === false && starLast.dropped === false,
+    `declares=${starLast.declares} dropped=${starLast.dropped}`);
+
+  // A local declaration beats `export *` regardless of order too (already the case).
+  const local = scenario('prec-local', "export * from './foo-with';\n" + withoutSave, { 'foo-with.ts': withSave });
+  check('a local class wins over `export *`', local.declares === false && local.dropped === false);
+
+  // Cycle of stars still terminates and yields "unknown", which keeps the edge.
+  const cyc = scenario('cycle', "export * from './a';\n", { 'a.ts': "export * from './barrel';\n" });
+  check('a re-export cycle terminates and keeps the edge', cyc.dropped === false);
+}
+
 fs.rmSync(root, { recursive: true, force: true });
 console.log(fail ? `\n${fail} failure(s)` : '\nall inheritance checks passed');
 process.exit(fail ? 1 : 0);
