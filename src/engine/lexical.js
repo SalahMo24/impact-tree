@@ -37,7 +37,11 @@ function namesOf(ts, scope) {
         for (const d of s.declarationList.declarations) addBinding(d.name, d);
       } else if ((ts.isFunctionDeclaration(s) || ts.isClassDeclaration(s) || ts.isEnumDeclaration(s)
         || ts.isModuleDeclaration(s)) && s.name && ts.isIdentifier(s.name)) {
-        add(s.name.text, s);
+        // Overload signatures have no body; the implementation is the declaration a call
+        // reaches and the one the symbol collector reports, so it replaces the signature.
+        const seen = names.get(s.name.text);
+        if (seen && ts.isFunctionDeclaration(seen) && !seen.body && ts.isFunctionDeclaration(s) && s.body) names.set(s.name.text, s);
+        else add(s.name.text, s);
       }
     }
   };
