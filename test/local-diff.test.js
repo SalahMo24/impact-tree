@@ -71,6 +71,23 @@ const {
     check('diff.external and color.ui do not hide the change', r.allChanged.length === 2, J(r.allChanged.map((c) => c.label)));
   }
   {
+    // interHunkContext fuses two edits a few lines apart into one hunk (so the lines between
+    // read as changed); src/dstPrefix change the a/ b/ the parser looks for.
+    const lines = (a, b) => Array.from({ length: 20 }, (_, i) => `const v${i} = ${i === 2 ? a : i === 7 ? b : 0};`).join('\n') + '\n';
+    const repo = mkRepo({ 'src/m.ts': lines(0, 0), 'src/n.ts': 'one\n' }, { ts: false });
+    const base = headOf(repo);
+    write(repo, { 'src/m.ts': lines(1, 1), 'src/n.ts': 'two\n' });
+    const git = makeGit(repo);
+    const seen = () => ({ files: changedFiles(git, base, null, null).map((f) => f.path).sort(), hunks: allHunks(git, base, null, []) });
+    const plain = seen();
+    run(repo, ['config', 'diff.interHunkContext', '5']);
+    run(repo, ['config', 'diff.srcPrefix', 'x/']);
+    run(repo, ['config', 'diff.dstPrefix', 'y/']);
+    const configured = seen();
+    check('the fixture has two separate hunks', J(plain.hunks['src/m.ts']) === J([[3, 3], [8, 8]]), J(plain.hunks));
+    check('diff.interHunkContext and src/dstPrefix do not change files or ranges', J(configured) === J(plain), `${J(configured)} vs ${J(plain)}`);
+  }
+  {
     // A spaced name gets a trailing tab on its +++ line; an added line reading `++ x`
     // shows up as `+++ x` and used to be taken for the next file's header.
     const repo = mkRepo({ 'a b.ts': 'x\n', 'c.ts': 'one\n' }, { ts: false });
