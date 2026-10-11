@@ -234,7 +234,11 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, queryTimeoutMs 
     let cqrsFailure = null;
     if (cqrs) {
       let extra = [];
-      try { extra = await cqrs.extraCallers(file, pos); } catch (e) { cqrsFailure = (e && e.message) || 'lookup failed'; }
+      try {
+        const found = await cqrs.extraCallers(file, pos);
+        extra = found.callers;
+        if (found.unresolved.length) cqrsFailure = `no definition found for ${found.unresolved.join(', ')}`;
+      } catch (e) { cqrsFailure = (e && e.message) || 'lookup failed'; }
       if (startedGeneration !== generation) return staleAnswer();
       stats.cqrsEdges += extra.length;
       const have = new Set(out.map((c) => `${c.file}#${c.pos}`));

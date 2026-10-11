@@ -224,7 +224,7 @@ test('editor caller queries report whether they completed, and retry incomplete 
     } } };
   const fakeCqrs = new Module(cqrsId); fakeCqrs.loaded = true;
   fakeCqrs.exports = { makeCqrsEdges: () => ({ isHandlerExecute: () => false,
-    extraCallers: async () => { if (cqrsFails) throw new Error('index unavailable'); return []; } }) };
+    extraCallers: async () => { if (cqrsFails) throw new Error('index unavailable'); return { callers: [], unresolved: [] }; } }) };
   try {
     Module._load = function (name, ...args) { return name === 'vscode' ? stub : original.call(this, name, ...args); };
     require.cache[cqrsId] = fakeCqrs;

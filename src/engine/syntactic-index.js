@@ -606,6 +606,17 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
     return { callers: [...out.values()], incompleteReason };
   }
 
+  // Calls `callersOf` had to skip for want of a receiver it could classify, that could still
+  // be calls to `target`: only a member call named like the target qualifies. A skipped call
+  // with any other name cannot reach it, so counting those would make every search incomplete.
+  function unresolvedCallsTo(target) {
+    let n = 0;
+    for (const rec of byFile.values()) {
+      for (const c of rec.calls) if (c.receiver && c.receiver.kind === 'unknown' && c.name === target.name) n++;
+    }
+    return n;
+  }
+
   // (file, pos) -> { className, name } for a declaration, so a resolver can answer
   // incoming() with the same signature the rest of the engine already uses.
   const symbolIndex = new Map();
@@ -622,7 +633,7 @@ function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, path
   const symbolAt = (file, pos) => symbolIndex.get(`${file}#${pos}`) || null;
 
   return {
-    byFile, texts, callersOf, callersOfWithStatus, symbolAt, resolveModule,
+    byFile, texts, callersOf, callersOfWithStatus, unresolvedCallsTo, symbolAt, resolveModule,
     classKey, subtypesOf, supertypesOf, handlerCommand, size: byFile.size,
   };
 }
