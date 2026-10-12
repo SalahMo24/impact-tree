@@ -173,7 +173,7 @@ test('a file row reads attention, progress, then the last folder segment; the pa
   }));
   const a = await fileAt('src/deep/a.ts');
   assert.equal(item(a).description, '⛔ 1  ·  0/2  ·  deep');
-  assert.match(item(a).tooltip.value, /src\/deep\/a\.ts/);
+  assert.match(item(a).tooltip.value, /src\/\n└─ deep\/\n   └─ a\.ts/, 'the path, drawn as a folder tree');
   assert.equal(item(await fileAt('root.ts')).description, '0/1', 'no folder at the repo root');
 });
 
@@ -184,7 +184,7 @@ test('a file without a call graph reads "no call graph", then the last folder se
   }));
   const guide = item(await fileAt('docs/sub/guide.md'));
   assert.equal(guide.description, 'no call graph  ·  sub');
-  assert.match(guide.tooltip.value, /docs\/sub\/guide\.md/);
+  assert.match(guide.tooltip.value, /docs\/\n└─ sub\/\n   └─ guide\.md/, 'the path, drawn as a folder tree');
   assert.equal(item(await fileAt('README.md')).description, 'no call graph');
 });
 

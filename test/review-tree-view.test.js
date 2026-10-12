@@ -170,7 +170,7 @@ test('the file row shows the unreviewed attention count with the worst token, do
   const a = await fileAt('src/a.ts');
   assert.equal(item(a).label, 'a.ts');
   assert.equal(item(a).description, '⛔ 2  ·  0/4  ·  src');
-  assert.match(item(a).tooltip.value, /src\/a\.ts/);
+  assert.match(item(a).tooltip.value, /```\nsrc\/\n└─ a\.ts\n```/, 'the path is drawn as a folder tree');
   assert.match(item(a).tooltip.value, /4 changes, 2 need attention, 4 left to review/);
   const [bad, gone] = await provider.getChildren(a);
   provider.setChecked(bad, true);
