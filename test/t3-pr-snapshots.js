@@ -59,7 +59,13 @@ const run = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8'
                             console.error('MISSING cross-project caller', name, expected);
                         } else {
                             const caller = target.callers.find(c => c.label.includes(expected));
-                            assert.equal(caller.callState, expected === 'resolveScopedSettingsTargets' ? 'updated-at-call' : 'changed-elsewhere');
+                            assert.equal(caller.callState, 'changed-elsewhere');
+                            if (expected === 'resolveScopedSettingsTargets') {
+                                // Under the all-sites rule (9141672) one untouched call keeps the caller stale: the PR edits two
+                                // calls, but line 125 of scopedSettings.ts (the environment-scope `.sources` call) is left as is.
+                                const { updated, untouched, unknown } = caller.callSiteUpdates;
+                                assert.deepEqual([updated.length, untouched.length, unknown.length], [2, 1, 0], name);
+                            }
                         }
                     }
                 }

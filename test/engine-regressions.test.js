@@ -35,6 +35,189 @@ test('inheritance filter keeps scoped, shadowed, namespaced, and inherited-alias
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('TypeScript resolver preserves direct and subclass callers through renamed exports', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-renamed-callers-'));
+  let resolver;
+  try {
+    const files = {
+      'tsconfig.json': '{"compilerOptions":{"target":"ES2021","module":"commonjs","strict":true},"include":["*.ts"]}',
+      'base.ts': 'export class Base { save() {} }',
+      'mine.ts': "import { Base } from './base'; export class Mine extends Base { save() {} }",
+      'barrel.ts': "export { Mine as Renamed } from './mine';",
+      'sub.ts': "import { Renamed } from './barrel'; export class Sub extends Renamed {}",
+      'caller.ts': "import { Renamed } from './barrel'; export function direct(receiver: Renamed) { receiver.save(); }",
+      'caller-sub.ts': "import { Sub } from './sub'; export function subclass(receiver: Sub) { receiver.save(); }",
+    };
+    for (const [file, text] of Object.entries(files)) fs.writeFileSync(path.join(dir, file), text);
+    resolver = require('../src/engine/resolver-ts').createTsResolver(ts, dir);
+    const callers = await resolver.incoming(path.join(dir, 'mine.ts'), files['mine.ts'].indexOf('save()'));
+    assert.deepEqual(callers.map(c => c.label).sort(), ['direct', 'subclass']);
+    assert(callers.every(c => c.callSites.length === 1), 'both real call sites survive filtering');
+  } finally {
+    resolver?.dispose();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+const inheritanceFixture = (files) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-inheritance-bindings-'));
+  for (const [file, text] of Object.entries({
+    'tsconfig.json': '{"compilerOptions":{"strict":true,"module":"commonjs","target":"ES2021"},"include":["**/*.ts"]}',
+    ...files,
+  })) {
+    fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
+    fs.writeFileSync(path.join(dir, file), text);
+  }
+  return dir;
+};
+const assertInheritanceFixtureValid = (dir) => {
+  const config = ts.readConfigFile(path.join(dir, 'tsconfig.json'), ts.sys.readFile).config;
+  const parsed = ts.parseJsonConfigFileContent(config, ts.sys, dir);
+  const program = ts.createProgram(parsed.fileNames, parsed.options);
+  assert.deepEqual(ts.getPreEmitDiagnostics(program).map(d => ts.flattenDiagnosticMessageText(d.messageText, ' ')), []);
+};
+
+for (const [name, files, targetFile = 'mine.ts'] of [
+  ['renamed import', {
+    'barrel.ts': "export { Mine as Exported } from './mine'; export class Mine { save() {} }",
+    'caller.ts': "import { Exported as Mine } from './barrel'; export function direct(receiver: Mine) { receiver.save(); }",
+  }],
+  ['default import', {
+    'barrel.ts': "export { Mine as default } from './mine'; export class Mine { save() {} }",
+    'caller.ts': "import Mine from './barrel'; export function direct(receiver: Mine) { receiver.save(); }",
+  }],
+  ['namespace-qualified type', {
+    'other.ts': 'export class Mine { save() {} }',
+    'caller.ts': "import * as ns from './mine'; import { Mine } from './other'; export function direct(receiver: ns.Mine) { receiver.save(); }",
+  }],
+  ['dot-containing exported name', {
+    'barrel.ts': "export { Mine as 'ns.Mine' } from './mine'; export * as ns from './other';",
+    'other.ts': 'export class Mine { save() {} }',
+    'caller.ts': "import { 'ns.Mine' as Mine } from './barrel'; export function direct(receiver: Mine) { receiver.save(); }",
+  }],
+  ['shadowed type parameter', {
+    'other.ts': 'export class Other { save() {} }',
+    'caller.ts': "import { Mine as Actual } from './mine'; import { Other as Mine } from './other'; export function direct<Mine extends Actual>(receiver: Mine) { receiver.save(); }",
+  }],
+  ['block-local type alias', {
+    'other.ts': 'export class Other { save() {} }',
+    'caller.ts': "import { Mine as Actual } from './mine'; import { Other as Mine } from './other'; export function direct(receiver: Actual) { type Mine = Actual; const typed: Mine = receiver; typed.save(); }",
+  }],
+  ['wrapped shadowed type parameter', {
+    'other.ts': 'export class Other { save() {} }',
+    'caller.ts': "import { Mine as Actual } from './mine'; import { Other as Mine } from './other'; export function direct<Mine extends Actual>(receiver: Readonly<Mine>) { receiver.save(); }",
+  }],
+  ['local export alias', {
+    'barrel.ts': "import { Mine as Local } from './mine'; export { Local as Exported }; export * from './other';",
+    'other.ts': 'export class Exported { save() {} }',
+    'caller.ts': "import { Exported as Mine } from './barrel'; export function direct(receiver: Mine) { receiver.save(); }",
+  }],
+  ['private barrel declaration', {
+    'barrel.ts': "class Exported { save() {} } export { Mine as Exported } from './mine';",
+    'caller.ts': "import { Exported as Mine } from './barrel'; export function direct(receiver: Mine) { receiver.save(); }",
+  }],
+  ['named default class', {
+    'barrel.ts': "import { Base } from './base'; export default class Actual extends Base { save() {} } export class Mine { save() {} }",
+    'mine.ts': "export { default as Mine } from './barrel';",
+    'caller.ts': "import Mine from './barrel'; export function direct(receiver: Mine) { receiver.save(); }",
+  }, 'barrel.ts'],
+]) {
+  test(`inheritance filtering keeps a ${name} caller despite an unrelated namesake`, async () => {
+    const dir = inheritanceFixture({
+      'base.ts': 'export class Base { save() {} }',
+      'mine.ts': "import { Base } from './base'; export class Mine extends Base { save() {} }",
+      ...files,
+    });
+    try {
+      assertInheritanceFixtureValid(dir);
+      const target = path.join(dir, targetFile);
+      const pos = fs.readFileSync(target, 'utf8').indexOf('save()');
+      assert(pos >= 0, 'fixture contains the target method declaration');
+      for (const filterInherited of [false, true]) {
+        const resolver = require('../src/engine/resolver-ts').createTsResolver(ts, dir, { filterInherited });
+        try {
+          const callers = await resolver.incoming(target, pos);
+          assert.deepEqual(callers.map(c => c.label), ['direct'], `filterInherited=${filterInherited}`);
+          assert.equal(callers[0].callSites.length, 1);
+        } finally { resolver.dispose(); }
+      }
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+}
+
+test('symlink ancestry uses the import context regardless of caller-query order', async () => {
+  const mine = "import { Base } from './base'; export class Mine extends Base { save() {} }";
+  const dir = inheritanceFixture({
+    'real/base.ts': 'export class Base { save() {} }',
+    'real/mine.ts': mine,
+    'alias/base.ts': 'export class Base { save() {} }',
+    'direct.ts': "import { Mine } from './real/mine'; export function direct(receiver: Mine) { receiver.save(); }",
+    'port.ts': "import { Base } from './alias/base'; export function port(receiver: Base) { receiver.save(); }",
+  });
+  try {
+    fs.symlinkSync(path.join(dir, 'real/mine.ts'), path.join(dir, 'alias/mine.ts'), 'file');
+    assertInheritanceFixtureValid(dir);
+    for (const order of [['real', 'alias'], ['alias', 'real']]) {
+      for (const filterInherited of [false, true]) {
+        const resolver = require('../src/engine/resolver-ts').createTsResolver(ts, dir, { filterInherited });
+        try {
+          for (const context of order) {
+            const callers = await resolver.incoming(path.join(dir, context, 'mine.ts'), mine.indexOf('save()'));
+            assert.deepEqual(callers.map(c => c.label), context === 'real' ? ['direct'] : ['port'],
+              `${order.join(' -> ')}, filterInherited=${filterInherited}, target=${context}`);
+          }
+        } finally { resolver.dispose(); }
+      }
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('ancestry traversal visits both import contexts of a shared interface file', () => {
+  const mine = "import { Base } from './base'; import { Port as A } from './real/port'; import { Port as B } from './alias/port'; export class Mine extends Base implements A, B { save() {} }";
+  const dir = inheritanceFixture({
+    'base.ts': 'export class Base { save() {} }',
+    'mine.ts': mine,
+    'real/root.ts': 'export interface Root { save(): void }',
+    'alias/root.ts': 'export interface Root { save(): void }',
+    'real/port.ts': "import { Root } from './root'; export interface Port extends Root {}",
+    'real-caller.ts': "import { Root } from './real/root'; export function real(receiver: Root) { receiver.save(); }",
+    'alias-caller.ts': "import { Root } from './alias/root'; export function alias(receiver: Root) { receiver.save(); }",
+  });
+  try {
+    fs.symlinkSync(path.join(dir, 'real/port.ts'), path.join(dir, 'alias/port.ts'), 'file');
+    assertInheritanceFixtureValid(dir);
+    const filter = createInheritanceFilter(ts);
+    for (const context of ['real', 'alias']) {
+      const file = path.join(dir, `${context}-caller.ts`);
+      const start = fs.readFileSync(file, 'utf8').indexOf('receiver.save') + 'receiver.'.length;
+      const result = filter.filterAt(path.join(dir, 'mine.ts'), mine.indexOf('save()'), [{ file, callSites: [{ start }] }]);
+      assert.equal(result.dropped, 0, `${context} ancestor must survive traversal`);
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a nested class with an exported namesake keeps its own base-class caller', async () => {
+  const mine = "import { Base } from './base'; import { OtherBase } from './other-base'; export class Mine extends Base { save() {} } export function make() { class Mine extends OtherBase { save() {} } return Mine; }";
+  const dir = inheritanceFixture({
+    'base.ts': 'export class Base { save() {} }',
+    'other-base.ts': 'export class OtherBase { save() {} }',
+    'mine.ts': mine,
+    'caller.ts': "import { Base } from './base'; import { OtherBase } from './other-base'; export function outer(receiver: Base) { receiver.save(); } export function nested(receiver: OtherBase) { receiver.save(); }",
+  });
+  try {
+    assertInheritanceFixtureValid(dir);
+    for (const filterInherited of [false, true]) {
+      const resolver = require('../src/engine/resolver-ts').createTsResolver(ts, dir, { filterInherited });
+      try {
+        for (const [pos, expected] of [[mine.indexOf('save()'), 'outer'], [mine.lastIndexOf('save()'), 'nested']]) {
+          const callers = await resolver.incoming(path.join(dir, 'mine.ts'), pos);
+          assert.deepEqual(callers.map(c => c.label), [expected], `filterInherited=${filterInherited}, target=${expected}`);
+        }
+      } finally { resolver.dispose(); }
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('CQRS edges apply only to entry methods and include every declared event', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(),'it-cqrs-'));
   try {

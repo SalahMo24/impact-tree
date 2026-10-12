@@ -19,6 +19,7 @@
 // resolves in favour of keeping the edge.
 const fs = require('fs');
 const path = require('path');
+const { canonical } = require('./canonical-path');
 
 const EXT = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx'];
 
@@ -36,7 +37,8 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
   // which the editor resolver calls at the start of every local analysis; the TypeScript
   // resolver is rebuilt per run. Disposal: with the filter.
   const parsed = new Map();
-  // file -> { classes: Map<name, {heritage:[names], methods:Set}>, imports: Map<name, module> }
+  const scopeTypeNames = new WeakMap();
+  // file -> { classes: Map<name, {heritage:[names], methods:Set}>, imports: Map<name, {module, imported}> }
   function parse(file) {
     if (parsed.has(file)) return parsed.get(file);
     const text = read(file);
@@ -49,26 +51,62 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
 
     const classes = new Map();
     const imports = new Map();
+    const localExports = new Map();
+    const typeAliases = new Set();
     const reExports = [];
     const visit = (n) => {
+      if (ts.isExportDeclaration(n) && !n.moduleSpecifier && n.exportClause && ts.isNamedExports(n.exportClause)) {
+        for (const el of n.exportClause.elements) localExports.set(el.name.text, (el.propertyName || el.name).text);
+        return;
+      }
+      if (ts.isExportAssignment(n) && !n.isExportEquals) {
+        localExports.set('default', ts.isIdentifier(n.expression) ? n.expression.text : null);
+        return;
+      }
       if (ts.isExportDeclaration(n) && n.moduleSpecifier) {
+        const clause = n.exportClause;
+        // `namespace`: the one name `export * as ns` exposes. `names`: exported name ->
+        // name in the source module (`export { A as B }` maps B to A). Neither: `export *`.
         reExports.push({
           module: n.moduleSpecifier.text,
-          names: n.exportClause && ts.isNamedExports(n.exportClause)
-            ? n.exportClause.elements.map((el) => el.name.text) : null,   // null = export *
+          namespace: clause && ts.isNamespaceExport(clause) ? clause.name.text : null,
+          names: clause && ts.isNamedExports(clause)
+            ? new Map(clause.elements.map((el) => [el.name.text, (el.propertyName || el.name).text])) : null,
         });
         return;
       }
       if (ts.isImportDeclaration(n) && n.moduleSpecifier && n.importClause) {
         const mod = n.moduleSpecifier.text;
         const c = n.importClause;
-        if (c.name) imports.set(c.name.text, mod);
+        if (c.name) imports.set(c.name.text, { module: mod, imported: 'default' });
+        if (c.namedBindings && ts.isNamespaceImport(c.namedBindings)) {
+          imports.set(c.namedBindings.name.text, { module: mod, imported: '*' });
+        }
         if (c.namedBindings && ts.isNamedImports(c.namedBindings)) {
-          for (const el of c.namedBindings.elements) imports.set(el.name.text, mod);
+          for (const el of c.namedBindings.elements) imports.set(el.name.text,
+            { module: mod, imported: (el.propertyName || el.name).text });
         }
         return;
       }
-      if ((ts.isClassDeclaration(n) || ts.isInterfaceDeclaration(n)) && n.name) {
+      if (n.parent === sf) {
+        if (ts.isTypeAliasDeclaration(n)) typeAliases.add(n.name.text);
+        const modifiers = (ts.getModifiers ? ts.getModifiers(n) : n.modifiers) || [];
+        if (modifiers.some(m => m.kind === ts.SyntaxKind.DefaultKeyword)) {
+          localExports.set('default', n.name?.text || null);
+        } else if (modifiers.some(m => m.kind === ts.SyntaxKind.ExportKeyword)) {
+          const bindings = ts.isVariableStatement(n) ? n.declarationList.declarations.map(d => d.name) : n.name ? [n.name] : [];
+          while (bindings.length) {
+            const binding = bindings.pop();
+            if (ts.isIdentifier(binding)) localExports.set(binding.text, binding.text);
+            else if (ts.isObjectBindingPattern(binding) || ts.isArrayBindingPattern(binding)) {
+              for (const el of binding.elements) if (!ts.isOmittedExpression(el)) bindings.push(el.name);
+            }
+          }
+        }
+      }
+      // Nested declarations have lexical scopes that this file-level summary cannot
+      // prove. Leave them unknown rather than merging them with an exported namesake.
+      if (n.parent === sf && (ts.isClassDeclaration(n) || ts.isInterfaceDeclaration(n)) && n.name) {
         const heritage = [];
         for (const h of n.heritageClauses || []) {
           for (const t of h.types) heritage.push(t.expression.getText(sf));
@@ -91,7 +129,7 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
     };
     ts.forEachChild(sf, visit);
 
-    const rec = { file, sf, classes, imports, reExports };
+    const rec = { file, sf, classes, imports, localExports, typeAliases, reExports };
     parsed.set(file, rec);
     return rec;
   }
@@ -154,7 +192,9 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
   };
 
   // Where is `name` declared, starting from `file`? Follows the import and then any
-  // barrel hops -- an index.ts almost never declares what it re-exports.
+  // barrel hops -- an index.ts almost never declares what it re-exports. The answer is
+  // { file, name }: `name` there is the declared name, which differs from the asked one
+  // when a barrel renames (`export { Base as Renamed }`).
   const declCache = new Map();
   function fileDeclaring(file, name) {
     const ck = `${file}#${name}`;
@@ -162,51 +202,116 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
     declCache.set(ck, null);                       // guard against re-export cycles
     const rec = parse(file);
     if (!rec) return null;
-    if (rec.classes.has(name)) { declCache.set(ck, file); return file; }
-    const mod = rec.imports.get(name);
-    if (!mod) return null;
-    const f = resolveFrom(file, mod);
-    if (!f) return null;
-    const found = declaringVia(f, name, 0);
+    if (rec.classes.has(name)) { const d = { file, name }; declCache.set(ck, d); return d; }
+    const [local, ...members] = name.split('.').map(part => part.trim());
+    const imp = rec.imports.get(local);
+    if (!imp || (imp.imported === '*' && !members.length)) return null;
+    const found = declaringImport(file, imp, members, 0);
     declCache.set(ck, found);
     return found;
   }
 
-  function declaringVia(file, name, depth) {
+  function declaringImport(file, imp, members, depth) {
+    if (imp.imported === '*' && !members.length) return null;
+    const f = resolveFrom(file, imp.module);
+    if (!f) return null;
+    // An exported string name may itself contain dots. Keep namespace members
+    // separate from that binding name rather than treating it as a qualified name.
+    const imported = imp.imported === '*' ? members[0] : imp.imported;
+    return declaringVia(f, imported, depth, imp.imported === '*' ? members.slice(1) : members);
+  }
+
+  // A null result means "not found", and every caller treats it as "inheritance unknown":
+  // ancestorsOf stops climbing, ancestorDeclares skips the ancestor, and isSiblingDispatch
+  // and heritageKnown keep the edge. So the depth limit below can only keep an edge, never
+  // drop one.
+  function declaringVia(file, name, depth, members = []) {
     if (depth > 4) return null;
     const rec = parse(file);
     if (!rec) return null;
-    if (rec.classes.has(name)) return file;
+    // Only exported local bindings take precedence. A private same-named class
+    // must not hide the declaration exported from another module.
+    if (rec.localExports.has(name)) {
+      const local = rec.localExports.get(name);
+      if (!local) return null;
+      if (!members.length && rec.classes.has(local)) return { file, name: local };
+      const imp = rec.imports.get(local);
+      return imp ? declaringImport(file, imp, members, depth + 1) : null;
+    }
+    // Explicit exports override `export *` whatever the statement order, and are conclusive:
+    // an `export * as name` exposes a namespace, not a class, and an unresolvable named
+    // re-export must not fall through to an unrelated star.
+    const explicit = rec.reExports.find((re) => re.namespace === name || (re.names && re.names.has(name)));
+    if (explicit) {
+      if (explicit.namespace && !members.length) return null;
+      const f2 = resolveFrom(file, explicit.module);
+      const imported = explicit.namespace ? members[0] : explicit.names.get(name);
+      return f2 ? declaringVia(f2, imported, depth + 1, explicit.namespace ? members.slice(1) : members) : null;
+    }
+    // Stars do not export a module's default binding.
+    if (name === 'default') return null;
     for (const re of rec.reExports) {
-      if (re.names && !re.names.includes(name)) continue;
+      if (re.namespace || re.names) continue;
       const f2 = resolveFrom(file, re.module);
       if (!f2) continue;
-      const hit = declaringVia(f2, name, depth + 1);
+      const hit = declaringVia(f2, name, depth + 1, members);
       if (hit) return hit;
     }
     return null;
   }
 
   const ancestorCache = new Map();
-  // Transitive extends/implements names reachable from (file, className).
-  function ancestorsOf(file, className, depth = 0) {
-    const key = `${file}#${className}`;
-    if (ancestorCache.has(key)) return ancestorCache.get(key);
-    const out = new Set();
-    if (depth > 8) return out;                    // cycle / pathological guard
-    ancestorCache.set(key, out);                  // set early: heritage can be cyclic
-    const rec = parse(file);
-    const entry = rec && rec.classes.get(className);
-    if (!entry) return out;
-    for (const parent of entry.heritage) {
-      if (out.has(parent)) continue;
-      out.add(parent);
-      const pf = fileDeclaring(file, parent);
-      if (!pf) continue;
-      for (const g of ancestorsOf(pf, parent, depth + 1)) out.add(g);
+  // Dependencies resolve from the path used to reach a declaration. Two symlinks to
+  // one file can import different neighbours, so traversal/cache keys preserve that
+  // context even though class comparisons use the canonical physical path below.
+  const contextPaths = new Map();
+  const contextPath = (file) => {
+    if (!contextPaths.has(file)) {
+      const resolved = path.resolve(file);
+      contextPaths.set(file, path.sep === '\\' ? resolved.toLowerCase() : resolved);
     }
+    return contextPaths.get(file);
+  };
+  const contextKey = (file, name) => JSON.stringify([contextPath(file), name]);
+  // Resolve each path spelling once per analysis, including symlinks and Windows case.
+  const canonicalPaths = new Map();
+  const classKey = (file, name) => {
+    if (!canonicalPaths.has(file)) canonicalPaths.set(file, canonical(file));
+    return JSON.stringify([canonicalPaths.get(file), name]);
+  };
+  const sameDeclaration = (left, right) => classKey(left.file, left.name) === classKey(right.file, right.name);
+  const hasAncestor = (ancestry, declaration) => ancestry.identities.has(classKey(declaration.file, declaration.name));
+  // Keep declaration identities as well as the heritage names used for inspection.
+  // A barrel alias and the declared name refer to the same class; a matching name
+  // in another file does not. Visit by identity so cycles terminate without truncating
+  // a known relationship or resolving a transitive parent's name in the wrong file.
+  function ancestryOf(file, className) {
+    const key = contextKey(file, className);
+    if (ancestorCache.has(key)) return ancestorCache.get(key);
+    const out = { names: new Set(), declarations: new Map(), identities: new Set() };
+    const seen = new Set();
+    const pending = [{ file, name: className }];
+    while (pending.length) {
+      const current = pending.pop();
+      const ck = contextKey(current.file, current.name);
+      if (seen.has(ck)) continue;
+      seen.add(ck);
+      const entry = parse(current.file)?.classes.get(current.name);
+      if (!entry) continue;
+      for (const parent of entry.heritage) {
+        out.names.add(parent);
+        const pd = fileDeclaring(current.file, parent);
+        if (!pd) continue;
+        out.declarations.set(contextKey(pd.file, pd.name), pd);
+        out.identities.add(classKey(pd.file, pd.name));
+        pending.push(pd);
+      }
+    }
+    ancestorCache.set(key, out);
     return out;
   }
+
+  function ancestorsOf(file, className) { return ancestryOf(file, className).names; }
 
   function heritageKnown(file, name, seen = new Set()) {
     const key = `${file}#${name}`;
@@ -215,17 +320,15 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
     const entry = parse(file)?.classes.get(name);
     if (!entry) return false;
     return entry.heritage.every((parent) => {
-      const f = fileDeclaring(file, parent);
-      return f && heritageKnown(f, parent, seen);
+      const d = fileDeclaring(file, parent);
+      return d && heritageKnown(d.file, d.name, seen);
     });
   }
 
   function ancestorDeclares(file, className, method) {
-    for (const a of ancestorsOf(file, className)) {
-      const af = fileDeclaring(file, a);
-      if (!af) continue;
-      const rec = parse(af);
-      const entry = rec && rec.classes.get(a);
+    for (const ad of ancestryOf(file, className).declarations.values()) {
+      const rec = parse(ad.file);
+      const entry = rec && rec.classes.get(ad.name);
       if (entry && entry.methods.has(method)) return true;
     }
     return false;
@@ -288,11 +391,27 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
       }
       if (!t || !ts.isTypeReferenceNode(t)) return null;
       const n2 = t.typeName;
-      const nm = ts.isQualifiedName(n2) ? n2.right.text : n2.text;
-      if (/^(Promise|Array|Readonly|Partial)$/.test(nm) && t.typeArguments && t.typeArguments.length === 1) {
+      const qualified = n => ts.isQualifiedName(n) ? `${qualified(n.left)}.${n.right.text}` : n.text;
+      const nm = qualified(n2);
+      // Generic parameters and block-local type declarations can shadow imports.
+      // This syntax filter does not resolve those types or their constraints, so
+      // retaining the caller is safer than looking up a same-named file-level import.
+      const local = nm.split('.')[0];
+      if (rec.typeAliases.has(local)) return null;
+      for (let scope = t.parent; scope; scope = scope.parent) {
+        if (scope.typeParameters?.some(p => p.name.text === local)) return null;
+        if (ts.isBlock(scope) || ts.isModuleBlock(scope)) {
+          if (!scopeTypeNames.has(scope)) {
+            scopeTypeNames.set(scope, new Set(scope.statements.filter(s => ts.isTypeAliasDeclaration(s) || ts.isInterfaceDeclaration(s)
+              || ts.isClassDeclaration(s) || ts.isModuleDeclaration(s)).map(s => s.name?.text)));
+          }
+          if (scopeTypeNames.get(scope).has(local)) return null;
+        }
+      }
+      if (/^(Promise|Array|Readonly|Partial)$/.test(nm) && !rec.imports.has(nm) && !rec.classes.has(nm)
+        && t.typeArguments && t.typeArguments.length === 1) {
         const inner = t.typeArguments[0];
-        return inner && ts.isTypeReferenceNode(inner)
-          ? (ts.isQualifiedName(inner.typeName) ? inner.typeName.right.text : inner.typeName.text) : null;
+        return inner && ts.isTypeReferenceNode(inner) ? typeName(inner) : null;
       }
       return nm;
     }
@@ -308,18 +427,19 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
     const rec = parse(file);
     if (rec) {
       const sf = rec.sf;
-      const visit = (n, cls) => {
+      const visit = (n) => {
         if (out) return;
-        let cur = cls;
-        if ((ts.isClassDeclaration(n) || ts.isInterfaceDeclaration(n)) && n.name) cur = n.name.text;
         if ((ts.isMethodDeclaration(n) || ts.isGetAccessorDeclaration(n)) && n.name
           && n.name.getStart(sf) === pos) {
-          out = { file, className: cur || null, name: n.name.getText(sf) };
+          const owner = n.parent;
+          const className = (ts.isClassDeclaration(owner) || ts.isInterfaceDeclaration(owner))
+            && owner.parent === sf ? owner.name?.text || null : null;
+          out = { file, className, name: n.name.getText(sf) };
           return;
         }
-        ts.forEachChild(n, (k) => visit(k, cur));
+        ts.forEachChild(n, visit);
       };
-      ts.forEachChild(sf, (k) => visit(k, undefined));
+      ts.forEachChild(sf, visit);
     }
     targetCache.set(ck, out);
     return out;
@@ -331,17 +451,18 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
     if (!caller || !caller.callSites || !caller.callSites.length) return false;
     if (!ancestorDeclares(target.file, target.className, target.name)) return false;
 
-    const targetAncestors = ancestorsOf(target.file, target.className);
+    const targetDeclaration = { file: target.file, name: target.className };
+    const targetAncestors = ancestryOf(target.file, target.className);
     let unrelated = 0;
     for (const site of caller.callSites) {
       const t = receiverTypeAt(caller.file, site.start);
       if (!t) return false;                                  // unreadable -> keep
-      if (t === target.className) return false;
-      if (targetAncestors.has(t)) return false;              // typed as the port
-      const tf = fileDeclaring(caller.file, t);
-      if (!tf) return false;                                 // cannot judge -> keep
-      if (ancestorsOf(tf, t).has(target.className)) return false;   // a subclass
-      if (!heritageKnown(tf, t) || !heritageKnown(target.file, target.className)) return false;
+      const td = fileDeclaring(caller.file, t);
+      if (!td) return false;                                 // cannot judge -> keep
+      if (sameDeclaration(td, targetDeclaration)) return false;
+      if (hasAncestor(targetAncestors, td)) return false;     // typed as the port
+      if (hasAncestor(ancestryOf(td.file, td.name), targetDeclaration)) return false;   // a subclass
+      if (!heritageKnown(td.file, td.name) || !heritageKnown(target.file, target.className)) return false;
       unrelated++;
     }
     return unrelated > 0;
@@ -367,7 +488,7 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
     return filterCallers(target, callers);
   }
 
-  return { clear() { parsed.clear(); cfgCache.clear(); declCache.clear(); ancestorCache.clear(); targetCache.clear(); }, filterCallers, filterAt, targetAt, isSiblingDispatch, ancestorsOf, ancestorDeclares, receiverTypeAt };
+  return { clear() { parsed.clear(); cfgCache.clear(); declCache.clear(); ancestorCache.clear(); contextPaths.clear(); canonicalPaths.clear(); targetCache.clear(); }, filterCallers, filterAt, targetAt, isSiblingDispatch, ancestorsOf, ancestorDeclares, receiverTypeAt };
 }
 
 module.exports = { createInheritanceFilter };
