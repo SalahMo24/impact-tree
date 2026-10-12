@@ -171,7 +171,7 @@
      "label": "store.ts",
      "resourceUri": "uri:file:///repo/src/store.ts",
      "tooltip": {
-      "markdown": "**src/store.ts**\n\n_modified_\n\n5 changes, 3 need attention, 4 left to review"
+      "markdown": "```\nsrc/\n└─ store.ts\n```\n\n_modified_\n\n5 changes, 3 need attention, 4 left to review"
      }
     }
    },
@@ -766,7 +766,7 @@
      "label": "big.ts",
      "resourceUri": "uri:file:///repo/src/big.ts",
      "tooltip": {
-      "markdown": "**src/big.ts**\n\n_modified_\n\n1 change, 1 needs attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ big.ts\n```\n\n_modified_\n\n1 change, 1 needs attention, 1 left to review"
      }
     }
    },
@@ -1197,7 +1197,7 @@
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/api/util.ts",
      "tooltip": {
-      "markdown": "**src/api/util.ts**\n\n_modified_\n\n1 change, 1 needs attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ api/\n   └─ util.ts\n```\n\n_modified_\n\n1 change, 1 needs attention, 1 left to review"
      }
     }
    },
@@ -1268,7 +1268,7 @@
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/web/util.ts",
      "tooltip": {
-      "markdown": "**src/web/util.ts**\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ web/\n   └─ util.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
      }
     }
    },
@@ -1339,7 +1339,7 @@
      "label": "open.ts",
      "resourceUri": "uri:file:///repo/src/open.ts",
      "tooltip": {
-      "markdown": "**src/open.ts**\n\n_added_\n\n3 changes, 0 need attention, 0 left to review"
+      "markdown": "```\nsrc/\n└─ open.ts\n```\n\n_added_\n\n3 changes, 0 need attention, 0 left to review"
      }
     }
    },
@@ -1563,7 +1563,7 @@
      "label": "ready.ts",
      "resourceUri": "uri:file:///repo/src/ready.ts",
      "tooltip": {
-      "markdown": "**src/ready.ts**\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ ready.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
      }
     }
    },
@@ -1680,7 +1680,7 @@
      "label": "use.ts",
      "resourceUri": "uri:file:///repo/src/use.ts",
      "tooltip": {
-      "markdown": "**src/use.ts**\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ use.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
      }
     }
    },
@@ -1819,7 +1819,7 @@
      "label": "y.json",
      "resourceUri": "uri:file:///repo/config/x/y.json",
      "tooltip": {
-      "markdown": "**y.json**\n\n_renamed_\n\n`config/x/y.json`\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\nconfig/\n└─ x/\n   └─ y.json\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
      }
     }
    },
@@ -1843,7 +1843,7 @@
      "label": "a.md",
      "resourceUri": "uri:file:///repo/docs/a.md",
      "tooltip": {
-      "markdown": "**a.md**\n\n_modified_\n\n`docs/a.md`\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
      }
     }
    },
@@ -1867,7 +1867,7 @@
      "label": "README.md",
      "resourceUri": "uri:file:///repo/README.md",
      "tooltip": {
-      "markdown": "**README.md**\n\n_modified_\n\n`README.md`\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\nREADME.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
      }
     }
    },
@@ -2047,7 +2047,7 @@
      "label": "store.ts",
      "resourceUri": "uri:file:///repo/src/store.ts",
      "tooltip": {
-      "markdown": "**src/store.ts**\n\n_modified_\n\n5 changes, 4 need attention, 5 left to review"
+      "markdown": "```\nsrc/\n└─ store.ts\n```\n\n_modified_\n\n5 changes, 4 need attention, 5 left to review"
      }
     }
    },
@@ -2636,7 +2636,7 @@
      "label": "big.ts",
      "resourceUri": "uri:file:///repo/src/big.ts",
      "tooltip": {
-      "markdown": "**src/big.ts**\n\n_modified_\n\n1 change, 1 needs attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ big.ts\n```\n\n_modified_\n\n1 change, 1 needs attention, 1 left to review"
      }
     }
    },
@@ -3065,7 +3065,7 @@
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/api/util.ts",
      "tooltip": {
-      "markdown": "**src/api/util.ts**\n\n_modified_\n\n1 change, 1 needs attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ api/\n   └─ util.ts\n```\n\n_modified_\n\n1 change, 1 needs attention, 1 left to review"
      }
     }
    },
@@ -3134,7 +3134,7 @@
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/web/util.ts",
      "tooltip": {
-      "markdown": "**src/web/util.ts**\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ web/\n   └─ util.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
      }
     }
    },
@@ -3203,7 +3203,7 @@
      "label": "open.ts",
      "resourceUri": "uri:file:///repo/src/open.ts",
      "tooltip": {
-      "markdown": "**src/open.ts**\n\n_added_\n\n3 changes, 0 need attention, 3 left to review"
+      "markdown": "```\nsrc/\n└─ open.ts\n```\n\n_added_\n\n3 changes, 0 need attention, 3 left to review"
      }
     }
    },
@@ -3423,7 +3423,7 @@
      "label": "ready.ts",
      "resourceUri": "uri:file:///repo/src/ready.ts",
      "tooltip": {
-      "markdown": "**src/ready.ts**\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ ready.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
      }
     }
    },
@@ -3538,7 +3538,7 @@
      "label": "use.ts",
      "resourceUri": "uri:file:///repo/src/use.ts",
      "tooltip": {
-      "markdown": "**src/use.ts**\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ use.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
      }
     }
    },
@@ -3675,7 +3675,7 @@
      "label": "y.json",
      "resourceUri": "uri:file:///repo/config/x/y.json",
      "tooltip": {
-      "markdown": "**y.json**\n\n_renamed_\n\n`config/x/y.json`\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\nconfig/\n└─ x/\n   └─ y.json\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
      }
     }
    },
@@ -3698,7 +3698,7 @@
      "label": "a.md",
      "resourceUri": "uri:file:///repo/docs/a.md",
      "tooltip": {
-      "markdown": "**a.md**\n\n_modified_\n\n`docs/a.md`\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
      }
     }
    },
@@ -3721,7 +3721,7 @@
      "label": "README.md",
      "resourceUri": "uri:file:///repo/README.md",
      "tooltip": {
-      "markdown": "**README.md**\n\n_modified_\n\n`README.md`\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\nREADME.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
      }
     }
    },
@@ -3901,7 +3901,7 @@
      "label": "store.ts",
      "resourceUri": "uri:file:///repo/src/store.ts",
      "tooltip": {
-      "markdown": "**src/store.ts**\n\n_modified_\n\n5 changes, 4 need attention, 5 left to review"
+      "markdown": "```\nsrc/\n└─ store.ts\n```\n\n_modified_\n\n5 changes, 4 need attention, 5 left to review"
      }
     }
    },
@@ -4503,7 +4503,7 @@
      "label": "big.ts",
      "resourceUri": "uri:file:///repo/src/big.ts",
      "tooltip": {
-      "markdown": "**src/big.ts**\n\n_modified_\n\n1 change, 1 needs attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ big.ts\n```\n\n_modified_\n\n1 change, 1 needs attention, 1 left to review"
      }
     }
    },
@@ -4937,7 +4937,7 @@
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/api/util.ts",
      "tooltip": {
-      "markdown": "**src/api/util.ts**\n\n_modified_\n\n1 change, 1 needs attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ api/\n   └─ util.ts\n```\n\n_modified_\n\n1 change, 1 needs attention, 1 left to review"
      }
     }
    },
@@ -5011,7 +5011,7 @@
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/web/util.ts",
      "tooltip": {
-      "markdown": "**src/web/util.ts**\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ web/\n   └─ util.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
      }
     }
    },
@@ -5085,7 +5085,7 @@
      "label": "open.ts",
      "resourceUri": "uri:file:///repo/src/open.ts",
      "tooltip": {
-      "markdown": "**src/open.ts**\n\n_added_\n\n3 changes, 0 need attention, 3 left to review"
+      "markdown": "```\nsrc/\n└─ open.ts\n```\n\n_added_\n\n3 changes, 0 need attention, 3 left to review"
      }
     }
    },
@@ -5320,7 +5320,7 @@
      "label": "ready.ts",
      "resourceUri": "uri:file:///repo/src/ready.ts",
      "tooltip": {
-      "markdown": "**src/ready.ts**\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ ready.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
      }
     }
    },
@@ -5440,7 +5440,7 @@
      "label": "use.ts",
      "resourceUri": "uri:file:///repo/src/use.ts",
      "tooltip": {
-      "markdown": "**src/use.ts**\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ use.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
      }
     }
    },
@@ -5582,7 +5582,7 @@
      "label": "y.json",
      "resourceUri": "uri:file:///repo/config/x/y.json",
      "tooltip": {
-      "markdown": "**y.json**\n\n_renamed_\n\n`config/x/y.json`\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\nconfig/\n└─ x/\n   └─ y.json\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
      }
     }
    },
@@ -5605,7 +5605,7 @@
      "label": "a.md",
      "resourceUri": "uri:file:///repo/docs/a.md",
      "tooltip": {
-      "markdown": "**a.md**\n\n_modified_\n\n`docs/a.md`\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
      }
     }
    },
@@ -5628,7 +5628,7 @@
      "label": "README.md",
      "resourceUri": "uri:file:///repo/README.md",
      "tooltip": {
-      "markdown": "**README.md**\n\n_modified_\n\n`README.md`\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\nREADME.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
      }
     }
    },
@@ -5729,7 +5729,7 @@
      "label": "service.ts",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "**src/service.ts**\n\n_modified_\n\n2 changes, 1 needs attention, 2 left to review"
+      "markdown": "```\nsrc/\n└─ service.ts\n```\n\n_modified_\n\n2 changes, 1 needs attention, 2 left to review"
      }
     }
    },
@@ -6086,7 +6086,7 @@
      "label": "gone.ts",
      "resourceUri": "uri:impacttree-pr:///src/gone.ts?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "**src/gone.ts**\n\n_deleted_\n\n1 change, 1 needs attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ gone.ts\n```\n\n_deleted_\n\n1 change, 1 needs attention, 1 left to review"
      }
     }
    },
@@ -6147,7 +6147,7 @@
      "label": "caller.ts",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "**src/caller.ts**\n\n_added_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ caller.ts\n```\n\n_added_\n\n1 change, 0 need attention, 1 left to review"
      }
     }
    },
@@ -6217,7 +6217,7 @@
      "label": "new.md",
      "resourceUri": "uri:impacttree-pr:///docs/new.md?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "**new.md**\n\n_added_\n\n`docs/new.md`\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\ndocs/\n└─ new.md\n```\n\n_added_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
      }
     }
    },
@@ -6242,7 +6242,7 @@
      "label": "moved.md",
      "resourceUri": "uri:impacttree-pr:///docs/sub/moved.md?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "**moved.md**\n\n_renamed_\n\n`docs/sub/moved.md`\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\ndocs/\n└─ sub/\n   └─ moved.md\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
      }
     }
    },
@@ -6342,7 +6342,7 @@
      "label": "service.ts",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "**src/service.ts**\n\n_modified_\n\n2 changes, 1 needs attention, 2 left to review"
+      "markdown": "```\nsrc/\n└─ service.ts\n```\n\n_modified_\n\n2 changes, 1 needs attention, 2 left to review"
      }
     }
    },
@@ -6696,7 +6696,7 @@
      "label": "gone.ts",
      "resourceUri": "uri:impacttree-pr:///src/gone.ts?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "**src/gone.ts**\n\n_deleted_\n\n1 change, 1 needs attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ gone.ts\n```\n\n_deleted_\n\n1 change, 1 needs attention, 1 left to review"
      }
     }
    },
@@ -6755,7 +6755,7 @@
      "label": "caller.ts",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "**src/caller.ts**\n\n_added_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ caller.ts\n```\n\n_added_\n\n1 change, 0 need attention, 1 left to review"
      }
     }
    },
@@ -6823,7 +6823,7 @@
      "label": "new.md",
      "resourceUri": "uri:impacttree-pr:///docs/new.md?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "**new.md**\n\n_added_\n\n`docs/new.md`\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\ndocs/\n└─ new.md\n```\n\n_added_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
      }
     }
    },
@@ -6847,7 +6847,7 @@
      "label": "moved.md",
      "resourceUri": "uri:impacttree-pr:///docs/sub/moved.md?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "**moved.md**\n\n_renamed_\n\n`docs/sub/moved.md`\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\ndocs/\n└─ sub/\n   └─ moved.md\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
      }
     }
    },

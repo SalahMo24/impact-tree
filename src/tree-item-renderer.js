@@ -8,7 +8,8 @@
 // scans. A file row says what needs attention, then its progress, then its last folder
 // segment; a change row says where it is declared (only when that tells it apart from
 // its siblings), then its verdict, then "no test". A sidebar truncates from the right, so
-// the least important part comes last and the full path is in the tooltip. The review
+// the least important part comes last and the full path is in the tooltip, drawn as a
+// folder tree (path-tree.js). The review
 // threads of a pull request add `💬 N` (unresolved) and `✎ N` (your pending comments):
 // after the attention glyph on a file row, after the verdict on a change row.
 const path = require('path');
@@ -17,6 +18,7 @@ const {
 } = require('./tree-row-models');
 const { needsAttention } = require('./review-tree-model');
 const { describeThreadCounts } = require('./review-threads');
+const { pathTreeMarkdown } = require('./path-tree');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 /**
@@ -175,7 +177,7 @@ function renderReviewFileItem(vscode, n, view) {
     lastFolder(n.relPath),
   ].filter(Boolean).join('  ·  ');
   item.tooltip = new vscode.MarkdownString([
-    `**${n.relPath}**`, ...(n.status ? ['', `_${n.status}_`] : []), '',
+    ...pathTreeMarkdown(n.relPath), ...(n.status ? ['', `_${n.status}_`] : []), '',
     `${rows.length} change${rows.length === 1 ? '' : 's'}, ${attention.length} need${attention.length === 1 ? 's' : ''} attention, ${left.length} left to review`,
     ...(viewed ? ['', `_${viewed.tooltip}_`] : []),
   ].join('\n'));
@@ -207,7 +209,7 @@ function renderFileItem(vscode, n, view) {
   const viewed = viewedNote(view, n.relPath, view.checkedOf(n) === true);
   item.description = [...threadParts(n, view), 'no call graph', viewed && viewed.text, lastFolder(n.relPath)].filter(Boolean).join('  ·  ');
   item.tooltip = new vscode.MarkdownString([
-    `**${path.basename(n.relPath)}**`, '', `_${n.status}_`, '', `\`${n.relPath}\``, '',
+    ...pathTreeMarkdown(n.relPath), '', `_${n.status}_`, '',
     '_No call graph (tests, config, docs): read the diff and tick the file._',
     ...(viewed ? ['', `_${viewed.tooltip}_`] : []),
   ].join('\n'));
