@@ -204,6 +204,38 @@ console.log('\n▸ re-export forms through a barrel');
   check('a re-export cycle terminates and keeps the edge', cyc.dropped === false);
 }
 
+console.log('\n▸ renamed exports preserve related callers by declaration identity');
+{
+  write('identity/base.ts', 'export class Base { save() {} }\n');
+  write('identity/base-barrel.ts', "export { Base as RenamedBase } from './base';\n");
+  const mine = write('identity/mine.ts',
+    "import { RenamedBase } from './base-barrel'; export class Mine extends RenamedBase { save() {} }\n");
+  write('identity/other.ts', "import { Base } from './base'; export class Other extends Base {}\n");
+  write('identity/barrel.ts', "export { Mine as Renamed } from './mine';\nexport { Other as RenamedSibling } from './other';\n");
+  write('identity/sub.ts', "import { Renamed } from './barrel'; export class Sub extends Renamed {}\n");
+  write('identity/sub-barrel.ts', "export { Sub as RenamedSub } from './sub';\n");
+  write('identity/second-barrel.ts', "export { Renamed as TwiceRenamed } from './barrel';\n");
+  write('identity/unrelated.ts', 'export class Mine { save() {} }\n');
+  const f = createInheritanceFilter(ts);
+  const target = { file: mine, className: 'Mine', name: 'save' };
+  for (const [name, type, module, dropped] of [
+    ['a direct call through a renamed export', 'Renamed', './barrel', false],
+    ['a direct call through two renamed exports', 'TwiceRenamed', './second-barrel', false],
+    ['a subclass extending a renamed export', 'Sub', './sub', false],
+    ['a renamed subclass extending a renamed export', 'RenamedSub', './sub-barrel', false],
+    ['a base class exported under a different name in the target', 'Base', './base', false],
+    ['a renamed base-class receiver', 'RenamedBase', './base-barrel', false],
+    ['an unresolved renamed receiver', 'Unknown', './missing', false],
+    ['a renamed sibling receiver', 'RenamedSibling', './barrel', true],
+    ['an unrelated receiver with the target class name', 'Mine', './unrelated', true],
+  ]) {
+    const caller = write(`identity/caller-${type}.ts`,
+      `import { ${type} } from '${module}'; export function call(receiver: ${type}) { receiver.save(); }\n`);
+    const actual = f.isSiblingDispatch(target, { file: caller, callSites: [siteOf(caller, 'receiver.save', 'save')] });
+    check(`${name} is ${dropped ? 'dropped' : 'kept'}`, actual === dropped, `dropped=${actual}`);
+  }
+}
+
 fs.rmSync(root, { recursive: true, force: true });
 console.log(fail ? `\n${fail} failure(s)` : '\nall inheritance checks passed');
 process.exit(fail ? 1 : 0);

@@ -35,6 +35,30 @@ test('inheritance filter keeps scoped, shadowed, namespaced, and inherited-alias
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('TypeScript resolver preserves direct and subclass callers through renamed exports', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-renamed-callers-'));
+  let resolver;
+  try {
+    const files = {
+      'tsconfig.json': '{"compilerOptions":{"target":"ES2021","module":"commonjs","strict":true},"include":["*.ts"]}',
+      'base.ts': 'export class Base { save() {} }',
+      'mine.ts': "import { Base } from './base'; export class Mine extends Base { save() {} }",
+      'barrel.ts': "export { Mine as Renamed } from './mine';",
+      'sub.ts': "import { Renamed } from './barrel'; export class Sub extends Renamed {}",
+      'caller.ts': "import { Renamed } from './barrel'; export function direct(receiver: Renamed) { receiver.save(); }",
+      'caller-sub.ts': "import { Sub } from './sub'; export function subclass(receiver: Sub) { receiver.save(); }",
+    };
+    for (const [file, text] of Object.entries(files)) fs.writeFileSync(path.join(dir, file), text);
+    resolver = require('../src/engine/resolver-ts').createTsResolver(ts, dir);
+    const callers = await resolver.incoming(path.join(dir, 'mine.ts'), files['mine.ts'].indexOf('save()'));
+    assert.deepEqual(callers.map(c => c.label).sort(), ['direct', 'subclass']);
+    assert(callers.every(c => c.callSites.length === 1), 'both real call sites survive filtering');
+  } finally {
+    resolver?.dispose();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('CQRS edges apply only to entry methods and include every declared event', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(),'it-cqrs-'));
   try {

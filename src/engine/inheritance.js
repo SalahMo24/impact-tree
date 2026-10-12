@@ -207,25 +207,37 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
   }
 
   const ancestorCache = new Map();
-  // Transitive extends/implements names reachable from (file, className).
-  function ancestorsOf(file, className, depth = 0) {
-    const key = `${file}#${className}`;
+  const classKey = (file, name) => JSON.stringify([file, name]);
+  // Keep declaration identities as well as the heritage names used for inspection.
+  // A barrel alias and the declared name refer to the same class; a matching name
+  // in another file does not. Visit by identity so cycles terminate without truncating
+  // a known relationship or resolving a transitive parent's name in the wrong file.
+  function ancestryOf(file, className) {
+    const key = classKey(file, className);
     if (ancestorCache.has(key)) return ancestorCache.get(key);
-    const out = new Set();
-    if (depth > 8) return out;                    // cycle / pathological guard
-    ancestorCache.set(key, out);                  // set early: heritage can be cyclic
-    const rec = parse(file);
-    const entry = rec && rec.classes.get(className);
-    if (!entry) return out;
-    for (const parent of entry.heritage) {
-      if (out.has(parent)) continue;
-      out.add(parent);
-      const pd = fileDeclaring(file, parent);
-      if (!pd) continue;
-      for (const g of ancestorsOf(pd.file, pd.name, depth + 1)) out.add(g);
+    const out = { names: new Set(), declarations: new Map() };
+    const seen = new Set();
+    const pending = [{ file, name: className }];
+    while (pending.length) {
+      const current = pending.pop();
+      const ck = classKey(current.file, current.name);
+      if (seen.has(ck)) continue;
+      seen.add(ck);
+      const entry = parse(current.file)?.classes.get(current.name);
+      if (!entry) continue;
+      for (const parent of entry.heritage) {
+        out.names.add(parent);
+        const pd = fileDeclaring(current.file, parent);
+        if (!pd) continue;
+        out.declarations.set(classKey(pd.file, pd.name), pd);
+        pending.push(pd);
+      }
     }
+    ancestorCache.set(key, out);
     return out;
   }
+
+  function ancestorsOf(file, className) { return ancestryOf(file, className).names; }
 
   function heritageKnown(file, name, seen = new Set()) {
     const key = `${file}#${name}`;
@@ -240,9 +252,7 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
   }
 
   function ancestorDeclares(file, className, method) {
-    for (const a of ancestorsOf(file, className)) {
-      const ad = fileDeclaring(file, a);
-      if (!ad) continue;
+    for (const ad of ancestryOf(file, className).declarations.values()) {
       const rec = parse(ad.file);
       const entry = rec && rec.classes.get(ad.name);
       if (entry && entry.methods.has(method)) return true;
@@ -350,16 +360,18 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
     if (!caller || !caller.callSites || !caller.callSites.length) return false;
     if (!ancestorDeclares(target.file, target.className, target.name)) return false;
 
-    const targetAncestors = ancestorsOf(target.file, target.className);
+    const targetKey = classKey(target.file, target.className);
+    const targetAncestors = ancestryOf(target.file, target.className).declarations;
     let unrelated = 0;
     for (const site of caller.callSites) {
       const t = receiverTypeAt(caller.file, site.start);
       if (!t) return false;                                  // unreadable -> keep
-      if (t === target.className) return false;
-      if (targetAncestors.has(t)) return false;              // typed as the port
       const td = fileDeclaring(caller.file, t);
       if (!td) return false;                                 // cannot judge -> keep
-      if (ancestorsOf(td.file, td.name).has(target.className)) return false;   // a subclass
+      const receiverKey = classKey(td.file, td.name);
+      if (receiverKey === targetKey) return false;
+      if (targetAncestors.has(receiverKey)) return false;     // typed as the port
+      if (ancestryOf(td.file, td.name).declarations.has(targetKey)) return false;   // a subclass
       if (!heritageKnown(td.file, td.name) || !heritageKnown(target.file, target.className)) return false;
       unrelated++;
     }
