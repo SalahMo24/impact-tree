@@ -236,6 +236,21 @@ console.log('\n▸ renamed exports preserve related callers by declaration ident
     check(`${name} is ${dropped ? 'dropped' : 'kept'}`, actual === dropped, `dropped=${actual}`);
   }
 
+  for (const [name, imports, type, dropped] of [
+    ['renamed sibling import', "import { Other as Mine } from './other';", 'Mine', true],
+    ['namespace sibling', "import * as ns from './barrel';", 'ns.RenamedSibling', true],
+    ['namespace target', "import * as ns from './barrel';", 'ns.Renamed', false],
+    ['re-exported namespace target', "import { ns } from './namespace-barrel';", 'ns.Renamed', false],
+    ['default sibling', "import Mine from './default-other';", 'Mine', true],
+  ]) {
+    write('identity/namespace-barrel.ts', "export * as ns from './barrel';\n");
+    write('identity/default-other.ts', "export { Other as default } from './other';\n");
+    const caller = write(`identity/control-${name.replace(/ /g, '-')}.ts`,
+      `${imports} export function call(receiver: ${type}) { receiver.save(); }\n`);
+    const actual = f.isSiblingDispatch(target, { file: caller, callSites: [siteOf(caller, 'receiver.save', 'save')] });
+    check(`${name} is ${dropped ? 'dropped' : 'kept'}`, actual === dropped, `dropped=${actual}`);
+  }
+
   const link = path.join(root, 'identity-link');
   fs.symlinkSync(path.dirname(mine), link, 'junction');
   const spellings = [
