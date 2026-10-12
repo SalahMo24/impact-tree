@@ -209,7 +209,8 @@ console.log('\n▸ renamed exports preserve related callers by declaration ident
   write('identity/base.ts', 'export class Base { save() {} }\n');
   write('identity/base-barrel.ts', "export { Base as RenamedBase } from './base';\n");
   const mine = write('identity/mine.ts',
-    "import { RenamedBase } from './base-barrel'; export class Mine extends RenamedBase { save() {} }\n");
+    "import { RenamedBase } from './base-barrel'; export class Mine extends RenamedBase { save() {} }\n"
+    + 'export function sameFile(receiver: Mine) { receiver.save(); }\n');
   write('identity/other.ts', "import { Base } from './base'; export class Other extends Base {}\n");
   write('identity/barrel.ts', "export { Mine as Renamed } from './mine';\nexport { Other as RenamedSibling } from './other';\n");
   write('identity/sub.ts', "import { Renamed } from './barrel'; export class Sub extends Renamed {}\n");
@@ -234,6 +235,41 @@ console.log('\n▸ renamed exports preserve related callers by declaration ident
     const actual = f.isSiblingDispatch(target, { file: caller, callSites: [siteOf(caller, 'receiver.save', 'save')] });
     check(`${name} is ${dropped ? 'dropped' : 'kept'}`, actual === dropped, `dropped=${actual}`);
   }
+
+  const link = path.join(root, 'identity-link');
+  fs.symlinkSync(path.dirname(mine), link, 'junction');
+  const spellings = [
+    ['original', mine],
+    ['dot segment', `${path.dirname(mine)}${path.sep}.${path.sep}mine.ts`],
+    ['relative', path.relative(process.cwd(), mine)],
+    ['symlink', path.join(link, 'mine.ts')],
+  ];
+  if (path.sep === '\\') {
+    spellings.push(['forward slashes', mine.replace(/\\/g, '/')]);
+    spellings.push(['different case', mine.toUpperCase()]);
+  }
+  const pos = siteOf(mine, 'save() {}', 'save').start;
+  for (const [spelling, targetFile] of spellings) {
+    for (const [kind, callerFile] of [
+      ['direct', path.join(root, 'identity/caller-Renamed.ts')],
+      ['subclass', path.join(root, 'identity/caller-Sub.ts')],
+      ['same file', mine],
+    ]) {
+      const caller = { file: callerFile, callSites: [siteOf(callerFile, 'receiver.save', 'save')] };
+      const { kept, dropped } = f.filterAt(targetFile, pos, [caller]);
+      check(`${kind} caller is kept (${spelling} target path)`, dropped === 0 && kept.length === 1,
+        `dropped=${dropped}`);
+    }
+  }
+}
+
+{
+  let detail = '';
+  try {
+    require('child_process').execFileSync(process.execPath, [path.join(__dirname, 'windows-inheritance.js')],
+      { encoding: 'utf8', stdio: 'pipe' });
+  } catch (e) { detail = String(e.stderr || e.message); }
+  check('Windows slash and case variants preserve direct, subclass and same-file callers', !detail, detail);
 }
 
 fs.rmSync(root, { recursive: true, force: true });

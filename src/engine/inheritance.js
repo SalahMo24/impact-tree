@@ -19,6 +19,7 @@
 // resolves in favour of keeping the edge.
 const fs = require('fs');
 const path = require('path');
+const { canonical } = require('./canonical-path');
 
 const EXT = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx'];
 
@@ -207,7 +208,12 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
   }
 
   const ancestorCache = new Map();
-  const classKey = (file, name) => JSON.stringify([file, name]);
+  // Resolve each path spelling once per analysis, including symlinks and Windows case.
+  const canonicalPaths = new Map();
+  const classKey = (file, name) => {
+    if (!canonicalPaths.has(file)) canonicalPaths.set(file, canonical(file));
+    return JSON.stringify([canonicalPaths.get(file), name]);
+  };
   // Keep declaration identities as well as the heritage names used for inspection.
   // A barrel alias and the declared name refer to the same class; a matching name
   // in another file does not. Visit by identity so cycles terminate without truncating
@@ -398,7 +404,7 @@ function createInheritanceFilter(ts, { readFile, trace = () => {} } = {}) {
     return filterCallers(target, callers);
   }
 
-  return { clear() { parsed.clear(); cfgCache.clear(); declCache.clear(); ancestorCache.clear(); targetCache.clear(); }, filterCallers, filterAt, targetAt, isSiblingDispatch, ancestorsOf, ancestorDeclares, receiverTypeAt };
+  return { clear() { parsed.clear(); cfgCache.clear(); declCache.clear(); ancestorCache.clear(); canonicalPaths.clear(); targetCache.clear(); }, filterCallers, filterAt, targetAt, isSiblingDispatch, ancestorsOf, ancestorDeclares, receiverTypeAt };
 }
 
 module.exports = { createInheritanceFilter };
