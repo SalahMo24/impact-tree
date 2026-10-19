@@ -184,7 +184,7 @@ test('a finding with no callers found is not shown as updated', () => {
     finding: { label: 'target', relPath: 't.ts', startLine: 1, component: '(root)', kinds: [{ id: 'optional-param', short: '+optional param' }],
       callerState, staleCallers: 0, stale: [], throwsAdded: [], score: 1 } });
   const none = provider.getTreeItem(finding('none'));
-  assert.equal(none.description, '✓');
+  assert.equal(none.description, 'no callers');
   assert.match(none.tooltip.value, /Nothing calls it/);
   assert.doesNotMatch(none.tooltip.value, /Every caller was updated/);
   assert.match(provider.getTreeItem(finding('resolved')).tooltip.value, /Every caller was updated/);

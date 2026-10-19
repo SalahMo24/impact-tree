@@ -198,6 +198,7 @@ function renderItem(item, node, decorations) {
   return summarize({
     label: item.label, description: item.description, tooltip,
     icon: item.iconPath ? item.iconPath.id : undefined,
+    iconColor: item.iconPath && item.iconPath.color ? item.iconPath.color.id : undefined,
     collapsible: item.collapsibleState, checkbox: item.checkboxState, contextValue: item.contextValue,
     resourceUri: item.resourceUri,
     decoration: decorations.at(item.resourceUri),

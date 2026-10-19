@@ -22,35 +22,62 @@ const { classifyCallerUpdateState } = require('./engine/call-sites');
  * @typedef {(file: string, pos: number|string|null) => any} ResourceUriOf
  */
 
+// One name per state, used by the Details heading, the legend and the README, so a state
+// is called the same thing wherever the reviewer meets it. `levels` is indexed by verdict
+// level; a deleted row and an outside row have a level (1 and 4) but a name of their own.
+const STATE_NAMES = Object.freeze({
+  levels: Object.freeze(['Callers not updated', 'Callers unknown', 'Callers updated', 'Reaches callers', 'No callers']),
+  deleted: 'Deleted',
+  outside: 'Outside functions',
+});
+
+/**
+ * How a row's icon is coloured for its verdict level, indexed by level: red when a risky
+ * change met a caller that was not updated, amber when the callers cannot be told (and for
+ * a deleted symbol), none for the rest. Colour is the tree's only addition to the words,
+ * so a level-1 state must never map to none.
+ * `fileIcon` replaces `ThemeIcon.File` (which cannot be coloured) in `iconMode: 'file'`.
+ * @typedef {{ color: string, fileIcon: string }} IconTone
+ * @type {ReadonlyArray<IconTone|null>}
+ */
+const LEVEL_TONES = Object.freeze([
+  Object.freeze({ color: 'list.errorForeground', fileIcon: 'error' }),
+  Object.freeze({ color: 'list.warningForeground', fileIcon: 'warning' }),
+  null, null, null,
+]);
+
+/** The tone of a caller that was edited but not on the call line: it looks handled and is not. */
+const CHANGED_ELSEWHERE_TONE = LEVEL_TONES[1];
+
 const LEGEND = [
   ['file', 'Icon = file type', 'from your file-icon theme, on file rows whatever impactTree.iconMode says'],
   ['symbol-method', 'Icon = symbol kind', 'method, function, constructor or variable on change rows; impactTree.iconMode = "file" shows the file glyph instead'],
   ['tag', 'Badge M / A / D / R', 'git status against the review base, not HEAD — hover for the word'],
-  ['error', '⛔  a signature or throw change whose callers were NOT updated', 'review these first'],
-  ['pass', '✓  signature or throw change, all callers updated', 'every caller found was changed on the call line'],
-  ['circle-filled', '●  body-only change that reaches callers', 'the signature is the same, so callers still compile; their untouched call sites are expected'],
-  ['circle-slash', '∅  body-only change, no callers found', 'in the code searched — dynamic calls and unloaded projects are not seen'],
-  ['warning', '△  caller changed, but NOT on the call line', 'looks handled and is not'],
-  ['circle-outline', '○  caller not changed at all', 'affected but untouched'],
-  ['question', '?  callers unknown', 'the search failed or could not tell — e.g. passed as a value or DI-constructed; on a signature or throw change, review it'],
-  ['beaker', '🧪  test that reaches this code', ''],
-  ['issue-reopened', '↑  cycle — already shown higher up', ''],
+  ['error', 'Red icon — Callers not updated', 'a signature or throw change; review these first'],
+  ['warning', 'Amber icon — Check by hand', 'callers unknown, a deleted symbol, or a caller changed but not on the call line'],
+  ['pass', 'No colour — Fine', 'callers updated, a body-only change, or nothing calls it'],
+  ['beaker', 'Beaker icon — test that reaches this code', ''],
+  ['issue-reopened', 'Reopened-issue icon — cycle', 'already shown higher up in the tree'],
 ];
 
 // Three states, because "the symbol changed" and "the call was updated" are different
 // questions. A caller edited just above and below the call line is the dangerous case:
 // it looks handled and is not.
-/** @type {Record<string, { token: string, text: string }>} */
+/** @type {Record<string, { text: string }>} */
 const CALL_STATE = {
-  'updated-at-call':   { token: '✓', text: 'call updated' },
-  'changed-elsewhere': { token: '△', text: 'changed, but not at the call' },
-  unchanged:           { token: '○', text: 'not changed' },
+  'updated-at-call':   { text: 'call updated' },
+  'changed-elsewhere': { text: 'changed, but not at the call' },
+  unchanged:           { text: 'not changed' },
 };
 
 // What a caller row knows about its call sites when the view state cannot classify them.
 const NO_SITE_EVIDENCE = { updated: [], untouched: [], unknown: [] };
 
-/** @typedef {{ level: number, token: string, text: string, sentence: string }} Verdict */
+/**
+ * `token` is the glyph that surfaces outside the tree (the review lens) still lead with;
+ * tree rows and the Details panel show `text` and the state name instead.
+ * @typedef {{ level: number, token: string, text: string, sentence: string }} Verdict
+ */
 
 // What the analysis could not say about a caller search, in words a reviewer can act on.
 /** @type {Record<string, string>} */
@@ -134,7 +161,7 @@ function classifyBodyOnlyVerdict(change) {
 }
 
 /**
- * What a changed symbol's row leads with. Needs attention (level 0, `⛔`) means a risky
+ * What a changed symbol's row leads with. Needs attention (level 0) means a risky
  * change met a caller that was not updated; a risky kind is any kind but `body`, because
  * a body-only edit leaves callers untouched as a matter of course. Levels: 0 breaks
  * callers, 1 risk unknown, 2 risk handled, 3 behaviour reaches callers, 4 quiet.
@@ -177,6 +204,15 @@ const classifyRowVerdict = (row) => (row.finding ? classifyChangeVerdict(row.fin
  * @returns {Verdict}
  */
 const classifyWorstRowVerdict = (rows) => rows.map(classifyRowVerdict).reduce((w, v) => (v.level < w.level ? v : w));
+
+/**
+ * The state name of a change, deleted or outside row, for the Details heading.
+ * @param {TreeRow} row
+ * @param {Verdict} verdict The row's verdict.
+ * @returns {string}
+ */
+const stateNameOf = (row, verdict) => (row.type === 'deleted' ? STATE_NAMES.deleted
+  : row.type === 'outside' ? STATE_NAMES.outside : STATE_NAMES.levels[verdict.level]);
 
 /**
  * The git status the result records for a repo-relative path, trying the path with
@@ -455,7 +491,7 @@ const buildIncompleteCallersRow = (reason, hasCallers) => ({
 });
 
 module.exports = {
-  LEGEND, CALL_STATE, NO_SITE_EVIDENCE,
+  LEGEND, CALL_STATE, NO_SITE_EVIDENCE, STATE_NAMES, LEVEL_TONES, CHANGED_ELSEWHERE_TONE, stateNameOf,
   classifyChangeVerdict, classifyDeletedVerdict, classifyOutsideVerdict, classifyRowVerdict, classifyWorstRowVerdict, getFileStatus,
   buildReachScopeNote, buildPlaceholderRows, buildNoticeRows,
   buildChangeRows, buildDeletedRows, buildFileLeafRows, buildOutsideRows, describeOutsideRanges,

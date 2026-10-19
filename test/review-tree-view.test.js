@@ -165,16 +165,16 @@ test('only the first file starts expanded; every other expandable row starts col
   assert.equal(item(caller).collapsibleState, Collapsed, 'a caller expands to its own callers');
 });
 
-test('the file row shows the unreviewed attention count with the worst token, done/total, then its last folder', async () => {
+test('the file row shows the unreviewed attention count as words, done/total, then its last folder', async () => {
   const { provider, item, fileAt } = viewOf(sampleResult());
   const a = await fileAt('src/a.ts');
   assert.equal(item(a).label, 'a.ts');
-  assert.equal(item(a).description, '⛔ 2  ·  0/4  ·  src');
+  assert.equal(item(a).description, '2 need attention  ·  0/4  ·  src');
   assert.match(item(a).tooltip.value, /```\nsrc\/\n└─ a\.ts\n```/, 'the path is drawn as a folder tree');
   assert.match(item(a).tooltip.value, /4 changes, 2 need attention, 4 left to review/);
   const [bad, gone] = await provider.getChildren(a);
   provider.setChecked(bad, true);
-  assert.equal(item(a).description, '− 1  ·  1/4  ·  src', 'the token is the worst unreviewed one');
+  assert.equal(item(a).description, '1 needs attention  ·  1/4  ·  src', 'singular once one is left');
   provider.setChecked(gone, true);
   assert.equal(item(a).description, '2/4  ·  src', 'no attention left, no count');
 });
@@ -254,7 +254,7 @@ test('a filter hides rows, not a file\'s progress: its checkbox and counts still
   const { provider, item, fileAt } = viewOf(sampleResult());
   provider.toggleFilter('attention');
   const a = await fileAt('src/a.ts');
-  assert.equal(item(a).description, '⛔ 2  ·  0/4  ·  src');
+  assert.equal(item(a).description, '2 need attention  ·  0/4  ·  src');
   provider.setChecked(a, true);
   assert.equal(item(a).checkboxState, Checked);
   provider.toggleFilter('attention');

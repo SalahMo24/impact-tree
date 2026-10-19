@@ -166,7 +166,7 @@
       "status": "modified",
       "tooltip": "src/store.ts"
      },
-     "description": "⛔ 3  ·  1/5  ·  src",
+     "description": "3 need attention  ·  1/5  ·  src",
      "icon": "__file__",
      "label": "store.ts",
      "resourceUri": "uri:file:///repo/src/store.ts",
@@ -192,12 +192,13 @@
       "status": "modified",
       "tooltip": "src/store.ts:10"
      },
-     "description": "⛔  2 of 3 callers not updated (1 edited nearby)",
-     "icon": "__file__",
+     "description": "2 of 3 callers not updated (1 edited nearby)",
+     "icon": "error",
+     "iconColor": "list.errorForeground",
      "label": "save",
      "resourceUri": "uri:file:///repo/src/store.ts#100",
      "tooltip": {
-      "markdown": "⛔ **Store.save**\n\nThe parameter, and 2 of 3 callers were not changed on the call line. Check that they still work.\n\n**param**\n\n`src/store.ts:10`  ·  component `(root)`\n\n---\n\nbase: `save(a)`\n\nhead: `save(a, b)`\n\n---\n\n+ throw `Error`\n\n---\n\n**2 call site(s) not updated:**\n- useB\n- main\n\n1 of them were edited — just not on the call line\n\n_score 9_"
+      "markdown": "**Store.save**\n\nThe parameter, and 2 of 3 callers were not changed on the call line. Check that they still work.\n\n**param**\n\n`src/store.ts:10`  ·  component `(root)`\n\n---\n\nbase: `save(a)`\n\nhead: `save(a, b)`\n\n---\n\n+ throw `Error`\n\n---\n\n**2 call site(s) not updated:**\n- useB\n- main\n\n1 of them were edited — just not on the call line\n\n_score 9_"
      }
     }
    },
@@ -237,12 +238,12 @@
       "status": null,
       "tooltip": "src/app.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  app.ts",
      "icon": "__file__",
      "label": "main",
      "resourceUri": "uri:file:///repo/src/app.ts#7",
      "tooltip": {
-      "markdown": "○ **main**\n\n**not changed**\n\n`src/app.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**main**\n\n**not changed**\n\n`src/app.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -272,12 +273,13 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "△",
-     "icon": "__file__",
+     "description": "changed, but not at the call  ·  use.ts",
+     "icon": "warning",
+     "iconColor": "list.warningForeground",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
      "tooltip": {
-      "markdown": "△ **useB**\n\n**changed, but not at the call**\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
+      "markdown": "**useB**\n\n**changed, but not at the call**\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
      }
     }
    },
@@ -312,12 +314,12 @@
       "status": null,
       "tooltip": "src/app.ts"
      },
-     "description": "↑",
+     "description": "already shown above",
      "icon": "issue-reopened",
      "label": "main",
      "resourceUri": "uri:file:///repo/src/app.ts#7",
      "tooltip": {
-      "markdown": "↑ **main**\n\n_already shown higher up in this tree_\n\n`src/app.ts`\n\n2 call sites to the changed symbol\n\n1 of 2 call sites updated"
+      "markdown": "**main**\n\n_already shown higher up in this tree_\n\n`src/app.ts`\n\n2 call sites to the changed symbol\n\n1 of 2 call sites updated"
      }
     }
    },
@@ -337,12 +339,12 @@
       "status": null,
       "tooltip": "test/use.test.ts"
      },
-     "description": "🧪",
+     "description": "test  ·  use.test.ts",
      "icon": "beaker",
      "label": "usesB",
      "resourceUri": "uri:file:///repo/test/use.test.ts#4",
      "tooltip": {
-      "markdown": "🧪 **usesB**\n\n🧪 test\n\n`test/use.test.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**usesB**\n\ntest\n\n`test/use.test.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -362,12 +364,13 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "△",
-     "icon": "__file__",
+     "description": "changed, but not at the call  ·  use.ts",
+     "icon": "warning",
+     "iconColor": "list.warningForeground",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
      "tooltip": {
-      "markdown": "△ **useB**\n\n**changed, but not at the call**\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
+      "markdown": "**useB**\n\n**changed, but not at the call**\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
      }
     }
    },
@@ -402,12 +405,12 @@
       "status": null,
       "tooltip": "src/app.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  app.ts  ·  2 call sites",
      "icon": "__file__",
      "label": "main",
      "resourceUri": "uri:file:///repo/src/app.ts#7",
      "tooltip": {
-      "markdown": "○ **main**\n\n**not changed**\n\n`src/app.ts`\n\n2 call sites to the changed symbol\n\n1 of 2 call sites updated"
+      "markdown": "**main**\n\n**not changed**\n\n`src/app.ts`\n\n2 call sites to the changed symbol\n\n1 of 2 call sites updated"
      }
     }
    },
@@ -437,12 +440,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "↑",
+     "description": "already shown above",
      "icon": "issue-reopened",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
      "tooltip": {
-      "markdown": "↑ **useB**\n\n_already shown higher up in this tree_\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
+      "markdown": "**useB**\n\n_already shown higher up in this tree_\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
      }
     }
    },
@@ -462,12 +465,12 @@
       "status": null,
       "tooltip": "test/use.test.ts"
      },
-     "description": "🧪",
+     "description": "test  ·  use.test.ts",
      "icon": "beaker",
      "label": "usesB",
      "resourceUri": "uri:file:///repo/test/use.test.ts#4",
      "tooltip": {
-      "markdown": "🧪 **usesB**\n\n🧪 test\n\n`test/use.test.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**usesB**\n\ntest\n\n`test/use.test.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -487,12 +490,12 @@
       "status": null,
       "tooltip": "test/store.test.ts"
      },
-     "description": "🧪",
+     "description": "test  ·  store.test.ts",
      "icon": "beaker",
      "label": "saves",
      "resourceUri": "uri:file:///repo/test/store.test.ts#5",
      "tooltip": {
-      "markdown": "🧪 **saves**\n\n🧪 test\n\n`test/store.test.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**saves**\n\ntest\n\n`test/store.test.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -523,12 +526,13 @@
       "status": "modified",
       "tooltip": "src/store.ts:30"
      },
-     "description": "?  callers unknown  ·  tests ?",
-     "icon": "__file__",
+     "description": "callers unknown  ·  tests ?",
+     "icon": "warning",
+     "iconColor": "list.warningForeground",
      "label": "load",
      "resourceUri": "uri:file:///repo/src/store.ts#300",
      "tooltip": {
-      "markdown": "? **Store.load**\n\nThe optional param, and the callers found so far are updated, but more may be missing: the search reported \"query-failed\". Check its users by hand.\n\n_test reachability unknown: the walk budget of 120 callers ran out_\n\n_caller search incomplete: query-failed_\n\n**optional param**\n\n`src/store.ts:30`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**Store.load**\n\nThe optional param, and the callers found so far are updated, but more may be missing: the search reported \"query-failed\". Check its users by hand.\n\n_test reachability unknown: the walk budget of 120 callers ran out_\n\n_caller search incomplete: query-failed_\n\n**optional param**\n\n`src/store.ts:30`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -558,12 +562,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "✓",
+     "description": "call updated  ·  use.ts",
      "icon": "__file__",
      "label": "loader",
      "resourceUri": "uri:file:///repo/src/use.ts#120",
      "tooltip": {
-      "markdown": "✓ **loader**\n\n**call updated**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**loader**\n\n**call updated**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -593,12 +597,12 @@
       "status": null,
       "tooltip": "src/boot.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  boot.ts",
      "icon": "__file__",
      "label": "boot",
      "resourceUri": "uri:file:///repo/src/boot.ts#1",
      "tooltip": {
-      "markdown": "○ **boot**\n\n**not changed**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**boot**\n\n**not changed**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -663,12 +667,13 @@
       "status": "modified",
       "tooltip": "src/store.ts:50"
      },
-     "description": "?  callers unknown  ·  tests ?",
-     "icon": "__file__",
+     "description": "callers unknown  ·  tests ?",
+     "icon": "warning",
+     "iconColor": "list.warningForeground",
      "label": "inner",
      "resourceUri": "uri:file:///repo/src/store.ts#500",
      "tooltip": {
-      "markdown": "? **Store.inner**\n\nThe signature, but its callers could not be found: the search did not say why. Check its users by hand.\n\n_test reachability unknown: the test search did not finish_\n\n**sig**\n\n`src/store.ts:50`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**Store.inner**\n\nThe signature, but its callers could not be found: the search did not say why. Check its users by hand.\n\n_test reachability unknown: the test search did not finish_\n\n**sig**\n\n`src/store.ts:50`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -700,12 +705,13 @@
       "status": "modified",
       "tooltip": "Store.old deleted"
      },
-     "description": "−  deleted",
+     "description": "deleted",
      "icon": "trash",
+     "iconColor": "list.warningForeground",
      "label": "old",
      "resourceUri": "uri:file:///repo/src/store.ts#700",
      "tooltip": {
-      "markdown": "✕ **Store.old**\n\nThis symbol was removed. Its former callers were not searched, so check that nothing still uses it, including dynamic users.\n\n`src/store.ts`"
+      "markdown": "**Store.old**\n\nThis symbol was removed. Its former callers were not searched, so check that nothing still uses it, including dynamic users.\n\n`src/store.ts`"
      }
     }
    },
@@ -761,7 +767,7 @@
       "status": "modified",
       "tooltip": "src/big.ts"
      },
-     "description": "⛔ 1  ·  0/1  ·  src",
+     "description": "1 needs attention  ·  0/1  ·  src",
      "icon": "__file__",
      "label": "big.ts",
      "resourceUri": "uri:file:///repo/src/big.ts",
@@ -787,12 +793,13 @@
       "status": "modified",
       "tooltip": "src/big.ts:1"
      },
-     "description": "⛔  11 of 11 callers not updated",
-     "icon": "__file__",
+     "description": "11 of 11 callers not updated",
+     "icon": "error",
+     "iconColor": "list.errorForeground",
      "label": "Big",
      "resourceUri": "uri:file:///repo/src/big.ts#10",
      "tooltip": {
-      "markdown": "⛔ **Big**\n\nThe signature, and 11 of 11 callers were not changed on the call line. Check that they still work.\n\n**sig**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
+      "markdown": "**Big**\n\nThe signature, and 11 of 11 callers were not changed on the call line. Check that they still work.\n\n**sig**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
      }
     }
    },
@@ -872,12 +879,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  11 callers  ·  11 call sites",
      "icon": "__file__",
      "label": "use.ts",
      "resourceUri": "uri:file:///repo/src/use.ts",
      "tooltip": {
-      "markdown": "**src/use.ts**\n\n11 functions in this file call the change, across 11 call sites:\n\n- ○ caller0\n- ○ caller1\n- ○ caller10\n- ○ caller2\n- ○ caller3\n- ○ caller4\n- ○ caller5\n- ○ caller6\n- ○ caller7\n- ○ caller8\n- ○ caller9"
+      "markdown": "**src/use.ts**\n\n11 functions in this file call the change, across 11 call sites:\n\n- caller0 — not changed\n- caller1 — not changed\n- caller10 — not changed\n- caller2 — not changed\n- caller3 — not changed\n- caller4 — not changed\n- caller5 — not changed\n- caller6 — not changed\n- caller7 — not changed\n- caller8 — not changed\n- caller9 — not changed"
      }
     }
    },
@@ -897,12 +904,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "__file__",
      "label": "caller0",
      "resourceUri": "uri:file:///repo/src/use.ts#1000",
      "tooltip": {
-      "markdown": "○ **caller0**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller0**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -922,12 +929,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "__file__",
      "label": "caller1",
      "resourceUri": "uri:file:///repo/src/use.ts#1010",
      "tooltip": {
-      "markdown": "○ **caller1**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller1**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -947,12 +954,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "__file__",
      "label": "caller10",
      "resourceUri": "uri:file:///repo/src/use.ts#1100",
      "tooltip": {
-      "markdown": "○ **caller10**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller10**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -972,12 +979,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "__file__",
      "label": "caller2",
      "resourceUri": "uri:file:///repo/src/use.ts#1020",
      "tooltip": {
-      "markdown": "○ **caller2**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller2**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -997,12 +1004,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "__file__",
      "label": "caller3",
      "resourceUri": "uri:file:///repo/src/use.ts#1030",
      "tooltip": {
-      "markdown": "○ **caller3**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller3**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -1022,12 +1029,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "__file__",
      "label": "caller4",
      "resourceUri": "uri:file:///repo/src/use.ts#1040",
      "tooltip": {
-      "markdown": "○ **caller4**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller4**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -1047,12 +1054,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "__file__",
      "label": "caller5",
      "resourceUri": "uri:file:///repo/src/use.ts#1050",
      "tooltip": {
-      "markdown": "○ **caller5**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller5**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -1072,12 +1079,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "__file__",
      "label": "caller6",
      "resourceUri": "uri:file:///repo/src/use.ts#1060",
      "tooltip": {
-      "markdown": "○ **caller6**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller6**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -1097,12 +1104,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "__file__",
      "label": "caller7",
      "resourceUri": "uri:file:///repo/src/use.ts#1070",
      "tooltip": {
-      "markdown": "○ **caller7**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller7**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -1122,12 +1129,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "__file__",
      "label": "caller8",
      "resourceUri": "uri:file:///repo/src/use.ts#1080",
      "tooltip": {
-      "markdown": "○ **caller8**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller8**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -1147,12 +1154,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "__file__",
      "label": "caller9",
      "resourceUri": "uri:file:///repo/src/use.ts#1090",
      "tooltip": {
-      "markdown": "○ **caller9**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller9**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -1192,7 +1199,7 @@
       "status": "modified",
       "tooltip": "src/api/util.ts"
      },
-     "description": "? 1  ·  0/1  ·  api",
+     "description": "1 needs attention  ·  0/1  ·  api",
      "icon": "__file__",
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/api/util.ts",
@@ -1218,12 +1225,13 @@
       "status": "modified",
       "tooltip": "src/api/util.ts:5"
      },
-     "description": "?  DI-constructed  ·  no test",
-     "icon": "__file__",
+     "description": "DI-constructed  ·  no test",
+     "icon": "warning",
+     "iconColor": "list.warningForeground",
      "label": "helper  ‹api›",
      "resourceUri": "uri:file:///repo/src/api/util.ts#50",
      "tooltip": {
-      "markdown": "? **helper**\n\nThe signature, but its callers could not be found: it is built by a DI container, so its callers are not visible. Check its users by hand.\n\n_no test within 3 caller level(s)_\n\n**sig**\n\n`src/api/util.ts:5`  ·  component `api`\n\n_score 1_"
+      "markdown": "**helper**\n\nThe signature, but its callers could not be found: it is built by a DI container, so its callers are not visible. Check its users by hand.\n\n_no test within 3 caller level(s)_\n\n**sig**\n\n`src/api/util.ts:5`  ·  component `api`\n\n_score 1_"
      }
     }
    },
@@ -1289,12 +1297,12 @@
       "status": "modified",
       "tooltip": "src/web/util.ts:5"
      },
-     "description": "✓  ·  no test",
+     "description": "no callers  ·  no test",
      "icon": "__file__",
      "label": "helper  ‹web›",
      "resourceUri": "uri:file:///repo/src/web/util.ts#50",
      "tooltip": {
-      "markdown": "✓ **helper**\n\nThe signature. Nothing calls it in the code searched.\n\n_no test within 3 caller level(s)_\n\n**sig**\n\n`src/web/util.ts:5`  ·  component `web`\n\n_score 1_"
+      "markdown": "**helper**\n\nThe signature. Nothing calls it in the code searched.\n\n_no test within 3 caller level(s)_\n\n**sig**\n\n`src/web/util.ts:5`  ·  component `web`\n\n_score 1_"
      }
     }
    },
@@ -1360,12 +1368,12 @@
       "status": "added",
       "tooltip": "src/open.ts:10"
      },
-     "description": "●  ·  no test",
+     "description": "reaches 1 caller  ·  no test",
      "icon": "__file__",
      "label": "createOpen",
      "resourceUri": "uri:file:///repo/src/open.ts#100",
      "tooltip": {
-      "markdown": "● **createOpen**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:10`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**createOpen**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:10`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -1395,12 +1403,12 @@
       "status": null,
       "tooltip": "src/boot.ts"
      },
-     "description": "✓",
+     "description": "call updated  ·  boot.ts",
      "icon": "__file__",
      "label": "boot",
      "resourceUri": "uri:file:///repo/src/boot.ts#1",
      "tooltip": {
-      "markdown": "✓ **boot**\n\n**call updated**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**boot**\n\n**call updated**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -1442,12 +1450,12 @@
       "status": "added",
       "tooltip": "src/open.ts:20"
      },
-     "description": "in createOpen  ·  ●  ·  no test",
+     "description": "in createOpen  ·  reaches 1 caller  ·  no test",
      "icon": "__file__",
      "label": "uriFor",
      "resourceUri": "uri:file:///repo/src/open.ts#200",
      "tooltip": {
-      "markdown": "● **createOpen.uriFor**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:20`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**createOpen.uriFor**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:20`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -1477,12 +1485,13 @@
       "status": "added",
       "tooltip": "src/open.ts"
      },
-     "description": "△",
-     "icon": "__file__",
+     "description": "changed, but not at the call  ·  open.ts",
+     "icon": "warning",
+     "iconColor": "list.warningForeground",
      "label": "createOpen",
      "resourceUri": "uri:file:///repo/src/open.ts#100",
      "tooltip": {
-      "markdown": "△ **createOpen**\n\n**changed, but not at the call**\n\n`src/open.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
+      "markdown": "**createOpen**\n\n**changed, but not at the call**\n\n`src/open.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
      }
     }
    },
@@ -1513,12 +1522,12 @@
       "status": "added",
       "tooltip": "src/open.ts:60"
      },
-     "description": "∅  ·  no test",
+     "description": "no callers  ·  no test",
      "icon": "__file__",
      "label": "sameUri",
      "resourceUri": "uri:file:///repo/src/open.ts#600",
      "tooltip": {
-      "markdown": "∅ **sameUri**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:60`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**sameUri**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:60`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -1584,12 +1593,12 @@
       "status": "modified",
       "tooltip": "src/ready.ts:3"
      },
-     "description": "●  ·  no test",
+     "description": "reaches 1 caller  ·  no test",
      "icon": "__file__",
      "label": "READY",
      "resourceUri": "uri:file:///repo/src/ready.ts#30",
      "tooltip": {
-      "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_no test within 3 caller level(s)_\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_no test within 3 caller level(s)_\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -1619,12 +1628,12 @@
       "status": null,
       "tooltip": "src/boot.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  boot.ts",
      "icon": "__file__",
      "label": "boot",
      "resourceUri": "uri:file:///repo/src/boot.ts#1",
      "tooltip": {
-      "markdown": "○ **boot**\n\n**not changed**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**boot**\n\n**not changed**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -1701,12 +1710,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "●  ·  no test",
+     "description": "reaches 1 caller  ·  no test",
      "icon": "__file__",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
      "tooltip": {
-      "markdown": "● **useB**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_no test within 3 caller level(s)_\n\n`src/use.ts:8`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**useB**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_no test within 3 caller level(s)_\n\n`src/use.ts:8`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -1736,12 +1745,12 @@
       "status": null,
       "tooltip": "src/app.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  app.ts",
      "icon": "__file__",
      "label": "main",
      "resourceUri": "uri:file:///repo/src/app.ts#7",
      "tooltip": {
-      "markdown": "○ **main**\n\n**not changed**\n\n`src/app.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**main**\n\n**not changed**\n\n`src/app.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -1771,12 +1780,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "↑",
+     "description": "already shown above",
      "icon": "issue-reopened",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
      "tooltip": {
-      "markdown": "↑ **useB**\n\n_already shown higher up in this tree_\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
+      "markdown": "**useB**\n\n_already shown higher up in this tree_\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
      }
     }
    },
@@ -2042,7 +2051,7 @@
       "status": "modified",
       "tooltip": "src/store.ts"
      },
-     "description": "⛔ 4  ·  0/5  ·  src",
+     "description": "4 need attention  ·  0/5  ·  src",
      "icon": "__file__",
      "label": "store.ts",
      "resourceUri": "uri:file:///repo/src/store.ts",
@@ -2067,12 +2076,13 @@
       "status": "modified",
       "tooltip": "src/store.ts:10"
      },
-     "description": "⛔  2 of 3 callers not updated (1 edited nearby)  ·  param",
+     "description": "2 of 3 callers not updated (1 edited nearby)  ·  param",
      "icon": "symbol-method",
+     "iconColor": "list.errorForeground",
      "label": "save",
      "resourceUri": "uri:file:///repo/src/store.ts#100",
      "tooltip": {
-      "markdown": "⛔ **Store.save**\n\nThe parameter, and 2 of 3 callers were not changed on the call line. Check that they still work.\n\n**param**\n\n`src/store.ts:10`  ·  component `(root)`\n\n---\n\nbase: `save(a)`\n\nhead: `save(a, b)`\n\n---\n\n+ throw `Error`\n\n---\n\n**2 call site(s) not updated:**\n- useB\n- main\n\n1 of them were edited — just not on the call line\n\n_score 9_"
+      "markdown": "**Store.save**\n\nThe parameter, and 2 of 3 callers were not changed on the call line. Check that they still work.\n\n**param**\n\n`src/store.ts:10`  ·  component `(root)`\n\n---\n\nbase: `save(a)`\n\nhead: `save(a, b)`\n\n---\n\n+ throw `Error`\n\n---\n\n**2 call site(s) not updated:**\n- useB\n- main\n\n1 of them were edited — just not on the call line\n\n_score 9_"
      }
     }
    },
@@ -2112,12 +2122,12 @@
       "status": null,
       "tooltip": "src/app.ts"
      },
-     "description": "○  not changed  ·  app.ts",
+     "description": "not changed  ·  app.ts",
      "icon": "symbol-function",
      "label": "main",
      "resourceUri": "uri:file:///repo/src/app.ts#7",
      "tooltip": {
-      "markdown": "○ **main**\n\n**not changed**\n\n`src/app.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**main**\n\n**not changed**\n\n`src/app.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -2147,12 +2157,13 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "△  changed, but not at the call  ·  use.ts",
+     "description": "changed, but not at the call  ·  use.ts",
      "icon": "symbol-function",
+     "iconColor": "list.warningForeground",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
      "tooltip": {
-      "markdown": "△ **useB**\n\n**changed, but not at the call**\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
+      "markdown": "**useB**\n\n**changed, but not at the call**\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
      }
     }
    },
@@ -2187,12 +2198,12 @@
       "status": null,
       "tooltip": "src/app.ts"
      },
-     "description": "↑  already shown above",
+     "description": "already shown above",
      "icon": "issue-reopened",
      "label": "main",
      "resourceUri": "uri:file:///repo/src/app.ts#7",
      "tooltip": {
-      "markdown": "↑ **main**\n\n_already shown higher up in this tree_\n\n`src/app.ts`\n\n2 call sites to the changed symbol\n\n1 of 2 call sites updated"
+      "markdown": "**main**\n\n_already shown higher up in this tree_\n\n`src/app.ts`\n\n2 call sites to the changed symbol\n\n1 of 2 call sites updated"
      }
     }
    },
@@ -2212,12 +2223,12 @@
       "status": null,
       "tooltip": "test/use.test.ts"
      },
-     "description": "🧪  not changed  ·  use.test.ts",
+     "description": "test  ·  use.test.ts",
      "icon": "beaker",
      "label": "usesB",
      "resourceUri": "uri:file:///repo/test/use.test.ts#4",
      "tooltip": {
-      "markdown": "🧪 **usesB**\n\n🧪 test\n\n`test/use.test.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**usesB**\n\ntest\n\n`test/use.test.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -2237,12 +2248,13 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "△  changed, but not at the call  ·  use.ts",
+     "description": "changed, but not at the call  ·  use.ts",
      "icon": "symbol-function",
+     "iconColor": "list.warningForeground",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
      "tooltip": {
-      "markdown": "△ **useB**\n\n**changed, but not at the call**\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
+      "markdown": "**useB**\n\n**changed, but not at the call**\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
      }
     }
    },
@@ -2277,12 +2289,12 @@
       "status": null,
       "tooltip": "src/app.ts"
      },
-     "description": "○  not changed  ·  app.ts  ·  2 call sites",
+     "description": "not changed  ·  app.ts  ·  2 call sites",
      "icon": "symbol-function",
      "label": "main",
      "resourceUri": "uri:file:///repo/src/app.ts#7",
      "tooltip": {
-      "markdown": "○ **main**\n\n**not changed**\n\n`src/app.ts`\n\n2 call sites to the changed symbol\n\n1 of 2 call sites updated"
+      "markdown": "**main**\n\n**not changed**\n\n`src/app.ts`\n\n2 call sites to the changed symbol\n\n1 of 2 call sites updated"
      }
     }
    },
@@ -2312,12 +2324,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "↑  already shown above",
+     "description": "already shown above",
      "icon": "issue-reopened",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
      "tooltip": {
-      "markdown": "↑ **useB**\n\n_already shown higher up in this tree_\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
+      "markdown": "**useB**\n\n_already shown higher up in this tree_\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
      }
     }
    },
@@ -2337,12 +2349,12 @@
       "status": null,
       "tooltip": "test/use.test.ts"
      },
-     "description": "🧪  not changed  ·  use.test.ts",
+     "description": "test  ·  use.test.ts",
      "icon": "beaker",
      "label": "usesB",
      "resourceUri": "uri:file:///repo/test/use.test.ts#4",
      "tooltip": {
-      "markdown": "🧪 **usesB**\n\n🧪 test\n\n`test/use.test.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**usesB**\n\ntest\n\n`test/use.test.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -2362,12 +2374,12 @@
       "status": null,
       "tooltip": "test/store.test.ts"
      },
-     "description": "🧪  call updated  ·  store.test.ts",
+     "description": "test  ·  store.test.ts",
      "icon": "beaker",
      "label": "saves",
      "resourceUri": "uri:file:///repo/test/store.test.ts#5",
      "tooltip": {
-      "markdown": "🧪 **saves**\n\n🧪 test\n\n`test/store.test.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**saves**\n\ntest\n\n`test/store.test.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -2397,12 +2409,13 @@
       "status": "modified",
       "tooltip": "src/store.ts:30"
      },
-     "description": "?  callers unknown  ·  optional param  ·  tests ?",
+     "description": "callers unknown  ·  optional param  ·  tests ?",
      "icon": "symbol-method",
+     "iconColor": "list.warningForeground",
      "label": "load",
      "resourceUri": "uri:file:///repo/src/store.ts#300",
      "tooltip": {
-      "markdown": "? **Store.load**\n\nThe optional param, and the callers found so far are updated, but more may be missing: the search reported \"query-failed\". Check its users by hand.\n\n_test reachability unknown: the walk budget of 120 callers ran out_\n\n_caller search incomplete: query-failed_\n\n**optional param**\n\n`src/store.ts:30`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**Store.load**\n\nThe optional param, and the callers found so far are updated, but more may be missing: the search reported \"query-failed\". Check its users by hand.\n\n_test reachability unknown: the walk budget of 120 callers ran out_\n\n_caller search incomplete: query-failed_\n\n**optional param**\n\n`src/store.ts:30`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -2432,12 +2445,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "✓  call updated  ·  use.ts",
+     "description": "call updated  ·  use.ts",
      "icon": "symbol-function",
      "label": "loader",
      "resourceUri": "uri:file:///repo/src/use.ts#120",
      "tooltip": {
-      "markdown": "✓ **loader**\n\n**call updated**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**loader**\n\n**call updated**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -2467,12 +2480,12 @@
       "status": null,
       "tooltip": "src/boot.ts"
      },
-     "description": "○  not changed  ·  boot.ts",
+     "description": "not changed  ·  boot.ts",
      "icon": "symbol-function",
      "label": "boot",
      "resourceUri": "uri:file:///repo/src/boot.ts#1",
      "tooltip": {
-      "markdown": "○ **boot**\n\n**not changed**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**boot**\n\n**not changed**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -2536,12 +2549,13 @@
       "status": "modified",
       "tooltip": "src/store.ts:50"
      },
-     "description": "?  callers unknown  ·  sig  ·  tests ?",
+     "description": "callers unknown  ·  sig  ·  tests ?",
      "icon": "symbol-method",
+     "iconColor": "list.warningForeground",
      "label": "inner",
      "resourceUri": "uri:file:///repo/src/store.ts#500",
      "tooltip": {
-      "markdown": "? **Store.inner**\n\nThe signature, but its callers could not be found: the search did not say why. Check its users by hand.\n\n_test reachability unknown: the test search did not finish_\n\n**sig**\n\n`src/store.ts:50`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**Store.inner**\n\nThe signature, but its callers could not be found: the search did not say why. Check its users by hand.\n\n_test reachability unknown: the test search did not finish_\n\n**sig**\n\n`src/store.ts:50`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -2572,12 +2586,13 @@
       "status": "modified",
       "tooltip": "Store.old deleted"
      },
-     "description": "−  deleted",
+     "description": "deleted",
      "icon": "trash",
+     "iconColor": "list.warningForeground",
      "label": "old",
      "resourceUri": "uri:file:///repo/src/store.ts#700",
      "tooltip": {
-      "markdown": "✕ **Store.old**\n\nThis symbol was removed. Its former callers were not searched, so check that nothing still uses it, including dynamic users.\n\n`src/store.ts`"
+      "markdown": "**Store.old**\n\nThis symbol was removed. Its former callers were not searched, so check that nothing still uses it, including dynamic users.\n\n`src/store.ts`"
      }
     }
    },
@@ -2631,7 +2646,7 @@
       "status": "modified",
       "tooltip": "src/big.ts"
      },
-     "description": "⛔ 1  ·  0/1  ·  src",
+     "description": "1 needs attention  ·  0/1  ·  src",
      "icon": "__file__",
      "label": "big.ts",
      "resourceUri": "uri:file:///repo/src/big.ts",
@@ -2656,12 +2671,13 @@
       "status": "modified",
       "tooltip": "src/big.ts:1"
      },
-     "description": "⛔  11 of 11 callers not updated  ·  sig",
+     "description": "11 of 11 callers not updated  ·  sig",
      "icon": "symbol-constructor",
+     "iconColor": "list.errorForeground",
      "label": "Big",
      "resourceUri": "uri:file:///repo/src/big.ts#10",
      "tooltip": {
-      "markdown": "⛔ **Big**\n\nThe signature, and 11 of 11 callers were not changed on the call line. Check that they still work.\n\n**sig**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
+      "markdown": "**Big**\n\nThe signature, and 11 of 11 callers were not changed on the call line. Check that they still work.\n\n**sig**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
      }
     }
    },
@@ -2741,12 +2757,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○  11 callers  ·  11 call sites",
+     "description": "not changed  ·  11 callers  ·  11 call sites",
      "icon": "__file__",
      "label": "use.ts",
      "resourceUri": "uri:file:///repo/src/use.ts",
      "tooltip": {
-      "markdown": "**src/use.ts**\n\n11 functions in this file call the change, across 11 call sites:\n\n- ○ caller0\n- ○ caller1\n- ○ caller10\n- ○ caller2\n- ○ caller3\n- ○ caller4\n- ○ caller5\n- ○ caller6\n- ○ caller7\n- ○ caller8\n- ○ caller9"
+      "markdown": "**src/use.ts**\n\n11 functions in this file call the change, across 11 call sites:\n\n- caller0 — not changed\n- caller1 — not changed\n- caller10 — not changed\n- caller2 — not changed\n- caller3 — not changed\n- caller4 — not changed\n- caller5 — not changed\n- caller6 — not changed\n- caller7 — not changed\n- caller8 — not changed\n- caller9 — not changed"
      }
     }
    },
@@ -2766,12 +2782,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○  not changed  ·  use.ts",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller0",
      "resourceUri": "uri:file:///repo/src/use.ts#1000",
      "tooltip": {
-      "markdown": "○ **caller0**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller0**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -2791,12 +2807,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○  not changed  ·  use.ts",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller1",
      "resourceUri": "uri:file:///repo/src/use.ts#1010",
      "tooltip": {
-      "markdown": "○ **caller1**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller1**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -2816,12 +2832,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○  not changed  ·  use.ts",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller10",
      "resourceUri": "uri:file:///repo/src/use.ts#1100",
      "tooltip": {
-      "markdown": "○ **caller10**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller10**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -2841,12 +2857,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○  not changed  ·  use.ts",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller2",
      "resourceUri": "uri:file:///repo/src/use.ts#1020",
      "tooltip": {
-      "markdown": "○ **caller2**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller2**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -2866,12 +2882,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○  not changed  ·  use.ts",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller3",
      "resourceUri": "uri:file:///repo/src/use.ts#1030",
      "tooltip": {
-      "markdown": "○ **caller3**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller3**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -2891,12 +2907,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○  not changed  ·  use.ts",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller4",
      "resourceUri": "uri:file:///repo/src/use.ts#1040",
      "tooltip": {
-      "markdown": "○ **caller4**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller4**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -2916,12 +2932,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○  not changed  ·  use.ts",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller5",
      "resourceUri": "uri:file:///repo/src/use.ts#1050",
      "tooltip": {
-      "markdown": "○ **caller5**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller5**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -2941,12 +2957,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○  not changed  ·  use.ts",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller6",
      "resourceUri": "uri:file:///repo/src/use.ts#1060",
      "tooltip": {
-      "markdown": "○ **caller6**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller6**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -2966,12 +2982,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○  not changed  ·  use.ts",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller7",
      "resourceUri": "uri:file:///repo/src/use.ts#1070",
      "tooltip": {
-      "markdown": "○ **caller7**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller7**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -2991,12 +3007,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○  not changed  ·  use.ts",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller8",
      "resourceUri": "uri:file:///repo/src/use.ts#1080",
      "tooltip": {
-      "markdown": "○ **caller8**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller8**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -3016,12 +3032,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○  not changed  ·  use.ts",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller9",
      "resourceUri": "uri:file:///repo/src/use.ts#1090",
      "tooltip": {
-      "markdown": "○ **caller9**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller9**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -3060,7 +3076,7 @@
       "status": "modified",
       "tooltip": "src/api/util.ts"
      },
-     "description": "? 1  ·  0/1  ·  api",
+     "description": "1 needs attention  ·  0/1  ·  api",
      "icon": "__file__",
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/api/util.ts",
@@ -3085,12 +3101,13 @@
       "status": "modified",
       "tooltip": "src/api/util.ts:5"
      },
-     "description": "?  DI-constructed  ·  api  ·  sig  ·  no test",
+     "description": "DI-constructed  ·  api  ·  sig  ·  no test",
      "icon": "symbol-function",
+     "iconColor": "list.warningForeground",
      "label": "helper  ‹api›",
      "resourceUri": "uri:file:///repo/src/api/util.ts#50",
      "tooltip": {
-      "markdown": "? **helper**\n\nThe signature, but its callers could not be found: it is built by a DI container, so its callers are not visible. Check its users by hand.\n\n_no test within 3 caller level(s)_\n\n**sig**\n\n`src/api/util.ts:5`  ·  component `api`\n\n_score 1_"
+      "markdown": "**helper**\n\nThe signature, but its callers could not be found: it is built by a DI container, so its callers are not visible. Check its users by hand.\n\n_no test within 3 caller level(s)_\n\n**sig**\n\n`src/api/util.ts:5`  ·  component `api`\n\n_score 1_"
      }
     }
    },
@@ -3154,12 +3171,12 @@
       "status": "modified",
       "tooltip": "src/web/util.ts:5"
      },
-     "description": "✓  no callers  ·  web  ·  sig  ·  no test",
+     "description": "no callers  ·  web  ·  sig  ·  no test",
      "icon": "symbol-function",
      "label": "helper  ‹web›",
      "resourceUri": "uri:file:///repo/src/web/util.ts#50",
      "tooltip": {
-      "markdown": "✓ **helper**\n\nThe signature. Nothing calls it in the code searched.\n\n_no test within 3 caller level(s)_\n\n**sig**\n\n`src/web/util.ts:5`  ·  component `web`\n\n_score 1_"
+      "markdown": "**helper**\n\nThe signature. Nothing calls it in the code searched.\n\n_no test within 3 caller level(s)_\n\n**sig**\n\n`src/web/util.ts:5`  ·  component `web`\n\n_score 1_"
      }
     }
    },
@@ -3223,12 +3240,12 @@
       "status": "added",
       "tooltip": "src/open.ts:10"
      },
-     "description": "●  reaches 1 caller  ·  no test",
+     "description": "reaches 1 caller  ·  no test",
      "icon": "symbol-function",
      "label": "createOpen",
      "resourceUri": "uri:file:///repo/src/open.ts#100",
      "tooltip": {
-      "markdown": "● **createOpen**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:10`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**createOpen**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:10`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -3258,12 +3275,12 @@
       "status": null,
       "tooltip": "src/boot.ts"
      },
-     "description": "✓  call updated  ·  boot.ts",
+     "description": "call updated  ·  boot.ts",
      "icon": "symbol-function",
      "label": "boot",
      "resourceUri": "uri:file:///repo/src/boot.ts#1",
      "tooltip": {
-      "markdown": "✓ **boot**\n\n**call updated**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**boot**\n\n**call updated**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -3304,12 +3321,12 @@
       "status": "added",
       "tooltip": "src/open.ts:20"
      },
-     "description": "in createOpen  ·  ●  reaches 1 caller  ·  no test",
+     "description": "in createOpen  ·  reaches 1 caller  ·  no test",
      "icon": "symbol-method",
      "label": "uriFor",
      "resourceUri": "uri:file:///repo/src/open.ts#200",
      "tooltip": {
-      "markdown": "● **createOpen.uriFor**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:20`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**createOpen.uriFor**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:20`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -3339,12 +3356,13 @@
       "status": "added",
       "tooltip": "src/open.ts"
      },
-     "description": "△  changed, but not at the call  ·  open.ts",
+     "description": "changed, but not at the call  ·  open.ts",
      "icon": "symbol-function",
+     "iconColor": "list.warningForeground",
      "label": "createOpen",
      "resourceUri": "uri:file:///repo/src/open.ts#100",
      "tooltip": {
-      "markdown": "△ **createOpen**\n\n**changed, but not at the call**\n\n`src/open.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
+      "markdown": "**createOpen**\n\n**changed, but not at the call**\n\n`src/open.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
      }
     }
    },
@@ -3374,12 +3392,12 @@
       "status": "added",
       "tooltip": "src/open.ts:60"
      },
-     "description": "∅  no callers  ·  no test",
+     "description": "no callers  ·  no test",
      "icon": "symbol-function",
      "label": "sameUri",
      "resourceUri": "uri:file:///repo/src/open.ts#600",
      "tooltip": {
-      "markdown": "∅ **sameUri**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:60`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**sameUri**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n_no test within 3 caller level(s)_\n\n`src/open.ts:60`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -3443,12 +3461,12 @@
       "status": "modified",
       "tooltip": "src/ready.ts:3"
      },
-     "description": "●  reaches 1 caller  ·  no test",
+     "description": "reaches 1 caller  ·  no test",
      "icon": "symbol-variable",
      "label": "READY",
      "resourceUri": "uri:file:///repo/src/ready.ts#30",
      "tooltip": {
-      "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_no test within 3 caller level(s)_\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_no test within 3 caller level(s)_\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -3478,12 +3496,12 @@
       "status": null,
       "tooltip": "src/boot.ts"
      },
-     "description": "○  not changed  ·  boot.ts",
+     "description": "not changed  ·  boot.ts",
      "icon": "symbol-function",
      "label": "boot",
      "resourceUri": "uri:file:///repo/src/boot.ts#1",
      "tooltip": {
-      "markdown": "○ **boot**\n\n**not changed**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**boot**\n\n**not changed**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -3558,12 +3576,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "●  reaches 1 caller  ·  no test",
+     "description": "reaches 1 caller  ·  no test",
      "icon": "symbol-function",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
      "tooltip": {
-      "markdown": "● **useB**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_no test within 3 caller level(s)_\n\n`src/use.ts:8`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**useB**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_no test within 3 caller level(s)_\n\n`src/use.ts:8`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -3593,12 +3611,12 @@
       "status": null,
       "tooltip": "src/app.ts"
      },
-     "description": "○  not changed  ·  app.ts",
+     "description": "not changed  ·  app.ts",
      "icon": "symbol-function",
      "label": "main",
      "resourceUri": "uri:file:///repo/src/app.ts#7",
      "tooltip": {
-      "markdown": "○ **main**\n\n**not changed**\n\n`src/app.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**main**\n\n**not changed**\n\n`src/app.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -3628,12 +3646,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "↑  already shown above",
+     "description": "already shown above",
      "icon": "issue-reopened",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
      "tooltip": {
-      "markdown": "↑ **useB**\n\n_already shown higher up in this tree_\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
+      "markdown": "**useB**\n\n_already shown higher up in this tree_\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
      }
     }
    },
@@ -3896,7 +3914,7 @@
       "status": "modified",
       "tooltip": "src/store.ts"
      },
-     "description": "⛔ 4  ·  0/5  ·  src",
+     "description": "4 need attention  ·  0/5  ·  src",
      "icon": "__file__",
      "label": "store.ts",
      "resourceUri": "uri:file:///repo/src/store.ts",
@@ -3921,12 +3939,13 @@
       "status": "modified",
       "tooltip": "src/store.ts:10"
      },
-     "description": "⛔  2 of 3 callers not updated (1 edited nearby)",
+     "description": "2 of 3 callers not updated (1 edited nearby)",
      "icon": "symbol-method",
+     "iconColor": "list.errorForeground",
      "label": "save",
      "resourceUri": "uri:file:///repo/src/store.ts#100",
      "tooltip": {
-      "markdown": "⛔ **Store.save**\n\nThe parameter, and 2 of 3 callers were not changed on the call line. Check that they still work.\n\n**param**\n\n`src/store.ts:10`  ·  component `(root)`\n\n---\n\nbase: `save(a)`\n\nhead: `save(a, b)`\n\n---\n\n+ throw `Error`\n\n---\n\n**2 call site(s) not updated:**\n- useB\n- main\n\n1 of them were edited — just not on the call line\n\n_score 9_"
+      "markdown": "**Store.save**\n\nThe parameter, and 2 of 3 callers were not changed on the call line. Check that they still work.\n\n**param**\n\n`src/store.ts:10`  ·  component `(root)`\n\n---\n\nbase: `save(a)`\n\nhead: `save(a, b)`\n\n---\n\n+ throw `Error`\n\n---\n\n**2 call site(s) not updated:**\n- useB\n- main\n\n1 of them were edited — just not on the call line\n\n_score 9_"
      }
     }
    },
@@ -3966,12 +3985,12 @@
       "status": null,
       "tooltip": "src/app.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  app.ts",
      "icon": "symbol-function",
      "label": "main",
      "resourceUri": "uri:file:///repo/src/app.ts#7",
      "tooltip": {
-      "markdown": "○ **main**\n\n**not changed**\n\n`src/app.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**main**\n\n**not changed**\n\n`src/app.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -4001,12 +4020,13 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "△",
+     "description": "changed, but not at the call  ·  use.ts",
      "icon": "symbol-function",
+     "iconColor": "list.warningForeground",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
      "tooltip": {
-      "markdown": "△ **useB**\n\n**changed, but not at the call**\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
+      "markdown": "**useB**\n\n**changed, but not at the call**\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
      }
     }
    },
@@ -4041,12 +4061,12 @@
       "status": null,
       "tooltip": "src/app.ts"
      },
-     "description": "↑",
+     "description": "already shown above",
      "icon": "issue-reopened",
      "label": "main",
      "resourceUri": "uri:file:///repo/src/app.ts#7",
      "tooltip": {
-      "markdown": "↑ **main**\n\n_already shown higher up in this tree_\n\n`src/app.ts`\n\n2 call sites to the changed symbol\n\n1 of 2 call sites updated"
+      "markdown": "**main**\n\n_already shown higher up in this tree_\n\n`src/app.ts`\n\n2 call sites to the changed symbol\n\n1 of 2 call sites updated"
      }
     }
    },
@@ -4066,12 +4086,12 @@
       "status": null,
       "tooltip": "test/use.test.ts"
      },
-     "description": "🧪",
+     "description": "test  ·  use.test.ts",
      "icon": "beaker",
      "label": "usesB",
      "resourceUri": "uri:file:///repo/test/use.test.ts#4",
      "tooltip": {
-      "markdown": "🧪 **usesB**\n\n🧪 test\n\n`test/use.test.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**usesB**\n\ntest\n\n`test/use.test.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -4091,12 +4111,13 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "△",
+     "description": "changed, but not at the call  ·  use.ts",
      "icon": "symbol-function",
+     "iconColor": "list.warningForeground",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
      "tooltip": {
-      "markdown": "△ **useB**\n\n**changed, but not at the call**\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
+      "markdown": "**useB**\n\n**changed, but not at the call**\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
      }
     }
    },
@@ -4131,12 +4152,12 @@
       "status": null,
       "tooltip": "src/app.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  app.ts  ·  2 call sites",
      "icon": "symbol-function",
      "label": "main",
      "resourceUri": "uri:file:///repo/src/app.ts#7",
      "tooltip": {
-      "markdown": "○ **main**\n\n**not changed**\n\n`src/app.ts`\n\n2 call sites to the changed symbol\n\n1 of 2 call sites updated"
+      "markdown": "**main**\n\n**not changed**\n\n`src/app.ts`\n\n2 call sites to the changed symbol\n\n1 of 2 call sites updated"
      }
     }
    },
@@ -4166,12 +4187,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "↑",
+     "description": "already shown above",
      "icon": "issue-reopened",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
      "tooltip": {
-      "markdown": "↑ **useB**\n\n_already shown higher up in this tree_\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
+      "markdown": "**useB**\n\n_already shown higher up in this tree_\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
      }
     }
    },
@@ -4191,12 +4212,12 @@
       "status": null,
       "tooltip": "test/use.test.ts"
      },
-     "description": "🧪",
+     "description": "test  ·  use.test.ts",
      "icon": "beaker",
      "label": "usesB",
      "resourceUri": "uri:file:///repo/test/use.test.ts#4",
      "tooltip": {
-      "markdown": "🧪 **usesB**\n\n🧪 test\n\n`test/use.test.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**usesB**\n\ntest\n\n`test/use.test.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -4216,12 +4237,12 @@
       "status": null,
       "tooltip": "test/store.test.ts"
      },
-     "description": "🧪",
+     "description": "test  ·  store.test.ts",
      "icon": "beaker",
      "label": "saves",
      "resourceUri": "uri:file:///repo/test/store.test.ts#5",
      "tooltip": {
-      "markdown": "🧪 **saves**\n\n🧪 test\n\n`test/store.test.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**saves**\n\ntest\n\n`test/store.test.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -4256,12 +4277,13 @@
       "status": "modified",
       "tooltip": "src/store.ts:30"
      },
-     "description": "?  callers unknown",
+     "description": "callers unknown",
      "icon": "symbol-method",
+     "iconColor": "list.warningForeground",
      "label": "load",
      "resourceUri": "uri:file:///repo/src/store.ts#300",
      "tooltip": {
-      "markdown": "? **Store.load**\n\nThe optional param, and the callers found so far are updated, but more may be missing: the search reported \"query-failed\". Check its users by hand.\n\n_caller search incomplete: query-failed_\n\n**optional param**\n\n`src/store.ts:30`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**Store.load**\n\nThe optional param, and the callers found so far are updated, but more may be missing: the search reported \"query-failed\". Check its users by hand.\n\n_caller search incomplete: query-failed_\n\n**optional param**\n\n`src/store.ts:30`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -4291,12 +4313,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "✓",
+     "description": "call updated  ·  use.ts",
      "icon": "symbol-function",
      "label": "loader",
      "resourceUri": "uri:file:///repo/src/use.ts#120",
      "tooltip": {
-      "markdown": "✓ **loader**\n\n**call updated**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**loader**\n\n**call updated**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -4326,12 +4348,12 @@
       "status": null,
       "tooltip": "src/boot.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  boot.ts",
      "icon": "symbol-function",
      "label": "boot",
      "resourceUri": "uri:file:///repo/src/boot.ts#1",
      "tooltip": {
-      "markdown": "○ **boot**\n\n**not changed**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**boot**\n\n**not changed**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -4399,12 +4421,13 @@
       "status": "modified",
       "tooltip": "src/store.ts:50"
      },
-     "description": "?  callers unknown",
+     "description": "callers unknown",
      "icon": "symbol-method",
+     "iconColor": "list.warningForeground",
      "label": "inner",
      "resourceUri": "uri:file:///repo/src/store.ts#500",
      "tooltip": {
-      "markdown": "? **Store.inner**\n\nThe signature, but its callers could not be found: the search did not say why. Check its users by hand.\n\n**sig**\n\n`src/store.ts:50`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**Store.inner**\n\nThe signature, but its callers could not be found: the search did not say why. Check its users by hand.\n\n**sig**\n\n`src/store.ts:50`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -4439,12 +4462,13 @@
       "status": "modified",
       "tooltip": "Store.old deleted"
      },
-     "description": "−  deleted",
+     "description": "deleted",
      "icon": "trash",
+     "iconColor": "list.warningForeground",
      "label": "old",
      "resourceUri": "uri:file:///repo/src/store.ts#700",
      "tooltip": {
-      "markdown": "✕ **Store.old**\n\nThis symbol was removed. Its former callers were not searched, so check that nothing still uses it, including dynamic users.\n\n`src/store.ts`"
+      "markdown": "**Store.old**\n\nThis symbol was removed. Its former callers were not searched, so check that nothing still uses it, including dynamic users.\n\n`src/store.ts`"
      }
     }
    },
@@ -4498,7 +4522,7 @@
       "status": "modified",
       "tooltip": "src/big.ts"
      },
-     "description": "⛔ 1  ·  0/1  ·  src",
+     "description": "1 needs attention  ·  0/1  ·  src",
      "icon": "__file__",
      "label": "big.ts",
      "resourceUri": "uri:file:///repo/src/big.ts",
@@ -4523,12 +4547,13 @@
       "status": "modified",
       "tooltip": "src/big.ts:1"
      },
-     "description": "⛔  11 of 11 callers not updated",
+     "description": "11 of 11 callers not updated",
      "icon": "symbol-constructor",
+     "iconColor": "list.errorForeground",
      "label": "Big",
      "resourceUri": "uri:file:///repo/src/big.ts#10",
      "tooltip": {
-      "markdown": "⛔ **Big**\n\nThe signature, and 11 of 11 callers were not changed on the call line. Check that they still work.\n\n**sig**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
+      "markdown": "**Big**\n\nThe signature, and 11 of 11 callers were not changed on the call line. Check that they still work.\n\n**sig**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
      }
     }
    },
@@ -4608,12 +4633,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  11 callers  ·  11 call sites",
      "icon": "__file__",
      "label": "use.ts",
      "resourceUri": "uri:file:///repo/src/use.ts",
      "tooltip": {
-      "markdown": "**src/use.ts**\n\n11 functions in this file call the change, across 11 call sites:\n\n- ○ caller0\n- ○ caller1\n- ○ caller10\n- ○ caller2\n- ○ caller3\n- ○ caller4\n- ○ caller5\n- ○ caller6\n- ○ caller7\n- ○ caller8\n- ○ caller9"
+      "markdown": "**src/use.ts**\n\n11 functions in this file call the change, across 11 call sites:\n\n- caller0 — not changed\n- caller1 — not changed\n- caller10 — not changed\n- caller2 — not changed\n- caller3 — not changed\n- caller4 — not changed\n- caller5 — not changed\n- caller6 — not changed\n- caller7 — not changed\n- caller8 — not changed\n- caller9 — not changed"
      }
     }
    },
@@ -4633,12 +4658,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller0",
      "resourceUri": "uri:file:///repo/src/use.ts#1000",
      "tooltip": {
-      "markdown": "○ **caller0**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller0**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -4658,12 +4683,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller1",
      "resourceUri": "uri:file:///repo/src/use.ts#1010",
      "tooltip": {
-      "markdown": "○ **caller1**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller1**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -4683,12 +4708,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller10",
      "resourceUri": "uri:file:///repo/src/use.ts#1100",
      "tooltip": {
-      "markdown": "○ **caller10**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller10**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -4708,12 +4733,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller2",
      "resourceUri": "uri:file:///repo/src/use.ts#1020",
      "tooltip": {
-      "markdown": "○ **caller2**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller2**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -4733,12 +4758,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller3",
      "resourceUri": "uri:file:///repo/src/use.ts#1030",
      "tooltip": {
-      "markdown": "○ **caller3**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller3**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -4758,12 +4783,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller4",
      "resourceUri": "uri:file:///repo/src/use.ts#1040",
      "tooltip": {
-      "markdown": "○ **caller4**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller4**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -4783,12 +4808,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller5",
      "resourceUri": "uri:file:///repo/src/use.ts#1050",
      "tooltip": {
-      "markdown": "○ **caller5**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller5**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -4808,12 +4833,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller6",
      "resourceUri": "uri:file:///repo/src/use.ts#1060",
      "tooltip": {
-      "markdown": "○ **caller6**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller6**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -4833,12 +4858,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller7",
      "resourceUri": "uri:file:///repo/src/use.ts#1070",
      "tooltip": {
-      "markdown": "○ **caller7**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller7**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -4858,12 +4883,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller8",
      "resourceUri": "uri:file:///repo/src/use.ts#1080",
      "tooltip": {
-      "markdown": "○ **caller8**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller8**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -4883,12 +4908,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  use.ts",
      "icon": "symbol-function",
      "label": "caller9",
      "resourceUri": "uri:file:///repo/src/use.ts#1090",
      "tooltip": {
-      "markdown": "○ **caller9**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**caller9**\n\n**not changed**\n\n`src/use.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -4932,7 +4957,7 @@
       "status": "modified",
       "tooltip": "src/api/util.ts"
      },
-     "description": "? 1  ·  0/1  ·  api",
+     "description": "1 needs attention  ·  0/1  ·  api",
      "icon": "__file__",
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/api/util.ts",
@@ -4957,12 +4982,13 @@
       "status": "modified",
       "tooltip": "src/api/util.ts:5"
      },
-     "description": "?  DI-constructed",
+     "description": "DI-constructed",
      "icon": "symbol-function",
+     "iconColor": "list.warningForeground",
      "label": "helper  ‹api›",
      "resourceUri": "uri:file:///repo/src/api/util.ts#50",
      "tooltip": {
-      "markdown": "? **helper**\n\nThe signature, but its callers could not be found: it is built by a DI container, so its callers are not visible. Check its users by hand.\n\n**sig**\n\n`src/api/util.ts:5`  ·  component `api`\n\n_score 1_"
+      "markdown": "**helper**\n\nThe signature, but its callers could not be found: it is built by a DI container, so its callers are not visible. Check its users by hand.\n\n**sig**\n\n`src/api/util.ts:5`  ·  component `api`\n\n_score 1_"
      }
     }
    },
@@ -5031,12 +5057,12 @@
       "status": "modified",
       "tooltip": "src/web/util.ts:5"
      },
-     "description": "✓",
+     "description": "no callers",
      "icon": "symbol-function",
      "label": "helper  ‹web›",
      "resourceUri": "uri:file:///repo/src/web/util.ts#50",
      "tooltip": {
-      "markdown": "✓ **helper**\n\nThe signature. Nothing calls it in the code searched.\n\n**sig**\n\n`src/web/util.ts:5`  ·  component `web`\n\n_score 1_"
+      "markdown": "**helper**\n\nThe signature. Nothing calls it in the code searched.\n\n**sig**\n\n`src/web/util.ts:5`  ·  component `web`\n\n_score 1_"
      }
     }
    },
@@ -5105,12 +5131,12 @@
       "status": "added",
       "tooltip": "src/open.ts:10"
      },
-     "description": "●",
+     "description": "reaches 1 caller",
      "icon": "symbol-function",
      "label": "createOpen",
      "resourceUri": "uri:file:///repo/src/open.ts#100",
      "tooltip": {
-      "markdown": "● **createOpen**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/open.ts:10`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**createOpen**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/open.ts:10`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -5140,12 +5166,12 @@
       "status": null,
       "tooltip": "src/boot.ts"
      },
-     "description": "✓",
+     "description": "call updated  ·  boot.ts",
      "icon": "symbol-function",
      "label": "boot",
      "resourceUri": "uri:file:///repo/src/boot.ts#1",
      "tooltip": {
-      "markdown": "✓ **boot**\n\n**call updated**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**boot**\n\n**call updated**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -5191,12 +5217,12 @@
       "status": "added",
       "tooltip": "src/open.ts:20"
      },
-     "description": "in createOpen  ·  ●",
+     "description": "in createOpen  ·  reaches 1 caller",
      "icon": "symbol-method",
      "label": "uriFor",
      "resourceUri": "uri:file:///repo/src/open.ts#200",
      "tooltip": {
-      "markdown": "● **createOpen.uriFor**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/open.ts:20`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**createOpen.uriFor**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/open.ts:20`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -5226,12 +5252,13 @@
       "status": "added",
       "tooltip": "src/open.ts"
      },
-     "description": "△",
+     "description": "changed, but not at the call  ·  open.ts",
      "icon": "symbol-function",
+     "iconColor": "list.warningForeground",
      "label": "createOpen",
      "resourceUri": "uri:file:///repo/src/open.ts#100",
      "tooltip": {
-      "markdown": "△ **createOpen**\n\n**changed, but not at the call**\n\n`src/open.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
+      "markdown": "**createOpen**\n\n**changed, but not at the call**\n\n`src/open.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
      }
     }
    },
@@ -5266,12 +5293,12 @@
       "status": "added",
       "tooltip": "src/open.ts:60"
      },
-     "description": "∅",
+     "description": "no callers",
      "icon": "symbol-function",
      "label": "sameUri",
      "resourceUri": "uri:file:///repo/src/open.ts#600",
      "tooltip": {
-      "markdown": "∅ **sameUri**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n`src/open.ts:60`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**sameUri**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n`src/open.ts:60`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -5340,12 +5367,12 @@
       "status": "modified",
       "tooltip": "src/ready.ts:3"
      },
-     "description": "●",
+     "description": "reaches 1 caller",
      "icon": "symbol-variable",
      "label": "READY",
      "resourceUri": "uri:file:///repo/src/ready.ts#30",
      "tooltip": {
-      "markdown": "● **READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -5375,12 +5402,12 @@
       "status": null,
       "tooltip": "src/boot.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  boot.ts",
      "icon": "symbol-function",
      "label": "boot",
      "resourceUri": "uri:file:///repo/src/boot.ts#1",
      "tooltip": {
-      "markdown": "○ **boot**\n\n**not changed**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**boot**\n\n**not changed**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -5460,12 +5487,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "●",
+     "description": "reaches 1 caller",
      "icon": "symbol-function",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
      "tooltip": {
-      "markdown": "● **useB**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/use.ts:8`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**useB**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/use.ts:8`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -5495,12 +5522,12 @@
       "status": null,
       "tooltip": "src/app.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  app.ts",
      "icon": "symbol-function",
      "label": "main",
      "resourceUri": "uri:file:///repo/src/app.ts#7",
      "tooltip": {
-      "markdown": "○ **main**\n\n**not changed**\n\n`src/app.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**main**\n\n**not changed**\n\n`src/app.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -5530,12 +5557,12 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "↑",
+     "description": "already shown above",
      "icon": "issue-reopened",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
      "tooltip": {
-      "markdown": "↑ **useB**\n\n_already shown higher up in this tree_\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
+      "markdown": "**useB**\n\n_already shown higher up in this tree_\n\n`src/use.ts`\n\n1 call site to the changed symbol\n\n---\n\nThis caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating."
      }
     }
    },
@@ -5724,7 +5751,7 @@
       "status": "modified",
       "tooltip": "src/service.ts"
      },
-     "description": "⛔ 1  ·  0/2  ·  src",
+     "description": "1 needs attention  ·  0/2  ·  src",
      "icon": "__file__",
      "label": "service.ts",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha",
@@ -5750,12 +5777,13 @@
       "status": "modified",
       "tooltip": "src/service.ts:12"
      },
-     "description": "⛔  1 of 2 callers not updated",
+     "description": "1 of 2 callers not updated",
      "icon": "symbol-method",
+     "iconColor": "list.errorForeground",
      "label": "run",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#120",
      "tooltip": {
-      "markdown": "⛔ **Service.run**\n\nThe parameter, and 1 of 2 callers was not changed on the call line. Check that it still works.\n\n**param**\n\n`src/service.ts:12`  ·  component `(root)`\n\n---\n\n**1 call site(s) not updated:**\n- Caller.go\n\n_score 1_"
+      "markdown": "**Service.run**\n\nThe parameter, and 1 of 2 callers was not changed on the call line. Check that it still works.\n\n**param**\n\n`src/service.ts:12`  ·  component `(root)`\n\n---\n\n**1 call site(s) not updated:**\n- Caller.go\n\n_score 1_"
      }
     }
    },
@@ -5790,12 +5818,12 @@
       "status": "added",
       "tooltip": "src/caller.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  2 callers  ·  2 call sites",
      "icon": "__file__",
      "label": "caller.ts",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "**src/caller.ts**\n\n2 functions in this file call the change, across 2 call sites:\n\n- ○ Caller.go\n- ✓ Caller.stop"
+      "markdown": "**src/caller.ts**\n\n2 functions in this file call the change, across 2 call sites:\n\n- Caller.go — not changed\n- Caller.stop — call updated"
      }
     }
    },
@@ -5815,12 +5843,12 @@
       "status": "added",
       "tooltip": "src/caller.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  caller.ts",
      "icon": "symbol-method",
      "label": "Caller.go",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha#40",
      "tooltip": {
-      "markdown": "○ **Caller.go**\n\n**not changed**\n\n`src/caller.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**Caller.go**\n\n**not changed**\n\n`src/caller.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -5850,12 +5878,12 @@
       "status": null,
       "tooltip": "src/main.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  main.ts",
      "icon": "symbol-function",
      "label": "main",
      "resourceUri": "uri:impacttree-pr:///src/main.ts?side=head&revision=7%3Aheadsha%3Abasesha#3",
      "tooltip": {
-      "markdown": "○ **main**\n\n**not changed**\n\n`src/main.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**main**\n\n**not changed**\n\n`src/main.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -5897,12 +5925,12 @@
       "status": "added",
       "tooltip": "src/caller.ts"
      },
-     "description": "✓",
+     "description": "call updated  ·  caller.ts",
      "icon": "symbol-method",
      "label": "Caller.stop",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha#60",
      "tooltip": {
-      "markdown": "✓ **Caller.stop**\n\n**call updated**\n\n`src/caller.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**Caller.stop**\n\n**call updated**\n\n`src/caller.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -5944,12 +5972,12 @@
       "status": "modified",
       "tooltip": "src/service.ts:30"
      },
-     "description": "●",
+     "description": "reaches 1 caller",
      "icon": "symbol-method",
      "label": "idle",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#300",
      "tooltip": {
-      "markdown": "● **Service.idle**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/service.ts:30`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**Service.idle**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/service.ts:30`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -5979,12 +6007,12 @@
       "status": "added",
       "tooltip": "src/caller.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  caller.ts",
      "icon": "symbol-method",
      "label": "Caller.go",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha#40",
      "tooltip": {
-      "markdown": "○ **Caller.go**\n\n**not changed**\n\n`src/caller.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**Caller.go**\n\n**not changed**\n\n`src/caller.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -6014,12 +6042,12 @@
       "status": null,
       "tooltip": "src/main.ts"
      },
-     "description": "○",
+     "description": "not changed  ·  main.ts",
      "icon": "symbol-function",
      "label": "main",
      "resourceUri": "uri:impacttree-pr:///src/main.ts?side=head&revision=7%3Aheadsha%3Abasesha#3",
      "tooltip": {
-      "markdown": "○ **main**\n\n**not changed**\n\n`src/main.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**main**\n\n**not changed**\n\n`src/main.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -6081,7 +6109,7 @@
       "status": "deleted",
       "tooltip": "src/gone.ts"
      },
-     "description": "− 1  ·  0/1  ·  src",
+     "description": "1 needs attention  ·  0/1  ·  src",
      "icon": "__file__",
      "label": "gone.ts",
      "resourceUri": "uri:impacttree-pr:///src/gone.ts?side=head&revision=7%3Aheadsha%3Abasesha",
@@ -6107,12 +6135,13 @@
       "status": "deleted",
       "tooltip": "legacy deleted"
      },
-     "description": "−  deleted",
+     "description": "deleted",
      "icon": "trash",
+     "iconColor": "list.warningForeground",
      "label": "legacy",
      "resourceUri": "uri:impacttree-pr:///src/gone.ts?side=head&revision=7%3Aheadsha%3Abasesha#1",
      "tooltip": {
-      "markdown": "✕ **legacy**\n\nThis symbol was removed. Its former callers were not searched, so check that nothing still uses it, including dynamic users.\n\n`src/gone.ts`"
+      "markdown": "**legacy**\n\nThis symbol was removed. Its former callers were not searched, so check that nothing still uses it, including dynamic users.\n\n`src/gone.ts`"
      }
     }
    },
@@ -6168,12 +6197,12 @@
       "status": "added",
       "tooltip": "src/caller.ts"
      },
-     "description": "∅",
+     "description": "no callers",
      "icon": "symbol-method",
      "label": "stop",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha#60",
      "tooltip": {
-      "markdown": "∅ **Caller.stop**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n`src/caller.ts:6`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**Caller.stop**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n`src/caller.ts:6`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -6337,7 +6366,7 @@
       "status": "modified",
       "tooltip": "src/service.ts"
      },
-     "description": "⛔ 1  ·  0/2  ·  src",
+     "description": "1 needs attention  ·  0/2  ·  src",
      "icon": "__file__",
      "label": "service.ts",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha",
@@ -6362,12 +6391,13 @@
       "status": "modified",
       "tooltip": "src/service.ts:12"
      },
-     "description": "⛔  1 of 2 callers not updated  ·  param",
+     "description": "1 of 2 callers not updated  ·  param",
      "icon": "symbol-method",
+     "iconColor": "list.errorForeground",
      "label": "run",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#120",
      "tooltip": {
-      "markdown": "⛔ **Service.run**\n\nThe parameter, and 1 of 2 callers was not changed on the call line. Check that it still works.\n\n**param**\n\n`src/service.ts:12`  ·  component `(root)`\n\n---\n\n**1 call site(s) not updated:**\n- Caller.go\n\n_score 1_"
+      "markdown": "**Service.run**\n\nThe parameter, and 1 of 2 callers was not changed on the call line. Check that it still works.\n\n**param**\n\n`src/service.ts:12`  ·  component `(root)`\n\n---\n\n**1 call site(s) not updated:**\n- Caller.go\n\n_score 1_"
      }
     }
    },
@@ -6402,12 +6432,12 @@
       "status": "added",
       "tooltip": "src/caller.ts"
      },
-     "description": "○  2 callers  ·  2 call sites",
+     "description": "not changed  ·  2 callers  ·  2 call sites",
      "icon": "__file__",
      "label": "caller.ts",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "**src/caller.ts**\n\n2 functions in this file call the change, across 2 call sites:\n\n- ○ Caller.go\n- ✓ Caller.stop"
+      "markdown": "**src/caller.ts**\n\n2 functions in this file call the change, across 2 call sites:\n\n- Caller.go — not changed\n- Caller.stop — call updated"
      }
     }
    },
@@ -6427,12 +6457,12 @@
       "status": "added",
       "tooltip": "src/caller.ts"
      },
-     "description": "○  not changed  ·  caller.ts",
+     "description": "not changed  ·  caller.ts",
      "icon": "symbol-method",
      "label": "Caller.go",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha#40",
      "tooltip": {
-      "markdown": "○ **Caller.go**\n\n**not changed**\n\n`src/caller.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**Caller.go**\n\n**not changed**\n\n`src/caller.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -6462,12 +6492,12 @@
       "status": null,
       "tooltip": "src/main.ts"
      },
-     "description": "○  not changed  ·  main.ts",
+     "description": "not changed  ·  main.ts",
      "icon": "symbol-function",
      "label": "main",
      "resourceUri": "uri:impacttree-pr:///src/main.ts?side=head&revision=7%3Aheadsha%3Abasesha#3",
      "tooltip": {
-      "markdown": "○ **main**\n\n**not changed**\n\n`src/main.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**main**\n\n**not changed**\n\n`src/main.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -6509,12 +6539,12 @@
       "status": "added",
       "tooltip": "src/caller.ts"
      },
-     "description": "✓  call updated  ·  caller.ts",
+     "description": "call updated  ·  caller.ts",
      "icon": "symbol-method",
      "label": "Caller.stop",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha#60",
      "tooltip": {
-      "markdown": "✓ **Caller.stop**\n\n**call updated**\n\n`src/caller.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**Caller.stop**\n\n**call updated**\n\n`src/caller.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -6555,12 +6585,12 @@
       "status": "modified",
       "tooltip": "src/service.ts:30"
      },
-     "description": "●  reaches 1 caller",
+     "description": "reaches 1 caller",
      "icon": "symbol-method",
      "label": "idle",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#300",
      "tooltip": {
-      "markdown": "● **Service.idle**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/service.ts:30`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**Service.idle**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/service.ts:30`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -6590,12 +6620,12 @@
       "status": "added",
       "tooltip": "src/caller.ts"
      },
-     "description": "○  not changed  ·  caller.ts",
+     "description": "not changed  ·  caller.ts",
      "icon": "symbol-method",
      "label": "Caller.go",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha#40",
      "tooltip": {
-      "markdown": "○ **Caller.go**\n\n**not changed**\n\n`src/caller.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**Caller.go**\n\n**not changed**\n\n`src/caller.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -6625,12 +6655,12 @@
       "status": null,
       "tooltip": "src/main.ts"
      },
-     "description": "○  not changed  ·  main.ts",
+     "description": "not changed  ·  main.ts",
      "icon": "symbol-function",
      "label": "main",
      "resourceUri": "uri:impacttree-pr:///src/main.ts?side=head&revision=7%3Aheadsha%3Abasesha#3",
      "tooltip": {
-      "markdown": "○ **main**\n\n**not changed**\n\n`src/main.ts`\n\n1 call site to the changed symbol"
+      "markdown": "**main**\n\n**not changed**\n\n`src/main.ts`\n\n1 call site to the changed symbol"
      }
     }
    },
@@ -6691,7 +6721,7 @@
       "status": "deleted",
       "tooltip": "src/gone.ts"
      },
-     "description": "− 1  ·  0/1  ·  src",
+     "description": "1 needs attention  ·  0/1  ·  src",
      "icon": "__file__",
      "label": "gone.ts",
      "resourceUri": "uri:impacttree-pr:///src/gone.ts?side=head&revision=7%3Aheadsha%3Abasesha",
@@ -6716,12 +6746,13 @@
       "status": "deleted",
       "tooltip": "legacy deleted"
      },
-     "description": "−  deleted",
+     "description": "deleted",
      "icon": "trash",
+     "iconColor": "list.warningForeground",
      "label": "legacy",
      "resourceUri": "uri:impacttree-pr:///src/gone.ts?side=head&revision=7%3Aheadsha%3Abasesha#1",
      "tooltip": {
-      "markdown": "✕ **legacy**\n\nThis symbol was removed. Its former callers were not searched, so check that nothing still uses it, including dynamic users.\n\n`src/gone.ts`"
+      "markdown": "**legacy**\n\nThis symbol was removed. Its former callers were not searched, so check that nothing still uses it, including dynamic users.\n\n`src/gone.ts`"
      }
     }
    },
@@ -6775,12 +6806,12 @@
       "status": "added",
       "tooltip": "src/caller.ts"
      },
-     "description": "∅  no callers",
+     "description": "no callers",
      "icon": "symbol-method",
      "label": "stop",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha#60",
      "tooltip": {
-      "markdown": "∅ **Caller.stop**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n`src/caller.ts:6`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**Caller.stop**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n`src/caller.ts:6`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
