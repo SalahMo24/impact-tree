@@ -16,16 +16,24 @@ and nothing about *how the changes relate* — or which callers you forgot to up
 ## What it shows
 
 ```
- [TS]  lockRow                            ⛔                     M
- [TS]    ├ saveSnapshot                   ✓                      M
- [TS]    ├ appendEntry                    ○
- [🧪]    └ describes lockRow               🧪
- [MD]  design-notes.md                                            M
+ [TS]  lockRow          2 of 3 callers not updated        M    <- red icon
+ [TS]    ├ saveSnapshot   call updated                      M
+ [TS]    ├ appendEntry    not changed
+ [TS]    └ renameRow      changed, but not at the call           <- amber icon
+ [🧪]    └ lockRow.test   test
+ [MD]  design-notes.md                                        M
 ```
 
-- **Icon** — file type, from your icon theme
+- **Icon** — file type, from your icon theme; on a change row its colour is the state:
+  **red** = Callers not updated (a signature or throw change; review these first) ·
+  **amber** = Check by hand (callers unknown, a deleted symbol, or a caller changed but
+  not on the call line) · **no colour** = Fine (callers updated, a body-only change, or
+  nothing calls it) · beaker = a test that reaches this code · reopened-issue = a cycle,
+  already shown higher up
 - **Badge** — git status against the **review base** (not `HEAD`, so it stays correct on a PR)
-- **Glyph** — `⛔` call sites not updated · `✓` updated · `○` untouched · `△` changed but not at the call · `🧪` test
+- **Words** — the exact state next to the name: `2 of 3 callers not updated`, `callers unknown`,
+  `all callers updated`, `reaches 3 callers`, `no callers`, `deleted`; on a caller,
+  `call updated`, `changed, but not at the call` or `not changed`
 - **Hover** — signatures before/after, added `throw`s, and the un-updated callers by name
 
 Findings are ranked by **damage × invisibility to the compiler**: a new `throw` path or a

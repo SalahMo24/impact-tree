@@ -172,7 +172,7 @@ test('a file row reads attention, progress, then the last folder segment; the pa
     fileStatus: { 'src/deep/a.ts': 'modified', 'root.ts': 'modified' },
   }));
   const a = await fileAt('src/deep/a.ts');
-  assert.equal(item(a).description, '⛔ 1  ·  0/2  ·  deep');
+  assert.equal(item(a).description, '1 needs attention  ·  0/2  ·  deep');
   assert.match(item(a).tooltip.value, /src\/\n└─ deep\/\n   └─ a\.ts/, 'the path, drawn as a folder tree');
   assert.equal(item(await fileAt('root.ts')).description, '0/1', 'no folder at the repo root');
 });
@@ -247,19 +247,19 @@ test('a deleted row follows the same container rule', async () => {
   assert.doesNotMatch((await descriptions(single, 'src/b.js')).old, /\bin\b/);
 });
 
-// ---- 5. words only where something needs doing ------------------------------------------
-test('in hover mode only a row that needs attention shows the verdict words', async () => {
+// ---- 5. the state in words, in both detail modes ------------------------------------------
+test('in either detail mode a row says its state in words; inline adds the change kinds', async () => {
   const result = resultOf({
     allChanged: [stale('src/a.ts', 'bad', 10), change('src/a.ts', 'quiet', 30)], fileStatus: { 'src/a.ts': 'modified' },
     deleted: [{ label: 'gone', key: 'gone', relPath: 'src/a.ts', file: '/r/src/a.ts', namePos: 400, startLine: 40 }],
   });
   const text = await descriptions(viewOf(result), 'src/a.ts');
-  assert.match(text.bad, /^⛔  1 of 1 caller not updated/);
-  assert.match(text.gone, /^−  deleted/, 'a deleted symbol needs attention too');
-  assert.equal(text.quiet, '∅', 'a row that needs nothing shows its glyph alone');
+  assert.match(text.bad, /^1 of 1 caller not updated/);
+  assert.match(text.gone, /^deleted/);
+  assert.equal(text.quiet, 'no callers');
   const inline = await descriptions(viewOf(result, { state: { rowDetail: 'inline' } }), 'src/a.ts');
-  assert.match(inline.quiet, /^∅  no callers/, 'inline is unchanged');
-  assert.match(inline.bad, /^⛔  1 of 1 caller not updated/);
+  assert.match(inline.quiet, /^no callers/);
+  assert.match(inline.bad, /^1 of 1 caller not updated/);
 });
 
 // ---- 6. the one-line summary -------------------------------------------------------------
@@ -344,4 +344,101 @@ test('the spacer is not a counting row, and counts, line lookup and next-unrevie
   }
   assert.deepEqual(seen, ['finding', 'finding', 'finding']);
   assert.equal(provider.nextUnreviewed(null), null, 'nothing is left');
+});
+
+// ---- 7. fewer states (P2): three colours in the tree, the exact state in words ------------
+const { stateNameOf, classifyChangeVerdict } = require('../src/tree-row-models');
+const STATE_GLYPHS = /[⛔✓●∅△○?−≡🧪↑]/u;
+const ERROR = 'list.errorForeground';
+const WARNING = 'list.warningForeground';
+const renderRow = (iconMode, row, rowDetail = 'hover') => renderTreeItem(vscode, row, { rowDetail, iconMode, checkedOf: () => null });
+const findingRow = (label, f) => ({ type: 'finding', label, name: label, finding: change('src/a.ts', label, 1, f), file: '/r/src/a.ts', pos: 1 });
+const callerRow = (callState, extra = {}) => ({ type: 'caller', label: 'user', relPath: 'src/u.ts', file: '/r/src/u.ts', pos: 1, sites: 1,
+  test: false, cycle: false, changed: false, callState, callSiteUpdates: NO_SITES, ...extra });
+const updatedCaller = { ...callerOf('src/u.ts', 'u', 3), callState: 'updated-at-call' };
+
+// one representative row per verdict level: [name, row, icon colour, description start, icon in file mode]
+const LEVEL_ROWS = [
+  ['level 0', findingRow('l0', { kinds: [SIG], callerState: 'resolved', callers: [callerOf('src/u.ts', 'u', 3)], staleCallers: 1 }), ERROR, '1 of 1 caller not updated', 'error'],
+  ['level 1', findingRow('l1', { kinds: [SIG], callerState: 'unknown' }), WARNING, 'callers unknown', 'warning'],
+  ['level 1, DI', findingRow('l1di', { kinds: [SIG], callerState: 'di' }), WARNING, 'DI-constructed', 'warning'],
+  ['level 2', findingRow('l2', { kinds: [SIG], callerState: 'resolved', callers: [updatedCaller] }), undefined, 'all callers updated', null],
+  ['level 3', findingRow('l3', { callerState: 'resolved', callers: [callerOf('src/u.ts', 'u', 3)] }), undefined, 'reaches 1 caller', null],
+  ['level 4', findingRow('l4', {}), undefined, 'no callers', null],
+];
+
+test('each verdict level colours the icon red, amber or not at all, and says its state in words', () => {
+  for (const [name, row, color, words, fileIcon] of LEVEL_ROWS) {
+    for (const rowDetail of ['hover', 'inline']) {
+      const sym = renderRow('symbol', row, rowDetail);
+      assert.equal(sym.iconPath.color && sym.iconPath.color.id, color, `${name}: symbol icon colour`);
+      assert.match(sym.iconPath.id, /^symbol-/, `${name}: the symbol-kind icon is kept`);
+      assert.ok(sym.description.startsWith(words), `${name} (${rowDetail}): ${sym.description}`);
+      assert.doesNotMatch(sym.description, STATE_GLYPHS, `${name}: no glyph token in the description`);
+      assert.doesNotMatch(sym.tooltip.value.split('\n')[0], STATE_GLYPHS, `${name}: none in the tooltip header`);
+    }
+    const file = renderRow('file', row);
+    if (fileIcon) {
+      assert.deepEqual([file.iconPath.id, file.iconPath.color.id], [fileIcon, color], `${name}: file mode swaps in a coloured icon`);
+    } else assert.equal(file.iconPath, vscode.ThemeIcon.File, `${name}: a fine row keeps ThemeIcon.File`);
+  }
+});
+
+test('a level-1 state is never uncoloured, in either icon mode', () => {
+  for (const state of ['unknown', 'di']) {
+    const row = findingRow('u', { kinds: [SIG], callerState: state });
+    for (const mode of ['symbol', 'file']) assert.equal(renderRow(mode, row).iconPath.color.id, WARNING, `${state} in ${mode} mode`);
+  }
+  const incomplete = findingRow('p', { kinds: [SIG], callerState: 'resolved', callersComplete: false, callers: [updatedCaller] });
+  assert.equal(renderRow('symbol', incomplete).iconPath.color.id, WARNING, 'updated callers with a search that did not finish');
+  // A body-only change keeps level 3 for ordering, but an unknown must not read as fine.
+  for (const state of ['unknown', 'di']) {
+    const body = findingRow('b', { callerState: state });
+    for (const mode of ['symbol', 'file']) assert.equal(renderRow(mode, body).iconPath.color.id, WARNING, `body-only, ${state} in ${mode} mode`);
+    assert.equal(stateNameOf(body, classifyChangeVerdict(body.finding)), 'Callers unknown', `body-only, ${state}: Details heading`);
+  }
+});
+
+test('a deleted row keeps the trash icon in amber; an outside row is uncoloured', () => {
+  const deleted = { type: 'deleted', label: 'Store.old', name: 'old', key: 'k', relPath: 'src/a.ts', file: '/r/src/a.ts' };
+  for (const mode of ['symbol', 'file']) {
+    const item = renderRow(mode, deleted);
+    assert.deepEqual([item.iconPath.id, item.iconPath.color.id, item.description], ['trash', WARNING, 'deleted'], mode);
+    assert.doesNotMatch(item.tooltip.value.split('\n')[0], STATE_GLYPHS);
+  }
+  const outside = renderRow('symbol', { type: 'outside', label: 'Outside functions', relPath: 'src/a.ts', file: '/r/src/a.ts', ranges: [[1, 4]], desc: 'lines 1–4' });
+  assert.equal(outside.iconPath.color, undefined);
+  assert.equal(outside.description, 'lines 1–4');
+});
+
+test('caller rows say the call state in words; only a caller changed elsewhere is amber', () => {
+  const cases = [['updated-at-call', 'call updated', undefined], ['unchanged', 'not changed', undefined], ['changed-elsewhere', 'changed, but not at the call', WARNING]];
+  for (const [callState, words, color] of cases) {
+    for (const mode of ['symbol', 'file']) {
+      const item = renderRow(mode, callerRow(callState));
+      assert.equal(item.description, `${words}  ·  u.ts`, `${callState} (${mode})`);
+      assert.equal(item.iconPath.color && item.iconPath.color.id, color, `${callState} (${mode}) colour`);
+      assert.doesNotMatch(item.tooltip.value.split('\n')[0], STATE_GLYPHS);
+    }
+    const group = renderRow('symbol', { type: 'callerFile', label: 'u.ts', relPath: 'src/u.ts', callState, sites: 1, callers: [callerRow(callState)] });
+    assert.ok(group.description.startsWith(words), group.description);
+    assert.equal(group.iconPath.color && group.iconPath.color.id, color, `${callState}: caller-file colour`);
+    assert.doesNotMatch(group.description + group.tooltip.value, STATE_GLYPHS);
+  }
+  const testCaller = renderRow('symbol', callerRow('unchanged', { test: true }));
+  assert.deepEqual([testCaller.iconPath.id, testCaller.description.split('  ·  ')[0]], ['beaker', 'test']);
+  const cycle = renderRow('symbol', callerRow('changed-elsewhere', { cycle: true }));
+  assert.deepEqual([cycle.iconPath.id, cycle.description, cycle.iconPath.color], ['issue-reopened', 'already shown above', undefined]);
+});
+
+test('the legend explains the colours without glyph tokens, and the state names are frozen and distinct', () => {
+  const { LEGEND, STATE_NAMES } = require('../src/tree-row-models');
+  const names = [...STATE_NAMES.levels, STATE_NAMES.deleted, STATE_NAMES.outside];
+  const legendText = LEGEND.map(([, label, desc]) => `${label} ${desc}`).join('\n');
+  assert.match(legendText, /Red icon — Callers not updated/);
+  assert.match(legendText, /Amber icon/);
+  assert.match(legendText, /No colour — Fine/);
+  assert.doesNotMatch(legendText, STATE_GLYPHS);
+  assert.ok(Object.isFrozen(STATE_NAMES) && Object.isFrozen(STATE_NAMES.levels));
+  assert.equal(new Set(names).size, names.length, 'no two states share a name');
 });

@@ -62,7 +62,7 @@ test('in both detail modes the row marks "no test" and "tests ?", and a covered 
     const rows = await rowsOf(resultOf([
       change('failedSearch', 'unknown', 'a caller query failed: boom'), change('none', 'uncovered'), change('covered', 'covered'),
     ]), mode);
-    const verdict = mode === 'hover' ? '∅' : '∅  no callers';
+    const verdict = 'no callers';
     assert.equal(rows.none.item.description, `${verdict}  ·  no test`, mode);
     assert.equal(rows.failedSearch.item.description, `${verdict}  ·  tests ?`, `${mode}: unknown is not the same as covered`);
     assert.equal(rows.covered.item.description, verdict, mode);
@@ -73,9 +73,9 @@ test('in both detail modes the row marks "no test" and "tests ?", and a covered 
 
 test('no test marker before the walk runs, or in a PR preview', async () => {
   const deferred = await rowsOf(resultOf([change('a', 'not-computed')]), 'hover');
-  assert.equal(deferred.a.item.description, '∅');
+  assert.equal(deferred.a.item.description, 'no callers');
   const preview = await rowsOf(resultOf([change('b', 'unknown', 'x')], { tierA: true, testReachComputed: false }), 'hover');
-  assert.equal(preview.b.item.description, '∅');
+  assert.equal(preview.b.item.description, 'no callers');
   assert.equal(preview.b.tests.label, 'Tests are not searched in a PR preview');
   assert.equal(preview.b.testsItem.command, undefined);
 });

@@ -7,14 +7,15 @@
 // Layout rule: a row's description is short and in a fixed order, so a column of rows
 // scans. A file row says what needs attention, then its progress, then its last folder
 // segment; a change row says where it is declared (only when that tells it apart from
-// its siblings), then its verdict, then "no test". A sidebar truncates from the right, so
+// its siblings), then its state in words, then "no test". The state is also the icon's
+// colour: red or amber, none when fine (see LEVEL_TONES). A sidebar truncates from the right, so
 // the least important part comes last and the full path is in the tooltip, drawn as a
 // folder tree (path-tree.js). The review
 // threads of a pull request add `💬 N` (unresolved) and `✎ N` (your pending comments):
-// after the attention glyph on a file row, after the verdict on a change row.
+// after the attention count on a file row, after the state on a change row.
 const path = require('path');
 const {
-  CALL_STATE, classifyChangeVerdict, classifyDeletedVerdict, classifyWorstRowVerdict,
+  CALL_STATE, LEVEL_TONES, CHANGED_ELSEWHERE_TONE, toneOf, classifyChangeVerdict, classifyDeletedVerdict,
 } = require('./tree-row-models');
 const { needsAttention } = require('./review-tree-model');
 const { describeThreadCounts } = require('./review-threads');
@@ -23,8 +24,8 @@ const { pathTreeMarkdown } = require('./path-tree');
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 /**
  * What a row's rendering depends on besides the row.
- * - `rowDetail`: 'hover' keeps a change row to its name and one verdict glyph, with the
- *   verdict's words and the change kinds in the tooltip; 'inline' shows them on the row.
+ * - `rowDetail`: 'hover' keeps a change row to its name and its state in words, with the
+ *   change kinds in the tooltip; 'inline' shows the kinds on the row too.
  * - `iconMode`: 'file' for the file-type glyph, 'symbol' for a symbol-kind icon on change rows;
  *   file rows always show the file-type glyph.
  * - `checkedOf(row)`: whether the row's review checkbox is ticked, or null for no checkbox.
@@ -87,21 +88,22 @@ function symbolIcon(label, sym) {
 }
 
 /**
- * Helpers bound to one render: the view's detail and icon modes.
+ * Helpers bound to one render: the view's icon mode.
  * @param {any} vscode
  * @param {TreeView} view
  */
 function renderHelpers(vscode, view) {
   return {
-    // 'hover' keeps the single state glyph in the row so the column is still scannable;
-    // `words` is what a row that needs doing shows in its place.
-    rowDesc: (/** @type {string} */ token, /** @type {string} */ full, /** @type {string} */ words = token) => (
-      view.rowDetail === 'inline' ? full : words),
-    // VS Code infers a folder glyph for any expandable row with a resourceUri;
-    // ThemeIcon.File overrides that and resolves the row against the file-icon theme.
-    rowIcon: (/** @type {string} */ label, /** @type {any} */ sym) => (view.iconMode === 'symbol'
-      ? new vscode.ThemeIcon(symbolIcon(label, sym))
-      : vscode.ThemeIcon.File),
+    // The icon carries the colour; the words carry the state. In 'symbol' mode the
+    // symbol-kind icon is kept and tinted. ThemeIcon.File cannot be tinted, so in 'file'
+    // mode a red or amber row swaps it for an `error` / `warning` icon of that colour, and
+    // a fine row keeps ThemeIcon.File (which also stops VS Code inferring a folder glyph
+    // for an expandable row with a resourceUri).
+    rowIcon: (/** @type {string} */ label, /** @type {any} */ sym, /** @type {import('./tree-row-models').IconTone|null} */ tone = null) => {
+      const color = tone ? new vscode.ThemeColor(tone.color) : undefined;
+      if (view.iconMode === 'symbol') return new vscode.ThemeIcon(symbolIcon(label, sym), color);
+      return tone ? new vscode.ThemeIcon(tone.fileIcon, color) : vscode.ThemeIcon.File;
+    },
   };
 }
 
@@ -119,12 +121,13 @@ function applyCheckbox(vscode, item, row, view) {
 }
 
 /**
- * The description of a change or deleted row: where it is declared, its verdict as
- * `impactTree.rowDetail` asks, and what the test walk established. In either detail mode
- * a walk that found no test reads "no test", and one that did not finish "tests ?", so
- * a lack of evidence never looks like a covered change; the reason is in the tooltip.
+ * The description of a change or deleted row: where it is declared, its state in words
+ * (with the change kinds when `impactTree.rowDetail` is inline), and what the test walk
+ * established. In either detail mode a walk that found no test reads "no test", and one
+ * that did not finish "tests ?", so a lack of evidence never looks like a covered change;
+ * the reason is in the tooltip.
  * @param {string|null|undefined} container
- * @param {string} verdict The glyph, or the glyph and words.
+ * @param {string} verdict The state in words, plus what the detail mode adds.
  * @param {TreeRow|null} change A change row, for its `scopeNote` and `reachReason`; null for a deleted row.
  * @param {string[]} [threads] The row's thread counts, shown right after the verdict.
  * @returns {string}
@@ -170,7 +173,7 @@ function renderReviewFileItem(vscode, n, view) {
   const attention = left.filter(needsAttention);
   const viewed = viewedNote(view, n.relPath, left.length === 0);
   item.description = [
-    attention.length ? `${classifyWorstRowVerdict(attention).token} ${attention.length}` : null,
+    attention.length ? `${attention.length} need${attention.length === 1 ? 's' : ''} attention` : null,
     ...threadParts(n, view),
     `${rows.length - left.length}/${rows.length}`,
     viewed && viewed.text,
@@ -240,10 +243,11 @@ function renderPlainItem(vscode, item, n, view) {
       item.collapsibleState = vscode.TreeItemCollapsibleState.None;
       // VS Code cannot strike a tree label through, so the icon says it is gone.
       item.label = n.name;
-      const words = `${st.token}  ${st.text}`;
-      item.description = describeChangeRow(containerToShow(n), renderHelpers(vscode, view).rowDesc(st.token, words, needsAttention(n) ? words : st.token), null);
-      item.iconPath = new vscode.ThemeIcon('trash');  // semantics beat decoration here
-      item.tooltip = new vscode.MarkdownString([`✕ **${n.label}**`, '', st.sentence, '', `\`${n.relPath}\``].join('\n'));
+      item.description = describeChangeRow(containerToShow(n), st.text, null);
+      // Semantics beat decoration here: it keeps `trash` whatever iconMode says, in the
+      // level's amber (an unsearched deleted symbol is never "fine").
+      item.iconPath = new vscode.ThemeIcon('trash', new vscode.ThemeColor(/** @type {import('./tree-row-models').IconTone} */ (LEVEL_TONES[st.level]).color));
+      item.tooltip = new vscode.MarkdownString([`**${n.label}**`, '', st.sentence, '', `\`${n.relPath}\``].join('\n'));
       item.contextValue = 'deleted';
       applyCheckbox(vscode, item, n, view);
       item.command = { command: 'impactTree.openFile', title: 'Open diff', arguments: [n] };
@@ -278,7 +282,7 @@ function renderPlainItem(vscode, item, n, view) {
 function buildChangeTooltipLines(n, st, kinds) {
   const f = n.finding;
   return [
-    `${st.token} **${f.label}**`,
+    `**${f.label}**`,
     '',
     st.sentence,
     ...(n.reachReason ? ['', `_test reachability unknown: ${n.reachReason}_`] : []),
@@ -310,17 +314,16 @@ function buildChangeTooltipLines(n, st, kinds) {
  * @param {TreeView} view
  */
 function renderChangeItem(vscode, item, n, view) {
-  const { rowDesc, rowIcon } = renderHelpers(vscode, view);
+  const { rowIcon } = renderHelpers(vscode, view);
   const f = n.finding;
   const st = classifyChangeVerdict(f);
   const kinds = f.kinds.filter((/** @type {any} */ k) => k.id !== 'body').map((/** @type {any} */ k) => k.short || k.label);
   const qual = n.ambiguous ? `  ·  ${f.component}` : '';
   item.label = n.ambiguous ? `${n.name}  ‹${f.component}›` : n.name;
   item.description = describeChangeRow(containerToShow(n),
-    rowDesc(st.token, `${st.token}  ${st.text}${qual}${kinds.length ? '  ·  ' + kinds.join(', ') : ''}`,
-      needsAttention(n) ? `${st.token}  ${st.text}` : st.token),
+    view.rowDetail === 'inline' ? `${st.text}${qual}${kinds.length ? '  ·  ' + kinds.join(', ') : ''}` : st.text,
     n, threadParts(n, view));
-  item.iconPath = rowIcon(f.label, f);
+  item.iconPath = rowIcon(f.label, f, toneOf(st));
   item.tooltip = new vscode.MarkdownString(buildChangeTooltipLines(n, st, kinds).join('\n'));
   item.contextValue = 'finding';
   applyCheckbox(vscode, item, n, view);
@@ -334,20 +337,21 @@ function renderChangeItem(vscode, item, n, view) {
  * @param {any} vscode
  * @param {any} item The row's item, already constructed.
  * @param {TreeRow} n
- * @param {TreeView} view
  */
-function renderCallerFileItem(vscode, item, n, view) {
-  const { rowDesc } = renderHelpers(vscode, view);
+function renderCallerFileItem(vscode, item, n) {
   const cs = CALL_STATE[n.callState] || CALL_STATE.unchanged;
-  const tok = n.test ? '🧪' : cs.token;
+  const state = n.test ? 'test' : cs.text;
   const fns = n.callers.length;
-  item.description = rowDesc(tok,
-    `${tok}  ${fns} caller${fns === 1 ? '' : 's'}  ·  ${n.sites} call site${n.sites === 1 ? '' : 's'}`);
-  item.iconPath = vscode.ThemeIcon.File;  // a file, whatever iconMode says
+  item.description = [state, `${fns} caller${fns === 1 ? '' : 's'}`, `${n.sites} call site${n.sites === 1 ? '' : 's'}`].join('  ·  ');
+  // A file, whatever iconMode says; ThemeIcon.File cannot be tinted, so the one state that
+  // looks handled and is not trades it for the amber warning icon.
+  item.iconPath = !n.test && n.callState === 'changed-elsewhere' && CHANGED_ELSEWHERE_TONE
+    ? new vscode.ThemeIcon(CHANGED_ELSEWHERE_TONE.fileIcon, new vscode.ThemeColor(CHANGED_ELSEWHERE_TONE.color))
+    : vscode.ThemeIcon.File;
   item.tooltip = new vscode.MarkdownString([
     `**${n.relPath}**`, '',
     `${fns} function${fns === 1 ? '' : 's'} in this file call the change, across ${n.sites} call site${n.sites === 1 ? '' : 's'}:`,
-    '', ...n.callers.slice(0, 12).map((/** @type {TreeRow} */ c) => `- ${(CALL_STATE[c.callState] || CALL_STATE.unchanged).token} ${c.label}`),
+    '', ...n.callers.slice(0, 12).map((/** @type {TreeRow} */ c) => `- ${c.label} — ${c.test ? 'test' : (CALL_STATE[c.callState] || CALL_STATE.unchanged).text}`),
     ...(n.callers.length > 12 ? [`- …and ${n.callers.length - 12} more`] : []),
   ].join('\n'));
   item.contextValue = 'callerFile';
@@ -363,23 +367,22 @@ function renderCallerFileItem(vscode, item, n, view) {
  * @param {TreeView} view
  */
 function renderCallerItem(vscode, item, n, view) {
-  const { rowDesc, rowIcon } = renderHelpers(vscode, view);
+  const { rowIcon } = renderHelpers(vscode, view);
   const cs = CALL_STATE[n.callState] || CALL_STATE.unchanged;
   const base = path.basename(n.relPath || n.file);
-  const tok = n.cycle ? '↑' : n.test ? '🧪' : cs.token;
+  const state = n.cycle ? 'already shown above' : n.test ? 'test' : cs.text;
   // Some calls were edited and others not: the row cannot read as handled, and the count says why.
   const { updated, untouched, unknown } = n.callSiteUpdates;
   const notUpdated = untouched.length + unknown.length;
   const partlyUpdated = updated.length > 0 && notUpdated > 0;
-  item.description = n.cycle ? rowDesc('↑', '↑  already shown above')
-    : rowDesc(tok, `${tok}  ${cs.text}  ·  ${base}${n.sites > 1 ? `  ·  ${n.sites} call sites` : ''}`);
+  item.description = n.cycle ? state : `${state}  ·  ${base}${n.sites > 1 ? `  ·  ${n.sites} call sites` : ''}`;
   item.iconPath = n.cycle ? new vscode.ThemeIcon('issue-reopened')
     : n.test ? new vscode.ThemeIcon('beaker')
-      : rowIcon(n.label, null);
+      : rowIcon(n.label, null, n.callState === 'changed-elsewhere' ? CHANGED_ELSEWHERE_TONE : null);
   item.tooltip = new vscode.MarkdownString([
-    `${tok} **${n.label}**`,
+    `**${n.label}**`,
     '',
-    n.cycle ? '_already shown higher up in this tree_' : n.test ? '🧪 test' : `**${cs.text}**`,
+    n.cycle ? '_already shown higher up in this tree_' : n.test ? 'test' : `**${cs.text}**`,
     '',
     `\`${n.relPath || n.file}\``,
     ...(n.sites ? ['', `${n.sites} call site${n.sites === 1 ? '' : 's'} to the changed symbol`] : []),
@@ -428,7 +431,7 @@ function renderTreeItem(vscode, n, view) {
   const plain = renderPlainItem(vscode, item, n, view);
   if (plain) return plain;
   if (n.type === 'finding') return renderChangeItem(vscode, item, n, view);
-  if (n.type === 'callerFile') return renderCallerFileItem(vscode, item, n, view);
+  if (n.type === 'callerFile') return renderCallerFileItem(vscode, item, n);
   return renderCallerItem(vscode, item, n, view);
 }
 

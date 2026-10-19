@@ -66,8 +66,8 @@ test('a cursor inside a change in a review diff shows that change and reveals it
   const details = env.openDetails();
   const { a } = await rowsOf(env);
   env.moveCursor(fileUri(env, 'a.ts'), 11);
-  assert.match(textOf(details), /^at cursor, line 11 bad a\.ts:10–12 Needs attention\. /);
-  assert.match(textOf(details), /Callers \(1\) Show callers ○ user b\.ts:3 /, 'the call site line, read from the file');
+  assert.match(textOf(details), /^at cursor, line 11 bad a\.ts:10–12 Callers not updated\. /);
+  assert.match(textOf(details), /Callers \(1\) Show callers not changed user b\.ts:3 not updated /, 'the call site line, read from the file');
   assert.equal(env.seen.revealed.length, 1);
   assert.equal(env.seen.revealed[0].row, a[0]);
   assert.deepEqual(env.seen.revealed[0].options, { select: true, focus: false });
@@ -202,7 +202,7 @@ test('a tree selection shows that row; a caller or tests row shows its change', 
   const [under, tests] = await env.tree().getChildren(a[0]);
   assert.equal(under.type, 'caller');
   env.select([under]);
-  assert.match(textOf(details), /^selected in tree bad a\.ts:10–12 Needs attention\. /);
+  assert.match(textOf(details), /^selected in tree bad a\.ts:10–12 Callers not updated\. /);
   env.select([a[1]]);
   env.select([tests]);
   assert.match(textOf(details), /^selected in tree bad /);

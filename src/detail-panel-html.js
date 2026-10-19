@@ -1,7 +1,7 @@
 // @ts-check
 'use strict';
 const assert = require('node:assert/strict');
-const { classifyRowVerdict, CALL_STATE } = require('./tree-row-models');
+const { classifyRowVerdict, stateNameOf, CALL_STATE } = require('./tree-row-models');
 const { treeItemId } = require('./review-tree-model');
 
 // The detail panel's whole document, built from one row of the change tree. Pure: the
@@ -16,15 +16,12 @@ const { treeItemId } = require('./review-tree-model');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 
-// Level 0 breaks callers, 1 risk unknown, 2 risk handled, 3 behaviour reaches callers, 4 quiet.
-const VERDICT_WORDS = ['Needs attention', 'Risk unknown', 'Risk handled', 'Reaches callers', 'Quiet'];
-
 const NO_ROW_HINT = 'Select a change in the tree, or put the cursor in a changed function.';
 
-// How each call state looks in the callers table: the token's colour class follows the mockup.
+// How each call state looks in the callers table: its words, in the colour class of the mockup.
 /** @type {Record<string, string>} */
 const CALL_STATE_CLASS = { 'updated-at-call': 'lv2', 'changed-elsewhere': 'lv1', unchanged: 'lv4' };
-const UNKNOWN_CALL_STATE = { token: '?', text: 'unknown' };
+const UNKNOWN_CALL_STATE = { text: 'unknown' };
 
 /** @type {Record<string, string>} */
 const ENTITIES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -73,7 +70,7 @@ h4 a { text-transform: none; letter-spacing: 0; margin-left: 6px; }
 .sig.new { background: var(--vscode-diffEditor-insertedTextBackground); }
 table { border-collapse: collapse; width: 100%; }
 td { padding: 2px 4px; vertical-align: top; }
-td.st { width: 18px; text-align: center; }
+td.st { white-space: nowrap; padding-right: 8px; }
 a { color: var(--vscode-textLink-foreground); text-decoration: none; cursor: pointer; }
 a:hover { color: var(--vscode-textLink-activeForeground); text-decoration: underline; }
 .note { color: var(--vscode-descriptionForeground); margin-top: 4px; }
@@ -282,7 +279,7 @@ function callersHtml(impactRows, { result, risky, lineOf, id, commenting = false
     const comment = commenting && line != null
       ? `<td><a href="#" data-act="caller-comment" data-index="${i}" title="Comment about this call: on its line when the pull request's diff shows it, else on this change with the caller named after your text">💬</a></td>`
       : commenting ? '<td></td>' : '';
-    return `<tr><td class="st ${CALL_STATE_CLASS[c.callState] || 'lv1'}" title="${escapeHtml(state.text)}">${state.token}</td>`
+    return `<tr><td class="st ${CALL_STATE_CLASS[c.callState] || 'lv1'}" title="${escapeHtml(state.text)}">${escapeHtml(state.text)}</td>`
       + `<td><a href="#" data-act="caller" data-index="${i}">${c.test ? '🧪 ' : ''}${escapeHtml(c.label)}</a></td><td class="where">${where}</td>${comment}</tr>`;
   }).join('');
   const noteHtml = notes.map((n) => `<div class="note">${escapeHtml(n.label)}${n.tooltip ? `: ${escapeHtml(n.tooltip)}` : ''}</div>`).join('');
@@ -300,7 +297,7 @@ function changeHtml(row, { result, impactRows, lineOf, commenting }) {
   const c = row.finding;
   const v = classifyRowVerdict(row);
   let h = `<h3>${escapeHtml(c.label)}</h3><div class="where">${escapeHtml(c.relPath)}:${c.startLine}–${c.endLine}</div>`;
-  h += `<div class="verdict lv${v.level}"><b>${VERDICT_WORDS[v.level]}.</b> ${escapeHtml(v.sentence)}</div>`;
+  h += `<div class="verdict lv${v.level}"><b>${stateNameOf(row, v)}.</b> ${escapeHtml(v.sentence)}</div>`;
   // An added symbol has no signature before; a missing one is not a change.
   if (typeof c.baseSig === 'string' && typeof c.headSig === 'string' && c.baseSig !== c.headSig) {
     h += `<h4>Signature</h4><div class="sig old">− ${escapeHtml(tidySignature(c.baseSig))}</div><div class="sig new">+ ${escapeHtml(tidySignature(c.headSig))}</div>`;
@@ -383,4 +380,4 @@ function buildDetailHtml(row, { result, isReviewed, impactRows, nonce, cspSource
     + `<script nonce="${nonce}">${script(nonce)}</script></body></html>`;
 }
 
-module.exports = { reviewPresentation, progressPresentation, buildDetailHtml, listCallerRows, describeOrigin, tidySignature, escapeHtml, VERDICT_WORDS };
+module.exports = { reviewPresentation, progressPresentation, buildDetailHtml, listCallerRows, describeOrigin, tidySignature, escapeHtml };
