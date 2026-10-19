@@ -156,7 +156,7 @@ function fakeWebviewPanel(viewType, title, showOptions, options = {}) {
 // async git calls (fetch, rev-parse of FETCH_HEAD, checkout), so the worktree itself
 // never moves. `changedSource` puts a committed TypeScript change on a feature branch,
 // which is what readiness needs before it will warm the language server.
-function createEnv({ prewarm = false, changedSource = false, memento = new Map(), signIn = null, graphql = null } = {}) {
+function createEnv({ prewarm = false, changedSource = false, memento = new Map(), signIn = null, graphql = null, settings = {} } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-ext-commands-'));
   const sh = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
   sh('init', '-q', '--initial-branch=main'); sh('config', 'user.name', 'Test'); sh('config', 'user.email', 'test@example.com');
@@ -180,7 +180,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   // `statusBars` every status bar item created, in order (`statusBar` is the first, the
   // review progress); `panels` every webview panel created, in order.
   const seen = { warnings: [], errors: [], infos: [], log: [], status: [], modals: 0, analyze: [], remote: [],
-    signals: [], callerQueries: [], warmUps: [], contexts: {}, revealed: [], statusBar: null, statusBars: [], panels: [], executed: [],
+    signals: [], progress: [], callerQueries: [], warmUps: [], contexts: {}, revealed: [], statusBar: null, statusBars: [], panels: [], executed: [],
     focus: 'editor', focusedRow: null, editorSpaces: 0 };
   const git = { fetches: [], checkouts: [], calls: [] };
   const holds = { fetch: gates(), modal: gates(), remote: gates(), analyze: gates(), callers: gates(), warmUp: gates() };
@@ -193,9 +193,9 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   const comments = createCommentsApi();
 
   const disposable = () => ({ dispose() {} });
-  const cfg = { get: (name, fallback) => ({ prewarm, analyseOnStartup: false, fetchBase: false })[name] ?? fallback,
+  const cfg = { get: (name, fallback) => ({ prewarm, analyseOnStartup: false, fetchBase: false, ...settings })[name] ?? fallback,
     update: async () => {} };
-  const vscode = { ...baseStub, ConfigurationTarget: { Workspace: 2 }, ViewColumn: { Active: -1, Beside: -2, One: 1 },
+  const vscode = { ...baseStub, ConfigurationTarget: { Workspace: 2 }, ProgressLocation: { SourceControl: 1, Window: 10, Notification: 15 }, ViewColumn: { Active: -1, Beside: -2, One: 1 },
     Position: class { constructor(line, character) { this.line = line; this.character = character; } },
     Range: class { constructor(...args) { this.args = args; [this.start, this.end] = [{ line: args[0], character: args[1] }, { line: args[2], character: args[3] }]; } },
     OverviewRulerLane: { Center: 2 },
@@ -227,7 +227,12 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
         if (id === 'impactTree.sources') captured.sources = options.treeDataProvider;
         return view;
       },
-      withProgress: async (_, fn) => fn({ report() {} }),
+      // `progress` records each withProgress call: its options and every message reported to it.
+      withProgress: async (options, fn) => {
+        const record = { options, messages: [], settled: false };
+        seen.progress.push(record);
+        try { return await fn({ report: (m) => { if (m && m.message) record.messages.push(m.message); } }); } finally { record.settled = true; }
+      },
       showQuickPick: async () => quickPick,
       showWarningMessage: async (message, options) => {
         if (options && options.modal) {
@@ -266,7 +271,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       } },
     env: { openExternal: async () => {} },
     comments: comments.api,
-    workspace: { workspaceFolders: [{ uri: baseStub.Uri.file(dir) }], getConfiguration: () => cfg,
+    workspace: { workspaceFolders: [{ uri: baseStub.Uri.file(dir) }], getConfiguration: () => cfg, onDidChangeWorkspaceFolders: disposable,
       registerTextDocumentContentProvider: disposable,
       textDocuments: [], onDidOpenTextDocument: disposable, onDidCloseTextDocument: disposable },
   };

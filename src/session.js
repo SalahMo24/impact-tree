@@ -42,10 +42,11 @@ function untilCancelled(signal, promise) {
  * signal synchronously, so a run whose signal is not aborted is still the current one.
  *
  * @param {*} vscode
- * @param {{ log: (m: string) => void, review: object, checkpoint?: string }} opts
- *   `checkpoint` is the review checkpoint restored from the workspace.
+ * @param {{ log: (m: string) => void, review: object, checkpoint?: string, indexingTickMs?: number }} opts
+ *   `checkpoint` is the review checkpoint restored from the workspace. `indexingTickMs` is
+ *   how often the first-index elapsed time is refreshed; tests shorten it.
  */
-function createSession(vscode, { log: logToChannel, review, checkpoint }) {
+function createSession(vscode, { log: logToChannel, review, checkpoint, indexingTickMs = 1000 }) {
   // Required here rather than at module load: tests intercept analyze/git per activate.
   const { analyze, loadTypeScript } = require('./engine/analyze');
 
@@ -112,6 +113,19 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
     return f[0].uri.fsPath;
   }
 
+  /**
+   * Whether the window has a repository to analyse. Cheap (one `rev-parse`), and asked
+   * again when a run begins, so a `git init` followed by Refresh is noticed.
+   * @returns {'ok'|'noFolder'|'noGit'}
+   */
+  function repoStatus() {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || !folders.length) return 'noFolder';
+    const { makeGit } = require('./engine/git');
+    const inside = makeGit(folders[0].uri.fsPath).tryRaw(['rev-parse', '--is-inside-work-tree']);
+    return inside !== null && inside.trim() === 'true' ? 'ok' : 'noGit';
+  }
+
   const isTierA = () => !!(session.state && session.state.result && session.state.result.tierA);
 
   // Classifies the call sites a caller row has in one file, as the pipelines did when the
@@ -136,6 +150,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
       iconMode: cfg.get('iconMode', 'symbol'),
       rowDetail: cfg.get('rowDetail', 'hover'),
       error: null,
+      problem: null,
       ...extra,
     };
   }
@@ -174,7 +189,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
     lifecycle.run = record;
     lifecycle.state = stage;
     if (source.kind !== 'pr') session.resolverOverride = null;     // leaving a PR preview
-    session.state = { ...session.state, source, result: null, error: null };
+    session.state = { ...session.state, source, result: null, error: null, problem: null };
     session.decorate.clear();
     session.provider.refresh();
     notifyAnalysisChanged();
@@ -215,7 +230,9 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
   /**
    * Publishes a run's failure: the view shows `viewError`, the log gets the stack, and
    * an error pops up. A cancellation, a replaced run and a disposed session publish
-   * nothing.
+   * nothing. A checkpoint that is missing or no longer a commit (`NO_CHECKPOINT`) is not
+   * a failure of the tool but a mode that cannot run yet: the view says so and offers
+   * "Set checkpoint now" (publishRunProblem), and nothing pops up.
    * @param {{ id: number }} run
    * @param {Error} error
    * @param {{ viewError?: string, logLabel?: string }} [shown]
@@ -223,9 +240,28 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
    */
   function failAnalysisRun(run, error, { viewError = error.message, logLabel = 'ERROR' } = {}) {
     if (!owns(run) || isAnalysisCancelled(error)) return false;
-    session.state = { ...session.state, result: null, error: viewError };
+    if (/** @type {any} */ (error).code === 'NO_CHECKPOINT') {
+      return publishRunProblem(run, session.state.checkpoint
+        ? { kind: 'checkpointGone', detail: error.message } : { kind: 'noCheckpoint' });
+    }
+    session.state = { ...session.state, result: null, error: viewError, problem: null };
     log(`${logLabel} ${error.stack || error.message}`);
     vscode.window.showErrorMessage(`Impact Tree: ${error.message}`);
+    return true;
+  }
+
+  /**
+   * Publishes why the run's mode cannot run, only while the run is current: the view shows
+   * the matching rows (tree-row-models buildProblemRows). An obsolete run publishes nothing,
+   * so a late answer never replaces what a newer run shows.
+   * @param {{ id: number }} run
+   * @param {{ kind: 'noCheckpoint'|'checkpointGone', detail?: string }} problem
+   * @returns {boolean} Whether the problem was published.
+   */
+  function publishRunProblem(run, problem) {
+    if (!owns(run)) return false;
+    session.state = { ...session.state, result: null, error: null, problem };
+    log(`${problem.kind}${problem.detail ? `: ${problem.detail}` : ''}`);
     return true;
   }
 
@@ -358,6 +394,67 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
     return { key: current, replaces: replaced.filter((k) => k !== current) };
   }
 
+  // The first-index status of the current user-started run, for the Changes view's message.
+  // Owner: the run named in `run`; only that run sets or clears it, and only while current.
+  const indexing = { run: null, text: null };
+  const indexingListeners = new Set();
+  const setIndexing = (run, text) => {
+    indexing.run = text === null ? null : run;
+    indexing.text = text;
+    for (const listener of [...indexingListeners]) {
+      try { listener(); } catch (e) { log(`an indexing listener failed: ${e && e.message}`); }
+    }
+  };
+  /**
+   * @param {() => void} listener Called when the indexing text changes; read it with getIndexingText().
+   * @returns {{ dispose: () => void }}
+   */
+  function onDidChangeIndexing(listener) {
+    if (disposed()) return { dispose() {} };
+    indexingListeners.add(listener);
+    return { dispose: () => indexingListeners.delete(listener) };
+  }
+  /** @returns {string|null} "Indexing the workspace..." with the elapsed time while a run waits for the first index. */
+  const getIndexingText = () => indexing.text;
+
+  /**
+   * Waits for the language server to be ready on behalf of a user-started run. While the
+   * first index is being built it shows a hideable status-bar progress (window location)
+   * and the Changes view message, both with the elapsed seconds, refreshed every
+   * `indexingTickMs`. There is deliberately no percentage: the language server reports no
+   * progress, so any figure would be invented, and an invented figure is a claim the tool
+   * cannot back. Prewarm never calls this, so background warm-up stays silent.
+   * The timer is cleared in `finally` (completion, failure, cancellation, replacement); it
+   * only publishes while the run is current, and an older run's cleanup leaves a newer
+   * run's text alone.
+   * @param {{ id: number, signal: AbortSignal }} run
+   * @param {Promise<boolean>} ready The shared warm-up (`session.ensureReady`).
+   * @returns {Promise<boolean>}
+   */
+  async function untilReady(run, ready) {
+    if (!session.isIndexing()) return untilCancelled(run.signal, ready);
+    const since = Date.now();
+    let timer = null;
+    try {
+      return await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Window, title: 'Impact Tree' },
+        async (windowProgress) => {
+          const tick = () => {
+            if (!owns(run)) return;
+            const text = `Indexing the workspace, first run only — usually 10–35 s… ${Math.floor((Date.now() - since) / 1000)} s`;
+            windowProgress.report({ message: text });
+            setIndexing(run, text);
+          };
+          tick();
+          timer = setInterval(tick, indexingTickMs);
+          return untilCancelled(run.signal, ready);
+        });
+    } finally {
+      clearInterval(timer);
+      if (indexing.run === run) setIndexing(run, null);
+    }
+  }
+
   // Analyses the working repository for `run` and publishes the result if the run is
   // still current. Throws on failure, including the cancellation error.
   async function analyseLocalRun(run, source, mode, progress) {
@@ -379,7 +476,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
         configureLocalReview(source, repo, pending, base);
         session.provider.refresh();
         log(`changed files ready in ${Date.now() - tStart}ms; caller analysis continues`);
-        if (pending.allChanged.length) await untilCancelled(run.signal, session.ensureReady(progress));
+        if (pending.allChanged.length) await untilReady(run, session.ensureReady(progress));
       },
       onProgress: (p2) => {
         if (p2.phase === 'component') report(`analysing ${p2.component}…`);
@@ -419,6 +516,17 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
     const run = beginAnalysisRun({ source, stage: 'analysing' });
     if (!run) return;
     try {
+      // Nothing to analyse here is not an error: the view says why and what to do (the
+      // welcome screens in package.json), so no popup.
+      const repo = repoStatus();
+      if (repo !== 'ok') { log(`not analysing: ${repo}`); return; }
+      // Checkpoint mode has no base until a checkpoint is recorded. Say so instead of
+      // starting an analysis that can only fail; a recorded one that is no longer a commit
+      // is found by the analysis itself and arrives through failAnalysisRun.
+      if (mode === 'checkpoint' && !(session.state && session.state.checkpoint)) {
+        publishRunProblem(run, { kind: 'noCheckpoint' });
+        return;
+      }
       await vscode.window.withProgress(
         { location: { viewId: 'impactTree.changes' }, title: 'Impact Tree' },
         async (progress) => {
@@ -524,6 +632,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
     session.readyPromise = null;
     session.state = null;
     analysisListeners.clear();
+    indexingListeners.clear();
   }
 
   // Lets an expanded row say its caller query failed rather than show no callers.
@@ -543,14 +652,15 @@ function createSession(vscode, { log: logToChannel, review, checkpoint }) {
   };
 
   Object.assign(session, {
-    repoRoot, isTierA, viewStateFromResult, refresh, analyseCheckedOutPr, refreshWithTestReach, setCheckpoint,
+    repoRoot, repoStatus, isTierA, viewStateFromResult, onDidChangeIndexing, getIndexingText, refresh, analyseCheckedOutPr, refreshWithTestReach, setCheckpoint,
     beginAnalysisRun, beginAnalysingStage, completeAnalysisRun, failAnalysisRun, releaseAnalysisRunResources,
     isCurrentAnalysis, getAnalysisId, beginCheckout, endCheckout, checkoutInProgress, isBusy, getPhase,
     prewarmInBackground, dispose, treeResolver, onDidChangeAnalysis,
   });
-  const { ensureReady, ensureResolver } = createReadiness(vscode, session, { log });
+  const { ensureReady, ensureResolver, isIndexing } = createReadiness(vscode, session, { log });
   session.ensureReady = ensureReady;
   session.ensureResolver = ensureResolver;
+  session.isIndexing = isIndexing;
   return session;
 }
 

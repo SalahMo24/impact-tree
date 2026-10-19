@@ -22,7 +22,7 @@ test('editor commands refresh the selected PR, preserve preview documents, and r
   const cfg = { get: (name, fallback) => ({ prewarm: false, analyseOnStartup: false, fetchBase: false })[name] ?? fallback,
     update: async (...args) => updates.push(args) };
   const disposable = () => ({ dispose() {} });
-  const stub = { ...baseStub, ConfigurationTarget: { Workspace: 2 },
+  const stub = { ...baseStub, ConfigurationTarget: { Workspace: 2 }, ProgressLocation: { Window: 10 },
     Position: class { constructor(line, character) { this.line = line; this.character = character; } },
     Range: class { constructor(...args) { this.args = args; } },
     languages: { registerCodeLensProvider: disposable },
@@ -50,7 +50,7 @@ test('editor commands refresh the selected PR, preserve preview documents, and r
       },
     },
     comments: require('./extension-env').createCommentsApi().api,
-    workspace: { workspaceFolders: [{ uri: baseStub.Uri.file(dir) }], getConfiguration: () => cfg,
+    workspace: { workspaceFolders: [{ uri: baseStub.Uri.file(dir) }], getConfiguration: () => cfg, onDidChangeWorkspaceFolders: () => ({ dispose() {} }),
       registerTextDocumentContentProvider: (scheme, p) => { providers.set(scheme, p); return disposable(); },
       textDocuments: [], onDidOpenTextDocument: disposable, onDidCloseTextDocument: disposable },
   };

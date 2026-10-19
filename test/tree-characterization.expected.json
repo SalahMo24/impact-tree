@@ -5701,7 +5701,7 @@
     "item": {
      "collapsible": 0,
      "decoration": null,
-     "description": "callers outside this PR are NOT shown  ·  check out for full impact",
+     "description": "Preview: callers outside this PR and tests are not searched.",
      "icon": "eye",
      "label": "Preview — PR files only (3 file(s))",
      "tooltip": "Built from the pull request's own files via the GitHub API.\nYour worktree was not touched.\n\nAny caller living in a file this PR does not change is invisible here.\nUse \"Check out and analyse\" on the PR for the complete tree."
@@ -6315,7 +6315,7 @@
     "item": {
      "collapsible": 0,
      "decoration": null,
-     "description": "callers outside this PR are NOT shown  ·  check out for full impact",
+     "description": "Preview: callers outside this PR and tests are not searched.",
      "icon": "eye",
      "label": "Preview — PR files only (3 file(s))",
      "tooltip": "Built from the pull request's own files via the GitHub API.\nYour worktree was not touched.\n\nAny caller living in a file this PR does not change is invisible here.\nUse \"Check out and analyse\" on the PR for the complete tree."
@@ -6935,21 +6935,6 @@
  "no result yet": {
   "summary": {},
   "rows": [
-   {
-    "at": "/0:Ready — click to analyse",
-    "item": {
-     "collapsible": 0,
-     "command": {
-      "command": "impactTree.refresh",
-      "title": "Ready — click to analyse"
-     },
-     "decoration": null,
-     "description": "Impact Tree: Refresh",
-     "icon": "play",
-     "label": "Ready — click to analyse",
-     "tooltip": "Ready — click to analyse"
-    }
-   },
    {
     "flushes": 0
    }

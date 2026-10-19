@@ -233,7 +233,9 @@ test('8b. a prewarm on its own shows Preparing, and Ready once it ends, even whe
     assert.deepEqual(await rootLabels(env), ['Preparing…']);
     warm.fail(new Error('server went away'));
     await flush();
-    assert.deepEqual(await rootLabels(env), ['Ready — click to analyse']);
+    // Idle is an empty tree: the welcome screen with the three ways in is its content.
+    assert.deepEqual(await rootLabels(env), []);
+    assert.equal(env.seen.contexts['impactTree.state'], 'idle');
     assert.deepEqual(env.seen.errors, []);
   }, { prewarm: true, changedSource: true });
 });
@@ -294,9 +296,10 @@ test('11. a throw from repoRoot() or resolver.clear() is a failed run, not an un
     const folders = env.vscode.workspace.workspaceFolders;
     env.vscode.workspace.workspaceFolders = [];
     await env.refresh();
-    assert.equal(env.seen.errors.length, 1);
-    assert.match(env.seen.errors[0], /no workspace folder open/);
-    assert.deepEqual(await rootLabels(env), ['Impact Tree: no workspace folder open'], 'the view shows the failure');
+    // Not a failure: the view is empty and its welcome screen says to open a folder.
+    assert.deepEqual(env.seen.errors, []);
+    assert.deepEqual(await rootLabels(env), []);
+    assert.equal(env.seen.contexts['impactTree.state'], 'noFolder');
     env.vscode.workspace.workspaceFolders = folders;
     await env.refresh();
     assert.equal(env.seen.analyze.length, 1, 'the failed run released the session');

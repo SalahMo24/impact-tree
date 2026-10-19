@@ -92,7 +92,13 @@ function headBase(git) {
 }
 
 function checkpointBase(git, opts) {
-  if (!opts.checkpoint) throw new Error('checkpoint mode requires opts.checkpoint');
+  if (!opts.checkpoint) {
+    // The extension never gets here (its session asks for a checkpoint first); this guards
+    // the CLI and any other caller, and carries the code so they can tell it from a bug.
+    const err = new Error('checkpoint mode requires opts.checkpoint');
+    err.code = 'NO_CHECKPOINT';
+    throw err;
+  }
   // `rev-parse <40 hex>` echoes any well-formed sha back, existing or not, so a stale
   // checkpoint surfaced as a raw `git diff` failure. Ask for a commit specifically.
   const sha = git.revParse(`${opts.checkpoint}^{commit}`);
@@ -611,10 +617,10 @@ async function analyze(repo, opts = {}) {
       }
       for (let i = 0; i < ranked.length; i++) {
         const r = ranked[i];
-        if (i >= (opts.rankedRoots ?? 6)) { roots.push({ ...r, blast: null, blastCapped: false }); continue; }
+        if (i >= (opts.rankedRoots ?? 6)) { roots.push({ ...r, blast: null, blastCapped: false, blastNotComputed: true }); continue; }
         throwIfCancelled(signal);
         const b = await blastRadius(resolver, r.file, r.namePos, opts.blastDepth ?? 1);
-        roots.push({ ...r, blast: b.count, blastCapped: b.capped });
+        roots.push({ ...r, blast: b.count, blastCapped: b.capped, blastNotComputed: false });
       }
       roots.sort((a, b) => b.score - a.score || (b.blast || 0) - (a.blast || 0));
       const forest = [];

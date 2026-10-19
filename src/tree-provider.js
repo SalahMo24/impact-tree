@@ -2,6 +2,7 @@
 'use strict';
 const { nodeId } = require('./review-state');
 const { prQuery } = require('./pr-documents');
+const { viewStateOf } = require('./view-state');
 const models = require('./tree-row-models');
 const reviewTree = require('./review-tree-model');
 const { groupCallerRowsByFile } = require('./tree-grouping');
@@ -63,15 +64,17 @@ const threadsModel = require('./review-threads');
  *   getAnalysisId?: () => number, isCurrentAnalysis?: (analysisId: number) => boolean,
  *   getThreads?: () => import('./review-threads').ThreadsView,
  *   viewedOf?: (relPath: string, allTicked: boolean) => import('./tree-item-renderer').ViewedNote|null,
+ *   getRepoStatus?: () => import('./view-state').RepoStatus,
  * }} deps `getThreads` is what is known of the review threads of the pull request under
  *   review (`threadsViewOf` of the review store); a review without one has none. Call
  *   `threadsChanged` whenever its answer may have changed. `viewedOf` says what a file row
- *   shows about GitHub's viewed mark; read at render time.
+ *   shows about GitHub's viewed mark; read at render time. `getRepoStatus` says whether the
+ *   window has a folder and a repository, which decides the empty states.
  */
 function createTreeProvider(vscode, {
   getState, resolver, isBusy = () => false, decorate = null, getPhase = () => 'ready', review = null,
   getAnalysisId = () => 0, isCurrentAnalysis = () => true, getThreads = () => threadsModel.NO_THREADS,
-  viewedOf = () => null,
+  viewedOf = () => null, getRepoStatus = () => 'ok',
 }) {
   /** @param {TreeRow} n */
   const idOf = (n) => review?.id ? review.id(n) : nodeId(n);
@@ -233,7 +236,16 @@ function createTreeProvider(vscode, {
   // The state of a review that is shown, or null while a placeholder row or nothing is.
   const shownState = () => {
     const state = getState();
-    return !state || !state.result || models.buildPlaceholderRows({ phase: getPhase(), busy: isBusy(), state }) ? null : state;
+    return !state || !state.result || models.buildPlaceholderRows({ phase: getPhase(), busy: isBusy(), state, repo: getRepoStatus() }) ? null : state;
+  };
+  // The state whose summary line the view shows: a review that is shown, or an analysis
+  // that found nothing changed. The latter has no rows (its welcome screen speaks), but its
+  // mode and base are still worth a line, and the tree view's message is where they go.
+  const summaryState = () => {
+    const state = getState();
+    if (!state || !state.result) return null;
+    const view = viewStateOf({ repo: getRepoStatus(), phase: getPhase(), busy: isBusy(), state });
+    return view === 'shown' || view === 'nothingChanged' ? state : null;
   };
   /**
    * Remembers where rows came from, so `getParent` can answer for rows built on demand.
@@ -260,7 +272,7 @@ function createTreeProvider(vscode, {
    * @param {number} analysisId
    */
   function rootRows(state, analysisId) {
-    const placeholder = models.buildPlaceholderRows({ phase: getPhase(), busy: isBusy(), state });
+    const placeholder = models.buildPlaceholderRows({ phase: getPhase(), busy: isBusy(), state, repo: getRepoStatus() });
     if (placeholder) return placeholder;
     // A missing state got the placeholder above.
     const st = /** @type {ProviderState} */ (state);
@@ -530,7 +542,7 @@ function createTreeProvider(vscode, {
      * @returns {{ message: string|undefined, badge: { value: number, tooltip: string }|undefined }}
      */
     summarize() {
-      const state = shownState();
+      const state = summaryState();
       if (!state) return { message: undefined, badge: undefined };
       const counts = reviewTree.countReview(builtFor(state).rows, isReviewed);
       return reviewTree.buildReviewSummary(state.result, state.source, counts, filter, threadsModel.threadsMessageSuffix(getThreads()));
