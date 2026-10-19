@@ -436,7 +436,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     preview(pr) { quickPick = { id: 'preview' }; return run('impactTree.openPullRequest', pr); },
     refresh: () => run('impactTree.refresh'),
     analyseLocally: (mode) => run('impactTree.analyseMode', mode),
-    selectMode(id) { quickPick = { id, label: require('../src/engine/analyze').modeLabel(id) }; return run('impactTree.selectMode'); },
+    selectMode(id) { quickPick = { id, label: require('../src/engine/mode-labels').modeLabel(id) }; return run('impactTree.selectMode'); },
     computeTestReach: () => run('impactTree.computeTestReach'),
     deactivate: () => extension.deactivate(),
     dispose() {

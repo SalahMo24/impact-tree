@@ -3,7 +3,7 @@
 const path = require('path');
 const { classifyCallerUpdateState } = require('./engine/call-sites');
 const { viewStateOf } = require('./view-state');
-const { MODES, modeLabel } = require('./engine/analyze');
+const { MODE_LABELS, modeLabel } = require('./engine/mode-labels');
 
 // Row models for the change tree: plain objects describing each row, built from an
 // analysis result. Pure: nothing here reads session state, registers a decoration or
@@ -285,9 +285,6 @@ function buildPlaceholderRows({ phase, busy, state, repo = 'ok' }) {
   }
 }
 
-// How the modes are named to a reader: `MODES[id].label` in the engine is the one table.
-/** @type {Record<string, string>} */
-const MODE_LABELS = Object.fromEntries(Object.entries(MODES).map(([id, m]) => [id, m.label]));
 
 /**
  * The status text for a count of changes that need attention: `1 needs attention`,

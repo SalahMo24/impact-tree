@@ -20,6 +20,7 @@ const { validateConcurrency, validateReachDepth } = require('./settings');
 const { throwIfCancelled } = require('./cancellation');
 const { walkTestReach, DEFAULT_REACH_BUDGET } = require('./test-reach');
 const { diffLinesFromChanges } = require('./diff-lines');
+const { MODE_LABELS, modeLabel } = require('./mode-labels');
 
 // Prefer the project's own TypeScript so analysis matches what the editor sees; fall
 // back to the repo root, then to whatever this extension was installed with.
@@ -132,14 +133,12 @@ async function branchMergeBase(git, opts, warnings) {
 }
 
 const MODES = {
-  working:    { label: 'Uncommitted (agent)', desc: 'uncommitted changes only (agent review)', headRev: null,   requireClean: false, resolveBase: headBase },
-  checkpoint: { label: 'Since checkpoint', desc: 'since a recorded checkpoint',            headRev: null,   requireClean: false, resolveBase: checkpointBase },
-  branch:     { label: 'Branch + uncommitted', desc: 'whole branch vs base (includes uncommitted)', headRev: null, requireClean: false, resolveBase: branchMergeBase },
-  pr:         { label: 'Branch vs base', desc: 'committed branch state vs base (PR semantics)', headRev: 'HEAD', requireClean: true, resolveBase: branchMergeBase },
+  working:    { label: MODE_LABELS.working, desc: 'uncommitted changes only (agent review)', headRev: null,   requireClean: false, resolveBase: headBase },
+  checkpoint: { label: MODE_LABELS.checkpoint, desc: 'since a recorded checkpoint',            headRev: null,   requireClean: false, resolveBase: checkpointBase },
+  branch:     { label: MODE_LABELS.branch, desc: 'whole branch vs base (includes uncommitted)', headRev: null, requireClean: false, resolveBase: branchMergeBase },
+  pr:         { label: MODE_LABELS.pr, desc: 'committed branch state vs base (PR semantics)', headRev: 'HEAD', requireClean: true, resolveBase: branchMergeBase },
 };
 
-/** The name a reader sees for a mode id (the setting value); an unknown id is shown as it is. */
-const modeLabel = (/** @type {string} */ id) => (MODES[/** @type {keyof typeof MODES} */ (id)] ? MODES[/** @type {keyof typeof MODES} */ (id)].label : id);
 
 function resolveEffectiveMode(mode, cfg, dirty, onDirty, warnings) {
   if(!(cfg.requireClean && dirty.length)) return { effectiveMode: mode, effectiveCfg: cfg };
