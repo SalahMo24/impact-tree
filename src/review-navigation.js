@@ -4,7 +4,7 @@ const { treeItemId } = require('./review-tree-model');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 
-// Walking a review without the mouse: the three filter toggles, "next unreviewed", and the
+// Walking a review without the mouse: the three filter toggles, "next" and "previous unreviewed", and the
 // status bar item that shows how much is left. The state lives in the provider (the filter,
 // the ticks); this module only connects it to commands, context keys and the status bar.
 
@@ -80,6 +80,12 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
     if (!row) { vscode.window.showInformationMessage(nothingLeftText(provider.getFilter())); return; }
     await goTo(row);
   };
+  const previousUnreviewed = async () => {
+    if (!provider.reviewCounts()) return;
+    const row = provider.previousUnreviewed(startOfWalk());
+    if (!row) { vscode.window.showInformationMessage(nothingLeftText(provider.getFilter())); return; }
+    await goTo(row);
+  };
   /**
    * Goes to the shown review's row with this tree id, as "next unreviewed" does.
    * @param {string} id A `treeItemId`.
@@ -104,6 +110,7 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
       on('impactTree.filterUnreviewed', toggle('unreviewed')), on('impactTree.filterUnreviewedOn', toggle('unreviewed')),
       on('impactTree.filterThreads', toggle('threads')), on('impactTree.filterThreadsOn', toggle('threads')),
       on('impactTree.nextUnreviewed', nextUnreviewed),
+      on('impactTree.previousUnreviewed', previousUnreviewed),
     ],
     revealRow,
     update() {

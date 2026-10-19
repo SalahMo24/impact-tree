@@ -444,6 +444,8 @@ test('the contributions: a keybinding in a review editor, a context menu on chan
     [{ command: 'impactTree.showCallers', key: 'shift+alt+c', when: 'editorTextFocus && impactTree.hasReview' }]);
   assert.deepEqual(contributes.menus['view/item/context'].map((m) => [m.command, m.when, m.group]), [
     ['impactTree.showCallers', 'view == impactTree.changes && viewItem == finding', 'navigation@1'],
+    // the inline icon passes the same change row as the context menu (tested below)
+    ['impactTree.showCallers', 'view == impactTree.changes && viewItem == finding', 'inline@1'],
     ['impactTree.retryViewedSync', 'view == impactTree.changes && viewItem =~ /ViewedFailed$/', 'inline'],
   ]);
   assert.equal(contributes.menus.commandPalette.find((m) => m.command === 'impactTree.retryViewedSync').when, 'false');
@@ -451,6 +453,9 @@ test('the contributions: a keybinding in a review editor, a context menu on chan
   const palette = new Map(contributes.menus.commandPalette.map((m) => [m.command, m.when]));
   for (const id of ['impactTree.showCallers', 'impactTree.showChange', 'impactTree.setReviewed']) assert.ok(declared.has(id), id);
   assert.equal(palette.get('impactTree.showCallers'), 'impactTree.hasReview');
+  const callers = contributes.commands.find((c) => c.command === 'impactTree.showCallers');
+  assert.equal(callers.title, 'Impact Tree: Show callers');
+  assert.ok(callers.icon, 'the inline action needs an icon');
   assert.equal(palette.get('impactTree.showChange'), 'false');
   assert.equal(palette.get('impactTree.setReviewed'), 'false');
 });

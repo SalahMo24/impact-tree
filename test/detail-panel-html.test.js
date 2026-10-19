@@ -61,7 +61,7 @@ test('a change that breaks a caller: level word, sentence, location, signatures,
   assert.match(text, /Signature − \(a: string\) => void \+ \(a: string, b: number\) => void/);
   assert.match(text, /Callers \(2\) Show callers call updated alsoUses src\/other\.ts:51 not changed useIt src\/user\.ts:31 not updated Tests/, 'sorted as the tree sorts them, with the call-site line');
   assert.match(text, /Tests Tested by spec\.test\.js/);
-  assert.match(text, /Mark reviewed Next unreviewed$/);
+  assert.match(text, /Mark reviewed Next unreviewed Show callers$/);
 });
 
 test('a risky change marks the callers its verdict counts as not updated; a body-only change does not', () => {
@@ -135,6 +135,22 @@ test('the tests line follows the tests row: not computed, unknown, none within r
   assert.match(textOf(render(findRow(preview, 'f'), preview)), /Tests Tests are not searched in a PR preview/);
 });
 
+test('Compute test reachability is a button only on a change of a local result whose test reach is not computed', () => {
+  const c = change('src/a.ts', 'f', 10);
+  const button = /data-act="test-reach"/;
+  const local = resultOf({ allChanged: [c], testReachComputed: false });
+  assert.match(render(findRow(local, 'f'), local), button);
+  assert.match(textOf(render(findRow(local, 'f'), local)), /Show callers Compute test reachability$/);
+  const computed = resultOf({ allChanged: [c] });
+  assert.doesNotMatch(render(findRow(computed, 'f'), computed), button);
+  const preview = resultOf({ allChanged: [c], tierA: true, testReachComputed: false });
+  assert.doesNotMatch(render(findRow(preview, 'f'), preview), button, 'a preview cannot compute it; the command would only explain');
+  assert.doesNotMatch(render(rowsOf(local)[0], local), button, 'only a change has it');
+  const id = treeItemId(findRow(local, 'f'));
+  assert.ok(render(findRow(local, 'f'), local).includes(`<button class="secondary" data-act="peek" data-id="${id}">Show callers</button>`),
+    'a Show callers button even for a change without callers');
+});
+
 test('an unfinished caller search is said under the callers, and a preview says which callers it can see', () => {
   const c = change('src/a.ts', 'f', 10, { callerState: 'resolved', callers: [callerOf('src/u.ts', 'u', 100, false)], callersComplete: false,
     callersIncompleteReason: 'the server timed out' });
@@ -171,7 +187,7 @@ test('a reviewed change offers Untick; the tick button says what it will do', ()
   const result = resultOf({ allChanged: [c] });
   const row = findRow(result, 'f');
   const on = render(row, result, { isReviewed: (r) => r === row });
-  assert.match(textOf(on), /Untick Next unreviewed$/);
+  assert.match(textOf(on), /Untick Next unreviewed Show callers$/);
   const id = treeItemId(row);
   assert.ok(on.includes(`data-act="tick" data-id="${id}" data-on="false"`), 'the button names the row it ticks');
   assert.ok(render(row, result).includes(`data-act="tick" data-id="${id}" data-on="true"`));

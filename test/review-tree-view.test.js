@@ -387,10 +387,29 @@ test('the next unreviewed row follows the filter and the ticks, and is null when
   assert.equal(provider.nextUnreviewed(null), null);
 });
 
+test('the previous unreviewed row follows the filter and the ticks, and is null when none is left', async () => {
+  const { provider, fileAt } = viewOf(sampleResult());
+  const a = await fileAt('src/a.ts');
+  const [bad, gone, body, outsideRow] = await provider.getChildren(a);
+  assert.equal(provider.previousUnreviewed(gone), bad);
+  const notes = await fileAt('notes.md');
+  assert.equal(provider.previousUnreviewed(bad), notes, 'wraps to the last row of the review');
+  provider.toggleFilter('attention');
+  assert.equal(provider.previousUnreviewed(body), gone);
+  assert.equal(provider.previousUnreviewed(gone), bad);
+  assert.equal(provider.previousUnreviewed(bad), gone, 'wraps over the hidden rows');
+  provider.toggleFilter('attention');
+  provider.setChecked(a, true);
+  assert.equal(provider.previousUnreviewed(outsideRow), notes, 'a.ts is ticked: nothing above, so it wraps');
+  for (const f of ['src/b.ts', 'notes.md']) provider.setChecked(await fileAt(f), true);
+  assert.equal(provider.previousUnreviewed(null), null);
+});
+
 test('the counts of a shown review, and none while a placeholder is shown', async () => {
   const { provider } = viewOf(sampleResult());
   assert.deepEqual(provider.reviewCounts(), { total: 6, left: 6, attention: 2 });
   const none = createTreeProvider(vscode, { getState: () => null, resolver: {} });
   assert.equal(none.reviewCounts(), null);
   assert.equal(none.nextUnreviewed(null), null);
+  assert.equal(none.previousUnreviewed(null), null);
 });

@@ -592,6 +592,16 @@ function createTreeProvider(vscode, {
       return state ? reviewTree.findNextUnreviewed(builtFor(state).rows, { after, isReviewed, filter, openThreadsOf }) : null;
     },
     /**
+     * The first unreviewed row before `before` in the order the view shows, under the active
+     * filter; see `findPreviousUnreviewed`.
+     * @param {TreeRow|null} before A counting row or a file row, or null to start at the bottom.
+     * @returns {TreeRow|null} Null when no review is shown or nothing is left.
+     */
+    previousUnreviewed(before) {
+      const state = shownState();
+      return state ? reviewTree.findPreviousUnreviewed(builtFor(state).rows, { after: before, isReviewed, filter, openThreadsOf }) : null;
+    },
+    /**
      * Whether a counting row is ticked.
      * @param {TreeRow} row
      * @returns {boolean}

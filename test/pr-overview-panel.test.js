@@ -462,6 +462,37 @@ test('the status bar shows a pending review with comments and opens the tab; the
   env.dispose();
 });
 
+test('submit review is offered while a pull request is open; the loading key disables it until data arrives', () => {
+  const env = setup({ kind: 'none' });
+  const key = 'impactTree.pullRequestReviewLoading';
+  assert.equal(env.seen.contexts[key], false);
+  env.store.set({ kind: 'loading', target: TARGET, previous: null });
+  assert.equal(env.seen.contexts['impactTree.hasPullRequestReview'], true, 'a pull request is the source');
+  assert.equal(env.seen.contexts[key], true, 'first load: the disabled entry, with its reason');
+  env.store.set(ready());
+  assert.equal(env.seen.contexts[key], false);
+  env.store.set({ kind: 'loading', target: TARGET, previous: reviewModel() });
+  assert.equal(env.seen.contexts[key], false, 'a reload keeps the earlier data, so the tab still opens');
+  env.store.set({ kind: 'failed', target: TARGET, error: new Error('boom'), previous: null });
+  assert.equal(env.seen.contexts[key], false, 'a failure opens the tab, which offers Retry');
+  assert.equal(env.seen.contexts['impactTree.hasPullRequestReview'], true);
+  env.store.set({ kind: 'none' });
+  assert.equal(env.seen.contexts['impactTree.hasPullRequestReview'], false);
+  env.dispose();
+});
+
+test('each submit-review state has exactly one title entry, and the unavailable one cannot run', () => {
+  const { contributes } = require('../package.json');
+  const entries = contributes.menus['view/title'].filter((m) => /submitReview/.test(m.command));
+  const whenFor = (id) => entries.find((m) => m.command === id).when;
+  assert.match(whenFor('impactTree.submitReview'), /impactTree\.hasPullRequestReview && !impactTree\.pullRequestReviewLoading$/);
+  assert.match(whenFor('impactTree.submitReviewUnavailable'), /impactTree\.hasPullRequestReview && impactTree\.pullRequestReviewLoading$/);
+  const unavailable = contributes.commands.find((c) => c.command === 'impactTree.submitReviewUnavailable');
+  assert.equal(unavailable.enablement, 'false');
+  assert.match(unavailable.title, /loading the pull request review/);
+  assert.equal(contributes.menus.commandPalette.find((m) => m.command === 'impactTree.submitReviewUnavailable').when, 'false');
+});
+
 // ---- disposal -----------------------------------------------------------------------
 
 test('dispose closes the tab, removes the bar, the commands and the store subscription', async () => {
@@ -559,7 +590,7 @@ test('package.json declares the commands, the tree-title entry and their when cl
   const ids = pkg.contributes.commands.map((c) => c.command);
   for (const id of ['impactTree.showPullRequest', 'impactTree.submitReview', 'impactTree.revealReviewThread']) assert.ok(ids.includes(id), id);
   const title = pkg.contributes.menus['view/title'].find((m) => m.command === 'impactTree.submitReview');
-  assert.equal(title.when, 'view == impactTree.changes && impactTree.hasPullRequestReview');
+  assert.equal(title.when, 'view == impactTree.changes && impactTree.hasPullRequestReview && !impactTree.pullRequestReviewLoading');
   assert.ok(pkg.contributes.commands.find((c) => c.command === 'impactTree.submitReview').icon);
   assert.equal(pkg.contributes.menus.commandPalette.find((m) => m.command === 'impactTree.revealReviewThread').when, 'false');
 });

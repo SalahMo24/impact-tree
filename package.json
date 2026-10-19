@@ -116,6 +116,11 @@
         "icon": "$(arrow-down)"
       },
       {
+        "command": "impactTree.previousUnreviewed",
+        "title": "Impact Tree: Go to previous unreviewed change",
+        "icon": "$(arrow-up)"
+      },
+      {
         "command": "impactTree.selectMode",
         "title": "Impact Tree: Select diff mode",
         "icon": "$(git-compare)"
@@ -135,7 +140,8 @@
       },
       {
         "command": "impactTree.showCallers",
-        "title": "Impact Tree: Show callers of this change (rebind it in Keyboard Shortcuts)"
+        "title": "Impact Tree: Show callers",
+        "icon": "$(references)"
       },
       {
         "command": "impactTree.showChange",
@@ -242,6 +248,13 @@
         "icon": "$(git-pull-request-go-to-changes)"
       },
       {
+        "command": "impactTree.submitReviewUnavailable",
+        "title": "Submit review… (loading the pull request review)",
+        "category": "Impact Tree",
+        "icon": "$(git-pull-request-go-to-changes)",
+        "enablement": "false"
+      },
+      {
         "command": "impactTree.revealReviewThread",
         "title": "Go to review thread",
         "category": "Impact Tree"
@@ -285,9 +298,14 @@
           "group": "navigation@3"
         },
         {
-          "command": "impactTree.nextUnreviewed",
+          "command": "impactTree.previousUnreviewed",
           "when": "view == impactTree.changes",
           "group": "navigation@4"
+        },
+        {
+          "command": "impactTree.nextUnreviewed",
+          "when": "view == impactTree.changes",
+          "group": "navigation@5"
         },
         {
           "command": "impactTree.selectMode",
@@ -298,11 +316,6 @@
           "command": "impactTree.setCheckpoint",
           "when": "view == impactTree.changes",
           "group": "1_mode@2"
-        },
-        {
-          "command": "impactTree.showLegend",
-          "when": "view == impactTree.changes",
-          "group": "2_help@1"
         },
         {
           "command": "impactTree.showLog",
@@ -321,8 +334,18 @@
         },
         {
           "command": "impactTree.submitReview",
-          "when": "view == impactTree.changes && impactTree.hasPullRequestReview",
-          "group": "navigation@5"
+          "when": "view == impactTree.changes && impactTree.hasPullRequestReview && !impactTree.pullRequestReviewLoading",
+          "group": "navigation@6"
+        },
+        {
+          "command": "impactTree.submitReviewUnavailable",
+          "when": "view == impactTree.changes && impactTree.hasPullRequestReview && impactTree.pullRequestReviewLoading",
+          "group": "navigation@6"
+        },
+        {
+          "command": "impactTree.showLegend",
+          "when": "view == impactTree.changes",
+          "group": "navigation@7"
         }
       ],
       "commandPalette": [
@@ -357,6 +380,14 @@
         {
           "command": "impactTree.nextUnreviewed",
           "when": "impactTree.hasReview"
+        },
+        {
+          "command": "impactTree.previousUnreviewed",
+          "when": "impactTree.hasReview"
+        },
+        {
+          "command": "impactTree.submitReviewUnavailable",
+          "when": "false"
         },
         {
           "command": "impactTree.analyseMode",
@@ -485,6 +516,11 @@
           "group": "navigation@1"
         },
         {
+          "command": "impactTree.showCallers",
+          "when": "view == impactTree.changes && viewItem == finding",
+          "group": "inline@1"
+        },
+        {
           "command": "impactTree.retryViewedSync",
           "when": "view == impactTree.changes && viewItem =~ /ViewedFailed$/",
           "group": "inline"
@@ -495,6 +531,11 @@
       {
         "command": "impactTree.nextUnreviewed",
         "key": "alt+n",
+        "when": "impactTree.hasReview"
+      },
+      {
+        "command": "impactTree.previousUnreviewed",
+        "key": "shift+alt+n",
         "when": "impactTree.hasReview"
       },
       {
