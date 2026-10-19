@@ -150,6 +150,7 @@ document.addEventListener('click', (event) => {
   if (act === 'tick') postMessage({ type: 'tick', id: el.getAttribute('data-id'), on: el.getAttribute('data-on') === 'true' });
   else if (act === 'next') postMessage({ type: 'next' });
   else if (act === 'peek') postMessage({ type: 'showCallers', id: el.getAttribute('data-id') });
+  else if (act === 'test-reach') postMessage({ type: 'computeTestReach' });
   else if (act === 'caller') postMessage({ type: 'openCaller', index: Number(el.getAttribute('data-index')) });
   else if (act === 'thread') postMessage({ type: 'revealThread', id: el.getAttribute('data-id') });
   else if (act === 'comment') postMessage({ type: 'comment', id: el.getAttribute('data-id') });
@@ -201,11 +202,28 @@ function progressHtml(model) {
     + `<progress max="${model.total}" value="${model.reviewed}" data-progress-meter>${escapeHtml(model.percentText)}</progress></div>`;
 }
 
-/** @param {ReviewPresentation|null} model The fields shared with progress patches. */
-function buttonsHtml(model) {
+/**
+ * @param {ReviewPresentation|null} model The fields shared with progress patches.
+ * @param {string} [extra] More secondary buttons (`changeActionsHtml`), after "Next unreviewed".
+ */
+function buttonsHtml(model, extra = '') {
   assert.ok(model, 'a row with review actions must have a tree identity');
   return `<div class="actions"><button data-act="tick" data-id="${escapeHtml(model.id)}" data-on="${!model.reviewed}">${escapeHtml(model.buttonText)}</button>`
-    + '<button class="secondary" data-act="next">Next unreviewed</button></div>';
+    + `<button class="secondary" data-act="next">Next unreviewed</button>${extra}</div>`;
+}
+
+/**
+ * The buttons only a change has: where its callers are, and the test reachability a local
+ * review can still compute. A Preview gets no compute button: the command would only
+ * explain that it needs local analysis.
+ * @param {string|undefined} id The change's tree id.
+ * @param {any} result The shown result.
+ * @returns {string}
+ */
+function changeActionsHtml(id, result) {
+  const callers = id ? `<button class="secondary" data-act="peek" data-id="${escapeHtml(id)}">Show callers</button>` : '';
+  const computable = result && !result.tierA && !result.testReachComputed;
+  return callers + (computable ? '<button class="secondary" data-act="test-reach">Compute test reachability</button>' : '');
 }
 const ROW_WORDS = { mark: 'Mark reviewed', untick: 'Untick' };
 
@@ -348,7 +366,7 @@ function bodyHtml(row, { result, isReviewed, impactRows, lineOf, threads }) {
   if (row.type === 'finding') h = changeHtml(row, { result, impactRows, lineOf, commenting: !!(threads && threads.action) });
   else if (row.type === 'deleted') h = `<h3>${escapeHtml(row.label)}</h3><div class="where">${escapeHtml(row.relPath)} · deleted</div><div class="verdict lv${v.level}">${escapeHtml(v.sentence)}</div>`;
   else h = `<h3>Outside functions</h3><div class="where">${escapeHtml(row.relPath)} · ${escapeHtml(v.text)}</div><div class="verdict lv${v.level}">${escapeHtml(v.sentence)}</div>`;
-  return h + section + buttonsHtml(reviewPresentation(row, isReviewed));
+  return h + section + buttonsHtml(reviewPresentation(row, isReviewed), row.type === 'finding' ? changeActionsHtml(treeItemId(row), result) : '');
 }
 
 /**

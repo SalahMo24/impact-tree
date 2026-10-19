@@ -516,6 +516,50 @@ test('a row that is not among the file rows, such as a caller, starts the walk a
   assert.equal(model.findNextUnreviewed(rows, { after: under, isReviewed, filter: 'all' }), row('a.js', 'bad'));
 });
 
+test('the previous unreviewed row starts at the bottom, then walks up in display order', () => {
+  const { rows, row, ticked, isReviewed } = walkRows();
+  const prev = (after, filter = 'all') => model.findPreviousUnreviewed(rows, { after, isReviewed, filter });
+  assert.equal(prev(null), row('n.md'), 'the last row of the review');
+  assert.equal(prev(row('n.md')), row('c.js', 'q'));
+  assert.equal(prev(row('b.js', 'unk')), row('a.js', 'Outside functions'), 'across a file boundary, never onto a spacer');
+  assert.equal(prev(row('a.js', 'mid')), row('a.js', 'bad'));
+  ticked.add(row('a.js', 'mid'));
+  assert.equal(prev(row('a.js', 'low')), row('a.js', 'bad'), 'ticked rows are skipped');
+});
+
+test('the backward walk wraps once, and ends at the starting row when it is the only one left', () => {
+  const { rows, row, ticked, isReviewed } = walkRows();
+  const prev = (after, filter = 'all') => model.findPreviousUnreviewed(rows, { after, isReviewed, filter });
+  assert.equal(prev(row('a.js', 'bad')), row('n.md'), 'before the first row it goes to the last');
+  ticked.add(row('n.md'));
+  assert.equal(prev(row('a.js', 'bad')), row('c.js', 'q'));
+  for (const f of rows) for (const r of f.rows || [f]) if (r !== row('c.js', 'q')) ticked.add(r);
+  assert.equal(prev(row('c.js', 'q')), row('c.js', 'q'), 'the only one left, even though it is the starting row');
+  assert.equal(prev(row('a.js', 'bad')), row('c.js', 'q'));
+});
+
+test('the backward walk: a file row stands before its rows, nothing left is null, an empty review is null', () => {
+  const { rows, row, ticked, isReviewed } = walkRows();
+  const prev = (after) => model.findPreviousUnreviewed(rows, { after, isReviewed, filter: 'all' });
+  assert.equal(prev(rows[1]), row('a.js', 'Outside functions'), 'selecting a file goes to the row above it');
+  assert.equal(prev(rows[0]), row('n.md'), 'above the first file it wraps');
+  for (const f of rows) for (const r of f.rows || [f]) ticked.add(r);
+  for (const filter of ['all', 'attention', 'unreviewed']) {
+    assert.equal(model.findPreviousUnreviewed(rows, { after: null, isReviewed, filter }), null, filter);
+    assert.equal(model.findPreviousUnreviewed(rows, { after: row('b.js', 'unk'), isReviewed, filter }), null, filter);
+  }
+  assert.equal(model.findPreviousUnreviewed([], { after: null, isReviewed, filter: 'all' }), null);
+});
+
+test('the backward walk with a filter visits only the rows it shows, from a hidden row\'s place', () => {
+  const { rows, row, isReviewed } = walkRows();
+  const prev = (after, filter) => model.findPreviousUnreviewed(rows, { after, isReviewed, filter });
+  assert.equal(prev(row('b.js', 'unk'), 'attention'), row('a.js', 'bad'), 'mid and low are hidden');
+  assert.equal(prev(row('a.js', 'bad'), 'attention'), row('b.js', 'unk'), 'and it wraps to the last shown');
+  assert.equal(prev(row('a.js', 'low'), 'attention'), row('a.js', 'bad'), 'a hidden selection starts from its own place');
+  assert.equal(prev(row('c.js', 'q'), 'attention'), row('b.js', 'unk'), 'its whole file is hidden');
+});
+
 test('tree item ids exist for file and counting rows only, and are unique in the tree', () => {
   const result = resultOf({
     allChanged: [stale1('a.js', 'bad'), reaches('a.js', 'mid'), change('d.js', 'twin', { startLine: 10 }), change('d.js', 'twin', { startLine: 40 }),

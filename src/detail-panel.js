@@ -42,7 +42,7 @@ function headRelPath(uri, { result, rel }) {
  * @param {unknown} message
  * @param {string|null} token The current page's nonce; null when the view is disposed.
  * @returns {{ type: 'tick', id: string, on: boolean }|{ type: 'next' }|{ type: 'ready' }|{ type: 'showCallers', id: string }
- *   |{ type: 'openCaller', index: number }|{ type: 'revealThread', id: string }|{ type: 'comment', id: string }
+ *   |{ type: 'computeTestReach' }|{ type: 'openCaller', index: number }|{ type: 'revealThread', id: string }|{ type: 'comment', id: string }
  *   |{ type: 'commentCaller', index: number }|null}
  */
 function parseMessage(message, token) {
@@ -53,6 +53,7 @@ function parseMessage(message, token) {
   if (m.type === 'next') return { type: 'next' };
   if (m.type === 'ready') return { type: 'ready' };
   if (m.type === 'showCallers' && typeof m.id === 'string') return { type: 'showCallers', id: m.id };
+  if (m.type === 'computeTestReach') return { type: 'computeTestReach' };
   if (m.type === 'openCaller' && Number.isSafeInteger(m.index) && Number(m.index) >= 0) return { type: 'openCaller', index: Number(m.index) };
   if (m.type === 'revealThread' && typeof m.id === 'string' && m.id !== '') return { type: 'revealThread', id: m.id };
   if (m.type === 'comment' && typeof m.id === 'string') return { type: 'comment', id: m.id };
@@ -308,6 +309,15 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log, revi
     }
     if (m.type === 'showCallers') {
       if (m.id === shown.id) await vscode.commands.executeCommand('impactTree.showCallers', m.id);
+      return;
+    }
+    if (m.type === 'computeTestReach') {
+      // Offered only on a change of a local result whose test reach is not computed; a page
+      // drawn before the analysis changed has an older nonce and never gets here.
+      const state = getState();
+      if (row.type === 'finding' && state && state.result && !state.result.tierA && !state.result.testReachComputed) {
+        await vscode.commands.executeCommand('impactTree.computeTestReach');
+      }
       return;
     }
     if (m.type === 'revealThread' || m.type === 'comment' || m.type === 'commentCaller') { await onReviewAction(m, row); return; }

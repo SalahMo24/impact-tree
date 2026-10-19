@@ -402,12 +402,41 @@ function treeItemId(row) {
  *   Without it, or when it is not among `files`, the walk starts at the top.
  * @returns {TreeRow|null} Null when no row is left.
  */
-function findNextUnreviewed(files, { after = null, isReviewed, filter, openThreadsOf = NO_THREAD_COUNTS }) {
+function findNextUnreviewed(files, opts) {
+  const { order, shown, here } = walkOf(files, opts);
+  return [...order.slice(here + 1), ...order.slice(0, here + 1)].find((r) => shown.has(r)) || null;
+}
+
+/**
+ * The first unreviewed counting row before `after` in display order, with the filter
+ * applied: `findNextUnreviewed` walked backwards. It wraps once to the bottom, so it may
+ * end at `after` itself when that is the only row left.
+ * @param {TreeRow[]} files The rows from `buildFileRows`.
+ * @param {{ after?: TreeRow|null, isReviewed: (row: TreeRow) => boolean, filter: ReviewFilter, openThreadsOf?: OpenThreadsOf }} opts
+ *   As for `findNextUnreviewed`. A file row stands just before its own rows, so the walk
+ *   from it starts at the row above the file. Without `after`, the walk starts at the bottom.
+ * @returns {TreeRow|null} Null when no row is left.
+ */
+function findPreviousUnreviewed(files, opts) {
+  const { order, shown, here } = walkOf(files, opts);
+  // `here` is -1 without a start, which means "past the bottom" going backwards.
+  const from = here < 0 ? order.length : here;
+  return [...order.slice(0, from).reverse(), ...order.slice(from).reverse()].find((r) => shown.has(r)) || null;
+}
+
+/**
+ * What both walks share: the rows in display order, the unreviewed ones the filter shows,
+ * and the index of the row the walk starts from.
+ * @param {TreeRow[]} files
+ * @param {{ after?: TreeRow|null, isReviewed: (row: TreeRow) => boolean, filter: ReviewFilter, openThreadsOf?: OpenThreadsOf }} opts
+ * @returns {{ order: TreeRow[], shown: Set<TreeRow>, here: number }} `here` is -1 without a usable start.
+ */
+function walkOf(files, { after = null, isReviewed, filter, openThreadsOf = NO_THREAD_COUNTS }) {
   /** @type {TreeRow[]} */
   const order = files.flatMap((f) => (f.type === 'reviewFile' ? [f, ...f.rows] : [f]));
   const shown = new Set(filterFileRows(files, filter, isReviewed, openThreadsOf).flatMap((e) => e.rows).filter((r) => !isReviewed(r)));
   const here = after ? order.findIndex((r) => treeItemId(r) === treeItemId(after)) : -1;
-  return [...order.slice(here + 1), ...order.slice(0, here + 1)].find((r) => shown.has(r)) || null;
+  return { order, shown, here };
 }
 
 /**
@@ -479,5 +508,5 @@ const span = (row) => row.finding.endLine - row.finding.startLine;
 
 module.exports = {
   buildFileRows, buildImpactRows, collectCountingRows, collectTickTargets, needsAttention, countReview, listAttentionLeft, describeReviewSource, buildReviewSummary,
-  findRowAtLine, filterFileRows, toggleFilter, findNextUnreviewed, treeItemId, buildEmptyFilterRow, buildSpacerRow,
+  findRowAtLine, filterFileRows, toggleFilter, findNextUnreviewed, findPreviousUnreviewed, treeItemId, buildEmptyFilterRow, buildSpacerRow,
 };

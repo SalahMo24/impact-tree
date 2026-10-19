@@ -236,7 +236,7 @@ test('the tick message ticks the row shown and repaints; next runs the command; 
   env.select([a[0]]);
   await sendAction(details, { type: 'tick', id: tickId(details), on: true });
   assert.equal(env.isTicked(a[0]), true);
-  assert.match(textOf(details), /Untick Next unreviewed$/);
+  assert.match(textOf(details), /Untick Next unreviewed Show callers Compute test reachability$/);
   assert.equal(env.seen.statusBar.text.split(' ')[1], '3', 'the status bar repainted too');
   await sendAction(details, { type: 'tick', id: tickId(details), on: false });
   assert.equal(env.isTicked(a[0]), false);
@@ -330,6 +330,41 @@ test('the Show callers message runs the command for the row shown; one drawn for
   await sendAction(details, { type: 'showCallers', id });
   assert.equal(ran().length, 1, 'the panel moved on to another row');
   assert.doesNotMatch(details.webview.html, /data-act="peek"/, 'a file row has no callers link');
+}));
+
+test('the Compute test reachability message runs the command for a local change; forged, stale or preview messages do nothing', () => withEnv(async (env) => {
+  useResult(env);
+  await env.refresh();
+  const details = env.openDetails();
+  const { a } = await rowsOf(env);
+  env.select([a[0]]);
+  const ran = () => env.seen.executed.filter(([name]) => name === 'impactTree.computeTestReach');
+  assert.match(details.webview.html, /data-act="test-reach"/);
+  const token = /<script nonce="([^"]+)"/.exec(details.webview.html)[1];
+  for (const message of [{ type: 'computeTestReach' }, { type: 'computeTestReach', token: 'forged' }, { type: 'computeTestReach', token: `${token} ` },
+    { type: 'computetestreach', token }]) await details.send(message);
+  assert.equal(ran().length, 0, 'no token, a wrong token or an unknown type');
+  env.select([(await env.tree().getChildren())[2]]);   // a file without a call graph
+  await details.send({ type: 'computeTestReach', token: /<script nonce="([^"]+)"/.exec(details.webview.html)[1] });
+  assert.equal(ran().length, 0, 'a file row has no such button');
+  env.select([a[0]]);
+  await sendAction(details, { type: 'computeTestReach' });
+  assert.equal(ran().length, 1);
+}));
+
+test('a preview offers no Compute test reachability button and ignores the message', () => withEnv(async (env) => {
+  useResult(env, { tierA: true });
+  await env.preview(pull(7));
+  for (let i = 0; i < 20; i++) await new Promise((resolve) => setImmediate(resolve));   // the preview's rows arrive after it
+  const details = env.openDetails();
+  const files = await env.tree().getChildren();
+  const [bad] = (await env.tree().getChildren(files.find((f) => f.relPath === 'a.ts'))).filter((r) => r.type === 'finding');
+  assert.ok(bad, 'the preview shows the change');
+  env.select([bad]);
+  assert.doesNotMatch(details.webview.html, /data-act="test-reach"/);
+  assert.match(details.webview.html, /data-act="peek"/, 'Show callers is still offered');
+  await sendAction(details, { type: 'computeTestReach' });
+  assert.equal(env.seen.executed.filter(([name]) => name === 'impactTree.computeTestReach').length, 0);
 }));
 
 test('showChange shows the change in the panel and reveals it in the tree; a bad id does nothing', () => withEnv(async (env) => {
