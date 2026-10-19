@@ -442,8 +442,8 @@ test('toggling a filter turns it on, turns the other off, and a second toggle re
 test('the summary names a filter that narrows the tree and says nothing for all', () => {
   const result = { mode: 'branch', base: { ref: 'main' } };
   const counts = { total: 5, left: 3, attention: 1 };
-  assert.equal(model.buildReviewSummary(result, null, counts).message, 'branch mode · ⛔ 1 · 3 of 5 left');
-  assert.equal(model.buildReviewSummary(result, null, counts, 'all').message, 'branch mode · ⛔ 1 · 3 of 5 left');
+  assert.equal(model.buildReviewSummary(result, null, counts).message, 'Branch + uncommitted · 1 needs attention · 3 of 5 left');
+  assert.equal(model.buildReviewSummary(result, null, counts, 'all').message, 'Branch + uncommitted · 1 needs attention · 3 of 5 left');
   assert.match(model.buildReviewSummary(result, null, counts, 'attention').message, / · filter: needs attention$/);
   assert.match(model.buildReviewSummary(result, null, counts, 'unreviewed').message, / · filter: unreviewed$/);
 });

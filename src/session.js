@@ -508,7 +508,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     configureLocalReview(source, repo, result, base);
     const stale = result.findings.reduce((n, f) => n + f.staleCallers, 0);
     vscode.window.setStatusBarMessage(
-      `Impact Tree: ${result.findings.length} finding(s), ${stale} un-updated caller(s), base ${result.base.ref}`, 8000);
+      `Impact Tree: ${result.findings.length} finding(s), ${stale} caller(s) not updated, base ${result.base.ref}`, 8000);
   }
 
   // Runs a local analysis of `source` in `mode`; never rejects.

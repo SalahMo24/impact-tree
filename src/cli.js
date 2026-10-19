@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 const path = require('path');
-const { analyze, MODES } = require('./engine/analyze');
+const { analyze, MODES, modeLabel } = require('./engine/analyze');
 const { blastText } = require('./cli-format');
 
 const argv = process.argv.slice(2);
@@ -12,8 +12,8 @@ const DEFAULTS = { depth: 2, treeDepth: 2 };
 if (flag('help')) {
   console.log(`impact-tree — inverted call-graph review\n\nUsage: node src/cli.js [options]\n
   --repo <path>        repo root (default: cwd)
-  --mode <m>           ${Object.keys(MODES).join(' | ')}   (default: pr)
-${Object.entries(MODES).map(([k, v]) => `                         ${k.padEnd(11)} ${v.desc}`).join('\n')}
+  --mode <m>           ${Object.keys(MODES).join(' | ')}   (default: pr = Branch vs base)
+${Object.entries(MODES).map(([k, v]) => `                         ${k.padEnd(11)} ${v.label}: ${v.desc}`).join('\n')}
   --base <ref>         base branch for pr/branch modes (default: main; resolved to origin/<ref>)
   --checkpoint <sha>   base for checkpoint mode
   --fetch              git fetch the base before resolving
@@ -53,7 +53,7 @@ if (flag('json')) {
 const rel = (f) => path.relative(repo, f);
 const H = (s) => { console.log(''); console.log('='.repeat(78)); console.log(s); console.log('='.repeat(78)); };
 
-console.log(`impact-tree — mode '${result.mode}' (${result.modeDesc})`);
+console.log(`impact-tree — ${modeLabel(result.mode)} (${result.modeDesc})`);
 console.log(`base ${result.base.ref} @ ${String(result.base.sha).slice(0, 10)}   ${result.changedFileCount} changed src file(s)`);
 result.warnings.forEach((w) => console.log(`⚠ ${w}`));
 
@@ -82,7 +82,7 @@ for (const f of result.findings) {
   } else if (f.callersComplete === false) {
     console.log(`      ? callers found so far are updated, but ${missingNote(f)}`);
   } else {
-    console.log(`      🟢 no un-updated callers`);
+    console.log(`      🟢 no callers left not updated`);
   }
 }
 

@@ -15,7 +15,7 @@
 // after the attention count on a file row, after the state on a change row.
 const path = require('path');
 const {
-  CALL_STATE, LEVEL_TONES, CHANGED_ELSEWHERE_TONE, toneOf, classifyChangeVerdict, classifyDeletedVerdict,
+  CALL_STATE, LEVEL_TONES, attentionCountText, CHANGED_ELSEWHERE_TONE, toneOf, classifyChangeVerdict, classifyDeletedVerdict,
 } = require('./tree-row-models');
 const { needsAttention } = require('./review-tree-model');
 const { describeThreadCounts } = require('./review-threads');
@@ -49,18 +49,18 @@ const { pathTreeMarkdown } = require('./path-tree');
 const threadParts = (row, view) => describeThreadCounts(view.threadCountsOf ? view.threadCountsOf(row) : null);
 
 /**
- * What a file row says about GitHub's "viewed" mark; nothing when in sync.
- * - `changed`: GitHub dropped its mark because the file changed after it, and some rows are unticked.
+ * What a file row says about GitHub's Viewed on GitHub mark; nothing when in sync.
+ * - `changed`: GitHub dropped its mark because the file changed after it, and some rows are not reviewed.
  * - `syncing`: a write is queued or in flight.
  * - `failed`: the last write failed; the row offers Retry.
  * @typedef {'changed'|'syncing'|'failed'} ViewedNote
  */
 
-const VIEWED_TEXT = Object.freeze({ changed: '👁 changed', syncing: '👁 …', failed: 'viewed not synced' });
+const VIEWED_TEXT = Object.freeze({ changed: '👁 changed', syncing: '👁 …', failed: 'Viewed on GitHub not synced' });
 const VIEWED_TOOLTIP = Object.freeze({
-  changed: 'GitHub no longer shows this file as viewed because it changed after you viewed it. Tick the remaining rows to mark it viewed again.',
-  syncing: 'Updating the viewed mark on GitHub.',
-  failed: 'The viewed mark could not be written to GitHub. Your ticks are kept; use Retry to send it again.',
+  changed: 'This file changed after you marked it Viewed on GitHub, so GitHub cleared that mark. Mark the remaining rows reviewed to set it again.',
+  syncing: 'Updating Viewed on GitHub.',
+  failed: 'Viewed on GitHub could not be updated. Your reviewed marks are kept; use Retry to send it again.',
 });
 
 /**
@@ -173,7 +173,7 @@ function renderReviewFileItem(vscode, n, view) {
   const attention = left.filter(needsAttention);
   const viewed = viewedNote(view, n.relPath, left.length === 0);
   item.description = [
-    attention.length ? `${attention.length} need${attention.length === 1 ? 's' : ''} attention` : null,
+    attention.length ? attentionCountText(attention.length) : null,
     ...threadParts(n, view),
     `${rows.length - left.length}/${rows.length}`,
     viewed && viewed.text,
@@ -181,7 +181,7 @@ function renderReviewFileItem(vscode, n, view) {
   ].filter(Boolean).join('  ·  ');
   item.tooltip = new vscode.MarkdownString([
     ...pathTreeMarkdown(n.relPath), ...(n.status ? ['', `_${n.status}_`] : []), '',
-    `${rows.length} change${rows.length === 1 ? '' : 's'}, ${attention.length} need${attention.length === 1 ? 's' : ''} attention, ${left.length} left to review`,
+    `${rows.length} change${rows.length === 1 ? '' : 's'}, ${attentionCountText(attention.length)}, ${left.length} left to review`,
     ...(viewed ? ['', `_${viewed.tooltip}_`] : []),
   ].join('\n'));
   // The failed note makes Retry available through the context value (package.json `when`).
@@ -213,7 +213,7 @@ function renderFileItem(vscode, n, view) {
   item.description = [...threadParts(n, view), 'no call graph', viewed && viewed.text, lastFolder(n.relPath)].filter(Boolean).join('  ·  ');
   item.tooltip = new vscode.MarkdownString([
     ...pathTreeMarkdown(n.relPath), '', `_${n.status}_`, '',
-    '_No call graph (tests, config, docs): read the diff and tick the file._',
+    '_No call graph (tests, config, docs): read the diff and mark the file reviewed._',
     ...(viewed ? ['', `_${viewed.tooltip}_`] : []),
   ].join('\n'));
   if (viewed && viewed.note === 'failed') item.contextValue = 'fileViewedFailed';

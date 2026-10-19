@@ -223,7 +223,7 @@ test('the approve check refuses Approve without "Approve anyway" and does not ca
   env.open();
   await env.send({ type: 'submit', event: 'APPROVE', body: 'ok', approveAnyway: false });
   assert.deepEqual(env.store.calls.submit, []);
-  assert.match(textOf(env.panel()), /Not approved: tick “Approve anyway” first/);
+  assert.match(textOf(env.panel()), /Not approved: check “Approve anyway” first/);
   assert.equal(env.page().el('summary').value, 'ok', 'the summary is kept');
   await env.send({ type: 'submit', event: 'APPROVE', body: 'ok', approveAnyway: true });
   assert.deepEqual(env.store.calls.submit, [{ event: 'APPROVE', body: 'ok' }]);

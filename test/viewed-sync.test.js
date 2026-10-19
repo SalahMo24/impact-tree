@@ -214,7 +214,7 @@ test('DISMISSED keeps ticked rows, shows 👁 changed until all are ticked, then
   assert.equal(await v.description('src/a.ts'), '2/2  ·  src');
 });
 
-test('a failed write keeps the ticks, shows "viewed not synced" and Retry re-sends the current state', async () => {
+test('a failed write keeps the ticks, shows "Viewed on GitHub not synced" and Retry re-sends the current state', async () => {
   const v = setup(twoFiles());
   const sync = v.make();
   const file = await v.file('src/a.ts');
@@ -224,7 +224,7 @@ test('a failed write keeps the ticks, shows "viewed not synced" and Retry re-sen
   await flush();
   assert.ok((await v.rows('src/a.ts')).every((r) => v.provider.isReviewed(r)), 'ticks are kept');
   const item = v.item(await v.file('src/a.ts'));
-  assert.match(item.description, /viewed not synced/);
+  assert.match(item.description, /Viewed on GitHub not synced/);
   assert.equal(item.contextValue, 'reviewFileViewedFailed');
   assert.deepEqual(v.repaints, ['src/a.ts']);
   // a reload that still shows the old mark does not undo the local ticks
@@ -316,7 +316,7 @@ test('a queued file whose state returns to what GitHub holds is never written', 
   assert.deepEqual(v.fake.calls.map((c) => c.path), ['src/a.ts']);
 });
 
-test('the write queue is bounded: a file past the budget shows "viewed not synced", and Retry works once there is room', async () => {
+test('the write queue is bounded: a file past the budget shows "Viewed on GitHub not synced", and Retry works once there is room', async () => {
   const names = ['src/a.ts', 'src/b.ts', 'src/c.ts'];
   const v = setup(resultOf({ allChanged: names.map((n) => change(n, 'fn', 1)), fileStatus: Object.fromEntries(names.map((n) => [n, 'modified'])) }),
     { maxQueuedWrites: 1 });
@@ -324,7 +324,7 @@ test('the write queue is bounded: a file past the budget shows "viewed not synce
   const [fa, fb, fc] = await Promise.all(names.map((n) => v.file(n)));
   v.provider.setCheckedBatch([fa, fb, fc].map((row) => ({ row, on: true })));   // a in flight, b queued, c over budget
   assert.equal(v.fake.calls.length, 1);
-  assert.match(await v.description('src/c.ts'), /viewed not synced/);
+  assert.match(await v.description('src/c.ts'), /Viewed on GitHub not synced/);
   assert.equal((await v.rows('src/c.ts')).every((r) => v.provider.isReviewed(r)), true, 'its ticks are kept');
   assert.equal(sync.retry('src/b.ts'), false, 'b is queued, not failed');
   assert.equal(sync.retry('src/c.ts'), false, 'still no room');
@@ -348,7 +348,7 @@ test('results for a pull request no longer under review are ignored', async () =
   v.fake.fail(old);
   await flush();
   assert.equal(v.fake.calls.length, 1, 'no follow-up, no retry state for the old review');
-  assert.doesNotMatch(await v.description('src/a.ts'), /viewed not synced|👁/);
+  assert.doesNotMatch(await v.description('src/a.ts'), /Viewed on GitHub not synced|👁/);
   assert.deepEqual(v.repaints.filter((r) => r), []);
   // and the new review starts clean
   v.fake.load({});
@@ -434,7 +434,7 @@ test('the viewed note sits after progress and before the folder; a file without 
   assert.equal(renderTreeItem(vscode, fileRow, { rowDetail: 'hover', iconMode: 'symbol', checkedOf: () => false }).description, '0/1  ·  src');
   const plain = { type: 'file', label: 'notes.md', relPath: 'docs/notes.md', status: 'added', absPath: '/r/docs/notes.md' };
   const failed = renderTreeItem(vscode, plain, view('failed'));
-  assert.equal(failed.description, 'no call graph  ·  viewed not synced  ·  docs');
+  assert.equal(failed.description, 'no call graph  ·  Viewed on GitHub not synced  ·  docs');
   assert.equal(failed.contextValue, 'fileViewedFailed');
 });
 

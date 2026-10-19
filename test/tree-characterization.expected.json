@@ -5,7 +5,7 @@
     "tooltip": "11 of 16 left to review",
     "value": 11
    },
-   "message": "branch mode (requested pr) · ⛔ 5 · 11 of 16 left"
+   "message": "Branch + uncommitted (requested Branch vs base) · 5 need attention · 11 of 16 left"
   },
   "rows": [
    {
@@ -1828,7 +1828,7 @@
      "label": "y.json",
      "resourceUri": "uri:file:///repo/config/x/y.json",
      "tooltip": {
-      "markdown": "```\nconfig/\n└─ x/\n   └─ y.json\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\nconfig/\n└─ x/\n   └─ y.json\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
      }
     }
    },
@@ -1852,7 +1852,7 @@
      "label": "a.md",
      "resourceUri": "uri:file:///repo/docs/a.md",
      "tooltip": {
-      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
      }
     }
    },
@@ -1876,7 +1876,7 @@
      "label": "README.md",
      "resourceUri": "uri:file:///repo/README.md",
      "tooltip": {
-      "markdown": "```\nREADME.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\nREADME.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
      }
     }
    },
@@ -1891,7 +1891,7 @@
     "tooltip": "16 of 16 left to review",
     "value": 16
    },
-   "message": "branch mode (requested pr) · ⛔ 6 · 16 of 16 left"
+   "message": "Branch + uncommitted (requested Branch vs base) · 6 need attention · 16 of 16 left"
   },
   "rows": [
    {
@@ -3693,7 +3693,7 @@
      "label": "y.json",
      "resourceUri": "uri:file:///repo/config/x/y.json",
      "tooltip": {
-      "markdown": "```\nconfig/\n└─ x/\n   └─ y.json\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\nconfig/\n└─ x/\n   └─ y.json\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
      }
     }
    },
@@ -3716,7 +3716,7 @@
      "label": "a.md",
      "resourceUri": "uri:file:///repo/docs/a.md",
      "tooltip": {
-      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
      }
     }
    },
@@ -3739,7 +3739,7 @@
      "label": "README.md",
      "resourceUri": "uri:file:///repo/README.md",
      "tooltip": {
-      "markdown": "```\nREADME.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\nREADME.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
      }
     }
    },
@@ -3754,7 +3754,7 @@
     "tooltip": "16 of 16 left to review",
     "value": 16
    },
-   "message": "branch mode (requested pr) · ⛔ 6 · 16 of 16 left"
+   "message": "Branch + uncommitted (requested Branch vs base) · 6 need attention · 16 of 16 left"
   },
   "rows": [
    {
@@ -5609,7 +5609,7 @@
      "label": "y.json",
      "resourceUri": "uri:file:///repo/config/x/y.json",
      "tooltip": {
-      "markdown": "```\nconfig/\n└─ x/\n   └─ y.json\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\nconfig/\n└─ x/\n   └─ y.json\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
      }
     }
    },
@@ -5632,7 +5632,7 @@
      "label": "a.md",
      "resourceUri": "uri:file:///repo/docs/a.md",
      "tooltip": {
-      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
      }
     }
    },
@@ -5655,7 +5655,7 @@
      "label": "README.md",
      "resourceUri": "uri:file:///repo/README.md",
      "tooltip": {
-      "markdown": "```\nREADME.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\nREADME.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
      }
     }
    },
@@ -5670,7 +5670,7 @@
     "tooltip": "5 of 6 left to review",
     "value": 5
    },
-   "message": "PR #7 · ⛔ 2 · 5 of 6 left"
+   "message": "PR #7 · 2 need attention · 5 of 6 left"
   },
   "rows": [
    {
@@ -6246,7 +6246,7 @@
      "label": "new.md",
      "resourceUri": "uri:impacttree-pr:///docs/new.md?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "```\ndocs/\n└─ new.md\n```\n\n_added_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\ndocs/\n└─ new.md\n```\n\n_added_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
      }
     }
    },
@@ -6271,7 +6271,7 @@
      "label": "moved.md",
      "resourceUri": "uri:impacttree-pr:///docs/sub/moved.md?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "```\ndocs/\n└─ sub/\n   └─ moved.md\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\ndocs/\n└─ sub/\n   └─ moved.md\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
      }
     }
    },
@@ -6286,7 +6286,7 @@
     "tooltip": "6 of 6 left to review",
     "value": 6
    },
-   "message": "PR #7 · ⛔ 2 · 6 of 6 left"
+   "message": "PR #7 · 2 need attention · 6 of 6 left"
   },
   "rows": [
    {
@@ -6854,7 +6854,7 @@
      "label": "new.md",
      "resourceUri": "uri:impacttree-pr:///docs/new.md?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "```\ndocs/\n└─ new.md\n```\n\n_added_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\ndocs/\n└─ new.md\n```\n\n_added_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
      }
     }
    },
@@ -6878,7 +6878,7 @@
      "label": "moved.md",
      "resourceUri": "uri:impacttree-pr:///docs/sub/moved.md?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "```\ndocs/\n└─ sub/\n   └─ moved.md\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and tick the file._"
+      "markdown": "```\ndocs/\n└─ sub/\n   └─ moved.md\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
      }
     }
    },

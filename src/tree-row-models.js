@@ -3,6 +3,7 @@
 const path = require('path');
 const { classifyCallerUpdateState } = require('./engine/call-sites');
 const { viewStateOf } = require('./view-state');
+const { MODES, modeLabel } = require('./engine/analyze');
 
 // Row models for the change tree: plain objects describing each row, built from an
 // analysis result. Pure: nothing here reads session state, registers a decoration or
@@ -83,10 +84,9 @@ const CALL_STATE = {
 const NO_SITE_EVIDENCE = { updated: [], untouched: [], unknown: [] };
 
 /**
- * `token` is the glyph that surfaces outside the tree (the review lens) still lead with;
- * tree rows and the Details panel show `text` and the state name instead.
+ * Every surface (tree, Details, review lens) shows `text`; none leads with a glyph.
  * `unknown` marks a body-only verdict whose callers could not be found (level 3, but not fine).
- * @typedef {{ level: number, token: string, text: string, sentence: string, unknown?: boolean }} Verdict
+ * @typedef {{ level: number, text: string, sentence: string, unknown?: boolean }} Verdict
  */
 
 // What the analysis could not say about a caller search, in words a reviewer can act on.
@@ -129,16 +129,16 @@ function classifyRiskyVerdict(change, risky) {
   if (stale > 0) {
     const of = `${stale} of ${n} caller${n === 1 ? '' : 's'}`;
     const nearby = change.staleChangedElsewhere || 0;
-    return { level: 0, token: '⛔', text: `${of} not updated${nearby ? ` (${nearby} edited nearby)` : ''}${mayBeMissing ? ' — more may be missing' : ''}`,
+    return { level: 0, text: `${of} not updated${nearby ? ` (${nearby} edited nearby)` : ''}${mayBeMissing ? ' — more may be missing' : ''}`,
       sentence: `${what}, and ${of} ${stale === 1 ? 'was' : 'were'} not changed on the call line. Check that ${stale === 1 ? 'it still works' : 'they still work'}.${mayBeMissing ? ' More callers may be missing.' : ''}` };
   }
   if (mayBeMissing || !callersKnown(change)) {
     const found = change.callerState === 'resolved';
-    return { level: 1, token: '?', text: change.callerState === 'di' ? 'DI-constructed' : 'callers unknown',
+    return { level: 1, text: change.callerState === 'di' ? 'DI-constructed' : 'callers unknown',
       sentence: `${what}, ${found ? 'and the callers found so far are updated, but more may be missing' : 'but its callers could not be found'}: ${describeUnknownCallers(change)}. Check its users by hand.` };
   }
   const none = change.callerState === 'none';
-  return { level: 2, token: '✓', text: none ? 'no callers' : 'all callers updated',
+  return { level: 2, text: none ? 'no callers' : 'all callers updated',
     sentence: `${what}. ${none ? 'Nothing calls it in the code searched.' : 'Every caller was updated on the call line.'}` };
 }
 
@@ -154,11 +154,11 @@ function classifyBodyOnlyVerdict(change) {
   const mayBeMissing = change.callersComplete === false;
   // A finished search that found nothing is `none`; one that was cut short may have missed callers.
   if (!callersKnown(change) || (mayBeMissing && change.callerState === 'none')) {
-    return { level: 3, token: '?', text: change.callerState === 'di' ? 'DI-constructed' : 'callers unknown', unknown: true,
+    return { level: 3, text: change.callerState === 'di' ? 'DI-constructed' : 'callers unknown', unknown: true,
       sentence: `Only the body changed. Its callers could not be found: ${describeUnknownCallers(change)}.` };
   }
   if (change.callerState === 'none') {
-    return { level: 4, token: '∅', text: 'no callers', sentence: 'Only the body changed, and nothing calls it in the code searched.' };
+    return { level: 4, text: 'no callers', sentence: 'Only the body changed, and nothing calls it in the code searched.' };
   }
   const untouched = callers.filter((/** @type {any} */ c) => c.callState !== 'updated-at-call').length;
   // The check is about the unchanged callers when there are any, else about the updated ones.
@@ -166,7 +166,7 @@ function classifyBodyOnlyVerdict(change) {
   const which = untouched === 0
     ? `${n === 1 ? 'Its caller was' : `All ${n} callers were`} updated too; ${check(n)}.`
     : `${untouched} of ${n} caller${n === 1 ? '' : 's'} ${untouched === 1 ? 'is' : 'are'} unchanged, which is expected; ${check(untouched)}.`;
-  return { level: 3, token: '●', text: `reaches ${n} caller${n === 1 ? '' : 's'}`,
+  return { level: 3, text: `reaches ${n} caller${n === 1 ? '' : 's'}`,
     sentence: `Only the body changed: the signature is the same, so callers still compile. ${which}${mayBeMissing ? ' More callers may be missing.' : ''}` };
 }
 
@@ -189,7 +189,7 @@ function classifyChangeVerdict(change) {
  * deleted symbol's former callers and so cannot say that no one still uses it.
  * @returns {Verdict}
  */
-const classifyDeletedVerdict = () => ({ level: 1, token: '−', text: 'deleted',
+const classifyDeletedVerdict = () => ({ level: 1, text: 'deleted',
   sentence: 'This symbol was removed. Its former callers were not searched, so check that nothing still uses it, including dynamic users.' });
 
 /**
@@ -197,7 +197,7 @@ const classifyDeletedVerdict = () => ({ level: 1, token: '−', text: 'deleted',
  * @param {Array<[number, number]>} ranges The changed line ranges outside every callable.
  * @returns {Verdict}
  */
-const classifyOutsideVerdict = (ranges) => ({ level: 4, token: '≡', text: describeOutsideRanges(ranges),
+const classifyOutsideVerdict = (ranges) => ({ level: 4, text: describeOutsideRanges(ranges),
   sentence: 'Changed lines that are not inside any function: imports, constants, type comments and top-level statements. They have no callers, so read them in the diff.' });
 
 /**
@@ -277,7 +277,7 @@ function buildPlaceholderRows({ phase, busy, state, repo = 'ok' }) {
       // base that could not be fetched) the warnings must stay visible, so say it as a row.
       const notices = buildNoticeRows(state.result);
       if (!notices.length) return [];
-      const mode = MODE_LABELS[state.result.mode] || state.result.mode;
+      const mode = modeLabel(state.result.mode);
       return [...notices, { type: 'message', icon: 'info', label: `Nothing changed — ${mode} against ${state.result.base.ref}`,
         desc: 'Switch mode', command: 'impactTree.selectMode' }];
     }
@@ -285,9 +285,17 @@ function buildPlaceholderRows({ phase, busy, state, repo = 'ok' }) {
   }
 }
 
-// How the modes are named to a reader; the setting values (`pr`, `branch`, ...) stay.
+// How the modes are named to a reader: `MODES[id].label` in the engine is the one table.
 /** @type {Record<string, string>} */
-const MODE_LABELS = { pr: 'Branch vs base', branch: 'Branch + uncommitted', working: 'Uncommitted (agent)', checkpoint: 'Since checkpoint' };
+const MODE_LABELS = Object.fromEntries(Object.entries(MODES).map(([id, m]) => [id, m.label]));
+
+/**
+ * The status text for a count of changes that need attention: `1 needs attention`,
+ * `3 need attention`.
+ * @param {number} n
+ * @returns {string}
+ */
+const attentionCountText = (n) => `${n} ${n === 1 ? 'needs' : 'need'} attention`;
 
 /**
  * The rows for a mode that cannot run because of what the session recorded, each with the
@@ -539,7 +547,7 @@ const buildIncompleteCallersRow = (reason, hasCallers) => ({
 module.exports = {
   LEGEND, CALL_STATE, NO_SITE_EVIDENCE, STATE_NAMES, LEVEL_TONES, CHANGED_ELSEWHERE_TONE, toneOf, stateNameOf,
   classifyChangeVerdict, classifyDeletedVerdict, classifyOutsideVerdict, classifyRowVerdict, classifyWorstRowVerdict, getFileStatus,
-  buildReachScopeNote, buildPlaceholderRows, buildNoticeRows, PREVIEW_LIMITS_NOTE, MODE_LABELS,
+  buildReachScopeNote, buildPlaceholderRows, buildNoticeRows, PREVIEW_LIMITS_NOTE, MODE_LABELS, attentionCountText,
   buildChangeRows, buildDeletedRows, buildFileLeafRows, buildOutsideRows, describeOutsideRanges,
   buildComputeTestReachRow, dropExcludedCallers, collectAncestry, buildCallerRows,
   buildIncompleteCallersRow,

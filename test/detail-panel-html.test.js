@@ -182,12 +182,12 @@ test('a caller whose line cannot be read shows its path alone', () => {
   assert.match(textOf(html), /not changed u src\/u\.ts Tests/);
 });
 
-test('a reviewed change offers Untick; the tick button says what it will do', () => {
+test('a reviewed change offers Mark not reviewed; the tick button says what it will do', () => {
   const c = change('src/a.ts', 'f', 10);
   const result = resultOf({ allChanged: [c] });
   const row = findRow(result, 'f');
   const on = render(row, result, { isReviewed: (r) => r === row });
-  assert.match(textOf(on), /Untick Next unreviewed Show callers$/);
+  assert.match(textOf(on), /Mark not reviewed Next unreviewed Show callers$/);
   const id = treeItemId(row);
   assert.ok(on.includes(`data-act="tick" data-id="${id}" data-on="false"`), 'the button names the row it ticks');
   assert.ok(render(row, result).includes(`data-act="tick" data-id="${id}" data-on="true"`));
@@ -219,7 +219,7 @@ test('a file with a call graph: name, path, status, counts, and file-wide button
   const text = textOf(render(file, result, { isReviewed: (r) => r.label === quiet.label }));
   assert.match(text, /^selected in tree a\.ts src\/a\.ts · modified 3 changes, 2 need attention, 2 left to review\. Mark file reviewed Next unreviewed$/);
   const all = render(file, result, { isReviewed: () => true });
-  assert.match(textOf(all), /0 left to review\. Untick file Next unreviewed$/);
+  assert.match(textOf(all), /0 left to review\. Mark file not reviewed Next unreviewed$/);
   assert.match(all, /data-act="tick" data-id="file:src\/a\.ts" data-on="false"/);
   const one = resultOf({ allChanged: [change('src/b.ts', 'q', 10)] });
   assert.match(textOf(render(rowsOf(one)[0], one)), /1 change, 0 need attention, 1 left to review\./);
@@ -230,7 +230,7 @@ test('a file without a call graph says so and can be ticked', () => {
   const [file] = rowsOf(result);
   assert.equal(file.type, 'file');
   const text = textOf(render(file, result));
-  assert.match(text, /^selected in tree notes\.md docs\/notes\.md · added No call graph for this file \(tests, config, docs\)\. Read the diff and tick the file\. Mark reviewed Next unreviewed$/);
+  assert.match(text, /^selected in tree notes\.md docs\/notes\.md · added No call graph for this file \(tests, config, docs\)\. Read the diff and mark the file reviewed\. Mark reviewed Next unreviewed$/);
 });
 
 test('no row: a short hint, and no buttons', () => {
@@ -358,7 +358,7 @@ test('the progress strip names the source, counts, attention and percentage, and
   const strip = (progress) => buildDetailHtml(null, { result: null, isReviewed: () => false, impactRows: [], nonce: NONCE,
     cspSource: CSP_SOURCE, origin: 'tree', lineOf, progress: progressPresentation(progress) });
   const html = strip({ line: 'PR #15 against main', total: 8, left: 5, attention: 2 });
-  assert.match(textOf(html), /^PR #15 against main 3 of 8 reviewed ⛔ 2 need attention 38% 38% Select a change/);
+  assert.match(textOf(html), /^PR #15 against main 3 of 8 reviewed 2 need attention 38% 38% Select a change/);
   assert.match(html, /<progress max="8" value="3" data-progress-meter>/);
   assert.match(textOf(strip({ line: 'x', total: 2, left: 0, attention: 0 })), /2 of 2 reviewed nothing needs attention 100%/);
   assert.doesNotMatch(html, /\sstyle="/, 'the meter is styled by the nonce stylesheet, not inline');

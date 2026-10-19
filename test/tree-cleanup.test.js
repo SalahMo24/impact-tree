@@ -266,11 +266,11 @@ test('in either detail mode a row says its state in words; inline adds the chang
 test('the summary reads PR or mode, the attention count, what is left and the filter', () => {
   const counts = { total: 5, left: 3, attention: 2 };
   const result = resultOf({ base: { ref: 'origin/main', sha: 'abc' } });
-  assert.equal(model.buildReviewSummary(result, { kind: 'pr', pr: { number: 15 } }, counts).message, 'PR #15 · ⛔ 2 · 3 of 5 left');
-  assert.equal(model.buildReviewSummary(result, { kind: 'local' }, counts).message, 'branch mode · ⛔ 2 · 3 of 5 left');
+  assert.equal(model.buildReviewSummary(result, { kind: 'pr', pr: { number: 15 } }, counts).message, 'PR #15 · 2 need attention · 3 of 5 left');
+  assert.equal(model.buildReviewSummary(result, { kind: 'local' }, counts).message, 'Branch + uncommitted · 2 need attention · 3 of 5 left');
   assert.equal(model.buildReviewSummary(result, { kind: 'pr', pr: { number: 15 } }, counts, 'attention').message,
-    'PR #15 · ⛔ 2 · 3 of 5 left · filter: needs attention');
-  assert.equal(model.buildReviewSummary(result, null, counts, 'unreviewed').message, 'branch mode · ⛔ 2 · 3 of 5 left · filter: unreviewed');
+    'PR #15 · 2 need attention · 3 of 5 left · filter: needs attention');
+  assert.equal(model.buildReviewSummary(result, null, counts, 'unreviewed').message, 'Branch + uncommitted · 2 need attention · 3 of 5 left · filter: unreviewed');
   assert.doesNotMatch(model.buildReviewSummary(result, null, counts).message, /origin\/main/, 'the base is not named');
 });
 

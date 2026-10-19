@@ -35,25 +35,25 @@ const verdictOf = (extra) => models.classifyChangeVerdict({
 
 test('every risky kind and every caller outcome gets the level the review rules give it', () => {
   const table = [
-    // [name, change, level, token, text]
-    ['risky, one stale of three', { staleCallers: 1, callers: callersOf(3) }, 0, '⛔', '1 of 3 callers not updated'],
-    ['risky, all stale', { staleCallers: 2, callers: callersOf(2) }, 0, '⛔', '2 of 2 callers not updated'],
-    ['risky, stale and the search incomplete', { staleCallers: 1, callersComplete: false, callers: callersOf(1) }, 0, '⛔', '1 of 1 caller not updated — more may be missing'],
-    ['risky, stale, one edited nearby', { staleCallers: 2, staleChangedElsewhere: 1, callers: callersOf(3) }, 0, '⛔', '2 of 3 callers not updated (1 edited nearby)'],
-    ['risky, stale, edited nearby and incomplete', { staleCallers: 2, staleChangedElsewhere: 2, callersComplete: false, callers: callersOf(2) }, 0, '⛔', '2 of 2 callers not updated (2 edited nearby) — more may be missing'],
-    ['risky, stale, none edited nearby', { staleCallers: 1, staleChangedElsewhere: 0, callers: callersOf(1) }, 0, '⛔', '1 of 1 caller not updated'],
-    ['risky, search incomplete', { callersComplete: false, callers: callersOf(1, 'updated-at-call') }, 1, '?', 'callers unknown'],
-    ['risky, callers unknown', { callerState: 'unknown', callers: [] }, 1, '?', 'callers unknown'],
-    ['risky, a state the result does not define', { callerState: undefined, callers: [] }, 1, '?', 'callers unknown'],
-    ['risky, DI-built', { callerState: 'di', callers: [] }, 1, '?', 'DI-constructed'],
-    ['risky, all callers updated', { callers: callersOf(2, 'updated-at-call') }, 2, '✓', 'all callers updated'],
-    ['risky, no callers', { callerState: 'none', callers: [] }, 2, '✓', 'no callers'],
-    ['risky, old result without callersComplete', { callers: callersOf(1, 'updated-at-call'), callersComplete: undefined }, 2, '✓', 'all callers updated'],
+    // [name, change, level, text]
+    ['risky, one stale of three', { staleCallers: 1, callers: callersOf(3) }, 0, '1 of 3 callers not updated'],
+    ['risky, all stale', { staleCallers: 2, callers: callersOf(2) }, 0, '2 of 2 callers not updated'],
+    ['risky, stale and the search incomplete', { staleCallers: 1, callersComplete: false, callers: callersOf(1) }, 0, '1 of 1 caller not updated — more may be missing'],
+    ['risky, stale, one edited nearby', { staleCallers: 2, staleChangedElsewhere: 1, callers: callersOf(3) }, 0, '2 of 3 callers not updated (1 edited nearby)'],
+    ['risky, stale, edited nearby and incomplete', { staleCallers: 2, staleChangedElsewhere: 2, callersComplete: false, callers: callersOf(2) }, 0, '2 of 2 callers not updated (2 edited nearby) — more may be missing'],
+    ['risky, stale, none edited nearby', { staleCallers: 1, staleChangedElsewhere: 0, callers: callersOf(1) }, 0, '1 of 1 caller not updated'],
+    ['risky, search incomplete', { callersComplete: false, callers: callersOf(1, 'updated-at-call') }, 1, 'callers unknown'],
+    ['risky, callers unknown', { callerState: 'unknown', callers: [] }, 1, 'callers unknown'],
+    ['risky, a state the result does not define', { callerState: undefined, callers: [] }, 1, 'callers unknown'],
+    ['risky, DI-built', { callerState: 'di', callers: [] }, 1, 'DI-constructed'],
+    ['risky, all callers updated', { callers: callersOf(2, 'updated-at-call') }, 2, 'all callers updated'],
+    ['risky, no callers', { callerState: 'none', callers: [] }, 2, 'no callers'],
+    ['risky, old result without callersComplete', { callers: callersOf(1, 'updated-at-call'), callersComplete: undefined }, 2, 'all callers updated'],
   ];
   for (const kind of RISKY_KINDS) {
-    for (const [name, extra, level, token, text] of table) {
+    for (const [name, extra, level, text] of table) {
       const v = verdictOf({ kinds: [BODY, kind], ...extra });
-      assert.deepEqual([v.level, v.token, v.text], [level, token, text], `${kind.id}: ${name}`);
+      assert.deepEqual([v.level, v.text], [level, text], `${kind.id}: ${name}`);
       assert.ok(v.sentence.includes(kind.label), `${kind.id}: ${name}: the sentence names the kind`);
     }
   }
@@ -61,18 +61,18 @@ test('every risky kind and every caller outcome gets the level the review rules 
 
 test('a body-only change is never needs-attention, however many callers were left alone', () => {
   const table = [
-    ['callers, none touched', { staleCallers: 2, callers: callersOf(2) }, 3, '●', 'reaches 2 callers'],
-    ['one caller', { staleCallers: 1, callers: callersOf(1) }, 3, '●', 'reaches 1 caller'],
-    ['callers, search incomplete', { callersComplete: false, callers: callersOf(1) }, 3, '●', 'reaches 1 caller'],
-    ['callers unknown', { callerState: 'unknown', callers: [] }, 3, '?', 'callers unknown'],
-    ['incomplete and nothing found', { callerState: 'none', callersComplete: false, callers: [] }, 3, '?', 'callers unknown'],
-    ['a state the result does not define', { callerState: 'anything', callers: [] }, 3, '?', 'callers unknown'],
-    ['DI-built', { callerState: 'di', callers: [] }, 3, '?', 'DI-constructed'],
-    ['no callers', { callerState: 'none', callers: [] }, 4, '∅', 'no callers'],
+    ['callers, none touched', { staleCallers: 2, callers: callersOf(2) }, 3, 'reaches 2 callers'],
+    ['one caller', { staleCallers: 1, callers: callersOf(1) }, 3, 'reaches 1 caller'],
+    ['callers, search incomplete', { callersComplete: false, callers: callersOf(1) }, 3, 'reaches 1 caller'],
+    ['callers unknown', { callerState: 'unknown', callers: [] }, 3, 'callers unknown'],
+    ['incomplete and nothing found', { callerState: 'none', callersComplete: false, callers: [] }, 3, 'callers unknown'],
+    ['a state the result does not define', { callerState: 'anything', callers: [] }, 3, 'callers unknown'],
+    ['DI-built', { callerState: 'di', callers: [] }, 3, 'DI-constructed'],
+    ['no callers', { callerState: 'none', callers: [] }, 4, 'no callers'],
   ];
-  for (const [name, extra, level, token, text] of table) {
+  for (const [name, extra, level, text] of table) {
     const v = verdictOf(extra);
-    assert.deepEqual([v.level, v.token, v.text], [level, token, text], name);
+    assert.deepEqual([v.level, v.text], [level, text], name);
   }
 });
 
@@ -107,12 +107,12 @@ test('a body-only sentence agrees with how many callers are unchanged: none, one
 });
 
 test('deleted symbols and outside-functions rows have fixed verdicts', () => {
-  assert.deepEqual(models.classifyDeletedVerdict(), { level: 1, token: '−', text: 'deleted', sentence: models.classifyDeletedVerdict().sentence });
+  assert.deepEqual(models.classifyDeletedVerdict(), { level: 1, text: 'deleted', sentence: models.classifyDeletedVerdict().sentence });
   assert.match(models.classifyDeletedVerdict().sentence, /removed/);
   assert.match(models.classifyDeletedVerdict().sentence, /not searched/);
   assert.doesNotMatch(models.classifyDeletedVerdict().sentence, /nothing (in the analysed code )?(still )?calls|no(thing| one) (still )?call/i, 'it does not claim nothing calls it');
   const outside = models.classifyOutsideVerdict([[1, 4], [22, 22]]);
-  assert.deepEqual([outside.level, outside.token, outside.text], [4, '≡', 'lines 1–4, 22']);
+  assert.deepEqual([outside.level, outside.text], [4, 'lines 1–4, 22']);
   assert.match(outside.sentence, /not inside any function/);
   assert.equal(models.classifyOutsideVerdict([[9.5, 9.5]]).text, 'deleted before line 10');
 });

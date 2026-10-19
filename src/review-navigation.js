@@ -1,6 +1,7 @@
 // @ts-check
 'use strict';
 const { treeItemId } = require('./review-tree-model');
+const { attentionCountText } = require('./tree-row-models');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 
@@ -21,7 +22,7 @@ const nextKeyHint = (platform) => (platform === 'darwin' ? '⌥N' : 'Alt+N');
  * @param {string} platform
  * @returns {string}
  */
-const statusBarText = ({ left, attention }, platform) => `$(checklist) ${left} left · ⛔ ${attention} · ${nextKeyHint(platform)} next`;
+const statusBarText = ({ left, attention }, platform) => `$(checklist) ${left} left · ${attentionCountText(attention)} · ${nextKeyHint(platform)} next`;
 
 /**
  * What "nothing is left" means under a filter, since "all reviewed" would be untrue when
@@ -48,7 +49,7 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
   const bar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
   bar.name = 'Impact Tree review progress';
   bar.command = 'impactTree.nextUnreviewed';
-  bar.tooltip = 'Go to the next unreviewed change (rebind it in Keyboard Shortcuts)';
+  bar.tooltip = 'Go to the next unreviewed change';
 
   // A context key is sent only when its value changes.
   /** @type {Map<string, unknown>} */

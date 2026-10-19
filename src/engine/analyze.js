@@ -132,22 +132,25 @@ async function branchMergeBase(git, opts, warnings) {
 }
 
 const MODES = {
-  working:    { desc: 'uncommitted changes only (agent review)', headRev: null,   requireClean: false, resolveBase: headBase },
-  checkpoint: { desc: 'since a recorded checkpoint',            headRev: null,   requireClean: false, resolveBase: checkpointBase },
-  branch:     { desc: 'whole branch vs base (includes uncommitted)', headRev: null, requireClean: false, resolveBase: branchMergeBase },
-  pr:         { desc: 'committed branch state vs base (PR semantics)', headRev: 'HEAD', requireClean: true, resolveBase: branchMergeBase },
+  working:    { label: 'Uncommitted (agent)', desc: 'uncommitted changes only (agent review)', headRev: null,   requireClean: false, resolveBase: headBase },
+  checkpoint: { label: 'Since checkpoint', desc: 'since a recorded checkpoint',            headRev: null,   requireClean: false, resolveBase: checkpointBase },
+  branch:     { label: 'Branch + uncommitted', desc: 'whole branch vs base (includes uncommitted)', headRev: null, requireClean: false, resolveBase: branchMergeBase },
+  pr:         { label: 'Branch vs base', desc: 'committed branch state vs base (PR semantics)', headRev: 'HEAD', requireClean: true, resolveBase: branchMergeBase },
 };
+
+/** The name a reader sees for a mode id (the setting value); an unknown id is shown as it is. */
+const modeLabel = (/** @type {string} */ id) => (MODES[/** @type {keyof typeof MODES} */ (id)] ? MODES[/** @type {keyof typeof MODES} */ (id)].label : id);
 
 function resolveEffectiveMode(mode, cfg, dirty, onDirty, warnings) {
   if(!(cfg.requireClean && dirty.length)) return { effectiveMode: mode, effectiveCfg: cfg };
     // Erroring to a blank view the moment someone edits a file is hostile. Fall back
     // to 'branch' (which includes uncommitted work) and say loudly that we did.
     if(onDirty !== 'fallback') {
-      const err = new Error(`working tree is dirty — a PR diff would be contaminated by ${dirty.length} uncommitted change(s). Commit, stash, or use mode 'branch'.`);
+      const err = new Error(`the working tree is dirty — a PR diff would be contaminated by ${dirty.length} uncommitted change(s). Commit, stash, or switch to ${MODES.branch.label}.`);
       err.dirty = dirty;
       throw err;
     }
-    warnings.push(`${dirty.length} uncommitted change(s) — showing 'branch' (includes your edits) instead of 'pr'. Commit or stash for a true PR diff.`);
+    warnings.push(`${dirty.length} uncommitted change(s) — showing ${MODES.branch.label} (includes your edits) instead of ${MODES.pr.label}. Commit or stash for a true PR diff.`);
    
 
   return { effectiveMode: 'branch', effectiveCfg: MODES.branch };
@@ -708,4 +711,4 @@ async function analyze(repo, opts = {}) {
     return result;
   }
 }
-module.exports = { analyze, MODES, loadTypeScript, rangesFor, withoutUntrackedCallers };
+module.exports = { analyze, MODES, modeLabel, loadTypeScript, rangesFor, withoutUntrackedCallers };

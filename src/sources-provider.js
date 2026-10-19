@@ -50,7 +50,7 @@ function createSourcesProvider(vscode, {
         const slug = getRepoSlug();
         return [
           N({ type: 'group', key: 'local', label: 'Local changes', icon: 'vm', expanded: true,
-            desc: `mode: ${getMode()}` }),
+            desc: modes[getMode()] ? modes[getMode()].label : getMode() }),
           N({ type: 'group', key: 'prs', label: 'Pull requests', icon: 'github', expanded: true,
             desc: slug ? `${slug.owner}/${slug.repo}` : 'no github remote' }),
         ];
@@ -60,7 +60,7 @@ function createSourcesProvider(vscode, {
         const active = getMode();
         return Object.entries(modes).map(([id, m]) => N({
           type: 'mode',
-          label: id,
+          label: m.label,
           icon: id === active ? 'check' : (MODE_ICON[id] || 'circle-outline'),
           desc: m.desc,
           command: 'impactTree.analyseMode',

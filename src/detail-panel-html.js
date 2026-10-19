@@ -1,7 +1,7 @@
 // @ts-check
 'use strict';
 const assert = require('node:assert/strict');
-const { classifyRowVerdict, stateNameOf, CALL_STATE, PREVIEW_LIMITS_NOTE } = require('./tree-row-models');
+const { classifyRowVerdict, stateNameOf, CALL_STATE, PREVIEW_LIMITS_NOTE, attentionCountText } = require('./tree-row-models');
 const { treeItemId } = require('./review-tree-model');
 
 // The detail panel's whole document, built from one row of the change tree. Pure: the
@@ -184,7 +184,7 @@ function progressPresentation(progress) {
   return {
     line: progress.line, reviewed, total: progress.total,
     countText: `${reviewed} of ${progress.total} reviewed`,
-    attentionText: progress.attention ? `⛔ ${progress.attention} need attention` : 'nothing needs attention',
+    attentionText: progress.attention ? attentionCountText(progress.attention) : 'nothing needs attention',
     attentionClass: progress.attention ? 'lv0' : 'lv2',
     percentText: `${Math.round((100 * reviewed) / progress.total)}%`,
   };
@@ -223,7 +223,7 @@ function changeActionsHtml(id, result) {
   const computable = result && !result.tierA && !result.testReachComputed;
   return callers + (computable ? '<button class="secondary" data-act="test-reach">Compute test reachability</button>' : '');
 }
-const ROW_WORDS = { mark: 'Mark reviewed', untick: 'Untick' };
+const ROW_WORDS = { mark: 'Mark reviewed', unmark: 'Mark not reviewed' };
 
 /**
  * Only the fields progress can change in an existing document. Pure, shared by the
@@ -237,14 +237,14 @@ function reviewPresentation(row, isReviewed) {
   const id = row && treeItemId(row);
   if (!row || !id) return null;
   const reviewed = isReviewed(row);
-  const words = row.type === 'reviewFile' ? { mark: 'Mark file reviewed', untick: 'Untick file' } : ROW_WORDS;
+  const words = row.type === 'reviewFile' ? { mark: 'Mark file reviewed', unmark: 'Mark file not reviewed' } : ROW_WORDS;
   let summaryText = null;
   if (row.type === 'reviewFile') {
     const count = row.rows.length, attention = row.attention || 0;
     const left = row.rows.filter((/** @type {TreeRow} */ r) => !isReviewed(r)).length;
-    summaryText = `${count} change${count === 1 ? '' : 's'}, ${attention} need${attention === 1 ? 's' : ''} attention, ${left} left to review.`;
+    summaryText = `${count} change${count === 1 ? '' : 's'}, ${attentionCountText(attention)}, ${left} left to review.`;
   }
-  return { id, reviewed, buttonText: reviewed ? words.untick : words.mark, summaryText };
+  return { id, reviewed, buttonText: reviewed ? words.unmark : words.mark, summaryText };
 }
 
 /**
@@ -341,7 +341,7 @@ function changeHtml(row, { result, impactRows, lineOf, commenting }) {
 function fileHtml(row, isReviewed, threads) {
   const head = `<h3>${escapeHtml(row.label)}</h3><div class="where">${escapeHtml(row.relPath)} · ${escapeHtml(row.status ?? 'changed')}</div>`;
   if (row.type === 'file') {
-    return `${head}<div class="verdict lv4">No call graph for this file (tests, config, docs). Read the diff and tick the file.</div>${threads}${buttonsHtml(reviewPresentation(row, isReviewed))}`;
+    return `${head}<div class="verdict lv4">No call graph for this file (tests, config, docs). Read the diff and mark the file reviewed.</div>${threads}${buttonsHtml(reviewPresentation(row, isReviewed))}`;
   }
   const model = reviewPresentation(row, isReviewed);
   assert.ok(model, 'a file shown in Details must have a tree identity');

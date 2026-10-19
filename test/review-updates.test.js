@@ -63,7 +63,7 @@ test('all marking routes patch Details, refresh one file, and leave unchanged de
     await tree.getChildren(current[0]);
     tickClock();
     assert.equal(env.isTicked(first), on);
-    assert.match(details.displayHtml, on ? />Untick<\/button>/ : />Mark reviewed<\/button>/);
+    assert.match(details.displayHtml, on ? />Mark not reviewed<\/button>/ : />Mark reviewed<\/button>/);
   }
   assert.deepEqual(treeEvents, [aFile, aFile, aFile]);
   assert.equal(progress.length, 3);
@@ -93,7 +93,7 @@ test('one file gesture updates its visible summary, and repeated marks publish n
   tree.setCheckedBatch([{ row: aFile, on: true }, { row: notes, on: true }]);
   assert.ok(env.isTicked(first) && env.isTicked(second));
   assert.match(details.displayHtml, /0 left to review\./);
-  assert.match(details.displayHtml, />Untick file<\/button>/);
+  assert.match(details.displayHtml, />Mark file not reviewed<\/button>/);
   assert.equal(details.loads, loads);
   assert.deepEqual(events, [aFile, notes]);
   assert.equal(progress.length, 1, 'one notification for the gesture');
@@ -195,14 +195,14 @@ test('the ready handshake recovers a missed patch, and browser patches reject st
   const before = details.posted.length;
   await details.send(page.sent[0]);
   for (const message of details.posted.slice(before)) page.receive(message);
-  assert.equal(button.textContent, 'Untick');
+  assert.equal(button.textContent, 'Mark not reviewed');
   assert.equal(button.getAttribute('data-on'), 'false');
   assert.equal(page.nodes.get('[data-act="tick"]'), button, 'the same DOM node');
   assert.equal(details.loads, loads);
   const patch = details.posted.slice(before).find(m => m.type === 'review');
   page.receive({ ...patch, token: 'obsolete', model: { ...patch.model, reviewed: false, buttonText: 'wrong' } });
   page.receive({ type: 'origin', token: 'obsolete', text: 'wrong origin' });
-  assert.equal(button.textContent, 'Untick');
+  assert.equal(button.textContent, 'Mark not reviewed');
   assert.equal(page.nodes.get('.origin').textContent, initialOrigin);
   page.click('[data-act="tick"]');
   assert.deepEqual(page.sent.at(-1), { type: 'tick', id: treeItemId(first), on: false, token });
@@ -255,7 +255,7 @@ test('any tick updates the progress strip by a patch, also a tick of a row other
   const details = env.openDetails();
   env.select([first]);
   const loads = details.loads, page = details.webview.html;
-  assert.deepEqual(stripOf(details), { line: 'pr mode against main', count: '0 of 4 reviewed', attention: '⛔ 1 need attention', percent: '0%' });
+  assert.deepEqual(stripOf(details), { line: 'Branch vs base against main', count: '0 of 4 reviewed', attention: '1 needs attention', percent: '0%' });
   uiClock(t);
 
   env.tick(user, true);
@@ -265,9 +265,9 @@ test('any tick updates the progress strip by a patch, also a tick of a row other
   assert.match(details.displayHtml, />Mark reviewed<\/button>/);
 
   env.tick(first, true);
-  assert.deepEqual(stripOf(details), { line: 'pr mode against main', count: '2 of 4 reviewed', attention: 'nothing needs attention', percent: '50%' });
+  assert.deepEqual(stripOf(details), { line: 'Branch vs base against main', count: '2 of 4 reviewed', attention: 'nothing needs attention', percent: '50%' });
   assert.deepEqual(details.posted.map(m => m.type), ['progress', 'progress', 'review']);
-  assert.match(details.displayHtml, />Untick<\/button>/);
+  assert.match(details.displayHtml, />Mark not reviewed<\/button>/);
 
   details.posted.length = 0;
   env.tick(second, false); // already unreviewed: nothing changes

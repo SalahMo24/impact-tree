@@ -105,7 +105,7 @@ test('a cursor moving inside the row shown only updates the header; the page is 
   assert.equal(details.loads, reloaded);
   env.tick(a[1], true);
   assert.equal(details.loads, reloaded, 'a tick patches the review fields without reloading');
-  assert.match(textOf(details), /^at cursor, line 50 reach .*Untick/);
+  assert.match(textOf(details), /^at cursor, line 50 reach .*Mark not reviewed/);
 }));
 
 test('a cursor between functions shows the file', () => withEnv(async (env) => {
@@ -153,13 +153,13 @@ test('the strip names a pull request and its base, and shows with nothing select
   await env.preview(pull(7));
   const details = env.openDetails();
   assert.equal(textOf(details), NOT_FOLLOWED);
-  assert.equal(stripTextOf(details), 'PR #7 against main 0 of 4 reviewed ⛔ 1 need attention 0% 0%');
+  assert.equal(stripTextOf(details), 'PR #7 against main 0 of 4 reviewed 1 needs attention 0% 0%');
 }));
 
 test('the strip of a local review names its mode', () => withEnv(async (env) => {
   useResult(env);
   await env.refresh();
-  assert.equal(stripTextOf(env.openDetails()), 'pr mode against main 0 of 4 reviewed ⛔ 1 need attention 0% 0%');
+  assert.equal(stripTextOf(env.openDetails()), 'Branch vs base against main 0 of 4 reviewed 1 needs attention 0% 0%');
 }));
 
 test('in a preview only the pull request\'s head side is followed', () => withEnv(async (env) => {
@@ -236,7 +236,7 @@ test('the tick message ticks the row shown and repaints; next runs the command; 
   env.select([a[0]]);
   await sendAction(details, { type: 'tick', id: tickId(details), on: true });
   assert.equal(env.isTicked(a[0]), true);
-  assert.match(textOf(details), /Untick Next unreviewed Show callers Compute test reachability$/);
+  assert.match(textOf(details), /Mark not reviewed Next unreviewed Show callers Compute test reachability$/);
   assert.equal(env.seen.statusBar.text.split(' ')[1], '3', 'the status bar repainted too');
   await sendAction(details, { type: 'tick', id: tickId(details), on: false });
   assert.equal(env.isTicked(a[0]), false);
@@ -244,7 +244,7 @@ test('the tick message ticks the row shown and repaints; next runs the command; 
   env.select([files[0]]);
   await sendAction(details, { type: 'tick', id: tickId(details), on: true });
   assert.ok(a.every((r) => env.isTicked(r)), 'a file\'s button ticks its rows');
-  assert.match(textOf(details), /0 left to review\. Untick file /);
+  assert.match(textOf(details), /0 left to review\. Mark file not reviewed /);
 
   await sendAction(details, { type: 'next' });
   assert.deepEqual(env.seen.executed.filter(([name]) => name === 'impactTree.nextUnreviewed').length, 1);

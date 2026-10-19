@@ -27,7 +27,7 @@ function callerOpen({ tierA, rel, baseRel, status, absPath, fileChanged, always,
     kind: 'diff',
     left,
     right,
-    rhsName: tierA ? `PR #${prNumber}` : 'working',
+    rhsName: tierA ? `PR #${prNumber}` : 'working tree',
   };
 }
 

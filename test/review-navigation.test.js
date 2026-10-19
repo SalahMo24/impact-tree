@@ -41,7 +41,7 @@ test('the hint names the key for the platform', () => {
   assert.equal(nextKeyHint('darwin'), '⌥N');
   assert.equal(nextKeyHint('linux'), 'Alt+N');
   assert.equal(nextKeyHint('win32'), 'Alt+N');
-  assert.equal(statusBarText({ left: 3, attention: 1 }, 'darwin'), '$(checklist) 3 left · ⛔ 1 · ⌥N next');
+  assert.equal(statusBarText({ left: 3, attention: 1 }, 'darwin'), '$(checklist) 3 left · 1 needs attention · ⌥N next');
 });
 
 test('the status bar is hidden with no review, and shows what is left, the attention count and the key', () => withEnv(async (env) => {
@@ -53,11 +53,11 @@ test('the status bar is hidden with no review, and shows what is left, the atten
   assert.equal(env.seen.contexts['impactTree.filter'], 'all');
   await env.refresh();
   assert.equal(bar.visible, true);
-  assert.equal(bar.text, `$(checklist) 4 left · ⛔ 1 · ${NEXT_KEY} next`);
+  assert.equal(bar.text, `$(checklist) 4 left · 1 needs attention · ${NEXT_KEY} next`);
   assert.equal(env.seen.contexts['impactTree.hasReview'], true);
   const { rows } = await rowsOf(env);
   env.tick(rows[0], true);
-  assert.equal(bar.text, `$(checklist) 3 left · ⛔ 0 · ${NEXT_KEY} next`, 'it follows a tick');
+  assert.equal(bar.text, `$(checklist) 3 left · 0 need attention · ${NEXT_KEY} next`, 'it follows a tick');
 }));
 
 test('the status bar hides again when the review goes away', () => withEnv(async (env) => {
@@ -78,12 +78,12 @@ test('the filter commands narrow the tree, name the filter and set the context k
   useResult(env);
   await env.refresh();
   assert.deepEqual(await shown(env), ALL);
-  assert.equal(env.view().message, 'pr mode · ⛔ 1 · 4 of 4 left');
+  assert.equal(env.view().message, 'Branch vs base · 1 needs attention · 4 of 4 left');
 
   env.run('impactTree.filterAttention');
   assert.equal(env.seen.contexts['impactTree.filter'], 'attention');
   assert.deepEqual(await shown(env), ['a.ts', '  bad'], 'only the rows that need attention, and only their files');
-  assert.equal(env.view().message, 'pr mode · ⛔ 1 · 4 of 4 left · filter: needs attention');
+  assert.equal(env.view().message, 'Branch vs base · 1 needs attention · 4 of 4 left · filter: needs attention');
 
   env.run('impactTree.filterUnreviewed');
   assert.equal(env.seen.contexts['impactTree.filter'], 'unreviewed', 'one turns the other off');
@@ -238,7 +238,7 @@ test('with nothing left it reports it and reveals nothing', () => withEnv(async 
   await env.run('impactTree.nextUnreviewed');
   assert.deepEqual(env.seen.infos, ['Impact Tree: all reviewed']);
   assert.deepEqual(env.seen.revealed, []);
-  assert.equal(env.seen.statusBar.text, `$(checklist) 0 left · ⛔ 0 · ${NEXT_KEY} next`);
+  assert.equal(env.seen.statusBar.text, `$(checklist) 0 left · 0 need attention · ${NEXT_KEY} next`);
   env.tick(rows[0], false);
   env.run('impactTree.filterAttention');
   env.tick(rows[0], true);
@@ -266,7 +266,7 @@ test('package.json contributes the commands, the keybinding and the palette gate
       { command: 'impactTree.previousUnreviewed', key: 'shift+alt+n', when: 'impactTree.hasReview' }]);
   assert.equal(contributes.commands.find((c) => c.command === 'impactTree.previousUnreviewed').title, 'Impact Tree: Go to previous unreviewed change');
   assert.equal(contributes.commands.find((c) => c.command === 'impactTree.nextUnreviewed').title, 'Impact Tree: Go to next unreviewed change');
-  assert.equal(env.seen.statusBar.tooltip, 'Go to the next unreviewed change (rebind it in Keyboard Shortcuts)');
+  assert.equal(env.seen.statusBar.tooltip, 'Go to the next unreviewed change');
   // the title bar keeps refresh, the three filters, next and (for a PR review only)
   // "Submit review…"; the rest is in the overflow menu
   const changes = contributes.menus['view/title'].filter((m) => m.when.startsWith('view == impactTree.changes'));

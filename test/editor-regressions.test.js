@@ -105,7 +105,7 @@ test('editor commands refresh the selected PR, preserve preview documents, and r
     fs.writeFileSync(path.join(dir,'new.ts'), originalSource.replace('x=1','x=2'));
     git('add','-A');
     const second = context(); extension.activate(second);
-    quickPick = { label: 'checkpoint' };
+    quickPick = { id: 'checkpoint', label: 'Since checkpoint' };
     await commands.get('impactTree.selectMode')();
     assert.deepEqual(errors, []);
     assert.deepEqual(updates.at(-1), ['mode','checkpoint',2]);

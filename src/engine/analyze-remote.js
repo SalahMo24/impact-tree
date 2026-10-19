@@ -68,7 +68,7 @@ async function analyzeRemote({
   ts, gh, slug, pr, repoRoot,
   maxFiles, concurrency, onProgress = () => {}, onPrepared, trace = () => {}, signal,
 }) {
-  if (!ts) throw new Error('Tier A needs TypeScript to parse the PR files');
+  if (!ts) throw new Error('Preview needs TypeScript to parse the PR files');
   throwIfCancelled(signal);
   const warnings = [];
   const fileLimit = validateTierAMaxFiles(maxFiles, warnings);

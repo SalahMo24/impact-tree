@@ -241,7 +241,7 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, revealThre
     keepDraft(owner.number, m.body);
     // Ours, not GitHub's: the store would send it, so the check is made here.
     if (m.event === 'APPROVE' && model.check && !m.approveAnyway) {
-      owner.error = 'Not approved: tick “Approve anyway” first. Changes needing attention or unresolved threads are still open.';
+      owner.error = 'Not approved: check “Approve anyway” first. Changes that need attention or unresolved threads are still open.';
       render();
       return;
     }

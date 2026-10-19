@@ -5,6 +5,7 @@ const { escapeHtml } = require('./detail-panel-html');
 const { reviewDataOf } = require('./pr-review-store');
 const { openCount } = require('./pr-review-data');
 const { treeItemId } = require('./review-tree-model');
+const { attentionCountText } = require('./tree-row-models');
 
 // The Pull Request tab's whole document, built from a plain page model. Pure: the adapter
 // (pr-overview-panel.js) supplies the store's state, the tree's review progress, the kept
@@ -63,7 +64,7 @@ function buttonRules(facts) {
   return {
     requestChanges: facts.own ? off(null) : facts.hasSummary ? on : off('Request Changes needs a summary.'),
     approve: facts.own ? off(null)
-      : facts.checkNeeded && !facts.approveAnyway ? off('Tick “Approve anyway” to approve with the items above still open.') : on,
+      : facts.checkNeeded && !facts.approveAnyway ? off('Check “Approve anyway” to approve with the items above still open.') : on,
     comment: facts.hasSummary || facts.pendingComments > 0 ? on : off('Comment needs a summary or a pending comment.'),
   };
 }
@@ -382,11 +383,11 @@ function checkHtml(check) {
   if (a) {
     const links = check.attention.map((i) => `<a href="#" data-act="revealRow" data-row="${escapeHtml(i.id)}" title="${escapeHtml(i.where)}">${escapeHtml(i.name)}</a>`
       + ` <span class="where">${escapeHtml(i.where)}</span>`).join(', ');
-    items.push(`<li>${a} change${a === 1 ? '' : 's'} needing attention ${a === 1 ? 'is' : 'are'} not reviewed: ${links}</li>`);
+    items.push(`<li>${attentionCountText(a)} and ${a === 1 ? 'is' : 'are'} not reviewed: ${links}</li>`);
   }
   const t = check.unresolvedThreads;
   if (t) items.push(`<li>${t} thread${t === 1 ? ' is' : 's are'} unresolved</li>`);
-  if (check.progressKnown) items.push(`<li>${check.left} of ${check.total} rows are not ticked</li>`);
+  if (check.progressKnown) items.push(`<li>${check.left} of ${check.total} rows are not reviewed</li>`);
   return `<div class="check" data-el="check"><b>Before you approve:</b><ul>${items.join('')}</ul>`
     + '<label><input type="checkbox" data-el="anyway"> Approve anyway</label></div>';
 }

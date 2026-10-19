@@ -24,7 +24,7 @@ const { headRelPath } = require('./detail-panel');
  * first line. A deleted symbol has no line in the head file, and an outside or file row is
  * not a function, so none of them gets a lens.
  * @param {TreeRow[]} rows The rows of one file from the shown review.
- * @param {(row: TreeRow) => boolean} isReviewed Whether a counting row is ticked.
+ * @param {(row: TreeRow) => boolean} isReviewed Whether a counting row is reviewed.
  * @returns {LensEntry[]} In the order of `rows`; `line` is 0-based.
  */
 function lensPlan(rows, isReviewed) {
@@ -35,7 +35,7 @@ function lensPlan(rows, isReviewed) {
     if (row.type !== 'finding' || !id) continue;
     const verdict = classifyRowVerdict(row);
     if (verdict.level > 1) continue;
-    plan.push({ id, line: row.finding.startLine - 1, verdict: `${verdict.token} ${verdict.text}`,
+    plan.push({ id, line: row.finding.startLine - 1, verdict: verdict.text,
       hasCallers: (row.finding.callers || []).length > 0, reviewed: isReviewed(row) });
   }
   return plan;

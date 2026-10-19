@@ -131,13 +131,13 @@ test('the message adds the pull request\'s counts when not zero, or that threads
   const source = { kind: 'pr', pr: { number: 7 } };
   const counts = { total: 5, left: 5, attention: 0 };
   const message = (threads, filter) => buildReviewSummary(result, source, counts, filter, threadsMessageSuffix(threads)).message;
-  assert.equal(message({ status: 'ready', threads: THREADS }), 'PR #7 · ⛔ 0 · 5 of 5 left · 💬 9 · ✎ 2');
-  assert.equal(message({ status: 'ready', threads: THREADS }, 'threads'), 'PR #7 · ⛔ 0 · 5 of 5 left · 💬 9 · ✎ 2 · filter: unresolved threads');
-  assert.equal(message({ status: 'ready', threads: [thread(1, { isResolved: true })] }), 'PR #7 · ⛔ 0 · 5 of 5 left');
-  assert.equal(message({ status: 'ready', threads: [thread(1, {}, [mine(1)])] }), 'PR #7 · ⛔ 0 · 5 of 5 left · ✎ 1');
-  assert.equal(message({ status: 'loading' }), 'PR #7 · ⛔ 0 · 5 of 5 left');
-  assert.equal(message({ status: 'failed', message: 'x' }), 'PR #7 · ⛔ 0 · 5 of 5 left · ⚠ threads not loaded');
-  assert.equal(message({ status: 'none' }), 'PR #7 · ⛔ 0 · 5 of 5 left');
+  assert.equal(message({ status: 'ready', threads: THREADS }), 'PR #7 · 0 need attention · 5 of 5 left · 💬 9 · ✎ 2');
+  assert.equal(message({ status: 'ready', threads: THREADS }, 'threads'), 'PR #7 · 0 need attention · 5 of 5 left · 💬 9 · ✎ 2 · filter: unresolved threads');
+  assert.equal(message({ status: 'ready', threads: [thread(1, { isResolved: true })] }), 'PR #7 · 0 need attention · 5 of 5 left');
+  assert.equal(message({ status: 'ready', threads: [thread(1, {}, [mine(1)])] }), 'PR #7 · 0 need attention · 5 of 5 left · ✎ 1');
+  assert.equal(message({ status: 'loading' }), 'PR #7 · 0 need attention · 5 of 5 left');
+  assert.equal(message({ status: 'failed', message: 'x' }), 'PR #7 · 0 need attention · 5 of 5 left · ⚠ threads not loaded');
+  assert.equal(message({ status: 'none' }), 'PR #7 · 0 need attention · 5 of 5 left');
 });
 
 test('the threads filter keeps rows with unresolved threads, and files whose only ones are on no row', () => {

@@ -440,7 +440,7 @@ function walkOf(files, { after = null, isReviewed, filter, openThreadsOf = NO_TH
 }
 
 /**
- * What is reviewed: `PR #15`, or `<mode> mode` for a local review (with the mode it was
+ * What is reviewed: `PR #15`, or the mode's label (`Branch vs base`) for a local review (with the mode it was
  * asked for when the analysis fell back to another).
  * @param {any} result
  * @param {{ kind: string, pr?: { number: number } }|null|undefined} source The session's source.
@@ -448,8 +448,8 @@ function walkOf(files, { after = null, isReviewed, filter, openThreadsOf = NO_TH
  */
 function describeReviewSubject(result, source) {
   const pr = source && (source.kind === 'pr' || source.kind === 'checkout') && source.pr ? source.pr.number : null;
-  const asked = result.requestedMode && result.requestedMode !== result.mode ? ` (requested ${result.requestedMode})` : '';
-  return pr == null ? `${result.mode} mode${asked}` : `PR #${pr}`;
+  const asked = result.requestedMode && result.requestedMode !== result.mode ? ` (requested ${models.MODE_LABELS[result.requestedMode] ?? result.requestedMode})` : '';
+  return pr == null ? `${models.MODE_LABELS[result.mode] ?? result.mode}${asked}` : `PR #${pr}`;
 }
 
 /**
@@ -477,7 +477,7 @@ function buildReviewSummary(result, source, { total, left, attention }, filter =
   const what = describeReviewSubject(result, source);
   const named = filter === 'all' ? '' : ` · filter: ${FILTER_LABELS[filter]}`;
   return {
-    message: `${what} · ⛔ ${attention} · ${left} of ${total} left${threads}${named}`,
+    message: `${what} · ${models.attentionCountText(attention)} · ${left} of ${total} left${threads}${named}`,
     badge: left > 0 ? { value: left, tooltip: `${left} of ${total} left to review` } : undefined,
   };
 }

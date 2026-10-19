@@ -163,7 +163,7 @@ test('an obsolete run cannot publish the checkpoint message over a newer run', (
   first.fail(checkpointError('checkpoint deadbeef0000 is not a commit'));
   await older;
   assert.deepEqual(await rootLabels(env), [], 'the newer run is what is shown');
-  assert.match(env.view().message, /^working mode · /);
+  assert.match(env.view().message, /^Uncommitted \(agent\) · /);
   assert.notEqual(env.seen.contexts['impactTree.state'], 'problem');
   assert.deepEqual(env.seen.errors, []);
 }, { memento: new Map([['impactTree.checkpoint', 'deadbeef00000000000000000000000000000000']]) }));

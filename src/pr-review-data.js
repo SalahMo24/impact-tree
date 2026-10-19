@@ -508,7 +508,7 @@ async function loadPullRequestReview(gh, { owner, name, number }, { signal, budg
     moreFiles = page.hasNextPage;
     fileCursor = page.endCursor;
   }
-  if (moreFiles) incomplete.push(`changed files: viewed state for only the first ${viewed.size} was loaded (budget ${maxFilePages} pages of ${PAGE_SIZE})`);
+  if (moreFiles) incomplete.push(`changed files: Viewed on GitHub state for only the first ${viewed.size} was loaded (budget ${maxFilePages} pages of ${PAGE_SIZE})`);
 
   for (const t of threads) {
     for (const reason of t.incomplete || []) incomplete.push(`thread ${t.id} on ${t.path}: ${reason}`);

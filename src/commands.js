@@ -18,11 +18,11 @@ function registerCommands(vscode, {
 
     vscode.commands.registerCommand('impactTree.selectMode', async () => {
       const pick = await vscode.window.showQuickPick(
-        Object.entries(MODES).map(([id, m]) => ({ label: id, description: m.desc })),
-        { title: 'Impact Tree: diff mode' });
+        Object.entries(MODES).map(([id, m]) => ({ id, label: m.label, description: m.desc })),
+        { title: 'Impact Tree: Choose what to review' });
       if (!pick) return;
-      await vscode.workspace.getConfiguration('impactTree').update('mode', pick.label, vscode.ConfigurationTarget.Workspace);
-      await session.refresh(pick.label);
+      await vscode.workspace.getConfiguration('impactTree').update('mode', pick.id, vscode.ConfigurationTarget.Workspace);
+      await session.refresh(pick.id);
     }),
 
     vscode.commands.registerCommand('impactTree.showLegend', async () => {
