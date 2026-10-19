@@ -43,7 +43,7 @@ function headRelPath(uri, { result, rel }) {
  * @param {string|null} token The current page's nonce; null when the view is disposed.
  * @returns {{ type: 'tick', id: string, on: boolean }|{ type: 'next' }|{ type: 'ready' }|{ type: 'showCallers', id: string }
  *   |{ type: 'computeTestReach' }|{ type: 'openCaller', index: number }|{ type: 'revealThread', id: string }|{ type: 'comment', id: string }
- *   |{ type: 'commentCaller', index: number }|null}
+ *   |{ type: 'commentCaller', index: number }|{ type: 'checkoutAndAnalyse' }|null}
  */
 function parseMessage(message, token) {
   if (!message || typeof message !== 'object') return null;
@@ -52,6 +52,7 @@ function parseMessage(message, token) {
   if (m.type === 'tick' && typeof m.id === 'string' && typeof m.on === 'boolean') return { type: 'tick', id: m.id, on: m.on };
   if (m.type === 'next') return { type: 'next' };
   if (m.type === 'ready') return { type: 'ready' };
+  if (m.type === 'checkoutAndAnalyse') return { type: 'checkoutAndAnalyse' };
   if (m.type === 'showCallers' && typeof m.id === 'string') return { type: 'showCallers', id: m.id };
   if (m.type === 'computeTestReach') return { type: 'computeTestReach' };
   if (m.type === 'openCaller' && Number.isSafeInteger(m.index) && Number(m.index) >= 0) return { type: 'openCaller', index: Number(m.index) };
@@ -92,16 +93,18 @@ function parseMessage(message, token) {
  *   view: { visible: boolean, selection: readonly TreeRow[], reveal: (row: TreeRow, options: object) => PromiseLike<void>,
  *     onDidChangeSelection: (listener: (e: { selection: readonly TreeRow[] }) => void) => { dispose(): any },
  *     onDidChangeVisibility: (listener: (e: { visible: boolean }) => void) => { dispose(): any } },
- *   getState: () => { result: any, rel: (file: string) => string }|null,
+ *   getState: () => { result: any, rel: (file: string) => string, source?: any }|null,
  *   lineOf: (file: string, offset: number) => number|null,
  *   log: (message: string) => void,
  *   reviewActions?: () => ReviewActions|null,
+ *   checkoutAndAnalyse?: (pr: any) => Promise<unknown>,
  * }} deps `view` is the change view; `getState` the session state; `lineOf` the 1-based
  *   line of an offset in a file, or null when unreadable. `reviewActions` starts comments
- *   and opens threads; without it the Threads section's buttons do nothing.
+ *   and opens threads; without it the Threads section's buttons do nothing. `checkoutAndAnalyse`
+ *   checks out a pull request and analyses it; a Preview's page offers it for the PR shown.
  * @returns {{ disposables: Array<{ dispose(): any }> }}
  */
-function createDetailPanel(vscode, { provider, view, getState, lineOf, log, reviewActions = () => null }) {
+function createDetailPanel(vscode, { provider, view, getState, lineOf, log, reviewActions = () => null, checkoutAndAnalyse = async () => undefined }) {
   /** @type {any} */
   let webviewView = null;
   /** @type {Array<{ dispose(): any }>} */
@@ -301,6 +304,7 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log, revi
     if (m.type === 'next') { await vscode.commands.executeCommand('impactTree.nextUnreviewed'); return; }
     const row = currentRow();
     if (!row) return;
+    if (m.type === 'checkoutAndAnalyse') { await onCheckout(); return; }
     // A click that left the page before the panel moved on to another row ticks nothing.
     if (m.type === 'tick') {
       if (m.id !== shown.id) return;
@@ -324,6 +328,16 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log, revi
     if (row.type !== 'finding') return;
     const caller = listCallerRows(provider.impactRowsOf(row))[m.index];
     if (caller) await vscode.commands.executeCommand('impactTree.openCaller', caller);
+  }
+
+  // The Preview limits button. The page that sent it has the current token and version, but
+  // the request still names nothing: the PR is the one the session shows, and only while the
+  // shown result is that PR's Preview. Anything else is ignored rather than guessed at.
+  async function onCheckout() {
+    const state = getState();
+    const source = state && state.source;
+    if (!state || !state.result || !state.result.tierA || !source || source.kind !== 'pr') return;
+    await checkoutAndAnalyse(source.pr);
   }
 
   /**

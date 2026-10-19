@@ -21,6 +21,7 @@ const { createReviewComments } = require('./review-comments');
 const { createPullRequestPanel } = require('./pr-overview-panel');
 const { registerContentProviders } = require('./content-providers');
 const { registerCommands } = require('./commands');
+const { contextKeysOf } = require('./view-state');
 
 // Bumped whenever extension-side behaviour changes, so the exthost log proves which
 // build is actually loaded instead of us inferring it from timestamps.
@@ -54,7 +55,11 @@ function activate(context) {
   // Created once the review store exists; a file row asks it what to say about GitHub's viewed mark.
   /** @type {ReturnType<typeof createViewedSync>|null} */
   let viewedSync = null;
+  // Whether the window has a folder and a repository: asked at activation, when the folders
+  // change and whenever a run begins (so `git init` then Refresh is noticed), not on every repaint.
+  let repoStatus = owned.repoStatus();
   const provider = createTreeProvider(vscode, {
+    getRepoStatus: () => repoStatus,
     getThreads: () => (reviewStore ? threadsViewOf(reviewStore.getState()) : NO_THREADS),
     decorate,
     viewedOf: (relPath, allTicked) => (viewedSync ? viewedSync.statusOf(relPath, allTicked) : null),
@@ -76,11 +81,16 @@ function activate(context) {
   // Details starts comments and opens threads through the review comments, created below.
   let reviewComments = null;
   const details = createDetailPanel(vscode, { provider, view, getState: () => owned.state, lineOf: readLineOfOffset, log,
-    reviewActions: () => reviewComments });
+    reviewActions: () => reviewComments, checkoutAndAnalyse: (pr) => session.checkoutAndAnalyse(pr) });
   context.subscriptions.push(...details.disposables);
   // Counts follow presentation and progress events, independently of tree repaint scope.
   const showSummary = () => {
-    const { message, badge } = provider.summarize();
+    const summary = provider.summarize();
+    const { badge } = summary;
+    // While a run waits for the first index, the view says so, with the elapsed seconds,
+    // after the counts the reviewer is already using.
+    const indexing = owned.getIndexingText();
+    const message = indexing === null ? summary.message : summary.message ? `${summary.message} · ${indexing}` : indexing;
     if (view.message !== message) view.message = message;
     if (view.badge?.value !== badge?.value || view.badge?.tooltip !== badge?.tooltip) view.badge = badge;
     navigation.update();
@@ -88,6 +98,31 @@ function activate(context) {
   context.subscriptions.push(provider.onDidChangePresentation(showSummary), provider.onDidChangeReview(showSummary),
     provider.onDidChangeThreads(showSummary));
   showSummary();
+  context.subscriptions.push(owned.onDidChangeIndexing(showSummary));
+
+  // The welcome screens (package.json `viewsWelcome`) are chosen by these context keys.
+  // Sent only when a value changes: setContext is a round trip to the workbench.
+  /** @type {Map<string, string>} */
+  const contextSent = new Map();
+  const publishContext = () => {
+    const keys = contextKeysOf({ repo: repoStatus, phase: owned.getPhase(), busy: owned.isBusy(), state: owned.state });
+    for (const [key, value] of Object.entries(keys)) {
+      if (contextSent.get(key) === value) continue;
+      contextSent.set(key, value);
+      Promise.resolve(vscode.commands.executeCommand('setContext', key, value))
+        .then(undefined, (e) => log(`could not set context ${key}: ${e && e.message}`));
+    }
+  };
+  const recheckRepo = () => {
+    const next = owned.repoStatus();
+    if (next === repoStatus) return;
+    repoStatus = next;
+    provider.refresh();
+    sources.refresh();
+  };
+  context.subscriptions.push(provider.onDidChangePresentation(publishContext),
+    owned.onDidChangeAnalysis(() => { recheckRepo(); publishContext(); }),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => { recheckRepo(); publishContext(); }));
   context.subscriptions.push(view.onDidChangeCheckboxState((e) => {
     const started = Date.now();
     // A file's checkbox ticks its changes; a change's ticks only itself, not its callers.
@@ -154,6 +189,7 @@ function activate(context) {
   context.subscriptions.push(reviewComments);
 
   const sources = createSourcesProvider(vscode, {
+    getRepoStatus: () => repoStatus,
     modes: MODES,
     getMode: () => vscode.workspace.getConfiguration('impactTree').get('mode', 'pr'),
     getRepoSlug: repoSlug,
@@ -187,6 +223,8 @@ function activate(context) {
       loadingPrs = false; sources.refresh();
     }
   };
+
+  publishContext();
 
   const { previewPullRequest, checkoutAndAnalyse } = createPrActions(vscode, session, {
     log, gh, repoSlug, sources, prDocuments,

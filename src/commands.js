@@ -83,9 +83,18 @@ function registerCommands(vscode, {
     vscode.commands.registerCommand('impactTree.setCheckpoint', async () => {
       const { makeGit } = require('./engine/git');
       const sha = makeGit(session.repoRoot()).revParse('HEAD');
+      // A repository with no commit has nothing to record; storing null would read as "no
+      // checkpoint" while the message claimed one was set.
+      if (!sha) { vscode.window.showWarningMessage('Impact Tree: there is no commit to record as a checkpoint yet'); return; }
       session.setCheckpoint(sha);
       await context.workspaceState.update('impactTree.checkpoint', sha);
       vscode.window.showInformationMessage(`Impact Tree: checkpoint set at ${String(sha).slice(0, 10)}`);
+      // The view may be showing "No checkpoint yet": now there is one, so run the mode it
+      // was waiting for. Only for a local review; a PR on screen is not replaced.
+      const source = session.state && session.state.source;
+      if (vscode.workspace.getConfiguration('impactTree').get('mode', 'pr') === 'checkpoint' && (!source || source.kind === 'local')) {
+        await session.refresh();
+      }
     }),
     
     vscode.commands.registerCommand('impactTree.openChange', (node) => openReview.openChange(node)),

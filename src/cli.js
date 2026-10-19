@@ -2,6 +2,7 @@
 'use strict';
 const path = require('path');
 const { analyze, MODES } = require('./engine/analyze');
+const { blastText } = require('./cli-format');
 
 const argv = process.argv.slice(2);
 const arg = (n, d) => { const i = argv.indexOf(`--${n}`); return i === -1 ? d : argv[i + 1]; };
@@ -18,11 +19,13 @@ ${Object.entries(MODES).map(([k, v]) => `                         ${k.padEnd(11)
   --fetch              git fetch the base before resolving
   --allow-local-base   permit a local base ref when origin/<ref> is missing (unsafe)
   --depth <n>          upward closure depth for blast radius / test reach (default ${DEFAULTS.depth})
+  --roots <n>          roots that get a blast radius and a tree (default 6)
   --tree-depth <n>     rendered tree depth (default ${DEFAULTS.treeDepth})
   --json               emit JSON instead of text`);
   process.exit(0);
 }
 
+const rankedRoots = Number(arg('roots', 6));
 const repo = path.resolve(arg('repo', process.cwd()));
 const t0 = Date.now();
 
@@ -33,7 +36,7 @@ try {
     mode: arg('mode', 'pr'), base: arg('base', 'main'), checkpoint: arg('checkpoint'),
     fetch: flag('fetch'), allowLocalBase: flag('allow-local-base'),
     depth: Number(arg('depth', DEFAULTS.depth)), treeDepth: Number(arg('tree-depth', DEFAULTS.treeDepth)),
-    blastDepth: Number(arg('blast-depth', 1)), rankedRoots: Number(arg('roots', 6)),
+    blastDepth: Number(arg('blast-depth', 1)), rankedRoots,
     maxChildren: Number(arg('max-children', 8)),
   });
 } catch (e) {
@@ -85,10 +88,10 @@ for (const f of result.findings) {
 
 H('② INVERTED TREE');
 for (const c of result.components) {
-  for (const root of c.forest.slice(0, 6)) {
+  for (const root of c.forest) {
     console.log('');
     console.log(`● ${root.label}   [${root.added ? 'ADDED' : 'CHANGED'}]  ${rel(root.file)}:${root.startLine}`);
-    console.log(`  blast ${root.blast ?? '-'}${root.blastCapped ? '+' : ''} · score ${root.score}${root.testCount ? ` · 🧪 ${root.testCount}` : ''}${root.testState === 'uncovered' ? ' · ⚠ no test' : ''}${root.testState === 'unknown' ? ' · ? test reach unknown' : ''}`);
+    console.log(`  ${blastText(root, rankedRoots)} · score ${root.score}${root.testCount ? ` · 🧪 ${root.testCount}` : ''}${root.testState === 'uncovered' ? ' · ⚠ no test' : ''}${root.testState === 'unknown' ? ' · ? test reach unknown' : ''}`);
     const walk = (nodes, truncated, prefix) => {
       nodes.forEach((n, i) => {
         const last = i === nodes.length - 1 && !truncated;

@@ -524,3 +524,59 @@ test('well-formed panel actions require the current page token', () => withEnv(a
   assert.equal(env.isTicked(a[0]), false);
   assert.equal(env.seen.executed.length, before);
 }));
+
+// P3: a Preview cannot see callers outside the PR or tests, so every change's page says so
+// and offers the way out. The button asks for nothing but the PR the session shows.
+test('every change in a preview says what a preview cannot see, with Check out and analyse', () => withEnv(async (env) => {
+  useResult(env, { tierA: true });
+  await env.preview(pull(7));
+  const details = env.openDetails();
+  const changes = await env.changeRows();
+  assert.equal(changes.length, 3);
+  for (const row of changes) {
+    env.select([row]);
+    assert.match(textOf(details), /Preview: callers outside this PR and tests are not searched\. Check out and analyse/, row.label);
+    assert.match(details.webview.html, /data-act="checkout">Check out and analyse<\/button>/);
+  }
+}));
+
+test('a local review never shows the preview limits', () => withEnv(async (env) => {
+  useResult(env);
+  await env.refresh();
+  const details = env.openDetails();
+  const changes = await env.changeRows();
+  assert.equal(changes.length, 3);
+  for (const row of changes) {
+    env.select([row]);
+    assert.doesNotMatch(details.webview.html, /Preview: callers outside|data-act="checkout"/, row.label);
+  }
+}));
+
+test('the Check out and analyse message checks out the shown pull request; a stale, malformed or foreign one does not', () => withEnv(async (env) => {
+  useResult(env, { tierA: true });
+  await env.preview(pull(7));
+  const details = env.openDetails();
+  const [change] = await env.changeRows();
+  env.select([change]);
+  const token = /<script nonce="([^"]+)"/.exec(details.webview.html)[1];
+  for (const bad of [{ type: 'checkoutAndAnalyse' }, { type: 'checkoutAndAnalyse', token: 'obsolete' }, { type: 'checkoutAndAnalyse', token: null },
+    { type: 'checkoutAnalyse', token }, { type: 'checkout', token }]) await details.send(bad);
+  assert.equal(env.seen.modals, 0, 'nothing asked to check out');
+  await details.send({ type: 'checkoutAndAnalyse', token, pr: pull(99) });
+  assert.equal(env.seen.modals, 1, 'the checkout was confirmed with the user');
+  assert.deepEqual(env.git.fetches, [7], 'it is the pull request shown, whatever the message names');
+  assert.deepEqual(env.seen.errors, []);
+}));
+
+test('the Check out and analyse message does nothing once the shown result is not a preview', () => withEnv(async (env) => {
+  useResult(env, { tierA: true });
+  await env.preview(pull(7));
+  const details = env.openDetails();
+  const [change] = await env.changeRows();
+  env.select([change]);
+  const token = /<script nonce="([^"]+)"/.exec(details.webview.html)[1];
+  useResult(env);
+  await env.refresh();
+  await details.send({ type: 'checkoutAndAnalyse', token });
+  assert.equal(env.seen.modals, 0, 'no checkout was started');
+}));

@@ -146,9 +146,11 @@ test('the placeholder row explains every state without a result, and there is no
   assert.deepEqual(label({ phase: 'preparing', state: { result: resultOf() } }), ['Preparing…']);
   assert.deepEqual(label({ phase: 'analysing' }), ['Analysing…']);
   assert.deepEqual(label({ busy: true, state: { result: resultOf() } }), ['Analysing…']);
-  assert.deepEqual(label({ state: {} }), ['Ready — click to analyse']);
+  // Idle has no rows on purpose: with no children the view shows its welcome screen (package.json).
+  assert.deepEqual(label({ state: {} }), []);
   assert.deepEqual(label({ state: { error: 'boom' } }), ['boom']);
-  assert.equal(label({ state: { result: resultOf() } }), undefined);
+  assert.equal(label({ state: { result: resultOf({ otherFiles: [{ path: 'notes.md', status: 'added' }] }) } }), undefined);
+  assert.deepEqual(label({ state: { result: resultOf() } }), [], 'nothing changed: the welcome screen speaks');
 });
 
 test('notice rows: the preview notice first, then one row per warning and per unanalysed component', () => {
@@ -158,7 +160,7 @@ test('notice rows: the preview notice first, then one row per warning and per un
   ]);
   const preview = models.buildNoticeRows(deepFreeze(resultOf({ tierA: true, changedFileCount: 4, warnings: ['w'] })));
   assert.deepEqual(preview.map((r) => r.label), ['Preview — PR files only (4 file(s))', 'w']);
-  assert.match(preview[0].desc, /callers outside this PR are NOT shown/);
+  assert.equal(preview[0].desc, 'Preview: callers outside this PR and tests are not searched.');
   assert.deepEqual(models.buildNoticeRows(resultOf()), []);
 });
 

@@ -15,6 +15,7 @@ const MODE_ICON = {
 function createSourcesProvider(vscode, {
   modes, getMode, getRepoSlug, github, getPrs, getPrsTruncated = () => false, getPrError, isLoadingPrs,
   getTeams = () => ({ teams: [], truncated: false, error: null }),
+  getRepoStatus = () => 'ok',
 }) {
   const _emitter = new vscode.EventEmitter();
   const N = (o) => o;
@@ -43,6 +44,9 @@ function createSourcesProvider(vscode, {
     getTreeItem: toItem,
     async getChildren(node) {
       if (!node) {
+        // No folder or no repository: nothing here can work, so the view is empty and its
+        // welcome screen (package.json) says what to do.
+        if (getRepoStatus() !== 'ok') return [];
         const slug = getRepoSlug();
         return [
           N({ type: 'group', key: 'local', label: 'Local changes', icon: 'vm', expanded: true,

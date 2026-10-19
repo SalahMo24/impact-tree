@@ -2,6 +2,7 @@
 'use strict';
 const path = require('path');
 const { classifyCallerUpdateState } = require('./engine/call-sites');
+const { viewStateOf } = require('./view-state');
 
 // Row models for the change tree: plain objects describing each row, built from an
 // analysis result. Pure: nothing here reads session state, registers a decoration or
@@ -247,31 +248,66 @@ function getFileStatus(result, relPath) {
 const buildReachScopeNote = (result) => `no test within ${result.reachDepth ? `${result.reachDepth} caller level(s)` : 'the searched caller levels'}`;
 
 /**
- * The single row the view shows while there is no result to draw, or null when there is.
+ * The rows for a view with nothing to review yet, or null when a result is shown. An
+ * empty array is deliberate: with no children VS Code shows the `viewsWelcome` entry for
+ * the state (package.json), which carries the buttons. The state comes from
+ * `viewStateOf`, the same function that publishes the welcome screens' context key.
  * Never leaves the view looking idle while prerequisites are still resolving: a user
  * should not have to know that an index is warming.
- * @param {{ phase: string, busy: boolean, state: any }} view
+ * @param {{ phase: string, busy: boolean, state: any, repo?: import('./view-state').RepoStatus }} view
  * @returns {TreeRow[]|null}
  */
-function buildPlaceholderRows({ phase, busy, state }) {
-  // A prepared result belongs to the current run and is safe to review while callers
-  // are loading. The session clears the previous result before starting Refresh.
-  if ((phase === 'analysing' || phase === 'preparing' || busy) && state?.result?.callersPending) return null;
-  if (phase === 'starting' || phase === 'preparing') {
-    return [{ type: 'message', label: 'Preparing…', icon: 'loading~spin',
-      desc: 'indexing the workspace — this happens once per window' }];
+function buildPlaceholderRows({ phase, busy, state, repo = 'ok' }) {
+  switch (viewStateOf({ repo, phase, busy, state })) {
+    case 'idle': case 'noFolder': case 'noGit': case 'noTypeScript': return [];
+    case 'busy':
+      if (phase === 'checkingOut') {
+        return [{ type: 'message', label: 'Checking out…', icon: 'loading~spin', desc: 'the pull request is being checked out into your worktree' }];
+      }
+      if (phase === 'starting' || phase === 'preparing') {
+        return [{ type: 'message', label: 'Preparing…', icon: 'loading~spin',
+          desc: 'indexing the workspace — this happens once per window' }];
+      }
+      return [{ type: 'message', label: 'Analysing…', icon: 'loading~spin',
+        desc: 'resolving callers through the language server' }];
+    case 'problem': return buildProblemRows(state.problem);
+    case 'error': return [{ type: 'message', label: state.error, icon: 'error' }];
+    case 'nothingChanged': {
+      // Without warnings the welcome screen says it. With them (a mode that fell back, a
+      // base that could not be fetched) the warnings must stay visible, so say it as a row.
+      const notices = buildNoticeRows(state.result);
+      if (!notices.length) return [];
+      const mode = MODE_LABELS[state.result.mode] || state.result.mode;
+      return [...notices, { type: 'message', icon: 'info', label: `Nothing changed — ${mode} against ${state.result.base.ref}`,
+        desc: 'Switch mode', command: 'impactTree.selectMode' }];
+    }
+    default: return null;
   }
-  if (phase === 'analysing' || busy) {
-    return [{ type: 'message', label: 'Analysing…', icon: 'loading~spin',
-      desc: 'resolving callers through the language server' }];
-  }
-  if (!state || (!state.result && !state.error)) {
-    return [{ type: 'message', label: 'Ready — click to analyse', icon: 'play',
-      desc: 'Impact Tree: Refresh', command: 'impactTree.refresh' }];
-  }
-  if (state.error) return [{ type: 'message', label: state.error, icon: 'error' }];
-  return null;
 }
+
+// How the modes are named to a reader; the setting values (`pr`, `branch`, ...) stay.
+/** @type {Record<string, string>} */
+const MODE_LABELS = { pr: 'Branch vs base', branch: 'Branch + uncommitted', working: 'Uncommitted (agent)', checkpoint: 'Since checkpoint' };
+
+/**
+ * The rows for a mode that cannot run because of what the session recorded, each with the
+ * action that fixes it. Checkpoint mode needs a commit to diff against.
+ * @param {{ kind: 'noCheckpoint'|'checkpointGone', detail?: string }} problem
+ * @returns {TreeRow[]}
+ */
+function buildProblemRows(problem) {
+  const setNow = { type: 'message', label: 'Set checkpoint now', icon: 'bookmark',
+    desc: 'records the current commit', command: 'impactTree.setCheckpoint' };
+  if (problem.kind === 'checkpointGone') {
+    return [{ type: 'message', icon: 'history', label: 'The checkpoint is gone',
+      desc: 'its commit is no longer in this repository', tooltip: problem.detail }, setNow];
+  }
+  return [{ type: 'message', icon: 'history', label: 'No checkpoint yet',
+    desc: 'Since checkpoint shows what changed after a commit you record' }, setNow];
+}
+
+// The Preview's limit in words, shared by the tree's notice row and every change's Details page.
+const PREVIEW_LIMITS_NOTE = 'Preview: callers outside this PR and tests are not searched.';
 
 /**
  * The rows above the changed files: the preview notice, then one row per analysis
@@ -291,7 +327,7 @@ function buildNoticeRows(r) {
     rows.push({
       type: 'message', icon: 'eye',
       label: `Preview — PR files only (${r.changedFileCount} file(s))`,
-      desc: 'callers outside this PR are NOT shown  ·  check out for full impact',
+      desc: PREVIEW_LIMITS_NOTE,
       tooltip: 'Built from the pull request\'s own files via the GitHub API.\n'
         + 'Your worktree was not touched.\n\n'
         + 'Any caller living in a file this PR does not change is invisible here.\n'
@@ -503,7 +539,7 @@ const buildIncompleteCallersRow = (reason, hasCallers) => ({
 module.exports = {
   LEGEND, CALL_STATE, NO_SITE_EVIDENCE, STATE_NAMES, LEVEL_TONES, CHANGED_ELSEWHERE_TONE, toneOf, stateNameOf,
   classifyChangeVerdict, classifyDeletedVerdict, classifyOutsideVerdict, classifyRowVerdict, classifyWorstRowVerdict, getFileStatus,
-  buildReachScopeNote, buildPlaceholderRows, buildNoticeRows,
+  buildReachScopeNote, buildPlaceholderRows, buildNoticeRows, PREVIEW_LIMITS_NOTE, MODE_LABELS,
   buildChangeRows, buildDeletedRows, buildFileLeafRows, buildOutsideRows, describeOutsideRanges,
   buildComputeTestReachRow, dropExcludedCallers, collectAncestry, buildCallerRows,
   buildIncompleteCallersRow,

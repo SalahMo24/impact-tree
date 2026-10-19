@@ -1,7 +1,7 @@
 // @ts-check
 'use strict';
 const assert = require('node:assert/strict');
-const { classifyRowVerdict, stateNameOf, CALL_STATE } = require('./tree-row-models');
+const { classifyRowVerdict, stateNameOf, CALL_STATE, PREVIEW_LIMITS_NOTE } = require('./tree-row-models');
 const { treeItemId } = require('./review-tree-model');
 
 // The detail panel's whole document, built from one row of the change tree. Pure: the
@@ -151,6 +151,7 @@ document.addEventListener('click', (event) => {
   else if (act === 'caller') postMessage({ type: 'openCaller', index: Number(el.getAttribute('data-index')) });
   else if (act === 'thread') postMessage({ type: 'revealThread', id: el.getAttribute('data-id') });
   else if (act === 'comment') postMessage({ type: 'comment', id: el.getAttribute('data-id') });
+  else if (act === 'checkout') postMessage({ type: 'checkoutAndAnalyse' });
   else if (act === 'caller-comment') postMessage({ type: 'commentCaller', index: Number(el.getAttribute('data-index')) });
 });
 postMessage({ type: 'ready' });
@@ -348,6 +349,19 @@ function fileHtml(row, isReviewed, threads) {
 }
 
 /**
+ * What a Preview cannot see, on the page of every change in it, with the way out. A
+ * Preview searches only the pull request's own files, so a change with no callers here
+ * may still have callers elsewhere: the page must not let that read as "no impact".
+ * @param {any} result The shown result.
+ * @returns {string} Nothing for a result that is not a Preview.
+ */
+function previewLimitsHtml(result) {
+  if (!result || !result.tierA) return '';
+  return `<div class="note" data-preview-limits>${escapeHtml(PREVIEW_LIMITS_NOTE)}</div>`
+    + '<div class="actions"><button data-act="checkout">Check out and analyse</button></div>';
+}
+
+/**
  * The body for one row, or the hint when there is none.
  * @param {TreeRow|null} row
  * @param {{ result: any, isReviewed: (row: TreeRow) => boolean, impactRows: TreeRow[], lineOf: (file: string, offset: number) => number|null,
@@ -363,7 +377,8 @@ function bodyHtml(row, { result, isReviewed, impactRows, lineOf, threads }) {
   if (row.type === 'finding') h = changeHtml(row, { result, impactRows, lineOf, commenting: !!(threads && threads.action) });
   else if (row.type === 'deleted') h = `<h3>${escapeHtml(row.label)}</h3><div class="where">${escapeHtml(row.relPath)} · deleted</div><div class="verdict lv${v.level}">${escapeHtml(v.sentence)}</div>`;
   else h = `<h3>Outside functions</h3><div class="where">${escapeHtml(row.relPath)} · ${escapeHtml(v.text)}</div><div class="verdict lv${v.level}">${escapeHtml(v.sentence)}</div>`;
-  return h + section + buttonsHtml(reviewPresentation(row, isReviewed), row.type === 'finding' ? changeActionsHtml(treeItemId(row), result) : '');
+  return h + previewLimitsHtml(result) + section
+    + buttonsHtml(reviewPresentation(row, isReviewed), row.type === 'finding' ? changeActionsHtml(treeItemId(row), result) : '');
 }
 
 /**
