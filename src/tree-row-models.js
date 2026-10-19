@@ -49,6 +49,14 @@ const LEVEL_TONES = Object.freeze([
 /** The tone of a caller that was edited but not on the call line: it looks handled and is not. */
 const CHANGED_ELSEWHERE_TONE = LEVEL_TONES[1];
 
+/**
+ * The icon tone of a verdict. A body-only change whose callers could not be found keeps
+ * level 3 for ordering, but it is amber: an unknown must never be drawn as fine.
+ * @param {Verdict} verdict
+ * @returns {IconTone|null}
+ */
+const toneOf = (verdict) => (verdict.unknown ? LEVEL_TONES[1] : LEVEL_TONES[verdict.level]);
+
 const LEGEND = [
   ['file', 'Icon = file type', 'from your file-icon theme, on file rows whatever impactTree.iconMode says'],
   ['symbol-method', 'Icon = symbol kind', 'method, function, constructor or variable on change rows; impactTree.iconMode = "file" shows the file glyph instead'],
@@ -76,7 +84,8 @@ const NO_SITE_EVIDENCE = { updated: [], untouched: [], unknown: [] };
 /**
  * `token` is the glyph that surfaces outside the tree (the review lens) still lead with;
  * tree rows and the Details panel show `text` and the state name instead.
- * @typedef {{ level: number, token: string, text: string, sentence: string }} Verdict
+ * `unknown` marks a body-only verdict whose callers could not be found (level 3, but not fine).
+ * @typedef {{ level: number, token: string, text: string, sentence: string, unknown?: boolean }} Verdict
  */
 
 // What the analysis could not say about a caller search, in words a reviewer can act on.
@@ -144,7 +153,7 @@ function classifyBodyOnlyVerdict(change) {
   const mayBeMissing = change.callersComplete === false;
   // A finished search that found nothing is `none`; one that was cut short may have missed callers.
   if (!callersKnown(change) || (mayBeMissing && change.callerState === 'none')) {
-    return { level: 3, token: '?', text: change.callerState === 'di' ? 'DI-constructed' : 'callers unknown',
+    return { level: 3, token: '?', text: change.callerState === 'di' ? 'DI-constructed' : 'callers unknown', unknown: true,
       sentence: `Only the body changed. Its callers could not be found: ${describeUnknownCallers(change)}.` };
   }
   if (change.callerState === 'none') {
@@ -212,7 +221,8 @@ const classifyWorstRowVerdict = (rows) => rows.map(classifyRowVerdict).reduce((w
  * @returns {string}
  */
 const stateNameOf = (row, verdict) => (row.type === 'deleted' ? STATE_NAMES.deleted
-  : row.type === 'outside' ? STATE_NAMES.outside : STATE_NAMES.levels[verdict.level]);
+  : row.type === 'outside' ? STATE_NAMES.outside
+    : verdict.unknown ? STATE_NAMES.levels[1] : STATE_NAMES.levels[verdict.level]);
 
 /**
  * The git status the result records for a repo-relative path, trying the path with
@@ -491,7 +501,7 @@ const buildIncompleteCallersRow = (reason, hasCallers) => ({
 });
 
 module.exports = {
-  LEGEND, CALL_STATE, NO_SITE_EVIDENCE, STATE_NAMES, LEVEL_TONES, CHANGED_ELSEWHERE_TONE, stateNameOf,
+  LEGEND, CALL_STATE, NO_SITE_EVIDENCE, STATE_NAMES, LEVEL_TONES, CHANGED_ELSEWHERE_TONE, toneOf, stateNameOf,
   classifyChangeVerdict, classifyDeletedVerdict, classifyOutsideVerdict, classifyRowVerdict, classifyWorstRowVerdict, getFileStatus,
   buildReachScopeNote, buildPlaceholderRows, buildNoticeRows,
   buildChangeRows, buildDeletedRows, buildFileLeafRows, buildOutsideRows, describeOutsideRanges,

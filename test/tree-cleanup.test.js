@@ -347,6 +347,7 @@ test('the spacer is not a counting row, and counts, line lookup and next-unrevie
 });
 
 // ---- 7. fewer states (P2): three colours in the tree, the exact state in words ------------
+const { stateNameOf, classifyChangeVerdict } = require('../src/tree-row-models');
 const STATE_GLYPHS = /[⛔✓●∅△○?−≡🧪↑]/u;
 const ERROR = 'list.errorForeground';
 const WARNING = 'list.warningForeground';
@@ -390,6 +391,12 @@ test('a level-1 state is never uncoloured, in either icon mode', () => {
   }
   const incomplete = findingRow('p', { kinds: [SIG], callerState: 'resolved', callersComplete: false, callers: [updatedCaller] });
   assert.equal(renderRow('symbol', incomplete).iconPath.color.id, WARNING, 'updated callers with a search that did not finish');
+  // A body-only change keeps level 3 for ordering, but an unknown must not read as fine.
+  for (const state of ['unknown', 'di']) {
+    const body = findingRow('b', { callerState: state });
+    for (const mode of ['symbol', 'file']) assert.equal(renderRow(mode, body).iconPath.color.id, WARNING, `body-only, ${state} in ${mode} mode`);
+    assert.equal(stateNameOf(body, classifyChangeVerdict(body.finding)), 'Callers unknown', `body-only, ${state}: Details heading`);
+  }
 });
 
 test('a deleted row keeps the trash icon in amber; an outside row is uncoloured', () => {

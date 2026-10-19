@@ -15,7 +15,7 @@
 // after the attention count on a file row, after the state on a change row.
 const path = require('path');
 const {
-  CALL_STATE, LEVEL_TONES, CHANGED_ELSEWHERE_TONE, classifyChangeVerdict, classifyDeletedVerdict,
+  CALL_STATE, LEVEL_TONES, CHANGED_ELSEWHERE_TONE, toneOf, classifyChangeVerdict, classifyDeletedVerdict,
 } = require('./tree-row-models');
 const { needsAttention } = require('./review-tree-model');
 const { describeThreadCounts } = require('./review-threads');
@@ -323,7 +323,7 @@ function renderChangeItem(vscode, item, n, view) {
   item.description = describeChangeRow(containerToShow(n),
     view.rowDetail === 'inline' ? `${st.text}${qual}${kinds.length ? '  ·  ' + kinds.join(', ') : ''}` : st.text,
     n, threadParts(n, view));
-  item.iconPath = rowIcon(f.label, f, LEVEL_TONES[st.level]);
+  item.iconPath = rowIcon(f.label, f, toneOf(st));
   item.tooltip = new vscode.MarkdownString(buildChangeTooltipLines(n, st, kinds).join('\n'));
   item.contextValue = 'finding';
   applyCheckbox(vscode, item, n, view);
