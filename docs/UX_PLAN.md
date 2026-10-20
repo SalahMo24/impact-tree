@@ -94,7 +94,7 @@ Numbered after `RELEASE_PLAN.md`'s G1–G7.
   updated, amber = unknown or changed-not-at-call, none = fine), with the exact state
   (● ∅ ✓ ○ △) as the row's description text and in the tooltip. Or keep all glyphs and
   only switch to theme icons (U3 as written).
-- **G10. Review effort score.** Show a 1–5 effort score in the summary (S1)? If yes, the
+- **G10. Review effort score.** Dropped with S1 (2026-10-20). Was: show a 1–5 effort score in the summary (S1)? If yes, the
   formula is fixed in the PR from inputs the engine has (risk scores, number of changes,
   callers outside the PR, incomplete searches) and documented in the README. A score
   nobody can explain is worse than none.
@@ -105,9 +105,8 @@ Numbered after `RELEASE_PLAN.md`'s G1–G7.
 - **G12. Posting to the PR (E1).** Off by default and posted on a button press only, or
   also a setting to post on every submit? One comment, edited in place on re-post, or a
   new one each time?
-- **G3 / G4 from `RELEASE_PLAN.md`** decide F3 and F4 below. This plan proposes: G3 (d),
-  a Claude Code `Stop` hook when configured, else the "Checkpoint now" button; G4 both
-  clipboard and a git-ignored `.impact-tree/feedback.md`, plus the terminal hand-off in F4.
+- **G3 / G4 from `RELEASE_PLAN.md`**: decided 2026-10-20. No per-agent turn hook; feedback
+  rounds with a snapshot checkpoint and a feedback file per round instead (Part F).
 
 ## Part P: plain first run (confusion fixes)
 
@@ -157,25 +156,10 @@ Owner check: U8's usability walk, run after P1–P5.
 
 ## Part S: understand before reading
 
-### S1. Summary card (extends U1; gate G10)
+### S1. Summary card (dropped)
 
-A fixed block at the top of Details when no row is selected, and pinned above the
-per-row content otherwise (collapsed to one line):
-
-```
-PR #51 · 12 changes in 7 files · Effort 3/5
-  ⛔ 2 callers not updated      → filter
-  ?  1 caller search incomplete → filter (reason)
-  ↗ 3 changes reach callers outside this diff
-  🧪 1 change has no test reaching it
-  8 of 12 reviewed · 2 unresolved threads
-```
-
-Acceptance: every count is the same number the tree's filters produce (one function
-computes both, tested); clicking a count applies that filter and shows it as active and
-clearable (U1); counts that are zero are hidden; an incomplete or preview analysis says
-so on the first line; the effort score, if G10 says yes, is a pure function with tests
-and a README entry; repaint rules hold (the card patches, it does not re-render Details).
+Dropped 2026-10-20 by the owner: too much information that isn't useful. G10 and
+the summary half of U2 go with it.
 
 ### S2. Call-flow diagram for a change (optional)
 
@@ -202,49 +186,141 @@ Acceptance: in Path order, Next/Previous unreviewed (`Alt+N`, U6's key) follow t
 the status bar shows "step 4 of 12"; Details shows "why here": "changes `foo`, called by
 steps 6 and 9".
 
-## Part F: the agent loop
+## Part F: feedback rounds with any agent
 
-The feature most likely to make the tool hard to give up. CodeRabbit sells this as "Fix
-with AI" and a paid CLI that takes minutes; Impact Tree can do the core of it exactly
-and in seconds. Builds on Part A of `RELEASE_PLAN.md`; A1–A2 come first.
+Decided 2026-10-20 (owner): no per-agent turn hooks (no generic way exists). Instead the
+reviewer leaves feedback on local changes, sends it as a markdown file to whichever agent
+they use, and the next review shows what happened to each item. The files stay in the
+repo; after several rounds the owner may ask an agent to extract rules from them (not
+part of this plan). Replaces the earlier F3 (turn hooks) and F4 (send to agent),
+`RELEASE_PLAN.md` A1–A2, and gates G3/G4. The earlier F1 (a fix prompt per unupdated
+caller) and F2 (`--agent` NDJSON output) are deferred, not dropped.
+Mockup reviewed 2026-10-20.
 
-### F1. A fix prompt for every unupdated caller
+Research behind it: CodeRabbit's IDE extension hands fixes to an agent through a
+`coderabbit.agentType` setting (native chat, clipboard, `claude`/`codex` in a terminal,
+other extensions) but keeps nothing between local reviews; GitHub, Bitbucket and
+CodeRabbit's PR reviews track "since last review" by commit, which misses uncommitted
+agent work and breaks on rebase; Claude Code's checkpoints track only its own edit tools.
+A content snapshot of the working tree covers all of these.
 
-Acceptance: each ⛔ change and each △/○ caller under it has **Copy fix prompt** (inline
-action and Details button). The prompt is built only from engine facts: the symbol, old
-and new signature (or the new throw), and each caller not updated with `file:line` and
-the call line's text, ending with an instruction to update those calls or explain why not.
-No guessed fix. Pure function, snapshot-tested on a fixture; a change with an incomplete
-search says so in the prompt.
+### F1. Feedback drafts on local reviews
 
-### F2. Machine-readable output for agents
+Acceptance: in Uncommitted (agent), Since checkpoint and Branch + uncommitted results,
+the diff offers a comment box labelled **Feedback** (its own comment controller; PR
+reviews keep theirs), and Details' 💬 on a change or caller starts a draft there too.
+Drafts are listed in a **Feedback to send** group at the top of Changes (click opens the
+line; context menu Edit / Delete / Send feedback…), counted in the status bar, and kept
+in workspace state (`impactTree.feedbackDrafts`, `{ version: 1, items: FeedbackItem[] }`,
+at most 200 items, body at most 10 000 characters; an unrecognised stored value is
+dropped with one log line, never half-read).
 
-Acceptance: `impact-tree --agent` (CLI) writes NDJSON events: `status`, one `finding`
-per ⛔ or ? change (fields: severity from the verdict, file, symbol, kind of change,
-callers not updated with `file:line`, `prompt` from F1, `complete: false` when the
-search was incomplete), then `complete` with counts. Exit code 0 when nothing needs
-attention, 1 when something does, 2 on error. Documented in the README with a sample.
+### F2. Snapshot checkpoints, stored outside the repository
 
-### F3. Run after every agent turn (gate G3)
+A snapshot records the working tree (tracked, modified and untracked files; `.gitignore`
+respected; `.impact-tree/` excluded) as a commit whose objects are written to a folder
+of the extension's workspace storage, never to `.git`:
 
-Acceptance: a documented Claude Code `Stop` hook (and a Codex equivalent if it has one)
-that runs `impact-tree --agent --mode working` and, when findings exist, returns them to
-the agent so it fixes them before stopping; the same hook records the turn's checkpoint
-(A2). An install command writes the hook config after showing it and asking. Owner check:
-a real session where the agent fixes a missed caller on its own.
+```
+cp $(git rev-parse --git-path index) <tmp>/index
+GIT_INDEX_FILE=<tmp>/index GIT_OBJECT_DIRECTORY=<snap>/objects \
+  GIT_ALTERNATE_OBJECT_DIRECTORIES=<repo objects> git add -A -- . ':(exclude).impact-tree'
+… git write-tree; … git commit-tree <tree> [-p HEAD]
+```
 
-### F4. Send to an agent from the editor (gate G4; extends A5)
+Reading a snapshot passes `GIT_ALTERNATE_OBJECT_DIRECTORIES=<snap>/objects` to the git
+commands that read it (engine, base-side documents, review identity), through an
+explicit `objectDirs` option of `makeGit`; nothing in the user's shell changes. Checkpoint
+mode diffs with a temporary index in which untracked files are added intent-to-add
+(`git add -N`), so a file untracked at snapshot time is not reported as deleted. The
+user's index, HEAD, refs, stash and `.git/objects` are never written.
+"Set checkpoint now" takes a snapshot too. A stored checkpoint that is an ordinary commit
+(older builds) keeps working.
 
-Acceptance: next to Copy fix prompt (F1) and on A5's exported review, **Send to agent**
-offers what's available: a running Claude Code / Codex terminal (sends the text, doesn't
-press enter), the clipboard, and the feedback file from G4; the last choice is remembered
-as a setting.
+Acceptance: tests on throwaway repos prove the above, including that `.git` is
+unchanged; a missing snapshot folder gives the existing "The checkpoint is gone" row;
+time and size measured on t3code and recorded here.
+
+### F3. Send feedback
+
+Acceptance: **Send feedback** (title bar ✈ when drafts exist, the group's context menu)
+asks where to send it, remembering the answer in `impactTree.agent`
+(`ask` | `claude` | `codex` | `chat` | `clipboard` | `save`; ⌥ asks again). It then:
+writes `.impact-tree/feedback/<YYYY-MM-DD>-<n>.md` (format below; never overwrites),
+takes a snapshot (F2) and makes it the checkpoint, clears the drafts, switches to Since
+checkpoint, and hands off: Claude Code / Codex run `claude "<prompt>"` / `codex "<prompt>"`
+in a new terminal; editor chat only where a spike proved it can fill the chat (else not
+offered); clipboard copies the prompt. The prompt names the file and asks for a
+`Status:` line under each item. If the file or snapshot step fails nothing is cleared
+and the reason is shown.
+
+Once per repo, after the first send: offer to add one line pointing agents at
+`.impact-tree/feedback/` to `AGENTS.md` and `CLAUDE.md` (Add / Not now / Never).
+
+File format (one round), parsed back by F4:
+
+```
+# Feedback round 2 · 2026-10-20 14:32
+<!-- impact-tree feedback v1 round=2 checkpoint=<sha|none> -->
+Branch: feat/x · Reviewed: Uncommitted (agent)
+
+For the agent: address each item. Under each one, write `Status: done` or
+`Status: skipped — reason`. Don't change anything else in this file.
+
+## 1. src/session.js:212 · runAnalysis
+<!-- item id=<id> -->
+> } catch { /* ignore */ }
+Don't swallow errors here.
+Status:
+```
+
+### F4. What happened to each item
+
+Acceptance: when the checkpoint is a feedback round's snapshot, Changes shows a
+**Feedback round N** group first. Each item states, in words, two separate facts: the
+agent's status (`Agent: done`, `Agent: skipped`, `No status written`, or `Status
+unreadable` when the item's marker is gone) and whether the code near the item changed
+since the snapshot (`Code changed` / `No code change` / `Change unknown` when the diff
+could not be read). Amber when they disagree or anything is unknown (done with no code
+change, skipped, unreadable); never shown as fine on missing evidence. Details shows the
+text, status and reason, with Open change and **Reply in next round** (new draft at the
+same place).
+
+### F5. Cleanup of stored data
+
+Feedback files are never deleted, moved or rewritten by cleanup. Everything else
+Impact Tree stores has a retention rule, applied in the background (bounded, after
+startup and after each send) and by **Impact Tree: Clean up stored data**, which lists
+what it will delete with sizes and asks first:
+
+| Stored | Rule |
+| --- | --- |
+| Snapshots | Keep the current checkpoint and the latest 2 rounds; delete others older than 30 days or whose branch no longer exists. |
+| Temporary index files | Deleted after each use; leftovers deleted on startup. |
+| Review progress (`impactTree.reviewed.*`) | Delete keys unused for 90 days, and branch keys whose branch is gone. |
+| Checkpoint id | Cleared when its snapshot is deleted. |
+
+Remote-tracking refs fetched for a base and branches made by "Check out and analyse" are
+the user's git data and are left alone.
+
+### Shared contracts (F1–F5)
+
+```js
+/** @typedef {{ id: string, file: string, line: number|null, symbol: string|null,
+ *   caller: { label: string, file: string, line: number }|null, quote: string,
+ *   body: string, createdAtMs: number }} FeedbackItem
+ *   `file` repo-relative, `line` one-based (null: the whole change or file),
+ *   `quote` the code the reviewer saw (at most 5 lines / 400 characters). */
+/** @typedef {{ id: string, sha: string, objectsDir: string, createdAtMs: number,
+ *   branch: string|null, headSha: string|null, round: number|null, bytes: number }} SnapshotRecord
+ *   `objectsDir` absolute; `round` set when the snapshot was taken by Send feedback. */
+```
 
 ## Part E: share the result
 
 ### E1. Post an impact summary to the PR (gate G12; README roadmap)
 
-Acceptance: from the PR tab, **Post impact summary** posts S1's numbers and a table of
+Acceptance: from the PR tab, **Post impact summary** posts the result's counts and a table of
 ⛔ and ? changes (symbol, file, callers not updated) as one comment inside a collapsed
 `<details>`, under 40 lines whatever the PR size; it states when it came from a preview
 or an incomplete analysis, and which commit it describes; re-posting follows G12; it
@@ -269,8 +345,8 @@ reviewed. Tested with two heads of a fixture repo.
 
 1. **P1–P5** right after C. Cheap, independent, and it's what confuses users now. P2
    replaces U3; P5 is U7; P4 absorbs U6. Needs G8 and G9 first.
-2. **S1** (absorbs U1 and the summary half of U2). Needs G10.
-3. **A0–A2, then F1–F4.** The agent loop, ahead of B. Needs G3 and G4.
+2. ~~S1~~ dropped.
+3. **F1–F5** (feedback rounds), ahead of B. Replaces A1–A2.
 4. **W1–W2**, then **E1** and **I1**. Needs G11 and G12.
 5. **B** (review loop part 2), the rest of U (U2 rows, U4, U5, U8), then R.
 
