@@ -535,6 +535,11 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      from unticking a file until the next analysis.
    - Planned: a stat-keyed token cache, if reviews of more than about a thousand changed
      files prove common; measure again before adding it.
+   - Exists: the snapshot store (`src/engine/snapshot-store.js`) is owned by the extension
+     activation (created in `src/snapshot-storage.js` from `context.storageUri`). It keeps
+     checkpoint snapshots under `<storage>/impact-tree/`, serializes its manifest writes,
+     and writes nothing to `.git` (objects go to its own folder; temporary indexes are
+     removed in `finally`, leftovers swept at startup). Retention: F5.
 5. Enroll modules in linting and JSDoc type checking, then enforce those checks in
    CI. Broaden coverage as modules are brought into compliance.
    - Exists: `npm run lint` (ESLint flat config), `npm run typecheck` (`tsc` over
