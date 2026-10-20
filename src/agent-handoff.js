@@ -112,7 +112,8 @@ async function handOff(vscode, id, { prompt, repoRoot, platform = process.platfo
     const terminal = vscode.window.createTerminal({ name: plan.name, cwd: repoRoot });
     terminal.show();
     terminal.sendText(plan.command, true);
-    return plan.alsoClipboard ? `Started in a terminal; the prompt is on the clipboard to paste.` : 'Started in a terminal.';
+    const name = CLIS[/** @type {'claude'|'codex'} */ (id)].name;
+    return plan.alsoClipboard ? `Started ${name} in a terminal; the prompt is on the clipboard to paste.` : `Started ${name} in a terminal.`;
   }
   if (plan.kind === 'chat') {
     await vscode.commands.executeCommand(CHAT_COMMAND, plan.args);
