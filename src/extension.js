@@ -12,6 +12,7 @@ const { createGitHub, parseRemote } = require('./github');
 const { createSourcesProvider } = require('./sources-provider');
 const { createPrDocuments } = require('./pr-documents');
 const { createSession } = require('./session');
+const { createSnapshotStoreGetter } = require('./snapshot-storage');
 const { createPrActions } = require('./pr-actions');
 const { createPullRequestReviewStore, reviewTargetOf } = require('./pr-review-store');
 const { createViewedSync } = require('./viewed-sync');
@@ -44,8 +45,14 @@ function activate(context) {
   log(`activated  build=${BUILD}  resolver=vscode-callhierarchy  openTextDocument=never`);
 
   // Local, so the closures below keep this activation's session after deactivate().
-  const owned = createSession(vscode, { log, review, checkpoint: context.workspaceState.get('impactTree.checkpoint') });
+  // Snapshot checkpoints live in the extension's per-workspace storage, never in .git. Without a
+  // storage folder there is no store and a checkpoint stays a plain HEAD commit.
+  const getSnapshotStore = createSnapshotStoreGetter(context, () => owned.repoRoot(), log);
+  const getObjectDirs = () => { const s = getSnapshotStore(); return s ? s.objectDirs() : []; };
+  const getTempDir = () => { const s = getSnapshotStore(); return s ? s.tempDir() : undefined; };
+  const owned = createSession(vscode, { log, review, checkpoint: context.workspaceState.get('impactTree.checkpoint'), getObjectDirs, getTempDir });
   session = owned;
+  getSnapshotStore();   // creates the store and sweeps leftover temporary files in the background
 
   const decorate = createDecorationProvider(vscode);
   session.decorate = decorate;
@@ -250,9 +257,9 @@ function activate(context) {
 
   context.subscriptions.push(
     ...registerCommands(vscode, {
-      BUILD, session, openReview, sources, gh, loadPrs, context, log, out,
+      BUILD, session, openReview, sources, gh, loadPrs, context, log, out, getSnapshotStore,
     }),
-    ...registerContentProviders(vscode, { prDocuments, repoRoot: () => session.repoRoot(), gh, repoSlug, log }),
+    ...registerContentProviders(vscode, { prDocuments, repoRoot: () => session.repoRoot(), gh, repoSlug, log, getObjectDirs }),
   );
 
   if (vscode.workspace.getConfiguration('impactTree').get('prewarm', true)) {

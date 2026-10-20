@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { makeGit, resolveBaseAsync } = require('./git');
+const { createDiffIndex } = require('./diff-index');
 const {
   changedFiles, untrackedFiles, worktreeFiles, allHunks, hunkDiffArgs, wholeFileRange, isTestPath, isSourcePath,
   projectRootOf, projectConfigIn, clearProjectCache, projectLabel, INFERRED_PROJECT,
@@ -340,7 +341,12 @@ function inferredProjectFiles(repo, git) {
  * @param {object} [opts]
  * @param {'working'|'checkpoint'|'branch'|'pr'} [opts.mode='pr']
  * @param {string} [opts.base='main'] Base branch or revision for `pr` and `branch`.
- * @param {string} [opts.checkpoint] Required for `checkpoint`. Must resolve to a commit.
+ * @param {string} [opts.checkpoint] Required for `checkpoint`. Must resolve to a commit: an ordinary
+ *   commit, or a snapshot commit whose objects live in one of `opts.objectDirs`.
+ * @param {string[]} [opts.objectDirs] Absolute extra object directories git may read (snapshot
+ *   stores). Not used to write anything.
+ * @param {string} [opts.tempDir] Existing directory for the run's temporary index (checkpoint
+ *   mode); default the OS temp dir. The index is removed before `analyze` continues.
  * @param {boolean} [opts.fetch] Fetch the base before resolving it.
  * @param {boolean} [opts.allowLocalBase] Allow a local base ref when the remote-tracking ref is missing.
  * @param {number} [opts.fetchTimeoutMs] Deadline for that fetch, in milliseconds.
@@ -417,7 +423,7 @@ async function analyze(repo, opts = {}) {
   if (!cfg) throw new Error(`unknown mode '${mode}' (expected ${Object.keys(MODES).join('|')})`);
   const { signal } = opts;
   throwIfCancelled(signal);
-  const git = makeGit(repo);
+  const git = makeGit(repo, { objectDirs: opts.objectDirs });
   const warnings = [];
   const depth = validateReachDepth(opts.depth, warnings);
   const concurrency = validateConcurrency(opts.concurrency, warnings);
@@ -436,17 +442,31 @@ async function analyze(repo, opts = {}) {
 
 
   const headRev = opts.headRev !== undefined ? opts.headRev : effectiveCfg.headRev;
-  const untracked = new Set(untrackedFiles(git));
-  const everything = includeUntrackedFiles(changedFiles(git, base.sha, headRev, null), untracked, headRev);
-  const { files, byComponent } = changedSourceByProject(repo, everything);
+  // Checkpoint mode diffs the snapshot against the worktree through a private index in
+  // which untracked files are intent-to-add: a file untracked at snapshot time and
+  // unchanged since is then not reported as deleted, and every untracked file reaches the
+  // diff itself, so none is appended afterwards. Owner: this block; removed in `finally`
+  // (the block is synchronous, so a cancellation cannot interleave).
+  const viaIndex = mode === 'checkpoint' && headRev === null;
+  const diffIndex = viaIndex ? createDiffIndex(repo, { tempDir: opts.tempDir }) : null;
+  const deletions = {};
+  const hunkHeaders = {};
+  let untracked, everything, files, byComponent, ranges;
+  try {
+    const diffGit = diffIndex ? makeGit(repo, { objectDirs: opts.objectDirs, env: diffIndex.env }) : git;
+    untracked = new Set(viaIndex ? [] : untrackedFiles(git));
+    everything = includeUntrackedFiles(changedFiles(diffGit, base.sha, headRev, null), untracked, headRev);
+    ({ files, byComponent } = changedSourceByProject(repo, everything));
+    const trackedForDiff = files.filter((f) => !f.untracked);
+    ranges = trackedForDiff.length ? rangesFor(diffGit, base.sha, headRev, trackedForDiff, { deletionsOut: deletions, changesOut: hunkHeaders }) : {};
+  } finally {
+    if (diffIndex) diffIndex.dispose();
+  }
   const unanalysable = new Map();
 
   // relPath -> [[startLine, endLine], ...] of the new-side changed ranges
   const changedRanges = {};
   const tracked = files.filter((f) => !f.untracked);
-  const deletions = {};
-  const hunkHeaders = {};
-  const ranges = tracked.length ? rangesFor(git, base.sha, headRev, tracked, { deletionsOut: deletions, changesOut: hunkHeaders }) : {};
   for (const f of files) {
     changedRanges[f.path] = f.untracked ? wholeFileRange(path.join(repo, f.path)) : (ranges[f.path] || []);
   }

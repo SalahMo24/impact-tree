@@ -241,6 +241,8 @@ Acceptance: tests on throwaway repos prove the above, including that `.git` is
 unchanged; a missing snapshot folder gives the existing "The checkpoint is gone" row;
 time and size measured on t3code and recorded here.
 
+Measured (Apple M3 Pro, Node v22.18.0, `take()` on t3code, 23 078 tracked files, three runs each): clean tree 179-186 ms and 160 bytes (one commit object; every blob and tree already exists in the repository's own objects, so the snapshot holds only what is new). A local clone of t3code with 5 modified and 3 untracked small files: 198-206 ms and 7 110 bytes (the changed blobs, the trees above them and the commit). Size grows with the content changed since the repository last stored it, not with repository size. `.git` of the measured repository was not touched (`git status --porcelain` identical before and after).
+
 ### F3. Send feedback
 
 Acceptance: **Send feedback** (title bar ✈ when drafts exist, the group's context menu)

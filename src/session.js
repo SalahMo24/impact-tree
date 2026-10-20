@@ -42,11 +42,15 @@ function untilCancelled(signal, promise) {
  * signal synchronously, so a run whose signal is not aborted is still the current one.
  *
  * @param {*} vscode
- * @param {{ log: (m: string) => void, review: object, checkpoint?: string, indexingTickMs?: number }} opts
+ * @param {{ log: (m: string) => void, review: object, checkpoint?: string, indexingTickMs?: number, getObjectDirs?: () => string[], getTempDir?: () => string|undefined }} opts
  *   `checkpoint` is the review checkpoint restored from the workspace. `indexingTickMs` is
- *   how often the first-index elapsed time is refreshed; tests shorten it.
+ *   how often the first-index elapsed time is refreshed; tests shorten it. `getObjectDirs` returns
+ *   the absolute snapshot object directories that reading the checkpoint revision needs; it is
+ *   asked at each use, so a snapshot taken after startup is visible. `getTempDir` names the
+ *   folder for an analysis's temporary index (the snapshot store's, so its startup sweep
+ *   removes what a crash leaves); undefined uses the OS temp folder.
  */
-function createSession(vscode, { log: logToChannel, review, checkpoint, indexingTickMs = 1000 }) {
+function createSession(vscode, { log: logToChannel, review, checkpoint, indexingTickMs = 1000, getObjectDirs = () => [], getTempDir = () => undefined }) {
   // Required here rather than at module load: tests intercept analyze/git per activate.
   const { analyze, loadTypeScript } = require('./engine/analyze');
 
@@ -369,7 +373,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     if (!review) return;
     const { makeGit } = require('./engine/git');
     const { createReviewIdentity, localRevisions } = require('./review-identity');
-    const identity = createReviewIdentity(loadTypeScript(repo, repo), repo, localRevisions(repo, result, makeGit(repo)));
+    const identity = createReviewIdentity(loadTypeScript(repo, repo), repo, localRevisions(repo, result, makeGit(repo, { objectDirs: getObjectDirs() })));
     const { key, replaces, branch } = reviewKeys(source, repo, result, base);
     review.configure(key, identity, { migrateFrom: replaces, branch });
   }
@@ -487,6 +491,8 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
       },
       mode, base, fetch: cfg.get('fetchBase', true),
       checkpoint: session.state && session.state.checkpoint,
+      objectDirs: getObjectDirs(),
+      tempDir: getTempDir(),
       depth: cfg.get('reachDepth', 2),
       skipForest: true,                      // the tree resolves callers on expand
       deferTestReach: !(session.state && session.state.wantTestReach), // only one section needs it
