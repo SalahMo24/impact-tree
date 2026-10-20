@@ -72,6 +72,16 @@ function parseMessage(message, token) {
  */
 
 /**
+ * What Details asks of the feedback drafts (`createFeedbackComments`): whether a local
+ * review is shown, and starting a draft on a row or about a caller.
+ * @typedef {{
+ *   available: () => boolean,
+ *   commentOnRow: (row: TreeRow) => Promise<unknown>,
+ *   commentOnCaller: (row: TreeRow, caller: import('./review-comments-model').CallerContext) => Promise<unknown>,
+ * }} FeedbackActions
+ */
+
+/**
  * Registers the Details view and makes it follow the tree and the cursor.
  *
  * What is shown is a tree id and an origin, not a row: the row is looked up again on each
@@ -97,14 +107,18 @@ function parseMessage(message, token) {
  *   lineOf: (file: string, offset: number) => number|null,
  *   log: (message: string) => void,
  *   reviewActions?: () => ReviewActions|null,
+ *   feedbackActions?: () => FeedbackActions|null,
  *   checkoutAndAnalyse?: (pr: any) => Promise<unknown>,
  * }} deps `view` is the change view; `getState` the session state; `lineOf` the 1-based
  *   line of an offset in a file, or null when unreadable. `reviewActions` starts comments
- *   and opens threads; without it the Threads section's buttons do nothing. `checkoutAndAnalyse`
+ *   and opens threads; without it the Threads section's buttons do nothing. `feedbackActions`
+ *   starts feedback drafts: a row of a local review (no Threads section) offers it through
+ *   the same 💬 buttons. `checkoutAndAnalyse`
  *   checks out a pull request and analyses it; a Preview's page offers it for the PR shown.
  * @returns {{ disposables: Array<{ dispose(): any }> }}
  */
-function createDetailPanel(vscode, { provider, view, getState, lineOf, log, reviewActions = () => null, checkoutAndAnalyse = async () => undefined }) {
+function createDetailPanel(vscode, { provider, view, getState, lineOf, log, reviewActions = () => null, feedbackActions = () => null,
+  checkoutAndAnalyse = async () => undefined }) {
   /** @type {any} */
   let webviewView = null;
   /** @type {Array<{ dispose(): any }>} */
@@ -167,6 +181,8 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log, revi
   }
 
   const currentRow = () => (shown.id ? provider.rowById(shown.id) : null);
+  // Whether the rows shown are of a local review, whose 💬 buttons start feedback drafts.
+  const feedbackShown = () => { const actions = feedbackActions(); return !!(actions && actions.available()); };
   /** @param {TreeRow|null} row */
   const threadSectionOf = (row) => buildThreadSection(row, provider.threadsView(), (row && provider.threadsOfRow(row)) || []);
 
@@ -192,7 +208,7 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log, revi
     const html = buildDetailHtml(row, {
       result: state && state.result, isReviewed: provider.isReviewed,
       impactRows: row && row.type === 'finding' ? provider.impactRowsOf(row) : [],
-      nonce, cspSource: webviewView.webview.cspSource, origin: shown.origin, lineOf, progress, threads,
+      nonce, cspSource: webviewView.webview.cspSource, origin: shown.origin, lineOf, progress, threads, feedback: feedbackShown(),
     });
     lastThreads = JSON.stringify(threads);
     renderToken = nonce;
@@ -349,7 +365,8 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log, revi
   async function onReviewAction(m, row) {
     const actions = reviewActions();
     const section = threadSectionOf(row);
-    if (!actions || !section) return;
+    if (!section) { if (m.type !== 'revealThread') await onFeedbackAction(m, row); return; }
+    if (!actions) return;
     if (m.type === 'revealThread') {
       if (section.threads.some((t) => t.id === m.id)) await actions.revealThread(m.id);
       return;
@@ -359,18 +376,48 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log, revi
       if (m.id === shown.id) await actions.commentOnRow(row);
       return;
     }
-    if (row.type !== 'finding') return;
-    const caller = listCallerRows(provider.impactRowsOf(row))[m.index];
+    const caller = callerContextOf(row, m.index, 'a comment');
+    if (caller) await actions.commentOnCaller(row, caller);
+  }
+
+  /**
+   * A 💬 button of a local review's row: starts a feedback draft on the shown row, or about
+   * one of its callers. Only while a local review is shown, as the page was drawn for.
+   * @param {{ type: 'comment', id: string }|{ type: 'commentCaller', index: number }} m
+   * @param {TreeRow} row The shown row.
+   */
+  async function onFeedbackAction(m, row) {
+    const actions = feedbackActions();
+    if (!actions || !actions.available()) return;
+    if (m.type === 'comment') {
+      if (m.id === shown.id) await actions.commentOnRow(row);
+      return;
+    }
+    const caller = callerContextOf(row, m.index, 'a feedback draft');
+    if (caller) await actions.commentOnCaller(row, caller);
+  }
+
+  /**
+   * The caller a 💬 in the callers table names, with the line of its call; null (after
+   * saying why, when the line cannot be read) when there is none.
+   * @param {TreeRow} row The shown row.
+   * @param {number} index
+   * @param {string} what What would be started, for the warning.
+   * @returns {import('./review-comments-model').CallerContext|null}
+   */
+  function callerContextOf(row, index, what) {
+    if (row.type !== 'finding') return null;
+    const caller = listCallerRows(provider.impactRowsOf(row))[index];
     const state = getState();
-    if (!caller || !state) return;
+    if (!caller || !state) return null;
     const offset = caller.callSites && caller.callSites[0] ? caller.callSites[0].start : caller.pos;
     const siteLine = typeof offset === 'number' ? lineOf(caller.file, offset) : null;
     const relPath = caller.relPath ?? state.rel(caller.file);
     if (siteLine == null || !relPath) {
-      vscode.window.showWarningMessage(`Impact Tree: the line of ${caller.label}'s call could not be read, so a comment about it cannot be started.`);
-      return;
+      vscode.window.showWarningMessage(`Impact Tree: the line of ${caller.label}'s call could not be read, so ${what} about it cannot be started.`);
+      return null;
     }
-    await actions.commentOnCaller(row, { label: caller.label, test: !!caller.test, relPath, siteLine, callState: caller.callState });
+    return { label: caller.label, test: !!caller.test, relPath, siteLine, callState: caller.callState };
   }
 
   const disposeView = () => {

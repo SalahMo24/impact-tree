@@ -244,7 +244,8 @@ test('the tick message ticks the row shown and repaints; next runs the command; 
   env.select([files[0]]);
   await sendAction(details, { type: 'tick', id: tickId(details), on: true });
   assert.ok(a.every((r) => env.isTicked(r)), 'a file\'s button ticks its rows');
-  assert.match(textOf(details), /0 left to review\. Mark file not reviewed /);
+  // A local review: the file's page also offers a feedback draft (F1).
+  assert.match(textOf(details), /0 left to review\. Feedback 💬 Feedback on this file Mark file not reviewed /);
 
   await sendAction(details, { type: 'next' });
   assert.deepEqual(env.seen.executed.filter(([name]) => name === 'impactTree.nextUnreviewed').length, 1);

@@ -23,6 +23,9 @@ const { createPullRequestPanel } = require('./pr-overview-panel');
 const { registerContentProviders } = require('./content-providers');
 const { registerCommands } = require('./commands');
 const { contextKeysOf } = require('./view-state');
+const { createFeedbackDrafts } = require('./feedback-drafts');
+const { createFeedbackComments } = require('./feedback-comments');
+const { createFeedbackStatus, SHOW_DRAFTS_COMMAND } = require('./feedback-tree');
 
 // Bumped whenever extension-side behaviour changes, so the exthost log proves which
 // build is actually loaded instead of us inferring it from timestamps.
@@ -53,6 +56,9 @@ function activate(context) {
   const owned = createSession(vscode, { log, review, checkpoint: context.workspaceState.get('impactTree.checkpoint'), getObjectDirs, getTempDir });
   session = owned;
   getSnapshotStore();   // creates the store and sweeps leftover temporary files in the background
+  // Feedback drafts on local reviews (F1), kept in workspace state; disposed with the window.
+  const feedbackDrafts = createFeedbackDrafts(context.workspaceState, { log });
+  context.subscriptions.push(feedbackDrafts);
 
   const decorate = createDecorationProvider(vscode);
   session.decorate = decorate;
@@ -77,6 +83,7 @@ function activate(context) {
     getAnalysisId: owned.getAnalysisId,
     isCurrentAnalysis: owned.isCurrentAnalysis,
     resolver: owned.treeResolver,
+    getFeedbackDrafts: () => feedbackDrafts.list(),
   });
   session.provider = provider;
   context.subscriptions.push(provider, decorate);
@@ -85,10 +92,13 @@ function activate(context) {
   context.subscriptions.push(view);
   const navigation = createReviewNavigation(vscode, { provider, view });
   context.subscriptions.push(...navigation.disposables);
-  // Details starts comments and opens threads through the review comments, created below.
+  // Details starts comments and opens threads through the review comments, and starts
+  // feedback drafts through the feedback comments, both created below.
   let reviewComments = null;
+  let feedbackComments = null;
   const details = createDetailPanel(vscode, { provider, view, getState: () => owned.state, lineOf: readLineOfOffset, log,
-    reviewActions: () => reviewComments, checkoutAndAnalyse: (pr) => session.checkoutAndAnalyse(pr) });
+    reviewActions: () => reviewComments, feedbackActions: () => feedbackComments,
+    checkoutAndAnalyse: (pr) => session.checkoutAndAnalyse(pr) });
   context.subscriptions.push(...details.disposables);
   // Counts follow presentation and progress events, independently of tree repaint scope.
   const showSummary = () => {
@@ -112,7 +122,9 @@ function activate(context) {
   /** @type {Map<string, string>} */
   const contextSent = new Map();
   const publishContext = () => {
-    const keys = contextKeysOf({ repo: repoStatus, phase: owned.getPhase(), busy: owned.isBusy(), state: owned.state });
+    const keys = { ...contextKeysOf({ repo: repoStatus, phase: owned.getPhase(), busy: owned.isBusy(), state: owned.state }),
+      // F3 hangs the title bar's Send feedback on it.
+      'impactTree.hasFeedbackDrafts': feedbackDrafts.list().length > 0 };
     for (const [key, value] of Object.entries(keys)) {
       if (contextSent.get(key) === value) continue;
       contextSent.set(key, value);
@@ -195,6 +207,23 @@ function activate(context) {
   });
   context.subscriptions.push(reviewComments);
 
+  // Feedback drafts in the review diff of a local review, next to (never instead of) the
+  // pull request comments above. Follows the drafts and the analysis; disposed with the window.
+  feedbackComments = createFeedbackComments(vscode, {
+    drafts: feedbackDrafts, log,
+    getSession: () => ({ source: owned.state && owned.state.source, result: (owned.state && owned.state.result) || null }),
+    getAnalysisId: owned.getAnalysisId,
+    isCurrentAnalysis: owned.isCurrentAnalysis,
+    repoRoot: () => owned.repoRoot(),
+    // openReview is created below; this runs only on a click, after activation.
+    openDiff: (relPath, line) => openReview.openFile({ relPath, ranges: line === null ? [] : [[line, line]] }),
+    contextEvents: [
+      owned.onDidChangeAnalysis,
+      (listener) => provider.onDidChangePresentation((e) => { if (e.reason !== 'filter') listener(); }),
+    ],
+  });
+  context.subscriptions.push(feedbackComments);
+
   const sources = createSourcesProvider(vscode, {
     getRepoStatus: () => repoStatus,
     modes: MODES,
@@ -248,6 +277,22 @@ function activate(context) {
     store: reviewStore, provider, revealRow: navigation.revealRow, revealThread: reviewComments.revealThread, log,
   });
   context.subscriptions.push(...pullRequestTab.disposables);
+
+  // The drafts' count in the status bar, after the review's own items; a drafts change
+  // repaints only the tree's "Feedback to send" group.
+  const feedbackStatus = createFeedbackStatus(vscode);
+  const showFeedback = () => {
+    provider.feedbackChanged();
+    feedbackStatus.update(feedbackDrafts.list().length);
+    publishContext();
+  };
+  feedbackStatus.update(feedbackDrafts.list().length);
+  context.subscriptions.push(feedbackStatus, feedbackDrafts.onDidChange(showFeedback),
+    vscode.commands.registerCommand(SHOW_DRAFTS_COMMAND, async () => {
+      const group = provider.feedbackGroup();
+      if (!group) { vscode.window.showInformationMessage('Impact Tree: there are no feedback drafts.'); return; }
+      await view.reveal(group, { select: false, focus: true, expand: true });
+    }));
 
   // Restore an existing session silently so a returning user sees their PRs without
   // being prompted; never pop a sign-in modal on startup.
