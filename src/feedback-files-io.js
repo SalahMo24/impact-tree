@@ -76,8 +76,8 @@ async function readRound(absPath, opts) {
 }
 
 /**
- * Round files in the feedback folder, sorted by round then name. Keeps at most 10 000
- * matching entries; `truncated` says when more existed. A missing folder is an empty list.
+ * Round files in the feedback folder, sorted by round then name. Keeps the newest 10 000
+ * matching entries (the read-back needs the latest round); `truncated` says when more existed. A missing folder is an empty list.
  * @param {string} repoRoot @param {{ fs?: Fs }} [opts]
  * @returns {Promise<{ files: Array<{ name: string, date: string, round: number, absPath: string, relPath: string }>, truncated: boolean }>}
  */
@@ -94,7 +94,7 @@ async function listRounds(repoRoot, opts) {
   }
   recs.sort((a, b) => a.round - b.round || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const truncated = recs.length > MAX_LISTED;
-  return { files: truncated ? recs.slice(0, MAX_LISTED) : recs, truncated };
+  return { files: truncated ? recs.slice(-MAX_LISTED) : recs, truncated };
 }
 
 module.exports = { feedbackDir, writeRound, readRound, listRounds };

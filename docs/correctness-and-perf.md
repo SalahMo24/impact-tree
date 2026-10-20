@@ -438,6 +438,153 @@ Validation before and after:
   are byte-identical. PR #12745 local/preview checks passed on both versions.
 - Changed tests/benchmark passed ESLint; `git diff --check` passed.
 
+## PR #50 inheritance fixes and measured cost (2026-10-12)
+
+The local fixes preserve imported binding names (named aliases, defaults and
+namespace qualification) and separate physical class identity from the path
+context used to resolve ancestry. A file reached through two symlink contexts can
+have different relative dependencies. Ancestry caching and traversal retain both
+contexts; class comparisons use canonical physical paths and declared names.
+The four reproductions are permanent tests in `test/engine-regressions.test.js`,
+including both symlink query orders. Nearby export/scope controls from the preceding
+review remain in the fix.
+
+### Separate optimization review
+
+The optional optimization short-circuited comparisons on matching lexical paths
+and lazily indexed ancestors by name to avoid some canonical-path lookups. It was
+removed: it is unnecessary for the regression fix and adds comparison paths and a
+lazy cache. The final implementation compares canonical identities directly and
+keeps an eager identity set alongside the context-keyed ancestry declarations.
+No performance enhancement is required or claimed.
+
+A separate five-pair comparison used snapshots of the same corrected code,
+differing only in that optimization. Both passed the inheritance controls; the
+version without it also passed all 25 engine regression tests and the existing
+75-case path matrix, 80-level hierarchy, cycle, missing-file and cache-clear probes.
+Every benchmark produced identical kept-caller signatures. Median milliseconds
+per 100-target batch:
+
+| Workload | Optimization cold / warm / refresh | Without optimization cold / warm / refresh |
+| --- | --- | --- |
+| Ordinary | 72.016 / 1.874 / 26.898 | 78.766 / 2.032 / 31.298 |
+| Barrels | 212.327 / 1.859 / 148.223 | 219.349 / 1.966 / 143.256 |
+| Deep hierarchy | 86.172 / 1.897 / 34.408 | 91.628 / 2.007 / 36.604 |
+
+These observations show modest savings on most batches, with an inconsistent
+refresh benefit. They do not make the optimization necessary for correctness.
+Source hashes and all 30 observations are in
+`benchmarks/pr50-2026-10-12-optimization-review.json`.
+
+### Exact final-code comparison
+
+The final inheritance source SHA-256 is
+`2f580d07f6dd6f59dcf314eecbbd81c623dd0cfd2432fe2a9774993fddd83eda`.
+The driver checked that it stayed unchanged throughout the run. All 80 observations
+and the harness hash are in `benchmarks/pr50-2026-10-12.json`.
+The before version is local commit `b1381c64facf50dbae723f72a481717e18de4192`,
+before these two regression fixes. Original PR revision
+`fff798ab820d2b6ce3876f3a862908bec15aff49` is an additional ordinary/barrel
+control; its depth cutoff makes the deep fixture incorrect, so it is excluded there.
+
+Environment: Node 22.18.0, arm64 macOS, Apple M3 Pro, 18 GiB RAM, 512 MiB old-space
+limit, five fresh processes per version/workload. Workload and version order rotate
+across rounds; children run serially, with no validation suites running concurrently.
+The inheritance harness queries 100 target methods and 400 typed call sites.
+Ordinary/deep fixtures have 201 files; barrels have 302. Deep subclasses have 16
+intermediate classes. Every batch asserts 300 genuine caller edges kept and 100
+sibling edges dropped, with identical output signatures across versions and
+cold/warm/refresh. Warm samples average 50 repetitions per process. Cold means a
+fresh process/filter, not a deliberately flushed OS file cache. These isolate
+inheritance-filter work; they do not measure language-server indexing or live
+whole-extension responsiveness.
+
+| Workload | Before cold / warm / refresh (ms) | Final cold / warm / refresh (ms) | Median change cold / warm / refresh |
+| --- | --- | --- | --- |
+| Ordinary | 77.800 / 1.883 / 30.062 | 74.483 / 2.019 / 31.385 | −4.3% / +7.2% / +4.4% |
+| Barrels | 216.137 / 1.889 / 144.526 | 232.167 / 1.996 / 144.463 | +7.4% / +5.7% / −0.04% |
+| Deep hierarchy | 90.278 / 1.930 / 35.956 | 96.231 / 2.114 / 38.299 | +6.6% / +9.5% / +6.5% |
+
+The barrel cold slowdown occurs in all five pairs (6.813–20.758 ms extra), with
+a median-batch increase of 16.030 ms. Deep warm and refresh batches are slower in
+all five pairs: 0.062–0.263 ms and 1.646–6.321 ms extra, respectively. These are
+observed performance regressions in the isolated workloads. Deep cold timing is
+mixed (three slower, two faster); its median alone does not establish a consistent
+slowdown. Ordinary warm is slower in four pairs. Ordinary refresh and barrel
+warm/refresh are mixed. Ordinary cold is faster in this run, but unchanged controls
+also vary substantially, so no general speedup is claimed. Five samples are not a
+statistical significance test.
+
+| Workload | Before populated / cleared heap (MiB) | Final populated / cleared heap (MiB) |
+| --- | --- | --- |
+| Ordinary | 3.760 / 1.150 | 3.998 / 1.200 |
+| Barrels | 4.123 / 1.224 | 4.394 / 1.282 |
+| Deep hierarchy | 7.306 / 1.290 | 7.870 / 1.329 |
+
+Populated retained heap increases by 0.238 / 0.271 / 0.564 MiB for ordinary /
+barrels / deep. Values are increases over process baseline after an event-loop turn
+and forced GC, not whole-extension memory. Warm parser admissions remain zero;
+cold and refresh admissions remain 201 / 302 / 201 files. Median cold event-loop
+delay changes from 78.314 / 217.329 / 90.911 ms to 74.911 / 232.975 / 97.070 ms,
+consistent with synchronous batch duration.
+
+### Previously recorded results
+
+The earlier intermediate run is preserved in
+`benchmarks/pr50-2026-10-12-intermediate.json`. Its source hash differs from the
+final code and predates the latest correctness changes. This historical comparison
+does not isolate the optimization as the paired snapshot comparison above does.
+
+| Workload | Earlier recorded cold / warm / refresh (ms) | Exact final cold / warm / refresh (ms) |
+| --- | --- | --- |
+| Ordinary | 76.667 / 1.929 / 31.637 | 74.483 / 2.019 / 31.385 |
+| Barrels | 216.748 / 1.883 / 140.206 | 232.167 / 1.996 / 144.463 |
+| Deep hierarchy | 90.302 / 1.912 / 38.206 | 96.231 / 2.114 / 38.299 |
+
+Compared with the original PR in this final run, ordinary cold / warm / refresh
+medians increase from 66.265 / 1.654 / 25.216 ms to 74.483 / 2.019 / 31.385 ms;
+barrel medians increase from 179.195 / 1.652 / 106.076 ms to
+232.167 / 1.996 / 144.463 ms. This includes the earlier identity/canonical-path
+fixes as well as the latest fixes. The original version is not a correctness-equivalent
+baseline for the new regressions, though these benchmark fixtures return the same
+expected results.
+
+The existing CQRS and syntactic-index fixtures were rerun as controls against
+recorded performance. The CQRS harness disables inheritance filtering, so it does
+not measure these changes. The T3 target remains pinned at
+`9a609a4e444ba739d6fcd607769d68b679b0bcc5`; environment and fixtures match the
+2026-10-11 recorded CQRS measurements. First-generation median batches:
+
+| Control | Previously recorded final | Current before | Exact final |
+| --- | --- | --- | --- |
+| T3 CQRS cold / warm / refresh (ms) | 27.22 / 2.34 / 4.24 | 21.92 / 1.56 / 3.57 | 9.15 / 1.42 / 3.40 |
+| Ordinary synthetic CQRS cold (ms) | 28.28 | 22.75 | 22.41 |
+| Handler CQRS cold / warm / refresh (ms) | 244.24 / 18.43 / 176.34 | 200.33 / 17.64 / 131.14 | 198.61 / 17.67 / 130.93 |
+| T3 / synthetic / handler populated heap (MiB) | 0.34 / 0.53 / 66.47 | 0.34 / 0.53 / 66.46 | 0.34 / 0.53 / 66.46 |
+| Syntactic barrel fixture (ms) | approximately 160 | 159 | 161 |
+
+CQRS parser admissions remain 0 / 0 / 0 for ordinary sources and 100 / 0 / 100
+for handler sources (cold / warm / refresh). The syntactic fixture returns identical
+SHA-1 `353caecf6c3e56d225d9b5a20f55b3f4cb46a68f` and 139 callers.
+These controls do not establish a speed change caused by this fix. The unchanged
+T3 control has noisy cold ranges of 8.93–27.18 ms before and 8.76–41.32 ms after.
+No general improvement is claimed from lower historical-control timings.
+
+Reproduce inheritance with `node --expose-gc --max-old-space-size=512
+test/measure-inheritance.js ordinary` (or `barrels` / `deep`). An optional second
+argument loads the filter from an archived source root, allowing the same harness
+to compare revisions. For CQRS use `test/measure-cqrs-cache.js` with `synthetic`,
+`handlers`, or the pinned T3 path. For the syntactic control use
+`PRINT_BARREL_SIGNATURE=1 node test/syntactic-index.test.js`.
+
+Final-code validation: full `npm test`, separate nonempty `HEAD~20` tree checks,
+scoped snapshots (zero missing cross-project expectations), and `git diff --check`
+passed. Default full-suite tree/callsite integration stages skip on the target's
+empty diff; nonempty tree checks were run separately. All 25 engine regression
+tests pass. Lint/typecheck from the preceding review passed, but `inheritance.js`
+is not enrolled in their configuration; those commands are not evidence of coverage
+for this changed file. Nothing was committed or pushed.
+
 Recommendation: keep the optimization. It removes demonstrated unnecessary AST
 allocations and traversal for irrelevant files, with substantially less populated
 heap and faster isolated ordinary-file queries. Candidate files retain the existing

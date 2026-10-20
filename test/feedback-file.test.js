@@ -279,3 +279,12 @@ test('readRound caps size; listRounds sorts, ignores junk, and handles a missing
     assert.deepEqual(await io.readRound(dir), { ok: false, reason: 'not a file' });
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test('listRounds keeps the newest rounds when there are more than 10 000', async () => {
+  const names = Array.from({ length: 10002 }, (_, i) => `2026-10-20-${i + 1}.md`);
+  const l = await io.listRounds('/repo', { fs: /** @type {any} */ ({ readdir: async () => names }) });
+  assert.equal(l.truncated, true);
+  assert.equal(l.files.length, 10000);
+  assert.equal(l.files[0].round, 3);
+  assert.equal(l.files[l.files.length - 1].round, 10002);
+});
