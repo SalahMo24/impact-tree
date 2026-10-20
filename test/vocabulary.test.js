@@ -347,6 +347,7 @@ const SOURCES = [
   'review-navigation', 'review-lens', 'review-open', 'open-review', 'commands', 'session', 'cli', 'cli-format',
   'view-state', 'path-tree', 'decorations', 'extension', 'readiness', 'review-threads', 'review-comments',
   'engine/analyze', 'engine/analyze-remote',
+  'feedback-drafts', 'feedback-comments', 'feedback-comments-model', 'feedback-tree',
 ].map((name) => `src/${name}.js`);
 
 test('the user-facing source modules use no retired term in their string literals', () => {

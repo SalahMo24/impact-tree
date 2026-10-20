@@ -447,6 +447,11 @@ test('the contributions: a keybinding in a review editor, a context menu on chan
     // the inline icon passes the same change row as the context menu (tested below)
     ['impactTree.showCallers', 'view == impactTree.changes && viewItem == finding', 'inline@1'],
     ['impactTree.retryViewedSync', 'view == impactTree.changes && viewItem =~ /ViewedFailed$/', 'inline'],
+    // a feedback draft row of the "Feedback to send" group (F1): Edit and Delete, inline and in its menu
+    ['impactTree.feedback.edit', 'view == impactTree.changes && viewItem == feedbackDraft', 'inline@1'],
+    ['impactTree.feedback.delete', 'view == impactTree.changes && viewItem == feedbackDraft', 'inline@2'],
+    ['impactTree.feedback.edit', 'view == impactTree.changes && viewItem == feedbackDraft', 'navigation@1'],
+    ['impactTree.feedback.delete', 'view == impactTree.changes && viewItem == feedbackDraft', 'navigation@2'],
   ]);
   assert.equal(contributes.menus.commandPalette.find((m) => m.command === 'impactTree.retryViewedSync').when, 'false');
   const declared = new Set(contributes.commands.map((c) => c.command));

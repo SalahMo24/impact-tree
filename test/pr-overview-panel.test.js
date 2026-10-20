@@ -551,8 +551,9 @@ test('wired: a local review has no PR tab, and the pending-review bar stays hidd
   await env.refresh();
   await flushAll();
   assert.equal(env.seen.contexts['impactTree.hasPullRequestReview'], false);
-  assert.equal(env.seen.statusBars.length, 2, 'review progress and pending review');
+  assert.equal(env.seen.statusBars.length, 3, 'review progress, pending review and feedback drafts');
   assert.equal(env.seen.statusBars[1].visible, false);
+  assert.equal(env.seen.statusBars[2].visible, false, 'no feedback drafts');
   await env.run('impactTree.showPullRequest');
   assert.equal(env.seen.panels.length, 0);
   assert.match(env.seen.infos.at(-1), /no pull request is under review/);

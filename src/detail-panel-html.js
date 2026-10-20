@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const { classifyRowVerdict, stateNameOf, CALL_STATE, PREVIEW_LIMITS_NOTE, attentionCountText } = require('./tree-row-models');
 const { treeItemId } = require('./review-tree-model');
+const { commentTargetOf } = require('./review-threads');
 
 // The detail panel's whole document, built from one row of the change tree. Pure: the
 // caller supplies everything that needs the editor or the disk (the ticks, the change's
@@ -280,11 +281,12 @@ function threadsHtml(section, id) {
  * `stale` list, a caller that is not a test and was not updated at the call.
  * @param {TreeRow[]} impactRows
  * @param {{ result: any, risky: boolean, lineOf: (file: string, offset: number) => number|null, id: string|undefined,
- *   commenting?: boolean }} opts `id` is the change's tree id, which the "Show callers" link
- *   names. `commenting` adds a 💬 per caller that starts a comment about it.
+ *   commenting?: 'comment'|'feedback'|null }} opts `id` is the change's tree id, which the
+ *   "Show callers" link names. `commenting` adds a 💬 per caller that starts a pull request
+ *   comment (`comment`) or a feedback draft (`feedback`) about it; none when null.
  * @returns {string}
  */
-function callersHtml(impactRows, { result, risky, lineOf, id, commenting = false }) {
+function callersHtml(impactRows, { result, risky, lineOf, id, commenting = null }) {
   const callers = listCallerRows(impactRows);
   const notes = impactRows.filter((r) => r.type === 'message').slice(0, -1);
   if (!callers.length && !notes.length) return '';
@@ -296,7 +298,7 @@ function callersHtml(impactRows, { result, risky, lineOf, id, commenting = false
     const stale = risky && !c.test && c.callState !== 'updated-at-call' ? ' <span class="stale">not updated</span>' : '';
     const where = `${escapeHtml(c.relPath ?? c.file)}${line == null ? '' : `:${line}`}${stale}`;
     const comment = commenting && line != null
-      ? `<td><a href="#" data-act="caller-comment" data-index="${i}" title="Comment about this call: on its line when the pull request's diff shows it, else on this change with the caller named after your text">💬</a></td>`
+      ? `<td><a href="#" data-act="caller-comment" data-index="${i}" title="${CALLER_COMMENT_TITLES[commenting]}">💬</a></td>`
       : commenting ? '<td></td>' : '';
     return `<tr><td class="st ${CALL_STATE_CLASS[c.callState] || 'lv1'}" title="${escapeHtml(state.text)}">${escapeHtml(state.text)}</td>`
       + `<td><a href="#" data-act="caller" data-index="${i}">${c.test ? '🧪 ' : ''}${escapeHtml(c.label)}</a></td><td class="where">${where}</td>${comment}</tr>`;
@@ -306,10 +308,34 @@ function callersHtml(impactRows, { result, risky, lineOf, id, commenting = false
   return `<h4>Callers (${callers.length})${peek}</h4>${preview}${rows ? `<table>${rows}</table>` : ''}${noteHtml}`;
 }
 
+/** What a caller's 💬 says it does, by what it starts. */
+const CALLER_COMMENT_TITLES = Object.freeze({
+  comment: 'Comment about this call: on its line when the pull request\'s diff shows it, else on this change with the caller named after your text',
+  feedback: 'Start a feedback draft about this call: on its line when its file is in this review, else on this change with the caller named. Nothing is sent yet',
+});
+
+/** The feedback button of a local review's row, by what it starts a draft on. */
+const FEEDBACK_LABELS = Object.freeze({ change: '💬 Feedback on this change', lines: '💬 Feedback on these lines', file: '💬 Feedback on this file' });
+
+/**
+ * The Feedback section of a row of a local review: a button that starts a feedback draft
+ * on the row in the diff. Nothing for a row that cannot take one (a deleted symbol).
+ * @param {TreeRow} row
+ * @returns {string}
+ */
+function feedbackHtml(row) {
+  const target = commentTargetOf(row);
+  const id = treeItemId(row);
+  if (!target || !id) return '';
+  return `<h4>Feedback</h4><div class="actions"><button class="secondary" data-act="comment" data-id="${escapeHtml(id)}" `
+    + 'title="Starts a feedback draft for the agent in the diff. Nothing is sent until you send your feedback.">'
+    + `${FEEDBACK_LABELS[target]}</button></div>`;
+}
+
 /**
  * The body of a change row: location, verdict, signature, new throws, callers, tests.
  * @param {TreeRow} row A `finding` row.
- * @param {{ result: any, impactRows: TreeRow[], lineOf: (file: string, offset: number) => number|null, commenting: boolean }} opts
+ * @param {{ result: any, impactRows: TreeRow[], lineOf: (file: string, offset: number) => number|null, commenting: 'comment'|'feedback'|null }} opts
  * @returns {string}
  */
 function changeHtml(row, { result, impactRows, lineOf, commenting }) {
@@ -365,16 +391,20 @@ function previewLimitsHtml(result) {
  * The body for one row, or the hint when there is none.
  * @param {TreeRow|null} row
  * @param {{ result: any, isReviewed: (row: TreeRow) => boolean, impactRows: TreeRow[], lineOf: (file: string, offset: number) => number|null,
- *   threads: import('./review-threads').ThreadSection|null }} opts
+ *   threads: import('./review-threads').ThreadSection|null, feedback: boolean }} opts `feedback`:
+ *   the row is of a local review, whose 💬 buttons start feedback drafts. Ignored when the
+ *   row has a Threads section (a pull request's).
  * @returns {string}
  */
-function bodyHtml(row, { result, isReviewed, impactRows, lineOf, threads }) {
+function bodyHtml(row, { result, isReviewed, impactRows, lineOf, threads, feedback }) {
   if (!row) return `<p class="where">${NO_ROW_HINT}</p>`;
-  const section = threadsHtml(threads, treeItemId(row));
+  const asFeedback = feedback && !threads;
+  const section = threadsHtml(threads, treeItemId(row)) + (asFeedback ? feedbackHtml(row) : '');
   if (row.type === 'reviewFile' || row.type === 'file') return fileHtml(row, isReviewed, section);
   const v = classifyRowVerdict(row);
   let h;
-  if (row.type === 'finding') h = changeHtml(row, { result, impactRows, lineOf, commenting: !!(threads && threads.action) });
+  const commenting = threads && threads.action ? 'comment' : asFeedback ? 'feedback' : null;
+  if (row.type === 'finding') h = changeHtml(row, { result, impactRows, lineOf, commenting });
   else if (row.type === 'deleted') h = `<h3>${escapeHtml(row.label)}</h3><div class="where">${escapeHtml(row.relPath)} · deleted</div><div class="verdict lv${v.level}">${escapeHtml(v.sentence)}</div>`;
   else h = `<h3>Outside functions</h3><div class="where">${escapeHtml(row.relPath)} · ${escapeHtml(v.text)}</div><div class="verdict lv${v.level}">${escapeHtml(v.sentence)}</div>`;
   return h + previewLimitsHtml(result) + section
@@ -392,16 +422,18 @@ function bodyHtml(row, { result, isReviewed, impactRows, lineOf, threads }) {
  *   lineOf: (file: string, offset: number) => number|null,
  *   progress?: ProgressPresentation|null,
  *   threads?: import('./review-threads').ThreadSection|null,
+ *   feedback?: boolean,
  * }} opts `result` is the shown result. `isReviewed` says whether a counting row is ticked.
  *   `impactRows` are `buildImpactRows`'s rows for a change row (ignored otherwise).
  *   `nonce` is base64 and fresh per document; `cspSource` is the webview's. `origin` is
  *   `'tree'` or `'cursor:<line>'` (1-based). `lineOf` gives the 1-based line of an offset
  *   in a file, or null when it cannot be read. `progress` is the strip above the row; none
  *   when absent or null. `threads` is the row's Threads section (`buildThreadSection`);
- *   none when absent or null, and then callers offer no comment either.
+ *   none when absent or null, and then callers offer no comment either. `feedback`: the row
+ *   is of a local review, so its 💬 buttons start feedback drafts (`FEEDBACK_LABELS`).
  * @returns {string} The whole HTML document.
  */
-function buildDetailHtml(row, { result, isReviewed, impactRows, nonce, cspSource, origin, lineOf, progress = null, threads = null }) {
+function buildDetailHtml(row, { result, isReviewed, impactRows, nonce, cspSource, origin, lineOf, progress = null, threads = null, feedback = false }) {
   assert.match(nonce, /^[A-Za-z0-9+/=]+$/, 'the nonce must be base64 so it cannot break out of the CSP');
   const header = row ? `<div class="origin">${describeOrigin(origin)}</div>` : '';
   const csp = `default-src 'none'; style-src ${escapeHtml(cspSource)} 'nonce-${nonce}'; script-src 'nonce-${nonce}';`;
@@ -409,7 +441,7 @@ function buildDetailHtml(row, { result, isReviewed, impactRows, nonce, cspSource
     + `<meta http-equiv="Content-Security-Policy" content="${csp}">`
     + '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
     + `<style nonce="${nonce}">${STYLE}</style></head>`
-    + `<body>${progressHtml(progress)}${header}${bodyHtml(row, { result, isReviewed, impactRows, lineOf, threads })}`
+    + `<body>${progressHtml(progress)}${header}${bodyHtml(row, { result, isReviewed, impactRows, lineOf, threads, feedback })}`
     + `<script nonce="${nonce}">${script(nonce)}</script></body></html>`;
 }
 
