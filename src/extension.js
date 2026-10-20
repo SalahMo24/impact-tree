@@ -1,4 +1,6 @@
 'use strict';
+const path = require('path');
+const fs = require('fs');
 const vscode = require('vscode');
 const { MODES } = require('./engine/analyze');
 const { createTreeProvider } = require('./tree-provider');
@@ -26,6 +28,9 @@ const { contextKeysOf } = require('./view-state');
 const { createFeedbackDrafts } = require('./feedback-drafts');
 const { createFeedbackComments } = require('./feedback-comments');
 const { createFeedbackStatus, SHOW_DRAFTS_COMMAND } = require('./feedback-tree');
+const { createFeedbackRoundView } = require('./feedback-round-view');
+const { createSendFeedback } = require('./feedback-send');
+const { createAutoCleanup, createCleanupCommand } = require('./storage-cleanup-run');
 
 // Bumped whenever extension-side behaviour changes, so the exthost log proves which
 // build is actually loaded instead of us inferring it from timestamps.
@@ -56,6 +61,9 @@ function activate(context) {
   const owned = createSession(vscode, { log, review, checkpoint: context.workspaceState.get('impactTree.checkpoint'), getObjectDirs, getTempDir });
   session = owned;
   getSnapshotStore();   // creates the store and sweeps leftover temporary files in the background
+  // The last sent round's read-back (F4); created below, once the tree exists.
+  /** @type {ReturnType<typeof createFeedbackRoundView>|null} */
+  let feedbackRound = null;
   // Feedback drafts on local reviews (F1), kept in workspace state; disposed with the window.
   const feedbackDrafts = createFeedbackDrafts(context.workspaceState, { log });
   context.subscriptions.push(feedbackDrafts);
@@ -84,6 +92,7 @@ function activate(context) {
     isCurrentAnalysis: owned.isCurrentAnalysis,
     resolver: owned.treeResolver,
     getFeedbackDrafts: () => feedbackDrafts.list(),
+    getFeedbackRound: () => (feedbackRound ? feedbackRound.current() : null),
   });
   session.provider = provider;
   context.subscriptions.push(provider, decorate);
@@ -294,6 +303,73 @@ function activate(context) {
       await view.reveal(group, { select: false, focus: true, expand: true });
     }));
 
+  // What happened to the last sent round (F4), refreshed after each analysis, when a round
+  // file changes, and after a send. Disposed with the window.
+  feedbackRound = createFeedbackRoundView({
+    workspaceState: context.workspaceState, session: owned, getSnapshotStore, log,
+    onChange: () => provider.feedbackChanged(),
+  });
+  const refreshRound = () => { if (feedbackRound) feedbackRound.refresh(); };
+  const roundFiles = vscode.workspace.createFileSystemWatcher('**/.impact-tree/feedback/*.md');
+  context.subscriptions.push(feedbackRound, roundFiles, owned.onDidChangeAnalysis(refreshRound),
+    roundFiles.onDidChange(refreshRound), roundFiles.onDidCreate(refreshRound), roundFiles.onDidDelete(refreshRound));
+  refreshRound();
+
+  // Cleanup of stored data (F5): in the background a minute after startup and after each
+  // send; never feedback files, never the current checkpoint.
+  const cleanupDeps = { getSnapshotStore, workspaceState: context.workspaceState, session: owned, review, log };
+  const autoCleanup = createAutoCleanup(cleanupDeps);
+  const cleanupTimer = setTimeout(() => { autoCleanup(); }, 60000);
+  context.subscriptions.push({ dispose: () => clearTimeout(cleanupTimer) });
+
+  // Send feedback (F3): the round file, its snapshot as the checkpoint, the hand-off.
+  const sendFeedback = createSendFeedback(vscode, {
+    drafts: feedbackDrafts, getSnapshotStore, session: owned, workspaceState: context.workspaceState, log,
+    afterSend: () => { refreshRound(); autoCleanup(); },
+  });
+  context.subscriptions.push(
+    vscode.commands.registerCommand('impactTree.sendFeedback', () => sendFeedback()),
+    vscode.commands.registerCommand('impactTree.sendFeedbackTo', () => sendFeedback({ ask: true })),
+    vscode.commands.registerCommand('impactTree.cleanUpStoredData', createCleanupCommand(vscode, cleanupDeps)),
+    vscode.commands.registerCommand('impactTree.feedback.openRoundItem', (row) => openRoundItem(row)),
+    vscode.commands.registerCommand('impactTree.feedback.openRoundFile', async () => {
+      const current = feedbackRound && feedbackRound.current();
+      if (!current) return;
+      await vscode.window.showTextDocument(vscode.Uri.file(path.join(owned.repoRoot(), current.relPath)));
+    }),
+    vscode.commands.registerCommand('impactTree.feedback.reply', (row) => replyToRoundItem(row)),
+  );
+
+  /** Opens a round item's file at its line. @param {any} row */
+  async function openRoundItem(row) {
+    if (!row || typeof row.file !== 'string') return;
+    const uri = vscode.Uri.file(path.join(owned.repoRoot(), ...row.file.split('/')));
+    try {
+      const line = typeof row.line === 'number' ? row.line - 1 : 0;
+      await vscode.window.showTextDocument(uri, { selection: new vscode.Range(line, 0, line, 0), preview: true });
+    } catch (e) {
+      vscode.window.showWarningMessage(`Impact Tree: cannot open ${row.file} (${e.message}).`);
+    }
+  }
+
+  /**
+   * "Reply in next round": a new draft at the same place, written in an input box (the file
+   * may have no change in the review shown, so no comment box can be offered there).
+   * @param {any} row
+   */
+  async function replyToRoundItem(row) {
+    if (!row || typeof row.file !== 'string') return;
+    const body = await vscode.window.showInputBox({
+      title: `Reply in next round · ${row.label}`, prompt: `Was: ${row.summary || '(no text)'} — ${row.desc}`,
+      placeHolder: 'Feedback for the agent (Markdown)',
+      validateInput: (v) => (v.trim() === '' ? 'Write the feedback, or press Escape.' : null),
+    });
+    if (typeof body !== 'string') return;
+    const quote = row.line ? readLines(path.join(owned.repoRoot(), ...row.file.split('/')), row.line, 5) : '';
+    const added = await feedbackDrafts.add({ file: row.file, line: row.line, symbol: row.symbol, caller: null, quote, body });
+    if (!added.ok) vscode.window.showErrorMessage(`Impact Tree: the reply was not added (${added.error.message}).`);
+  }
+
   // Restore an existing session silently so a returning user sees their PRs without
   // being prompted; never pop a sign-in modal on startup.
   gh.signIn().then(
@@ -324,4 +400,19 @@ function deactivate() {
   prDocuments = null;
 }
 
+/**
+ * Up to `count` lines of a file from one-based `line`, for a draft's quote; '' when unreadable.
+ * Reads at most 2 MB.
+ * @param {string} abs @param {number} line @param {number} count
+ */
+function readLines(abs, line, count) {
+  try {
+    if (fs.statSync(abs).size > 2 * 1024 * 1024) return '';
+    return fs.readFileSync(abs, 'utf8').split(/\r?\n/).slice(line - 1, line - 1 + count).join('\n');
+  } catch {
+    return '';
+  }
+}
+
 module.exports = { activate, deactivate };
+

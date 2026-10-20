@@ -66,6 +66,24 @@ silently-omitted optional parameter outranks a signature break that `tsc` alread
 - For a GitHub PR, add review comments, reply to or resolve conversations, and
   submit a review from the pull request tab.
 
+### Feedback rounds with a coding agent
+
+- While reviewing local changes, leave **feedback** in the diff's comment box or with 💬 in
+  Details. Drafts collect in **Feedback to send** at the top of Changes.
+- **Send feedback** (✈ in the title bar; hold ⌥ for **Send feedback to…**) writes the drafts
+  to `.impact-tree/feedback/<date>-<n>.md`, records a checkpoint, and hands the round to
+  Claude Code or Codex (in a terminal), the editor's chat (Copilot Chat, Cursor; you press
+  Enter), or the clipboard. The agent is asked to write `Status: done` or
+  `Status: skipped — reason` under each item.
+- The next review shows **Feedback round N** first: for each item, what the agent wrote and
+  whether the code near it changed. "Done" with no code change, skipped, or anything unknown
+  is amber. **Reply in next round** starts a new draft at the same place.
+- The feedback files are yours: Impact Tree never deletes them. Kept together they record
+  how you want code written, and can later be turned into rules for your agents.
+- Checkpoints are snapshots of the working tree, kept in the editor's storage for this
+  workspace, not in `.git`. Old ones are removed automatically; **Clean up stored data**
+  (Changes ⋯ menu) shows what is stored and deletes it on confirmation.
+
 ## Install (from source)
 
 ```bash
@@ -99,6 +117,7 @@ checkpoint, from a recorded SHA).
 | `impactTree.prewarm` | `true` | index at startup so the first run is fast |
 | `impactTree.reachDepth` | `2` | caller levels searched for test reachability, from 1 to 6 |
 | `impactTree.tierA.maxFiles` | `300` | maximum files fetched for a no-checkout PR preview |
+| `impactTree.agent` | `ask` | where **Send feedback** hands a round: `claude`, `codex`, `chat`, `clipboard`, `save`, or `ask` |
 
 ## Performance
 

@@ -555,7 +555,12 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      review navigation (`src/review-navigation.js`), and the detail panel and its HTML
      builder (`src/detail-panel.js`, `src/detail-panel-html.js`), and the review lens and callers
      peek (`src/review-lens.js`), and the feedback drafts (`src/feedback-drafts.js`,
-     `src/feedback-comments.js`, `src/feedback-comments-model.js`, `src/feedback-tree.js`).
+     `src/feedback-comments.js`, `src/feedback-comments-model.js`, `src/feedback-tree.js`), the
+     feedback rounds (`src/feedback-file.js`, `src/feedback-files-io.js`, `src/feedback-send.js`,
+     `src/feedback-readback.js`, `src/feedback-round-model.js`, `src/feedback-round-view.js`,
+     `src/agent-handoff.js`, `src/agent-pointer.js`), the snapshot store
+     (`src/engine/snapshot-store.js`, `src/engine/diff-index.js`, `src/snapshot-storage.js`) and the
+     cleanup of stored data (`src/storage-cleanup.js`, `src/storage-cleanup-run.js`).
    - Planned: type-aware lint rules such as `no-floating-promises` (whether to add them
      before the review loop is an open decision), and enrolling the remaining modules.
 

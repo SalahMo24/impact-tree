@@ -109,6 +109,52 @@ function renderFeedbackItem(vscode, row) {
   return item;
 }
 
+/**
+ * The "Feedback round N" group: what happened to each item of the round whose snapshot is
+ * the checkpoint (docs/UX_PLAN.md F4). Built from `roundRows`; null when there is no round.
+ * @param {import('./feedback-round-view').RoundView|null} view
+ * @returns {{ label: string, desc: string, relPath: string, children: Array<{ type: 'feedbackRoundItem', label: string,
+ *   desc: string, tooltip: string, attention: boolean, itemId: string, file: string, line: number|null,
+ *   symbol: string|null, summary: string }> }|null}
+ */
+function buildRoundGroup(view) {
+  if (!view) return null;
+  return {
+    label: view.label, desc: view.description, relPath: view.relPath,
+    children: view.items.map((i) => ({
+      type: 'feedbackRoundItem', label: i.label, desc: i.description, tooltip: i.tooltip, attention: i.attention,
+      itemId: i.id, file: i.item.file, line: i.item.line, symbol: i.item.symbol, summary: i.item.summary,
+    })),
+  };
+}
+
+/**
+ * A TreeItem for the round group or one of its items. An item that needs attention has the
+ * amber warning icon; one that does not has a plain check. Both say why in words.
+ * @param {any} vscode
+ * @param {{ type: string, label: string, desc?: string, tooltip?: string, attention?: boolean }} row
+ * @returns {any}
+ */
+function renderRoundItem(vscode, row) {
+  if (row.type === 'feedbackRound') {
+    const item = new vscode.TreeItem(row.label, vscode.TreeItemCollapsibleState.Expanded);
+    item.description = row.desc;
+    item.iconPath = new vscode.ThemeIcon('comment-discussion');
+    item.tooltip = 'What the agent wrote under each item, and whether the code near it changed since the feedback was sent.';
+    item.contextValue = 'feedbackRound';
+    return item;
+  }
+  const item = new vscode.TreeItem(row.label, vscode.TreeItemCollapsibleState.None);
+  item.description = row.desc;
+  item.iconPath = row.attention
+    ? new vscode.ThemeIcon('warning', new vscode.ThemeColor('list.warningForeground'))
+    : new vscode.ThemeIcon('check');
+  item.tooltip = row.tooltip;
+  item.contextValue = 'feedbackRoundItem';
+  item.command = { command: 'impactTree.feedback.openRoundItem', title: 'Open', arguments: [row] };
+  return item;
+}
+
 /** The command the status bar item runs: shows the "Feedback to send" group. */
 const SHOW_DRAFTS_COMMAND = 'impactTree.feedback.showDrafts';
 
@@ -137,5 +183,5 @@ function createFeedbackStatus(vscode) {
 }
 
 module.exports = {
-  buildFeedbackGroup, feedbackStatusText, renderFeedbackItem, createFeedbackStatus, GROUP_LABEL, FIRST_LINE_MAX, SHOW_DRAFTS_COMMAND,
+  buildFeedbackGroup, buildRoundGroup, renderRoundItem, feedbackStatusText, renderFeedbackItem, createFeedbackStatus, GROUP_LABEL, FIRST_LINE_MAX, SHOW_DRAFTS_COMMAND,
 };

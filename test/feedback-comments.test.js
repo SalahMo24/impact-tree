@@ -460,7 +460,9 @@ test('the contributions: comment buttons, comment and tree actions scoped to the
     [COMMANDS.add, `${FB} && commentThreadIsEmpty`], [COMMANDS.cancel, `${FB} && commentThreadIsEmpty`]]);
   assert.deepEqual(pick('comments/comment/title'), [[COMMANDS.edit, `${FB} && comment == feedbackDraft`], [COMMANDS.remove, `${FB} && comment == feedbackDraft`]]);
   assert.deepEqual(pick('comments/comment/context'), [[COMMANDS.saveEdit, `${FB} && comment == feedbackDraft`], [COMMANDS.cancelEdit, `${FB} && comment == feedbackDraft`]]);
-  for (const m of menus['view/item/context'].filter((x) => x.command.startsWith('impactTree.feedback.'))) {
+  // The draft commands act on draft rows only (a sent round's rows have their own, F4).
+  const draftCommands = new Set(Object.values(COMMANDS));
+  for (const m of menus['view/item/context'].filter((x) => draftCommands.has(x.command))) {
     assert.equal(m.when, 'view == impactTree.changes && viewItem == feedbackDraft');
   }
   // Every other comment menu entry still belongs to the pull request controller.

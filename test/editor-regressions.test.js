@@ -52,7 +52,8 @@ test('editor commands refresh the selected PR, preserve preview documents, and r
     comments: require('./extension-env').createCommentsApi().api,
     workspace: { workspaceFolders: [{ uri: baseStub.Uri.file(dir) }], getConfiguration: () => cfg, onDidChangeWorkspaceFolders: () => ({ dispose() {} }),
       registerTextDocumentContentProvider: (scheme, p) => { providers.set(scheme, p); return disposable(); },
-      textDocuments: [], onDidOpenTextDocument: disposable, onDidCloseTextDocument: disposable },
+      textDocuments: [], onDidOpenTextDocument: disposable, onDidCloseTextDocument: disposable,
+      createFileSystemWatcher: () => ({ onDidChange: disposable, onDidCreate: disposable, onDidDelete: disposable, dispose() {} }) },
   };
   const context = () => ({ subscriptions: [], workspaceState: { get: (k) => state.get(k), update: async (k,v) => state.set(k,v) } });
   try {

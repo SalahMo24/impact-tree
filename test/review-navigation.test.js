@@ -274,12 +274,16 @@ test('package.json contributes the commands, the keybinding and the palette gate
   assert.deepEqual(changes.filter((m) => m.group.startsWith('navigation')).map((m) => m.command),
     ['impactTree.refresh', 'impactTree.filterAttention', 'impactTree.filterAttentionOn', 'impactTree.filterUnreviewed', 'impactTree.filterUnreviewedOn',
       'impactTree.filterThreads', 'impactTree.filterThreadsOn', 'impactTree.previousUnreviewed', 'impactTree.nextUnreviewed',
-      'impactTree.submitReview', 'impactTree.submitReviewUnavailable', 'impactTree.showLegend']);
+      'impactTree.submitReview', 'impactTree.submitReviewUnavailable', 'impactTree.sendFeedback', 'impactTree.showLegend']);
+  // Send feedback shows only with drafts; holding ⌥ turns it into "Send feedback to…".
+  assert.equal(changes.find((m) => m.command === 'impactTree.sendFeedback').when, 'view == impactTree.changes && impactTree.hasFeedbackDrafts');
+  assert.equal(changes.find((m) => m.command === 'impactTree.sendFeedback').alt, 'impactTree.sendFeedbackTo');
   const order = (id) => Number(changes.find((m) => m.command === id).group.split('@')[1]);
   assert.ok(order('impactTree.previousUnreviewed') < order('impactTree.nextUnreviewed'), 'previous is left of next');
   assert.ok(order('impactTree.showLegend') > order('impactTree.submitReview'), 'the legend is the rightmost icon');
-  assert.deepEqual(['selectMode', 'setCheckpoint', 'showLog', 'clearReviewed'].map((c) => groupOf(`impactTree.${c}`)[0]),
-    ['1_mode@1', '1_mode@2', '2_help@2', '3_progress@1']);
+  assert.ok(order('impactTree.showLegend') > order('impactTree.sendFeedback'), 'the legend stays right of Send feedback');
+  assert.deepEqual(['selectMode', 'setCheckpoint', 'showLog', 'clearReviewed', 'cleanUpStoredData'].map((c) => groupOf(`impactTree.${c}`)[0]),
+    ['1_mode@1', '1_mode@2', '2_help@2', '3_progress@1', '3_progress@2']);
   const palette = Object.fromEntries(contributes.menus.commandPalette.map((m) => [m.command, m.when]));
   for (const id of ['impactTree.filterAttention', 'impactTree.filterUnreviewed', 'impactTree.nextUnreviewed', 'impactTree.previousUnreviewed']) assert.equal(palette[id], 'impactTree.hasReview', id);
   for (const id of ['impactTree.filterAttentionOn', 'impactTree.filterUnreviewedOn', 'impactTree.filterThreadsOn']) assert.equal(palette[id], 'false', id);

@@ -305,6 +305,15 @@ what it will delete with sizes and asks first:
 Remote-tracking refs fetched for a base and branches made by "Check out and analyse" are
 the user's git data and are left alone.
 
+### Status (2026-10-20)
+
+F1–F5 are implemented on `feat/ux-p1-p5`, with tests, lint and type checks; not yet tried
+in a live editor. Differences from the mockup: Details shows nothing for a round's items
+(their tooltip has the text, status and reason, and their menu has Reply in next round);
+"Reply in next round" takes the text in an input box, since the item's file may have no
+change in the review shown; the cleanup dialog is a multi-select list plus a confirmation,
+VS Code's native equivalent of the mocked checkbox dialog.
+
 ### Shared contracts (F1–F5)
 
 ```js

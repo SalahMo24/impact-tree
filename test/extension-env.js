@@ -273,7 +273,8 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     comments: comments.api,
     workspace: { workspaceFolders: [{ uri: baseStub.Uri.file(dir) }], getConfiguration: () => cfg, onDidChangeWorkspaceFolders: disposable,
       registerTextDocumentContentProvider: disposable,
-      textDocuments: [], onDidOpenTextDocument: disposable, onDidCloseTextDocument: disposable },
+      textDocuments: [], onDidOpenTextDocument: disposable, onDidCloseTextDocument: disposable,
+      createFileSystemWatcher: () => ({ onDidChange: disposable, onDidCreate: disposable, onDidDelete: disposable, dispose() {} }) },
   };
 
   const fakeRawAsync = async (args, _opts, realRawAsync) => {

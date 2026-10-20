@@ -452,6 +452,15 @@ test('the contributions: a keybinding in a review editor, a context menu on chan
     ['impactTree.feedback.delete', 'view == impactTree.changes && viewItem == feedbackDraft', 'inline@2'],
     ['impactTree.feedback.edit', 'view == impactTree.changes && viewItem == feedbackDraft', 'navigation@1'],
     ['impactTree.feedback.delete', 'view == impactTree.changes && viewItem == feedbackDraft', 'navigation@2'],
+    // Send feedback on the drafts group (inline) and in the drafts' menus (F3)
+    ['impactTree.sendFeedback', 'view == impactTree.changes && viewItem == feedbackGroup', 'inline@1'],
+    ['impactTree.sendFeedback', 'view == impactTree.changes && viewItem =~ /^feedback(Group|Draft)$/', 'send@1'],
+    ['impactTree.sendFeedbackTo', 'view == impactTree.changes && viewItem =~ /^feedback(Group|Draft)$/', 'send@2'],
+    // a sent round's items: Reply in next round; the round: Open feedback file (F4)
+    ['impactTree.feedback.reply', 'view == impactTree.changes && viewItem == feedbackRoundItem', 'inline@1'],
+    ['impactTree.feedback.reply', 'view == impactTree.changes && viewItem == feedbackRoundItem', 'navigation@1'],
+    ['impactTree.feedback.openRoundFile', 'view == impactTree.changes && viewItem == feedbackRound', 'inline@1'],
+    ['impactTree.feedback.openRoundFile', 'view == impactTree.changes && viewItem == feedbackRound', 'navigation@1'],
   ]);
   assert.equal(contributes.menus.commandPalette.find((m) => m.command === 'impactTree.retryViewedSync').when, 'false');
   const declared = new Set(contributes.commands.map((c) => c.command));
