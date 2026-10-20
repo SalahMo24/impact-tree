@@ -370,8 +370,8 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     const { makeGit } = require('./engine/git');
     const { createReviewIdentity, localRevisions } = require('./review-identity');
     const identity = createReviewIdentity(loadTypeScript(repo, repo), repo, localRevisions(repo, result, makeGit(repo)));
-    const { key, replaces } = reviewKeys(source, repo, result, base);
-    review.configure(key, identity, { migrateFrom: replaces });
+    const { key, replaces, branch } = reviewKeys(source, repo, result, base);
+    review.configure(key, identity, { migrateFrom: replaces, branch });
   }
 
   // Which review the result belongs to, and the key it replaces. A checked-out PR is
@@ -391,7 +391,10 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     const replaced = source.kind === 'checkout'
       ? [key(`${who}@${source.sha}`, result.requestedMode), key('HEAD', result.mode)]
       : [key(who, result.mode)];
-    return { key: current, replaces: replaced.filter((k) => k !== current) };
+    // Cleanup's branch: the checked-out branch of a local review; none for a PR checkout
+    // (identified by number) or a detached HEAD.
+    const branch = source.kind === 'checkout' || !who || who === 'HEAD' ? null : who;
+    return { key: current, replaces: replaced.filter((k) => k !== current), branch };
   }
 
   // The first-index status of the current user-started run, for the Changes view's message.

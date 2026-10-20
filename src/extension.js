@@ -33,7 +33,7 @@ let out = null;
 const log = (m) => { if (out) out.appendLine(`[${new Date().toISOString().slice(11, 19)}] ${m}`); };
 
 function activate(context) {
-  const review = createReviewState(context.workspaceState);
+  const review = createReviewState(context.workspaceState, { log });
   // The disposable holds its own reference: deactivate() drops the module's before the
   // editor disposes the subscriptions.
   const documents = createPrDocuments();
