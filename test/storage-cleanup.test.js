@@ -152,8 +152,8 @@ test('summarize groups by reason, sums sizes and omits empty rows', () => {
   });
   const rows = summarize(p, { reviewKeys: new Map([['impactTree.reviewed.a', 50], ['impactTree.reviewed.b', 70]]) });
   assert.deepEqual(rows, [
-    { label: 'Checkpoints from older feedback rounds (4)', count: 4, bytes: 4096 },
-    { label: 'Review progress for deleted branches (2)', count: 2, bytes: 120 },
+    { label: 'Checkpoints from older feedback rounds (4)', group: 'Checkpoints from older feedback rounds', count: 4, bytes: 4096 },
+    { label: 'Review progress for deleted branches (2)', group: 'Review progress for deleted branches', count: 2, bytes: 120 },
   ]);
   assert.deepEqual(summarize(plan({})), []);
 });

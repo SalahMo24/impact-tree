@@ -160,6 +160,8 @@ function createReviewState(memento, { now = Date.now, log = null } = {}) {
     },
     clear() { reviewed.clear(); persist(); },
     size: () => reviewed.size,
+    /** The workspaceState key of the review now loaded, or null before one is; cleanup keeps it. */
+    activeKey: () => (memento && baseKey ? `${KEY}.${baseKey}` : null),
     /** how many of `ids` remain unreviewed */
     remaining: (ids) => (ids || []).filter((i) => !reviewed.has(i)).length,
   };

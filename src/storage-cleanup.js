@@ -185,7 +185,8 @@ function reviewLabel(reason) {
  * maps a key to its stored size (missing counts as 0).
  * @param {CleanupPlan} plan
  * @param {{ reviewKeys?: Map<string, number> }} [sizes]
- * @returns {Array<{ label: string, count: number, bytes: number }>}
+ * @returns {Array<{ label: string, group: string, count: number, bytes: number }>}
+ *   `group` is the label without its count, the same for every item of one kind.
  */
 function summarize(plan, sizes = {}) {
   /** @type {Map<string, { label: string, count: number, bytes: number }>} */
@@ -200,10 +201,10 @@ function summarize(plan, sizes = {}) {
   for (const { key, reason } of plan.reviewKeys) {
     add(reviewLabel(reason), (sizes.reviewKeys && sizes.reviewKeys.get(key)) || 0);
   }
-  return [...rows.values()].map((r) => ({ label: `${r.label} (${r.count})`, count: r.count, bytes: r.bytes }));
+  return [...rows.values()].map((r) => ({ label: `${r.label} (${r.count})`, group: r.label, count: r.count, bytes: r.bytes }));
 }
 
 module.exports = {
-  planCleanup, summarize, formatBytes,
+  planCleanup, summarize, formatBytes, snapshotLabel, reviewLabel,
   REASON_REPLACED, REASON_BRANCH_DELETED, REASON_CURRENT, snapshotAgeReason, reviewAgeReason,
 };
