@@ -41,6 +41,9 @@ const COMMANDS = Object.freeze({
   resolve: 'impactTree.review.resolve',
   unresolve: 'impactTree.review.unresolve',
   deletePending: 'impactTree.review.deletePendingComment',
+  editComment: 'impactTree.review.editComment',
+  saveEdit: 'impactTree.review.saveEdit',
+  cancelEdit: 'impactTree.review.cancelEdit',
   removeCallerContext: 'impactTree.review.removeCallerContext',
 });
 /** The label of a draft whose submit sends a file-level comment. */
@@ -67,7 +70,7 @@ const isObject = (v) => typeof v === 'object' && v !== null;
  * @typedef {import('./review-comments-model').ThreadSpec} ThreadSpec
  * @typedef {import('./review-comments-model').CommentSpec} CommentSpec
  * @typedef {Pick<import('./pr-review-store').PullRequestReviewStore,
- *   'getState'|'onDidChange'|'addComment'|'addFileComment'|'reply'|'setResolved'|'deletePendingComment'>} ReviewStore
+ *   'getState'|'onDidChange'|'addComment'|'addFileComment'|'reply'|'setResolved'|'deletePendingComment'|'editComment'>} ReviewStore
  * @typedef {{ dispose(): any }} Disposable
  * @typedef {import('./review-comments-model').CallerContext} CallerContext
  *
@@ -133,6 +136,11 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
   const threadIds = new WeakMap();
   /** @type {WeakMap<object, string>} */
   const commentIds = new WeakMap();
+  // The thread a drawn comment is in, and the text it was drawn with (what Cancel restores).
+  /** @type {WeakMap<object, any>} */
+  const commentThreads = new WeakMap();
+  /** @type {WeakMap<object, string>} */
+  const originalBodies = new WeakMap();
   // Drafts started from the tree or Details, by their thread. A draft the reviewer starts
   // with "+" is not here, and is sent as a plain line comment.
   /** @type {WeakMap<object, Draft>} */
@@ -197,13 +205,19 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
 
   // ---- drawing ----------------------------------------------------------------------------
 
-  /** @param {CommentSpec} c */
-  function toComment(c) {
-    const body = new vscode.MarkdownString(c.body);
+  /** @param {string} text */
+  function markdown(text) {
+    const body = new vscode.MarkdownString(text);
     // Text from GitHub: no command links, no HTML, no icons.
     body.isTrusted = false;
     body.supportHtml = false;
     body.supportThemeIcons = false;
+    return body;
+  }
+
+  /** @param {CommentSpec} c */
+  function toComment(c) {
+    const body = markdown(c.body);
     const when = new Date(c.createdAt);
     const comment = {
       body, mode: vscode.CommentMode.Preview, contextValue: c.contextValue,
@@ -212,17 +226,22 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
       ...(Number.isNaN(when.getTime()) ? {} : { timestamp: when }),
     };
     commentIds.set(comment, c.id);
+    originalBodies.set(comment, c.body);
     return comment;
   }
 
   /** @param {any} thread @param {ThreadSpec} spec */
   function describe(thread, spec) {
     thread.comments = spec.comments.map(toComment);
+    for (const comment of thread.comments) commentThreads.set(comment, thread);
     thread.label = spec.label;
     thread.contextValue = spec.contextValue;
     thread.canReply = spec.canReply;
     if (vscode.CommentThreadState) thread.state = spec.resolved ? vscode.CommentThreadState.Resolved : vscode.CommentThreadState.Unresolved;
   }
+
+  /** @param {any} thread Whether the reviewer has a comment of it open for editing. */
+  const isEditing = (thread) => thread.comments.some((/** @type {any} */ c) => c.mode === vscode.CommentMode.Editing);
 
   /** @param {string} key */
   function disposeDocument(key) {
@@ -249,6 +268,9 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
       const signature = JSON.stringify(spec);
       const existing = threads.get(spec.id);
       if (existing && existing.signature === signature) continue;
+      // Replacing the comments would throw away an open edit. The old signature stays, so
+      // the thread is redrawn from the data when the edit ends (`endEdit`).
+      if (existing && isEditing(existing.thread)) continue;
       const range = new vscode.Range(spec.startLine - 1, 0, spec.line - 1, 0);
       const collapsed = spec.resolved ? vscode.CommentThreadCollapsibleState.Collapsed : vscode.CommentThreadCollapsibleState.Expanded;
       if (!existing) {
@@ -627,6 +649,55 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
     if (!result.ok) showError(`Impact Tree: could not delete the pending comment — ${result.error.message}`);
   }
 
+  /** @param {unknown} body A comment's body: text or a MarkdownString. @returns {string|null} */
+  const bodyText = (body) => (typeof body === 'string' ? body : isObject(body) && typeof body.value === 'string' ? body.value : null);
+
+  /**
+   * Leaves edit mode and draws the thread again from the data, which an edit may have held back.
+   * @param {any} comment
+   * @param {any} thread
+   */
+  function endEdit(comment, thread) {
+    comment.mode = vscode.CommentMode.Preview;
+    thread.comments = [...thread.comments];
+    want({ uris: [thread.uri.toString()] });
+  }
+
+  /** @param {unknown} arg The comment, from its title action. */
+  function editComment(arg) {
+    const thread = isObject(arg) && /\bcanEdit\b/.test(arg.contextValue || '') ? commentThreads.get(arg) : undefined;
+    if (!thread) return;
+    /** @type {any} */ (arg).mode = vscode.CommentMode.Editing;
+    // VS Code notices only a reassignment.
+    thread.comments = [...thread.comments];
+    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+  }
+
+  /** @param {unknown} arg The comment being edited; VS Code has put the edited text in its body. */
+  async function saveEdit(arg) {
+    const commentId = isObject(arg) ? commentIds.get(arg) : undefined;
+    const thread = isObject(arg) ? commentThreads.get(arg) : undefined;
+    const text = isObject(arg) ? bodyText(arg.body) : null;
+    if (!commentId || !thread || text === null || isBlank(text)) return;
+    const result = await store.editComment({ commentId, body: text });
+    if (!result.ok) notSent('save your edit', result.error.message);
+    // The store has reloaded; until the thread is drawn from that, show the new text.
+    const comment = /** @type {any} */ (arg);
+    comment.body = markdown(text);
+    originalBodies.set(comment, text);
+    endEdit(comment, thread);
+  }
+
+  /** @param {unknown} arg The comment being edited. */
+  function cancelEdit(arg) {
+    const thread = isObject(arg) ? commentThreads.get(arg) : undefined;
+    const original = isObject(arg) ? originalBodies.get(arg) : undefined;
+    if (!thread || original === undefined) return;
+    const comment = /** @type {any} */ (arg);
+    comment.body = markdown(original);
+    endEdit(comment, thread);
+  }
+
   /** @type {Disposable[]} */
   const subscriptions = [
     store.onDidChange(({ paths }) => {
@@ -645,6 +716,9 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
     vscode.commands.registerCommand(COMMANDS.resolve, (/** @type {unknown} */ arg) => setResolved(true, arg)),
     vscode.commands.registerCommand(COMMANDS.unresolve, (/** @type {unknown} */ arg) => setResolved(false, arg)),
     vscode.commands.registerCommand(COMMANDS.deletePending, deletePending),
+    vscode.commands.registerCommand(COMMANDS.editComment, editComment),
+    vscode.commands.registerCommand(COMMANDS.saveEdit, saveEdit),
+    vscode.commands.registerCommand(COMMANDS.cancelEdit, cancelEdit),
     vscode.commands.registerCommand(COMMANDS.removeCallerContext, removeCallerContext),
   ];
 

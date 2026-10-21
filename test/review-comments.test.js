@@ -15,7 +15,7 @@ const {
   commentingContextOf, documentSide, commentableLines, acceptsComment, threadSpecsFor,
   rowCommentPlace, chooseCommentLine, callerContextBlock, withCallerContext, callerDraftLabel,
 } = require('../src/review-comments-model');
-const { createReviewComments, COMMANDS, PENDING_CONTEXT_KEY, CONTROLLER_ID, FILE_COMMENT_LABEL } = require('../src/review-comments');
+const { createReviewComments, CommentNotSentError, COMMANDS, PENDING_CONTEXT_KEY, CONTROLLER_ID, FILE_COMMENT_LABEL } = require('../src/review-comments');
 const { createPullRequestReviewStore } = require('../src/pr-review-store');
 const { prQuery } = require('../src/pr-documents');
 
@@ -42,7 +42,7 @@ const fileDoc = (relPath) => Uri.file(path.join(REPO, relPath));
 const baseDoc = (basePath, sha = BASE) => Uri.from({ scheme: 'impacttree-base', path: basePath, query: sha });
 
 const comment = (id, over = {}) => ({ id: `C_${id}`, databaseId: id, author: { login: 'bob', avatarUrl: null }, body: `body ${id}`,
-  createdAt: '2026-01-02T03:04:05Z', pending: false, mine: false, url: `https://x/${id}`, ...over });
+  createdAt: '2026-01-02T03:04:05Z', pending: false, mine: false, canEdit: false, url: `https://x/${id}`, ...over });
 const thread = (id, over = {}, comments = [comment(id)]) => ({ id: `T_${id}`, path: 'src/a.ts', side: 'RIGHT', line: 12,
   originalLine: 12, startLine: null, isResolved: false, isOutdated: false, fileLevel: false,
   canResolve: true, canUnresolve: false, canReply: true, comments, ...over });
@@ -205,7 +205,7 @@ function fakeStore(initial) {
     publish(next, paths = null) { state = next; for (const l of [...listeners]) l({ paths }); },
     listenerCount: () => listeners.size,
     addComment: mutation('addComment'), addFileComment: mutation('addFileComment'), reply: mutation('reply'), setResolved: mutation('setResolved'),
-    deletePendingComment: mutation('deletePendingComment'),
+    deletePendingComment: mutation('deletePendingComment'), editComment: mutation('editComment'),
   };
 }
 
@@ -508,6 +508,139 @@ test('Resolve, Unresolve and Delete call the store for their thread or comment',
   assert.deepEqual(env.editor.seen.errors, ['Impact Tree: could not resolve the thread — no permission']);
 });
 
+// ---- editing your own comments ----------------------------------------------------------
+
+const mineComment = (id, over = {}) => comment(id, { mine: true, canEdit: true, ...over });
+const editModel = (body = 'body 1') => reviewModel({ threads: [thread(1, {}, [mineComment(1, { body }), comment(2, { mine: true })])] });
+const bodyOf = (c) => (typeof c.body === 'string' ? c.body : c.body.value);
+
+async function editSetup(state = ready(editModel())) {
+  const env = setup({ state, open: [prDoc('src/a.ts', 'head')] });
+  await env.idle();
+  const [t] = env.threadsOn(env.docs[0].uri);
+  return { env, t, mode: baseStub.CommentMode };
+}
+
+test('only a comment the viewer can edit gets the canEdit action', () => {
+  const m = reviewModel({ threads: [thread(1, {}, [
+    mineComment(1, { pending: true }), mineComment(2), comment(3), comment(4, { mine: true }),
+  ])] });
+  const [spec] = threadSpecsFor(m, 'src/a.ts', 'RIGHT');
+  assert.deepEqual(spec.comments.map((c) => c.contextValue), ['pendingMine canEdit', 'canEdit', '', '']);
+});
+
+test('Edit puts the comment in edit mode, in a thread VS Code is told changed; others are left alone', async () => {
+  const { env, t, mode } = await editSetup();
+  const before = t.comments;
+  await env.editor.run(COMMANDS.editComment, t.comments[0]);
+  assert.equal(t.comments[0].mode, mode.Editing);
+  assert.notEqual(t.comments, before, 'reassigned');
+  assert.equal(t.collapsibleState, baseStub.CommentThreadCollapsibleState.Expanded);
+  await env.editor.run(COMMANDS.editComment, t.comments[1]);
+  assert.equal(t.comments[1].mode, mode.Preview, 'not editable by the viewer: nothing happens');
+});
+
+test('Save sends the edited text and returns to preview with it once the store has reloaded', async () => {
+  const { env, t, mode } = await editSetup();
+  await env.editor.run(COMMANDS.editComment, t.comments[0]);
+  t.comments[0].body = 'a better body';
+  env.store.answers.editComment = [(input) => { env.store.publish(ready(editModel(input.body)), ['src/a.ts']); return { ok: true }; }];
+  await env.editor.run(COMMANDS.saveEdit, t.comments[0]);
+  await env.idle();
+  assert.deepEqual(env.store.calls, [{ name: 'editComment', input: { commentId: 'C_1', body: 'a better body' } }]);
+  const [after] = env.threadsOn(env.docs[0].uri);
+  assert.equal(after, t);
+  assert.equal(after.comments[0].mode, mode.Preview);
+  assert.equal(bodyOf(after.comments[0]), 'a better body');
+  assert.equal(after.comments[0].body.isTrusted, false);
+});
+
+test('Save reads the text from a MarkdownString body too, and a blank text is refused in place', async () => {
+  const { env, t, mode } = await editSetup();
+  await env.editor.run(COMMANDS.editComment, t.comments[0]);
+  t.comments[0].body = '   ';
+  await env.editor.run(COMMANDS.saveEdit, t.comments[0]);
+  assert.deepEqual(env.store.calls, []);
+  assert.deepEqual(env.editor.seen.warnings, ['Impact Tree: write the comment first.']);
+  assert.equal(t.comments[0].mode, mode.Editing);
+  t.comments[0].body = new baseStub.MarkdownString('typed');
+  await env.editor.run(COMMANDS.saveEdit, t.comments[0]);
+  assert.deepEqual(env.store.calls, [{ name: 'editComment', input: { commentId: 'C_1', body: 'typed' } }]);
+});
+
+test('Cancel restores the original text, as untrusted Markdown, and preview mode', async () => {
+  const { env, t, mode } = await editSetup();
+  await env.editor.run(COMMANDS.editComment, t.comments[0]);
+  t.comments[0].body = 'half-typed';
+  await env.editor.run(COMMANDS.cancelEdit, t.comments[0]);
+  assert.equal(t.comments[0].mode, mode.Preview);
+  assert.equal(bodyOf(t.comments[0]), 'body 1');
+  assert.equal(t.comments[0].body.isTrusted, false);
+  assert.deepEqual(env.store.calls, []);
+});
+
+test('a failed save says so, rejects, and keeps the comment in edit mode with the edited text', async () => {
+  const { env, t, mode } = await editSetup();
+  await env.editor.run(COMMANDS.editComment, t.comments[0]);
+  t.comments[0].body = 'my edit';
+  env.store.answers.editComment = [{ ok: false, error: new Error('timeout') }];
+  await assert.rejects(env.editor.run(COMMANDS.saveEdit, t.comments[0]), CommentNotSentError);
+  assert.equal(t.comments[0].mode, mode.Editing);
+  assert.equal(bodyOf(t.comments[0]), 'my edit');
+  assert.deepEqual(env.editor.seen.errors, ['Impact Tree: could not save your edit — timeout. Your text is still in the comment box.']);
+});
+
+test('a store change that rewrites the thread does not reset an open edit; it is drawn when the edit ends', async () => {
+  const { env, t, mode } = await editSetup();
+  await env.editor.run(COMMANDS.editComment, t.comments[0]);
+  t.comments[0].body = 'in progress';
+  const next = reviewModel({ threads: [thread(1, {}, [mineComment(1, { body: 'changed elsewhere' }), comment(2, { mine: true }), comment(3)])] });
+  env.store.publish(ready(next), ['src/a.ts']);
+  await env.idle();
+  assert.equal(t.comments.length, 2, 'not rewritten');
+  assert.equal(t.comments[0].mode, mode.Editing);
+  assert.equal(bodyOf(t.comments[0]), 'in progress');
+  await env.editor.run(COMMANDS.cancelEdit, t.comments[0]);
+  await env.idle();
+  const [after] = env.threadsOn(env.docs[0].uri);
+  assert.equal(after, t);
+  assert.equal(after.comments.length, 3);
+  assert.equal(bodyOf(after.comments[0]), 'changed elsewhere');
+  assert.equal(after.comments[0].mode, mode.Preview);
+});
+
+test('a thread that goes away while being edited is still removed', async () => {
+  const { env, t } = await editSetup();
+  await env.editor.run(COMMANDS.editComment, t.comments[0]);
+  env.store.publish(ready(reviewModel({ threads: [] })), ['src/a.ts']);
+  await env.idle();
+  assert.equal(t.disposed, true);
+});
+
+test('end to end: Edit and Save send updatePullRequestReviewComment and the thread shows the new text', async () => {
+  const github = answeringGitHub({ threads: [rawThread(1, [rawComment(1, { viewerDidAuthor: true, viewerCanUpdate: true })])], pending: false });
+  const inner = github.graphql;
+  github.graphql = async (query, variables) => {
+    if (!/^mutation ImpactTreeUpdateComment/.test(query)) return inner(query, variables);
+    github.calls.push({ name: 'ImpactTreeUpdateComment', input: variables.input });
+    github.threads = [rawThread(1, [rawComment(1, { viewerDidAuthor: true, viewerCanUpdate: true, body: variables.input.body })])];
+    return { updatePullRequestReviewComment: { pullRequestReviewComment: { id: 'C_1', body: variables.input.body } } };
+  };
+  const env = await realStoreSetup(github);
+  const [t] = env.threadsOn();
+  assert.equal(t.comments[0].contextValue, 'canEdit');
+  await env.editor.run(COMMANDS.editComment, t.comments[0]);
+  t.comments[0].body = 'edited';
+  await env.editor.run(COMMANDS.saveEdit, t.comments[0]);
+  await env.comments.whenIdle();
+  assert.deepEqual(github.calls.filter((c) => c.name === 'ImpactTreeUpdateComment').map((c) => c.input), [{ pullRequestReviewCommentId: 'C_1', body: 'edited' }]);
+  const [after] = env.threadsOn();
+  assert.equal(bodyOf(after.comments[0]), 'edited');
+  assert.equal(after.comments[0].mode, baseStub.CommentMode.Preview);
+  env.comments.dispose();
+  env.store.dispose();
+});
+
 test('dispose disposes the controller, its threads and its subscriptions, and a pending draw publishes nothing', async () => {
   const env = setup({ source: checkoutSource(), result: checkoutResult(), open: [fileDoc('src/a.ts')] });
   await env.idle();
@@ -528,7 +661,7 @@ test('dispose disposes the controller, its threads and its subscriptions, and a 
 
 // GitHub-shaped answers, as the L2 normaliser reads them.
 const rawComment = (id, over = {}) => ({ id: `C_${id}`, databaseId: id, author: { login: 'bob', avatarUrl: null }, body: `body ${id}`,
-  createdAt: '2026-01-02T03:04:05Z', state: 'SUBMITTED', viewerDidAuthor: false, url: `https://x/${id}`, diffHunk: '', ...over });
+  createdAt: '2026-01-02T03:04:05Z', state: 'SUBMITTED', viewerDidAuthor: false, viewerCanUpdate: false, url: `https://x/${id}`, diffHunk: '', ...over });
 const rawThread = (id, comments, over = {}) => ({ id: `T_${id}`, isResolved: false, isOutdated: false, path: 'src/a.ts', line: 12,
   originalLine: 12, startLine: null, originalStartLine: null, diffSide: 'RIGHT', subjectType: 'LINE',
   viewerCanResolve: true, viewerCanUnresolve: false, viewerCanReply: true,

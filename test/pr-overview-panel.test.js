@@ -12,7 +12,7 @@ const vscodeStub = require('./vscode-stub');
 
 const TARGET = Object.freeze({ owner: 'o', name: 'r', number: 7, headOid: 'a'.repeat(40) });
 const comment = (id, over = {}) => ({ id: `C_${id}`, databaseId: id, author: { login: 'bob', avatarUrl: null }, body: `body ${id}`,
-  createdAt: '2026-01-02T03:04:05Z', pending: false, mine: false, url: `https://x/${id}`, ...over });
+  createdAt: '2026-01-02T03:04:05Z', pending: false, mine: false, canEdit: false, url: `https://x/${id}`, ...over });
 const thread = (id, over = {}, comments = [comment(id)]) => ({ id: `T_${id}`, path: 'src/a.js', side: 'RIGHT', line: 10, originalLine: 10,
   startLine: null, isResolved: false, isOutdated: false, fileLevel: false, canResolve: true, canUnresolve: false, canReply: true, comments, ...over });
 function reviewModel({ number = 7, threads = [], pending = null, own = false, title = 'Make it better' } = {}) {
@@ -519,7 +519,7 @@ const connection = (nodes) => ({ nodes, pageInfo: { hasNextPage: false, endCurso
 // review holding one of the viewer's comments in it.
 function githubAnswer({ pending }) {
   const posted = { id: 'C_1', databaseId: 1, author: { login: 'bob', avatarUrl: null }, body: 'why?', createdAt: '2026-01-02T03:04:05Z',
-    state: 'SUBMITTED', viewerDidAuthor: false, url: 'https://x/1', diffHunk: '@@ -3 +3 @@\n+const a = 1;' };
+    state: 'SUBMITTED', viewerDidAuthor: false, viewerCanUpdate: false, url: 'https://x/1', diffHunk: '@@ -3 +3 @@\n+const a = 1;' };
   const mine = { ...posted, id: 'C_2', databaseId: 2, body: 'rename', state: 'PENDING', viewerDidAuthor: true };
   return { repository: { pullRequest: {
     id: 'PR_7', number: 7, title: 'Seven', body: 'b', url: 'https://x', state: 'OPEN', author: null, viewerDidAuthor: false,

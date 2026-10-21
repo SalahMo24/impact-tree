@@ -41,6 +41,9 @@ const MUTATIONS = Object.freeze({
   deleteComment: `mutation ImpactTreeDeleteComment($input: DeletePullRequestReviewCommentInput!) {
   deletePullRequestReviewComment(input: $input) { clientMutationId }
 }`,
+  updateComment: `mutation ImpactTreeUpdateComment($input: UpdatePullRequestReviewCommentInput!) {
+  updatePullRequestReviewComment(input: $input) { pullRequestReviewComment { id body } }
+}`,
   submitReview: `mutation ImpactTreeSubmitReview($input: SubmitPullRequestReviewInput!) {
   submitPullRequestReview(input: $input) { pullRequestReview { id state } }
 }`,
@@ -363,6 +366,22 @@ async function performDeletePendingComment(ctx, { commentId }) {
 }
 
 /**
+ * Changes the text of one of the viewer's own comments. An unchanged text sends nothing.
+ * @param {MutationContext} ctx
+ * @param {{ commentId: string, body: string }} request
+ */
+async function performEditComment(ctx, { commentId, body }) {
+  const comment = ctx.model.threads.flatMap((t) => t.comments).find((c) => c.id === commentId);
+  if (!comment) throw new ReviewStoreError('stale', `comment ${commentId} is not in the loaded review; refresh and try again`);
+  if (!comment.canEdit) refuse('only your own comments can be edited');
+  if (body === comment.body) return;
+  const payload = await ctx.write(MUTATIONS.updateComment, { pullRequestReviewCommentId: commentId, body }, 'updatePullRequestReviewComment');
+  if (idIn(payload, 'pullRequestReviewComment', 'updatePullRequestReviewComment') !== commentId) {
+    throw new GitHubResponseError(ENDPOINT, 'updatePullRequestReviewComment answered with another comment');
+  }
+}
+
+/**
  * GitHub's rules, checked before sending so the reason is clear: approving or requesting
  * changes on one's own pull request is refused; requesting changes needs a summary; a
  * comment review needs a summary or a pending comment.
@@ -465,6 +484,14 @@ function checkSetResolved(raw) {
 function checkDeletePendingComment(raw) {
   if (!isObject(raw) || !isNonEmptyString(raw.commentId)) return { problem: '`commentId` must be a non-empty string' };
   return { request: { commentId: raw.commentId } };
+}
+
+/** @param {unknown} raw */
+function checkEditComment(raw) {
+  if (!isObject(raw) || !isNonEmptyString(raw.commentId)) return { problem: '`commentId` must be a non-empty string' };
+  const problem = bodyProblem(raw.body);
+  if (problem) return { problem };
+  return { request: { commentId: raw.commentId, body: /** @type {string} */ (raw.body) } };
 }
 
 /** @param {unknown} raw */
@@ -795,6 +822,8 @@ function createPullRequestReviewStore({ gh, getTarget, getAnalysisId, log: logLi
     setResolved: mutation(checkSetResolved, performSetResolved),
     /** `{ commentId }`. */
     deletePendingComment: mutation(checkDeletePendingComment, performDeletePendingComment),
+    /** `{ commentId, body }`. */
+    editComment: mutation(checkEditComment, performEditComment),
     /** `{ event, body? }`. */
     submitReview: mutation(checkSubmitReview, performSubmitReview),
     /** @returns {Promise<MutationResult>} */

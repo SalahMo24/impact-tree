@@ -161,8 +161,8 @@ function acceptsComment(ctx, at, startLine, line) {
  * @property {string} body Markdown, as written.
  * @property {string} createdAt ISO 8601.
  * @property {boolean} pending
- * @property {string} contextValue `pendingMine` for the viewer's own pending comment,
- *   which can be deleted; otherwise empty.
+ * @property {string} contextValue Space-separated actions that apply: `pendingMine` for the
+ *   viewer's own pending comment (it can be deleted), `canEdit` for one they can edit.
  *
  * @typedef {object} ThreadSpec
  * @property {string} id GraphQL node id.
@@ -198,7 +198,7 @@ function threadSpec(t) {
     resolved: t.isResolved, label, canReply, contextValue: actions.join(' '),
     comments: t.comments.map((c) => ({
       id: c.id, author: c.author ? c.author.login : 'ghost', avatarUrl: c.author ? c.author.avatarUrl : null,
-      body: c.body, createdAt: c.createdAt, pending: c.pending, contextValue: c.pending && c.mine ? 'pendingMine' : '',
+      body: c.body, createdAt: c.createdAt, pending: c.pending, contextValue: [c.pending && c.mine ? 'pendingMine' : '', c.canEdit ? 'canEdit' : ''].filter(Boolean).join(' '),
     })),
   };
 }

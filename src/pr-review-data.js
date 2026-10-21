@@ -47,7 +47,7 @@ const THREAD_FIELDS = `
     totalCount
     pageInfo { hasNextPage }
     nodes {
-      id databaseId author { ${AUTHOR_FIELDS} } body createdAt state viewerDidAuthor url diffHunk
+      id databaseId author { ${AUTHOR_FIELDS} } body createdAt state viewerDidAuthor viewerCanUpdate url diffHunk
     }
   }`;
 
@@ -114,6 +114,7 @@ const FILES_PAGE_QUERY = `query ImpactTreeReviewFiles($owner: String!, $name: St
  * @property {string} createdAt ISO 8601.
  * @property {boolean} pending Part of the viewer's unsubmitted review.
  * @property {boolean} mine The viewer wrote it.
+ * @property {boolean} canEdit The viewer wrote it and GitHub lets them change it.
  * @property {string} url
  *
  * @typedef {object} ReviewThread
@@ -275,6 +276,7 @@ function normaliseComment(raw, what) {
   const c = object(raw, what);
   str(c.diffHunk, `${what}.diffHunk`);
   if (c.databaseId != null && !Number.isSafeInteger(c.databaseId)) bad(`${what}.databaseId is not an integer`);
+  const mine = bool(c.viewerDidAuthor, `${what}.viewerDidAuthor`);
   return {
     id: str(c.id, `${what}.id`),
     databaseId: c.databaseId == null ? null : /** @type {number} */ (c.databaseId),
@@ -282,7 +284,8 @@ function normaliseComment(raw, what) {
     body: str(c.body, `${what}.body`),
     createdAt: str(c.createdAt, `${what}.createdAt`),
     pending: oneOf(c.state, ['PENDING', 'SUBMITTED'], `${what}.state`) === 'PENDING',
-    mine: bool(c.viewerDidAuthor, `${what}.viewerDidAuthor`),
+    mine,
+    canEdit: bool(c.viewerCanUpdate, `${what}.viewerCanUpdate`) && mine,
     url: str(c.url, `${what}.url`),
   };
 }
