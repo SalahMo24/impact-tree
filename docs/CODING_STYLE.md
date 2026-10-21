@@ -559,8 +559,9 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      feedback rounds (`src/feedback-file.js`, `src/feedback-files-io.js`, `src/feedback-send.js`,
      `src/feedback-readback.js`, `src/feedback-round-model.js`, `src/feedback-round-view.js`,
      `src/agent-handoff.js`, `src/agent-pointer.js`), the snapshot store
-     (`src/engine/snapshot-store.js`, `src/engine/diff-index.js`, `src/snapshot-storage.js`) and the
-     cleanup of stored data (`src/storage-cleanup.js`, `src/storage-cleanup-run.js`).
+     (`src/engine/snapshot-store.js`, `src/engine/diff-index.js`, `src/snapshot-storage.js`) the
+     cleanup of stored data (`src/storage-cleanup.js`, `src/storage-cleanup-run.js`), and the
+     search for users the editor's language server did not reach (`src/engine/unseen-users.js`).
    - Planned: type-aware lint rules such as `no-floating-promises` (whether to add them
      before the review loop is an open decision), and enrolling the remaining modules.
 

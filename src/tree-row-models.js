@@ -102,6 +102,8 @@ function describeUnknownCallers(change) {
   if (change.callerState === 'di') return 'it is built by a DI container, so its callers are not visible';
   const reason = change.callersIncompleteReason;
   if (INCOMPLETE_REASON_TEXT[reason]) return `it is ${INCOMPLETE_REASON_TEXT[reason]}`;
+  // From engine/unseen-users.js: already a clause.
+  if (typeof reason === 'string' && reason.startsWith('used in ')) return `it is ${reason}`;
   return reason ? `the search reported "${reason}"` : 'the search did not say why';
 }
 

@@ -5,6 +5,8 @@ const { offsetToPosition, positionToOffset } = require('./engine/textpos');
 const { makeCqrsEdges } = require('./engine/edges-cqrs');
 const { createInheritanceFilter } = require('./engine/inheritance');
 const { withDeadline } = require('./engine/deadline');
+const { findUnseenUsers, unseenUsersReason, gitGrep } = require('./engine/unseen-users');
+const { makeGit } = require('./engine/git');
 
 // Reuses the editor's already-running language server: no second program, incremental
 // for free, and any language with a call-hierarchy provider works, not just TypeScript.
@@ -55,7 +57,7 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, queryTimeoutMs 
   const initialStats = () => ({
     incomingCalls: 0, incomingMs: 0, cacheHits: 0, warmupRetries: 0,
     skipped: 0, resolvedEmpty: 0, cqrsEdges: 0, cqrsSuppressed: 0, durations: [], emptyAt: [],
-    inheritedDropped: 0,
+    inheritedDropped: 0, unseenUsers: 0,
   });
   const stats = initialStats();
 
@@ -260,6 +262,26 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, queryTimeoutMs 
     return { callers: out, complete: true };
   }
 
+  // The server answers from the projects it has loaded; a component's tests in their own
+  // tsconfig are never among them (see engine/unseen-users.js). Before "no callers", look
+  // for files that may use the symbol outside them. A search that fails is logged and
+  // leaves the server's answer: it is no evidence either way.
+  const grep = repoRoot ? gitGrep(makeGit(repoRoot)) : null;
+  /** @returns {Promise<string|null>} The reason the answer is unknown, or null. */
+  async function unseenUsers(file, pos) {
+    if (!ts || !grep) return null;
+    try {
+      const found = await findUnseenUsers({ ts, repo: repoRoot, declFile: file, pos, grep });
+      if (!found) return null;
+      const reason = unseenUsersReason(found);
+      if (reason) { stats.unseenUsers++; trace(`no callers from the server, but ${reason}`); }
+      return reason;
+    } catch (e) {
+      trace(`unseen-users search failed for ${require('path').basename(file)}@${pos}: ${e && e.message}`);
+      return null;
+    }
+  }
+
   async function incoming(file, pos, withTests = true) {
     return (await incomingWithStatus(file, pos, withTests)).callers;
   }
@@ -292,8 +314,10 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, queryTimeoutMs 
           const end = positionToOffset(file, r.range.end.line, r.range.end.character);
           return start == null || end == null || !(start <= pos && pos < end);
         });
-        return used
-          ? { state: 'unknown', reason: 'referenced-as-value', callers: [], complete: false }
+        if (used) return { state: 'unknown', reason: 'referenced-as-value', callers: [], complete: false };
+        const unseen = await unseenUsers(file, pos);
+        return unseen
+          ? { state: 'unknown', reason: unseen, callers: [], complete: false }
           : { state: 'none', callers: [], complete: true };
       } catch (e) {
         return { state: 'unknown', reason: (e && e.message) || 'reference query failed', callers: [], complete: false };

@@ -87,6 +87,8 @@ test('the sentence keeps the facts the row cannot: stale count, missing callers,
   const unknown = (extra) => verdictOf({ kinds, callerState: 'unknown', callers: [], callersComplete: false, ...extra }).sentence;
   assert.match(unknown({ callersIncompleteReason: 'referenced-as-value' }), /passed around as a value/);
   assert.match(unknown({ callersIncompleteReason: 'query-failed' }), /the search reported "query-failed"/);
+  assert.match(unknown({ callersIncompleteReason: "used in a file the editor's search did not reach (tests/a.spec.ts)" }),
+    /could not be found: it is used in a file the editor's search did not reach \(tests\/a\.spec\.ts\)\. Check its users by hand\./);
   assert.match(unknown({ callersIncompleteReason: undefined }), /did not say why/);
   assert.match(verdictOf({ kinds, callersComplete: false, callersIncompleteReason: 'referenced-as-value', callers: callersOf(1, 'updated-at-call') }).sentence,
     /callers found so far are updated, but more may be missing: it is passed around as a value/);
