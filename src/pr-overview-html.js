@@ -79,7 +79,7 @@ function buttonRules(facts) {
  * @typedef {{ kind: 'none' } | { kind: 'failed', message: string }
  *   | { kind: 'ready', items: import('./pr-review-data').CheckItem[], total: number, incomplete: string|null }} ChecksView
  *
- * @typedef {{ kind: 'failed', message: string } | { kind: 'ready', merge: MergeState, checks: ChecksView,
+ * @typedef {{ kind: 'failed', message: string, merge: MergeState } | { kind: 'ready', merge: MergeState, checks: ChecksView,
  *   reviewers: { items: import('./pr-review-data').ReviewerItem[], more: number },
  *   labels: { items: import('./pr-review-data').LabelItem[], more: number } }} OverviewView
  */
@@ -185,11 +185,12 @@ function approveCheckOf(data, { attentionLeft, counts }) {
  * @returns {MergeState}
  */
 function mergeStateOf(pr, overview) {
+  // The review query already says whether it is merged or closed; the overview is not needed for that.
+  if (pr.state === 'MERGED') return { tone: 'done', headline: 'Merged.', reasons: [], retry: false };
+  if (pr.state === 'CLOSED') return { tone: 'done', headline: 'Closed without merging.', reasons: [], retry: false };
   if (overview.kind === 'failed') {
     return { tone: 'unknown', headline: `Merge state could not be loaded: ${overview.error.message}`, reasons: [], retry: true };
   }
-  if (pr.state === 'MERGED') return { tone: 'done', headline: 'Merged.', reasons: [], retry: false };
-  if (pr.state === 'CLOSED') return { tone: 'done', headline: 'Closed without merging.', reasons: [], retry: false };
   const { merge, checks } = overview;
   const base = pr.baseRefName;
   /** @type {MergeState} */
@@ -229,7 +230,7 @@ function mergeStateOf(pr, overview) {
  * @returns {OverviewView}
  */
 function overviewViewOf(overview, pr) {
-  if (overview.kind === 'failed') return { kind: 'failed', message: overview.error.message };
+  if (overview.kind === 'failed') return { kind: 'failed', message: overview.error.message, merge: mergeStateOf(pr, overview) };
   const c = overview.checks;
   /** @type {ChecksView} */
   const checks = c.kind === 'failed' ? { kind: 'failed', message: c.error.message } : c;
@@ -253,7 +254,8 @@ function pageModelOf(state, { attentionLeft, counts, draft, error, busy }) {
   const model = {
     kind: data ? 'ready' : state.kind === 'failed' ? 'failed' : 'loading',
     number, loadError, refreshing: state.kind === 'loading', pr: null, timeline: [], pending: null,
-    own: false, check: null, overview: { kind: 'failed', message: 'not loaded' }, incomplete: [], draft, error, busy,
+    own: false, check: null,
+    overview: { kind: 'failed', message: 'not loaded', merge: { tone: 'unknown', headline: 'Merge state not loaded.', reasons: [], retry: true } }, incomplete: [], draft, error, busy,
   };
   if (!data) return model;
   const { pr } = data;
@@ -591,11 +593,11 @@ function checksHtml(checks) {
 
 /** @param {OverviewView} view @returns {string} */
 function mergeHtml(view) {
-  if (view.kind === 'failed') {
+  const m = view.merge;
+  if (view.kind === 'failed' && m.tone !== 'done') {
     return '<h4>Merge</h4><div class="merge unknown" data-el="merge"><span class="unk">?</span> '
       + `Merge state could not be loaded: <span class="text">${escapeHtml(view.message)}</span> ${retryButton}</div>`;
   }
-  const m = view.merge;
   const icon = { clean: '<span class="ok">✓</span>', blocked: '<span class="wait">●</span>', conflict: '<span class="bad">✗</span>',
     unknown: '<span class="unk">?</span>', done: '<span class="unk">✓</span>' }[m.tone];
   const refresh = m.retry ? ' <a href="#" data-act="retry">Refresh</a> in a moment.' : '';

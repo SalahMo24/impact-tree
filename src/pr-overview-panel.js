@@ -316,7 +316,7 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, revealThre
         const data = reviewDataOf(store.getState());
         const checks = data && data.overview.kind === 'ready' ? data.overview.checks : null;
         if (!checks || checks.kind !== 'ready' || !checks.items.some((c) => c.url === m.url)) {
-          log(`pull request tab: ignored a link that is not one of the loaded checks'`);
+          log(`pull request tab: ignored a link that is not one of the loaded checks`);
           return;
         }
         await vscode.env.openExternal(vscode.Uri.parse(m.url));

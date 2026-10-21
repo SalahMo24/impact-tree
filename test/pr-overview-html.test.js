@@ -371,6 +371,15 @@ test('mergeStateOf: merged and closed are done; a failed overview is unknown wit
   assert.deepEqual(failed, { tone: 'unknown', headline: 'Merge state could not be loaded: GitHub answered 502', reasons: [], retry: true });
 });
 
+test('a merged or closed pull request says so even when the overview failed to load', () => {
+  const failed = { kind: 'failed', error: new Error('GitHub answered 502') };
+  assert.equal(mergeStateOf({ ...PR, state: 'MERGED' }, failed).headline, 'Merged.');
+  const doc = html(ready({ ...reviewModel({ overview: failed }), pr: { ...reviewModel().pr, state: 'MERGED' } }));
+  assert.match(textOf(doc), /Merged\./);
+  assert.doesNotMatch(textOf(doc), /Merge state could not be loaded/);
+  assert.match(textOf(doc), /Checks could not be loaded/);
+});
+
 test('mergeStateOf: draft, conflicts, unknown, behind, clean and unstable', () => {
   const of = (merge, checks) => mergeStateOf(PR, overviewWith(checks ? { checks } : {}, merge));
   assert.deepEqual(of({ isDraft: true, mergeStateStatus: 'DRAFT' }),
