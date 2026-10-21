@@ -7,14 +7,17 @@
 // Nothing here sends anything anywhere.
 //
 // Commenting ranges: the whole document, for a document on disk that is one of the files
-// of the local result shown (bounded by that result's file list) and has no unsaved edits.
-// Base sides, pull request documents and files outside the result get none. The provider
+// of the result shown (a local review or a checked-out pull request; bounded by that
+// result's file list) and has no unsaved edits. Base sides, previewed pull request
+// documents and files outside the result get none. In a checked-out pull request the
+// review controller offers the same lines for GitHub comments; VS Code then asks which
+// one a new comment is for, by the controllers' labels. The provider
 // is set again whenever the result changes, which makes VS Code ask again.
 //
 // Drawing: every draft is a thread on its line of its file, in each open document on disk,
-// labelled "Feedback · draft", with Edit and Delete. Drafts are drawn while the review is
-// local (or nothing has been reviewed yet); a pull request's files show only its own
-// threads. A change of the drafts or of the result redraws the open documents; a thread
+// labelled "Feedback · draft", with Edit and Delete. Drafts are drawn while the files on
+// disk are reviewed (or nothing has been reviewed yet); a previewed pull request's
+// documents show only its own threads. A change of the drafts or of the result redraws the open documents; a thread
 // whose draft did not change keeps its VS Code object.
 //
 // Starting from the tree or Details: VS Code's API cannot fill a comment box, so these open
@@ -36,7 +39,7 @@ const { rowCommentPlace } = require('./review-comments-model');
 const { MAX_QUOTE_LINES } = require('./feedback-drafts');
 
 const CONTROLLER_ID = 'impactTree.feedback';
-const CONTROLLER_LABEL = 'Impact Tree feedback';
+const CONTROLLER_LABEL = 'Impact Tree: feedback for your agent';
 const COMMANDS = Object.freeze({
   add: 'impactTree.feedback.add',
   cancel: 'impactTree.feedback.cancel',
@@ -278,7 +281,7 @@ function createFeedbackComments(vscode, { drafts, getSession, getAnalysisId, isC
     const { thread, text } = arg;
     if (text.trim() === '') { tell('write the feedback first.'); return; }
     const ctx = contextNow();
-    if (!ctx) notAdded('feedback can be added only to a local review that is shown, not to a pull request or while analysing');
+    if (!ctx) notAdded('feedback can be added only while a local review or a checked-out pull request is shown, not while analysing');
     const rel = relPathOf(thread.uri, ctx.repoRoot);
     const purpose = purposes.get(thread);
     if (!rel || !ctx.files.has(rel)) notAdded('this document is not a file on disk of the review shown');
@@ -445,7 +448,7 @@ function createFeedbackComments(vscode, { drafts, getSession, getAnalysisId, isC
    */
   function startContext() {
     const ctx = contextNow();
-    if (!ctx) tell('feedback can be started only on a local review that is shown.');
+    if (!ctx) tell('feedback can be started only while a local review or a checked-out pull request is shown.');
     return ctx;
   }
 
@@ -537,7 +540,7 @@ function createFeedbackComments(vscode, { drafts, getSession, getAnalysisId, isC
       for (const key of [...drawn.keys()]) disposeDocument(key);
       controller.dispose();
     },
-    /** Whether feedback can be started now: a local review is shown. */
+    /** Whether feedback can be started now: a local review or a checked-out pull request is shown. */
     available: () => !disposed && contextNow() !== null,
     commentOnRow: (/** @type {any} */ row) => commentOnRow(row),
     commentOnCaller,

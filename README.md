@@ -68,8 +68,10 @@ silently-omitted optional parameter outranks a signature break that `tsc` alread
 
 ### Feedback rounds with a coding agent
 
-- While reviewing local changes, leave **feedback** in the diff's comment box or with 💬 in
-  Details. Drafts collect in **Feedback to send** at the top of Changes.
+- While reviewing local changes or a checked-out pull request, leave **feedback** in the
+  diff's comment box or with 💬 in Details. Drafts collect in **Feedback to send** at the
+  top of Changes. In a checked-out pull request, VS Code asks whether a new comment is a
+  GitHub review comment or feedback for your agent.
 - **Send feedback** (✈ in the title bar; hold ⌥ for **Send feedback to…**) writes the drafts
   to `.impact-tree/feedback/<date>-<n>.md`, records a checkpoint, and hands the round to
   Claude Code or Codex (in a terminal), the editor's chat (Copilot Chat, Cursor; you press

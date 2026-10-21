@@ -215,6 +215,13 @@ in workspace state (`impactTree.feedbackDrafts`, `{ version: 1, items: FeedbackI
 at most 200 items, body at most 10 000 characters; an unrecognised stored value is
 dropped with one log line, never half-read).
 
+A checked-out pull request takes feedback too: its files are on disk. Both comment
+controllers then offer the same lines and VS Code asks which a new comment is for, by
+their labels ("Impact Tree: GitHub review comment", "Impact Tree: feedback for your
+agent"). Details keeps 💬 for GitHub comments there and adds a separate Feedback button.
+Sending from a checked-out pull request names it in the round file ("Pull request #N
+(checked out)") and switches to Since checkpoint, as from a local review.
+
 ### F2. Snapshot checkpoints, stored outside the repository
 
 A snapshot records the working tree (tracked, modified and untracked files; `.gitignore`

@@ -188,6 +188,11 @@ test('Details of a file row of a local review offers feedback on the whole file'
   const [box] = feedbackBoxes(env);
   assert.equal(box.range.start.line, 0);
   assert.equal(box.label, 'New feedback · on the whole file');
+  box.dispose();
+  // The Feedback button sends its own message, which starts the same draft.
+  assert.match(details.displayHtml, /data-act="feedback"/);
+  await details.send(pageAction(details, { type: 'feedback', id: treeItemId(file) }));
+  assert.equal(feedbackBoxes(env).length, 1);
 }));
 
 test('Details of a Preview offers no feedback, and its 💬 messages start none', () => withEnv(async (env) => {

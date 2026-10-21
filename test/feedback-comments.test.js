@@ -34,7 +34,7 @@ const LOCAL = { kind: 'local' };
 
 // ---- the pure model ---------------------------------------------------------------------
 
-test('feedback is offered on a local result only, on its files that exist on disk', () => {
+test('feedback is offered on a result of the files on disk (local or a checked-out pull request), on its files that exist on disk', () => {
   const ctx = feedbackContextOf({ source: LOCAL, result: localResult(), repoRoot: REPO, analysisId: 3 });
   assert.deepEqual([...ctx.files], ['src/a.ts', 'notes.md'], 'a deleted file has no head side');
   assert.equal(ctx.analysisId, 3);
@@ -42,18 +42,19 @@ test('feedback is offered on a local result only, on its files that exist on dis
     { source: LOCAL, result: null },
     { source: LOCAL, result: { ...localResult(), tierA: true } },
     { source: { kind: 'pr', pr: { number: 7 } }, result: localResult() },
-    { source: { kind: 'checkout', pr: { number: 7 }, sha: 'a' }, result: localResult({ mode: 'pr' }) },
     { source: undefined, result: localResult() },
   ];
   for (const input of none) assert.equal(feedbackContextOf({ ...input, repoRoot: REPO, analysisId: 1 }), null, JSON.stringify(input.source));
   assert.equal(feedbackContextOf({ source: LOCAL, result: localResult(), repoRoot: null, analysisId: 1 }), null);
+  assert.ok(feedbackContextOf({ source: { kind: 'checkout', pr: { number: 7 }, sha: 'a' }, result: localResult({ mode: 'pr' }), repoRoot: REPO, analysisId: 1 }),
+    'a checked-out pull request');
   for (const mode of ['working', 'checkpoint', 'branch', 'pr']) {
     assert.ok(feedbackContextOf({ source: LOCAL, result: localResult({ mode }), repoRoot: REPO, analysisId: 1 }), mode);
   }
   assert.deepEqual([...headFilesOf({})], [], 'a result without a file list has no files');
 });
 
-test('only a document on disk inside the repository has a path; drafts are drawn in local reviews only', () => {
+test('only a document on disk inside the repository has a path; drafts are drawn in reviews of the files on disk only', () => {
   assert.equal(relPathOf(fileDoc('src/a.ts'), REPO), 'src/a.ts');
   assert.equal(relPathOf(baseDoc('src/a.ts'), REPO), null, 'the base side');
   assert.equal(relPathOf(prDoc('src/a.ts'), REPO), null, 'a pull request document');
@@ -61,7 +62,7 @@ test('only a document on disk inside the repository has a path; drafts are drawn
   assert.equal(drawsDrafts(LOCAL), true);
   assert.equal(drawsDrafts(undefined), true, 'before the first analysis');
   assert.equal(drawsDrafts({ kind: 'pr' }), false);
-  assert.equal(drawsDrafts({ kind: 'checkout' }), false);
+  assert.equal(drawsDrafts({ kind: 'checkout' }), true, 'a checked-out pull request is on disk');
 });
 
 test('the symbol of a line is the innermost change holding it', () => {
@@ -176,7 +177,7 @@ test('its own controller, labelled and worded for feedback', () => {
   const env = setup();
   assert.equal(env.editor.comments.controllers.length, 1);
   assert.deepEqual([env.controller.id, env.controller.label], [CONTROLLER_ID, CONTROLLER_LABEL]);
-  assert.equal(CONTROLLER_LABEL, 'Impact Tree feedback');
+  assert.equal(CONTROLLER_LABEL, 'Impact Tree: feedback for your agent');
   assert.notEqual(CONTROLLER_ID, REVIEW_CONTROLLER_ID, 'never the pull request controller');
   assert.deepEqual(env.controller.options, { placeHolder: 'Feedback for the agent (Markdown)', prompt: 'Add feedback' });
 });
@@ -192,8 +193,8 @@ test('a local result offers its files on disk whole; base sides, pull request do
   assert.deepEqual(await env.rangesOf({ uri: fileDoc('src/a.ts'), lineCount: 40, isDirty: true }), [], 'unsaved edits');
 });
 
-test('a pull request review, a Preview, or no result offers no feedback at all', async () => {
-  for (const [source, result] of [[{ kind: 'pr', pr: { number: 7 } }, { tierA: true }], [{ kind: 'checkout', pr: { number: 7 }, sha: 'a' }, localResult({ mode: 'pr' })], [LOCAL, null]]) {
+test('a previewed pull request or no result offers no feedback at all', async () => {
+  for (const [source, result] of [[{ kind: 'pr', pr: { number: 7 } }, { tierA: true }], [LOCAL, null]]) {
     const env = setup({ source, result });
     assert.equal(env.controller.commentingRangeProvider, undefined, JSON.stringify(source));
   }
@@ -259,7 +260,7 @@ test('feedback is refused, keeping the text in the box, where it cannot be kept'
   env.session.source = { kind: 'pr', pr: { number: 7 } };
   env.newResult({ tierA: true });
   assert.equal((await env.submit(COMMANDS.add, left, 'late')).sent, false);
-  assert.match(env.editor.seen.errors.at(-1), /only to a local review that is shown/);
+  assert.match(env.editor.seen.errors.at(-1), /only while a local review or a checked-out pull request is shown/);
 });
 
 test('Cancel removes an unsaved box, never a drawn draft', async () => {
@@ -293,13 +294,17 @@ test('drafts are redrawn when they change and when a document opens; an unchange
   assert.equal(first.disposed, true);
 });
 
-test('a pull request shown hides the drafts; a local review shows them again', async () => {
+test('a previewed pull request hides the drafts; a checked-out one or a local review shows them', async () => {
   const env = setup({ open: [fileDoc('src/a.ts')] });
   await env.drafts.add({ file: 'src/a.ts', line: 5, symbol: null, caller: null, quote: '', body: 'one' });
   assert.equal(env.threadsOn(fileDoc('src/a.ts')).length, 1);
   env.session.source = { kind: 'checkout', pr: { number: 7 }, sha: 'a' };
   env.newResult(localResult({ mode: 'pr' }));
-  assert.equal(env.threadsOn(fileDoc('src/a.ts')).length, 0, 'a checkout\'s files carry the pull request\'s threads');
+  assert.equal(env.threadsOn(fileDoc('src/a.ts')).length, 1, 'a checkout is reviewed on disk');
+  assert.ok(env.controller.commentingRangeProvider, 'and offers feedback there');
+  env.session.source = { kind: 'pr', pr: { number: 7 } };
+  env.newResult({ tierA: true });
+  assert.equal(env.threadsOn(fileDoc('src/a.ts')).length, 0, 'a Preview is not on disk');
   env.session.source = LOCAL;
   env.newResult();
   assert.equal(env.threadsOn(fileDoc('src/a.ts')).length, 1);
@@ -422,10 +427,10 @@ test('an obsolete result adds no box: the analysis changed while the diff opened
   assert.equal(env.controller.threads.filter((t) => !t.disposed && t.comments.length === 0).length, 0);
 });
 
-test('outside a local review nothing is started, and it says why', async () => {
+test('outside a review of the files on disk nothing is started, and it says why', async () => {
   const env = setup({ source: { kind: 'pr', pr: { number: 7 } }, result: { tierA: true } });
   assert.equal(await env.comments.commentOnRow(findingRow), null);
-  assert.match(env.editor.seen.warnings.at(-1), /feedback can be started only on a local review/);
+  assert.match(env.editor.seen.warnings.at(-1), /feedback can be started only while a local review or a checked-out pull request is shown/);
   assert.equal(env.comments.available(), false);
   assert.deepEqual(env.opened, []);
   const local = setup();

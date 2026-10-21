@@ -400,3 +400,20 @@ test('the Threads section escapes GitHub\'s text, needs no inline style, and its
   const without = buildDetailHtml(row, { result, isReviewed: () => false, impactRows, nonce: NONCE, cspSource: CSP_SOURCE, origin: 'tree', lineOf: () => 3 });
   assert.doesNotMatch(without, /Threads|data-act="caller-comment"/, 'a review without threads shows neither');
 });
+
+test('a checked-out pull request\'s row offers both: its Threads comment and a separate Feedback button', () => {
+  const caller = callerOf('src/user.ts', 'user', 40, false);
+  const c = change('src/a.ts', 'run', 10, { callers: [caller], callerState: 'resolved' });
+  const result = resultOf({ allChanged: [c] });
+  const [file] = buildFileRows(result, { uriOf }).rows;
+  const row = file.rows[0];
+  const impactRows = buildImpactRows(row, { result, uriOf, rel }).rows;
+  const threads = { title: 'Threads (0)', note: null, action: { target: 'change', label: 'Comment on this change' }, threads: [] };
+  const id = treeItemId(row).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/'/g, '&#39;');
+  const html = buildDetailHtml(row, { result, isReviewed: () => false, impactRows, nonce: NONCE, cspSource: CSP_SOURCE,
+    origin: 'tree', lineOf: () => 3, threads, feedback: true });
+  assert.match(html, new RegExp(`data-act="comment" data-id="${id}"`), 'the pull request comment');
+  assert.match(html, new RegExp(`data-act="feedback" data-id="${id}"`), 'the feedback draft, a message of its own');
+  assert.match(textOf(html), /Comment on this change Feedback 💬 Feedback on this change/);
+  assert.match(html, /data-act="caller-comment" data-index="0" title="Comment about this call/, 'a caller\'s 💬 starts the pull request comment');
+});

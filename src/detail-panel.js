@@ -43,7 +43,7 @@ function headRelPath(uri, { result, rel }) {
  * @param {string|null} token The current page's nonce; null when the view is disposed.
  * @returns {{ type: 'tick', id: string, on: boolean }|{ type: 'next' }|{ type: 'ready' }|{ type: 'showCallers', id: string }
  *   |{ type: 'computeTestReach' }|{ type: 'openCaller', index: number }|{ type: 'revealThread', id: string }|{ type: 'comment', id: string }
- *   |{ type: 'commentCaller', index: number }|{ type: 'checkoutAndAnalyse' }|null}
+ *   |{ type: 'feedback', id: string }|{ type: 'commentCaller', index: number }|{ type: 'checkoutAndAnalyse' }|null}
  */
 function parseMessage(message, token) {
   if (!message || typeof message !== 'object') return null;
@@ -58,6 +58,7 @@ function parseMessage(message, token) {
   if (m.type === 'openCaller' && Number.isSafeInteger(m.index) && Number(m.index) >= 0) return { type: 'openCaller', index: Number(m.index) };
   if (m.type === 'revealThread' && typeof m.id === 'string' && m.id !== '') return { type: 'revealThread', id: m.id };
   if (m.type === 'comment' && typeof m.id === 'string') return { type: 'comment', id: m.id };
+  if (m.type === 'feedback' && typeof m.id === 'string') return { type: 'feedback', id: m.id };
   if (m.type === 'commentCaller' && Number.isSafeInteger(m.index) && Number(m.index) >= 0) return { type: 'commentCaller', index: Number(m.index) };
   return null;
 }
@@ -181,7 +182,7 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log, revi
   }
 
   const currentRow = () => (shown.id ? provider.rowById(shown.id) : null);
-  // Whether the rows shown are of a local review, whose 💬 buttons start feedback drafts.
+  // Whether the rows shown are of a review of the files on disk, which take feedback drafts.
   const feedbackShown = () => { const actions = feedbackActions(); return !!(actions && actions.available()); };
   /** @param {TreeRow|null} row */
   const threadSectionOf = (row) => buildThreadSection(row, provider.threadsView(), (row && provider.threadsOfRow(row)) || []);
@@ -340,6 +341,7 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log, revi
       }
       return;
     }
+    if (m.type === 'feedback') { await onFeedbackAction({ type: 'comment', id: m.id }, row); return; }
     if (m.type === 'revealThread' || m.type === 'comment' || m.type === 'commentCaller') { await onReviewAction(m, row); return; }
     if (row.type !== 'finding') return;
     const caller = listCallerRows(provider.impactRowsOf(row))[m.index];

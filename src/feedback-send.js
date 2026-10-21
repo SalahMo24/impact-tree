@@ -77,7 +77,8 @@ async function send(vscode, deps, o) {
 
   const store = deps.getSnapshotStore();
   const result = session.state && session.state.result;
-  const reviewed = modeLabel((result && result.mode) || vscode.workspace.getConfiguration('impactTree').get('mode', 'pr'));
+  const source = session.state && session.state.source;
+  const reviewed = reviewedLabel(source, (result && result.mode) || vscode.workspace.getConfiguration('impactTree').get('mode', 'pr'));
   const { makeGit } = require('./engine/git');
   const branch = makeGit(repo).tryRaw(['symbolic-ref', '--quiet', '--short', 'HEAD']);
 
@@ -118,12 +119,29 @@ async function send(vscode, deps, o) {
   // Not awaited: the message stays up while the view switches; showSent handles its own errors.
   void showSent(vscode, `Feedback round ${sent.round} saved to ${sent.relPath}. ${handedOff}${checkpointText}`, sent.absPath, log);
 
-  if (sent.checkpointSha && (!session.state || !session.state.source || session.state.source.kind === 'local')) {
+  // A checked-out pull request is left too: the agent works on the same files on disk, and
+  // what it changes is seen against the round's snapshot. Picking the pull request again
+  // reviews it against its base.
+  const shownNow = session.state && session.state.source;
+  if (sent.checkpointSha && (!shownNow || shownNow.kind === 'local' || shownNow.kind === 'checkout')) {
     await vscode.workspace.getConfiguration('impactTree').update('mode', 'checkpoint', vscode.ConfigurationTarget.Workspace);
     await session.refresh('checkpoint');
   }
   if (deps.afterSend) deps.afterSend();
   await offerPointer(vscode, deps, repo, o);
+}
+
+/**
+ * What the round file says was reviewed: the mode, or the pull request checked out.
+ * @param {any} source The session's source.
+ * @param {string} mode
+ * @returns {string}
+ */
+function reviewedLabel(source, mode) {
+  if (source && source.kind === 'checkout' && source.pr && Number.isSafeInteger(source.pr.number)) {
+    return `Pull request #${source.pr.number} (checked out)`;
+  }
+  return modeLabel(mode);
 }
 
 /**
@@ -209,4 +227,4 @@ async function offerPointer(vscode, deps, repo, o) {
   }
 }
 
-module.exports = { createSendFeedback, saveRound, POINTER_KEY };
+module.exports = { createSendFeedback, saveRound, reviewedLabel, POINTER_KEY };

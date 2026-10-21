@@ -152,6 +152,7 @@ document.addEventListener('click', (event) => {
   else if (act === 'caller') postMessage({ type: 'openCaller', index: Number(el.getAttribute('data-index')) });
   else if (act === 'thread') postMessage({ type: 'revealThread', id: el.getAttribute('data-id') });
   else if (act === 'comment') postMessage({ type: 'comment', id: el.getAttribute('data-id') });
+  else if (act === 'feedback') postMessage({ type: 'feedback', id: el.getAttribute('data-id') });
   else if (act === 'checkout') postMessage({ type: 'checkoutAndAnalyse' });
   else if (act === 'caller-comment') postMessage({ type: 'commentCaller', index: Number(el.getAttribute('data-index')) });
 });
@@ -318,8 +319,9 @@ const CALLER_COMMENT_TITLES = Object.freeze({
 const FEEDBACK_LABELS = Object.freeze({ change: '💬 Feedback on this change', lines: '💬 Feedback on these lines', file: '💬 Feedback on this file' });
 
 /**
- * The Feedback section of a row of a local review: a button that starts a feedback draft
- * on the row in the diff. Nothing for a row that cannot take one (a deleted symbol).
+ * The Feedback section of a row of a review of the files on disk (local, or a checked-out
+ * pull request, next to its Threads section): a button that starts a feedback draft on the
+ * row in the diff. Nothing for a row that cannot take one (a deleted symbol).
  * @param {TreeRow} row
  * @returns {string}
  */
@@ -327,7 +329,7 @@ function feedbackHtml(row) {
   const target = commentTargetOf(row);
   const id = treeItemId(row);
   if (!target || !id) return '';
-  return `<h4>Feedback</h4><div class="actions"><button class="secondary" data-act="comment" data-id="${escapeHtml(id)}" `
+  return `<h4>Feedback</h4><div class="actions"><button class="secondary" data-act="feedback" data-id="${escapeHtml(id)}" `
     + 'title="Starts a feedback draft for the agent in the diff. Nothing is sent until you send your feedback.">'
     + `${FEEDBACK_LABELS[target]}</button></div>`;
 }
@@ -392,18 +394,19 @@ function previewLimitsHtml(result) {
  * @param {TreeRow|null} row
  * @param {{ result: any, isReviewed: (row: TreeRow) => boolean, impactRows: TreeRow[], lineOf: (file: string, offset: number) => number|null,
  *   threads: import('./review-threads').ThreadSection|null, feedback: boolean }} opts `feedback`:
- *   the row is of a local review, whose 💬 buttons start feedback drafts. Ignored when the
- *   row has a Threads section (a pull request's).
+ *   the row is of a review of the files on disk, so it gets a Feedback button. Its callers'
+ *   💬 start feedback drafts too, unless the row has a Threads section (a pull request's),
+ *   whose comments they start instead.
  * @returns {string}
  */
 function bodyHtml(row, { result, isReviewed, impactRows, lineOf, threads, feedback }) {
   if (!row) return `<p class="where">${NO_ROW_HINT}</p>`;
-  const asFeedback = feedback && !threads;
-  const section = threadsHtml(threads, treeItemId(row)) + (asFeedback ? feedbackHtml(row) : '');
+  const section = threadsHtml(threads, treeItemId(row)) + (feedback ? feedbackHtml(row) : '');
   if (row.type === 'reviewFile' || row.type === 'file') return fileHtml(row, isReviewed, section);
   const v = classifyRowVerdict(row);
   let h;
-  const commenting = threads && threads.action ? 'comment' : asFeedback ? 'feedback' : null;
+  // A caller's 💬 starts one kind of comment: the pull request's when it can take one.
+  const commenting = threads && threads.action ? 'comment' : feedback && !threads ? 'feedback' : null;
   if (row.type === 'finding') h = changeHtml(row, { result, impactRows, lineOf, commenting });
   else if (row.type === 'deleted') h = `<h3>${escapeHtml(row.label)}</h3><div class="where">${escapeHtml(row.relPath)} · deleted</div><div class="verdict lv${v.level}">${escapeHtml(v.sentence)}</div>`;
   else h = `<h3>Outside functions</h3><div class="where">${escapeHtml(row.relPath)} · ${escapeHtml(v.text)}</div><div class="verdict lv${v.level}">${escapeHtml(v.sentence)}</div>`;

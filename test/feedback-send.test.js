@@ -8,7 +8,7 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { createSnapshotStore } = require('../src/engine/snapshot-store');
-const { saveRound } = require('../src/feedback-send');
+const { saveRound, reviewedLabel } = require('../src/feedback-send');
 const { parseRound } = require('../src/feedback-file');
 
 const git = (cwd, args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -61,4 +61,10 @@ test('without a store the round is saved with no checkpoint', async (t) => {
   assert.equal(sent.checkpointSha, null);
   const parsed = parseRound(fs.readFileSync(sent.absPath, 'utf8'));
   assert.equal(parsed.ok && parsed.checkpointSha, null);
+});
+
+test('a round sent from a checked-out pull request names the pull request', () => {
+  assert.equal(reviewedLabel({ kind: 'checkout', pr: { number: 42 }, sha: 'a' }, 'pr'), 'Pull request #42 (checked out)');
+  assert.equal(reviewedLabel({ kind: 'local' }, 'pr'), 'Branch vs base');
+  assert.equal(reviewedLabel(undefined, 'working'), 'Uncommitted (agent)');
 });

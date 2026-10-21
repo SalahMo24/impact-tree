@@ -3,10 +3,11 @@
 // Where feedback drafts can be written and how they are drawn, decided without the editor
 // (docs/UX_PLAN.md F1). `feedback-comments.js` connects these to VS Code's comments API.
 //
-// Feedback is offered on a local result only (any local mode: Uncommitted (agent), Since
-// checkpoint, Branch + uncommitted, Branch vs base), and only on the head side of its
-// files: the file on disk, which is the code the agent will change. The base side
-// (`impacttree-base:`) and every pull request document are never offered.
+// Feedback is offered on a result analysed from disk: a local review (any local mode:
+// Uncommitted (agent), Since checkpoint, Branch + uncommitted, Branch vs base) or a pull
+// request checked out here. Only on the head side of its files: the file on disk, which is
+// the code the agent will change. The base side (`impacttree-base:`) and a previewed pull
+// request's documents (`impacttree-pr:`) are never offered; a Preview's files are not on disk.
 
 const path = require('path');
 
@@ -37,24 +38,33 @@ function headFilesOf(result) {
 }
 
 /**
- * The local result feedback can be written on, or null: no result shown, a Preview, or a
- * pull request (previewed or checked out), which has its own review comments.
+ * The result feedback can be written on, or null: no result shown, or a pull request
+ * previewed from GitHub (its files are not on disk). A checked-out pull request takes
+ * feedback as a local review does; its GitHub comments are offered alongside.
  * @param {{ source: unknown, result: unknown, repoRoot: string|null, analysisId: number }} input
  * @returns {FeedbackContext|null}
  */
 function feedbackContextOf({ source, result, repoRoot, analysisId }) {
-  if (!isObject(source) || source.kind !== 'local') return null;
+  if (!isOnDisk(source)) return null;
   if (!isObject(result) || result.tierA || !repoRoot) return null;
   return { analysisId, result, repoRoot, files: headFilesOf(result) };
 }
 
 /**
- * Whether drafts are drawn in the editor now: in a local review, or before anything has
- * been reviewed. Not while a pull request is shown, whose files carry its own threads.
+/**
+ * Whether a source's files are the ones on disk: a local review or a checked-out pull request.
+ * @param {unknown} source
+ * @returns {boolean}
+ */
+const isOnDisk = (source) => isObject(source) && (source.kind === 'local' || source.kind === 'checkout');
+
+/**
+ * Whether drafts are drawn in the editor now: in a review of the files on disk, or before
+ * anything has been reviewed. Not while a previewed pull request is shown.
  * @param {unknown} source The session's source; undefined before the first analysis.
  * @returns {boolean}
  */
-const drawsDrafts = (source) => source === undefined || source === null || (isObject(source) && source.kind === 'local');
+const drawsDrafts = (source) => source === undefined || source === null || isOnDisk(source);
 
 /**
  * The repository-relative path of a document on disk, or null for another scheme or a
@@ -135,4 +145,4 @@ function draftThreadSpecs(items, relPath, lineCount) {
     .map(({ id, line, label, body }) => ({ id, line, label, body }));
 }
 
-module.exports = { feedbackContextOf, headFilesOf, drawsDrafts, relPathOf, symbolAt, draftThreadSpecs, draftLabel, DRAFT_LABEL };
+module.exports = { isOnDisk, feedbackContextOf, headFilesOf, drawsDrafts, relPathOf, symbolAt, draftThreadSpecs, draftLabel, DRAFT_LABEL };
