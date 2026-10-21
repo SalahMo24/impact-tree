@@ -918,9 +918,64 @@ function pendingCount(threads) {
   return total;
 }
 
+/**
+ * @typedef {object} MergeState
+ * @property {'clean'|'blocked'|'conflict'|'unknown'|'done'} tone `clean` only when GitHub says so.
+ * @property {string} headline
+ * @property {string[]} reasons Why, plus notes (merge queue, a newer head).
+ * @property {boolean} retry The headline is not an answer yet: offer Refresh or Retry.
+ */
+
+/**
+ * Whether the pull request can be merged, in words. Never `clean` when unsure. Pure.
+ * @param {{ state: string, baseRefName: string }} pr
+ * @param {import('./pr-review-data').PullRequestOverview} overview
+ * @returns {MergeState}
+ */
+function mergeStateOf(pr, overview) {
+  // The review query already says whether it is merged or closed; the overview is not needed for that.
+  if (pr.state === 'MERGED') return { tone: 'done', headline: 'Merged.', reasons: [], retry: false };
+  if (pr.state === 'CLOSED') return { tone: 'done', headline: 'Closed without merging.', reasons: [], retry: false };
+  if (overview.kind === 'failed') {
+    return { tone: 'unknown', headline: `Merge state could not be loaded: ${overview.error.message}`, reasons: [], retry: true };
+  }
+  const { merge, checks } = overview;
+  const base = pr.baseRefName;
+  /** @type {MergeState} */
+  let result;
+  if (merge.isDraft || merge.mergeStateStatus === 'DRAFT') {
+    result = { tone: 'blocked', headline: 'This pull request is a draft.', reasons: ['Mark it ready for review on GitHub.'], retry: false };
+  } else if (merge.mergeable === 'CONFLICTING' || merge.mergeStateStatus === 'DIRTY') {
+    result = { tone: 'conflict', headline: `This branch has conflicts with ${base}.`, reasons: ['Resolve them in the checkout and push, or on GitHub.'], retry: false };
+  } else if (merge.mergeable === 'UNKNOWN' || merge.mergeStateStatus === 'UNKNOWN') {
+    result = { tone: 'unknown', headline: 'GitHub is still working out whether this can merge.', reasons: [], retry: true };
+  } else if (merge.mergeStateStatus === 'BLOCKED') {
+    /** @type {string[]} */
+    const reasons = [];
+    const required = checks.kind === 'ready' ? checks.items.filter((c) => c.required) : [];
+    for (const c of required) if (c.state === 'failed') reasons.push(`Required check ${c.name} failed`);
+    for (const c of required) if (c.state === 'pending') reasons.push(`Required check ${c.name} has not finished`);
+    if (merge.reviewDecision === 'CHANGES_REQUESTED') reasons.push('Changes were requested');
+    if (merge.reviewDecision === 'REVIEW_REQUIRED') reasons.push('An approving review is required');
+    // Checks that were not read can only matter when nothing read explains the block.
+    const unread = checks.kind === 'failed' || (checks.kind === 'ready' && checks.incomplete !== null);
+    if (!reasons.length) reasons.push(unread ? 'The required checks could not all be read' : 'Branch protection blocks the merge; GitHub does not say why here.');
+    result = { tone: 'blocked', headline: 'Merging is blocked:', reasons, retry: false };
+  } else if (merge.mergeStateStatus === 'BEHIND') {
+    result = { tone: 'blocked', headline: `This branch is behind ${base} and must be updated first.`, reasons: [], retry: false };
+  } else if (merge.mergeStateStatus === 'UNSTABLE') {
+    result = { tone: 'clean', headline: `No conflicts with ${base}. Some checks that are not required are failing.`, reasons: [], retry: false };
+  } else {
+    result = { tone: 'clean', headline: `No conflicts with ${base}. Ready to merge.`, reasons: [], retry: false };
+  }
+  if (merge.isMergeQueueEnabled) result.reasons.push('This branch uses a merge queue: merge on GitHub.');
+  if (merge.headMoved) result.reasons.push('GitHub has a newer head than the one reviewed; refresh the analysis.');
+  return result;
+}
+
 module.exports = {
   DEFAULT_BUDGETS, MAX_BUDGET, PAGE_SIZE, COMMENTS_PER_THREAD, TIMELINE_WINDOW,
   REVIEW_QUERY, THREADS_PAGE_QUERY, FILES_PAGE_QUERY, OVERVIEW_QUERY, CHECKS_PAGE_QUERY,
   loadPullRequestReview, normaliseFirstPage, normaliseThread, commentedLineOf,
-  threadsForRange, threadsForFile, openCount, pendingCount,
+  threadsForRange, threadsForFile, openCount, pendingCount, mergeStateOf,
 };

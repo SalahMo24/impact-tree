@@ -2,7 +2,7 @@
 'use strict';
 const crypto = require('crypto');
 const { reviewDataOf } = require('./pr-review-store');
-const { buildPullRequestHtml, pageModelOf, pendingStatusOf, submittedMessage } = require('./pr-overview-html');
+const { buildPullRequestHtml, pageModelOf, pendingStatusOf, submittedMessage, mergeRules, METHOD_WORDS } = require('./pr-overview-html');
 
 // The Pull Request tab (review loop L7): one editor tab per window showing the pull
 // request under review, its timeline, the viewer's pending comments, and the form that
@@ -14,6 +14,7 @@ const { buildPullRequestHtml, pageModelOf, pendingStatusOf, submittedMessage } =
 
 /** @typedef {import('./pr-overview-html').ReviewEvent} ReviewEvent */
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
+/** @typedef {import('./pr-overview-html').MergeMethod} MergeMethod */
 
 const VIEW_TYPE = 'impactTree.pullRequest';
 const CONTEXT_KEY = 'impactTree.hasPullRequestReview';
@@ -23,6 +24,7 @@ const CONTEXT_KEY = 'impactTree.hasPullRequestReview';
 // shows the data or a Retry.
 const LOADING_CONTEXT_KEY = 'impactTree.pullRequestReviewLoading';
 const REVIEW_EVENTS = Object.freeze(['COMMENT', 'APPROVE', 'REQUEST_CHANGES']);
+const MERGE_METHODS = Object.freeze(['MERGE', 'SQUASH', 'REBASE']);
 /**
  * The longest summary accepted from the page, in UTF-16 code units: four times GitHub's
  * own 65,536-character limit, so a real draft is never refused here (GitHub refuses it with
@@ -38,6 +40,7 @@ const MAX_DRAFTS = 20;
 
 /**
  * @typedef {{ type: 'submit', event: ReviewEvent, body: string, approveAnyway: boolean }
+ *   | { type: 'merge', method: MergeMethod }
  *   | { type: 'discard' } | { type: 'retry' } | { type: 'ready', body?: string }
  *   | { type: 'revealThread', threadId: string } | { type: 'revealRow', rowId: string }
  *   | { type: 'draft', body: string } | { type: 'openLink', url: string }} PageMessage
@@ -65,6 +68,7 @@ function parseMessage(message, token) {
     case 'submit':
       if (!REVIEW_EVENTS.includes(/** @type {string} */ (m.event)) || !isBody(m.body) || typeof m.approveAnyway !== 'boolean') return null;
       return { type: 'submit', event: /** @type {ReviewEvent} */ (m.event), body: m.body, approveAnyway: m.approveAnyway };
+    case 'merge': return MERGE_METHODS.includes(/** @type {string} */ (m.method)) ? { type: 'merge', method: /** @type {MergeMethod} */ (m.method) } : null;
     case 'discard': return { type: 'discard' };
     case 'retry': return { type: 'retry' };
     case 'ready': return m.body === undefined ? { type: 'ready' } : isBody(m.body) ? { type: 'ready', body: m.body } : null;
@@ -84,7 +88,8 @@ function parseMessage(message, token) {
  * @property {string} draftKey Webview state identity, replaced when submitted text is cleared.
  * @property {string|null} renderedKey The page model last rendered, without the draft.
  * @property {string|null} error The last submit or discard failure, shown in the page.
- * @property {null|'submit'|'discard'} busy
+ * @property {{ ok: boolean, text: string }|null} mergeResult The last merge's outcome, kept until the next action.
+ * @property {null|'submit'|'discard'|'merge'} busy
  * @property {Array<{ dispose(): any }>} subscriptions
  */
 
@@ -105,7 +110,7 @@ function parseMessage(message, token) {
  * closed or replaced publishes nothing to the page.
  * @param {any} vscode
  * @param {{
- *   store: Pick<import('./pr-review-store').PullRequestReviewStore, 'getState'|'onDidChange'|'submitReview'|'discardPendingReview'|'refresh'>,
+ *   store: Pick<import('./pr-review-store').PullRequestReviewStore, 'getState'|'onDidChange'|'submitReview'|'discardPendingReview'|'mergePullRequest'|'refresh'>,
  *   provider: { attentionLeft: () => TreeRow[]|null, reviewCounts: () => { total: number, left: number }|null,
  *     onDidChangeReview: (listener: (e: any) => void) => { dispose(): any },
  *     onDidChangePresentation: (listener: (e: any) => void) => { dispose(): any } },
@@ -137,7 +142,7 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, revealThre
   /** @param {OpenPanel} open */
   const modelOf = (open) => pageModelOf(store.getState(), {
     attentionLeft: provider.attentionLeft(), counts: provider.reviewCounts(),
-    draft: drafts.get(open.number) ?? '', error: open.error, busy: open.busy,
+    draft: drafts.get(open.number) ?? '', error: open.error, busy: open.busy, mergeResult: open.mergeResult,
   });
 
   /**
@@ -215,7 +220,7 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, revealThre
     const panel = vscode.window.createWebviewPanel(VIEW_TYPE, `Pull Request #${number}`, vscode.ViewColumn.Active,
       { enableScripts: true, localResourceRoots: [], retainContextWhenHidden: false });
     /** @type {OpenPanel} */
-    const opened = { panel, number, draftKey: crypto.randomBytes(16).toString('base64'), token: null, renderedKey: null, error: null, busy: null, subscriptions: [] };
+    const opened = { panel, number, draftKey: crypto.randomBytes(16).toString('base64'), token: null, renderedKey: null, error: null, mergeResult: null, busy: null, subscriptions: [] };
     current = opened;
     opened.subscriptions = [
       panel.webview.onDidReceiveMessage((/** @type {unknown} */ m) => onMessage(opened, m)
@@ -250,6 +255,7 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, revealThre
     }
     owner.busy = 'submit';
     owner.error = null;
+    owner.mergeResult = null;
     render();
     let result;
     try {
@@ -283,6 +289,7 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, revealThre
     if (answer !== 'Cancel review' || current !== owner || owner.busy) return;
     owner.busy = 'discard';
     owner.error = null;
+    owner.mergeResult = null;
     render();
     let result;
     try {
@@ -298,6 +305,57 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, revealThre
     if (current === owner) render();
   }
 
+  /**
+   * Merges after the reviewer confirms in a modal naming the method and the target branch.
+   * The method must be one the page model offers now, whatever the page posted. A merge is
+   * never retried; its outcome belongs to the tab that asked.
+   * @param {OpenPanel} owner
+   * @param {Extract<PageMessage, { type: 'merge' }>} m
+   */
+  async function merge(owner, m) {
+    if (owner.busy) return;
+    const model = modelOf(owner);
+    if (!model || model.kind !== 'ready' || !model.pr) return;
+    const rules = mergeRules(model);
+    if (rules.disabled || !rules.methods.includes(m.method)) {
+      log(`pull request tab: ignored a merge that the page does not offer (${m.method})`);
+      return;
+    }
+    const base = model.pr.baseRefName;
+    const words = METHOD_WORDS[m.method];
+    const answer = await vscode.window.showWarningMessage(`${words} PR #${owner.number} into ${base}?`,
+      { modal: true, detail: 'GitHub\u2019s default commit message is used. This cannot be undone here.' }, words);
+    if (answer !== words || current !== owner || owner.busy) return;
+    // The modal was open for a while: look again at what would be merged.
+    const again = modelOf(owner);
+    const rulesNow = again && again.kind === 'ready' ? mergeRules(again) : null;
+    if (!rulesNow || rulesNow.disabled || !rulesNow.methods.includes(m.method)) {
+      owner.mergeResult = { ok: false, text: 'Not merged: the pull request changed while you were confirming. Check the merge state and try again.' };
+      render();
+      return;
+    }
+    owner.busy = 'merge';
+    owner.error = null;
+    owner.mergeResult = null;
+    render();
+    let result;
+    try {
+      result = await store.mergePullRequest({ method: m.method });
+    } finally {
+      owner.busy = null;
+    }
+    if (result.ok) {
+      const oid = result.value ? ` as ${result.value.slice(0, 7)}` : '';
+      owner.mergeResult = { ok: true, text: `Merged into ${base}${oid}.` };
+      vscode.window.showInformationMessage(`Impact Tree: PR #${owner.number} was merged into ${base}`);
+    } else {
+      // A refusal the store made unsent is ours; anything else is GitHub's.
+      owner.mergeResult = { ok: false, text: `${result.error.name === 'ReviewStoreError' ? 'Not merged' : 'GitHub refused the merge'}: ${result.error.message}` };
+      vscode.window.showErrorMessage(`Impact Tree: ${owner.mergeResult.text}`);
+    }
+    if (current === owner) render();
+  }
+
   /** @param {OpenPanel} owner @param {unknown} raw */
   async function onMessage(owner, raw) {
     if (current !== owner) return;
@@ -309,6 +367,7 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, revealThre
         post(owner, { type: 'draft', body: drafts.get(owner.number) ?? '' }); return;
       case 'draft': keepDraft(owner.number, m.body); return;
       case 'submit': await submit(owner, m); return;
+      case 'merge': await merge(owner, m); return;
       case 'discard': await discard(owner); return;
       case 'retry': await store.refresh(); return;
       case 'openLink': {

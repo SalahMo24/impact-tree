@@ -6,7 +6,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  buildPullRequestHtml, pageModelOf, mergeStateOf, buttonRules, pendingStatusOf, submittedMessage, firstLineOf, formatWhen, OWN_PR_REASON,
+  buildPullRequestHtml, pageModelOf, mergeStateOf, buttonRules, mergeRules, pendingStatusOf, submittedMessage, firstLineOf, formatWhen, OWN_PR_REASON,
 } = require('../src/pr-overview-html');
 const { createFormPage } = require('./webview-page');
 
@@ -538,4 +538,111 @@ test('the overview parts have no inline style or handler in any state', () => {
     assert.ok(!/\sstyle=/.test(doc));
     assert.ok(!/\son\w+=/.test(doc));
   }
+});
+
+// ---- merging --------------------------------------------------------------------------
+
+const modelFor = (overview, over = {}, prOver = {}) => {
+  const model = reviewModel({ overview });
+  model.pr = { ...model.pr, ...prOver };
+  return pageModelOf(ready(model), panel(over));
+};
+const rulesFor = (overview, over, prOver) => mergeRules(modelFor(overview, over, prOver));
+const pickerOptions = (doc) => [...doc.matchAll(/<option value="(\w+)">([^<]*)<\/option>/g)].map((m) => [m[1], m[2]]);
+
+test('mergeRules: clean offers the allowed methods in GitHub\'s order, the first by default', () => {
+  const all = rulesFor(overviewWith());
+  assert.deepEqual(all, { show: true, methods: ['MERGE', 'SQUASH', 'REBASE'], notes: [], disabled: false, reason: null });
+  const some = rulesFor(overviewWith({}, { methods: { merge: false, squash: true, rebase: false } }));
+  assert.deepEqual(some.methods, ['SQUASH']);
+  assert.deepEqual(some.notes, ['Merge commits are not allowed in this repository.', 'Rebase is not allowed in this repository.']);
+  assert.equal(some.disabled, false);
+  assert.equal(rulesFor(overviewWith({}, { mergeStateStatus: 'UNSTABLE' })).disabled, false, 'failing checks that are not required do not block');
+});
+
+test('mergeRules: only a clean answer enables Merge, and every other state says why', () => {
+  const why = (merge, over, prOver) => { const r = rulesFor(overviewWith({}, merge), over, prOver); return [r.disabled, r.reason]; };
+  assert.deepEqual(why({ mergeStateStatus: 'BLOCKED' }), [true, 'Blocked: see the reasons above.']);
+  assert.deepEqual(why({ mergeStateStatus: 'BEHIND' }), [true, 'Blocked: see the reasons above.']);
+  assert.deepEqual(why({ isDraft: true, mergeStateStatus: 'DRAFT' }), [true, 'Blocked: see the reasons above.']);
+  assert.deepEqual(why({ mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY' }), [true, 'Resolve the conflicts first.']);
+  assert.deepEqual(why({ mergeable: 'UNKNOWN' }), [true, 'Waiting for GitHub’s answer.']);
+  assert.deepEqual(why({ mergeStateStatus: 'UNKNOWN' }), [true, 'Waiting for GitHub’s answer.']);
+  assert.deepEqual(why({ isMergeQueueEnabled: true }), [true, 'This branch uses a merge queue: merge on GitHub.']);
+  assert.deepEqual(why({ headMoved: true }), [true, 'GitHub has a newer head than the one reviewed; refresh the analysis.']);
+  for (const viewerPermission of ['TRIAGE', 'READ', null]) assert.deepEqual(why({ viewerPermission }), [true, 'You need write access to merge.']);
+  for (const viewerPermission of ['ADMIN', 'MAINTAIN', 'WRITE']) assert.equal(why({ viewerPermission })[0], false);
+  assert.deepEqual(why({ methods: { merge: false, squash: false, rebase: false } }), [true, 'This repository allows no merge method.']);
+  const failed = rulesFor({ kind: 'failed', error: new Error('502') });
+  assert.deepEqual([failed.show, failed.disabled, failed.reason, failed.methods], [true, true, 'The merge state could not be loaded.', []]);
+});
+
+test('mergeRules: busy disables without a reason; merged and closed show no button', () => {
+  const busy = rulesFor(overviewWith(), { busy: 'merge' });
+  assert.deepEqual([busy.show, busy.disabled, busy.reason], [true, true, null]);
+  assert.equal(rulesFor(overviewWith(), { busy: 'submit' }).disabled, true);
+  for (const state of ['MERGED', 'CLOSED']) {
+    const r = rulesFor(overviewWith(), {}, { state });
+    assert.equal(r.show, false, state);
+  }
+});
+
+test('the Merge box: picker with only the allowed methods, Merge…, the notes, and no inline handler', () => {
+  const doc = pageOf(overviewWith({}, { methods: { merge: true, squash: true, rebase: false } }));
+  assert.deepEqual(pickerOptions(doc), [['MERGE', 'Create a merge commit'], ['SQUASH', 'Squash and merge']]);
+  assert.ok(!isDisabled(doc, 'merge-button'));
+  assert.match(doc, /data-act="merge" data-el="merge-button">Merge…<\/button>/);
+  assert.match(textOf(doc), /Rebase is not allowed in this repository\./);
+  assert.equal(tagOf(doc, 'merge-reason'), null, 'no reason while enabled');
+  assert.ok(doc.indexOf('data-el="merge-button"') < doc.indexOf('Finish your review'));
+  assert.ok(!/\sstyle=|\son\w+=/.test(doc));
+});
+
+test('the Merge box: blocked, conflicts, unknown and a failed overview disable Merge… with the reason', () => {
+  const cases = [
+    [overviewWith({}, { mergeStateStatus: 'BLOCKED' }), /Blocked: see the reasons above\./, true],
+    [overviewWith({}, { mergeStateStatus: 'DIRTY' }), /Resolve the conflicts first\./, true],
+    [overviewWith({}, { mergeable: 'UNKNOWN' }), /Waiting for GitHub’s answer\./, true],
+    [{ kind: 'failed', error: new Error('502') }, /The merge state could not be loaded\./, false],
+  ];
+  for (const [overview, reason, hasPicker] of cases) {
+    const doc = pageOf(overview);
+    assert.ok(isDisabled(doc, 'merge-button'), String(reason));
+    assert.match(textOf(doc), reason);
+    assert.equal(pickerOptions(doc).length > 0, hasPicker);
+  }
+});
+
+test('the Merge box: running disables the picker and the button and says so; the result is kept', () => {
+  const doc = pageOf(overviewWith(), { busy: 'merge' });
+  assert.ok(isDisabled(doc, 'merge-button') && isDisabled(doc, 'merge-method'));
+  assert.match(textOf(doc), /Merging…/);
+  const merged = html(ready(reviewModel({ overview: overviewWith() })), { mergeResult: { ok: true, text: 'Merged into main as 4f2a9c1.' } });
+  assert.match(tagOf(merged, 'merge-result'), /class="ok text"/);
+  assert.match(textOf(merged), /Merged into main as 4f2a9c1\./);
+  const refused = html(ready(reviewModel({ overview: overviewWith() })), { mergeResult: { ok: false, text: 'GitHub refused the merge: <b>Head branch was modified</b>' } });
+  assert.match(tagOf(refused, 'merge-result'), /class="err text" data-el="merge-result" role="alert"/);
+  assert.ok(!refused.includes('<b>Head'), 'GitHub\'s words are escaped');
+});
+
+test('a merged or closed pull request says so and has no Merge button', () => {
+  for (const [state, words] of [['MERGED', /Merged\./], ['CLOSED', /Closed without merging\./]]) {
+    const model = reviewModel();
+    model.pr.state = state;
+    const doc = html(ready(model));
+    assert.match(textOf(doc), words);
+    assert.equal(tagOf(doc, 'merge-button'), null);
+    assert.equal(tagOf(doc, 'merge-method'), null);
+  }
+});
+
+test('page: Merge… posts the chosen method; a disabled button posts nothing', () => {
+  const p = page(ready(), {});
+  p.el('merge-method').value = 'SQUASH';
+  p.click('merge-button');
+  assert.deepEqual(lastSent(p), { type: 'merge', method: 'SQUASH', token: NONCE });
+  const blocked = page(ready(reviewModel({ overview: overviewWith({}, { mergeStateStatus: 'BLOCKED' }) })));
+  const before = blocked.sent.length;
+  blocked.click('merge-button');
+  assert.equal(blocked.sent.length, before);
 });

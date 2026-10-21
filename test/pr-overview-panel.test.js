@@ -38,9 +38,9 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
 function fakeStore(initial) {
   let state = initial;
   const listeners = new Set();
-  const calls = { submit: [], discard: 0, refresh: 0 };
+  const calls = { submit: [], discard: 0, refresh: 0, merge: [] };
   // Each mutation answers with the next queued answer (a value or a promise), else ok.
-  const answers = { submit: [], discard: [] };
+  const answers = { submit: [], discard: [], merge: [] };
   return {
     calls, answers,
     getState: () => state,
@@ -49,6 +49,7 @@ function fakeStore(initial) {
     listeners: () => listeners.size,
     submitReview(input) { calls.submit.push(input); return Promise.resolve(answers.submit.shift() ?? { ok: true }); },
     discardPendingReview() { calls.discard++; return Promise.resolve(answers.discard.shift() ?? { ok: true }); },
+    mergePullRequest(input) { calls.merge.push(input); return Promise.resolve(answers.merge.shift() ?? { ok: true, value: 'f'.repeat(40) }); },
     async refresh() { calls.refresh++; },
   };
 }
@@ -119,8 +120,9 @@ function setup(initial = ready(), { modalAnswer = 'Cancel review' } = {}) {
   };
 }
 const tokenOf = (panel) => /<script nonce="([^"]+)"/.exec(panel.webview.html)[1];
+const tagOfPanel = (panel, name) => new RegExp(`<\\w+[^>]*data-el="${name}"[^>]*>`).exec(panel.webview.html)?.[0] ?? '';
 const textOf = (panel) => panel.webview.html.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/g, ' ').replace(/<[^>]*>/g, ' ')
-  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
+  .replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 
 // ---- opening ------------------------------------------------------------------------
 
@@ -163,7 +165,8 @@ test('parseMessage accepts only the documented shapes with the current token', (
   const t = 'tok';
   const ok = [
     [{ type: 'submit', event: 'APPROVE', body: '', approveAnyway: false }, { type: 'submit', event: 'APPROVE', body: '', approveAnyway: false }],
-    [{ type: 'discard' }, { type: 'discard' }], [{ type: 'retry' }, { type: 'retry' }], [{ type: 'ready' }, { type: 'ready' }],
+    [{ type: 'discard' }, { type: 'discard' }], [{ type: 'retry' }, { type: 'retry' }],
+    ...['MERGE', 'SQUASH', 'REBASE'].map((method) => [{ type: 'merge', method }, { type: 'merge', method }]), [{ type: 'ready' }, { type: 'ready' }],
     [{ type: 'revealThread', threadId: 'T_1' }, { type: 'revealThread', threadId: 'T_1' }],
     [{ type: 'revealRow', rowId: 'finding:a:b:1' }, { type: 'revealRow', rowId: 'finding:a:b:1' }],
     [{ type: 'draft', body: 'x' }, { type: 'draft', body: 'x' }],
@@ -179,6 +182,8 @@ test('parseMessage accepts only the documented shapes with the current token', (
     { type: 'submit', event: 'COMMENT', body: 'x'.repeat(262145), approveAnyway: false, token: t },
     { type: 'revealThread', threadId: '', token: t }, { type: 'revealThread', threadId: 5, token: t },
     { type: 'revealRow', token: t }, { type: 'draft', token: t }, { type: 'merge', token: t },
+    { type: 'merge', method: 'merge', token: t }, { type: 'merge', method: 'FAST_FORWARD', token: t }, { type: 'merge', method: 3, token: t },
+    { type: 'merge', method: 'SQUASH' },
     { type: 'openLink', token: t }, { type: 'openLink', url: 5, token: t }, { type: 'openLink', url: '', token: t },
     { type: 'openLink', url: 'http://github.com/x', token: t }, { type: 'openLink', url: 'file:///etc/passwd', token: t },
     { type: 'openLink', url: 'javascript:alert(1)', token: t }, { type: 'openLink', url: `https://x/${'a'.repeat(3000)}`, token: t },
@@ -198,9 +203,10 @@ test('messages with no token, a wrong one, or an older page\'s token do nothing'
     await env.panel().send({ type: 'revealThread', threadId: 'T_1', token });
     await env.panel().send({ type: 'retry', token });
     await env.panel().send({ type: 'discard', token });
+    await env.panel().send({ type: 'merge', method: 'SQUASH', token });
   }
   await settle();
-  assert.deepEqual(env.store.calls, { submit: [], discard: 0, refresh: 0 });
+  assert.deepEqual(env.store.calls, { submit: [], discard: 0, refresh: 0, merge: [] });
   assert.deepEqual(env.seen.executed, []);
   assert.equal(env.seen.modals.length, 0);
   env.dispose();
@@ -396,6 +402,160 @@ test('Cancel review asks first; declining sends nothing, confirming discards thr
   env.dispose();
 });
 
+// ---- merge --------------------------------------------------------------------------
+
+const mergeable = (merge = {}, { state = 'OPEN' } = {}) => {
+  const model = reviewModel({ overview: { ...CLEAN_OVERVIEW, merge: { ...CLEAN_OVERVIEW.merge, ...merge } } });
+  model.pr.state = state;
+  return ready(model);
+};
+const OID = 'f'.repeat(40);
+
+test('merge: the modal names the method and the base; confirming merges with that method and shows the commit', async () => {
+  const env = setup(mergeable(), { modalAnswer: 'Squash and merge' });
+  env.open();
+  env.page().el('merge-method').value = 'SQUASH';
+  env.page().click('merge-button');
+  await settle();
+  assert.equal(env.seen.modals.length, 1);
+  assert.equal(env.seen.modals[0].m, 'Squash and merge PR #7 into main?');
+  assert.deepEqual(env.seen.modals[0].items, ['Squash and merge']);
+  assert.match(env.seen.modals[0].options.detail, /GitHub’s default commit message is used\./);
+  assert.deepEqual(env.store.calls.merge, [{ method: 'SQUASH' }]);
+  assert.match(textOf(env.panel()), /Merged into main as ffffff[f]\./);
+  assert.deepEqual(env.seen.infos, ['Impact Tree: PR #7 was merged into main']);
+  env.dispose();
+});
+
+test('merge: each method has its own words in the modal', async () => {
+  for (const [method, words] of [['MERGE', 'Create a merge commit'], ['REBASE', 'Rebase and merge']]) {
+    const env = setup(mergeable(), { modalAnswer: words });
+    env.open();
+    await env.send({ type: 'merge', method });
+    assert.equal(env.seen.modals[0].m, `${words} PR #7 into main?`);
+    assert.deepEqual(env.store.calls.merge, [{ method }]);
+    env.dispose();
+  }
+});
+
+test('merge: cancelling the modal sends nothing and changes nothing', async () => {
+  const env = setup(mergeable(), { modalAnswer: undefined });
+  env.open();
+  const before = env.panel().webview.html;
+  await env.send({ type: 'merge', method: 'SQUASH' });
+  assert.equal(env.seen.modals.length, 1);
+  assert.deepEqual(env.store.calls.merge, []);
+  assert.equal(env.panel().webview.html, before);
+  env.dispose();
+});
+
+test('merge: a method the page does not offer is refused even if the page posts it, without a modal', async () => {
+  const env = setup(mergeable({ methods: { merge: true, squash: true, rebase: false } }), { modalAnswer: 'Rebase and merge' });
+  env.open();
+  await env.send({ type: 'merge', method: 'REBASE' });
+  assert.equal(env.seen.modals.length, 0);
+  assert.deepEqual(env.store.calls.merge, []);
+  assert.ok(env.seen.log.some((m) => /ignored a merge/.test(m)));
+  env.dispose();
+});
+
+test('merge: nothing is asked or sent unless the state is clean, whatever the page posts', async () => {
+  const blockedStates = [{ mergeStateStatus: 'BLOCKED' }, { mergeStateStatus: 'DIRTY' }, { mergeable: 'UNKNOWN' }, { isDraft: true, mergeStateStatus: 'DRAFT' },
+    { isMergeQueueEnabled: true }, { viewerPermission: 'READ' }, { headMoved: true }];
+  for (const merge of blockedStates) {
+    const env = setup(mergeable(merge), { modalAnswer: 'Squash and merge' });
+    env.open();
+    await env.send({ type: 'merge', method: 'SQUASH' });
+    assert.equal(env.seen.modals.length, 0, JSON.stringify(merge));
+    assert.deepEqual(env.store.calls.merge, [], JSON.stringify(merge));
+    env.dispose();
+  }
+  for (const state of ['MERGED', 'CLOSED']) {
+    const env = setup(mergeable({}, { state }), { modalAnswer: 'Squash and merge' });
+    env.open();
+    await env.send({ type: 'merge', method: 'SQUASH' });
+    assert.deepEqual(env.store.calls.merge, [], state);
+    env.dispose();
+  }
+});
+
+test('merge: if the pull request stops being mergeable while the modal is open, nothing is sent', async () => {
+  const env = setup(mergeable(), { modalAnswer: 'Squash and merge' });
+  env.open();
+  // The answer arrives after the reviewer looked away: GitHub's state changed meanwhile.
+  const blocked = mergeable({ mergeStateStatus: 'BLOCKED' });
+  const realGetState = env.store.getState;
+  env.store.getState = () => (env.seen.modals.length ? blocked : realGetState());
+  await env.send({ type: 'merge', method: 'SQUASH' });
+  assert.deepEqual(env.store.calls.merge, []);
+  assert.match(textOf(env.panel()), /Not merged: the pull request changed while you were confirming/);
+  env.dispose();
+});
+
+test('merge: GitHub\'s refusal is shown in the box and as a message; the merge is not retried', async () => {
+  for (const message of ['Head branch was modified. Review and try the merge again.', 'Pull Request is not mergeable', 'Required status check "build" is expected.']) {
+    const env = setup(mergeable(), { modalAnswer: 'Squash and merge' });
+    env.open();
+    env.store.answers.merge.push({ ok: false, error: Object.assign(new Error(message), { name: 'GitHubGraphQLError' }) });
+    await env.send({ type: 'merge', method: 'SQUASH' });
+    assert.match(textOf(env.panel()), new RegExp(`GitHub refused the merge: ${message.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.match(tagOfPanel(env.panel(), 'merge-result'), /class="err text"/);
+    assert.deepEqual(env.seen.errors, [`Impact Tree: GitHub refused the merge: ${message}`]);
+    assert.equal(env.store.calls.merge.length, 1);
+    assert.ok(!env.page().el('merge-button').hasAttribute('disabled'), 'the reviewer may decide to try again');
+    env.dispose();
+  }
+});
+
+test('merge: a refusal the store made unsent is not called GitHub\'s', async () => {
+  const env = setup(mergeable(), { modalAnswer: 'Squash and merge' });
+  env.open();
+  env.store.answers.merge.push({ ok: false, error: Object.assign(new Error('You need write access to merge.'), { name: 'ReviewStoreError' }) });
+  await env.send({ type: 'merge', method: 'SQUASH' });
+  assert.match(textOf(env.panel()), /Not merged: You need write access to merge\./);
+  env.dispose();
+});
+
+test('merge: while it runs everything is disabled and a second merge is ignored; the result is kept until the next action', async () => {
+  const env = setup(withPending(), { modalAnswer: 'Squash and merge' });
+  env.open();
+  const answer = deferred();
+  env.store.answers.merge.push(answer.promise);
+  await env.send({ type: 'merge', method: 'SQUASH' });
+  for (const name of ['merge-button', 'merge-method', 'approve', 'comment', 'cancel']) assert.ok(env.page().el(name).hasAttribute('disabled'), name);
+  assert.match(textOf(env.panel()), /Merging…/);
+  await env.send({ type: 'merge', method: 'SQUASH' });
+  await env.send({ type: 'submit', event: 'COMMENT', body: 'x', approveAnyway: false });
+  assert.equal(env.store.calls.merge.length, 1);
+  assert.equal(env.store.calls.submit.length, 0, 'a submit waits for the merge to end');
+  answer.resolve({ ok: true, value: OID });
+  await settle();
+  assert.match(textOf(env.panel()), /Merged into main as fffffff\./);
+  env.store.set(mergeable({}, { state: 'MERGED' }));
+  assert.match(textOf(env.panel()), /Merged\..*Merged into main as fffffff\./, 'the reloaded state says Merged, and the result stays');
+  await env.send({ type: 'discard' });
+  env.dispose();
+});
+
+test('merge: a merge that finishes after its tab closed publishes nothing to a page, and the next tab has no result', async () => {
+  const env = setup(mergeable(), { modalAnswer: 'Squash and merge' });
+  env.open();
+  const answer = deferred();
+  env.store.answers.merge.push(answer.promise);
+  await env.send({ type: 'merge', method: 'SQUASH' });
+  const first = env.panel();
+  env.store.set(ready(reviewModel({ number: 8 }), { ...TARGET, number: 8 }));
+  assert.ok(first.disposed);
+  answer.resolve({ ok: true, value: OID });
+  await settle();
+  assert.deepEqual(env.seen.log.filter((m) => /disposed/.test(m)), []);
+  assert.deepEqual(env.seen.infos, ['Impact Tree: PR #7 was merged into main'], 'the merge happened, so the user is told');
+  env.store.set(mergeable());
+  env.open();
+  assert.ok(!/Merged into main as/.test(textOf(env.panel())));
+  env.dispose();
+});
+
 // ---- closing with the review --------------------------------------------------------
 
 test('the tab closes when the pull request review ends or moves to another pull request, not on a new head', () => {
@@ -565,12 +725,12 @@ const HEAD = 'a'.repeat(40);
 const connection = (nodes) => ({ nodes, pageInfo: { hasNextPage: false, endCursor: null } });
 // GitHub's answer for PR #7: one resolved thread and, while `pending` is set, a pending
 // review holding one of the viewer's comments in it.
-function githubAnswer({ pending }) {
+function githubAnswer({ pending, state = 'OPEN' }) {
   const posted = { id: 'C_1', databaseId: 1, author: { login: 'bob', avatarUrl: null }, body: 'why?', createdAt: '2026-01-02T03:04:05Z',
     state: 'SUBMITTED', viewerDidAuthor: false, viewerCanUpdate: false, url: 'https://x/1', diffHunk: '@@ -3 +3 @@\n+const a = 1;', commit: null, originalCommit: null, originalLine: null, originalStartLine: null };
   const mine = { ...posted, id: 'C_2', databaseId: 2, body: 'rename', state: 'PENDING', viewerDidAuthor: true };
   return { repository: { pullRequest: {
-    id: 'PR_7', number: 7, title: 'Seven', body: 'b', url: 'https://x', state: 'OPEN', author: null, viewerDidAuthor: false,
+    id: 'PR_7', number: 7, title: 'Seven', body: 'b', url: 'https://x', state, author: null, viewerDidAuthor: false,
     headRefOid: HEAD, baseRefOid: 'c'.repeat(40), headRefName: 'f', baseRefName: 'main',
     reviewThreads: connection([{ id: 'T_1', isResolved: true, isOutdated: false, path: 'a.ts', line: 3, originalLine: 3, startLine: null,
       originalStartLine: null, diffSide: 'RIGHT', subjectType: 'LINE', viewerCanResolve: true, viewerCanUnresolve: true, viewerCanReply: true,
@@ -632,6 +792,33 @@ test('wired: a PR preview with a pending review shows the bar; the tab submits t
     await flushAll();
     assert.ok(panel.disposed);
     assert.equal(env.seen.contexts['impactTree.hasPullRequestReview'], false);
+  }, { graphql: github.graphql });
+});
+
+test('wired: merging through the tab sends the reviewed head to GitHub, shows the commit, then the reloaded Merged state', async () => {
+  const github = { pending: false, state: 'OPEN', mutations: [] };
+  github.graphql = async (query, variables) => {
+    const name = /^(?:query|mutation) (\w+)/.exec(query)[1];
+    if (name === 'ImpactTreePullRequestOverview') return overviewAnswer(variables.headOid);
+    if (query.startsWith('query')) return githubAnswer(github);
+    github.mutations.push({ name, input: variables.input });
+    if (name !== 'ImpactTreeMerge') throw new Error(`unexpected mutation ${name}`);
+    github.state = 'MERGED';
+    return { mergePullRequest: { pullRequest: { id: 'PR_7', state: 'MERGED', mergeCommit: { oid: '4f2a9c1'.padEnd(40, '0') } } } };
+  };
+  await withEnv(async (env) => {
+    await env.preview({ ...pull(7), headSha: HEAD });
+    await flushAll();
+    await env.run('impactTree.showPullRequest');
+    const panel = env.seen.panels[0];
+    assert.match(textOf(panel), /No conflicts with main\. Ready to merge\./);
+    env.seen.modalAnswer = 'Squash and merge';
+    panel.page.el('merge-method').value = 'SQUASH';
+    panel.page.click('merge-button');
+    await flushAll();
+    assert.deepEqual(github.mutations, [{ name: 'ImpactTreeMerge', input: { pullRequestId: 'PR_7', mergeMethod: 'SQUASH', expectedHeadOid: HEAD } }]);
+    assert.match(textOf(panel), /Merged\. .*Merged into main as 4f2a9c1\./);
+    assert.equal(panel.page.el('merge-button'), null, 'a merged pull request has no Merge button');
   }, { graphql: github.graphql });
 });
 
