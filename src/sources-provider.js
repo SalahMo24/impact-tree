@@ -16,6 +16,9 @@ function createSourcesProvider(vscode, {
   modes, getMode, getRepoSlug, github, getPrs, getPrsTruncated = () => false, getPrError, isLoadingPrs,
   getTeams = () => ({ teams: [], truncated: false, error: null }),
   getRepoStatus = () => 'ok',
+  // Why no GitHub remote was chosen: `none` when no remote points at github.com, else the
+  // choice is unclear or the setting is wrong. Null when the remote is fine.
+  getRemoteProblem = () => null,
 }) {
   const _emitter = new vscode.EventEmitter();
   const N = (o) => o;
@@ -71,8 +74,11 @@ function createSourcesProvider(vscode, {
       if (node.key === 'prs') {
         const slug = getRepoSlug();
         if (!slug) {
-          return [N({ type: 'message', label: 'No GitHub remote on this workspace', icon: 'circle-slash',
-            desc: 'origin does not point at github.com' })];
+          const problem = getRemoteProblem();
+          return [N({ type: 'message', icon: 'circle-slash',
+            label: problem && !problem.none ? 'Cannot tell which GitHub remote to use' : 'No GitHub remote on this workspace',
+            desc: problem ? problem.text : 'No remote of this repository points at github.com.',
+            tooltip: problem ? problem.text : undefined })];
         }
         if (!github.isSignedIn()) {
           return [N({ type: 'message', label: 'Sign in to GitHub', icon: 'sign-in',
@@ -101,7 +107,7 @@ function createSourcesProvider(vscode, {
           desc: `${p.author}${p.draft ? '  ·  draft' : ''}${via ? `  ·  via ${via.join(', ')}` : ''}${p.isFork ? '  ·  fork' : ''}`,
           tooltip: `${p.title}\n\n${p.headRef} → ${p.baseRef}\nby ${p.author}\nupdated ${p.updatedAt}`
             + (via ? `\nreview requested from ${via.join(', ')}` : '')
-            + (p.isFork ? `\n\nFrom fork ${p.headRepo} — analysing it needs a fetch from that fork.` : ''),
+            + (p.isFork ? `\n\nFrom fork ${p.headRepo}.` : ''),
           command: 'impactTree.openPullRequest',
           args: [p],
         });

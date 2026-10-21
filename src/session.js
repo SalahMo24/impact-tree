@@ -80,6 +80,9 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     // The PR review store (src/pr-review-store.js). Set and disposed by extension.js,
     // which owns it; kept here only so later consumers can reach it.
     reviewStore: null,
+    // The git remote of the GitHub repository (the base branch lives there). extension.js
+    // replaces it with the chosen remote; 'origin' for a repository with no GitHub remote.
+    githubRemoteName: () => 'origin',
   };
 
   // The one lifecycle record. `run` is the current analysis's private record and
@@ -507,7 +510,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
         if (p2.phase === 'component') report(`analysing ${p2.component}…`);
         else if (p2.total) report(`${p2.component}: resolving callers ${p2.done}/${p2.total}`);
       },
-      mode, base, fetch: !retry && cfg.get('fetchBase', true),
+      mode, base, remote: session.githubRemoteName() || 'origin', fetch: !retry && cfg.get('fetchBase', true),
       checkpoint: session.state && session.state.checkpoint,
       objectDirs: getObjectDirs(),
       tempDir: getTempDir(),

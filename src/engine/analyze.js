@@ -126,6 +126,7 @@ function missingMergeBase(git, ref) {
 async function branchMergeBase(git, opts, warnings) {
   const resolved = await resolveBaseAsync(git, opts.base || 'main', {
     fetch: !!opts.fetch, allowLocal: !!opts.allowLocalBase, timeoutMs: opts.fetchTimeoutMs,
+    remote: opts.remote || 'origin',
   });
   warnings.push(...resolved.notes);
   const mergeBase = git.mergeBase(resolved.sha, 'HEAD');

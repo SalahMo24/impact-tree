@@ -1,0 +1,99 @@
+// @ts-check
+'use strict';
+
+const { parseRemote } = require('./github');
+
+/**
+ * Which git remote is the GitHub repository whose pull requests are reviewed. Pure: the
+ * caller runs `git remote -v` and reads the setting; nothing here touches git or the editor.
+ *
+ * @typedef {{ name: string, url: string }} Remote
+ * @typedef {{ kind: 'ok', name: string, owner: string, repo: string }
+ *   | { kind: 'none' }
+ *   | { kind: 'ambiguous', names: string[] }
+ *   | { kind: 'bad-setting', setting: string, reason: 'unsafe' | 'missing' | 'not-github' }
+ * } RemoteChoice
+ */
+
+const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/**
+ * A remote name goes to git as an argument, so one that could be read as an option (a
+ * leading `-`) or that holds spaces is never accepted.
+ * @param {unknown} name
+ * @returns {name is string}
+ */
+function isSafeRemoteName(name) {
+  return typeof name === 'string' && name.length <= 255 && SAFE_NAME.test(name);
+}
+
+/**
+ * The fetch URLs of `git remote -v` output, one entry per remote name (the first seen).
+ * Push lines and lines that are not `name<TAB>url (fetch)` are ignored.
+ * @param {string} text
+ * @returns {Remote[]}
+ */
+function parseRemoteList(text) {
+  /** @type {Remote[]} */
+  const remotes = [];
+  const seen = new Set();
+  for (const line of String(text || '').split('\n')) {
+    const m = /^(\S+)\s+(\S+)\s+\(fetch\)\s*$/.exec(line.trim());
+    if (!m || seen.has(m[1])) continue;
+    seen.add(m[1]);
+    remotes.push({ name: m[1], url: m[2] });
+  }
+  return remotes;
+}
+
+/**
+ * @param {Remote[]} remotes
+ * @param {unknown} setting The `impactTree.githubRemote` value as read.
+ * @returns {RemoteChoice}
+ */
+function chooseGitHubRemote(remotes, setting) {
+  const wanted = setting === undefined || setting === null ? '' : setting;
+  if (wanted !== '') {
+    const shown = typeof wanted === 'string' ? wanted : String(wanted);
+    if (!isSafeRemoteName(wanted)) return { kind: 'bad-setting', setting: shown, reason: 'unsafe' };
+    const remote = remotes.find((r) => r.name === wanted);
+    if (!remote) return { kind: 'bad-setting', setting: wanted, reason: 'missing' };
+    const slug = parseRemote(remote.url);
+    if (!slug) return { kind: 'bad-setting', setting: wanted, reason: 'not-github' };
+    return { kind: 'ok', name: wanted, owner: slug.owner, repo: slug.repo };
+  }
+  const github = [];
+  for (const r of remotes) {
+    const slug = isSafeRemoteName(r.name) ? parseRemote(r.url) : null;
+    if (slug) github.push({ name: r.name, ...slug });
+  }
+  if (github.length === 0) return { kind: 'none' };
+  const pick = github.find((r) => r.name === 'upstream') || github.find((r) => r.name === 'origin')
+    || (github.length === 1 ? github[0] : null);
+  if (!pick) return { kind: 'ambiguous', names: github.map((r) => r.name) };
+  return { kind: 'ok', name: pick.name, owner: pick.owner, repo: pick.repo };
+}
+
+/**
+ * One plain sentence saying why there is no GitHub repository to review, or null when
+ * there is one.
+ * @param {RemoteChoice} choice
+ * @returns {string|null}
+ */
+function describeRemoteProblem(choice) {
+  switch (choice.kind) {
+    case 'ok': return null;
+    case 'none': return 'No remote of this repository points at github.com.';
+    case 'ambiguous':
+      return `Several remotes point at github.com (${choice.names.join(', ')}); set impactTree.githubRemote to the one pull requests are opened against.`;
+    case 'bad-setting':
+      return choice.reason === 'not-github'
+        ? `impactTree.githubRemote is '${choice.setting}', which does not point at github.com.`
+        : choice.reason === 'unsafe'
+          ? `impactTree.githubRemote is '${choice.setting}', which is not a valid remote name.`
+          : `impactTree.githubRemote is '${choice.setting}', which is not a remote of this repository.`;
+    default: return null;
+  }
+}
+
+module.exports = { parseRemoteList, chooseGitHubRemote, isSafeRemoteName, describeRemoteProblem };

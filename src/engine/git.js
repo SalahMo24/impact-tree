@@ -1,5 +1,6 @@
 'use strict';
 const path = require('path');
+const { isSafeRemoteName } = require('../github-remote');
 const { execFileSync, execFile } = require('child_process');
 
 // A fetch can wait on the network or on a credential prompt nobody will ever answer.
@@ -120,32 +121,43 @@ const isRevExpression = (spec) => /[~^@:]/.test(spec)
 
 // `git fetch origin main` on a single-branch clone updates FETCH_HEAD and nothing else,
 // so origin/main stayed wherever it was and the base was silently stale. Name the
-// destination explicitly.
-const refspecFor = (name) => {
-  const branch = name.replace(/^origin\//, '');
-  return `+refs/heads/${branch}:refs/remotes/origin/${branch}`;
+// destination explicitly. `remote` is the git remote the base lives on ('origin' unless
+// the caller found the GitHub repository under another name); it goes to git as an
+// argument, so a name that could be read as an option is refused.
+const checkedRemote = (remote) => {
+  if (!isSafeRemoteName(remote)) throw new RangeError(`not a usable git remote name: ${JSON.stringify(remote)}`);
+  return remote;
+};
+const stripRemote = (name, remote) => (name.startsWith(`${remote}/`) ? name.slice(remote.length + 1) : name);
+const refspecFor = (name, remote = 'origin') => {
+  checkedRemote(remote);
+  const branch = stripRemote(name, remote);
+  return `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`;
 };
 
 // Async fetch of one branch into its remote-tracking ref. Never throws: returns a note.
-async function fetchBranch(git, name, { timeoutMs = DEFAULT_FETCH_TIMEOUT_MS } = {}) {
-  const remote = `origin/${name.replace(/^origin\//, '')}`;
+async function fetchBranch(git, name, { timeoutMs = DEFAULT_FETCH_TIMEOUT_MS, remote = 'origin' } = {}) {
+  checkedRemote(remote);
+  const tracking = `${remote}/${stripRemote(name, remote)}`;
   try {
-    await git.rawAsync(['fetch', '--quiet', 'origin', refspecFor(name)], { timeoutMs, env: FETCH_ENV });
-    return { ok: true, note: `fetched ${remote}` };
+    await git.rawAsync(['fetch', '--quiet', remote, refspecFor(name, remote)], { timeoutMs, env: FETCH_ENV });
+    return { ok: true, note: `fetched ${tracking}` };
   } catch (e) {
-    return { ok: false, note: `fetch of ${remote} failed (${e.message}) — using cached remote ref` };
+    return { ok: false, note: `fetch of ${tracking} failed (${e.message}) — using cached remote ref` };
   }
 }
 
 // resolveBase with the fetch done asynchronously, so the editor stays responsive.
-async function resolveBaseAsync(git, spec, { fetch = false, allowLocal = false, timeoutMs } = {}) {
+async function resolveBaseAsync(git, spec, { fetch = false, allowLocal = false, timeoutMs, remote = 'origin' } = {}) {
+  checkedRemote(remote);
   const notes = [];
-  if (fetch && !(spec && isRevExpression(spec))) notes.push((await fetchBranch(git, spec || 'main', { timeoutMs })).note);
-  const r = resolveBase(git, spec, { fetch: false, allowLocal });
+  if (fetch && !(spec && isRevExpression(spec))) notes.push((await fetchBranch(git, spec || 'main', { timeoutMs, remote })).note);
+  const r = resolveBase(git, spec, { fetch: false, allowLocal, remote });
   return { ...r, notes: [...notes, ...r.notes] };
 }
 
-function resolveBase(git, spec, { fetch = false, allowLocal = false } = {}) {
+function resolveBase(git, spec, { fetch = false, allowLocal = false, remote: remoteName = 'origin' } = {}) {
+  checkedRemote(remoteName);
   const notes = [];
   if (spec && isRevExpression(spec)) {
     const sha = git.revParse(spec);
@@ -153,9 +165,9 @@ function resolveBase(git, spec, { fetch = false, allowLocal = false } = {}) {
     throw new Error(`cannot resolve base revision '${spec}'`);
   }
   const name = spec || 'main';
-  const remote = `origin/${name.replace(/^origin\//, '')}`;
+  const remote = `${remoteName}/${stripRemote(name, remoteName)}`;
   if (fetch) {
-    const r = git.tryRaw(['fetch', '--quiet', 'origin', refspecFor(name)]);
+    const r = git.tryRaw(['fetch', '--quiet', remoteName, refspecFor(name, remoteName)]);
     notes.push(r === null ? `fetch of ${remote} failed — using cached remote ref` : `fetched ${remote}`);
   }
   const remoteSha = git.revParse(remote);

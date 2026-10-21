@@ -10,7 +10,8 @@ const { createReviewLens } = require('./review-lens');
 const { readLineOfOffset, offsetToPosition } = require('./engine/textpos');
 const { createDecorationProvider } = require('./decorations');
 const { createReviewState } = require('./review-state');
-const { createGitHub, parseRemote } = require('./github');
+const { createGitHub } = require('./github');
+const { parseRemoteList, chooseGitHubRemote, describeRemoteProblem } = require('./github-remote');
 const { createSourcesProvider } = require('./sources-provider');
 const { createPrDocuments } = require('./pr-documents');
 const { createSession } = require('./session');
@@ -167,12 +168,29 @@ function activate(context) {
   // Only decides which group a PR is listed under; a failure here never hides the PRs.
   let team = { teams: [], truncated: false, error: null };
 
-  const repoSlug = () => {
+  // Which remote is the GitHub repository (src/github-remote.js): read from git and the
+  // impactTree.githubRemote setting on each call, so a new remote or setting shows at once.
+  const githubRemote = () => {
+    let remotes = [];
     try {
       const { makeGit } = require('./engine/git');
-      const url = makeGit(session.repoRoot()).tryRaw(['remote', 'get-url', 'origin']);
-      return parseRemote(url);
-    } catch { return null; }
+      remotes = parseRemoteList(makeGit(session.repoRoot()).tryRaw(['remote', '-v']) || '');
+    } catch { /* no repository: no remotes */ }
+    return chooseGitHubRemote(remotes, vscode.workspace.getConfiguration('impactTree').get('githubRemote', ''));
+  };
+  const repoSlug = () => {
+    const choice = githubRemote();
+    return choice.kind === 'ok' ? { owner: choice.owner, repo: choice.repo } : null;
+  };
+  const remoteProblem = () => {
+    const choice = githubRemote();
+    const text = describeRemoteProblem(choice);
+    return text === null ? null : { none: choice.kind === 'none', text };
+  };
+  // The base branch is read from the same remote; a repository with no usable choice keeps 'origin'.
+  session.githubRemoteName = () => {
+    const choice = githubRemote();
+    return choice.kind === 'ok' ? choice.name : null;
   };
 
   // What GitHub says about the review of the PR being reviewed (threads, pending review,
@@ -182,7 +200,7 @@ function activate(context) {
   reviewStore = createPullRequestReviewStore({
     gh, log,
     getAnalysisId: owned.getAnalysisId,
-    getTarget: () => (owned.checkoutInProgress() != null ? null : reviewTargetOf(owned.state && owned.state.source, repoSlug)),
+    getTarget: () => (owned.checkoutInProgress() != null ? null : reviewTargetOf(owned.state && owned.state.source, repoSlug, () => (remoteProblem() || { text: null }).text)),
   });
   context.subscriptions.push(reviewStore, owned.onDidChangeAnalysis(() => reviewStore.sync()),
     // Counts in the tree: only the file rows of the paths named are repainted.
@@ -244,35 +262,54 @@ function activate(context) {
     getPrError: () => prError,
     isLoadingPrs: () => loadingPrs,
     getTeams: () => team,
+    getRemoteProblem: remoteProblem,
   });
   context.subscriptions.push(vscode.window.createTreeView('impactTree.sources',
     { treeDataProvider: sources }));
 
+  // Each load takes a number; only the latest one may publish, so a list for the old
+  // repository never lands after the setting changed.
+  let loadSeq = 0;
   const loadPrs = async () => {
+    const mine = ++loadSeq;
     const slug = repoSlug();
-    if (!slug || !gh.isSignedIn()) { sources.refresh(); return; }
+    if (!slug || !gh.isSignedIn()) { prs = []; prError = null; loadingPrs = false; sources.refresh(); return; }
     loadingPrs = true; prError = null; sources.refresh();
     const teamsLoaded = gh.listMyTeams().then(
       ({ teams, truncated }) => ({ teams, truncated, error: null }),
       (e) => ({ teams: [], truncated: false, error: e.message }));
     try {
-      ({ pullRequests: prs, truncated: prsTruncated } = await gh.listOpenPullRequests(slug));
+      const loaded = await gh.listOpenPullRequests(slug);
+      if (mine !== loadSeq) return;
+      ({ pullRequests: prs, truncated: prsTruncated } = loaded);
       log(`github: ${prs.length} open PR(s) in ${slug.owner}/${slug.repo}${prsTruncated ? ' (list truncated)' : ''}`);
-      team = await teamsLoaded;
+      const teams = await teamsLoaded;
+      if (mine !== loadSeq) return;
+      team = teams;
       log(team.error ? `github: teams unavailable: ${team.error}`
         : `github: ${team.teams.length} team(s)${team.truncated ? ' (list truncated)' : ''}`);
     } catch (e) {
+      if (mine !== loadSeq) return;
       prs = []; prsTruncated = false; prError = e.message;
       log(`github: ${e.message}`);
     } finally {
-      loadingPrs = false; sources.refresh();
+      if (mine === loadSeq) { loadingPrs = false; sources.refresh(); }
     }
   };
+
+  // A change of the GitHub remote setting moves the pull request list (and the review
+  // being read) to the other repository. Disposed with the window.
+  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
+    if (!e.affectsConfiguration('impactTree.githubRemote')) return;
+    sources.refresh();
+    reviewStore.sync();
+    loadPrs();
+  }));
 
   publishContext();
 
   const { previewPullRequest, checkoutAndAnalyse } = createPrActions(vscode, session, {
-    log, gh, repoSlug, sources, prDocuments,
+    log, gh, repoSlug, githubRemote, sources, prDocuments,
   });
   session.previewPullRequest = previewPullRequest;
   session.checkoutAndAnalyse = checkoutAndAnalyse;

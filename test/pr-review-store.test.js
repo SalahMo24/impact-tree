@@ -689,7 +689,8 @@ test('reviewTargetOf: PR previews and checkouts have a target, local reviews non
   assert.equal(reviewTargetOf(undefined, slug), null);
   assert.deepEqual(reviewTargetOf({ kind: 'pr', pr }, slug), TARGET);
   assert.deepEqual(reviewTargetOf({ kind: 'checkout', pr, sha: 'd'.repeat(40) }, slug), { ...TARGET, headOid: 'd'.repeat(40) });
-  assert.throws(() => reviewTargetOf({ kind: 'pr', pr }, () => null), /not a GitHub repository/);
+  assert.throws(() => reviewTargetOf({ kind: 'pr', pr }, () => null), /no GitHub remote.*cannot be loaded/);
+  assert.throws(() => reviewTargetOf({ kind: 'pr', pr }, () => null, () => 'Several remotes point at github.com (a, b).'), /Several remotes point at github.com \(a, b\)\. Its review threads cannot be loaded/);
 });
 
 

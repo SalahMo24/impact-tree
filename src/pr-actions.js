@@ -1,5 +1,7 @@
 'use strict';
 
+const { describeRemoteProblem } = require('./github-remote');
+
 // Unlike analyze.js's tryLoadTypeScript, a preview cannot skip TypeScript and
 // continue. Load from the repo root or abort the run.
 function loadTypeScriptForPreview(repo) {
@@ -18,9 +20,11 @@ function loadTypeScriptForPreview(repo) {
  *
  * @param {*} vscode
  * @param {object} session
- * @param {{ log: (m: string) => void, gh: object, repoSlug: () => object|null, sources: object, prDocuments: object }} opts
+ * @param {{ log: (m: string) => void, gh: object, repoSlug: () => object|null, githubRemote: () => import('./github-remote').RemoteChoice,
+ *   sources: object, prDocuments: object }} opts `githubRemote` is the remote of the GitHub
+ *   repository, read when a checkout starts.
  */
-function createPrActions(vscode, session, { log, gh, repoSlug, sources, prDocuments }) {
+function createPrActions(vscode, session, { log, gh, repoSlug, githubRemote, sources, prDocuments }) {
 
   const { analyzeRemote } = require('./engine/analyze-remote');
 
@@ -94,8 +98,9 @@ function createPrActions(vscode, session, { log, gh, repoSlug, sources, prDocume
   };
 
   // Checking out rewrites the worktree, so this states the exact effect and the branch
-  // it is leaving before doing anything. `pull/N/head` works for forks too, which a
-  // plain `fetch origin <headRef>` would not. A running analysis does not block it: the
+  // it is leaving before doing anything. `pull/N/head` on the GitHub remote works for
+  // forks too (the base repository holds the fork's commits), which a plain
+  // `fetch <remote> <headRef>` would not, and adds no remote to the user's repository. A running analysis does not block it: the
   // checkout cancels it once confirmed, and git waits until it has settled.
   const checkoutAndAnalyse = async (pr) => {
     const refuse = () => {
@@ -106,6 +111,11 @@ function createPrActions(vscode, session, { log, gh, repoSlug, sources, prDocume
       return busy != null;
     };
     if (refuse()) return;
+    const choice = githubRemote();
+    if (choice.kind !== 'ok') {
+      vscode.window.showErrorMessage(`Impact Tree: cannot check out PR #${pr.number}. ${describeRemoteProblem(choice)}`);
+      return;
+    }
     const { makeGit } = require('./engine/git');
     const git = makeGit(session.repoRoot());
     const dirty = git.isDirty();
@@ -129,7 +139,7 @@ function createPrActions(vscode, session, { log, gh, repoSlug, sources, prDocume
       await vscode.window.withProgress(
         { location: { viewId: 'impactTree.sources' }, title: `Fetching PR #${pr.number}` },
         async () => {
-          await git.rawAsync(['fetch', 'origin', `pull/${pr.number}/head`, '--quiet'],
+          await git.rawAsync(['fetch', choice.name, `pull/${pr.number}/head`, '--quiet'],
             { timeoutMs: 60000, env: require('./engine/git').FETCH_ENV });
           // Pin the fetched commit at once: FETCH_HEAD is rewritten by any later fetch.
           sha = (await git.rawAsync(['rev-parse', '--verify', 'FETCH_HEAD^{commit}'])).trim();

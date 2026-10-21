@@ -24,7 +24,7 @@ function createReadiness(vscode, session, { log }) {
     const cfg = vscode.workspace.getConfiguration('impactTree');
     let baseSha;
     try {
-      const b = resolveBase(git, cfg.get('baseBranch', 'main'), { fetch: false, allowLocal: true });
+      const b = resolveBase(git, cfg.get('baseBranch', 'main'), { fetch: false, allowLocal: true, remote: session.githubRemoteName() || 'origin' });
       baseSha = git.mergeBase(b.sha, 'HEAD') || b.sha;
     } catch { return null; }
     // A file no config claims still warms the server: it opens an inferred project.
