@@ -2,6 +2,16 @@
 'use strict';
 
 const { parseRemote } = require('./github');
+// The rule lives with the git commands that take the name.
+const { isSafeRemoteName: isSafeName } = require('./engine/git');
+
+/**
+ * A remote name goes to git as an argument, so one that could be read as an option (a
+ * leading `-`) or that holds spaces is never accepted.
+ * @param {unknown} name
+ * @returns {name is string}
+ */
+const isSafeRemoteName = (name) => isSafeName(name);
 
 /**
  * Which git remote is the GitHub repository whose pull requests are reviewed. Pure: the
@@ -14,18 +24,6 @@ const { parseRemote } = require('./github');
  *   | { kind: 'bad-setting', setting: string, reason: 'unsafe' | 'missing' | 'not-github' }
  * } RemoteChoice
  */
-
-const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-
-/**
- * A remote name goes to git as an argument, so one that could be read as an option (a
- * leading `-`) or that holds spaces is never accepted.
- * @param {unknown} name
- * @returns {name is string}
- */
-function isSafeRemoteName(name) {
-  return typeof name === 'string' && name.length <= 255 && SAFE_NAME.test(name);
-}
 
 /**
  * The fetch URLs of `git remote -v` output, one entry per remote name (the first seen).

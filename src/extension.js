@@ -303,7 +303,7 @@ function activate(context) {
     if (!e.affectsConfiguration('impactTree.githubRemote')) return;
     sources.refresh();
     reviewStore.sync();
-    loadPrs();
+    loadPrs().catch((err) => log(`github: reloading pull requests failed: ${err && err.message}`));
   }));
 
   publishContext();

@@ -1,6 +1,5 @@
 'use strict';
 const path = require('path');
-const { isSafeRemoteName } = require('../github-remote');
 const { execFileSync, execFile } = require('child_process');
 
 // A fetch can wait on the network or on a credential prompt nobody will ever answer.
@@ -119,6 +118,11 @@ const isRevExpression = (spec) => /[~^@:]/.test(spec)
   || /^[0-9a-f]{7,40}$/i.test(spec)
   || spec === 'HEAD';
 
+// A remote name goes to git as an argument, so one that could be read as an option (a
+// leading `-`) or that holds spaces is never accepted.
+const SAFE_REMOTE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const isSafeRemoteName = (name) => typeof name === 'string' && name.length <= 255 && SAFE_REMOTE_NAME.test(name);
+
 // `git fetch origin main` on a single-branch clone updates FETCH_HEAD and nothing else,
 // so origin/main stayed wherever it was and the base was silently stale. Name the
 // destination explicitly. `remote` is the git remote the base lives on ('origin' unless
@@ -187,4 +191,4 @@ function resolveBase(git, spec, { fetch = false, allowLocal = false, remote: rem
   notes.push(`WARNING: ${remote} not found — falling back to local ${name}; diff may include others' commits`);
   return { ref: name, sha, notes };
 }
-module.exports = { makeGit, resolveBase, resolveBaseAsync, fetchBranch, refspecFor, FETCH_ENV, DEFAULT_FETCH_TIMEOUT_MS };
+module.exports = { makeGit, resolveBase, resolveBaseAsync, fetchBranch, refspecFor, isSafeRemoteName, FETCH_ENV, DEFAULT_FETCH_TIMEOUT_MS };
