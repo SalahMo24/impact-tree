@@ -7,6 +7,7 @@
 
 const path = require('path');
 const { parsePrAddress, prKey } = require('./pr-documents');
+const { parseSuggestions } = require('./suggestions');
 
 /**
  * @typedef {'LEFT'|'RIGHT'} Side LEFT is the base file, RIGHT the head file.
@@ -162,7 +163,8 @@ function acceptsComment(ctx, at, startLine, line) {
  * @property {string} createdAt ISO 8601.
  * @property {boolean} pending
  * @property {string} contextValue Space-separated actions that apply: `pendingMine` for the
- *   viewer's own pending comment (it can be deleted), `canEdit` for one they can edit.
+ *   viewer's own pending comment (it can be deleted), `canEdit` for one they can edit,
+ *   `hasSuggestion` for a posted one holding a ```suggestion block (it can be applied).
  *
  * @typedef {object} ThreadSpec
  * @property {string} id GraphQL node id.
@@ -198,7 +200,10 @@ function threadSpec(t) {
     resolved: t.isResolved, label, canReply, contextValue: actions.join(' '),
     comments: t.comments.map((c) => ({
       id: c.id, author: c.author ? c.author.login : 'ghost', avatarUrl: c.author ? c.author.avatarUrl : null,
-      body: c.body, createdAt: c.createdAt, pending: c.pending, contextValue: [c.pending && c.mine ? 'pendingMine' : '', c.canEdit ? 'canEdit' : ''].filter(Boolean).join(' '),
+      body: c.body, createdAt: c.createdAt, pending: c.pending, contextValue: [
+        c.pending && c.mine ? 'pendingMine' : '', c.canEdit ? 'canEdit' : '',
+        !c.pending && parseSuggestions(c.body).length > 0 ? 'hasSuggestion' : '',
+      ].filter(Boolean).join(' '),
     })),
   };
 }

@@ -19,6 +19,8 @@ const vscodeStub = {
   CodeLens: class { constructor(range, command) { this.range = range; this.command = command; } },
   Location: class { constructor(uri, range) { this.uri = uri; this.range = range; } },
   ThemeColor: class { constructor(id) { this.id = id; } },
+  // Records its edits; a test's workspace applies them.
+  WorkspaceEdit: class { constructor() { this.edits = []; } replace(uri, range, newText) { this.edits.push({ uri, range, newText }); } },
   Uri: {
     file: (p) => uri('file', p, '', ''),
     parse: (s) => {

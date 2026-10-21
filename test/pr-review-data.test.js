@@ -16,7 +16,8 @@ const TARGET = { owner: 'o', name: 'r', number: 7 };
 const comment = (id, over = {}) => ({
   id: `C_${id}`, databaseId: 1000 + id, author: { login: 'bob', avatarUrl: 'https://a/bob' },
   body: `body ${id}`, createdAt: '2026-01-02T03:04:05Z', state: 'SUBMITTED', viewerDidAuthor: false, viewerCanUpdate: false,
-  url: `https://github.com/o/r/pull/7#discussion_r${id}`, diffHunk: '@@ -9,2 +9,2 @@\n context\n+const x = 1;', ...over,
+  url: `https://github.com/o/r/pull/7#discussion_r${id}`, diffHunk: '@@ -9,2 +9,2 @@\n context\n+const x = 1;',
+  commit: { oid: 'e'.repeat(40) }, ...over,
 });
 
 const thread = (id, over = {}) => ({
@@ -136,6 +137,7 @@ test('normalises every field of the pull request, thread, comment, review, file 
   assert.deepEqual(t.comments[0], {
     id: 'C_1', databaseId: 1001, author: { login: 'bob', avatarUrl: 'https://a/bob' }, body: 'body 1',
     createdAt: '2026-01-02T03:04:05Z', pending: true, mine: true, canEdit: true, url: 'https://github.com/o/r/pull/7#discussion_r1',
+    commitOid: 'e'.repeat(40),
   });
   assert.equal(t.comments[1].author, null);
   assert.equal(t.comments[1].databaseId, null);
@@ -283,6 +285,14 @@ test('a comment can be edited only when it is the viewer\'s and GitHub allows th
   assert.deepEqual(model.threads[0].comments.map((c) => c.canEdit), [true, false, false, false]);
 });
 
+test('a comment\'s commit is its oid (40 or 64 hex digits), or null when GitHub gives none', async () => {
+  const nodes = [comment(1), comment(2, { commit: { oid: 'f'.repeat(64) } }), comment(3, { commit: null })];
+  const model = await loadPullRequestReview(fakeClient([envelope(pullRequest({
+    reviewThreads: page([thread(1, { comments: { totalCount: 3, pageInfo: { hasNextPage: false }, nodes } })]),
+  }))]), TARGET);
+  assert.deepEqual(model.threads[0].comments.map((c) => c.commitOid), ['e'.repeat(40), 'f'.repeat(64), null]);
+});
+
 test('malformed nodes are a GitHubResponseError', async () => {
   const cases = {
     'thread without id': (pr) => { delete pr.reviewThreads.nodes[0].id; },
@@ -296,6 +306,10 @@ test('malformed nodes are a GitHubResponseError', async () => {
     'comment without viewerCanUpdate': (pr) => { delete pr.reviewThreads.nodes[0].comments.nodes[0].viewerCanUpdate; },
     'comment without diffHunk': (pr) => { delete pr.reviewThreads.nodes[0].comments.nodes[0].diffHunk; },
     'diffHunk not a string': (pr) => { pr.reviewThreads.nodes[0].comments.nodes[0].diffHunk = null; },
+    'comment without commit': (pr) => { delete pr.reviewThreads.nodes[0].comments.nodes[0].commit; },
+    'commit oid not hex': (pr) => { pr.reviewThreads.nodes[0].comments.nodes[0].commit = { oid: 'main' }; },
+    'commit oid short': (pr) => { pr.reviewThreads.nodes[0].comments.nodes[0].commit = { oid: 'abc1234' }; },
+    'commit not an object': (pr) => { pr.reviewThreads.nodes[0].comments.nodes[0].commit = 'e'.repeat(40); },
     'author without login': (pr) => { pr.reviewThreads.nodes[0].comments.nodes[0].author = {}; },
     'threads not a list': (pr) => { pr.reviewThreads.nodes = {}; },
     'more pages without cursor': (pr) => { pr.reviewThreads.pageInfo = { hasNextPage: true, endCursor: null }; },

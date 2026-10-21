@@ -264,6 +264,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       visibleTextEditors: [],
       activeTextEditor: undefined,
       onDidChangeTextEditorSelection: (handler) => { captured.cursor.push(handler); return disposable(); },
+      onDidChangeActiveTextEditor: disposable,
       registerWebviewViewProvider: (id, provider) => { captured.webviews.set(id, provider); return disposable(); },
     },
     commands: { registerCommand: (name, fn) => { commands.set(name, fn); return disposable(); },
