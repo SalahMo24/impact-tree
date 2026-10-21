@@ -70,6 +70,21 @@ function buttonRules(facts) {
 }
 
 /**
+ * @typedef {object} MergeState
+ * @property {'clean'|'blocked'|'conflict'|'unknown'|'done'} tone `clean` only when GitHub says so.
+ * @property {string} headline
+ * @property {string[]} reasons Why, plus notes (merge queue, a newer head).
+ * @property {boolean} retry The headline is not an answer yet: offer Refresh or Retry.
+ *
+ * @typedef {{ kind: 'none' } | { kind: 'failed', message: string }
+ *   | { kind: 'ready', items: import('./pr-review-data').CheckItem[], total: number, incomplete: string|null }} ChecksView
+ *
+ * @typedef {{ kind: 'failed', message: string } | { kind: 'ready', merge: MergeState, checks: ChecksView,
+ *   reviewers: { items: import('./pr-review-data').ReviewerItem[], more: number },
+ *   labels: { items: import('./pr-review-data').LabelItem[], more: number } }} OverviewView
+ */
+
+/**
  * @typedef {object} AttentionItem
  * @property {string} id The row's tree id, which "reveal row" names.
  * @property {string} name
@@ -108,6 +123,7 @@ function buttonRules(facts) {
  *   pending review, when there is one.
  * @property {boolean} own The viewer opened the pull request.
  * @property {ApproveCheck|null} check
+ * @property {OverviewView} overview Checks, merge state, reviewers and labels.
  * @property {string[]} incomplete Why the loaded data is not the whole story.
  * @property {string} draft The summary text to show.
  * @property {string|null} error The last submit or discard failure.
@@ -163,6 +179,64 @@ function approveCheckOf(data, { attentionLeft, counts }) {
 }
 
 /**
+ * Whether the pull request can be merged, in words. Never `clean` when unsure. Pure.
+ * @param {{ state: string, baseRefName: string }} pr
+ * @param {import('./pr-review-data').PullRequestOverview} overview
+ * @returns {MergeState}
+ */
+function mergeStateOf(pr, overview) {
+  if (overview.kind === 'failed') {
+    return { tone: 'unknown', headline: `Merge state could not be loaded: ${overview.error.message}`, reasons: [], retry: true };
+  }
+  if (pr.state === 'MERGED') return { tone: 'done', headline: 'Merged.', reasons: [], retry: false };
+  if (pr.state === 'CLOSED') return { tone: 'done', headline: 'Closed without merging.', reasons: [], retry: false };
+  const { merge, checks } = overview;
+  const base = pr.baseRefName;
+  /** @type {MergeState} */
+  let result;
+  if (merge.isDraft || merge.mergeStateStatus === 'DRAFT') {
+    result = { tone: 'blocked', headline: 'This pull request is a draft.', reasons: ['Mark it ready for review on GitHub.'], retry: false };
+  } else if (merge.mergeable === 'CONFLICTING' || merge.mergeStateStatus === 'DIRTY') {
+    result = { tone: 'conflict', headline: `This branch has conflicts with ${base}.`, reasons: ['Resolve them in the checkout and push, or on GitHub.'], retry: false };
+  } else if (merge.mergeable === 'UNKNOWN' || merge.mergeStateStatus === 'UNKNOWN') {
+    result = { tone: 'unknown', headline: 'GitHub is still working out whether this can merge.', reasons: [], retry: true };
+  } else if (merge.mergeStateStatus === 'BLOCKED') {
+    /** @type {string[]} */
+    const reasons = [];
+    const required = checks.kind === 'ready' ? checks.items.filter((c) => c.required) : [];
+    for (const c of required) if (c.state === 'failed') reasons.push(`Required check ${c.name} failed`);
+    for (const c of required) if (c.state === 'pending') reasons.push(`Required check ${c.name} has not finished`);
+    if (merge.reviewDecision === 'CHANGES_REQUESTED') reasons.push('Changes were requested');
+    if (merge.reviewDecision === 'REVIEW_REQUIRED') reasons.push('An approving review is required');
+    if (checks.kind === 'failed' || (checks.kind === 'ready' && checks.incomplete !== null)) reasons.push('The required checks could not all be read');
+    if (!reasons.length) reasons.push('Branch protection blocks the merge; GitHub does not say why here.');
+    result = { tone: 'blocked', headline: 'Merging is blocked:', reasons, retry: false };
+  } else if (merge.mergeStateStatus === 'BEHIND') {
+    result = { tone: 'blocked', headline: `This branch is behind ${base} and must be updated first.`, reasons: [], retry: false };
+  } else if (merge.mergeStateStatus === 'UNSTABLE') {
+    result = { tone: 'clean', headline: `No conflicts with ${base}. Some checks that are not required are failing.`, reasons: [], retry: false };
+  } else {
+    result = { tone: 'clean', headline: `No conflicts with ${base}. Ready to merge.`, reasons: [], retry: false };
+  }
+  if (merge.isMergeQueueEnabled) result.reasons.push('This branch uses a merge queue: merge on GitHub.');
+  if (merge.headMoved) result.reasons.push('GitHub has a newer head than the one reviewed; refresh the analysis.');
+  return result;
+}
+
+/**
+ * @param {import('./pr-review-data').PullRequestOverview} overview
+ * @param {{ state: string, baseRefName: string }} pr
+ * @returns {OverviewView}
+ */
+function overviewViewOf(overview, pr) {
+  if (overview.kind === 'failed') return { kind: 'failed', message: overview.error.message };
+  const c = overview.checks;
+  /** @type {ChecksView} */
+  const checks = c.kind === 'failed' ? { kind: 'failed', message: c.error.message } : c;
+  return { kind: 'ready', merge: mergeStateOf(pr, overview), checks, reviewers: overview.reviewers, labels: overview.labels };
+}
+
+/**
  * The page model for the store's state. Pure.
  * @param {ReviewStoreState} state
  * @param {{ attentionLeft: TreeRow[]|null, counts: { total: number, left: number }|null,
@@ -179,7 +253,7 @@ function pageModelOf(state, { attentionLeft, counts, draft, error, busy }) {
   const model = {
     kind: data ? 'ready' : state.kind === 'failed' ? 'failed' : 'loading',
     number, loadError, refreshing: state.kind === 'loading', pr: null, timeline: [], pending: null,
-    own: false, check: null, incomplete: [], draft, error, busy,
+    own: false, check: null, overview: { kind: 'failed', message: 'not loaded' }, incomplete: [], draft, error, busy,
   };
   if (!data) return model;
   const { pr } = data;
@@ -204,6 +278,7 @@ function pageModelOf(state, { attentionLeft, counts, draft, error, busy }) {
     }
     model.pending = { commentCount: data.pendingReview.commentCount, comments };
   }
+  model.overview = overviewViewOf(data.overview, pr);
   model.own = pr.viewerDidAuthor;
   model.check = approveCheckOf(data, { attentionLeft, counts });
   model.incomplete = data.incomplete;
@@ -234,11 +309,33 @@ function pendingStatusOf(state) {
 // Colours are the theme's: a tab must read in every theme, light and dark.
 const STYLE = `
 body { color: var(--vscode-foreground); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); line-height: 1.5; }
-main { max-width: 900px; padding: 12px 24px 40px; }
+main { max-width: 1000px; padding: 12px 24px 40px; }
 h2 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
 h2 .num, .where, .when, .note { color: var(--vscode-descriptionForeground); }
 h2 .num { font-weight: 400; }
 h4 { color: var(--vscode-descriptionForeground); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; margin: 16px 0 6px; }
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) 200px; gap: 18px; }
+@media (max-width: 560px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+.box { border: 1px solid var(--vscode-panel-border); border-radius: 4px; margin-top: 6px; }
+.row { display: flex; gap: 8px; align-items: baseline; padding: 5px 10px; border-top: 1px solid var(--vscode-panel-border); }
+.row:first-child { border-top: 0; }
+.row .n { flex: 1; overflow-wrap: anywhere; }
+.sum { padding: 7px 10px; font-weight: 600; display: flex; gap: 8px; }
+details summary { cursor: pointer; padding: 5px 10px; color: var(--vscode-descriptionForeground); border-top: 1px solid var(--vscode-panel-border); }
+.ctx, .dim { color: var(--vscode-descriptionForeground); }
+.req { font-size: 11px; border: 1px solid var(--vscode-panel-border); border-radius: 8px; padding: 0 6px; color: var(--vscode-descriptionForeground); }
+.ok { color: var(--vscode-testing-iconPassed); }
+.bad { color: var(--vscode-testing-iconFailed); }
+.wait { color: var(--vscode-editorWarning-foreground); }
+.unk { color: var(--vscode-descriptionForeground); }
+.merge { border-left: 3px solid var(--vscode-testing-iconPassed); background: var(--vscode-textBlockQuote-background); padding: 8px 10px; margin-top: 6px; }
+.merge.blocked { border-left-color: var(--vscode-editorWarning-foreground); }
+.merge.conflict { border-left-color: var(--vscode-testing-iconFailed); }
+.merge.unknown, .merge.done { border-left-color: var(--vscode-descriptionForeground); }
+.merge ul { margin: 4px 0 4px 18px; padding: 0; }
+.side .p { display: flex; gap: 6px; align-items: baseline; margin: 3px 0; }
+.side .p .s { margin-left: auto; font-size: 12px; }
+.lbl { display: inline-block; border-radius: 10px; padding: 0 8px; font-size: 12px; margin: 2px 3px 2px 0; border: 1px solid var(--vscode-panel-border); }
 .meta { margin-bottom: 12px; }
 .state { border-radius: 10px; padding: 1px 9px; font-size: 12px; margin-right: 6px; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
 .state.OPEN { color: var(--vscode-button-foreground); background: var(--vscode-testing-iconPassed); }
@@ -330,6 +427,7 @@ document.addEventListener('click', (event) => {
   else if (act === 'revealThread') post({ type: 'revealThread', threadId: target.getAttribute('data-thread') });
   else if (act === 'revealRow') post({ type: 'revealRow', rowId: target.getAttribute('data-row') });
   else if (act === 'retry') post({ type: 'retry' });
+  else if (act === 'openLink') post({ type: 'openLink', url: target.getAttribute('data-url') });
 });
 window.addEventListener('message', (event) => {
   const data = event.data;
@@ -425,6 +523,116 @@ function formHtml(model) {
     + '</div>';
 }
 
+const RE_HEX = /^[0-9a-f]{6}$/;
+/** @param {{ color: string|null }} label @returns {boolean} */
+const hasColor = (label) => label.color !== null && RE_HEX.test(label.color);
+
+/**
+ * One border colour rule per label with a valid colour, for the nonce'd stylesheet: a
+ * label colour cannot be an inline `style=` (the CSP blocks it). Only 6-digit hex gets in.
+ * @param {PageModel} model
+ * @returns {string}
+ */
+function labelCss(model) {
+  if (model.overview.kind !== 'ready') return '';
+  return model.overview.labels.items.map((l, i) => (hasColor(l) ? `.lbl-${i} { border-color: #${l.color}; }\n` : '')).join('');
+}
+
+const retryButton = '<button class="secondary" data-act="retry">Retry</button>';
+
+/** @type {Record<string, { icon: string, cls: string, words: string }>} */
+const CHECK_LOOK = {
+  failed: { icon: '✗', cls: 'bad', words: 'Failed' },
+  pending: { icon: '●', cls: 'wait', words: 'Pending' },
+  passed: { icon: '✓', cls: 'ok', words: 'Passed' },
+  skipped: { icon: '○', cls: 'unk', words: 'Skipped' },
+};
+
+/** @param {import('./pr-review-data').CheckItem} c @returns {string} */
+function checkRowHtml(c) {
+  const look = CHECK_LOOK[c.state];
+  return `<div class="row" data-el="check-row"><span class="${look.cls}">${look.icon}</span>`
+    + `<span class="n">${escapeHtml(c.name)}${c.context === null ? '' : ` <span class="ctx">· ${escapeHtml(c.context)}</span>`}`
+    + `${c.detail ? ` <span class="ctx">${escapeHtml(c.detail)}</span>` : ''}${c.required ? ' <span class="req">Required</span>' : ''}</span>`
+    + `<span class="${look.cls}">${look.words}</span>`
+    + (c.url === null ? '' : `<a href="#" data-act="openLink" data-url="${escapeHtml(c.url)}">Details</a>`) + '</div>';
+}
+
+/** @param {ChecksView} checks @returns {string} */
+function checksHtml(checks) {
+  if (checks.kind === 'failed') {
+    return '<h4>Checks</h4><div class="banner" role="alert" data-el="checks-failed">Checks could not be loaded: '
+      + `<span class="text">${escapeHtml(checks.message)}</span>. They are not shown, which does not mean there are none. ${retryButton}</div>`;
+  }
+  if (checks.kind === 'none' || checks.items.length === 0) return '<h4>Checks</h4><div class="note" data-el="checks-none">No checks reported for this commit.</div>';
+  const by = (/** @type {string} */ state) => checks.items.filter((c) => c.state === state);
+  const failed = by('failed'), pending = by('pending'), passed = by('passed'), skipped = by('skipped');
+  const tail = skipped.length ? `, ${skipped.length} skipped` : '';
+  let icon, text;
+  if (failed.length || pending.length) {
+    icon = failed.length ? '<span class="bad">✗</span>' : '<span class="wait">●</span>';
+    text = `${failed.length} failing, ${pending.length} pending, ${passed.length} passed${tail}`;
+  } else if (checks.incomplete !== null) {
+    icon = '<span class="unk">?</span>';
+    text = `None of the ${checks.items.length} loaded checks is failing or pending`;
+  } else if (passed.length) {
+    icon = '<span class="ok">✓</span>';
+    text = `All ${passed.length} checks passed${tail}`;
+  } else {
+    icon = '<span class="unk">○</span>';
+    text = `${skipped.length} skipped`;
+  }
+  const done = passed.length + skipped.length;
+  const folded = done === 0 ? '' : `<details data-el="checks-passed"><summary>${passed.length} passed${tail}</summary>${[...passed, ...skipped].map(checkRowHtml).join('')}</details>`;
+  return `<h4>Checks</h4><div class="box" data-el="checks"><div class="sum">${icon} <span>${escapeHtml(text)}</span></div>`
+    + `${[...failed, ...pending].map(checkRowHtml).join('')}${folded}</div>`
+    + (checks.incomplete === null ? '' : `<div class="note" data-el="checks-incomplete">${escapeHtml(`Only the first ${checks.items.length} of ${checks.total} checks were loaded.`)}</div>`);
+}
+
+/** @param {OverviewView} view @returns {string} */
+function mergeHtml(view) {
+  if (view.kind === 'failed') {
+    return '<h4>Merge</h4><div class="merge unknown" data-el="merge"><span class="unk">?</span> '
+      + `Merge state could not be loaded: <span class="text">${escapeHtml(view.message)}</span> ${retryButton}</div>`;
+  }
+  const m = view.merge;
+  const icon = { clean: '<span class="ok">✓</span>', blocked: '<span class="wait">●</span>', conflict: '<span class="bad">✗</span>',
+    unknown: '<span class="unk">?</span>', done: '<span class="unk">✓</span>' }[m.tone];
+  const refresh = m.retry ? ' <a href="#" data-act="retry">Refresh</a> in a moment.' : '';
+  const reasons = m.reasons.length ? `<ul>${m.reasons.map((r) => `<li>${escapeHtml(r)}</li>`).join('')}</ul>` : '';
+  return `<h4>Merge</h4><div class="merge ${m.tone}" data-el="merge">${icon} ${escapeHtml(m.headline)}${refresh}${reasons}</div>`;
+}
+
+/** @type {Record<string, { icon: string, cls: string, words: string }>} */
+const REVIEWER_LOOK = {
+  APPROVED: { icon: '✓', cls: 'ok', words: 'Approved' },
+  CHANGES_REQUESTED: { icon: '✗', cls: 'bad', words: 'Changes requested' },
+  AWAITING: { icon: '●', cls: 'wait', words: 'Awaiting review' },
+  COMMENTED: { icon: '💬', cls: 'dim', words: 'Commented' },
+  DISMISSED: { icon: '○', cls: 'unk', words: 'Dismissed' },
+};
+
+/** @param {OverviewView} view @returns {string} */
+function reviewersHtml(view) {
+  if (view.kind === 'failed') return `<h4>Reviewers</h4><div class="note" data-el="reviewers">Reviewers could not be loaded: ${escapeHtml(view.message)}</div>`;
+  const { items, more } = view.reviewers;
+  const rows = items.map((r) => {
+    const look = REVIEWER_LOOK[r.state];
+    return `<div class="p"><span class="${look.cls}">${look.icon}</span><span>${escapeHtml(r.name)}</span><span class="s ${look.cls}">${look.words}</span></div>`;
+  }).join('');
+  const note = more ? `<div class="note">${more} more reviewer${more === 1 ? ' was' : 's were'} not loaded.</div>` : '';
+  return `<h4>Reviewers</h4><div data-el="reviewers">${rows || '<div class="note">No reviewers.</div>'}${note}</div>`;
+}
+
+/** @param {OverviewView} view @returns {string} */
+function labelsHtml(view) {
+  if (view.kind === 'failed') return `<h4>Labels</h4><div class="note" data-el="labels">Labels could not be loaded: ${escapeHtml(view.message)}</div>`;
+  const { items, more } = view.labels;
+  const chips = items.map((l, i) => `<span class="lbl${hasColor(l) ? ` lbl-${i}` : ''}">${escapeHtml(l.name)}</span>`).join('');
+  const note = more ? `<div class="note">${more} more label${more === 1 ? ' was' : 's were'} not loaded.</div>` : '';
+  return `<h4>Labels</h4><div data-el="labels">${chips || '<div class="note">No labels.</div>'}${note}</div>`;
+}
+
 /** @param {PageModel} model @returns {string} */
 function bodyHtml(model) {
   const named = model.number === null ? 'the pull request' : `pull request #${model.number}`;
@@ -435,7 +643,9 @@ function bodyHtml(model) {
     ? `<div class="banner">Not everything was loaded:<ul>${model.incomplete.map((r) => `<li>${escapeHtml(r)}</li>`).join('')}</ul></div>` : '';
   return retryBanner(model.loadError)
     + (model.refreshing ? '<p class="note">Refreshing from GitHub…</p>' : '')
-    + incomplete + headerHtml(pr) + timelineHtml(model.timeline) + formHtml(model);
+    + incomplete + headerHtml(pr)
+    + `<div class="cols"><div>${timelineHtml(model.timeline)}${checksHtml(model.overview.kind === 'ready' ? model.overview.checks : { kind: 'failed', message: model.overview.message })}`
+    + `${mergeHtml(model.overview)}${formHtml(model)}</div><div class="side">${reviewersHtml(model.overview)}${labelsHtml(model.overview)}</div></div>`;
 }
 
 /**
@@ -450,11 +660,11 @@ function buildPullRequestHtml(model, { nonce, cspSource, draftKey = nonce }) {
   return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'
     + `<meta http-equiv="Content-Security-Policy" content="${csp}">`
     + '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
-    + `<style nonce="${nonce}">${STYLE}</style></head>`
+    + `<style nonce="${nonce}">${STYLE}${labelCss(model)}</style></head>`
     + `<body><main>${bodyHtml(model)}</main><script nonce="${nonce}">${script(nonce, draftKey)}</script></body></html>`;
 }
 
 module.exports = {
-  buildPullRequestHtml, pageModelOf, buttonRules, pendingStatusOf, submittedMessage, firstLineOf, formatWhen,
+  buildPullRequestHtml, pageModelOf, mergeStateOf, buttonRules, pendingStatusOf, submittedMessage, firstLineOf, formatWhen,
   OWN_PR_REASON,
 };

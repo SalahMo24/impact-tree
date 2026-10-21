@@ -7,7 +7,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { withEnv, finding, previewResult, pull } = require('./extension-env');
+const { withEnv, finding, previewResult, pull, overviewAnswer } = require('./extension-env');
 const { treeItemId } = require('../src/review-tree-model');
 const { CONTROLLER_ID, COMMANDS } = require('../src/review-comments');
 
@@ -30,6 +30,7 @@ function fakeGitHub(threads) {
   const gh = { threads, pending: false, calls: [], nextId: 100 };
   gh.graphql = async (query, variables) => {
     const name = /^(?:query|mutation) (\w+)/.exec(query)[1];
+    if (name === 'ImpactTreePullRequestOverview') return overviewAnswer(variables.headOid); // not one of the calls asserted on
     gh.calls.push({ name, input: variables.input });
     const { input } = variables;
     switch (name) {

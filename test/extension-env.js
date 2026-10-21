@@ -460,4 +460,20 @@ async function withEnv(fn, options) {
 
 const refusals = (env, pattern) => env.seen.warnings.filter((w) => pattern.test(w));
 
-module.exports = { fakeWebviewPanel, deferred, gates, shaFor, pull, localResult, finding, previewResult, createEnv, withEnv, refusals, createCommentsApi };
+/**
+ * GitHub's answer to the Pull Request tab's overview query (ImpactTreePullRequestOverview):
+ * clean, no checks, reviewers or labels. A fake GraphQL transport answers that query
+ * (and not the review's) with this, and keeps it out of the calls it asserts on.
+ * @param {string} headOid The reviewed commit.
+ */
+const overviewAnswer = (headOid) => ({ repository: {
+  mergeCommitAllowed: true, squashMergeAllowed: true, rebaseMergeAllowed: true, viewerPermission: 'WRITE',
+  pullRequest: {
+    headRefOid: headOid, isDraft: false, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', reviewDecision: null,
+    isMergeQueueEnabled: false, isInMergeQueue: false,
+    labels: { totalCount: 0, nodes: [] }, reviewRequests: { totalCount: 0, nodes: [] }, latestReviews: { totalCount: 0, nodes: [] },
+  },
+  object: { statusCheckRollup: null },
+} });
+
+module.exports = { overviewAnswer, fakeWebviewPanel, deferred, gates, shaFor, pull, localResult, finding, previewResult, createEnv, withEnv, refusals, createCommentsApi };

@@ -1,12 +1,14 @@
 // @ts-check
 'use strict';
 // What GitHub knows about the review of one pull request: its threads, the viewer's
-// pending review, per-file viewed state and a short timeline. Reading only; writes belong
+// pending review, per-file viewed state, a short timeline, and the pull request's
+// overview (checks, reviewers, labels, merge state). Reading only; writes belong
 // to the review-loop store. The query text and the normalisation are pure; the one
 // function that does I/O, `loadPullRequestReview`, takes the GitHub client as a dependency.
 
+const { AssertionError } = require('node:assert');
 const { GitHubResponseError } = require('./github-request');
-const { throwIfCancelled } = require('./engine/cancellation');
+const { throwIfCancelled, isAnalysisCancelled } = require('./engine/cancellation');
 
 const ENDPOINT = '/graphql';
 
@@ -25,11 +27,19 @@ const ENDPOINT = '/graphql';
  *   GitHub's own ceiling for a pull request's file list). Same enforcement and
  *   exhaustion; the files past the budget have no viewed state in the result.
  *
+ * - `maxCheckPages`: pages of 100 checks (check runs and commit statuses) of the reviewed
+ *   commit, default 3 (300 checks), counting the overview query's page. Enforced before
+ *   each follow-up request. Exhaustion: the checks so far are returned and the checks
+ *   section says that more exist (GitHub's own `hasNextPage`, so exactly at the cap is not
+ *   truncation).
+ *
  * Comments inside a thread are not paged: only the first `COMMENTS_PER_THREAD` are
  * read. A thread with more says so on the thread and on the result. The timeline is a
- * deliberate window of the newest `TIMELINE_WINDOW` items, not a truncated read.
+ * deliberate window of the newest `TIMELINE_WINDOW` items, not a truncated read. Labels,
+ * review requests and latest reviews are not paged: the first `PAGE_SIZE` are read, and
+ * the section says how many more exist.
  */
-const DEFAULT_BUDGETS = Object.freeze({ maxThreadPages: 5, maxFilePages: 30 });
+const DEFAULT_BUDGETS = Object.freeze({ maxThreadPages: 5, maxFilePages: 30, maxCheckPages: 3 });
 const MAX_BUDGET = 100;
 
 /** Nodes per page, and comments read per thread. GitHub's maximum for `first` is 100. */
@@ -103,6 +113,54 @@ const FILES_PAGE_QUERY = `query ImpactTreeReviewFiles($owner: String!, $name: St
   }
 }`;
 
+const CONTEXT_FIELDS = `
+  totalCount
+  pageInfo { hasNextPage endCursor }
+  nodes {
+    __typename
+    ... on CheckRun { name status conclusion detailsUrl isRequired(pullRequestNumber: $number) checkSuite { app { name } workflowRun { workflow { name } } } }
+    ... on StatusContext { context state targetUrl description isRequired(pullRequestNumber: $number) }
+  }`;
+
+/**
+ * The overview: merge state, labels, reviewers and page 1 of the checks of `$headOid`,
+ * the reviewed commit (not the pull request's current head, which may have moved).
+ */
+const OVERVIEW_QUERY = `query ImpactTreePullRequestOverview($owner: String!, $name: String!, $number: Int!, $headOid: GitObjectID!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed viewerPermission
+    pullRequest(number: $number) {
+      headRefOid isDraft mergeable mergeStateStatus reviewDecision isMergeQueueEnabled isInMergeQueue
+      labels(first: ${PAGE_SIZE}) { totalCount nodes { name color } }
+      reviewRequests(first: ${PAGE_SIZE}) { totalCount nodes { requestedReviewer { __typename ... on User { login } ... on Bot { login } ... on Mannequin { login } ... on Team { name combinedSlug } } } }
+      latestReviews(first: ${PAGE_SIZE}) { totalCount nodes { author { login } state } }
+    }
+    object(oid: $headOid) {
+      ... on Commit {
+        statusCheckRollup {
+          state
+          contexts(first: ${PAGE_SIZE}, after: $cursor) {${CONTEXT_FIELDS}
+          }
+        }
+      }
+    }
+  }
+}`;
+
+/** Follow-up page of checks. */
+const CHECKS_PAGE_QUERY = `query ImpactTreeOverviewChecks($owner: String!, $name: String!, $number: Int!, $headOid: GitObjectID!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    object(oid: $headOid) {
+      ... on Commit {
+        statusCheckRollup {
+          contexts(first: ${PAGE_SIZE}, after: $cursor) {${CONTEXT_FIELDS}
+          }
+        }
+      }
+    }
+  }
+}`;
+
 /**
  * @typedef {{ login: string, avatarUrl: string|null }} ReviewAuthor
  *
@@ -162,6 +220,41 @@ const FILES_PAGE_QUERY = `query ImpactTreeReviewFiles($owner: String!, $name: St
  * @property {string} headRefName Mutable branch name.
  * @property {string} baseRefName Mutable branch name.
  *
+ * @typedef {'MERGEABLE'|'CONFLICTING'|'UNKNOWN'} Mergeable
+ * @typedef {'BEHIND'|'BLOCKED'|'CLEAN'|'DIRTY'|'DRAFT'|'HAS_HOOKS'|'UNKNOWN'|'UNSTABLE'} MergeStateStatus
+ *
+ * @typedef {object} MergeInfo
+ * @property {Mergeable} mergeable
+ * @property {MergeStateStatus} mergeStateStatus
+ * @property {'APPROVED'|'CHANGES_REQUESTED'|'REVIEW_REQUIRED'|null} reviewDecision
+ * @property {boolean} isDraft
+ * @property {boolean} isMergeQueueEnabled
+ * @property {boolean} isInMergeQueue
+ * @property {{ merge: boolean, squash: boolean, rebase: boolean }} methods Merge methods the repository allows.
+ * @property {'ADMIN'|'MAINTAIN'|'WRITE'|'TRIAGE'|'READ'|null} viewerPermission
+ * @property {boolean} headMoved The pull request's head is not the commit that was reviewed.
+ *
+ * @typedef {{ name: string, color: string|null }} LabelItem `color` is 6 lower-case hex digits, else null.
+ * @typedef {'AWAITING'|'APPROVED'|'CHANGES_REQUESTED'|'COMMENTED'|'DISMISSED'} ReviewerState
+ * @typedef {{ name: string, kind: 'user'|'team', state: ReviewerState }} ReviewerItem
+ *
+ * @typedef {object} CheckItem
+ * @property {string} name
+ * @property {string|null} context Workflow name, else app name, else null.
+ * @property {'failed'|'pending'|'passed'|'skipped'} state
+ * @property {boolean} required
+ * @property {string|null} detail A commit status's description.
+ * @property {string|null} url https only, else null.
+ *
+ * @typedef {{ kind: 'none' }
+ *   | { kind: 'ready', items: CheckItem[], total: number, incomplete: string|null }
+ *   | { kind: 'failed', error: Error }} ChecksInfo `none`: GitHub reports no checks for the commit.
+ *
+ * @typedef {{ kind: 'ready', merge: MergeInfo, labels: { items: LabelItem[], more: number },
+ *   reviewers: { items: ReviewerItem[], more: number }, checks: ChecksInfo }
+ *   | { kind: 'failed', error: Error }} PullRequestOverview What the Pull Request tab shows
+ *   besides the review: a failure here fails only this part, never the review data.
+ *
  * @typedef {object} ReviewModel
  * @property {PullRequestSummary} pr
  * @property {ReviewThread[]} threads
@@ -170,6 +263,7 @@ const FILES_PAGE_QUERY = `query ImpactTreeReviewFiles($owner: String!, $name: St
  * @property {Map<string, ViewedState>} viewed Repository-relative path to state; paths
  *   past the file budget are absent.
  * @property {TimelineItem[]} timeline Newest 50 reviews and issue comments, oldest first.
+ * @property {PullRequestOverview} overview
  * @property {string[]} incomplete Why the model is not the whole story; empty when it is.
  */
 
@@ -445,9 +539,239 @@ function pullRequestOf(data, number) {
   return repo.pullRequest;
 }
 
+const CHECK_RUN_STATUSES = ['COMPLETED', 'IN_PROGRESS', 'PENDING', 'QUEUED', 'REQUESTED', 'WAITING'];
+const CHECK_RUN_CONCLUSIONS = ['SUCCESS', 'NEUTRAL', 'SKIPPED', 'FAILURE', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STARTUP_FAILURE', 'STALE'];
+/** @type {Record<string, CheckItem['state']>} */
+const CONCLUSION_STATE = {
+  SUCCESS: 'passed', NEUTRAL: 'skipped', SKIPPED: 'skipped', FAILURE: 'failed', TIMED_OUT: 'failed',
+  CANCELLED: 'failed', ACTION_REQUIRED: 'failed', STARTUP_FAILURE: 'failed', STALE: 'failed',
+};
+/** @type {Record<string, CheckItem['state']>} */
+const STATUS_STATE = { SUCCESS: 'passed', PENDING: 'pending', EXPECTED: 'pending', FAILURE: 'failed', ERROR: 'failed' };
+const REVIEWER_ORDER = ['CHANGES_REQUESTED', 'AWAITING', 'APPROVED', 'COMMENTED', 'DISMISSED'];
+
+/** @param {unknown} value @param {string} what @returns {string|null} */
+function strOrNull(value, what) {
+  return value == null ? null : str(value, what);
+}
+
+/** A link we will open: https only. @param {unknown} value @param {string} what @returns {string|null} */
+function httpsOrNull(value, what) {
+  const url = strOrNull(value, what);
+  if (url === null) return null;
+  try { return new URL(url).protocol === 'https:' ? url : null; } catch { return null; }
+}
+
+/** @param {unknown} raw @param {string} what @returns {CheckItem} */
+function normaliseCheck(raw, what) {
+  const c = object(raw, what);
+  const type = oneOf(c.__typename, ['CheckRun', 'StatusContext'], `${what}.__typename`);
+  const required = bool(c.isRequired, `${what}.isRequired`);
+  if (type === 'StatusContext') {
+    return {
+      name: str(c.context, `${what}.context`), context: null, required,
+      state: STATUS_STATE[oneOf(c.state, Object.keys(STATUS_STATE), `${what}.state`)],
+      detail: strOrNull(c.description, `${what}.description`), url: httpsOrNull(c.targetUrl, `${what}.targetUrl`),
+    };
+  }
+  const status = oneOf(c.status, CHECK_RUN_STATUSES, `${what}.status`);
+  const conclusion = c.conclusion == null ? null : oneOf(c.conclusion, CHECK_RUN_CONCLUSIONS, `${what}.conclusion`);
+  // A run that is not completed, or that says nothing about how it ended, has not passed.
+  const state = status !== 'COMPLETED' || conclusion === null ? 'pending' : CONCLUSION_STATE[conclusion];
+  const suite = c.checkSuite == null ? null : object(c.checkSuite, `${what}.checkSuite`);
+  const run = suite && suite.workflowRun != null ? object(suite.workflowRun, `${what}.checkSuite.workflowRun`) : null;
+  const workflow = run && run.workflow != null ? object(run.workflow, `${what}.checkSuite.workflowRun.workflow`) : null;
+  const app = suite && suite.app != null ? object(suite.app, `${what}.checkSuite.app`) : null;
+  return {
+    name: str(c.name, `${what}.name`),
+    context: workflow ? str(workflow.name, `${what} workflow name`) : app ? str(app.name, `${what} app name`) : null,
+    state, required, detail: null, url: httpsOrNull(c.detailsUrl, `${what}.detailsUrl`),
+  };
+}
+
+/**
+ * @param {unknown} raw A `contexts` connection.
+ * @returns {{ items: CheckItem[], total: number, hasNextPage: boolean, endCursor: string|null }}
+ */
+function normaliseContexts(raw) {
+  const c = connection(raw, 'contexts');
+  return {
+    items: c.nodes.map((n, i) => normaliseCheck(n, `check ${i}`)),
+    total: count(object(raw, 'contexts').totalCount, 'contexts.totalCount'),
+    hasNextPage: c.hasNextPage, endCursor: c.endCursor,
+  };
+}
+
+/** `{ nodes, totalCount }` of an unpaged list. @param {unknown} raw @param {string} what */
+function shortList(raw, what) {
+  const c = object(raw, what);
+  if (!Array.isArray(c.nodes)) bad(`${what}.nodes is not a list`);
+  return { nodes: /** @type {unknown[]} */ (c.nodes), more: Math.max(0, count(c.totalCount, `${what}.totalCount`) - c.nodes.length) };
+}
+
+/** @param {unknown} raw @returns {string|null} 6 lower-case hex digits, or null. */
+function labelColor(raw) {
+  return typeof raw === 'string' && /^[0-9a-fA-F]{6}$/.test(raw) ? raw.toLowerCase() : null;
+}
+
+/**
+ * @param {unknown} rawRequests `reviewRequests`
+ * @param {unknown} rawReviews `latestReviews`
+ * @param {string|null} authorLogin The pull request's author, who is not a reviewer of it.
+ * @returns {{ items: ReviewerItem[], more: number }}
+ */
+function normaliseReviewers(rawRequests, rawReviews, authorLogin) {
+  const requests = shortList(rawRequests, 'reviewRequests');
+  const reviews = shortList(rawReviews, 'latestReviews');
+  /** @type {Map<string, ReviewerItem>} */
+  const byKey = new Map();
+  // A requested reviewer is awaiting, even if they reviewed before: it is a re-request.
+  requests.nodes.forEach((n, i) => {
+    const what = `review request ${i}`;
+    const r = object(n, what).requestedReviewer;
+    /** @type {ReviewerItem} */
+    let item;
+    if (r == null) item = { name: 'ghost', kind: 'user', state: 'AWAITING' };
+    else {
+      const who = object(r, `${what}.requestedReviewer`);
+      const type = oneOf(who.__typename, ['User', 'Bot', 'Mannequin', 'Team'], `${what}.requestedReviewer.__typename`);
+      item = type === 'Team'
+        ? { name: str(who.combinedSlug, `${what} team slug`), kind: 'team', state: 'AWAITING' }
+        : { name: str(who.login, `${what} login`), kind: 'user', state: 'AWAITING' };
+    }
+    byKey.set(`${item.kind}:${item.name}`, item);
+  });
+  reviews.nodes.forEach((n, i) => {
+    const what = `latest review ${i}`;
+    const r = object(n, what);
+    const state = oneOf(r.state, ['PENDING', 'COMMENTED', 'APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'], `${what}.state`);
+    const a = r.author == null ? null : object(r.author, `${what}.author`);
+    const name = a ? str(a.login, `${what}.author.login`) : 'ghost';
+    if (state === 'PENDING' || name === authorLogin || byKey.has(`user:${name}`)) return;
+    byKey.set(`user:${name}`, { name, kind: 'user', state: /** @type {ReviewerState} */ (state) });
+  });
+  const items = [...byKey.values()].sort((a, b) => REVIEWER_ORDER.indexOf(a.state) - REVIEWER_ORDER.indexOf(b.state)
+    || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  return { items, more: requests.more + reviews.more };
+}
+
+/**
+ * Validates the overview query's answer. Pure.
+ * @param {unknown} rawData The `data` object of the answer.
+ * @param {{ number: number, reviewedHead: string, authorLogin: string|null }} facts
+ * @returns {{ merge: MergeInfo, labels: { items: LabelItem[], more: number },
+ *   reviewers: { items: ReviewerItem[], more: number },
+ *   contexts: null | undefined | ReturnType<typeof normaliseContexts> }} `contexts`: null when the
+ *   commit has no checks, undefined when GitHub does not know the commit.
+ */
+function normaliseOverview(rawData, { number, reviewedHead, authorLogin }) {
+  const repo = object(object(rawData, 'the answer').repository, 'repository');
+  const p = object(repo.pullRequest, `pull request #${number}`);
+  const where = 'the pull request overview';
+  const decision = p.reviewDecision == null ? null
+    : /** @type {MergeInfo['reviewDecision']} */ (oneOf(p.reviewDecision, ['APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED'], `${where}.reviewDecision`));
+  const permission = repo.viewerPermission == null ? null
+    : /** @type {MergeInfo['viewerPermission']} */ (oneOf(repo.viewerPermission, ['ADMIN', 'MAINTAIN', 'WRITE', 'TRIAGE', 'READ'], 'repository.viewerPermission'));
+  const merge = {
+    mergeable: /** @type {Mergeable} */ (oneOf(p.mergeable, ['MERGEABLE', 'CONFLICTING', 'UNKNOWN'], `${where}.mergeable`)),
+    mergeStateStatus: /** @type {MergeStateStatus} */ (oneOf(p.mergeStateStatus,
+      ['BEHIND', 'BLOCKED', 'CLEAN', 'DIRTY', 'DRAFT', 'HAS_HOOKS', 'UNKNOWN', 'UNSTABLE'], `${where}.mergeStateStatus`)),
+    reviewDecision: decision,
+    isDraft: bool(p.isDraft, `${where}.isDraft`),
+    isMergeQueueEnabled: bool(p.isMergeQueueEnabled, `${where}.isMergeQueueEnabled`),
+    isInMergeQueue: bool(p.isInMergeQueue, `${where}.isInMergeQueue`),
+    methods: {
+      merge: bool(repo.mergeCommitAllowed, 'repository.mergeCommitAllowed'),
+      squash: bool(repo.squashMergeAllowed, 'repository.squashMergeAllowed'),
+      rebase: bool(repo.rebaseMergeAllowed, 'repository.rebaseMergeAllowed'),
+    },
+    viewerPermission: permission,
+    headMoved: str(p.headRefOid, `${where}.headRefOid`) !== reviewedHead,
+  };
+  const labelList = shortList(p.labels, 'labels');
+  const labels = {
+    items: labelList.nodes.map((n, i) => {
+      const l = object(n, `label ${i}`);
+      return { name: str(l.name, `label ${i}.name`), color: labelColor(l.color) };
+    }),
+    more: labelList.more,
+  };
+  const reviewers = normaliseReviewers(p.reviewRequests, p.latestReviews, authorLogin);
+  let contexts;
+  if (repo.object != null) {
+    const commit = object(repo.object, 'the reviewed commit');
+    if (!('statusCheckRollup' in commit)) bad('the reviewed commit has no `statusCheckRollup` field in the answer');
+    contexts = commit.statusCheckRollup == null ? null
+      : normaliseContexts(object(commit.statusCheckRollup, 'statusCheckRollup').contexts);
+  }
+  return { merge, labels, reviewers, contexts };
+}
+
+/**
+ * Whether an error must propagate out of the overview instead of becoming its failure:
+ * a cancellation, or one of our own invariants.
+ * @param {unknown} error
+ * @param {AbortSignal|undefined} signal
+ * @returns {boolean}
+ */
+function mustPropagate(error, signal) {
+  return (signal !== undefined && signal.aborted) || isAnalysisCancelled(error) || error instanceof AssertionError
+    || (error instanceof Error && error.name === 'AbortError');
+}
+
+/**
+ * Loads the overview: one query, then the checks' follow-up pages while the budget lasts.
+ * Failures other than cancellation become the overview's (or the checks') `failed`.
+ * @param {Parameters<typeof loadPullRequestReview>[0]} gh
+ * @param {{ owner: string, name: string, number: number }} base
+ * @param {{ pr: PullRequestSummary, signal?: AbortSignal, maxCheckPages: number }} ctx
+ * @returns {Promise<PullRequestOverview>}
+ */
+async function loadOverview(gh, base, { pr, signal, maxCheckPages }) {
+  const vars = { ...base, headOid: pr.headRefOid };
+  try {
+    throwIfCancelled(signal);
+    const first = normaliseOverview(await gh.graphql(OVERVIEW_QUERY, { ...vars, cursor: null }, { signal }),
+      { number: base.number, reviewedHead: pr.headRefOid, authorLogin: pr.author ? pr.author.login : null });
+    /** @type {ChecksInfo} */
+    let checks;
+    if (first.contexts === undefined) {
+      checks = { kind: 'failed', error: new GitHubResponseError(ENDPOINT, `GitHub does not know commit ${pr.headRefOid.slice(0, 7)}`) };
+    } else if (first.contexts === null) {
+      checks = { kind: 'none' };
+    } else {
+      const items = first.contexts.items;
+      const total = first.contexts.total;
+      let { hasNextPage, endCursor } = first.contexts;
+      let pages = 1;
+      try {
+        while (hasNextPage && pages < maxCheckPages) {
+          throwIfCancelled(signal);
+          const answer = object(object(await gh.graphql(CHECKS_PAGE_QUERY, { ...vars, cursor: endCursor }, { signal }), 'the answer').repository, 'repository');
+          const commit = object(answer.object, 'the reviewed commit');
+          const rollup = object(commit.statusCheckRollup, 'statusCheckRollup');
+          const next = normaliseContexts(rollup.contexts);
+          items.push(...next.items);
+          pages += 1;
+          hasNextPage = next.hasNextPage;
+          endCursor = next.endCursor;
+        }
+        checks = { kind: 'ready', items, total, incomplete: hasNextPage ? `only the first ${items.length} of ${total} checks were loaded` : null };
+      } catch (e) {
+        if (mustPropagate(e, signal)) throw e;
+        checks = { kind: 'failed', error: /** @type {Error} */ (e) };
+      }
+    }
+    return { kind: 'ready', merge: first.merge, labels: first.labels, reviewers: first.reviewers, checks };
+  } catch (e) {
+    if (mustPropagate(e, signal)) throw e;
+    return { kind: 'failed', error: e instanceof Error ? e : new Error(String(e)) };
+  }
+}
+
 /**
  * @param {Partial<typeof DEFAULT_BUDGETS>|undefined} overrides
- * @returns {{ maxThreadPages: number, maxFilePages: number }}
+ * @returns {{ maxThreadPages: number, maxFilePages: number, maxCheckPages: number }}
  */
 function resolveBudgets(overrides) {
   const budgets = { ...DEFAULT_BUDGETS, ...overrides };
@@ -462,7 +786,8 @@ function resolveBudgets(overrides) {
 /**
  * Loads and normalises the review state of one pull request: page 1 of everything in a
  * single query, then threads and files separately by cursor until done or the budget is
- * spent. Does I/O only through `gh.graphql`, and lets its errors (typed GitHub errors,
+ * spent, then the overview (checks, reviewers, labels, merge state), whose failure is
+ * reported in `overview` and does not fail the load. Does I/O only through `gh.graphql`, and lets its errors (typed GitHub errors,
  * cancellation) propagate: a failed read is never an empty model.
  * @param {{ graphql: (query: string, variables?: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<Record<string, unknown>> }} gh
  * @param {{ owner: string, name: string, number: number }} target Repository owner and name,
@@ -476,7 +801,7 @@ function resolveBudgets(overrides) {
 async function loadPullRequestReview(gh, { owner, name, number }, { signal, budgets } = {}) {
   if (!isString(owner) || owner === '' || !isString(name) || name === '') throw new RangeError('owner and name must be non-empty strings');
   if (!Number.isSafeInteger(number) || number < 1) throw new RangeError('number must be a positive integer');
-  const { maxThreadPages, maxFilePages } = resolveBudgets(budgets);
+  const { maxThreadPages, maxFilePages, maxCheckPages } = resolveBudgets(budgets);
   const base = { owner, name, number };
 
   throwIfCancelled(signal);
@@ -516,7 +841,8 @@ async function loadPullRequestReview(gh, { owner, name, number }, { signal, budg
   for (const t of threads) {
     for (const reason of t.incomplete || []) incomplete.push(`thread ${t.id} on ${t.path}: ${reason}`);
   }
-  return { pr, threads, pendingReview, viewed, timeline, incomplete };
+  const overview = await loadOverview(gh, base, { pr, signal, maxCheckPages });
+  return { pr, threads, pendingReview, viewed, timeline, overview, incomplete };
 }
 
 /**
@@ -566,7 +892,7 @@ function pendingCount(threads) {
 
 module.exports = {
   DEFAULT_BUDGETS, MAX_BUDGET, PAGE_SIZE, COMMENTS_PER_THREAD, TIMELINE_WINDOW,
-  REVIEW_QUERY, THREADS_PAGE_QUERY, FILES_PAGE_QUERY,
+  REVIEW_QUERY, THREADS_PAGE_QUERY, FILES_PAGE_QUERY, OVERVIEW_QUERY, CHECKS_PAGE_QUERY,
   loadPullRequestReview, normaliseFirstPage, normaliseThread, commentedLineOf,
   threadsForRange, threadsForFile, openCount, pendingCount,
 };

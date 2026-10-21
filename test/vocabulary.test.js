@@ -81,6 +81,7 @@ const ALLOWED_LITERALS = [
   { re: /^(\.{1,2}\/|node:)\S*$/, why: 'a module path' },
   { re: /^tick$/, why: 'the page-to-host message type for a review mark (internal protocol)' },
   { re: /^stale$/, why: 'an error code of the review store (internal)' },
+  { re: /^STALE$/, why: 'a value of GitHub\'s check run conclusion, validated at the boundary (data, not prose)' },
   { re: /^\[data-act="tick"\]$/, why: 'a selector of the page script' },
   { re: /^analyze$/, why: 'a property name used as a string key' },
 ];
