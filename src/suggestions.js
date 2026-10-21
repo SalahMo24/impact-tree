@@ -12,8 +12,9 @@
 // counts it.
 
 /**
- * @typedef {{ text: string }} Suggestion The replacement for the commented lines, its
- *   lines joined by `\n`; empty means "delete these lines".
+ * @typedef {{ text: string|null }} Suggestion The replacement for the commented lines, its
+ *   lines joined by `\n`. Null for an empty block, which deletes the lines; a block holding
+ *   one blank line is `''` and replaces them with one blank line, as on GitHub.
  *
  * @typedef {{ line: number, character: number }} Position0 0-based, as VS Code's.
  * @typedef {{ start: Position0, end: Position0, text: string }} TextEdit Replace the text
@@ -27,7 +28,7 @@
  * @property {boolean} isOutdated
  * @property {boolean} fileLevel
  *
- * @typedef {{ ok: true, path: string, startLine: number, line: number, text: string }
+ * @typedef {{ ok: true, path: string, startLine: number, line: number, text: string|null }
  *   | { ok: false, reason: string }} ApplyDecision `startLine`..`line` are 1-based, inclusive.
  */
 
@@ -76,7 +77,8 @@ function parseSuggestions(body) {
     if (i >= lines.length) break; // unclosed: the rest of the body is its content
     if (info.trim() === 'suggestion') {
       const strip = new RegExp(`^ {0,${indent.length}}`);
-      out.push({ text: lines.slice(start, i).map((l) => l.replace(strip, '')).join('\n') });
+      const content = lines.slice(start, i).map((l) => l.replace(strip, ''));
+      out.push({ text: content.length === 0 ? null : content.join('\n') });
     }
     i++; // past the closing fence
   }
@@ -162,18 +164,18 @@ function linesChanged({ path, startLine, line }, workingLines, commitLines) {
 /**
  * The edit that replaces whole lines `startLine`..`line` (1-based, inclusive) with a
  * suggestion's text, keeping the file's line breaks: the replacement's lines are joined
- * with `eol`, and the line break after the last replaced line is kept. An empty text
- * deletes the lines with their line breaks. Pure.
+ * with `eol`, and the line break after the last replaced line is kept. A null text (an
+ * empty block) deletes the lines with their line breaks; `''` leaves one blank line. Pure.
  * @param {string[]} lines The file (`splitLines`); `line` is within it.
  * @param {number} startLine
  * @param {number} line
- * @param {string} text
+ * @param {string|null} text
  * @param {'\r\n'|'\n'} eol
  * @returns {TextEdit}
  */
 function suggestionEdit(lines, startLine, line, text, eol) {
   const first = startLine - 1, last = line - 1; // 0-based
-  if (text !== '') {
+  if (text !== null) {
     return { start: { line: first, character: 0 }, end: { line: last, character: lines[last].length }, text: splitLines(text).join(eol) };
   }
   // Deleting: take the line break after the last line, or, at the end of the file, the

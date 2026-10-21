@@ -13,8 +13,8 @@ test('a suggestion block is parsed to its lines, joined by \\n', () => {
   assert.deepEqual(texts('Try this:\n```suggestion\nconst a = 1;\n```\nthanks'), ['const a = 1;']);
   assert.deepEqual(texts('```suggestion\nfunction f() {\n  return 2;\n}\n```'), ['function f() {\n  return 2;\n}'], 'multi-line');
   assert.deepEqual(texts('```suggestion\r\nline one\r\nline two\r\n```\r\n'), ['line one\nline two'], 'CRLF');
-  assert.deepEqual(texts('```suggestion\n```'), [''], 'empty: delete the lines');
-  assert.deepEqual(texts('```suggestion\n\n```'), [''], 'one blank line');
+  assert.deepEqual(texts('```suggestion\n```'), [null], 'empty: delete the lines');
+  assert.deepEqual(texts('```suggestion\n\n```'), [''], 'one blank line: replace with a blank line');
   assert.deepEqual(texts('  ```suggestion\n    indented\n  ```'), ['  indented'], 'the fence\'s indentation is taken off');
   assert.deepEqual(texts('```suggestion   \nx\n```   '), ['x'], 'spaces around the info string and after the closing fence');
 });
@@ -102,15 +102,16 @@ const applied = (text, startLine, line, replacement) => applyTo(text, suggestion
 test('the edit replaces whole lines and leaves the rest as it was', () => {
   assert.equal(applied('a\nb\nc\nd\n', 2, 3, 'X\nY\nZ'), 'a\nX\nY\nZ\nd\n');
   assert.equal(applied('a\nb\nc', 3, 3, 'C'), 'a\nb\nC', 'the last line, no final line break');
-  assert.equal(applied('a\nb\n', 1, 1, ''), 'b\n', 'deletion takes the line break');
-  assert.equal(applied('a\nb\nc\n', 2, 2, ''), 'a\nc\n');
-  assert.equal(applied('a\nb\nc', 2, 3, ''), 'a', 'deleting the end of a file without a final line break');
-  assert.equal(applied('only', 1, 1, ''), '');
+  assert.equal(applied('a\nb\n', 1, 1, null), 'b\n', 'deletion takes the line break');
+  assert.equal(applied('a\nb\nc\n', 2, 2, null), 'a\nc\n');
+  assert.equal(applied('a\nb\nc', 2, 3, null), 'a', 'deleting the end of a file without a final line break');
+  assert.equal(applied('only', 1, 1, null), '');
+  assert.equal(applied('a\nb\nc\n', 2, 2, ''), 'a\n\nc\n', 'a blank-line suggestion leaves one blank line');
 });
 
 test('a CRLF file keeps CRLF', () => {
   assert.equal(eolOf('a\r\nb'), '\r\n');
   assert.equal(eolOf('a\nb\r\n'), '\n', 'the first line break decides');
   assert.equal(applied('a\r\nb\r\nc\r\n', 2, 2, 'X\nY'), 'a\r\nX\r\nY\r\nc\r\n');
-  assert.equal(applied('a\r\nb\r\nc\r\n', 2, 2, ''), 'a\r\nc\r\n');
+  assert.equal(applied('a\r\nb\r\nc\r\n', 2, 2, null), 'a\r\nc\r\n');
 });
