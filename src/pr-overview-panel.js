@@ -17,6 +17,11 @@ const { buildPullRequestHtml, pageModelOf, pendingStatusOf, submittedMessage } =
 
 const VIEW_TYPE = 'impactTree.pullRequest';
 const CONTEXT_KEY = 'impactTree.hasPullRequestReview';
+// True while the open pull request's review data is still loading for the first time, so
+// "Submit review…" is shown disabled with its reason (package.json) instead of opening an
+// empty tab. A reload that keeps earlier data, or a failed one, still opens the tab, which
+// shows the data or a Retry.
+const LOADING_CONTEXT_KEY = 'impactTree.pullRequestReviewLoading';
 const REVIEW_EVENTS = Object.freeze(['COMMENT', 'APPROVE', 'REQUEST_CHANGES']);
 /**
  * The longest summary accepted from the page, in UTF-16 code units: four times GitHub's
@@ -160,16 +165,20 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, revealThre
   const bar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 49);
   bar.name = 'Impact Tree pending review';
   bar.command = 'impactTree.showPullRequest';
-  /** @type {unknown} */
-  let sentContext;
+  /** @type {Map<string, unknown>} */
+  const sentContexts = new Map();
+  // The only place these keys are set, and only when a value changes.
+  /** @param {string} key @param {boolean} value */
+  function setContextOnChange(key, value) {
+    if (sentContexts.get(key) === value) return;
+    sentContexts.set(key, value);
+    Promise.resolve(vscode.commands.executeCommand('setContext', key, value))
+      .then(undefined, (/** @type {any} */ err) => log(`pull request tab: could not set ${key}: ${err && err.message}`));
+  }
   function updateStatus() {
     const state = store.getState();
-    const hasReview = state.kind !== 'none';
-    if (sentContext !== hasReview) {
-      sentContext = hasReview;
-      Promise.resolve(vscode.commands.executeCommand('setContext', CONTEXT_KEY, hasReview))
-        .then(undefined, (/** @type {any} */ err) => log(`pull request tab: could not set ${CONTEXT_KEY}: ${err && err.message}`));
-    }
+    setContextOnChange(CONTEXT_KEY, state.kind !== 'none');
+    setContextOnChange(LOADING_CONTEXT_KEY, state.kind === 'loading' && state.previous === null);
     const status = pendingStatusOf(state);
     if (!status) { bar.hide(); return; }
     if (bar.text !== status.text) bar.text = status.text;
@@ -232,7 +241,7 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, revealThre
     keepDraft(owner.number, m.body);
     // Ours, not GitHub's: the store would send it, so the check is made here.
     if (m.event === 'APPROVE' && model.check && !m.approveAnyway) {
-      owner.error = 'Not approved: tick “Approve anyway” first. Changes needing attention or unresolved threads are still open.';
+      owner.error = 'Not approved: check “Approve anyway” first. Changes that need attention or unresolved threads are still open.';
       render();
       return;
     }
@@ -331,4 +340,4 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, revealThre
   };
 }
 
-module.exports = { createPullRequestPanel, parseMessage, VIEW_TYPE, CONTEXT_KEY, MAX_DRAFTS };
+module.exports = { createPullRequestPanel, parseMessage, VIEW_TYPE, CONTEXT_KEY, LOADING_CONTEXT_KEY, MAX_DRAFTS };

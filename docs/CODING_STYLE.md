@@ -535,6 +535,11 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      from unticking a file until the next analysis.
    - Planned: a stat-keyed token cache, if reviews of more than about a thousand changed
      files prove common; measure again before adding it.
+   - Exists: the snapshot store (`src/engine/snapshot-store.js`) is owned by the extension
+     activation (created in `src/snapshot-storage.js` from `context.storageUri`). It keeps
+     checkpoint snapshots under `<storage>/impact-tree/`, serializes its manifest writes,
+     and writes nothing to `.git` (objects go to its own folder; temporary indexes are
+     removed in `finally`, leftovers swept at startup). Retention: F5.
 5. Enroll modules in linting and JSDoc type checking, then enforce those checks in
    CI. Broaden coverage as modules are brought into compliance.
    - Exists: `npm run lint` (ESLint flat config), `npm run typecheck` (`tsc` over
@@ -549,7 +554,14 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      `src/tree-row-models.js`, `src/tree-grouping.js`, `src/tree-item-renderer.js`), the
      review navigation (`src/review-navigation.js`), and the detail panel and its HTML
      builder (`src/detail-panel.js`, `src/detail-panel-html.js`), and the review lens and callers
-     peek (`src/review-lens.js`).
+     peek (`src/review-lens.js`), and the feedback drafts (`src/feedback-drafts.js`,
+     `src/feedback-comments.js`, `src/feedback-comments-model.js`, `src/feedback-tree.js`), the
+     feedback rounds (`src/feedback-file.js`, `src/feedback-files-io.js`, `src/feedback-send.js`,
+     `src/feedback-readback.js`, `src/feedback-round-model.js`, `src/feedback-round-view.js`,
+     `src/agent-handoff.js`, `src/agent-pointer.js`), the snapshot store
+     (`src/engine/snapshot-store.js`, `src/engine/diff-index.js`, `src/snapshot-storage.js`) the
+     cleanup of stored data (`src/storage-cleanup.js`, `src/storage-cleanup-run.js`), and the
+     search for users the editor's language server did not reach (`src/engine/unseen-users.js`).
    - Planned: type-aware lint rules such as `no-floating-promises` (whether to add them
      before the review loop is an open decision), and enrolling the remaining modules.
 

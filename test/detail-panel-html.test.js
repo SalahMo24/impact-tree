@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const { buildFileRows, buildImpactRows, treeItemId } = require('../src/review-tree-model');
 const { buildDetailHtml, listCallerRows, describeOrigin, tidySignature, progressPresentation } = require('../src/detail-panel-html');
+const { STATE_NAMES } = require('../src/tree-row-models');
 
 const uriOf = (file, pos) => (file ? `uri:${file}${pos == null ? '' : `#${pos}`}` : null);
 const rel = (f) => f.replace('/r/', '');
@@ -56,11 +57,11 @@ test('a change that breaks a caller: level word, sentence, location, signatures,
   const result = resultOf({ allChanged: [bad] });
   const text = textOf(render(findRow(result, 'Holder.bad'), result));
   assert.match(text, /^selected in tree Holder\.bad src\/a\.ts:10–19 /);
-  assert.match(text, /Needs attention\. The required parameter changed, and 1 of 2 callers was not changed on the call line\./);
+  assert.match(text, /Callers not updated\. The required parameter changed, and 1 of 2 callers was not changed on the call line\./);
   assert.match(text, /Signature − \(a: string\) => void \+ \(a: string, b: number\) => void/);
-  assert.match(text, /Callers \(2\) Show callers ✓ alsoUses src\/other\.ts:51 ○ useIt src\/user\.ts:31 not updated Tests/, 'sorted as the tree sorts them, with the call-site line');
+  assert.match(text, /Callers \(2\) Show callers call updated alsoUses src\/other\.ts:51 not changed useIt src\/user\.ts:31 not updated Tests/, 'sorted as the tree sorts them, with the call-site line');
   assert.match(text, /Tests Tested by spec\.test\.js/);
-  assert.match(text, /Mark reviewed Next unreviewed$/);
+  assert.match(text, /Mark reviewed Next unreviewed Show callers$/);
 });
 
 test('a risky change marks the callers its verdict counts as not updated; a body-only change does not', () => {
@@ -75,10 +76,10 @@ test('a risky change marks the callers its verdict counts as not updated; a body
   const risky = change('src/x.ts', 'risky', 10, { kinds: [PARAM], callerState: 'resolved', callers, staleCallers: 2 });
   const result = resultOf({ allChanged: [risky, edited] });
   const text = textOf(render(findRow(result, 'risky'), result));
-  assert.match(text, /Needs attention\. .*2 of 4 callers were not changed/);
-  assert.match(text, /Callers \(4\) Show callers △ edited src\/a\.ts:11 not updated ✓ updated src\/b\.ts:21 ○ left src\/c\.ts:31 not updated ○ 🧪 t\.test\.ts test\/t\.test\.ts:1 Tests/,
+  assert.match(text, /Callers not updated\. .*2 of 4 callers were not changed/);
+  assert.match(text, /Callers \(4\) Show callers changed, but not at the call edited src\/a\.ts:11 not updated call updated updated src\/b\.ts:21 not changed left src\/c\.ts:31 not updated not changed 🧪 t\.test\.ts test\/t\.test\.ts:1 Tests/,
     'a test caller is not counted, so it is not marked');
-  assert.equal(text.match(/not updated/g).length, 2);
+  assert.equal(text.slice(text.indexOf("Callers (")).match(/not updated/g).length, 2);
   const body = change('src/x.ts', 'body', 10, { callerState: 'resolved', callers });
   const plain = resultOf({ allChanged: [body, edited] });
   assert.doesNotMatch(textOf(render(findRow(plain, 'body'), plain)), /not updated/, 'unchanged callers are expected after a body-only change');
@@ -98,12 +99,13 @@ test('signatures are shown without the inferred-type placeholders, and escaped a
 
 test('each verdict level leads with its word', () => {
   const cases = [
-    [change('src/a.ts', 'unknown', 10, { kinds: [THROW], callerState: 'unknown', callersIncompleteReason: 'referenced-as-value' }), 'Risk unknown', 1],
-    [change('src/a.ts', 'handled', 10, { kinds: [PARAM], callerState: 'resolved', callers: [callerOf('src/u.ts', 'u', 100, true)] }), 'Risk handled', 2],
+    [change('src/a.ts', 'unknown', 10, { kinds: [THROW], callerState: 'unknown', callersIncompleteReason: 'referenced-as-value' }), 'Callers unknown', 1],
+    [change('src/a.ts', 'handled', 10, { kinds: [PARAM], callerState: 'resolved', callers: [callerOf('src/u.ts', 'u', 100, true)] }), 'Callers updated', 2],
     [change('src/a.ts', 'reaches', 10, { callerState: 'resolved', callers: [callerOf('src/u.ts', 'u', 100, false)] }), 'Reaches callers', 3],
-    [change('src/a.ts', 'quiet', 10), 'Quiet', 4],
+    [change('src/a.ts', 'quiet', 10), 'No callers', 4],
   ];
   for (const [c, word, level] of cases) {
+    assert.equal(word, STATE_NAMES.levels[level], 'the heading is the shared state name');
     const result = resultOf({ allChanged: [c] });
     const html = render(findRow(result, c.label), result);
     assert.match(textOf(html), new RegExp(`${c.label} src/a\\.ts:10–19 ${word}\\. `), c.label);
@@ -118,7 +120,7 @@ test('a new throw is listed; an added symbol has no "before" signature to show',
   const text = textOf(render(findRow(result, 'thrower'), result));
   assert.match(text, /New throw \+ throw new Error\("bad"\)/);
   assert.doesNotMatch(text, /Signature/);
-  assert.doesNotMatch(text, /Callers/, 'no callers, no callers section');
+  assert.doesNotMatch(text, /Callers \(/, 'no callers, no callers section');
 });
 
 test('the tests line follows the tests row: not computed, unknown, none within reach, a preview', () => {
@@ -133,11 +135,27 @@ test('the tests line follows the tests row: not computed, unknown, none within r
   assert.match(textOf(render(findRow(preview, 'f'), preview)), /Tests Tests are not searched in a PR preview/);
 });
 
+test('Compute test reachability is a button only on a change of a local result whose test reach is not computed', () => {
+  const c = change('src/a.ts', 'f', 10);
+  const button = /data-act="test-reach"/;
+  const local = resultOf({ allChanged: [c], testReachComputed: false });
+  assert.match(render(findRow(local, 'f'), local), button);
+  assert.match(textOf(render(findRow(local, 'f'), local)), /Show callers Compute test reachability$/);
+  const computed = resultOf({ allChanged: [c] });
+  assert.doesNotMatch(render(findRow(computed, 'f'), computed), button);
+  const preview = resultOf({ allChanged: [c], tierA: true, testReachComputed: false });
+  assert.doesNotMatch(render(findRow(preview, 'f'), preview), button, 'a preview cannot compute it; the command would only explain');
+  assert.doesNotMatch(render(rowsOf(local)[0], local), button, 'only a change has it');
+  const id = treeItemId(findRow(local, 'f'));
+  assert.ok(render(findRow(local, 'f'), local).includes(`<button class="secondary" data-act="peek" data-id="${id}">Show callers</button>`),
+    'a Show callers button even for a change without callers');
+});
+
 test('an unfinished caller search is said under the callers, and a preview says which callers it can see', () => {
   const c = change('src/a.ts', 'f', 10, { callerState: 'resolved', callers: [callerOf('src/u.ts', 'u', 100, false)], callersComplete: false,
     callersIncompleteReason: 'the server timed out' });
   const local = resultOf({ allChanged: [c] });
-  assert.match(textOf(render(findRow(local, 'f'), local)), /○ u src\/u\.ts:11 More callers may be missing: the server timed out/);
+  assert.match(textOf(render(findRow(local, 'f'), local)), /not changed u src\/u\.ts:11 More callers may be missing: the server timed out/);
   const preview = resultOf({ allChanged: [c], tierA: true });
   assert.match(textOf(render(findRow(preview, 'f'), preview)), /Callers \(1\) Show callers Preview: only callers in the pull request's own files are shown\./);
 });
@@ -151,7 +169,7 @@ test('callers grouped by file in the tree are listed one by one, test callers ma
   assert.equal(impact[0].type, 'callerFile', 'the fixture groups two callers');
   assert.deepEqual(listCallerRows(impact).map((r) => r.label), ['one', 'two', 'a.test.ts']);
   const html = render(row, result);
-  assert.match(textOf(html), /Callers \(3\) Show callers ○ one src\/u\.ts:11 ✓ two src\/u\.ts:21 ○ 🧪 a\.test\.ts test\/a\.test\.ts:1 /);
+  assert.match(textOf(html), /Callers \(3\) Show callers not changed one src\/u\.ts:11 call updated two src\/u\.ts:21 not changed 🧪 a\.test\.ts test\/a\.test\.ts:1 /);
   assert.deepEqual([...html.matchAll(/data-act="caller" data-index="(\d+)"/g)].map((m) => m[1]), ['0', '1', '2'], 'each caller is a link');
 });
 
@@ -161,15 +179,15 @@ test('a caller whose line cannot be read shows its path alone', () => {
   const row = findRow(result, 'f');
   const html = buildDetailHtml(row, { result, isReviewed: () => false, impactRows: buildImpactRows(row, { result, uriOf, rel }).rows,
     nonce: NONCE, cspSource: CSP_SOURCE, origin: 'tree', lineOf: () => null });
-  assert.match(textOf(html), /○ u src\/u\.ts Tests/);
+  assert.match(textOf(html), /not changed u src\/u\.ts Tests/);
 });
 
-test('a reviewed change offers Untick; the tick button says what it will do', () => {
+test('a reviewed change offers Mark not reviewed; the tick button says what it will do', () => {
   const c = change('src/a.ts', 'f', 10);
   const result = resultOf({ allChanged: [c] });
   const row = findRow(result, 'f');
   const on = render(row, result, { isReviewed: (r) => r === row });
-  assert.match(textOf(on), /Untick Next unreviewed$/);
+  assert.match(textOf(on), /Mark not reviewed Next unreviewed Show callers$/);
   const id = treeItemId(row);
   assert.ok(on.includes(`data-act="tick" data-id="${id}" data-on="false"`), 'the button names the row it ticks');
   assert.ok(render(row, result).includes(`data-act="tick" data-id="${id}" data-on="true"`));
@@ -201,7 +219,7 @@ test('a file with a call graph: name, path, status, counts, and file-wide button
   const text = textOf(render(file, result, { isReviewed: (r) => r.label === quiet.label }));
   assert.match(text, /^selected in tree a\.ts src\/a\.ts · modified 3 changes, 2 need attention, 2 left to review\. Mark file reviewed Next unreviewed$/);
   const all = render(file, result, { isReviewed: () => true });
-  assert.match(textOf(all), /0 left to review\. Untick file Next unreviewed$/);
+  assert.match(textOf(all), /0 left to review\. Mark file not reviewed Next unreviewed$/);
   assert.match(all, /data-act="tick" data-id="file:src\/a\.ts" data-on="false"/);
   const one = resultOf({ allChanged: [change('src/b.ts', 'q', 10)] });
   assert.match(textOf(render(rowsOf(one)[0], one)), /1 change, 0 need attention, 1 left to review\./);
@@ -212,7 +230,7 @@ test('a file without a call graph says so and can be ticked', () => {
   const [file] = rowsOf(result);
   assert.equal(file.type, 'file');
   const text = textOf(render(file, result));
-  assert.match(text, /^selected in tree notes\.md docs\/notes\.md · added No call graph for this file \(tests, config, docs\)\. Read the diff and tick the file\. Mark reviewed Next unreviewed$/);
+  assert.match(text, /^selected in tree notes\.md docs\/notes\.md · added No call graph for this file \(tests, config, docs\)\. Read the diff and mark the file reviewed\. Mark reviewed Next unreviewed$/);
 });
 
 test('no row: a short hint, and no buttons', () => {
@@ -340,7 +358,7 @@ test('the progress strip names the source, counts, attention and percentage, and
   const strip = (progress) => buildDetailHtml(null, { result: null, isReviewed: () => false, impactRows: [], nonce: NONCE,
     cspSource: CSP_SOURCE, origin: 'tree', lineOf, progress: progressPresentation(progress) });
   const html = strip({ line: 'PR #15 against main', total: 8, left: 5, attention: 2 });
-  assert.match(textOf(html), /^PR #15 against main 3 of 8 reviewed ⛔ 2 need attention 38% 38% Select a change/);
+  assert.match(textOf(html), /^PR #15 against main 3 of 8 reviewed 2 need attention 38% 38% Select a change/);
   assert.match(html, /<progress max="8" value="3" data-progress-meter>/);
   assert.match(textOf(strip({ line: 'x', total: 2, left: 0, attention: 0 })), /2 of 2 reviewed nothing needs attention 100%/);
   assert.doesNotMatch(html, /\sstyle="/, 'the meter is styled by the nonce stylesheet, not inline');
@@ -381,4 +399,21 @@ test('the Threads section escapes GitHub\'s text, needs no inline style, and its
   assert.doesNotMatch(html, /<[^>]*\s(?:style|on[a-z]+)=/, 'no inline style or handler attribute in any tag');
   const without = buildDetailHtml(row, { result, isReviewed: () => false, impactRows, nonce: NONCE, cspSource: CSP_SOURCE, origin: 'tree', lineOf: () => 3 });
   assert.doesNotMatch(without, /Threads|data-act="caller-comment"/, 'a review without threads shows neither');
+});
+
+test('a checked-out pull request\'s row offers both: its Threads comment and a separate Feedback button', () => {
+  const caller = callerOf('src/user.ts', 'user', 40, false);
+  const c = change('src/a.ts', 'run', 10, { callers: [caller], callerState: 'resolved' });
+  const result = resultOf({ allChanged: [c] });
+  const [file] = buildFileRows(result, { uriOf }).rows;
+  const row = file.rows[0];
+  const impactRows = buildImpactRows(row, { result, uriOf, rel }).rows;
+  const threads = { title: 'Threads (0)', note: null, action: { target: 'change', label: 'Comment on this change' }, threads: [] };
+  const id = treeItemId(row).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/'/g, '&#39;');
+  const html = buildDetailHtml(row, { result, isReviewed: () => false, impactRows, nonce: NONCE, cspSource: CSP_SOURCE,
+    origin: 'tree', lineOf: () => 3, threads, feedback: true });
+  assert.match(html, new RegExp(`data-act="comment" data-id="${id}"`), 'the pull request comment');
+  assert.match(html, new RegExp(`data-act="feedback" data-id="${id}"`), 'the feedback draft, a message of its own');
+  assert.match(textOf(html), /Comment on this change Feedback 💬 Feedback on this change/);
+  assert.match(html, /data-act="caller-comment" data-index="0" title="Comment about this call/, 'a caller\'s 💬 starts the pull request comment');
 });

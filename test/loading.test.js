@@ -38,7 +38,8 @@ test('local rows and diff commands are usable during warm-up; ticks survive fina
   const warm = env.holds.warmUp.next();
   const run = env.refresh();
   await warm.reached;
-  assert.match(env.view().message, /^pr mode · ⛔ 1 · 1 of 1 left$/);
+  // The first index is being built: the counts stay, and the elapsed time follows them.
+  assert.match(env.view().message, /^Branch vs base · 1 needs attention · 1 of 1 left · Indexing the workspace, first run only — usually 10–35 s… 0 s$/);
   assert.ok((await env.tree().getChildren()).some(row => row.label === 'Resolving callers…'));
   const [row] = await env.changeRows();
   env.tick(row, true);
@@ -231,7 +232,7 @@ test('provider query deadlines retain unknown coverage and observe late rejectio
   try {
     await withResolver(async name => name === 'vscode.prepareCallHierarchy' ? [{}]
       : hanging ? held.promise : [], async create => {
-      const resolver = create({ repoRoot: repo.dir, queryTimeoutMs: 20, filterInherited: false });
+      const resolver = create({ repoRoot: repo.dir, queryTimeoutMs: 20, coldBudgetMs: 0, filterInherited: false });
       const run = resolver.callerState(path.join(repo.dir, 'a.js'), 9);
       await flush();
       t.mock.timers.tick(20);
@@ -271,7 +272,7 @@ test('timed-out provider commands keep their admission slots until the provider 
       if (hanging) return held.promise;
       return name === 'vscode.prepareCallHierarchy' ? [{}] : [];
     }, async create => {
-      const resolver = create({ repoRoot: repo.dir, queryTimeoutMs: 20, filterInherited: false });
+      const resolver = create({ repoRoot: repo.dir, queryTimeoutMs: 20, coldBudgetMs: 0, filterInherited: false });
       const file = path.join(repo.dir, 'a.js');
       const running = Array.from({ length: 32 }, () => resolver.incomingWithStatus(file, 9));
       await flush();

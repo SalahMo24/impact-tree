@@ -22,7 +22,7 @@ test('editor commands refresh the selected PR, preserve preview documents, and r
   const cfg = { get: (name, fallback) => ({ prewarm: false, analyseOnStartup: false, fetchBase: false })[name] ?? fallback,
     update: async (...args) => updates.push(args) };
   const disposable = () => ({ dispose() {} });
-  const stub = { ...baseStub, ConfigurationTarget: { Workspace: 2 },
+  const stub = { ...baseStub, ConfigurationTarget: { Workspace: 2 }, ProgressLocation: { Window: 10 },
     Position: class { constructor(line, character) { this.line = line; this.character = character; } },
     Range: class { constructor(...args) { this.args = args; } },
     languages: { registerCodeLensProvider: disposable },
@@ -50,9 +50,10 @@ test('editor commands refresh the selected PR, preserve preview documents, and r
       },
     },
     comments: require('./extension-env').createCommentsApi().api,
-    workspace: { workspaceFolders: [{ uri: baseStub.Uri.file(dir) }], getConfiguration: () => cfg,
+    workspace: { workspaceFolders: [{ uri: baseStub.Uri.file(dir) }], getConfiguration: () => cfg, onDidChangeWorkspaceFolders: () => ({ dispose() {} }),
       registerTextDocumentContentProvider: (scheme, p) => { providers.set(scheme, p); return disposable(); },
-      textDocuments: [], onDidOpenTextDocument: disposable, onDidCloseTextDocument: disposable },
+      textDocuments: [], onDidOpenTextDocument: disposable, onDidCloseTextDocument: disposable,
+      createFileSystemWatcher: () => ({ onDidChange: disposable, onDidCreate: disposable, onDidDelete: disposable, dispose() {} }) },
   };
   const context = () => ({ subscriptions: [], workspaceState: { get: (k) => state.get(k), update: async (k,v) => state.set(k,v) } });
   try {
@@ -105,7 +106,7 @@ test('editor commands refresh the selected PR, preserve preview documents, and r
     fs.writeFileSync(path.join(dir,'new.ts'), originalSource.replace('x=1','x=2'));
     git('add','-A');
     const second = context(); extension.activate(second);
-    quickPick = { label: 'checkpoint' };
+    quickPick = { id: 'checkpoint', label: 'Since checkpoint' };
     await commands.get('impactTree.selectMode')();
     assert.deepEqual(errors, []);
     assert.deepEqual(updates.at(-1), ['mode','checkpoint',2]);
@@ -184,7 +185,7 @@ test('a finding with no callers found is not shown as updated', () => {
     finding: { label: 'target', relPath: 't.ts', startLine: 1, component: '(root)', kinds: [{ id: 'optional-param', short: '+optional param' }],
       callerState, staleCallers: 0, stale: [], throwsAdded: [], score: 1 } });
   const none = provider.getTreeItem(finding('none'));
-  assert.equal(none.description, '✓');
+  assert.equal(none.description, 'no callers');
   assert.match(none.tooltip.value, /Nothing calls it/);
   assert.doesNotMatch(none.tooltip.value, /Every caller was updated/);
   assert.match(provider.getTreeItem(finding('resolved')).tooltip.value, /Every caller was updated/);

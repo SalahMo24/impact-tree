@@ -1,4 +1,5 @@
 'use strict';
+const path = require('path');
 const { execFileSync, execFile } = require('child_process');
 
 // A fetch can wait on the network or on a credential prompt nobody will ever answer.
@@ -6,13 +7,28 @@ const { execFileSync, execFile } = require('child_process');
 const FETCH_ENV = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: process.env.GIT_ASKPASS || '' };
 const DEFAULT_FETCH_TIMEOUT_MS = 60000;
 
-function makeGit(repo) {
+/**
+ * @param {string} repo Repository root; every command runs there.
+ * @param {{ objectDirs?: string[], env?: Record<string, string> }} [options]
+ *   `objectDirs`: absolute object directories git may read besides the repository's own
+ *   (`GIT_ALTERNATE_OBJECT_DIRECTORIES`), e.g. snapshot stores. `env`: extra environment for
+ *   every command, e.g. `GIT_INDEX_FILE`. Both empty: the process environment is inherited as is.
+ */
+function makeGit(repo, { objectDirs = [], env: extraEnv = {} } = {}) {
+  for (const d of objectDirs) {
+    if (typeof d !== 'string' || !path.isAbsolute(d)) throw new TypeError(`objectDirs must be absolute paths, got ${JSON.stringify(d)}`);
+  }
+  const fixed = { ...extraEnv, ...(objectDirs.length ? { GIT_ALTERNATE_OBJECT_DIRECTORIES: objectDirs.join(path.delimiter) } : {}) };
+  const hasFixed = Object.keys(fixed).length > 0;
+  // undefined (inherit) unless something has to be added, so the default path is unchanged.
+  const envFor = (callEnv) => (hasFixed || callEnv ? { ...process.env, ...fixed, ...callEnv } : undefined);
   const git = (args, opts = {}) => {
-    const { quiet, ...rest } = opts;
-    return execFileSync('git', args, { cwd: repo, maxBuffer: 1 << 28, encoding: 'utf8', stdio: ['ignore', 'pipe', quiet ? 'ignore' : 'pipe'], ...rest });
+    const { quiet, env, ...rest } = opts;
+    return execFileSync('git', args, { cwd: repo, maxBuffer: 1 << 28, encoding: 'utf8', stdio: ['ignore', 'pipe', quiet ? 'ignore' : 'pipe'], env: envFor(env), ...rest });
   };
+  /** @param {string[]} args @param {{ timeoutMs?: number, env?: Record<string, string|undefined> }} [options] @returns {Promise<string>} */
   const rawAsync = (args, { timeoutMs = 0, env } = {}) => new Promise((resolve, reject) => {
-    execFile('git', args, { cwd: repo, maxBuffer: 1 << 28, encoding: 'utf8', timeout: timeoutMs, killSignal: 'SIGKILL', env },
+    execFile('git', args, { cwd: repo, maxBuffer: 1 << 28, encoding: 'utf8', timeout: timeoutMs, killSignal: 'SIGKILL', env: envFor(env) },
       (err, stdout, stderr) => {
         if (!err) return resolve(stdout);
         if (err.killed) err.message = `git ${args[0]} timed out after ${Math.round(timeoutMs / 1000)}s`;
@@ -38,7 +54,7 @@ function makeGit(repo) {
       let buf;
       try {
         buf = execFileSync('git', ['cat-file', '--batch'], {
-          cwd: repo, maxBuffer: 1 << 30, input: batchable.map((p) => `${rev}:${p}\n`).join(''),
+          cwd: repo, env: envFor(), maxBuffer: 1 << 30, input: batchable.map((p) => `${rev}:${p}\n`).join(''),
           stdio: ['pipe', 'pipe', 'ignore'],
         });
       } catch {
@@ -70,7 +86,7 @@ function makeGit(repo) {
       let lines;
       try {
         lines = execFileSync('git', ['cat-file', '--batch-check'], {
-          cwd: repo, input: batchable.map((p) => `${rev}:${p}\n`).join(''), stdio: ['pipe', 'pipe', 'ignore'],
+          cwd: repo, env: envFor(), input: batchable.map((p) => `${rev}:${p}\n`).join(''), stdio: ['pipe', 'pipe', 'ignore'],
         }).toString('utf8').split('\n');
       } catch {
         for (const p of batchable) out.set(p, one(p));

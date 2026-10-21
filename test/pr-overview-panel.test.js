@@ -223,7 +223,7 @@ test('the approve check refuses Approve without "Approve anyway" and does not ca
   env.open();
   await env.send({ type: 'submit', event: 'APPROVE', body: 'ok', approveAnyway: false });
   assert.deepEqual(env.store.calls.submit, []);
-  assert.match(textOf(env.panel()), /Not approved: tick “Approve anyway” first/);
+  assert.match(textOf(env.panel()), /Not approved: check “Approve anyway” first/);
   assert.equal(env.page().el('summary').value, 'ok', 'the summary is kept');
   await env.send({ type: 'submit', event: 'APPROVE', body: 'ok', approveAnyway: true });
   assert.deepEqual(env.store.calls.submit, [{ event: 'APPROVE', body: 'ok' }]);
@@ -462,6 +462,37 @@ test('the status bar shows a pending review with comments and opens the tab; the
   env.dispose();
 });
 
+test('submit review is offered while a pull request is open; the loading key disables it until data arrives', () => {
+  const env = setup({ kind: 'none' });
+  const key = 'impactTree.pullRequestReviewLoading';
+  assert.equal(env.seen.contexts[key], false);
+  env.store.set({ kind: 'loading', target: TARGET, previous: null });
+  assert.equal(env.seen.contexts['impactTree.hasPullRequestReview'], true, 'a pull request is the source');
+  assert.equal(env.seen.contexts[key], true, 'first load: the disabled entry, with its reason');
+  env.store.set(ready());
+  assert.equal(env.seen.contexts[key], false);
+  env.store.set({ kind: 'loading', target: TARGET, previous: reviewModel() });
+  assert.equal(env.seen.contexts[key], false, 'a reload keeps the earlier data, so the tab still opens');
+  env.store.set({ kind: 'failed', target: TARGET, error: new Error('boom'), previous: null });
+  assert.equal(env.seen.contexts[key], false, 'a failure opens the tab, which offers Retry');
+  assert.equal(env.seen.contexts['impactTree.hasPullRequestReview'], true);
+  env.store.set({ kind: 'none' });
+  assert.equal(env.seen.contexts['impactTree.hasPullRequestReview'], false);
+  env.dispose();
+});
+
+test('each submit-review state has exactly one title entry, and the unavailable one cannot run', () => {
+  const { contributes } = require('../package.json');
+  const entries = contributes.menus['view/title'].filter((m) => /submitReview/.test(m.command));
+  const whenFor = (id) => entries.find((m) => m.command === id).when;
+  assert.match(whenFor('impactTree.submitReview'), /impactTree\.hasPullRequestReview && !impactTree\.pullRequestReviewLoading$/);
+  assert.match(whenFor('impactTree.submitReviewUnavailable'), /impactTree\.hasPullRequestReview && impactTree\.pullRequestReviewLoading$/);
+  const unavailable = contributes.commands.find((c) => c.command === 'impactTree.submitReviewUnavailable');
+  assert.equal(unavailable.enablement, 'false');
+  assert.match(unavailable.title, /loading the pull request review/);
+  assert.equal(contributes.menus.commandPalette.find((m) => m.command === 'impactTree.submitReviewUnavailable').when, 'false');
+});
+
 // ---- disposal -----------------------------------------------------------------------
 
 test('dispose closes the tab, removes the bar, the commands and the store subscription', async () => {
@@ -520,8 +551,9 @@ test('wired: a local review has no PR tab, and the pending-review bar stays hidd
   await env.refresh();
   await flushAll();
   assert.equal(env.seen.contexts['impactTree.hasPullRequestReview'], false);
-  assert.equal(env.seen.statusBars.length, 2, 'review progress and pending review');
+  assert.equal(env.seen.statusBars.length, 3, 'review progress, pending review and feedback drafts');
   assert.equal(env.seen.statusBars[1].visible, false);
+  assert.equal(env.seen.statusBars[2].visible, false, 'no feedback drafts');
   await env.run('impactTree.showPullRequest');
   assert.equal(env.seen.panels.length, 0);
   assert.match(env.seen.infos.at(-1), /no pull request is under review/);
@@ -559,7 +591,7 @@ test('package.json declares the commands, the tree-title entry and their when cl
   const ids = pkg.contributes.commands.map((c) => c.command);
   for (const id of ['impactTree.showPullRequest', 'impactTree.submitReview', 'impactTree.revealReviewThread']) assert.ok(ids.includes(id), id);
   const title = pkg.contributes.menus['view/title'].find((m) => m.command === 'impactTree.submitReview');
-  assert.equal(title.when, 'view == impactTree.changes && impactTree.hasPullRequestReview');
+  assert.equal(title.when, 'view == impactTree.changes && impactTree.hasPullRequestReview && !impactTree.pullRequestReviewLoading');
   assert.ok(pkg.contributes.commands.find((c) => c.command === 'impactTree.submitReview').icon);
   assert.equal(pkg.contributes.menus.commandPalette.find((m) => m.command === 'impactTree.revealReviewThread').when, 'false');
 });

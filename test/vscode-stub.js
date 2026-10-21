@@ -42,8 +42,9 @@ const vscodeStub = {
   CommentMode: { Editing: 0, Preview: 1 },
   CommentThreadCollapsibleState: { Collapsed: 0, Expanded: 1 },
   CommentThreadState: { Unresolved: 0, Resolved: 1 },
+  ProgressLocation: { SourceControl: 1, Window: 10, Notification: 15 },
   ThemeIcon: Object.assign(
-    class { constructor(id) { this.id = id; } },
+    class { constructor(id, color) { this.id = id; this.color = color; } },
     { File: { id: '__file__' }, Folder: { id: '__folder__' } }),
   TreeItem: class {
     constructor(labelOrUri, state) {

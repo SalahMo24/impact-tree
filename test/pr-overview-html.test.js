@@ -183,24 +183,24 @@ test('the approve check lists unreviewed attention rows in order, unresolved thr
   const rows = [attentionRow('bad', 'src/a.ts', 10), { type: 'outside', label: 'Outside functions', relPath: 'src/b.ts', ranges: [[1, 2]] }];
   const doc = html(ready(reviewModel({ threads, pending: PENDING_TWO })), { attentionLeft: rows, counts: { total: 9, left: 5 } });
   const text = textOf(doc);
-  assert.match(text, /Before you approve: 2 changes needing attention are not reviewed: bad src\/a\.ts , Outside functions src\/b\.ts 2 threads are unresolved 5 of 9 rows are not ticked Approve anyway/);
+  assert.match(text, /Before you approve: 2 need attention and are not reviewed: bad src\/a\.ts , Outside functions src\/b\.ts 2 threads are unresolved 5 of 9 rows are not reviewed Approve anyway/);
   assert.deepEqual([...doc.matchAll(/data-act="revealRow" data-row="([^"]*)"/g)].map((m) => m[1]),
     ['finding:src/a.ts:bad:10', 'outside:src/b.ts:Outside functions:']);
   assert.ok(isDisabled(doc, 'approve'));
-  assert.match(text, /Tick “Approve anyway” to approve/);
+  assert.match(text, /Check “Approve anyway” to approve/);
   assert.match(tagOf(doc, 'anyway'), /type="checkbox"/);
   assert.ok(!/ checked/.test(tagOf(doc, 'anyway')), 'never ticked on a new page');
 });
 
 test('the approve check: only threads, only rows, or the tree not showing the review', () => {
   const onlyThread = textOf(html(ready(reviewModel({ threads: [thread(1)] }))));
-  assert.match(onlyThread, /Before you approve: 1 thread is unresolved 0 of 4 rows are not ticked/);
+  assert.match(onlyThread, /Before you approve: 1 thread is unresolved 0 of 4 rows are not reviewed/);
   const onlyRow = textOf(html(ready(), { attentionLeft: [attentionRow('bad', 'a.ts', 1)], counts: { total: 4, left: 1 } }));
-  assert.match(onlyRow, /1 change needing attention is not reviewed: bad a\.ts 1 of 4 rows are not ticked/);
+  assert.match(onlyRow, /1 needs attention and is not reviewed: bad a\.ts 1 of 4 rows are not reviewed/);
   // While the tree shows no review (it is analysing), what is left is unknown, not "nothing".
   const unknown = html(ready(), { attentionLeft: null, counts: null });
   assert.match(textOf(unknown), /The tree is not showing this review, so which changes are left is not known\./);
-  assert.ok(!/rows are not ticked/.test(textOf(unknown)));
+  assert.ok(!/rows are not reviewed/.test(textOf(unknown)));
   assert.ok(isDisabled(unknown, 'approve'));
 });
 

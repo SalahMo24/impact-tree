@@ -87,7 +87,7 @@ console.log('▸ opening a caller');
     fileChanged: true, always: false, baseSha: 'abc', prNumber: null,
   });
   check('a local review still diffs the worktree file',
-    local.kind === 'diff' && local.right.scheme === 'file' && local.rhsName === 'working');
+    local.kind === 'diff' && local.right.scheme === 'file' && local.rhsName === 'working tree');
 }
 
 console.log('\n▸ badges');

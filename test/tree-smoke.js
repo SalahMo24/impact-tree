@@ -10,7 +10,7 @@ const { createTreeProvider } = require('../src/tree-provider');
 
 const vscodeStub = {
   MarkdownString: class { constructor(v) { this.value = v; } },
-  ThemeColor: class { constructor(id) { this.id = id; } },
+  ThemeColor: class { constructor(id, color) { this.id = id; this.color = color; } },
   // faithful enough to catch what the last stub missed: .with() and fragments
   Uri: {
     file: (p) => {
@@ -26,7 +26,7 @@ const vscodeStub = {
   TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
   TreeItemCheckboxState: { Unchecked: 0, Checked: 1 },
   ThemeIcon: Object.assign(
-    class { constructor(id) { this.id = id; } },
+    class { constructor(id, color) { this.id = id; this.color = color; } },
     { File: { id: '__file__' }, Folder: { id: '__folder__' } }),
   // mirror the real constructor: a Uri argument sets resourceUri and derives the label
   TreeItem: class {
@@ -189,7 +189,7 @@ const check = (name, cond, extra = '') => {
   const { LEGEND } = require('../src/tree-provider');
   check('the legend command explains every marker', LEGEND.length >= 8, `${LEGEND.length} entries`);
   check('legend distinguishes call-updated from changed-elsewhere',
-    LEGEND.some(([, label]) => /callers updated/i.test(label)) && LEGEND.some(([, label]) => /NOT on the call line/i.test(label)));
+    LEGEND.some(([, label, desc]) => /callers updated/i.test(`${label} ${desc}`)) && LEGEND.some(([, label, desc]) => /not on the call line/i.test(`${label} ${desc}`)));
   const summary = provider.summarize();
   // `<mode> mode · ⛔ <attention> · <left> of <total> left` (41c383e); the numbers must be the counts.
   const counts = provider.reviewCounts();
@@ -227,16 +227,14 @@ const check = (name, cond, extra = '') => {
   const worst = changeNodes[0];
   const item = provider.getTreeItem(worst);
   check('change row labelled with its own name', String(item.label).startsWith(worst.name), String(item.label));
-  // A row that needs attention (level 0 or 1) shows its verdict in words even in hover mode, every
-  // other row only the glyph (41c383e); both keep "no test" / "tests ?" after it.
+  // Every change row shows its state in words, even in hover mode, with no glyph token;
+  // each keeps "no test" / "tests ?" after it.
   const hoverBad = changeNodes.filter((n) => {
     const d = String(provider.getTreeItem(n).description);
     const tail = '(  ·  (no test|tests \\?))*$';
-    return !(classifyRowVerdict(n).level <= 1
-      ? new RegExp(`^(in .+  ·  )?[⛔✓∅●?]  \\S.*${tail}`, 'u').test(d)
-      : new RegExp(`^(in .+  ·  )?[⛔✓∅●?]${tail}`, 'u').test(d));
+    return !(new RegExp(`^(in .+  ·  )?\\S.*${tail}`, 'u').test(d) && !/[⛔✓∅●?]/u.test(d));
   });
-  check('hover mode: row keeps where it is, the verdict glyph (words only when it needs attention) and "no test"',
+  check('hover mode: row keeps where it is, its state in words and "no test"',
     hoverBad.length === 0, hoverBad.slice(0, 2).map((n) => provider.getTreeItem(n).description).join(' | ') || String(item.description));
   check('hover mode: tooltip carries the verdict sentence and the location',
     item.tooltip.value.includes(`${worst.finding.relPath}:${worst.finding.startLine}`));
@@ -283,7 +281,7 @@ const check = (name, cond, extra = '') => {
   const lazyRoot = callerKids.find((c) => !c.cycle);
   if (!lazyRoot) throw new Error('This fixture needs a change with a caller that is not itself');
   const ci = provider.getTreeItem(lazyRoot);
-  check('hover mode: caller row keeps the state glyph only', /^[✓△○↑🧪]$/u.test(String(ci.description)), String(ci.description));
+  check('hover mode: caller row says its state in words', /^(call updated|changed, but not at the call|not changed|test)(  ·  .+)?$/u.test(String(ci.description)), String(ci.description));
   check('hover mode: caller tooltip has state and path',
     /call updated|not changed|changed, but not at the call|test/.test(ci.tooltip.value) && /\.tsx?/.test(ci.tooltip.value));
   check('caller row shows a symbol-kind icon by default (or beaker for tests)',

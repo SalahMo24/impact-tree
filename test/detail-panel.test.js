@@ -66,8 +66,8 @@ test('a cursor inside a change in a review diff shows that change and reveals it
   const details = env.openDetails();
   const { a } = await rowsOf(env);
   env.moveCursor(fileUri(env, 'a.ts'), 11);
-  assert.match(textOf(details), /^at cursor, line 11 bad a\.ts:10–12 Needs attention\. /);
-  assert.match(textOf(details), /Callers \(1\) Show callers ○ user b\.ts:3 /, 'the call site line, read from the file');
+  assert.match(textOf(details), /^at cursor, line 11 bad a\.ts:10–12 Callers not updated\. /);
+  assert.match(textOf(details), /Callers \(1\) Show callers not changed user b\.ts:3 not updated /, 'the call site line, read from the file');
   assert.equal(env.seen.revealed.length, 1);
   assert.equal(env.seen.revealed[0].row, a[0]);
   assert.deepEqual(env.seen.revealed[0].options, { select: true, focus: false });
@@ -105,7 +105,7 @@ test('a cursor moving inside the row shown only updates the header; the page is 
   assert.equal(details.loads, reloaded);
   env.tick(a[1], true);
   assert.equal(details.loads, reloaded, 'a tick patches the review fields without reloading');
-  assert.match(textOf(details), /^at cursor, line 50 reach .*Untick/);
+  assert.match(textOf(details), /^at cursor, line 50 reach .*Mark not reviewed/);
 }));
 
 test('a cursor between functions shows the file', () => withEnv(async (env) => {
@@ -153,13 +153,13 @@ test('the strip names a pull request and its base, and shows with nothing select
   await env.preview(pull(7));
   const details = env.openDetails();
   assert.equal(textOf(details), NOT_FOLLOWED);
-  assert.equal(stripTextOf(details), 'PR #7 against main 0 of 4 reviewed ⛔ 1 need attention 0% 0%');
+  assert.equal(stripTextOf(details), 'PR #7 against main 0 of 4 reviewed 1 needs attention 0% 0%');
 }));
 
 test('the strip of a local review names its mode', () => withEnv(async (env) => {
   useResult(env);
   await env.refresh();
-  assert.equal(stripTextOf(env.openDetails()), 'pr mode against main 0 of 4 reviewed ⛔ 1 need attention 0% 0%');
+  assert.equal(stripTextOf(env.openDetails()), 'Branch vs base against main 0 of 4 reviewed 1 needs attention 0% 0%');
 }));
 
 test('in a preview only the pull request\'s head side is followed', () => withEnv(async (env) => {
@@ -202,7 +202,7 @@ test('a tree selection shows that row; a caller or tests row shows its change', 
   const [under, tests] = await env.tree().getChildren(a[0]);
   assert.equal(under.type, 'caller');
   env.select([under]);
-  assert.match(textOf(details), /^selected in tree bad a\.ts:10–12 Needs attention\. /);
+  assert.match(textOf(details), /^selected in tree bad a\.ts:10–12 Callers not updated\. /);
   env.select([a[1]]);
   env.select([tests]);
   assert.match(textOf(details), /^selected in tree bad /);
@@ -236,7 +236,7 @@ test('the tick message ticks the row shown and repaints; next runs the command; 
   env.select([a[0]]);
   await sendAction(details, { type: 'tick', id: tickId(details), on: true });
   assert.equal(env.isTicked(a[0]), true);
-  assert.match(textOf(details), /Untick Next unreviewed$/);
+  assert.match(textOf(details), /Mark not reviewed Next unreviewed Show callers Compute test reachability$/);
   assert.equal(env.seen.statusBar.text.split(' ')[1], '3', 'the status bar repainted too');
   await sendAction(details, { type: 'tick', id: tickId(details), on: false });
   assert.equal(env.isTicked(a[0]), false);
@@ -244,7 +244,8 @@ test('the tick message ticks the row shown and repaints; next runs the command; 
   env.select([files[0]]);
   await sendAction(details, { type: 'tick', id: tickId(details), on: true });
   assert.ok(a.every((r) => env.isTicked(r)), 'a file\'s button ticks its rows');
-  assert.match(textOf(details), /0 left to review\. Untick file /);
+  // A local review: the file's page also offers a feedback draft (F1).
+  assert.match(textOf(details), /0 left to review\. Feedback 💬 Feedback on this file Mark file not reviewed /);
 
   await sendAction(details, { type: 'next' });
   assert.deepEqual(env.seen.executed.filter(([name]) => name === 'impactTree.nextUnreviewed').length, 1);
@@ -330,6 +331,41 @@ test('the Show callers message runs the command for the row shown; one drawn for
   await sendAction(details, { type: 'showCallers', id });
   assert.equal(ran().length, 1, 'the panel moved on to another row');
   assert.doesNotMatch(details.webview.html, /data-act="peek"/, 'a file row has no callers link');
+}));
+
+test('the Compute test reachability message runs the command for a local change; forged, stale or preview messages do nothing', () => withEnv(async (env) => {
+  useResult(env);
+  await env.refresh();
+  const details = env.openDetails();
+  const { a } = await rowsOf(env);
+  env.select([a[0]]);
+  const ran = () => env.seen.executed.filter(([name]) => name === 'impactTree.computeTestReach');
+  assert.match(details.webview.html, /data-act="test-reach"/);
+  const token = /<script nonce="([^"]+)"/.exec(details.webview.html)[1];
+  for (const message of [{ type: 'computeTestReach' }, { type: 'computeTestReach', token: 'forged' }, { type: 'computeTestReach', token: `${token} ` },
+    { type: 'computetestreach', token }]) await details.send(message);
+  assert.equal(ran().length, 0, 'no token, a wrong token or an unknown type');
+  env.select([(await env.tree().getChildren())[2]]);   // a file without a call graph
+  await details.send({ type: 'computeTestReach', token: /<script nonce="([^"]+)"/.exec(details.webview.html)[1] });
+  assert.equal(ran().length, 0, 'a file row has no such button');
+  env.select([a[0]]);
+  await sendAction(details, { type: 'computeTestReach' });
+  assert.equal(ran().length, 1);
+}));
+
+test('a preview offers no Compute test reachability button and ignores the message', () => withEnv(async (env) => {
+  useResult(env, { tierA: true });
+  await env.preview(pull(7));
+  for (let i = 0; i < 20; i++) await new Promise((resolve) => setImmediate(resolve));   // the preview's rows arrive after it
+  const details = env.openDetails();
+  const files = await env.tree().getChildren();
+  const [bad] = (await env.tree().getChildren(files.find((f) => f.relPath === 'a.ts'))).filter((r) => r.type === 'finding');
+  assert.ok(bad, 'the preview shows the change');
+  env.select([bad]);
+  assert.doesNotMatch(details.webview.html, /data-act="test-reach"/);
+  assert.match(details.webview.html, /data-act="peek"/, 'Show callers is still offered');
+  await sendAction(details, { type: 'computeTestReach' });
+  assert.equal(env.seen.executed.filter(([name]) => name === 'impactTree.computeTestReach').length, 0);
 }));
 
 test('showChange shows the change in the panel and reveals it in the tree; a bad id does nothing', () => withEnv(async (env) => {
@@ -488,4 +524,60 @@ test('well-formed panel actions require the current page token', () => withEnv(a
   }
   assert.equal(env.isTicked(a[0]), false);
   assert.equal(env.seen.executed.length, before);
+}));
+
+// P3: a Preview cannot see callers outside the PR or tests, so every change's page says so
+// and offers the way out. The button asks for nothing but the PR the session shows.
+test('every change in a preview says what a preview cannot see, with Check out and analyse', () => withEnv(async (env) => {
+  useResult(env, { tierA: true });
+  await env.preview(pull(7));
+  const details = env.openDetails();
+  const changes = await env.changeRows();
+  assert.equal(changes.length, 3);
+  for (const row of changes) {
+    env.select([row]);
+    assert.match(textOf(details), /Preview: callers outside this PR and tests are not searched\. Check out and analyse/, row.label);
+    assert.match(details.webview.html, /data-act="checkout">Check out and analyse<\/button>/);
+  }
+}));
+
+test('a local review never shows the preview limits', () => withEnv(async (env) => {
+  useResult(env);
+  await env.refresh();
+  const details = env.openDetails();
+  const changes = await env.changeRows();
+  assert.equal(changes.length, 3);
+  for (const row of changes) {
+    env.select([row]);
+    assert.doesNotMatch(details.webview.html, /Preview: callers outside|data-act="checkout"/, row.label);
+  }
+}));
+
+test('the Check out and analyse message checks out the shown pull request; a stale, malformed or foreign one does not', () => withEnv(async (env) => {
+  useResult(env, { tierA: true });
+  await env.preview(pull(7));
+  const details = env.openDetails();
+  const [change] = await env.changeRows();
+  env.select([change]);
+  const token = /<script nonce="([^"]+)"/.exec(details.webview.html)[1];
+  for (const bad of [{ type: 'checkoutAndAnalyse' }, { type: 'checkoutAndAnalyse', token: 'obsolete' }, { type: 'checkoutAndAnalyse', token: null },
+    { type: 'checkoutAnalyse', token }, { type: 'checkout', token }]) await details.send(bad);
+  assert.equal(env.seen.modals, 0, 'nothing asked to check out');
+  await details.send({ type: 'checkoutAndAnalyse', token, pr: pull(99) });
+  assert.equal(env.seen.modals, 1, 'the checkout was confirmed with the user');
+  assert.deepEqual(env.git.fetches, [7], 'it is the pull request shown, whatever the message names');
+  assert.deepEqual(env.seen.errors, []);
+}));
+
+test('the Check out and analyse message does nothing once the shown result is not a preview', () => withEnv(async (env) => {
+  useResult(env, { tierA: true });
+  await env.preview(pull(7));
+  const details = env.openDetails();
+  const [change] = await env.changeRows();
+  env.select([change]);
+  const token = /<script nonce="([^"]+)"/.exec(details.webview.html)[1];
+  useResult(env);
+  await env.refresh();
+  await details.send({ type: 'checkoutAndAnalyse', token });
+  assert.equal(env.seen.modals, 0, 'no checkout was started');
 }));

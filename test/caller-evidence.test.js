@@ -265,6 +265,39 @@ test('syntactic resolver: callerState passes the index answer through, scoped to
   assert.deepEqual([missing.state, missing.complete, missing.reason], ['unknown', false, 'symbol not found in the PR index']);
 });
 
+test('editor resolver: an empty answer is unknown when a test project the server did not load uses the symbol', async () => {
+  // The component's tsconfig includes only src/; its tests sit in another project, so
+  // neither the call hierarchy nor the references reach them.
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-vscode-unseen-')));
+  const file = path.join(dir, 'src', 'a.ts');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, 'export function target() {}\n');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{}');
+  fs.mkdirSync(path.join(dir, 'tests'));
+  const spec = path.join(dir, 'tests', 'a.spec.ts');
+  execFileSync('git', ['init', '-q'], { cwd: dir });
+  const pos = 16;
+  const stub = { ...vscodeStub, Position: class { constructor(line, character) { Object.assign(this, { line, character }); } },
+    commands: { executeCommand: async (name) => {
+      if (name === 'vscode.prepareCallHierarchy') return [{}];
+      if (name === 'vscode.provideIncomingCalls') return [];
+      if (name === 'vscode.executeReferenceProvider') return [{ uri: { fsPath: file }, range: { start: { line: 0, character: pos }, end: { line: 0, character: pos + 6 } } }];
+    } } };
+  try {
+    await withVscodeModule(stub, async () => {
+      const { createVscodeResolver } = require('../src/resolver-vscode');
+      const answer = () => createVscodeResolver({ repoRoot: dir, retries: 0, ts, filterInherited: false }).callerState(file, pos);
+      assert.deepEqual(await answer(), { state: 'none', callers: [], complete: true }, 'nothing else names it');
+      fs.writeFileSync(spec, "import { target } from 'src/a';\ntarget();\n");
+      const cs = await answer();
+      assert.deepEqual([cs.state, cs.complete], ['unknown', false]);
+      assert.equal(cs.reason, "used in a file the editor's search did not reach (tests/a.spec.ts)");
+    });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('editor resolver: callerState keeps the completeness of the answer', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-vscode-complete-'));
   const file = path.join(dir, 'a.ts'); fs.writeFileSync(file, 'function target() {}');
@@ -446,22 +479,25 @@ test('finding rows never read as fully updated when the caller search was incomp
   const item = (finding) => provider.getTreeItem(row(finding));
 
   const complete = item({ callersComplete: true });
-  assert.equal(complete.description, '✓', 'a row that needs nothing shows the glyph alone');
+  assert.equal(complete.description, 'all callers updated');
+  assert.equal(complete.iconPath.color, undefined, 'a fine row is not coloured');
   assert.match(complete.tooltip.value, /Every caller was updated/);
   const oldShape = item({});
-  assert.equal(oldShape.description, '✓', 'a result without the field is read as complete');
+  assert.equal(oldShape.description, 'all callers updated', 'a result without the field is read as complete');
   assert.match(oldShape.tooltip.value, /Every caller was updated/);
 
   const incomplete = item({ callersComplete: false, callersIncompleteReason: 'command-bus callers unavailable' });
-  assert.equal(incomplete.description, '?  callers unknown', 'a risky change with unknown callers needs attention, so it says why');
+  assert.equal(incomplete.description, 'callers unknown', 'a risky change with unknown callers says so');
+  assert.equal(incomplete.iconPath.color.id, 'list.warningForeground', 'and is never left uncoloured');
   assert.doesNotMatch(incomplete.tooltip.value, /Every caller was updated/);
   assert.match(incomplete.tooltip.value, /callers found so far are updated, but more may be missing/);
   assert.match(incomplete.tooltip.value, /command-bus callers unavailable/);
-  assert.equal(item({ callersComplete: false, callersIncompleteReason: null }).description, '?  callers unknown', 'a missing reason does not hide it');
+  assert.equal(item({ callersComplete: false, callersIncompleteReason: null }).description, 'callers unknown', 'a missing reason does not hide it');
 
   const staleCallers = [{ label: 'a', callState: 'unchanged' }, { label: 'b', callState: 'unchanged' }];
   const stale = item({ callersComplete: false, callersIncompleteReason: 'query-failed', staleCallers: 2, stale: staleCallers, callers: staleCallers });
-  assert.equal(stale.description, '⛔  2 of 2 callers not updated — more may be missing');
+  assert.equal(stale.description, '2 of 2 callers not updated — more may be missing');
+  assert.equal(stale.iconPath.color.id, 'list.errorForeground');
   assert.match(stale.tooltip.value, /2 of 2 callers were not changed on the call line/);
   assert.match(stale.tooltip.value, /More callers may be missing/);
   assert.match(stale.tooltip.value, /query-failed/);
@@ -488,6 +524,6 @@ test('an incomplete finding ranks as needing attention in its file, never as ok'
     resolver: { incomingWithStatus: async () => ({ callers: [], complete: true }) } });
   const [fileRow] = await provider.getChildren();
   assert.equal(fileRow.type, 'reviewFile');
-  assert.match(provider.getTreeItem(fileRow).description, /^\? 1  ·  /, 'the file counts it as needing attention');
+  assert.match(provider.getTreeItem(fileRow).description, /^1 needs attention  ·  /, 'the file counts it as needing attention');
   assert.deepEqual((await provider.getChildren(fileRow)).filter((r) => r.type !== 'spacer').map((r) => r.label), ['partial', 'fine'], 'and ranks it first');
 });

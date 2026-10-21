@@ -109,7 +109,7 @@ function createOpenReview(vscode, session, { log = () => {} } = {}) {
     const f = node.finding;
     const right = headUriFor(f.relPath, f.file);
     const sel = new vscode.Range(f.startLine - 1, 0, f.startLine - 1, 0);
-    const rhs = session.isTierA() ? `PR #${session.state.result.prNumber}` : 'working';
+    const rhs = session.isTierA() ? `PR #${session.state.result.prNumber}` : 'working tree';
     await openDiff(baseUriFor(f.relPath), right,
       `${path.basename(f.relPath)} (${String(session.state.result.base.sha).slice(0, 7)} ↔ ${rhs})`, { selection: sel });
   }
@@ -131,7 +131,7 @@ function createOpenReview(vscode, session, { log = () => {} } = {}) {
         const first = node.ranges && node.ranges[0];
         const line = first ? Math.max(0, Math.ceil(first[0]) - 1) : null;
         await openDiff(baseUriFor(rel), abs,
-          `${require('path').basename(rel)} (${String(session.state.result.base.sha).slice(0, 7)} ↔ ${session.isTierA() ? `PR #${session.state.result.prNumber}` : 'working'})`,
+          `${require('path').basename(rel)} (${String(session.state.result.base.sha).slice(0, 7)} ↔ ${session.isTierA() ? `PR #${session.state.result.prNumber}` : 'working tree'})`,
           line === null ? undefined : { selection: new vscode.Range(line, 0, line, 0) });
       } else {
         await trackOpen('file (outside diff)', abs, () => vscode.window.showTextDocument(abs));

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 const path = require('path');
-const { analyze, MODES } = require('./engine/analyze');
+const { analyze, MODES, modeLabel } = require('./engine/analyze');
+const { blastText } = require('./cli-format');
 
 const argv = process.argv.slice(2);
 const arg = (n, d) => { const i = argv.indexOf(`--${n}`); return i === -1 ? d : argv[i + 1]; };
@@ -11,18 +12,20 @@ const DEFAULTS = { depth: 2, treeDepth: 2 };
 if (flag('help')) {
   console.log(`impact-tree — inverted call-graph review\n\nUsage: node src/cli.js [options]\n
   --repo <path>        repo root (default: cwd)
-  --mode <m>           ${Object.keys(MODES).join(' | ')}   (default: pr)
-${Object.entries(MODES).map(([k, v]) => `                         ${k.padEnd(11)} ${v.desc}`).join('\n')}
+  --mode <m>           ${Object.keys(MODES).join(' | ')}   (default: pr = Branch vs base)
+${Object.entries(MODES).map(([k, v]) => `                         ${k.padEnd(11)} ${v.label}: ${v.desc}`).join('\n')}
   --base <ref>         base branch for pr/branch modes (default: main; resolved to origin/<ref>)
   --checkpoint <sha>   base for checkpoint mode
   --fetch              git fetch the base before resolving
   --allow-local-base   permit a local base ref when origin/<ref> is missing (unsafe)
   --depth <n>          upward closure depth for blast radius / test reach (default ${DEFAULTS.depth})
+  --roots <n>          roots that get a blast radius and a tree (default 6)
   --tree-depth <n>     rendered tree depth (default ${DEFAULTS.treeDepth})
   --json               emit JSON instead of text`);
   process.exit(0);
 }
 
+const rankedRoots = Number(arg('roots', 6));
 const repo = path.resolve(arg('repo', process.cwd()));
 const t0 = Date.now();
 
@@ -33,7 +36,7 @@ try {
     mode: arg('mode', 'pr'), base: arg('base', 'main'), checkpoint: arg('checkpoint'),
     fetch: flag('fetch'), allowLocalBase: flag('allow-local-base'),
     depth: Number(arg('depth', DEFAULTS.depth)), treeDepth: Number(arg('tree-depth', DEFAULTS.treeDepth)),
-    blastDepth: Number(arg('blast-depth', 1)), rankedRoots: Number(arg('roots', 6)),
+    blastDepth: Number(arg('blast-depth', 1)), rankedRoots,
     maxChildren: Number(arg('max-children', 8)),
   });
 } catch (e) {
@@ -50,7 +53,7 @@ if (flag('json')) {
 const rel = (f) => path.relative(repo, f);
 const H = (s) => { console.log(''); console.log('='.repeat(78)); console.log(s); console.log('='.repeat(78)); };
 
-console.log(`impact-tree — mode '${result.mode}' (${result.modeDesc})`);
+console.log(`impact-tree — ${modeLabel(result.mode)} (${result.modeDesc})`);
 console.log(`base ${result.base.ref} @ ${String(result.base.sha).slice(0, 10)}   ${result.changedFileCount} changed src file(s)`);
 result.warnings.forEach((w) => console.log(`⚠ ${w}`));
 
@@ -79,16 +82,16 @@ for (const f of result.findings) {
   } else if (f.callersComplete === false) {
     console.log(`      ? callers found so far are updated, but ${missingNote(f)}`);
   } else {
-    console.log(`      🟢 no un-updated callers`);
+    console.log(`      🟢 no callers left not updated`);
   }
 }
 
 H('② INVERTED TREE');
 for (const c of result.components) {
-  for (const root of c.forest.slice(0, 6)) {
+  for (const root of c.forest) {
     console.log('');
     console.log(`● ${root.label}   [${root.added ? 'ADDED' : 'CHANGED'}]  ${rel(root.file)}:${root.startLine}`);
-    console.log(`  blast ${root.blast ?? '-'}${root.blastCapped ? '+' : ''} · score ${root.score}${root.testCount ? ` · 🧪 ${root.testCount}` : ''}${root.testState === 'uncovered' ? ' · ⚠ no test' : ''}${root.testState === 'unknown' ? ' · ? test reach unknown' : ''}`);
+    console.log(`  ${blastText(root, rankedRoots)} · score ${root.score}${root.testCount ? ` · 🧪 ${root.testCount}` : ''}${root.testState === 'uncovered' ? ' · ⚠ no test' : ''}${root.testState === 'unknown' ? ' · ? test reach unknown' : ''}`);
     const walk = (nodes, truncated, prefix) => {
       nodes.forEach((n, i) => {
         const last = i === nodes.length - 1 && !truncated;

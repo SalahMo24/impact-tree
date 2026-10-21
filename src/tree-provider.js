@@ -2,11 +2,13 @@
 'use strict';
 const { nodeId } = require('./review-state');
 const { prQuery } = require('./pr-documents');
+const { viewStateOf } = require('./view-state');
 const models = require('./tree-row-models');
 const reviewTree = require('./review-tree-model');
 const { groupCallerRowsByFile } = require('./tree-grouping');
 const { renderTreeItem } = require('./tree-item-renderer');
 const threadsModel = require('./review-threads');
+const { buildFeedbackGroup, renderFeedbackItem, buildRoundGroup, renderRoundItem } = require('./feedback-tree');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 /** @typedef {import('./tree-row-models').DecorationRequest} DecorationRequest */
@@ -63,16 +65,72 @@ const threadsModel = require('./review-threads');
  *   getAnalysisId?: () => number, isCurrentAnalysis?: (analysisId: number) => boolean,
  *   getThreads?: () => import('./review-threads').ThreadsView,
  *   viewedOf?: (relPath: string, allTicked: boolean) => import('./tree-item-renderer').ViewedNote|null,
+ *   getRepoStatus?: () => import('./view-state').RepoStatus,
+ *   getFeedbackDrafts?: () => readonly import('./feedback-drafts').FeedbackItem[],
+ *   getFeedbackRound?: () => import('./feedback-round-view').RoundView|null,
  * }} deps `getThreads` is what is known of the review threads of the pull request under
  *   review (`threadsViewOf` of the review store); a review without one has none. Call
  *   `threadsChanged` whenever its answer may have changed. `viewedOf` says what a file row
- *   shows about GitHub's viewed mark; read at render time.
+ *   shows about GitHub's viewed mark; read at render time. `getRepoStatus` says whether the
+ *   window has a folder and a repository, which decides the empty states.
+ *   `getFeedbackDrafts` lists the feedback drafts, shown as the "Feedback to send" group at
+ *   the top; call `feedbackChanged` whenever its answer changes. `getFeedbackRound` is what
+ *   happened to the last sent round, shown as the "Feedback round N" group above it; call
+ *   `feedbackChanged` whenever it changes too.
  */
 function createTreeProvider(vscode, {
   getState, resolver, isBusy = () => false, decorate = null, getPhase = () => 'ready', review = null,
   getAnalysisId = () => 0, isCurrentAnalysis = () => true, getThreads = () => threadsModel.NO_THREADS,
-  viewedOf = () => null,
+  viewedOf = () => null, getRepoStatus = () => 'ok', getFeedbackDrafts = () => [], getFeedbackRound = () => null,
 }) {
+  // The "Feedback to send" group: one row object for the provider's life, so a drafts change
+  // can repaint it alone (`feedbackChanged`); its text is refreshed each time the root is
+  // read. Shown above everything else whenever there is a draft, whatever the view state:
+  // a draft must never be hidden by an analysis running or failing. Its children are built
+  // on each read and their parent recorded here. Owner: this provider; garbage with it.
+  /** @type {TreeRow} */
+  const feedbackGroupRow = { type: 'feedbackGroup', label: '', desc: '' };
+  /** @type {WeakMap<TreeRow, TreeRow>} */
+  const feedbackParents = new WeakMap();
+  // Whether the root the view last read had the group, so a drafts change knows whether
+  // the group appears or goes (the root repaints) or only changes (the group repaints).
+  let feedbackShown = false;
+  /** @returns {TreeRow|null} The group row with its current text, or null with no drafts. */
+  const feedbackRoot = () => {
+    const group = buildFeedbackGroup(getFeedbackDrafts());
+    if (!group) return null;
+    feedbackGroupRow.label = group.label;
+    feedbackGroupRow.desc = group.desc;
+    return feedbackGroupRow;
+  };
+  // The "Feedback round N" group, kept like the drafts group: one row object, its text
+  // refreshed on each root read, children rebuilt on each read. Owner: this provider.
+  /** @type {TreeRow} */
+  const roundGroupRow = { type: 'feedbackRound', label: '', desc: '' };
+  let roundShown = false;
+  /** @returns {TreeRow|null} */
+  const roundRoot = () => {
+    const group = buildRoundGroup(getFeedbackRound());
+    if (!group) return null;
+    roundGroupRow.label = group.label;
+    roundGroupRow.desc = group.desc;
+    roundGroupRow.relPath = group.relPath;
+    return roundGroupRow;
+  };
+  /** @returns {TreeRow[]} */
+  const roundChildren = () => {
+    const group = buildRoundGroup(getFeedbackRound());
+    const rows = /** @type {TreeRow[]} */ (/** @type {unknown} */ (group ? group.children : []));
+    for (const row of rows) feedbackParents.set(row, roundGroupRow);
+    return rows;
+  };
+  /** @returns {TreeRow[]} */
+  const feedbackChildren = () => {
+    const group = buildFeedbackGroup(getFeedbackDrafts());
+    const rows = group ? group.children : [];
+    for (const row of rows) feedbackParents.set(row, feedbackGroupRow);
+    return rows;
+  };
   /** @param {TreeRow} n */
   const idOf = (n) => review?.id ? review.id(n) : nodeId(n);
   // The review ids a row's checkbox stands for; none for a row without a checkbox.
@@ -233,7 +291,16 @@ function createTreeProvider(vscode, {
   // The state of a review that is shown, or null while a placeholder row or nothing is.
   const shownState = () => {
     const state = getState();
-    return !state || !state.result || models.buildPlaceholderRows({ phase: getPhase(), busy: isBusy(), state }) ? null : state;
+    return !state || !state.result || models.buildPlaceholderRows({ phase: getPhase(), busy: isBusy(), state, repo: getRepoStatus() }) ? null : state;
+  };
+  // The state whose summary line the view shows: a review that is shown, or an analysis
+  // that found nothing changed. The latter has no rows (its welcome screen speaks), but its
+  // mode and base are still worth a line, and the tree view's message is where they go.
+  const summaryState = () => {
+    const state = getState();
+    if (!state || !state.result) return null;
+    const view = viewStateOf({ repo: getRepoStatus(), phase: getPhase(), busy: isBusy(), state });
+    return view === 'shown' || view === 'nothingChanged' ? state : null;
   };
   /**
    * Remembers where rows came from, so `getParent` can answer for rows built on demand.
@@ -260,7 +327,21 @@ function createTreeProvider(vscode, {
    * @param {number} analysisId
    */
   function rootRows(state, analysisId) {
-    const placeholder = models.buildPlaceholderRows({ phase: getPhase(), busy: isBusy(), state });
+    const round = roundRoot();
+    const group = feedbackRoot();
+    feedbackShown = group !== null;
+    roundShown = round !== null;
+    const rows = resultRows(state, analysisId);
+    return [...(round ? [round] : []), ...(group ? [group] : []), ...rows];
+  }
+
+  /**
+   * The root rows of the review itself: a placeholder, or the notices and file rows.
+   * @param {ProviderState|null} state
+   * @param {number} analysisId
+   */
+  function resultRows(state, analysisId) {
+    const placeholder = models.buildPlaceholderRows({ phase: getPhase(), busy: isBusy(), state, repo: getRepoStatus() });
     if (placeholder) return placeholder;
     // A missing state got the placeholder above.
     const st = /** @type {ProviderState} */ (state);
@@ -456,8 +537,28 @@ function createTreeProvider(vscode, {
     for (const file of shown) if (wanted.has(file.relPath)) _emitter.fire(file);
   }
 
+  /**
+   * Repaints what a change of the feedback drafts affects: the group alone, or the root when
+   * the group appears or goes. Never the review's own rows.
+   * @returns {void}
+   */
+  function feedbackChanged() {
+    if (disposed) return;
+    const has = getFeedbackDrafts().length > 0;
+    const hasRound = getFeedbackRound() !== null;
+    if (has !== feedbackShown || hasRound !== roundShown) { _emitter.fire(); return; }
+    if (has) _emitter.fire(feedbackGroupRow);
+    if (hasRound) _emitter.fire(roundGroupRow);
+  }
+
   return {
     refreshFiles,
+    feedbackChanged,
+    /**
+     * The "Feedback to send" group row, or null when there are no drafts.
+     * @returns {TreeRow|null}
+     */
+    feedbackGroup: () => (getFeedbackDrafts().length ? feedbackGroupRow : null),
     /**
      * The file rows of the shown review: a `reviewFile` per file with a call graph, a
      * `file` row per file without. Canonical rows (as `setCheckedBatch` accepts them).
@@ -488,6 +589,19 @@ function createTreeProvider(vscode, {
     },
     /** @param {TreeRow} n */
     getTreeItem(n) {
+      if (n.type === 'feedbackRound' || n.type === 'feedbackRoundItem') {
+        if (n === roundGroupRow) roundRoot();
+        const item = renderRoundItem(vscode, /** @type {any} */ (n));
+        item.id = n.type === 'feedbackRound' ? 'feedback:round' : `feedback:round:${n.itemId}`;
+        return item;
+      }
+      if (n.type === 'feedbackGroup' || n.type === 'feedbackDraft') {
+        // A group repainted alone (`feedbackChanged`) takes its count from the drafts now.
+        if (n === feedbackGroupRow) feedbackRoot();
+        const item = renderFeedbackItem(vscode, /** @type {any} */ (n));
+        item.id = n.type === 'feedbackGroup' ? 'feedback:group' : `feedback:${n.draftId}`;
+        return item;
+      }
       const item = renderTreeItem(vscode, n, viewOf());
       const id = reviewTree.treeItemId(n) || built?.childIds.get(n);
       if (id) item.id = id;
@@ -499,7 +613,7 @@ function createTreeProvider(vscode, {
      * @param {TreeRow} n
      * @returns {TreeRow|undefined}
      */
-    getParent: (n) => built?.parents.get(n),
+    getParent: (n) => feedbackParents.get(n) || built?.parents.get(n),
     /** @param {TreeRow} [node] */
     async getChildren(node) {
       const analysisId = getAnalysisId();
@@ -510,6 +624,8 @@ function createTreeProvider(vscode, {
         case 'finding': return adopt(node, impactRows(node, analysisId));
         case 'caller': return node.cycle ? [] : adopt(node, await callerRows(node, analysisId));
         case 'callerFile': return adopt(node, node.callers);
+        case 'feedbackGroup': return feedbackChildren();
+        case 'feedbackRound': return roundChildren();
         // a file without a call graph, a deleted symbol, outside lines and messages
         default: return [];
       }
@@ -530,7 +646,7 @@ function createTreeProvider(vscode, {
      * @returns {{ message: string|undefined, badge: { value: number, tooltip: string }|undefined }}
      */
     summarize() {
-      const state = shownState();
+      const state = summaryState();
       if (!state) return { message: undefined, badge: undefined };
       const counts = reviewTree.countReview(builtFor(state).rows, isReviewed);
       return reviewTree.buildReviewSummary(state.result, state.source, counts, filter, threadsModel.threadsMessageSuffix(getThreads()));
@@ -590,6 +706,16 @@ function createTreeProvider(vscode, {
     nextUnreviewed(after) {
       const state = shownState();
       return state ? reviewTree.findNextUnreviewed(builtFor(state).rows, { after, isReviewed, filter, openThreadsOf }) : null;
+    },
+    /**
+     * The first unreviewed row before `before` in the order the view shows, under the active
+     * filter; see `findPreviousUnreviewed`.
+     * @param {TreeRow|null} before A counting row or a file row, or null to start at the bottom.
+     * @returns {TreeRow|null} Null when no review is shown or nothing is left.
+     */
+    previousUnreviewed(before) {
+      const state = shownState();
+      return state ? reviewTree.findPreviousUnreviewed(builtFor(state).rows, { after: before, isReviewed, filter, openThreadsOf }) : null;
     },
     /**
      * Whether a counting row is ticked.

@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { makeGit, resolveBaseAsync } = require('./git');
+const { createDiffIndex } = require('./diff-index');
 const {
   changedFiles, untrackedFiles, worktreeFiles, allHunks, hunkDiffArgs, wholeFileRange, isTestPath, isSourcePath,
   projectRootOf, projectConfigIn, clearProjectCache, projectLabel, INFERRED_PROJECT,
@@ -20,6 +21,7 @@ const { validateConcurrency, validateReachDepth } = require('./settings');
 const { throwIfCancelled } = require('./cancellation');
 const { walkTestReach, DEFAULT_REACH_BUDGET } = require('./test-reach');
 const { diffLinesFromChanges } = require('./diff-lines');
+const { MODE_LABELS, modeLabel } = require('./mode-labels');
 
 // Prefer the project's own TypeScript so analysis matches what the editor sees; fall
 // back to the repo root, then to whatever this extension was installed with.
@@ -92,7 +94,13 @@ function headBase(git) {
 }
 
 function checkpointBase(git, opts) {
-  if (!opts.checkpoint) throw new Error('checkpoint mode requires opts.checkpoint');
+  if (!opts.checkpoint) {
+    // The extension never gets here (its session asks for a checkpoint first); this guards
+    // the CLI and any other caller, and carries the code so they can tell it from a bug.
+    const err = new Error('checkpoint mode requires opts.checkpoint');
+    err.code = 'NO_CHECKPOINT';
+    throw err;
+  }
   // `rev-parse <40 hex>` echoes any well-formed sha back, existing or not, so a stale
   // checkpoint surfaced as a raw `git diff` failure. Ask for a commit specifically.
   const sha = git.revParse(`${opts.checkpoint}^{commit}`);
@@ -126,22 +134,23 @@ async function branchMergeBase(git, opts, warnings) {
 }
 
 const MODES = {
-  working:    { desc: 'uncommitted changes only (agent review)', headRev: null,   requireClean: false, resolveBase: headBase },
-  checkpoint: { desc: 'since a recorded checkpoint',            headRev: null,   requireClean: false, resolveBase: checkpointBase },
-  branch:     { desc: 'whole branch vs base (includes uncommitted)', headRev: null, requireClean: false, resolveBase: branchMergeBase },
-  pr:         { desc: 'committed branch state vs base (PR semantics)', headRev: 'HEAD', requireClean: true, resolveBase: branchMergeBase },
+  working:    { label: MODE_LABELS.working, desc: 'uncommitted changes only (agent review)', headRev: null,   requireClean: false, resolveBase: headBase },
+  checkpoint: { label: MODE_LABELS.checkpoint, desc: 'since a recorded checkpoint',            headRev: null,   requireClean: false, resolveBase: checkpointBase },
+  branch:     { label: MODE_LABELS.branch, desc: 'whole branch vs base (includes uncommitted)', headRev: null, requireClean: false, resolveBase: branchMergeBase },
+  pr:         { label: MODE_LABELS.pr, desc: 'committed branch state vs base (PR semantics)', headRev: 'HEAD', requireClean: true, resolveBase: branchMergeBase },
 };
+
 
 function resolveEffectiveMode(mode, cfg, dirty, onDirty, warnings) {
   if(!(cfg.requireClean && dirty.length)) return { effectiveMode: mode, effectiveCfg: cfg };
     // Erroring to a blank view the moment someone edits a file is hostile. Fall back
     // to 'branch' (which includes uncommitted work) and say loudly that we did.
     if(onDirty !== 'fallback') {
-      const err = new Error(`working tree is dirty — a PR diff would be contaminated by ${dirty.length} uncommitted change(s). Commit, stash, or use mode 'branch'.`);
+      const err = new Error(`the working tree is dirty — a PR diff would be contaminated by ${dirty.length} uncommitted change(s). Commit, stash, or switch to ${MODES.branch.label}.`);
       err.dirty = dirty;
       throw err;
     }
-    warnings.push(`${dirty.length} uncommitted change(s) — showing 'branch' (includes your edits) instead of 'pr'. Commit or stash for a true PR diff.`);
+    warnings.push(`${dirty.length} uncommitted change(s) — showing ${MODES.branch.label} (includes your edits) instead of ${MODES.pr.label}. Commit or stash for a true PR diff.`);
    
 
   return { effectiveMode: 'branch', effectiveCfg: MODES.branch };
@@ -332,7 +341,12 @@ function inferredProjectFiles(repo, git) {
  * @param {object} [opts]
  * @param {'working'|'checkpoint'|'branch'|'pr'} [opts.mode='pr']
  * @param {string} [opts.base='main'] Base branch or revision for `pr` and `branch`.
- * @param {string} [opts.checkpoint] Required for `checkpoint`. Must resolve to a commit.
+ * @param {string} [opts.checkpoint] Required for `checkpoint`. Must resolve to a commit: an ordinary
+ *   commit, or a snapshot commit whose objects live in one of `opts.objectDirs`.
+ * @param {string[]} [opts.objectDirs] Absolute extra object directories git may read (snapshot
+ *   stores). Not used to write anything.
+ * @param {string} [opts.tempDir] Existing directory for the run's temporary index (checkpoint
+ *   mode); default the OS temp dir. The index is removed before `analyze` continues.
  * @param {boolean} [opts.fetch] Fetch the base before resolving it.
  * @param {boolean} [opts.allowLocalBase] Allow a local base ref when the remote-tracking ref is missing.
  * @param {number} [opts.fetchTimeoutMs] Deadline for that fetch, in milliseconds.
@@ -409,7 +423,7 @@ async function analyze(repo, opts = {}) {
   if (!cfg) throw new Error(`unknown mode '${mode}' (expected ${Object.keys(MODES).join('|')})`);
   const { signal } = opts;
   throwIfCancelled(signal);
-  const git = makeGit(repo);
+  const git = makeGit(repo, { objectDirs: opts.objectDirs });
   const warnings = [];
   const depth = validateReachDepth(opts.depth, warnings);
   const concurrency = validateConcurrency(opts.concurrency, warnings);
@@ -428,17 +442,31 @@ async function analyze(repo, opts = {}) {
 
 
   const headRev = opts.headRev !== undefined ? opts.headRev : effectiveCfg.headRev;
-  const untracked = new Set(untrackedFiles(git));
-  const everything = includeUntrackedFiles(changedFiles(git, base.sha, headRev, null), untracked, headRev);
-  const { files, byComponent } = changedSourceByProject(repo, everything);
+  // Checkpoint mode diffs the snapshot against the worktree through a private index in
+  // which untracked files are intent-to-add: a file untracked at snapshot time and
+  // unchanged since is then not reported as deleted, and every untracked file reaches the
+  // diff itself, so none is appended afterwards. Owner: this block; removed in `finally`
+  // (the block is synchronous, so a cancellation cannot interleave).
+  const viaIndex = mode === 'checkpoint' && headRev === null;
+  const diffIndex = viaIndex ? createDiffIndex(repo, { tempDir: opts.tempDir }) : null;
+  const deletions = {};
+  const hunkHeaders = {};
+  let untracked, everything, files, byComponent, ranges;
+  try {
+    const diffGit = diffIndex ? makeGit(repo, { objectDirs: opts.objectDirs, env: diffIndex.env }) : git;
+    untracked = new Set(viaIndex ? [] : untrackedFiles(git));
+    everything = includeUntrackedFiles(changedFiles(diffGit, base.sha, headRev, null), untracked, headRev);
+    ({ files, byComponent } = changedSourceByProject(repo, everything));
+    const trackedForDiff = files.filter((f) => !f.untracked);
+    ranges = trackedForDiff.length ? rangesFor(diffGit, base.sha, headRev, trackedForDiff, { deletionsOut: deletions, changesOut: hunkHeaders }) : {};
+  } finally {
+    if (diffIndex) diffIndex.dispose();
+  }
   const unanalysable = new Map();
 
   // relPath -> [[startLine, endLine], ...] of the new-side changed ranges
   const changedRanges = {};
   const tracked = files.filter((f) => !f.untracked);
-  const deletions = {};
-  const hunkHeaders = {};
-  const ranges = tracked.length ? rangesFor(git, base.sha, headRev, tracked, { deletionsOut: deletions, changesOut: hunkHeaders }) : {};
   for (const f of files) {
     changedRanges[f.path] = f.untracked ? wholeFileRange(path.join(repo, f.path)) : (ranges[f.path] || []);
   }
@@ -561,6 +589,8 @@ async function analyze(repo, opts = {}) {
         c.callerState = cs.state;
         c.callersComplete = cs.complete === true;
         c.callersIncompleteReason = c.callersComplete ? null : cs.reason ?? null;
+        // The language server did not answer in time: the editor retries these once it is up.
+        c.callersRetryable = !c.callersComplete && cs.retryable === true;
         c.callers = cs.callers;
         for (const x of cs.callers) {
           x.callSiteUpdates = classifyCallSiteUpdates({
@@ -611,10 +641,10 @@ async function analyze(repo, opts = {}) {
       }
       for (let i = 0; i < ranked.length; i++) {
         const r = ranked[i];
-        if (i >= (opts.rankedRoots ?? 6)) { roots.push({ ...r, blast: null, blastCapped: false }); continue; }
+        if (i >= (opts.rankedRoots ?? 6)) { roots.push({ ...r, blast: null, blastCapped: false, blastNotComputed: true }); continue; }
         throwIfCancelled(signal);
         const b = await blastRadius(resolver, r.file, r.namePos, opts.blastDepth ?? 1);
-        roots.push({ ...r, blast: b.count, blastCapped: b.capped });
+        roots.push({ ...r, blast: b.count, blastCapped: b.capped, blastNotComputed: false });
       }
       roots.sort((a, b) => b.score - a.score || (b.blast || 0) - (a.blast || 0));
       const forest = [];
@@ -702,4 +732,4 @@ async function analyze(repo, opts = {}) {
     return result;
   }
 }
-module.exports = { analyze, MODES, loadTypeScript, rangesFor, withoutUntrackedCallers };
+module.exports = { analyze, MODES, modeLabel, loadTypeScript, rangesFor, withoutUntrackedCallers };

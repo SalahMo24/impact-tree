@@ -8,7 +8,7 @@
  * @returns {object[]} disposables
  */
 function registerCommands(vscode, {
-  BUILD, session, openReview, sources, gh, loadPrs, context, log, out,
+  BUILD, session, openReview, sources, gh, loadPrs, context, log, out, getSnapshotStore = () => null,
 }) {
   const { MODES } = require('./engine/analyze');
   return [
@@ -18,11 +18,11 @@ function registerCommands(vscode, {
 
     vscode.commands.registerCommand('impactTree.selectMode', async () => {
       const pick = await vscode.window.showQuickPick(
-        Object.entries(MODES).map(([id, m]) => ({ label: id, description: m.desc })),
-        { title: 'Impact Tree: diff mode' });
+        Object.entries(MODES).map(([id, m]) => ({ id, label: m.label, description: m.desc })),
+        { title: 'Impact Tree: Choose what to review' });
       if (!pick) return;
-      await vscode.workspace.getConfiguration('impactTree').update('mode', pick.label, vscode.ConfigurationTarget.Workspace);
-      await session.refresh(pick.label);
+      await vscode.workspace.getConfiguration('impactTree').update('mode', pick.id, vscode.ConfigurationTarget.Workspace);
+      await session.refresh(pick.id);
     }),
 
     vscode.commands.registerCommand('impactTree.showLegend', async () => {
@@ -83,9 +83,34 @@ function registerCommands(vscode, {
     vscode.commands.registerCommand('impactTree.setCheckpoint', async () => {
       const { makeGit } = require('./engine/git');
       const sha = makeGit(session.repoRoot()).revParse('HEAD');
-      session.setCheckpoint(sha);
-      await context.workspaceState.update('impactTree.checkpoint', sha);
-      vscode.window.showInformationMessage(`Impact Tree: checkpoint set at ${String(sha).slice(0, 10)}`);
+      // A repository with no commit has nothing to record; storing null would read as "no
+      // checkpoint" while the message claimed one was set.
+      if (!sha) { vscode.window.showWarningMessage('Impact Tree: there is no commit to record as a checkpoint yet'); return; }
+      // A snapshot records the working tree, uncommitted work included, in the extension's
+      // own storage. Without a store (no storage folder) the checkpoint is the HEAD commit.
+      let checkpointSha = sha;
+      const store = getSnapshotStore();
+      if (store) {
+        try {
+          const record = await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: 'Recording checkpoint…' },
+            () => store.take());
+          checkpointSha = record.sha;
+        } catch (e) {
+          log(`checkpoint: snapshot failed: ${e.message}`);
+          vscode.window.showErrorMessage(`Impact Tree: could not record the checkpoint (${e.message})`);
+          return;
+        }
+      }
+      session.setCheckpoint(checkpointSha);
+      await context.workspaceState.update('impactTree.checkpoint', checkpointSha);
+      vscode.window.showInformationMessage(`Impact Tree: checkpoint set at ${String(checkpointSha).slice(0, 10)}`);
+      // The view may be showing "No checkpoint yet": now there is one, so run the mode it
+      // was waiting for. Only for a local review; a PR on screen is not replaced.
+      const source = session.state && session.state.source;
+      if (vscode.workspace.getConfiguration('impactTree').get('mode', 'pr') === 'checkpoint' && (!source || source.kind === 'local')) {
+        await session.refresh();
+      }
     }),
     
     vscode.commands.registerCommand('impactTree.openChange', (node) => openReview.openChange(node)),

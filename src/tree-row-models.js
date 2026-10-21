@@ -2,6 +2,8 @@
 'use strict';
 const path = require('path');
 const { classifyCallerUpdateState } = require('./engine/call-sites');
+const { viewStateOf } = require('./view-state');
+const { MODE_LABELS, modeLabel } = require('./engine/mode-labels');
 
 // Row models for the change tree: plain objects describing each row, built from an
 // analysis result. Pure: nothing here reads session state, registers a decoration or
@@ -22,35 +24,70 @@ const { classifyCallerUpdateState } = require('./engine/call-sites');
  * @typedef {(file: string, pos: number|string|null) => any} ResourceUriOf
  */
 
+// One name per state, used by the Details heading, the legend and the README, so a state
+// is called the same thing wherever the reviewer meets it. `levels` is indexed by verdict
+// level; a deleted row and an outside row have a level (1 and 4) but a name of their own.
+const STATE_NAMES = Object.freeze({
+  levels: Object.freeze(['Callers not updated', 'Callers unknown', 'Callers updated', 'Reaches callers', 'No callers']),
+  deleted: 'Deleted',
+  outside: 'Outside functions',
+});
+
+/**
+ * How a row's icon is coloured for its verdict level, indexed by level: red when a risky
+ * change met a caller that was not updated, amber when the callers cannot be told (and for
+ * a deleted symbol), none for the rest. Colour is the tree's only addition to the words,
+ * so a level-1 state must never map to none.
+ * `fileIcon` replaces `ThemeIcon.File` (which cannot be coloured) in `iconMode: 'file'`.
+ * @typedef {{ color: string, fileIcon: string }} IconTone
+ * @type {ReadonlyArray<IconTone|null>}
+ */
+const LEVEL_TONES = Object.freeze([
+  Object.freeze({ color: 'list.errorForeground', fileIcon: 'error' }),
+  Object.freeze({ color: 'list.warningForeground', fileIcon: 'warning' }),
+  null, null, null,
+]);
+
+/** The tone of a caller that was edited but not on the call line: it looks handled and is not. */
+const CHANGED_ELSEWHERE_TONE = LEVEL_TONES[1];
+
+/**
+ * The icon tone of a verdict. A body-only change whose callers could not be found keeps
+ * level 3 for ordering, but it is amber: an unknown must never be drawn as fine.
+ * @param {Verdict} verdict
+ * @returns {IconTone|null}
+ */
+const toneOf = (verdict) => (verdict.unknown ? LEVEL_TONES[1] : LEVEL_TONES[verdict.level]);
+
 const LEGEND = [
   ['file', 'Icon = file type', 'from your file-icon theme, on file rows whatever impactTree.iconMode says'],
   ['symbol-method', 'Icon = symbol kind', 'method, function, constructor or variable on change rows; impactTree.iconMode = "file" shows the file glyph instead'],
   ['tag', 'Badge M / A / D / R', 'git status against the review base, not HEAD — hover for the word'],
-  ['error', '⛔  a signature or throw change whose callers were NOT updated', 'review these first'],
-  ['pass', '✓  signature or throw change, all callers updated', 'every caller found was changed on the call line'],
-  ['circle-filled', '●  body-only change that reaches callers', 'the signature is the same, so callers still compile; their untouched call sites are expected'],
-  ['circle-slash', '∅  body-only change, no callers found', 'in the code searched — dynamic calls and unloaded projects are not seen'],
-  ['warning', '△  caller changed, but NOT on the call line', 'looks handled and is not'],
-  ['circle-outline', '○  caller not changed at all', 'affected but untouched'],
-  ['question', '?  callers unknown', 'the search failed or could not tell — e.g. passed as a value or DI-constructed; on a signature or throw change, review it'],
-  ['beaker', '🧪  test that reaches this code', ''],
-  ['issue-reopened', '↑  cycle — already shown higher up', ''],
+  ['error', 'Red icon — Callers not updated', 'a signature or throw change; review these first'],
+  ['warning', 'Amber icon — Check by hand', 'callers unknown, a deleted symbol, or a caller changed but not on the call line'],
+  ['pass', 'No colour — Fine', 'callers updated, a body-only change, or nothing calls it'],
+  ['beaker', 'Beaker icon — test that reaches this code', ''],
+  ['issue-reopened', 'Reopened-issue icon — cycle', 'already shown higher up in the tree'],
 ];
 
 // Three states, because "the symbol changed" and "the call was updated" are different
 // questions. A caller edited just above and below the call line is the dangerous case:
 // it looks handled and is not.
-/** @type {Record<string, { token: string, text: string }>} */
+/** @type {Record<string, { text: string }>} */
 const CALL_STATE = {
-  'updated-at-call':   { token: '✓', text: 'call updated' },
-  'changed-elsewhere': { token: '△', text: 'changed, but not at the call' },
-  unchanged:           { token: '○', text: 'not changed' },
+  'updated-at-call':   { text: 'call updated' },
+  'changed-elsewhere': { text: 'changed, but not at the call' },
+  unchanged:           { text: 'not changed' },
 };
 
 // What a caller row knows about its call sites when the view state cannot classify them.
 const NO_SITE_EVIDENCE = { updated: [], untouched: [], unknown: [] };
 
-/** @typedef {{ level: number, token: string, text: string, sentence: string }} Verdict */
+/**
+ * Every surface (tree, Details, review lens) shows `text`; none leads with a glyph.
+ * `unknown` marks a body-only verdict whose callers could not be found (level 3, but not fine).
+ * @typedef {{ level: number, text: string, sentence: string, unknown?: boolean }} Verdict
+ */
 
 // What the analysis could not say about a caller search, in words a reviewer can act on.
 /** @type {Record<string, string>} */
@@ -65,6 +102,14 @@ function describeUnknownCallers(change) {
   if (change.callerState === 'di') return 'it is built by a DI container, so its callers are not visible';
   const reason = change.callersIncompleteReason;
   if (INCOMPLETE_REASON_TEXT[reason]) return `it is ${INCOMPLETE_REASON_TEXT[reason]}`;
+  // From engine/unseen-users.js: already a clause.
+  if (typeof reason === 'string' && reason.startsWith('used in ')) return `it is ${reason}`;
+  // A provider deadline or a server still loading: say what happened, not the command name.
+  if (typeof reason === 'string' && /timed out|not ready|outstanding requests/.test(reason)) {
+    return change.callersRetryable === false
+      ? 'the language server did not answer in time'
+      : 'the language server did not answer in time (it is retried once TypeScript has loaded; Refresh asks again)';
+  }
   return reason ? `the search reported "${reason}"` : 'the search did not say why';
 }
 
@@ -92,16 +137,16 @@ function classifyRiskyVerdict(change, risky) {
   if (stale > 0) {
     const of = `${stale} of ${n} caller${n === 1 ? '' : 's'}`;
     const nearby = change.staleChangedElsewhere || 0;
-    return { level: 0, token: '⛔', text: `${of} not updated${nearby ? ` (${nearby} edited nearby)` : ''}${mayBeMissing ? ' — more may be missing' : ''}`,
+    return { level: 0, text: `${of} not updated${nearby ? ` (${nearby} edited nearby)` : ''}${mayBeMissing ? ' — more may be missing' : ''}`,
       sentence: `${what}, and ${of} ${stale === 1 ? 'was' : 'were'} not changed on the call line. Check that ${stale === 1 ? 'it still works' : 'they still work'}.${mayBeMissing ? ' More callers may be missing.' : ''}` };
   }
   if (mayBeMissing || !callersKnown(change)) {
     const found = change.callerState === 'resolved';
-    return { level: 1, token: '?', text: change.callerState === 'di' ? 'DI-constructed' : 'callers unknown',
+    return { level: 1, text: change.callerState === 'di' ? 'DI-constructed' : 'callers unknown',
       sentence: `${what}, ${found ? 'and the callers found so far are updated, but more may be missing' : 'but its callers could not be found'}: ${describeUnknownCallers(change)}. Check its users by hand.` };
   }
   const none = change.callerState === 'none';
-  return { level: 2, token: '✓', text: none ? 'no callers' : 'all callers updated',
+  return { level: 2, text: none ? 'no callers' : 'all callers updated',
     sentence: `${what}. ${none ? 'Nothing calls it in the code searched.' : 'Every caller was updated on the call line.'}` };
 }
 
@@ -117,11 +162,11 @@ function classifyBodyOnlyVerdict(change) {
   const mayBeMissing = change.callersComplete === false;
   // A finished search that found nothing is `none`; one that was cut short may have missed callers.
   if (!callersKnown(change) || (mayBeMissing && change.callerState === 'none')) {
-    return { level: 3, token: '?', text: change.callerState === 'di' ? 'DI-constructed' : 'callers unknown',
+    return { level: 3, text: change.callerState === 'di' ? 'DI-constructed' : 'callers unknown', unknown: true,
       sentence: `Only the body changed. Its callers could not be found: ${describeUnknownCallers(change)}.` };
   }
   if (change.callerState === 'none') {
-    return { level: 4, token: '∅', text: 'no callers', sentence: 'Only the body changed, and nothing calls it in the code searched.' };
+    return { level: 4, text: 'no callers', sentence: 'Only the body changed, and nothing calls it in the code searched.' };
   }
   const untouched = callers.filter((/** @type {any} */ c) => c.callState !== 'updated-at-call').length;
   // The check is about the unchanged callers when there are any, else about the updated ones.
@@ -129,12 +174,12 @@ function classifyBodyOnlyVerdict(change) {
   const which = untouched === 0
     ? `${n === 1 ? 'Its caller was' : `All ${n} callers were`} updated too; ${check(n)}.`
     : `${untouched} of ${n} caller${n === 1 ? '' : 's'} ${untouched === 1 ? 'is' : 'are'} unchanged, which is expected; ${check(untouched)}.`;
-  return { level: 3, token: '●', text: `reaches ${n} caller${n === 1 ? '' : 's'}`,
+  return { level: 3, text: `reaches ${n} caller${n === 1 ? '' : 's'}`,
     sentence: `Only the body changed: the signature is the same, so callers still compile. ${which}${mayBeMissing ? ' More callers may be missing.' : ''}` };
 }
 
 /**
- * What a changed symbol's row leads with. Needs attention (level 0, `⛔`) means a risky
+ * What a changed symbol's row leads with. Needs attention (level 0) means a risky
  * change met a caller that was not updated; a risky kind is any kind but `body`, because
  * a body-only edit leaves callers untouched as a matter of course. Levels: 0 breaks
  * callers, 1 risk unknown, 2 risk handled, 3 behaviour reaches callers, 4 quiet.
@@ -152,7 +197,7 @@ function classifyChangeVerdict(change) {
  * deleted symbol's former callers and so cannot say that no one still uses it.
  * @returns {Verdict}
  */
-const classifyDeletedVerdict = () => ({ level: 1, token: '−', text: 'deleted',
+const classifyDeletedVerdict = () => ({ level: 1, text: 'deleted',
   sentence: 'This symbol was removed. Its former callers were not searched, so check that nothing still uses it, including dynamic users.' });
 
 /**
@@ -160,7 +205,7 @@ const classifyDeletedVerdict = () => ({ level: 1, token: '−', text: 'deleted',
  * @param {Array<[number, number]>} ranges The changed line ranges outside every callable.
  * @returns {Verdict}
  */
-const classifyOutsideVerdict = (ranges) => ({ level: 4, token: '≡', text: describeOutsideRanges(ranges),
+const classifyOutsideVerdict = (ranges) => ({ level: 4, text: describeOutsideRanges(ranges),
   sentence: 'Changed lines that are not inside any function: imports, constants, type comments and top-level statements. They have no callers, so read them in the diff.' });
 
 /**
@@ -177,6 +222,16 @@ const classifyRowVerdict = (row) => (row.finding ? classifyChangeVerdict(row.fin
  * @returns {Verdict}
  */
 const classifyWorstRowVerdict = (rows) => rows.map(classifyRowVerdict).reduce((w, v) => (v.level < w.level ? v : w));
+
+/**
+ * The state name of a change, deleted or outside row, for the Details heading.
+ * @param {TreeRow} row
+ * @param {Verdict} verdict The row's verdict.
+ * @returns {string}
+ */
+const stateNameOf = (row, verdict) => (row.type === 'deleted' ? STATE_NAMES.deleted
+  : row.type === 'outside' ? STATE_NAMES.outside
+    : verdict.unknown ? STATE_NAMES.levels[1] : STATE_NAMES.levels[verdict.level]);
 
 /**
  * The git status the result records for a repo-relative path, trying the path with
@@ -201,31 +256,71 @@ function getFileStatus(result, relPath) {
 const buildReachScopeNote = (result) => `no test within ${result.reachDepth ? `${result.reachDepth} caller level(s)` : 'the searched caller levels'}`;
 
 /**
- * The single row the view shows while there is no result to draw, or null when there is.
+ * The rows for a view with nothing to review yet, or null when a result is shown. An
+ * empty array is deliberate: with no children VS Code shows the `viewsWelcome` entry for
+ * the state (package.json), which carries the buttons. The state comes from
+ * `viewStateOf`, the same function that publishes the welcome screens' context key.
  * Never leaves the view looking idle while prerequisites are still resolving: a user
  * should not have to know that an index is warming.
- * @param {{ phase: string, busy: boolean, state: any }} view
+ * @param {{ phase: string, busy: boolean, state: any, repo?: import('./view-state').RepoStatus }} view
  * @returns {TreeRow[]|null}
  */
-function buildPlaceholderRows({ phase, busy, state }) {
-  // A prepared result belongs to the current run and is safe to review while callers
-  // are loading. The session clears the previous result before starting Refresh.
-  if ((phase === 'analysing' || phase === 'preparing' || busy) && state?.result?.callersPending) return null;
-  if (phase === 'starting' || phase === 'preparing') {
-    return [{ type: 'message', label: 'Preparing…', icon: 'loading~spin',
-      desc: 'indexing the workspace — this happens once per window' }];
+function buildPlaceholderRows({ phase, busy, state, repo = 'ok' }) {
+  switch (viewStateOf({ repo, phase, busy, state })) {
+    case 'idle': case 'noFolder': case 'noGit': case 'noTypeScript': return [];
+    case 'busy':
+      if (phase === 'checkingOut') {
+        return [{ type: 'message', label: 'Checking out…', icon: 'loading~spin', desc: 'the pull request is being checked out into your worktree' }];
+      }
+      if (phase === 'starting' || phase === 'preparing') {
+        return [{ type: 'message', label: 'Preparing…', icon: 'loading~spin',
+          desc: 'indexing the workspace — this happens once per window' }];
+      }
+      return [{ type: 'message', label: 'Analysing…', icon: 'loading~spin',
+        desc: 'resolving callers through the language server' }];
+    case 'problem': return buildProblemRows(state.problem);
+    case 'error': return [{ type: 'message', label: state.error, icon: 'error' }];
+    case 'nothingChanged': {
+      // Without warnings the welcome screen says it. With them (a mode that fell back, a
+      // base that could not be fetched) the warnings must stay visible, so say it as a row.
+      const notices = buildNoticeRows(state.result);
+      if (!notices.length) return [];
+      const mode = modeLabel(state.result.mode);
+      return [...notices, { type: 'message', icon: 'info', label: `Nothing changed — ${mode} against ${state.result.base.ref}`,
+        desc: 'Switch mode', command: 'impactTree.selectMode' }];
+    }
+    default: return null;
   }
-  if (phase === 'analysing' || busy) {
-    return [{ type: 'message', label: 'Analysing…', icon: 'loading~spin',
-      desc: 'resolving callers through the language server' }];
-  }
-  if (!state || (!state.result && !state.error)) {
-    return [{ type: 'message', label: 'Ready — click to analyse', icon: 'play',
-      desc: 'Impact Tree: Refresh', command: 'impactTree.refresh' }];
-  }
-  if (state.error) return [{ type: 'message', label: state.error, icon: 'error' }];
-  return null;
 }
+
+
+/**
+ * The status text for a count of changes that need attention: `1 needs attention`,
+ * `3 need attention`.
+ * @param {number} n
+ * @returns {string}
+ */
+const attentionCountText = (n) => `${n} ${n === 1 ? 'needs' : 'need'} attention`;
+
+/**
+ * The rows for a mode that cannot run because of what the session recorded, each with the
+ * action that fixes it. Checkpoint mode needs a commit to diff against.
+ * @param {{ kind: 'noCheckpoint'|'checkpointGone', detail?: string }} problem
+ * @returns {TreeRow[]}
+ */
+function buildProblemRows(problem) {
+  const setNow = { type: 'message', label: 'Set checkpoint now', icon: 'bookmark',
+    desc: 'records the current commit', command: 'impactTree.setCheckpoint' };
+  if (problem.kind === 'checkpointGone') {
+    return [{ type: 'message', icon: 'history', label: 'The checkpoint is gone',
+      desc: 'its commit is no longer in this repository', tooltip: problem.detail }, setNow];
+  }
+  return [{ type: 'message', icon: 'history', label: 'No checkpoint yet',
+    desc: 'Since checkpoint shows what changed after a commit you record' }, setNow];
+}
+
+// The Preview's limit in words, shared by the tree's notice row and every change's Details page.
+const PREVIEW_LIMITS_NOTE = 'Preview: callers outside this PR and tests are not searched.';
 
 /**
  * The rows above the changed files: the preview notice, then one row per analysis
@@ -245,7 +340,7 @@ function buildNoticeRows(r) {
     rows.push({
       type: 'message', icon: 'eye',
       label: `Preview — PR files only (${r.changedFileCount} file(s))`,
-      desc: 'callers outside this PR are NOT shown  ·  check out for full impact',
+      desc: PREVIEW_LIMITS_NOTE,
       tooltip: 'Built from the pull request\'s own files via the GitHub API.\n'
         + 'Your worktree was not touched.\n\n'
         + 'Any caller living in a file this PR does not change is invisible here.\n'
@@ -455,9 +550,9 @@ const buildIncompleteCallersRow = (reason, hasCallers) => ({
 });
 
 module.exports = {
-  LEGEND, CALL_STATE, NO_SITE_EVIDENCE,
+  LEGEND, CALL_STATE, NO_SITE_EVIDENCE, STATE_NAMES, LEVEL_TONES, CHANGED_ELSEWHERE_TONE, toneOf, stateNameOf,
   classifyChangeVerdict, classifyDeletedVerdict, classifyOutsideVerdict, classifyRowVerdict, classifyWorstRowVerdict, getFileStatus,
-  buildReachScopeNote, buildPlaceholderRows, buildNoticeRows,
+  buildReachScopeNote, buildPlaceholderRows, buildNoticeRows, PREVIEW_LIMITS_NOTE, MODE_LABELS, attentionCountText,
   buildChangeRows, buildDeletedRows, buildFileLeafRows, buildOutsideRows, describeOutsideRanges,
   buildComputeTestReachRow, dropExcludedCallers, collectAncestry, buildCallerRows,
   buildIncompleteCallersRow,

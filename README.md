@@ -16,17 +16,25 @@ and nothing about *how the changes relate* — or which callers you forgot to up
 ## What it shows
 
 ```
- [TS]  lockRow                            ⛔                     M
- [TS]    ├ saveSnapshot                   ✓                      M
- [TS]    ├ appendEntry                    ○
- [🧪]    └ describes lockRow               🧪
- [MD]  design-notes.md                                            M
+ [TS]  lockRow          2 of 3 callers not updated        M    <- red icon
+ [TS]    ├ saveSnapshot   call updated                      M
+ [TS]    ├ appendEntry    not changed
+ [TS]    └ renameRow      changed, but not at the call           <- amber icon
+ [🧪]    └ lockRow.test   test
+ [MD]  design-notes.md                                        M
 ```
 
-- **Icon** — file type, from your icon theme
+- **Icon** — file type, from your icon theme; on a change row its colour is the state:
+  **red** = Callers not updated (a signature or throw change; review these first) ·
+  **amber** = Check by hand (callers unknown, a deleted symbol, or a caller changed but
+  not on the call line) · **no colour** = Fine (callers updated, a body-only change, or
+  nothing calls it) · beaker = a test that reaches this code · reopened-issue = a cycle,
+  already shown higher up
 - **Badge** — git status against the **review base** (not `HEAD`, so it stays correct on a PR)
-- **Glyph** — `⛔` call sites not updated · `✓` updated · `○` untouched · `△` changed but not at the call · `🧪` test
-- **Hover** — signatures before/after, added `throw`s, and the un-updated callers by name
+- **Words** — the exact state next to the name: `2 of 3 callers not updated`, `callers unknown`,
+  `all callers updated`, `reaches 3 callers`, `no callers`, `deleted`; on a caller,
+  `call updated`, `changed, but not at the call` or `not changed`
+- **Hover** — signatures before/after, added `throw`s, and the callers not updated, by name
 
 Findings are ranked by **damage × invisibility to the compiler**: a new `throw` path or a
 silently-omitted optional parameter outranks a signature break that `tsc` already rejects.
@@ -35,7 +43,7 @@ silently-omitted optional parameter outranks a signature break that `tsc` alread
 
 - **Roots are seeded from the diff.** A changed symbol that calls another changed symbol
   nests under it instead of appearing twice.
-- **"Stale" means the call site was not updated**, not merely that the symbol changed — a
+- **"Callers not updated" means the call site was not updated**, not merely that the symbol changed — a
   caller edited on the lines either side of a call is flagged, not cleared.
 - **Framework edges are recovered.** A NestJS-style `bus.execute(new FooCommand())` has no
   static edge to `@CommandHandler(FooCommand)`; those are reconnected, and the
@@ -45,16 +53,38 @@ silently-omitted optional parameter outranks a signature break that `tsc` alread
 
 - Open **Impact Tree** in the Activity Bar. The **Review** view lists local change
   modes and, after signing in to GitHub, open pull requests for the workspace repository.
-- Review local changes in `pr`, `branch`, `working`, or `checkpoint` mode. The
-  `working` mode is useful for reviewing uncommitted edits made by a coding agent.
+- Review local changes in **Branch vs base**, **Branch + uncommitted**, **Uncommitted
+  (agent)**, or **Since checkpoint** mode. **Uncommitted (agent)** is useful for reviewing
+  edits made by a coding agent.
 - Preview a GitHub pull request without a checkout, or check out its branch for
   analysis using the editor's language server. A no-checkout preview searches the
   files supplied by the PR and cannot establish callers outside those files.
 - Use the **Changes** and **Details** views to inspect findings, open diffs, and
-  navigate to callers. Track progress with review checkboxes and filter for changes
-  needing attention, unreviewed changes, or unresolved conversations.
+  navigate to callers. Track progress by marking changes reviewed, and filter for what needs
+  attention (callers not updated, or callers to check by hand), unreviewed changes, or
+  unresolved conversations.
 - For a GitHub PR, add review comments, reply to or resolve conversations, and
   submit a review from the pull request tab.
+
+### Feedback rounds with a coding agent
+
+- While reviewing local changes or a checked-out pull request, leave **feedback** in the
+  diff's comment box or with 💬 in Details. Drafts collect in **Feedback to send** at the
+  top of Changes. In a checked-out pull request, VS Code asks whether a new comment is a
+  GitHub review comment or feedback for your agent.
+- **Send feedback** (✈ in the title bar; hold ⌥ for **Send feedback to…**) writes the drafts
+  to `.impact-tree/feedback/<date>-<n>.md`, records a checkpoint, and hands the round to
+  Claude Code or Codex (in a terminal), the editor's chat (Copilot Chat, Cursor; you press
+  Enter), or the clipboard. The agent is asked to write `Status: done` or
+  `Status: skipped — reason` under each item.
+- The next review shows **Feedback round N** first: for each item, what the agent wrote and
+  whether the code near it changed. "Done" with no code change, skipped, or anything unknown
+  is amber. **Reply in next round** starts a new draft at the same place.
+- The feedback files are yours: Impact Tree never deletes them. Kept together they record
+  how you want code written, and can later be turned into rules for your agents.
+- Checkpoints are snapshots of the working tree, kept in the editor's storage for this
+  workspace, not in `.git`. Old ones are removed automatically; **Clean up stored data**
+  (Changes ⋯ menu) shows what is stored and deletes it on confirmation.
 
 ## Install (from source)
 
@@ -74,20 +104,22 @@ Restart the editor, open a git repository, and run **Impact Tree: Refresh**.
 npm run analyze -- --repo /path/to/repo --mode pr --base main
 ```
 
-Modes: `pr` (committed branch vs base) · `branch` (includes uncommitted) ·
-`working` (uncommitted only) · `checkpoint` (since a recorded SHA).
+Modes (the `--mode` value, then the name the extension shows): `pr` (Branch vs base) ·
+`branch` (Branch + uncommitted) · `working` (Uncommitted (agent)) · `checkpoint` (Since
+checkpoint, from a recorded SHA).
 
 ## Settings
 
 | setting | default | |
 |---|---|---|
-| `impactTree.mode` | `pr` | which diff to review |
+| `impactTree.mode` | `pr` | which diff to review: `pr` = Branch vs base, `branch` = Branch + uncommitted, `working` = Uncommitted (agent), `checkpoint` = Since checkpoint |
 | `impactTree.baseBranch` | `main` | always resolved to `origin/<branch>` |
 | `impactTree.iconMode` | `symbol` | `file` glyphs or `symbol` kinds on code rows |
 | `impactTree.rowDetail` | `hover` | a change row's verdict words and kinds in the tooltip, or `inline` |
 | `impactTree.prewarm` | `true` | index at startup so the first run is fast |
 | `impactTree.reachDepth` | `2` | caller levels searched for test reachability, from 1 to 6 |
 | `impactTree.tierA.maxFiles` | `300` | maximum files fetched for a no-checkout PR preview |
+| `impactTree.agent` | `ask` | where **Send feedback** hands a round: `claude`, `codex`, `chat`, `clipboard`, `save`, or `ask` |
 
 ## Performance
 
@@ -100,6 +132,11 @@ analysis after that     ~3.5s    median query ~300ms
 ```
 
 The extension reuses the editor's running server, so it never builds a second program.
+
+The index is rebuilt after a checkout, and in a large monorepo that can take a minute.
+While it loads, caller searches go one at a time and may each wait up to 60 s (2 minutes in
+total), instead of all timing out after 5 s. Any that still time out are retried once the
+server answers, while the review stays open; the view says so. Refresh asks again at any time.
 
 ## Tests
 

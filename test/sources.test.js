@@ -14,12 +14,7 @@ const vscodeStub = {
   Uri: { parse: (s) => ({ uri: s }) },
 };
 
-const MODES = {
-  working: { desc: 'uncommitted changes only' },
-  branch: { desc: 'whole branch vs base' },
-  pr: { desc: 'committed branch state vs base' },
-  checkpoint: { desc: 'since a recorded checkpoint' },
-};
+const { MODES } = require('../src/engine/analyze');
 
 let fail = 0;
 const check = (name, cond, extra = '') => {
@@ -65,7 +60,7 @@ function build(over = {}) {
   check('both start expanded so neither is hidden behind a twistie',
     roots.every((r) => r.expanded === true));
   check('pr row names the repo', roots[1].desc === 'SalahMo24/impact-tree', roots[1].desc);
-  check('local row names the active mode', roots[0].desc === 'mode: pr', roots[0].desc);
+  check('local row names the active mode', roots[0].desc === 'Branch vs base', roots[0].desc);
 
   console.log('\n▸ local modes');
   const local = await build().getChildren(roots[0]);
@@ -73,10 +68,10 @@ function build(over = {}) {
   check('every mode carries an analyse command',
     local.every((m) => m.command === 'impactTree.analyseMode' && m.args.length === 1));
   const active = local.filter((m) => m.icon === 'check');
-  check('exactly the active mode is ticked', active.length === 1 && active[0].label === 'pr',
+  check('exactly the active mode is ticked', active.length === 1 && active[0].label === 'Branch vs base',
     active.map((a) => a.label).join(','));
   check('working mode is reachable — the local review the user asked for',
-    local.some((m) => m.label === 'working' && m.args[0] === 'working'));
+    local.some((m) => m.label === 'Uncommitted (agent)' && m.args[0] === 'working'));
 
   console.log('\n▸ pull request states');
   const prsNode = roots[1];

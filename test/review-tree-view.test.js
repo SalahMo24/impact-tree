@@ -165,16 +165,16 @@ test('only the first file starts expanded; every other expandable row starts col
   assert.equal(item(caller).collapsibleState, Collapsed, 'a caller expands to its own callers');
 });
 
-test('the file row shows the unreviewed attention count with the worst token, done/total, then its last folder', async () => {
+test('the file row shows the unreviewed attention count as words, done/total, then its last folder', async () => {
   const { provider, item, fileAt } = viewOf(sampleResult());
   const a = await fileAt('src/a.ts');
   assert.equal(item(a).label, 'a.ts');
-  assert.equal(item(a).description, '⛔ 2  ·  0/4  ·  src');
+  assert.equal(item(a).description, '2 need attention  ·  0/4  ·  src');
   assert.match(item(a).tooltip.value, /```\nsrc\/\n└─ a\.ts\n```/, 'the path is drawn as a folder tree');
   assert.match(item(a).tooltip.value, /4 changes, 2 need attention, 4 left to review/);
   const [bad, gone] = await provider.getChildren(a);
   provider.setChecked(bad, true);
-  assert.equal(item(a).description, '− 1  ·  1/4  ·  src', 'the token is the worst unreviewed one');
+  assert.equal(item(a).description, '1 needs attention  ·  1/4  ·  src', 'singular once one is left');
   provider.setChecked(gone, true);
   assert.equal(item(a).description, '2/4  ·  src', 'no attention left, no count');
 });
@@ -182,14 +182,14 @@ test('the file row shows the unreviewed attention count with the worst token, do
 test('the summary counts unreviewed attention rows and what is left, and follows the ticks', async () => {
   const { provider, fileAt } = viewOf(sampleResult(), { state: { source: { kind: 'local' } } });
   assert.deepEqual(provider.summarize(), {
-    message: 'branch mode · ⛔ 2 · 6 of 6 left',
+    message: 'Branch + uncommitted · 2 need attention · 6 of 6 left',
     badge: { value: 6, tooltip: '6 of 6 left to review' },
   });
   provider.setChecked(await fileAt('src/a.ts'), true);
-  assert.equal(provider.summarize().message, 'branch mode · ⛔ 0 · 2 of 6 left');
+  assert.equal(provider.summarize().message, 'Branch + uncommitted · 0 need attention · 2 of 6 left');
   provider.setChecked(await fileAt('src/b.ts'), true);
   provider.setChecked(await fileAt('notes.md'), true);
-  assert.deepEqual(provider.summarize(), { message: 'branch mode · ⛔ 0 · 0 of 6 left', badge: undefined });
+  assert.deepEqual(provider.summarize(), { message: 'Branch + uncommitted · 0 need attention · 0 of 6 left', badge: undefined });
 });
 
 test('there is no summary without a result, or while a placeholder is shown', () => {
@@ -205,13 +205,13 @@ test('there is no summary without a result, or while a placeholder is shown', ()
 test('the summary names the PR for a preview or a checkout, and the mode for a local review', () => {
   const counts = { attention: 3, left: 70, total: 71 };
   const result = resultOf({ base: { ref: 'main', sha: 'x' } });
-  assert.equal(buildReviewSummary(result, { kind: 'pr', pr: { number: 15 } }, counts).message, 'PR #15 · ⛔ 3 · 70 of 71 left');
-  assert.equal(buildReviewSummary(result, { kind: 'checkout', pr: { number: 9 }, sha: 'abc' }, counts).message, 'PR #9 · ⛔ 3 · 70 of 71 left');
-  assert.equal(buildReviewSummary(result, { kind: 'local' }, counts).message, 'branch mode · ⛔ 3 · 70 of 71 left');
-  assert.equal(buildReviewSummary(result, null, counts).message, 'branch mode · ⛔ 3 · 70 of 71 left');
+  assert.equal(buildReviewSummary(result, { kind: 'pr', pr: { number: 15 } }, counts).message, 'PR #15 · 3 need attention · 70 of 71 left');
+  assert.equal(buildReviewSummary(result, { kind: 'checkout', pr: { number: 9 }, sha: 'abc' }, counts).message, 'PR #9 · 3 need attention · 70 of 71 left');
+  assert.equal(buildReviewSummary(result, { kind: 'local' }, counts).message, 'Branch + uncommitted · 3 need attention · 70 of 71 left');
+  assert.equal(buildReviewSummary(result, null, counts).message, 'Branch + uncommitted · 3 need attention · 70 of 71 left');
   const fellBack = resultOf({ mode: 'branch', requestedMode: 'pr', base: { ref: 'origin/main', sha: 'x' } });
   assert.equal(buildReviewSummary(fellBack, { kind: 'local' }, { attention: 1, left: 1, total: 1 }).message,
-    'branch mode (requested pr) · ⛔ 1 · 1 of 1 left', 'a fallback mode says what was asked for');
+    'Branch + uncommitted (requested Branch vs base) · 1 needs attention · 1 of 1 left', 'a fallback mode says what was asked for');
   assert.deepEqual(buildReviewSummary(result, null, { attention: 0, left: 1, total: 2 }).badge, { value: 1, tooltip: '1 of 2 left to review' });
   assert.equal(buildReviewSummary(result, null, { attention: 0, left: 0, total: 2 }).badge, undefined, 'nothing left, no badge');
 });
@@ -254,7 +254,7 @@ test('a filter hides rows, not a file\'s progress: its checkbox and counts still
   const { provider, item, fileAt } = viewOf(sampleResult());
   provider.toggleFilter('attention');
   const a = await fileAt('src/a.ts');
-  assert.equal(item(a).description, '⛔ 2  ·  0/4  ·  src');
+  assert.equal(item(a).description, '2 need attention  ·  0/4  ·  src');
   provider.setChecked(a, true);
   assert.equal(item(a).checkboxState, Checked);
   provider.toggleFilter('attention');
@@ -275,11 +275,11 @@ test('turning one filter on turns the other off, and the active one again return
 
 test('the summary message names the active filter', () => {
   const { provider } = viewOf(sampleResult(), { state: { source: { kind: 'local' } } });
-  assert.equal(provider.summarize().message, 'branch mode · ⛔ 2 · 6 of 6 left');
+  assert.equal(provider.summarize().message, 'Branch + uncommitted · 2 need attention · 6 of 6 left');
   provider.toggleFilter('attention');
-  assert.equal(provider.summarize().message, 'branch mode · ⛔ 2 · 6 of 6 left · filter: needs attention');
+  assert.equal(provider.summarize().message, 'Branch + uncommitted · 2 need attention · 6 of 6 left · filter: needs attention');
   provider.toggleFilter('unreviewed');
-  assert.equal(provider.summarize().message, 'branch mode · ⛔ 2 · 6 of 6 left · filter: unreviewed');
+  assert.equal(provider.summarize().message, 'Branch + uncommitted · 2 need attention · 6 of 6 left · filter: unreviewed');
 });
 
 test('when a filter leaves nothing the root is one message row, after any notices', async () => {
@@ -387,10 +387,29 @@ test('the next unreviewed row follows the filter and the ticks, and is null when
   assert.equal(provider.nextUnreviewed(null), null);
 });
 
+test('the previous unreviewed row follows the filter and the ticks, and is null when none is left', async () => {
+  const { provider, fileAt } = viewOf(sampleResult());
+  const a = await fileAt('src/a.ts');
+  const [bad, gone, body, outsideRow] = await provider.getChildren(a);
+  assert.equal(provider.previousUnreviewed(gone), bad);
+  const notes = await fileAt('notes.md');
+  assert.equal(provider.previousUnreviewed(bad), notes, 'wraps to the last row of the review');
+  provider.toggleFilter('attention');
+  assert.equal(provider.previousUnreviewed(body), gone);
+  assert.equal(provider.previousUnreviewed(gone), bad);
+  assert.equal(provider.previousUnreviewed(bad), gone, 'wraps over the hidden rows');
+  provider.toggleFilter('attention');
+  provider.setChecked(a, true);
+  assert.equal(provider.previousUnreviewed(outsideRow), notes, 'a.ts is ticked: nothing above, so it wraps');
+  for (const f of ['src/b.ts', 'notes.md']) provider.setChecked(await fileAt(f), true);
+  assert.equal(provider.previousUnreviewed(null), null);
+});
+
 test('the counts of a shown review, and none while a placeholder is shown', async () => {
   const { provider } = viewOf(sampleResult());
   assert.deepEqual(provider.reviewCounts(), { total: 6, left: 6, attention: 2 });
   const none = createTreeProvider(vscode, { getState: () => null, resolver: {} });
   assert.equal(none.reviewCounts(), null);
   assert.equal(none.nextUnreviewed(null), null);
+  assert.equal(none.previousUnreviewed(null), null);
 });

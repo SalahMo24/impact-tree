@@ -43,10 +43,10 @@ test('a deleted row, an outside row and a file row get no lens, whatever their l
   assert.deepEqual(lensPlan(rows, never).map((l) => l.id), [treeItemId(LEVELS[0])]);
 });
 
-test('a lens says the verdict, offers the callers only when there are some, and tells the tick', () => {
+test('a lens says the verdict, offers the callers only when there are some, and tells the reviewed mark', () => {
   const [lv0, lv1] = lensPlan(LEVELS, never);
-  assert.deepEqual(lensTitles(lv0), { verdict: '⛔ 1 of 3 callers not updated', callers: 'Show callers', tick: 'Mark reviewed' });
-  assert.deepEqual(lensTitles(lv1), { verdict: '? callers unknown', callers: null, tick: 'Mark reviewed' }, 'no callers, no peek');
+  assert.deepEqual(lensTitles(lv0), { verdict: '1 of 3 callers not updated', callers: 'Show callers', tick: 'Mark reviewed' });
+  assert.deepEqual(lensTitles(lv1), { verdict: 'callers unknown', callers: null, tick: 'Mark reviewed' }, 'no callers, no peek');
   assert.equal(lv0.hasCallers, true);
   assert.equal(lv1.hasCallers, false);
 });
@@ -65,7 +65,7 @@ test('the lens follows the change\'s own facts, on any line and any caller count
     changeRow('y', 200, { kinds: [RISKY], callerState: 'di', callers: [] }),
     changeRow('z', 7, { kinds: [RISKY], staleCallers: 1, callers: callers(1), callersComplete: false })];
   assert.deepEqual(lensPlan(rows, never).map((l) => [l.line, lensTitles(l).verdict]), [
-    [0, '⛔ 2 of 2 callers not updated'], [199, '? DI-constructed'], [6, '⛔ 1 of 1 caller not updated — more may be missing']]);
+    [0, '2 of 2 callers not updated'], [199, 'DI-constructed'], [6, '1 of 1 caller not updated — more may be missing']]);
   assert.deepEqual(lensPlan([], never), []);
 });
 
@@ -151,10 +151,10 @@ test('a reviewed head-side document gets three lenses on the first line of each 
   assert.deepEqual(env.lensProvider().selector, [{ scheme: 'file' }, { scheme: 'impacttree-pr' }]);
   const lenses = env.lensesFor(fileUri(env, 'a.ts'));
   assert.deepEqual(lenses.map((l) => [l.range.start, l.command.title, l.command.command, l.command.arguments]), [
-    [at(9, 0), '⛔ 1 of 1 caller not updated', 'impactTree.showChange', ['finding:a.ts:bad:10']],
+    [at(9, 0), '1 of 1 caller not updated', 'impactTree.showChange', ['finding:a.ts:bad:10']],
     [at(9, 0), 'Show callers', 'impactTree.showCallers', ['finding:a.ts:bad:10']],
     [at(9, 0), 'Mark reviewed', 'impactTree.setReviewed', ['finding:a.ts:bad:10', true, env.tree().reviewVersion()]],
-    [at(59, 0), '? callers unknown', 'impactTree.showChange', ['finding:a.ts:lost:60']],
+    [at(59, 0), 'callers unknown', 'impactTree.showChange', ['finding:a.ts:lost:60']],
     [at(59, 0), 'Mark reviewed', 'impactTree.setReviewed', ['finding:a.ts:lost:60', true, env.tree().reviewVersion()]],
   ], '`reach` is level 3 and has none; `lost` has no callers, so no peek');
   assert.deepEqual(env.lensesFor(fileUri(env, 'b.ts')), [], 'b.ts is reviewed, but nothing in it needs attention');
@@ -224,7 +224,7 @@ test('the lens ticks its change on and off, and its title follows', () => withEn
   assert.equal(titles()[2], 'Mark reviewed');
   await env.run(tick().command, ...tick().arguments);
   assert.equal(env.isTicked(bad), true);
-  assert.deepEqual(titles().slice(0, 3), ['⛔ 1 of 1 caller not updated', 'Show callers', '✓ Reviewed'], 'the lens stays');
+  assert.deepEqual(titles().slice(0, 3), ['1 of 1 caller not updated', 'Show callers', '✓ Reviewed'], 'the lens stays');
   assert.deepEqual(tick().arguments, ['finding:a.ts:bad:10', false, env.tree().reviewVersion()], 'and now unticks');
   assert.equal(env.seen.statusBar.text.split(' ')[1], '4', 'the view repainted');
   await env.run(tick().command, ...tick().arguments);
@@ -444,13 +444,32 @@ test('the contributions: a keybinding in a review editor, a context menu on chan
     [{ command: 'impactTree.showCallers', key: 'shift+alt+c', when: 'editorTextFocus && impactTree.hasReview' }]);
   assert.deepEqual(contributes.menus['view/item/context'].map((m) => [m.command, m.when, m.group]), [
     ['impactTree.showCallers', 'view == impactTree.changes && viewItem == finding', 'navigation@1'],
+    // the inline icon passes the same change row as the context menu (tested below)
+    ['impactTree.showCallers', 'view == impactTree.changes && viewItem == finding', 'inline@1'],
     ['impactTree.retryViewedSync', 'view == impactTree.changes && viewItem =~ /ViewedFailed$/', 'inline'],
+    // a feedback draft row of the "Feedback to send" group (F1): Edit and Delete, inline and in its menu
+    ['impactTree.feedback.edit', 'view == impactTree.changes && viewItem == feedbackDraft', 'inline@1'],
+    ['impactTree.feedback.delete', 'view == impactTree.changes && viewItem == feedbackDraft', 'inline@2'],
+    ['impactTree.feedback.edit', 'view == impactTree.changes && viewItem == feedbackDraft', 'navigation@1'],
+    ['impactTree.feedback.delete', 'view == impactTree.changes && viewItem == feedbackDraft', 'navigation@2'],
+    // Send feedback on the drafts group (inline) and in the drafts' menus (F3)
+    ['impactTree.sendFeedback', 'view == impactTree.changes && viewItem == feedbackGroup', 'inline@1'],
+    ['impactTree.sendFeedback', 'view == impactTree.changes && viewItem =~ /^feedback(Group|Draft)$/', 'send@1'],
+    ['impactTree.sendFeedbackTo', 'view == impactTree.changes && viewItem =~ /^feedback(Group|Draft)$/', 'send@2'],
+    // a sent round's items: Reply in next round; the round: Open feedback file (F4)
+    ['impactTree.feedback.reply', 'view == impactTree.changes && viewItem == feedbackRoundItem', 'inline@1'],
+    ['impactTree.feedback.reply', 'view == impactTree.changes && viewItem == feedbackRoundItem', 'navigation@1'],
+    ['impactTree.feedback.openRoundFile', 'view == impactTree.changes && viewItem == feedbackRound', 'inline@1'],
+    ['impactTree.feedback.openRoundFile', 'view == impactTree.changes && viewItem == feedbackRound', 'navigation@1'],
   ]);
   assert.equal(contributes.menus.commandPalette.find((m) => m.command === 'impactTree.retryViewedSync').when, 'false');
   const declared = new Set(contributes.commands.map((c) => c.command));
   const palette = new Map(contributes.menus.commandPalette.map((m) => [m.command, m.when]));
   for (const id of ['impactTree.showCallers', 'impactTree.showChange', 'impactTree.setReviewed']) assert.ok(declared.has(id), id);
   assert.equal(palette.get('impactTree.showCallers'), 'impactTree.hasReview');
+  const callers = contributes.commands.find((c) => c.command === 'impactTree.showCallers');
+  assert.equal(callers.title, 'Impact Tree: Show callers');
+  assert.ok(callers.icon, 'the inline action needs an icon');
   assert.equal(palette.get('impactTree.showChange'), 'false');
   assert.equal(palette.get('impactTree.setReviewed'), 'false');
 });

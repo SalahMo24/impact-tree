@@ -41,7 +41,7 @@ test('the hint names the key for the platform', () => {
   assert.equal(nextKeyHint('darwin'), '⌥N');
   assert.equal(nextKeyHint('linux'), 'Alt+N');
   assert.equal(nextKeyHint('win32'), 'Alt+N');
-  assert.equal(statusBarText({ left: 3, attention: 1 }, 'darwin'), '$(checklist) 3 left · ⛔ 1 · ⌥N next');
+  assert.equal(statusBarText({ left: 3, attention: 1 }, 'darwin'), '$(checklist) 3 left · 1 needs attention · ⌥N next');
 });
 
 test('the status bar is hidden with no review, and shows what is left, the attention count and the key', () => withEnv(async (env) => {
@@ -53,11 +53,11 @@ test('the status bar is hidden with no review, and shows what is left, the atten
   assert.equal(env.seen.contexts['impactTree.filter'], 'all');
   await env.refresh();
   assert.equal(bar.visible, true);
-  assert.equal(bar.text, `$(checklist) 4 left · ⛔ 1 · ${NEXT_KEY} next`);
+  assert.equal(bar.text, `$(checklist) 4 left · 1 needs attention · ${NEXT_KEY} next`);
   assert.equal(env.seen.contexts['impactTree.hasReview'], true);
   const { rows } = await rowsOf(env);
   env.tick(rows[0], true);
-  assert.equal(bar.text, `$(checklist) 3 left · ⛔ 0 · ${NEXT_KEY} next`, 'it follows a tick');
+  assert.equal(bar.text, `$(checklist) 3 left · 0 need attention · ${NEXT_KEY} next`, 'it follows a tick');
 }));
 
 test('the status bar hides again when the review goes away', () => withEnv(async (env) => {
@@ -78,12 +78,12 @@ test('the filter commands narrow the tree, name the filter and set the context k
   useResult(env);
   await env.refresh();
   assert.deepEqual(await shown(env), ALL);
-  assert.equal(env.view().message, 'pr mode · ⛔ 1 · 4 of 4 left');
+  assert.equal(env.view().message, 'Branch vs base · 1 needs attention · 4 of 4 left');
 
   env.run('impactTree.filterAttention');
   assert.equal(env.seen.contexts['impactTree.filter'], 'attention');
   assert.deepEqual(await shown(env), ['a.ts', '  bad'], 'only the rows that need attention, and only their files');
-  assert.equal(env.view().message, 'pr mode · ⛔ 1 · 4 of 4 left · filter: needs attention');
+  assert.equal(env.view().message, 'Branch vs base · 1 needs attention · 4 of 4 left · filter: needs attention');
 
   env.run('impactTree.filterUnreviewed');
   assert.equal(env.seen.contexts['impactTree.filter'], 'unreviewed', 'one turns the other off');
@@ -127,6 +127,53 @@ test('next unreviewed reveals and selects the first row, then the one after the 
   env.view().selection = [b[0]];
   await env.run('impactTree.nextUnreviewed');
   assert.equal(env.seen.revealed[3].row, files[2], 'a file without a call graph is the row to review');
+}));
+
+test('previous unreviewed starts at the bottom, then walks up, across files and over spacers', () => withEnv(async (env) => {
+  useResult(env);
+  await env.refresh();
+  const { files, rows, b } = await rowsOf(env);
+  await env.run('impactTree.previousUnreviewed');
+  assert.equal(env.seen.revealed[0].row, files[2], 'with no selection it starts at the bottom');
+  assert.deepEqual(env.seen.revealed[0].options, { select: true, focus: true, expand: true });
+  env.view().selection = [files[2]];
+  await env.run('impactTree.previousUnreviewed');
+  assert.equal(env.seen.revealed[1].row, b[0], 'up into the previous file, not onto a spacer');
+  env.view().selection = [b[0]];
+  await env.run('impactTree.previousUnreviewed');
+  assert.equal(env.seen.revealed[2].row, rows[1]);
+  env.view().selection = [rows[1]];
+  await env.run('impactTree.previousUnreviewed');
+  assert.equal(env.seen.revealed[3].row, rows[0]);
+  env.view().selection = [rows[0]];
+  await env.run('impactTree.previousUnreviewed');
+  assert.equal(env.seen.revealed[4].row, files[2], 'above the first row it wraps to the last');
+}));
+
+test('previous unreviewed follows the active filter and wraps', () => withEnv(async (env) => {
+  useResult(env);
+  await env.refresh();
+  const { rows } = await rowsOf(env);
+  env.run('impactTree.filterAttention');
+  env.view().selection = [rows[0]];
+  await env.run('impactTree.previousUnreviewed');
+  assert.equal(env.seen.revealed.at(-1).row, rows[0], '`bad` is the only row shown, so it ends where it started');
+  env.view().selection = [rows[1]];   // `reach` is hidden by the filter
+  await env.run('impactTree.previousUnreviewed');
+  assert.equal(env.seen.revealed.at(-1).row, rows[0]);
+}));
+
+test('previous unreviewed with nothing left reports it; with no review it does nothing', () => withEnv(async (env) => {
+  await env.run('impactTree.previousUnreviewed');
+  assert.deepEqual(env.seen.infos, []);
+  assert.deepEqual(env.seen.revealed, []);
+  useResult(env);
+  await env.refresh();
+  const { files, rows, b } = await rowsOf(env);
+  for (const row of [...rows, ...b, files[2]]) env.tick(row, true);
+  await env.run('impactTree.previousUnreviewed');
+  assert.deepEqual(env.seen.infos, ['Impact Tree: all reviewed']);
+  assert.deepEqual(env.seen.revealed, []);
 }));
 
 test('next unreviewed from a file\'s spacer goes on after that file, never onto a spacer', () => withEnv(async (env) => {
@@ -191,7 +238,7 @@ test('with nothing left it reports it and reveals nothing', () => withEnv(async 
   await env.run('impactTree.nextUnreviewed');
   assert.deepEqual(env.seen.infos, ['Impact Tree: all reviewed']);
   assert.deepEqual(env.seen.revealed, []);
-  assert.equal(env.seen.statusBar.text, `$(checklist) 0 left · ⛔ 0 · ${NEXT_KEY} next`);
+  assert.equal(env.seen.statusBar.text, `$(checklist) 0 left · 0 need attention · ${NEXT_KEY} next`);
   env.tick(rows[0], false);
   env.run('impactTree.filterAttention');
   env.tick(rows[0], true);
@@ -207,7 +254,7 @@ test('next unreviewed with no review shown does nothing', () => withEnv(async (e
 
 test('package.json contributes the commands, the keybinding and the palette gates', () => withEnv(async (env) => {
   const { contributes } = require('../package.json');
-  const mine = ['filterAttention', 'filterAttentionOn', 'filterUnreviewed', 'filterUnreviewedOn', 'filterThreads', 'filterThreadsOn', 'nextUnreviewed']
+  const mine = ['filterAttention', 'filterAttentionOn', 'filterUnreviewed', 'filterUnreviewedOn', 'filterThreads', 'filterThreadsOn', 'nextUnreviewed', 'previousUnreviewed']
     .map((c) => `impactTree.${c}`);
   for (const id of mine) {
     assert.ok(contributes.commands.some((c) => c.command === id && c.icon), `${id} is contributed with an icon`);
@@ -215,21 +262,30 @@ test('package.json contributes the commands, the keybinding and the palette gate
   }
   // the review lens adds its own, ⇧⌥C for the callers peek (test/review-lens.test.js)
   assert.deepEqual(contributes.keybindings.filter((k) => k.command !== 'impactTree.showCallers'),
-    [{ command: 'impactTree.nextUnreviewed', key: 'alt+n', when: 'impactTree.hasReview' }]);
+    [{ command: 'impactTree.nextUnreviewed', key: 'alt+n', when: 'impactTree.hasReview' },
+      { command: 'impactTree.previousUnreviewed', key: 'shift+alt+n', when: 'impactTree.hasReview' }]);
+  assert.equal(contributes.commands.find((c) => c.command === 'impactTree.previousUnreviewed').title, 'Impact Tree: Go to previous unreviewed change');
   assert.equal(contributes.commands.find((c) => c.command === 'impactTree.nextUnreviewed').title, 'Impact Tree: Go to next unreviewed change');
-  assert.equal(env.seen.statusBar.tooltip, 'Go to the next unreviewed change (rebind it in Keyboard Shortcuts)');
+  assert.equal(env.seen.statusBar.tooltip, 'Go to the next unreviewed change');
   // the title bar keeps refresh, the three filters, next and (for a PR review only)
   // "Submit review…"; the rest is in the overflow menu
   const changes = contributes.menus['view/title'].filter((m) => m.when.startsWith('view == impactTree.changes'));
   const groupOf = (id) => changes.filter((m) => m.command === id).map((m) => m.group);
   assert.deepEqual(changes.filter((m) => m.group.startsWith('navigation')).map((m) => m.command),
     ['impactTree.refresh', 'impactTree.filterAttention', 'impactTree.filterAttentionOn', 'impactTree.filterUnreviewed', 'impactTree.filterUnreviewedOn',
-      'impactTree.filterThreads', 'impactTree.filterThreadsOn', 'impactTree.nextUnreviewed',
-      'impactTree.submitReview']);
-  assert.deepEqual(['selectMode', 'setCheckpoint', 'showLegend', 'showLog', 'clearReviewed'].map((c) => groupOf(`impactTree.${c}`)[0]),
-    ['1_mode@1', '1_mode@2', '2_help@1', '2_help@2', '3_progress@1']);
+      'impactTree.filterThreads', 'impactTree.filterThreadsOn', 'impactTree.previousUnreviewed', 'impactTree.nextUnreviewed',
+      'impactTree.submitReview', 'impactTree.submitReviewUnavailable', 'impactTree.sendFeedback', 'impactTree.showLegend']);
+  // Send feedback shows only with drafts; holding ⌥ turns it into "Send feedback to…".
+  assert.equal(changes.find((m) => m.command === 'impactTree.sendFeedback').when, 'view == impactTree.changes && impactTree.hasFeedbackDrafts');
+  assert.equal(changes.find((m) => m.command === 'impactTree.sendFeedback').alt, 'impactTree.sendFeedbackTo');
+  const order = (id) => Number(changes.find((m) => m.command === id).group.split('@')[1]);
+  assert.ok(order('impactTree.previousUnreviewed') < order('impactTree.nextUnreviewed'), 'previous is left of next');
+  assert.ok(order('impactTree.showLegend') > order('impactTree.submitReview'), 'the legend is the rightmost icon');
+  assert.ok(order('impactTree.showLegend') > order('impactTree.sendFeedback'), 'the legend stays right of Send feedback');
+  assert.deepEqual(['selectMode', 'setCheckpoint', 'showLog', 'clearReviewed', 'cleanUpStoredData'].map((c) => groupOf(`impactTree.${c}`)[0]),
+    ['1_mode@1', '1_mode@2', '2_help@2', '3_progress@1', '3_progress@2']);
   const palette = Object.fromEntries(contributes.menus.commandPalette.map((m) => [m.command, m.when]));
-  for (const id of ['impactTree.filterAttention', 'impactTree.filterUnreviewed', 'impactTree.nextUnreviewed']) assert.equal(palette[id], 'impactTree.hasReview', id);
+  for (const id of ['impactTree.filterAttention', 'impactTree.filterUnreviewed', 'impactTree.nextUnreviewed', 'impactTree.previousUnreviewed']) assert.equal(palette[id], 'impactTree.hasReview', id);
   for (const id of ['impactTree.filterAttentionOn', 'impactTree.filterUnreviewedOn', 'impactTree.filterThreadsOn']) assert.equal(palette[id], 'false', id);
   // the threads filter is offered only once a pull request's threads are loaded
   assert.equal(palette['impactTree.filterThreads'], 'impactTree.hasReviewThreads');

@@ -250,7 +250,7 @@ test('one controller; a preview offers comments only on its hunk lines, per side
   const env = setup({ open: [prDoc('src/a.ts', 'head'), prDoc('src/a.ts', 'base')] });
   await env.idle();
   assert.equal(env.editor.comments.controllers.length, 1);
-  assert.deepEqual([env.controller.id, env.controller.label], [CONTROLLER_ID, 'Impact Tree review']);
+  assert.deepEqual([env.controller.id, env.controller.label], [CONTROLLER_ID, 'Impact Tree: GitHub review comment']);
   const [head, base] = env.docs;
   assert.deepEqual(await env.rangesOf(head), [[10, 17], [40, 46]]);
   assert.deepEqual(await env.rangesOf(base), [[8, 14]]);

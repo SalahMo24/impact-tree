@@ -7,6 +7,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
+const { MODES } = require('../src/engine/analyze');
 const { pull, localResult, finding, withEnv, refusals } = require('./extension-env');
 
 const flush = () => new Promise(setImmediate);
@@ -40,7 +41,7 @@ test('1. a newer refresh replaces an older one, whose late result, decorations a
       await olderRun;
 
       assert.deepEqual((await env.changeRows()).map((n) => n.label), ['newer']);
-      assert.match(messageOf(env), /^pr mode · ⛔ /);
+      assert.match(messageOf(env), /^Branch vs base · 0 need attention /);
       assert.equal(decorationAt(env, older[0].file, older[0].namePos), undefined, 'no decoration of the older result');
       assert.notEqual(decorationAt(env, newer.file, newer.namePos), undefined);
       assert.deepEqual(env.seen.errors, []);
@@ -61,7 +62,7 @@ test('2. selectMode during a run produces a result in the newly selected mode', 
       first.release();
       await running;
       assert.deepEqual(env.seen.analyze.map((a) => a.mode), [from, to]);
-      assert.match(messageOf(env), new RegExp(`^${to} mode · `), 'the view shows the selected mode');
+      assert.match(messageOf(env), new RegExp(`^${MODES[to].label.replace(/[+()]/g, '\\$&')} · `), 'the view shows the selected mode');
       assert.deepEqual(env.seen.errors, []);
     }));
   }
@@ -95,7 +96,7 @@ test('4. a local refresh during a PR preview gives a local result, and the rever
     await preview;
     assert.equal(env.seen.analyze.length, 1, 'the local analysis ran');
     assert.ok(!(await rootLabels(env)).some((l) => PREVIEW_ROW.test(l)), 'the preview did not take over the view');
-    assert.match(messageOf(env), /^pr mode · /);
+    assert.match(messageOf(env), /^Branch vs base · /);
     await env.refresh();
     assert.deepEqual(env.seen.remote, [7], 'Refresh now follows the local analysis');
     assert.deepEqual(env.seen.errors, []);
@@ -233,7 +234,9 @@ test('8b. a prewarm on its own shows Preparing, and Ready once it ends, even whe
     assert.deepEqual(await rootLabels(env), ['Preparing…']);
     warm.fail(new Error('server went away'));
     await flush();
-    assert.deepEqual(await rootLabels(env), ['Ready — click to analyse']);
+    // Idle is an empty tree: the welcome screen with the three ways in is its content.
+    assert.deepEqual(await rootLabels(env), []);
+    assert.equal(env.seen.contexts['impactTree.state'], 'idle');
     assert.deepEqual(env.seen.errors, []);
   }, { prewarm: true, changedSource: true });
 });
@@ -278,7 +281,7 @@ test('10. an older run\'s finally never changes the state of a newer run', async
 
       second.release();
       await newerRun;
-      assert.match(messageOf(env), /^branch mode · /);
+      assert.match(messageOf(env), /^Branch \+ uncommitted · /);
       assert.deepEqual(env.seen.errors, []);
     }));
   }
@@ -294,9 +297,10 @@ test('11. a throw from repoRoot() or resolver.clear() is a failed run, not an un
     const folders = env.vscode.workspace.workspaceFolders;
     env.vscode.workspace.workspaceFolders = [];
     await env.refresh();
-    assert.equal(env.seen.errors.length, 1);
-    assert.match(env.seen.errors[0], /no workspace folder open/);
-    assert.deepEqual(await rootLabels(env), ['Impact Tree: no workspace folder open'], 'the view shows the failure');
+    // Not a failure: the view is empty and its welcome screen says to open a folder.
+    assert.deepEqual(env.seen.errors, []);
+    assert.deepEqual(await rootLabels(env), []);
+    assert.equal(env.seen.contexts['impactTree.state'], 'noFolder');
     env.vscode.workspace.workspaceFolders = folders;
     await env.refresh();
     assert.equal(env.seen.analyze.length, 1, 'the failed run released the session');

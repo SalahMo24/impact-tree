@@ -37,7 +37,7 @@ async function fetchPreviewText(address, { gh, repoSlug }, signal) {
  * @param {{ prDocuments: object, repoRoot: () => string, gh: object, repoSlug: () => object|null, log?: (message: string) => void }} opts
  * @returns {object[]} disposables to push on the extension context
  */
-function registerContentProviders(vscode, { prDocuments, repoRoot, gh, repoSlug, log = () => {} }) {
+function registerContentProviders(vscode, { prDocuments, repoRoot, gh, repoSlug, log = () => {}, getObjectDirs = () => [] }) {
   return [
     // Tier A text: the held preview, else GitHub at the address's commit; never the worktree.
     vscode.workspace.registerTextDocumentContentProvider('impacttree-pr', {
@@ -58,7 +58,7 @@ function registerContentProviders(vscode, { prDocuments, repoRoot, gh, repoSlug,
       provideTextDocumentContent(uri) {
         const { makeGit } = require('./engine/git');
         const started = Date.now();
-        const text = makeGit(repoRoot()).show(uri.query, uri.path);
+        const text = makeGit(repoRoot(), { objectDirs: getObjectDirs() }).show(uri.query, uri.path);
         // A missing blob is expected for added files. Preserve the existing empty side,
         // but record it so a failed base read can be distinguished during diagnosis.
         log(`editor: base content ${uri.toString()} ${text === null ? 'unavailable or absent' : `${text.length} characters`} in ${Date.now() - started}ms`);

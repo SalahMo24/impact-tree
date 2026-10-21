@@ -131,13 +131,13 @@ test('the message adds the pull request\'s counts when not zero, or that threads
   const source = { kind: 'pr', pr: { number: 7 } };
   const counts = { total: 5, left: 5, attention: 0 };
   const message = (threads, filter) => buildReviewSummary(result, source, counts, filter, threadsMessageSuffix(threads)).message;
-  assert.equal(message({ status: 'ready', threads: THREADS }), 'PR #7 · ⛔ 0 · 5 of 5 left · 💬 9 · ✎ 2');
-  assert.equal(message({ status: 'ready', threads: THREADS }, 'threads'), 'PR #7 · ⛔ 0 · 5 of 5 left · 💬 9 · ✎ 2 · filter: unresolved threads');
-  assert.equal(message({ status: 'ready', threads: [thread(1, { isResolved: true })] }), 'PR #7 · ⛔ 0 · 5 of 5 left');
-  assert.equal(message({ status: 'ready', threads: [thread(1, {}, [mine(1)])] }), 'PR #7 · ⛔ 0 · 5 of 5 left · ✎ 1');
-  assert.equal(message({ status: 'loading' }), 'PR #7 · ⛔ 0 · 5 of 5 left');
-  assert.equal(message({ status: 'failed', message: 'x' }), 'PR #7 · ⛔ 0 · 5 of 5 left · ⚠ threads not loaded');
-  assert.equal(message({ status: 'none' }), 'PR #7 · ⛔ 0 · 5 of 5 left');
+  assert.equal(message({ status: 'ready', threads: THREADS }), 'PR #7 · 0 need attention · 5 of 5 left · 💬 9 · ✎ 2');
+  assert.equal(message({ status: 'ready', threads: THREADS }, 'threads'), 'PR #7 · 0 need attention · 5 of 5 left · 💬 9 · ✎ 2 · filter: unresolved threads');
+  assert.equal(message({ status: 'ready', threads: [thread(1, { isResolved: true })] }), 'PR #7 · 0 need attention · 5 of 5 left');
+  assert.equal(message({ status: 'ready', threads: [thread(1, {}, [mine(1)])] }), 'PR #7 · 0 need attention · 5 of 5 left · ✎ 1');
+  assert.equal(message({ status: 'loading' }), 'PR #7 · 0 need attention · 5 of 5 left');
+  assert.equal(message({ status: 'failed', message: 'x' }), 'PR #7 · 0 need attention · 5 of 5 left · ⚠ threads not loaded');
+  assert.equal(message({ status: 'none' }), 'PR #7 · 0 need attention · 5 of 5 left');
 });
 
 test('the threads filter keeps rows with unresolved threads, and files whose only ones are on no row', () => {
@@ -164,12 +164,12 @@ test('the threads filter keeps rows with unresolved threads, and files whose onl
 
 // ---- the provider -------------------------------------------------------------------------
 
-test('rows show their counts: file rows after the attention glyph, change and outside rows after the verdict', async () => {
+test('rows show their counts: file rows after the attention count, change and outside rows after the state', async () => {
   const v = view(sampleResult(), { status: 'ready', threads: [...THREADS, thread(30, { path: 'notes.md', fileLevel: true, line: null })] });
   assert.equal(v.describe(await v.fileAt('src/a.ts')), '💬 9  ·  ✎ 2  ·  0/3  ·  src');
-  // the verdict glyph, then the counts
-  assert.match(v.describe(await v.rowAt('src/a.ts', 'Holder.inner')), /^in Holder  ·  \S+  ·  💬 1  ·  ✎ 1$/);
-  assert.match(v.describe(await v.rowAt('src/a.ts', 'Holder')), /^\S+  ·  💬 2$/);
+  // the state in words, then the counts
+  assert.match(v.describe(await v.rowAt('src/a.ts', 'Holder.inner')), /^in Holder  ·  [^·]+  ·  💬 1  ·  ✎ 1$/);
+  assert.match(v.describe(await v.rowAt('src/a.ts', 'Holder')), /^[^·]+  ·  💬 2$/);
   const outside = await v.rowAt('src/a.ts', 'Outside functions');
   assert.equal(v.describe(outside), `${outside.desc}  ·  💬 2  ·  ✎ 1`);
   assert.equal(v.describe(await v.fileAt('src/b.ts')), '0/1  ·  src', 'no threads: no counts');

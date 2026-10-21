@@ -1,10 +1,11 @@
 // @ts-check
 'use strict';
 const { treeItemId } = require('./review-tree-model');
+const { attentionCountText } = require('./tree-row-models');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 
-// Walking a review without the mouse: the three filter toggles, "next unreviewed", and the
+// Walking a review without the mouse: the three filter toggles, "next" and "previous unreviewed", and the
 // status bar item that shows how much is left. The state lives in the provider (the filter,
 // the ticks); this module only connects it to commands, context keys and the status bar.
 
@@ -21,7 +22,7 @@ const nextKeyHint = (platform) => (platform === 'darwin' ? '⌥N' : 'Alt+N');
  * @param {string} platform
  * @returns {string}
  */
-const statusBarText = ({ left, attention }, platform) => `$(checklist) ${left} left · ⛔ ${attention} · ${nextKeyHint(platform)} next`;
+const statusBarText = ({ left, attention }, platform) => `$(checklist) ${left} left · ${attentionCountText(attention)} · ${nextKeyHint(platform)} next`;
 
 /**
  * What "nothing is left" means under a filter, since "all reviewed" would be untrue when
@@ -48,7 +49,7 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
   const bar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
   bar.name = 'Impact Tree review progress';
   bar.command = 'impactTree.nextUnreviewed';
-  bar.tooltip = 'Go to the next unreviewed change (rebind it in Keyboard Shortcuts)';
+  bar.tooltip = 'Go to the next unreviewed change';
 
   // A context key is sent only when its value changes.
   /** @type {Map<string, unknown>} */
@@ -80,6 +81,12 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
     if (!row) { vscode.window.showInformationMessage(nothingLeftText(provider.getFilter())); return; }
     await goTo(row);
   };
+  const previousUnreviewed = async () => {
+    if (!provider.reviewCounts()) return;
+    const row = provider.previousUnreviewed(startOfWalk());
+    if (!row) { vscode.window.showInformationMessage(nothingLeftText(provider.getFilter())); return; }
+    await goTo(row);
+  };
   /**
    * Goes to the shown review's row with this tree id, as "next unreviewed" does.
    * @param {string} id A `treeItemId`.
@@ -104,6 +111,7 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
       on('impactTree.filterUnreviewed', toggle('unreviewed')), on('impactTree.filterUnreviewedOn', toggle('unreviewed')),
       on('impactTree.filterThreads', toggle('threads')), on('impactTree.filterThreadsOn', toggle('threads')),
       on('impactTree.nextUnreviewed', nextUnreviewed),
+      on('impactTree.previousUnreviewed', previousUnreviewed),
     ],
     revealRow,
     update() {

@@ -7,7 +7,7 @@ function initialisePending(changed) {
   for (const c of changed) {
     Object.assign(c, {
       callerState: 'unknown', callersComplete: false,
-      callersIncompleteReason: 'caller analysis is still running', callers: [],
+      callersIncompleteReason: 'caller analysis is still running', callersRetryable: false, callers: [],
       stale: [], staleCallers: 0, staleChangedElsewhere: 0,
       tests: [], testState: 'not-computed', testReachIncompleteReason: null,
     });

@@ -97,7 +97,7 @@ test('a preview\'s threads show as counts on rows, in the message, and turn on t
   const { tree, aFile, bFile, bad } = await start(env);
   assert.match(env.view().message, / · 💬 2$/, 'the resolved thread is not counted');
   assert.equal(env.seen.contexts['impactTree.hasReviewThreads'], true);
-  assert.match(tree.getTreeItem(aFile).description, /^(\S+ \d+  ·  )?💬 2  ·  0\/1$/);
+  assert.match(tree.getTreeItem(aFile).description, /^(\d+ needs? attention  ·  )?💬 2  ·  0\/1$/);
   assert.match(tree.getTreeItem(bad).description, /  ·  💬 1$/);
   assert.doesNotMatch(String(tree.getTreeItem(bFile).description), /💬/);
   await env.run('impactTree.filterThreads');

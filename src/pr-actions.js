@@ -7,7 +7,7 @@ function loadTypeScriptForPreview(repo) {
   try {
     return loadTypeScript(repo, repo);
   } catch (e) {
-    throw new Error(`Tier A needs TypeScript: ${e.message}`);
+    throw new Error(`Preview needs TypeScript: ${e.message}`);
   }
 }
 
@@ -61,7 +61,7 @@ function createPrActions(vscode, session, { log, gh, repoSlug, sources, prDocume
             maxFiles: cfg.get('tierA.maxFiles', 300),
             concurrency: cfg.get('concurrency', 8),
             onPrepared: (pending) => {
-              if (publish(pending)) log(`tier A: changed files ready in ${Date.now() - t0}ms; caller analysis continues`);
+              if (publish(pending)) log(`preview: changed files ready in ${Date.now() - t0}ms; caller analysis continues`);
             },
             onProgress: (p2) => { if (!run.signal.aborted) progress.report({
               message: p2.total ? `${p2.message} ${p2.done}/${p2.total}` : p2.message,
@@ -74,7 +74,7 @@ function createPrActions(vscode, session, { log, gh, repoSlug, sources, prDocume
           // Text for the diff views, keyed the way the content provider looks it up.
           if (!publish(result)) return;
 
-          log(`tier A: PR #${pr.number} ${result.changedFileCount} file(s), `
+          log(`preview: PR #${pr.number} ${result.changedFileCount} file(s), `
             + `${result.allChanged.length} changed symbol(s), ${result.findings.length} finding(s) `
             + `in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
           result.warnings.forEach((w) => log(`  warn: ${w}`));
@@ -87,7 +87,7 @@ function createPrActions(vscode, session, { log, gh, repoSlug, sources, prDocume
             `Impact Tree: PR #${pr.number} preview — ${result.findings.length} finding(s), PR files only`, 8000);
         });
     } catch (e) {
-      session.failAnalysisRun(run, e, { viewError: `PR #${pr.number}: ${e.message}`, logLabel: 'ERROR tier A' });
+      session.failAnalysisRun(run, e, { viewError: `PR #${pr.number}: ${e.message}`, logLabel: 'ERROR preview' });
     } finally {
       session.releaseAnalysisRunResources(run);
     }
@@ -146,6 +146,7 @@ function createPrActions(vscode, session, { log, gh, repoSlug, sources, prDocume
     vscode.window.showInformationMessage(
       `Impact Tree: on PR #${pr.number}. Return with: git checkout ${was}`);
     sources.refresh();
+    session.languageServerMayReload();
     await session.analyseCheckedOutPr(pr, sha);
   };
 

@@ -65,6 +65,13 @@ function createReadiness(vscode, session, { log }) {
   // server. Concurrent callers share the same promise instead of racing. The session
   // owns `session.resolver` and `session.readyPromise` (see src/session.js); this module
   // creates the resolver once, from the repository root and the settings at that time.
+  // Whether the first index is being built right now. Owner: this module; set around the
+  // language server's warm-up only, and cleared in the same `finally`, so a failed or
+  // never-finishing warm-up cannot leave it set. Readers (the session) use it to decide
+  // whether a user-started run shows the indexing progress. It is a flag, not progress:
+  // the language server reports none, so no percentage is, or may be, derived from it.
+  let indexing = false;
+
   function ensureReady(progress) {
     if (session.readyPromise) return session.readyPromise;
     const prepare = (async () => {
@@ -75,12 +82,17 @@ function createReadiness(vscode, session, { log }) {
 
       if (!resolver.isWarm()) {
         say('indexing the workspace (first run only)');
-        const t = await warmTarget(repo);
-        if (t) {
-          const ok = await resolver.warmUp(t.file, t.pos);
-          if (!ok) log('language server never warmed; results may be incomplete');
-        } else {
-          log('no changed TypeScript file to warm with — skipping warm-up');
+        indexing = true;
+        try {
+          const t = await warmTarget(repo);
+          if (t) {
+            const ok = await resolver.warmUp(t.file, t.pos);
+            if (!ok) log('language server still loading after the warm-up; caller searches wait for it one at a time, and any that time out are retried once it answers');
+          } else {
+            log('no changed TypeScript file to warm with — skipping warm-up');
+          }
+        } finally {
+          indexing = false;
         }
       }
       return true;
@@ -94,7 +106,7 @@ function createReadiness(vscode, session, { log }) {
     return prepare;
   }
 
-  return { ensureReady, ensureResolver, warmTarget };
+  return { ensureReady, ensureResolver, warmTarget, isIndexing: () => indexing };
 }
 
 module.exports = { createReadiness };

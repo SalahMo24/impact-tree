@@ -112,7 +112,7 @@ const isObject = (v) => typeof v === 'object' && v !== null;
 function createReviewComments(vscode, { store, getSession, repoRoot, readHead, contextEvents, log = () => {}, headUri, openDiff }) {
   let disposed = false;
   const makeController = () => {
-    const next = vscode.comments.createCommentController(CONTROLLER_ID, 'Impact Tree review');
+    const next = vscode.comments.createCommentController(CONTROLLER_ID, 'Impact Tree: GitHub review comment');
     next.options = { placeHolder: 'Leave a comment (Markdown)', prompt: 'Reply' };
     return next;
   };
