@@ -349,8 +349,10 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, revealThre
       owner.mergeResult = { ok: true, text: `Merged into ${base}${oid}.` };
       vscode.window.showInformationMessage(`Impact Tree: PR #${owner.number} was merged into ${base}`);
     } else {
-      // A refusal the store made unsent is ours; anything else is GitHub's.
-      owner.mergeResult = { ok: false, text: `${result.error.name === 'ReviewStoreError' ? 'Not merged' : 'GitHub refused the merge'}: ${result.error.message}` };
+      // A refusal the store made unsent is ours; a lost answer is not a refusal; anything else is GitHub's.
+      const name = result.error.name;
+      const lead = name === 'ReviewStoreError' ? 'Not merged' : name === 'MergeOutcomeUnknownError' ? 'Merge outcome unknown' : 'GitHub refused the merge';
+      owner.mergeResult = { ok: false, text: `${lead}: ${result.error.message}` };
       vscode.window.showErrorMessage(`Impact Tree: ${owner.mergeResult.text}`);
     }
     if (current === owner) render();

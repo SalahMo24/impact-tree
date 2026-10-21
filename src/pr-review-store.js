@@ -14,8 +14,10 @@
 
 const assert = require('node:assert/strict');
 const { loadPullRequestReview, mergeStateOf } = require('./pr-review-data');
-const { GitHubResponseError } = require('./github-request');
-const { throwIfCancelled } = require('./engine/cancellation');
+const {
+  GitHubResponseError, GitHubGraphQLError, GitHubAuthError, GitHubRateLimitError, GitHubHttpError,
+} = require('./github-request');
+const { throwIfCancelled, isAnalysisCancelled } = require('./engine/cancellation');
 const { otherRepositoryProblem } = require('./github-remote');
 
 const ENDPOINT = '/graphql';
@@ -435,7 +437,29 @@ async function performDiscardPendingReview(ctx) {
     'pullRequestReview', 'deletePullRequestReview');
 }
 
-/** @param {MutationContext} ctx @param {{ path: string, viewed: boolean }} request */
+/**
+ * A merge whose answer was lost: a timeout, a network failure, a server error, or an
+ * answer that could not be read. GitHub may have merged, so this is never shown as a
+ * refusal; the store reloads, and the reloaded state says whether it is merged.
+ */
+class MergeOutcomeUnknownError extends Error {
+  /** @param {Error} cause */
+  constructor(cause) {
+    super(`it is not known whether GitHub merged it (${cause.message}); the pull request was loaded again, see its state`);
+    this.name = 'MergeOutcomeUnknownError';
+    this.cause = cause;
+  }
+}
+
+/**
+ * Whether GitHub answered a write and did not apply it: errors it returned, a refused
+ * token, a rate limit, or a 4xx. Anything else may have been applied.
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+const refusedUnapplied = (error) => error instanceof GitHubGraphQLError || error instanceof GitHubAuthError
+  || error instanceof GitHubRateLimitError || (error instanceof GitHubHttpError && error.status >= 400 && error.status < 500);
+
 /**
  * Merges the pull request, exactly the reviewed head. Nothing is sent unless GitHub says
  * the merge is clean (`mergeStateOf`), the method is one the repository allows, the viewer
@@ -456,12 +480,19 @@ async function performMerge(ctx, { method }) {
   if (merge.headMoved) refuse('GitHub has a newer head than the one reviewed; refresh the analysis.');
   const state = mergeStateOf(pr, overview);
   if (state.tone !== 'clean') refuse([state.headline, ...state.reasons].join(' '));
-  const payload = await ctx.write(MUTATIONS.merge,
-    { pullRequestId: pr.id, mergeMethod: method, expectedHeadOid: ctx.target.headOid }, 'mergePullRequest');
-  const merged = payload.pullRequest;
-  if (!isObject(merged) || merged.state !== 'MERGED') throw new GitHubResponseError(ENDPOINT, 'mergePullRequest answered without the pull request merged');
-  const commit = merged.mergeCommit;
-  return isObject(commit) && typeof commit.oid === 'string' && OID.test(commit.oid) ? commit.oid : undefined;
+  try {
+    const payload = await ctx.write(MUTATIONS.merge,
+      { pullRequestId: pr.id, mergeMethod: method, expectedHeadOid: ctx.target.headOid }, 'mergePullRequest');
+    const merged = payload.pullRequest;
+    if (!isObject(merged) || merged.state !== 'MERGED') throw new GitHubResponseError(ENDPOINT, 'mergePullRequest answered without the pull request merged');
+    const commit = merged.mergeCommit;
+    return isObject(commit) && typeof commit.oid === 'string' && OID.test(commit.oid) ? commit.oid : undefined;
+  } catch (error) {
+    if (refusedUnapplied(error) || isAnalysisCancelled(error)) throw error;
+    // Never retried. The reload after this mutation shows what GitHub did.
+    ctx.applied = true;
+    throw new MergeOutcomeUnknownError(error instanceof Error ? error : new Error(String(error)));
+  }
 }
 
 /** @param {MutationContext} ctx @param {{ path: string, viewed: boolean }} request */
@@ -890,5 +921,5 @@ function createPullRequestReviewStore({ gh, getTarget, getAnalysisId, log: logLi
 /** @typedef {ReturnType<typeof createPullRequestReviewStore>} PullRequestReviewStore */
 
 module.exports = {
-  MUTATIONS, ReviewStoreError, createPullRequestReviewStore, reviewDataOf, reviewTargetOf, validateTarget, changedPaths,
+  MUTATIONS, ReviewStoreError, MergeOutcomeUnknownError, createPullRequestReviewStore, reviewDataOf, reviewTargetOf, validateTarget, changedPaths,
 };

@@ -6,9 +6,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
-  createPullRequestReviewStore, changedPaths, reviewDataOf, reviewTargetOf, ReviewStoreError,
+  createPullRequestReviewStore, changedPaths, reviewDataOf, reviewTargetOf, ReviewStoreError, MergeOutcomeUnknownError,
 } = require('../src/pr-review-store');
-const { GitHubGraphQLError, GitHubRateLimitError, GitHubResponseError } = require('../src/github-request');
+const { GitHubGraphQLError, GitHubRateLimitError, GitHubResponseError, GitHubTimeoutError, GitHubHttpError } = require('../src/github-request');
 
 const HEAD = 'a'.repeat(40);
 const TARGET = Object.freeze({ owner: 'o', name: 'r', number: 7, headOid: HEAD });
@@ -852,19 +852,43 @@ test('merge: GitHub\'s own refusals come back as the error and are not retried',
   }
 });
 
-test('merge: an answer without the pull request merged is an error, and the store reloads', async () => {
+test('merge: an answer without the pull request merged is an unknown outcome, never a refusal, and the store reloads', async () => {
   for (const payload of [{ mergePullRequest: { pullRequest: { id: 'PR_7', state: 'OPEN', mergeCommit: null } } }, { mergePullRequest: { pullRequest: null } }, { mergePullRequest: null }]) {
     const { gh, store } = await readyToMerge();
     const merging = store.mergePullRequest({ method: 'SQUASH' });
     (await gh.call(1)).resolve(payload);
-    if (payload.mergePullRequest) {
-      assert.equal((await gh.call(2)).name, 'ImpactTreePullRequestReview');
-      gh.calls[2].resolve(answer());
-    }
+    assert.equal((await gh.call(2)).name, 'ImpactTreePullRequestReview');
+    gh.calls[2].resolve(answer());
     const result = await merging;
     assert.equal(result.ok, false);
-    assert.ok(result.error instanceof GitHubResponseError);
+    assert.ok(result.error instanceof MergeOutcomeUnknownError);
+    assert.ok(result.error.cause instanceof GitHubResponseError);
   }
+});
+
+test('merge: a lost answer (timeout, server error) may have merged: reloaded, never retried, never called a refusal', async () => {
+  for (const lost of [new GitHubTimeoutError('/graphql', 30000), new GitHubHttpError('/graphql', 502), new TypeError('fetch failed')]) {
+    const { gh, store } = await readyToMerge();
+    const merging = store.mergePullRequest({ method: 'MERGE' });
+    (await gh.call(1)).reject(lost);
+    assert.equal((await gh.call(2)).name, 'ImpactTreePullRequestReview', 'reloads to see what GitHub did');
+    gh.calls[2].resolve(answer());
+    const result = await merging;
+    assert.equal(result.ok, false);
+    assert.ok(result.error instanceof MergeOutcomeUnknownError);
+    assert.equal(result.error.cause, lost);
+    assert.equal(gh.calls.filter((c) => c.name === 'ImpactTreeMerge').length, 1, 'not retried');
+  }
+});
+
+test('merge: a 4xx answer is a refusal: nothing reloads', async () => {
+  const { gh, store } = await readyToMerge();
+  const merging = store.mergePullRequest({ method: 'MERGE' });
+  const refusal = new GitHubHttpError('/graphql', 422);
+  (await gh.call(1)).reject(refusal);
+  const result = await merging;
+  assert.equal(result.error, refusal);
+  assert.equal(gh.calls.length, 2);
 });
 
 test('merge: the data the merge is judged on is the data loaded when its turn came', async () => {

@@ -516,6 +516,16 @@ test('merge: a refusal the store made unsent is not called GitHub\'s', async () 
   env.dispose();
 });
 
+test('merge: a lost answer is shown as an unknown outcome, never as a refusal', async () => {
+  const env = setup(mergeable(), { modalAnswer: 'Squash and merge' });
+  env.open();
+  env.store.answers.merge.push({ ok: false, error: Object.assign(new Error('it is not known whether GitHub merged it (timeout)'), { name: 'MergeOutcomeUnknownError' }) });
+  await env.send({ type: 'merge', method: 'SQUASH' });
+  assert.match(textOf(env.panel()), /Merge outcome unknown: it is not known whether GitHub merged it/);
+  assert.doesNotMatch(textOf(env.panel()), /GitHub refused the merge/);
+  env.dispose();
+});
+
 test('merge: while it runs everything is disabled and a second merge is ignored; the result is kept until the next action', async () => {
   const env = setup(withPending(), { modalAnswer: 'Squash and merge' });
   env.open();
