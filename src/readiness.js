@@ -87,7 +87,7 @@ function createReadiness(vscode, session, { log }) {
           const t = await warmTarget(repo);
           if (t) {
             const ok = await resolver.warmUp(t.file, t.pos);
-            if (!ok) log('language server never warmed; results may be incomplete');
+            if (!ok) log('language server still loading after the warm-up; caller searches wait for it one at a time, and any that time out are retried once it answers');
           } else {
             log('no changed TypeScript file to warm with — skipping warm-up');
           }

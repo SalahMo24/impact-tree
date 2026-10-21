@@ -23,6 +23,8 @@
  * @property {CallerRow[]} callers
  * @property {boolean} complete
  * @property {string} [reason] Present whenever `complete` is false.
+ * @property {boolean} [retryable] True when the search did not finish because the language
+ *   server did not answer in time or was not ready; the same query may succeed later.
  */
 
 /**
@@ -37,6 +39,7 @@
  * @property {CallerRow[]} callers Empty unless `state` is `'resolved'`.
  * @property {boolean} complete
  * @property {string} [reason] Present whenever `complete` is false.
+ * @property {boolean} [retryable] As in CallerAnswer.
  */
 
 module.exports = {};

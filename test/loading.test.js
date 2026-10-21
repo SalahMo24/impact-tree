@@ -232,7 +232,7 @@ test('provider query deadlines retain unknown coverage and observe late rejectio
   try {
     await withResolver(async name => name === 'vscode.prepareCallHierarchy' ? [{}]
       : hanging ? held.promise : [], async create => {
-      const resolver = create({ repoRoot: repo.dir, queryTimeoutMs: 20, filterInherited: false });
+      const resolver = create({ repoRoot: repo.dir, queryTimeoutMs: 20, coldBudgetMs: 0, filterInherited: false });
       const run = resolver.callerState(path.join(repo.dir, 'a.js'), 9);
       await flush();
       t.mock.timers.tick(20);
@@ -272,7 +272,7 @@ test('timed-out provider commands keep their admission slots until the provider 
       if (hanging) return held.promise;
       return name === 'vscode.prepareCallHierarchy' ? [{}] : [];
     }, async create => {
-      const resolver = create({ repoRoot: repo.dir, queryTimeoutMs: 20, filterInherited: false });
+      const resolver = create({ repoRoot: repo.dir, queryTimeoutMs: 20, coldBudgetMs: 0, filterInherited: false });
       const file = path.join(repo.dir, 'a.js');
       const running = Array.from({ length: 32 }, () => resolver.incomingWithStatus(file, 9));
       await flush();

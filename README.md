@@ -133,6 +133,11 @@ analysis after that     ~3.5s    median query ~300ms
 
 The extension reuses the editor's running server, so it never builds a second program.
 
+The index is rebuilt after a checkout, and in a large monorepo that can take a minute.
+While it loads, caller searches go one at a time and may each wait up to 60 s (2 minutes in
+total), instead of all timing out after 5 s. Any that still time out are retried once the
+server answers, while the review stays open; the view says so. Refresh asks again at any time.
+
 ## Tests
 
 See [the coding style guide](docs/CODING_STYLE.md) for implementation requirements,

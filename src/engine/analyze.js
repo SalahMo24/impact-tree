@@ -589,6 +589,8 @@ async function analyze(repo, opts = {}) {
         c.callerState = cs.state;
         c.callersComplete = cs.complete === true;
         c.callersIncompleteReason = c.callersComplete ? null : cs.reason ?? null;
+        // The language server did not answer in time: the editor retries these once it is up.
+        c.callersRetryable = !c.callersComplete && cs.retryable === true;
         c.callers = cs.callers;
         for (const x of cs.callers) {
           x.callSiteUpdates = classifyCallSiteUpdates({

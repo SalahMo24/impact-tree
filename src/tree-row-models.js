@@ -104,6 +104,12 @@ function describeUnknownCallers(change) {
   if (INCOMPLETE_REASON_TEXT[reason]) return `it is ${INCOMPLETE_REASON_TEXT[reason]}`;
   // From engine/unseen-users.js: already a clause.
   if (typeof reason === 'string' && reason.startsWith('used in ')) return `it is ${reason}`;
+  // A provider deadline or a server still loading: say what happened, not the command name.
+  if (typeof reason === 'string' && /timed out|not ready|outstanding requests/.test(reason)) {
+    return change.callersRetryable === false
+      ? 'the language server did not answer in time'
+      : 'the language server did not answer in time (it is retried once TypeScript has loaded; Refresh asks again)';
+  }
   return reason ? `the search reported "${reason}"` : 'the search did not say why';
 }
 

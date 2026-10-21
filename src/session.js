@@ -42,15 +42,20 @@ function untilCancelled(signal, promise) {
  * signal synchronously, so a run whose signal is not aborted is still the current one.
  *
  * @param {*} vscode
- * @param {{ log: (m: string) => void, review: object, checkpoint?: string, indexingTickMs?: number, getObjectDirs?: () => string[], getTempDir?: () => string|undefined }} opts
+ * @param {{ log: (m: string) => void, review: object, checkpoint?: string, indexingTickMs?: number, callerRetryWaitMs?: number,
+ *   getObjectDirs?: () => string[], getTempDir?: () => string|undefined }} opts
  *   `checkpoint` is the review checkpoint restored from the workspace. `indexingTickMs` is
- *   how often the first-index elapsed time is refreshed; tests shorten it. `getObjectDirs` returns
+ *   how often the first-index elapsed time is refreshed; tests shorten it. `callerRetryWaitMs`
+ *   bounds the wait for the language server before timed-out caller searches are retried
+ *   (1..120000; see scheduleCallerRetry). `getObjectDirs` returns
  *   the absolute snapshot object directories that reading the checkpoint revision needs; it is
  *   asked at each use, so a snapshot taken after startup is visible. `getTempDir` names the
  *   folder for an analysis's temporary index (the snapshot store's, so its startup sweep
  *   removes what a crash leaves); undefined uses the OS temp folder.
  */
-function createSession(vscode, { log: logToChannel, review, checkpoint, indexingTickMs = 1000, getObjectDirs = () => [], getTempDir = () => undefined }) {
+function createSession(vscode, { log: logToChannel, review, checkpoint, indexingTickMs = 1000, callerRetryWaitMs = 120000,
+  getObjectDirs = () => [], getTempDir = () => undefined }) {
+  if (!Number.isSafeInteger(callerRetryWaitMs) || callerRetryWaitMs < 1 || callerRetryWaitMs > 120000) throw new RangeError('callerRetryWaitMs must be 1..120000');
   // Required here rather than at module load: tests intercept analyze/git per activate.
   const { analyze, loadTypeScript } = require('./engine/analyze');
 
@@ -155,6 +160,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
       rowDetail: cfg.get('rowDetail', 'hover'),
       error: null,
       problem: null,
+      retryingCallers: false,
       ...extra,
     };
   }
@@ -168,13 +174,15 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
    * `checkout` source is a PR whose head `sha` is checked out; it is analysed locally,
    * against the PR's base, until a request with another source replaces it.
    * @param {{ source: { kind: 'local' } | { kind: 'pr', pr: object } | { kind: 'checkout', pr: object, sha: string },
-   *   stage: 'preparing'|'analysing' }} request
+   *   stage: 'preparing'|'analysing', keepResult?: boolean }} request
    *   `stage` is the phase the run starts in. Local/checkout runs publish changed rows
-   *   before warming the language server and resolving their callers.
+   *   before warming the language server and resolving their callers. `keepResult`: the
+   *   shown result stays reviewable until the run publishes its own (a caller retry,
+   *   which only refines it); the view does not go back to "Analysing…".
    * @returns {{ id: number, signal: AbortSignal } | null} The run's handle, or null when refused.
    *   The signal is aborted when the run is replaced, a checkout starts, or the session is disposed.
    */
-  function beginAnalysisRun({ source, stage }) {
+  function beginAnalysisRun({ source, stage, keepResult = false }) {
     if (disposed()) return null;
     if (lifecycle.checkout) {
       vscode.window.showWarningMessage(`Impact Tree: PR #${lifecycle.checkout.prNumber} is being checked out — try again when it finishes`);
@@ -193,8 +201,12 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     lifecycle.run = record;
     lifecycle.state = stage;
     if (source.kind !== 'pr') session.resolverOverride = null;     // leaving a PR preview
-    session.state = { ...session.state, source, result: null, error: null, problem: null };
-    session.decorate.clear();
+    if (keepResult && session.state && session.state.result) {
+      session.state = { ...session.state, source, retryingCallers: true };
+    } else {
+      session.state = { ...session.state, source, result: null, error: null, problem: null, retryingCallers: false };
+      session.decorate.clear();
+    }
     session.provider.refresh();
     notifyAnalysisChanged();
     return handle;
@@ -285,6 +297,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     if (lifecycle.run === record) {
       lifecycle.run = null;
       lifecycle.state = 'ready';
+      if (session.state && session.state.retryingCallers) session.state = { ...session.state, retryingCallers: false };
       session.provider.refresh();
     }
     record.settle();
@@ -464,21 +477,26 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
 
   // Analyses the working repository for `run` and publishes the result if the run is
   // still current. Throws on failure, including the cancellation error.
-  async function analyseLocalRun(run, source, mode, progress) {
+  // `retry`: a caller retry (see scheduleCallerRetry). It keeps the resolver's answers, so
+  // only what did not finish is asked again, publishes no early rows (the shown result
+  // stays), does not fetch, and schedules no further retry.
+  async function analyseLocalRun(run, source, mode, progress, { retry = false } = {}) {
     // A replaced run must not clear the resolver a newer run is using.
     throwIfCancelled(run.signal);
     const repo = repoRoot();
     const cfg = vscode.workspace.getConfiguration('impactTree');
     const base = source.kind === 'checkout' ? source.pr.baseRef : cfg.get('baseBranch', 'main');
-    session.resolver.clear();
-    session.localResolver = null;
+    if (!retry) {
+      session.resolver.clear();
+      session.localResolver = null;
+    }
     const tStart = Date.now();
     const report = (m) => { if (!run.signal.aborted && progress) progress.report({ message: m }); };
     // vscode.commands.executeCommand takes no cancellation token, so the language
     // server cannot be told to stop. The signal stops new queries; one already sent
     // finishes in the server and its answer is dropped with the cancelled run.
     const result = await analyze(repo, {
-      onPrepared: async (pending) => {
+      onPrepared: retry ? undefined : async (pending) => {
         if (!completeAnalysisRun(run, { result: pending, repo, expansionResolver: null })) return;
         configureLocalReview(source, repo, pending, base);
         session.provider.refresh();
@@ -489,7 +507,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
         if (p2.phase === 'component') report(`analysing ${p2.component}…`);
         else if (p2.total) report(`${p2.component}: resolving callers ${p2.done}/${p2.total}`);
       },
-      mode, base, fetch: cfg.get('fetchBase', true),
+      mode, base, fetch: !retry && cfg.get('fetchBase', true),
       checkpoint: session.state && session.state.checkpoint,
       objectDirs: getObjectDirs(),
       tempDir: getTempDir(),
@@ -518,11 +536,59 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     const stale = result.findings.reduce((n, f) => n + f.staleCallers, 0);
     vscode.window.setStatusBarMessage(
       `Impact Tree: ${result.findings.length} finding(s), ${stale} caller(s) not updated, base ${result.base.ref}`, 8000);
+    const unanswered = result.allChanged.filter((c) => c.callersRetryable).length;
+    if (retry) log(`caller retry: ${unanswered} search(es) still did not finish`);
+    else if (unanswered) void scheduleCallerRetry(run, source, mode, result, unanswered);
+  }
+
+  /**
+   * Caller searches that timed out or met a server still loading are asked again once:
+   * after waiting (at most callerRetryWaitMs) until the language server answers a caller
+   * query, a retry run re-asks only them (the answers that finished are kept), and the
+   * shown result stays reviewable meanwhile. Skipped when anything else has been shown
+   * since, or the session ends. Owner: the result it was scheduled for; a newer run or
+   * result makes it do nothing. Never rejects.
+   * @param {{ id: number }} run The run that published `result`; the retry starts after it ended.
+   * @param {object} source @param {string} mode @param {any} result @param {number} count
+   * @returns {Promise<void>}
+   */
+  async function scheduleCallerRetry(run, source, mode, result, count) {
+    const id = lifecycle.generation;
+    const ended = records.get(run) ? records.get(run).settled : Promise.resolve();
+    const stillShown = () => !disposed() && isCurrentAnalysis(id) && session.state && session.state.result === result;
+    const target = result.allChanged.find((c) => c.callersRetryable);
+    const searches = `${count} caller search${count === 1 ? '' : 'es'}`;
+    log(`${searches} did not finish (the language server did not answer in time); retrying once it answers`);
+    const token = {};
+    const since = Date.now();
+    const tick = () => {
+      if (stillShown()) setIndexing(token, `${searches} timed out — retrying when TypeScript has loaded… ${Math.floor((Date.now() - since) / 1000)} s`);
+      else if (indexing.run === token) setIndexing(token, null);
+    };
+    tick();
+    const timer = setInterval(tick, indexingTickMs);
+    let ready = false;
+    try {
+      ready = await session.resolver.warmUp(target.file, target.namePos, { timeoutMs: callerRetryWaitMs });
+    } catch (e) {
+      log(`caller retry: waiting for the language server failed: ${e && e.message}`);
+    } finally {
+      clearInterval(timer);
+      if (indexing.run === token) setIndexing(token, null);
+    }
+    await ended;
+    if (!stillShown() || lifecycle.run) return;
+    if (!ready) {
+      log(`caller retry: the language server did not answer within ${Math.round(callerRetryWaitMs / 1000)} s — press Refresh to try again`);
+      return;
+    }
+    log(`caller retry: the language server answers now; asking ${searches} again`);
+    await analyseLocally(source, mode, { retry: true });
   }
 
   // Runs a local analysis of `source` in `mode`; never rejects.
-  async function analyseLocally(source, mode) {
-    const run = beginAnalysisRun({ source, stage: 'analysing' });
+  async function analyseLocally(source, mode, { retry = false } = {}) {
+    const run = beginAnalysisRun({ source, stage: 'analysing', keepResult: retry });
     if (!run) return;
     try {
       // Nothing to analyse here is not an error: the view says why and what to do (the
@@ -542,10 +608,11 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
           session.ensureResolver();
           beginAnalysingStage(run);
           session.provider.refresh();
-          await analyseLocalRun(run, source, mode, progress);
+          await analyseLocalRun(run, source, mode, progress, { retry });
         });
     } catch (e) {
-      failAnalysisRun(run, e);
+      // A failed retry leaves the result it was refining: that one is still true.
+      if (retry) { if (!isAnalysisCancelled(e)) log(`caller retry failed: ${e && e.message}`); } else failAnalysisRun(run, e);
     } finally {
       releaseAnalysisRunResources(run);
     }
@@ -564,6 +631,16 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     const held = session.state && session.state.source;
     if (!mode && held && held.kind === 'checkout') return analyseCheckedOutPr(held.pr, held.sha);
     return analyseLocally({ kind: 'local' }, mode || vscode.workspace.getConfiguration('impactTree').get('mode', 'pr'));
+  }
+
+  /**
+   * The worktree just moved (a checkout): the language server reloads its projects, so it
+   * is treated as cold again and the next analysis warms it up first.
+   * @returns {void}
+   */
+  function languageServerMayReload() {
+    if (session.resolver && session.resolver.expectReload) session.resolver.expectReload();
+    session.readyPromise = null;
   }
 
   /**
@@ -661,7 +738,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
   };
 
   Object.assign(session, {
-    repoRoot, repoStatus, isTierA, viewStateFromResult, onDidChangeIndexing, getIndexingText, refresh, analyseCheckedOutPr, refreshWithTestReach, setCheckpoint,
+    repoRoot, repoStatus, isTierA, viewStateFromResult, onDidChangeIndexing, getIndexingText, refresh, analyseCheckedOutPr, languageServerMayReload, refreshWithTestReach, setCheckpoint,
     beginAnalysisRun, beginAnalysingStage, completeAnalysisRun, failAnalysisRun, releaseAnalysisRunResources,
     isCurrentAnalysis, getAnalysisId, beginCheckout, endCheckout, checkoutInProgress, isBusy, getPhase,
     prewarmInBackground, dispose, treeResolver, onDidChangeAnalysis,

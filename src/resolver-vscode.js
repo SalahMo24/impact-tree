@@ -15,12 +15,23 @@ const { makeGit } = require('./engine/git');
 // editor to sync the document to the extension host, which Cursor rejects for many
 // files ("Documents above the size limit cannot be synchronized with extensions") and
 // which costs a round trip per caller. Offsets are converted from disk instead.
-function createVscodeResolver({ retries = 4, retryDelayMs = 250, queryTimeoutMs = 5000, ts = null, trace = () => {}, filterInherited = true, repoRoot = null } = {}) {
+function createVscodeResolver({
+  retries = 4, retryDelayMs = 250, queryTimeoutMs = 5000, coldQueryTimeoutMs = 60000, coldBudgetMs = 120000,
+  ts = null, trace = () => {}, filterInherited = true, repoRoot = null,
+} = {}) {
   // Five seconds per provider command admits ordinary warm queries (median 384 ms
   // in the live review) but stops a 27–92 s server stall from gating caller results.
   // The provider keeps running; only this bounded wait ends. Timed-out answers are
   // incomplete and never cached. Warm-up has its own total elapsed-time budget.
   if (!Number.isSafeInteger(queryTimeoutMs) || queryTimeoutMs < 1 || queryTimeoutMs > 120000) throw new RangeError('query timeout must be 1..120000 ms');
+  // While the server is still loading its projects (after the window opens or a checkout),
+  // every query waits behind that load; eight parallel queries at five seconds each all
+  // time out. Until one caller query has answered (`callersReady`), queries go one at a
+  // time, each allowed `coldQueryTimeoutMs`. The whole cold phase of an analysis is
+  // bounded by `coldBudgetMs`; past it queries run in parallel at `queryTimeoutMs` again,
+  // and what times out is marked retryable (the session retries it once the server is up).
+  if (!Number.isSafeInteger(coldQueryTimeoutMs) || coldQueryTimeoutMs < 1 || coldQueryTimeoutMs > 120000) throw new RangeError('cold query timeout must be 1..120000 ms');
+  if (!Number.isSafeInteger(coldBudgetMs) || coldBudgetMs < 0 || coldBudgetMs > 600000) throw new RangeError('cold budget must be 0..600000 ms');
   // A timed-out command still consumes a real provider request. Keep at most 32
   // outstanding requests (the maximum analysis concurrency), across generations,
   // until the underlying promises settle. Later queries report incomplete coverage
@@ -36,7 +47,20 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, queryTimeoutMs 
   // Retrying is only meaningful until the language server has proven it is up. Once ANY
   // query has succeeded, retrying unsupported symbols no longer helps. Preserve
   // their unknown state without paying the startup backoff on every query.
+  // `serverWarm`: the server answered a prepareCallHierarchy with an item, which needs only
+  // the one file. `callersReady`: it answered an incoming-calls query, which needs the
+  // file's project loaded; only that makes the server ready for caller queries.
   let serverWarm = false;
+  let callersReady = false;
+  // The cold phase (see coldQueryTimeoutMs). Owner: this resolver. `coldTurn` is the end
+  // of the queue of cold queries; each waits for the one before it. `coldSpentMs` is the
+  // time cold queries took in this analysis; clear() resets it.
+  let coldTurn = Promise.resolve();
+  let coldSpentMs = 0;
+  const coldPhase = () => !callersReady && coldSpentMs < coldBudgetMs;
+  /** A failure that a later query, with the server up, may not repeat. */
+  const isRetryable = (e) => !!e && /timed out|outstanding requests/.test(String(e.message || ''));
+  const notAnswered = (e) => ({ ready: false, calls: [], reason: e && e.message, ...(isRetryable(e) ? { retryable: true } : {}) });
   // Cache: complete caller answers (`cache`) and how each query ended (`queryStates`).
   // Owner: this resolver, which the session keeps for the window (`session.resolver`,
   // created in src/readiness.js). Key: target file#position and whether tests were
@@ -120,28 +144,39 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, queryTimeoutMs 
   let cqrs = ts && makeCqrsEdges(ts, cqrsProviders);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  async function query(file, pos) {
+  /** The queried position, or null when the file cannot be read. */
+  function positionOf(file, pos) {
     const p = offsetToPosition(file, pos);
-    if (!p) return { ready: false, calls: [], reason: 'unreadable' };
-    const uri = vscode.Uri.file(file);
-    const position = new vscode.Position(p.line, p.character);
+    return p ? { uri: vscode.Uri.file(file), position: new vscode.Position(p.line, p.character) } : null;
+  }
+
+  /** Incoming calls of a prepared item; a completed answer proves the project is loaded. */
+  async function incomingCallsOf(item, timeoutMs) {
+    try {
+      const calls = await withDeadline(() => requestProvider('vscode.provideIncomingCalls', item), timeoutMs, 'vscode.provideIncomingCalls');
+      if (!Array.isArray(calls)) return { ready: false, calls: [], reason: 'no incoming-call result' };
+      callersReady = true;
+      return { ready: true, calls, empty: calls.length === 0 };
+    } catch (e) {
+      return notAnswered(e);
+    }
+  }
+
+  // A query once the server answers caller queries: each command gets queryTimeoutMs.
+  async function warmQuery(file, pos) {
+    const at = positionOf(file, pos);
+    if (!at) return { ready: false, calls: [], reason: 'unreadable' };
     const maxAttempts = serverWarm ? 1 : retries + 1;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       let items;
       try {
-        items = await command('vscode.prepareCallHierarchy', uri, position);
+        items = await command('vscode.prepareCallHierarchy', at.uri, at.position);
       } catch (e) {
-        return { ready: false, calls: [], reason: e && e.message };
+        return notAnswered(e);
       }
       if (items && items.length) {
         serverWarm = true;
-        try {
-          const calls = await command('vscode.provideIncomingCalls', items[0]);
-          if (!Array.isArray(calls)) return { ready: false, calls: [], reason: 'no incoming-call result' };
-          return { ready: true, calls, empty: calls.length === 0 };
-        } catch (e) {
-          return { ready: false, calls: [], reason: e && e.message };
-        }
+        return incomingCallsOf(items[0], queryTimeoutMs);
       }
       if (serverWarm) break;           // no hierarchy item for this symbol
       stats.warmupRetries++;
@@ -149,35 +184,86 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, queryTimeoutMs 
     }
     // Without a hierarchy item, provider support for this symbol is unproven.
     if (serverWarm) return { ready: false, calls: [], reason: 'no call hierarchy item' };
-    return { ready: false, calls: [], reason: 'language server not ready' };
+    return { ready: false, calls: [], reason: 'language server not ready', retryable: true };
+  }
+
+  // A query while the server is loading: one deadline for the whole query, polling until
+  // the file has a hierarchy item (a server that is not up answers none).
+  async function coldQuery(file, pos, budgetMs) {
+    const at = positionOf(file, pos);
+    if (!at) return { ready: false, calls: [], reason: 'unreadable' };
+    const started = Date.now();
+    const left = () => budgetMs - (Date.now() - started);
+    for (let attempt = 1; left() > 0; attempt++) {
+      let items;
+      try {
+        items = await withDeadline(() => requestProvider('vscode.prepareCallHierarchy', at.uri, at.position), left(), 'vscode.prepareCallHierarchy');
+      } catch (e) {
+        return notAnswered(e);
+      }
+      if (items && items.length) {
+        serverWarm = true;
+        return incomingCallsOf(items[0], Math.max(1, left()));
+      }
+      if (serverWarm) return { ready: false, calls: [], reason: 'no call hierarchy item' };
+      stats.warmupRetries++;
+      await sleep(Math.max(0, Math.min(250 * attempt, 2000, left())));
+    }
+    return { ready: false, calls: [], reason: `language server not ready after ${Math.round(budgetMs / 1000)} s`, retryable: true };
+  }
+
+  async function query(file, pos) {
+    if (!coldPhase()) return warmQuery(file, pos);
+    const startedGeneration = generation;
+    let release = () => {};
+    const turn = new Promise((resolve) => { release = resolve; });
+    const before = coldTurn;
+    coldTurn = turn;
+    try {
+      await before;
+      // Cleared while waiting: the answer would be dropped, so ask nothing.
+      if (startedGeneration !== generation) return { ready: false, calls: [], reason: 'caller query belongs to an earlier analysis' };
+      // The server came up while this query waited: let the next one go at once.
+      if (!coldPhase()) { release(); return warmQuery(file, pos); }
+      const t = Date.now();
+      try {
+        return await coldQuery(file, pos, Math.min(coldQueryTimeoutMs, coldBudgetMs - coldSpentMs));
+      } finally {
+        coldSpentMs += Date.now() - t;
+        if (callersReady) trace(`language server answered caller queries after ${coldSpentMs}ms of cold queries`);
+      }
+    } finally {
+      release();
+    }
   }
 
   // The first query pays for the language server loading the whole project (tens of
   // seconds on a large one). Concurrent queries all block behind it and each reports the
   // full wait. Warming up explicitly means that cost is paid once, ideally before the
-  // user asks for anything.
+  // user asks for anything. Warm means a caller query answered (`callersReady`), not only
+  // a hierarchy item: an item needs one parsed file, the callers need the project.
   async function warmUp(file, pos, { timeoutMs = 15000 } = {}) {
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120000) throw new RangeError('warm-up timeout must be 1..120000 ms');
-    if (serverWarm) return true;
+    if (callersReady) return true;
     const started = Date.now();
+    const left = () => timeoutMs - (Date.now() - started);
     let attempt = 0;
-    while (Date.now() - started < timeoutMs) {
-      const p2 = offsetToPosition(file, pos);
-      if (!p2) return false;
+    while (left() > 0) {
+      const at = positionOf(file, pos);
+      if (!at) return false;
       try {
-        const remaining = timeoutMs - (Date.now() - started);
-        const items = await withDeadline(() => requestProvider('vscode.prepareCallHierarchy',
-          vscode.Uri.file(file), new vscode.Position(p2.line, p2.character)), remaining, 'language-server warm-up');
-        if (items && items.length) {
+        const items = await withDeadline(() => requestProvider('vscode.prepareCallHierarchy', at.uri, at.position), left(), 'language-server warm-up');
+        if (items && items.length && left() > 0) {
           serverWarm = true;
+          await withDeadline(() => requestProvider('vscode.provideIncomingCalls', items[0]), left(), 'language-server warm-up');
+          callersReady = true;
           stats.warmUpMs = Date.now() - started;
           trace(`language server warm after ${stats.warmUpMs}ms`);
           return true;
         }
       } catch { /* server still starting */ }
       attempt++;
-      const remaining = timeoutMs - (Date.now() - started);
-      if (remaining > 0) await sleep(Math.min(250 * attempt, 2000, remaining));
+      if (left() > 0) await sleep(Math.min(250 * attempt, 2000, left()));
     }
     trace(`language server did not warm within ${timeoutMs}ms`);
     return false;
@@ -197,9 +283,9 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, queryTimeoutMs 
     // hierarchy returns every bus.execute() site; none of them reach this handler
     const isHandler = !!(queryCqrs && queryCqrs.isHandlerExecute(file, pos));
     if (isHandler) stats.cqrsSuppressed++;
-    const { ready, calls, reason, empty } = isHandler ? { ready: true, calls: [] } : await query(file, pos);
+    const { ready, calls, reason, empty, retryable } = isHandler ? { ready: true, calls: [], retryable: false } : await query(file, pos);
     if (startedGeneration !== generation) return staleAnswer();
-    queryStates.set(key, { ready, reason, isHandler });
+    queryStates.set(key, { ready, reason, isHandler, retryable: retryable === true });
     if (ready && empty) { stats.resolvedEmpty++; stats.emptyAt.push({ file, pos }); }
     const dt = Date.now() - t;
     stats.incomingMs += dt;
@@ -209,7 +295,7 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, queryTimeoutMs 
     if (!ready) {
       stats.skipped++;
       if (reason) stats.lastReason = reason;
-      return { callers: [], complete: false, reason: reason || 'caller query did not complete' };
+      return { callers: [], complete: false, reason: reason || 'caller query did not complete', ...(retryable ? { retryable: true } : {}) };
     }
     const out = [];
     const seen = new Set();
@@ -291,14 +377,25 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, queryTimeoutMs 
     incoming,
     incomingWithStatus,
     warmUp,
-    isWarm: () => serverWarm,
+    isWarm: () => callersReady,
+    /**
+     * The server is about to reload its projects (the worktree moved under it, as a
+     * checkout does): treat it as cold until a caller query answers again.
+     */
+    expectReload() {
+      serverWarm = false;
+      callersReady = false;
+      coldSpentMs = 0;
+    },
     /** @returns {Promise<import('./engine/caller-contract').CallerState>} */
     async callerState(file, pos, { isConstructor = false } = {}) {
       const { callers, ...coverage } = await incomingWithStatus(file, pos);
       if (callers.length) return { state: 'resolved', callers, ...coverage };
       if (!coverage.complete) return { state: 'unknown', callers: [], ...coverage };
       const status = queryStates.get(`A${file}#${pos}`);
-      if (!status?.ready) return { state: 'unknown', reason: status?.reason || 'caller query did not complete', callers: [], complete: false };
+      if (!status?.ready) {
+        return { state: 'unknown', reason: status?.reason || 'caller query did not complete', callers: [], complete: false, ...(status?.retryable ? { retryable: true } : {}) };
+      }
       if (isConstructor) return { state: 'di', callers: [], complete: true };
       if (status.isHandler) return { state: 'unknown', reason: 'command-bus handler', callers: [], complete: false };
       // Empty call hierarchies also occur for value-passed callbacks. Only report
@@ -320,7 +417,7 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, queryTimeoutMs 
           ? { state: 'unknown', reason: unseen, callers: [], complete: false }
           : { state: 'none', callers: [], complete: true };
       } catch (e) {
-        return { state: 'unknown', reason: (e && e.message) || 'reference query failed', callers: [], complete: false };
+        return { state: 'unknown', reason: (e && e.message) || 'reference query failed', callers: [], complete: false, ...(isRetryable(e) ? { retryable: true } : {}) };
       }
     },
     stats: () => {
@@ -338,6 +435,7 @@ function createVscodeResolver({ retries = 4, retryDelayMs = 250, queryTimeoutMs 
     },
     clear() {
       generation++;
+      coldSpentMs = 0;
       cache.clear();
       queryStates.clear();
       inherited?.clear();

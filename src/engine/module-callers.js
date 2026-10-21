@@ -190,7 +190,7 @@ function withModuleCallers(resolver, moduleCallers) {
       const coverage = mergeCoverage(cs, extra);
       if (callers.length) return { ...cs, state: 'resolved', callers, ...coverage };
       // An empty answer from an unfinished search is not evidence that nothing calls it.
-      if (!extra.complete) return { state: 'unknown', callers: [], ...coverage };
+      if (!extra.complete) return { state: 'unknown', callers: [], ...coverage, ...(cs.retryable ? { retryable: true } : {}) };
       return cs;
     },
   };

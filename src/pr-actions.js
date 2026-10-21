@@ -146,6 +146,7 @@ function createPrActions(vscode, session, { log, gh, repoSlug, sources, prDocume
     vscode.window.showInformationMessage(
       `Impact Tree: on PR #${pr.number}. Return with: git checkout ${was}`);
     sources.refresh();
+    session.languageServerMayReload();
     await session.analyseCheckedOutPr(pr, sha);
   };
 

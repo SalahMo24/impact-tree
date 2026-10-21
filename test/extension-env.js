@@ -180,7 +180,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   // `statusBars` every status bar item created, in order (`statusBar` is the first, the
   // review progress); `panels` every webview panel created, in order.
   const seen = { warnings: [], errors: [], infos: [], log: [], status: [], modals: 0, analyze: [], remote: [],
-    signals: [], progress: [], callerQueries: [], warmUps: [], contexts: {}, revealed: [], statusBar: null, statusBars: [], panels: [], executed: [],
+    signals: [], progress: [], callerQueries: [], warmUps: [], analyzeOptions: [], contexts: {}, revealed: [], statusBar: null, statusBars: [], panels: [], executed: [],
     focus: 'editor', focusedRow: null, editorSpaces: 0 };
   const git = { fetches: [], checkouts: [], calls: [] };
   const holds = { fetch: gates(), modal: gates(), remote: gates(), analyze: gates(), callers: gates(), warmUp: gates() };
@@ -320,6 +320,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     if (resolved === path.join(SRC, 'engine/analyze.js')) {
       return { ...originalLoad.call(this, name, parent, ...rest), analyze: async (_repo, o) => {
         seen.analyze.push({ mode: o.mode, base: o.base });
+        seen.analyzeOptions.push({ fetch: o.fetch, early: typeof o.onPrepared === 'function' });
         seen.signals.push(o.signal);
         if (hooks.localPrepared) await o.onPrepared(hooks.localPrepared(o));
         await holds.analyze.enter(() => undefined);
@@ -331,6 +332,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     if (resolved === path.join(SRC, 'resolver-vscode.js')) {
       return { createVscodeResolver: () => ({
         isWarm: () => hooks.warm,
+        expectReload: () => { seen.reloads = (seen.reloads || 0) + 1; },
         warmUp: (file) => { seen.warmUps.push(file); return holds.warmUp.enter(() => true); },
         clear: () => hooks.clearResolver(),
         stats: () => ({}),
