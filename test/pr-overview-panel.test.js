@@ -7,7 +7,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createPullRequestPanel, parseMessage, MAX_DRAFTS } = require('../src/pr-overview-panel');
-const { fakeWebviewPanel, deferred } = require('./extension-env');
+const { fakeWebviewPanel, deferred, overviewAnswer } = require('./extension-env');
 const vscodeStub = require('./vscode-stub');
 
 const TARGET = Object.freeze({ owner: 'o', name: 'r', number: 7, headOid: 'a'.repeat(40) });
@@ -15,11 +15,17 @@ const comment = (id, over = {}) => ({ id: `C_${id}`, databaseId: id, author: { l
   createdAt: '2026-01-02T03:04:05Z', pending: false, mine: false, canEdit: false, url: `https://x/${id}`, ...over });
 const thread = (id, over = {}, comments = [comment(id)]) => ({ id: `T_${id}`, path: 'src/a.js', side: 'RIGHT', line: 10, originalLine: 10,
   startLine: null, isResolved: false, isOutdated: false, fileLevel: false, canResolve: true, canUnresolve: false, canReply: true, comments, ...over });
-function reviewModel({ number = 7, threads = [], pending = null, own = false, title = 'Make it better' } = {}) {
+const CLEAN_OVERVIEW = Object.freeze({
+  kind: 'ready',
+  merge: { mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', reviewDecision: null, isDraft: false, isMergeQueueEnabled: false,
+    isInMergeQueue: false, methods: { merge: true, squash: true, rebase: true }, viewerPermission: 'WRITE', headMoved: false },
+  labels: { items: [], more: 0 }, reviewers: { items: [], more: 0 }, checks: { kind: 'none' },
+});
+function reviewModel({ number = 7, threads = [], pending = null, own = false, title = 'Make it better', overview = CLEAN_OVERVIEW } = {}) {
   return {
     pr: { id: `PR_${number}`, number, title, body: 'b', url: 'https://x', state: 'OPEN', author: { login: 'alice', avatarUrl: null },
       viewerDidAuthor: own, headRefOid: 'a'.repeat(40), baseRefOid: 'c'.repeat(40), headRefName: 'feature', baseRefName: 'main' },
-    threads, pendingReview: pending, viewed: new Map(), timeline: [], incomplete: [],
+    threads, pendingReview: pending, viewed: new Map(), timeline: [], overview, incomplete: [],
   };
 }
 const ready = (model = reviewModel(), target = TARGET) => ({ kind: 'ready', target, model });
@@ -60,11 +66,13 @@ function fakeProvider() {
 }
 
 function setup(initial = ready(), { modalAnswer = 'Cancel review' } = {}) {
-  const seen = { infos: [], errors: [], warnings: [], modals: [], contexts: {}, executed: [], panels: [], bars: [], opened: [], revealedRows: [], log: [] };
+  const seen = { external: [], infos: [], errors: [], warnings: [], modals: [], contexts: {}, executed: [], panels: [], bars: [], opened: [], revealedRows: [], log: [] };
   const commands = new Map();
   const vscode = {
     ...vscodeStub,
     ViewColumn: { Active: -1 },
+    Uri: { ...vscodeStub.Uri, parse: (raw) => ({ raw }) },
+    env: { openExternal: async (uri) => { seen.external.push(uri.raw); return true; } },
     window: {
       createWebviewPanel: (...args) => { const p = fakeWebviewPanel(...args); seen.panels.push(p); return p; },
       createStatusBarItem: (alignment, priority) => {
@@ -159,6 +167,7 @@ test('parseMessage accepts only the documented shapes with the current token', (
     [{ type: 'revealThread', threadId: 'T_1' }, { type: 'revealThread', threadId: 'T_1' }],
     [{ type: 'revealRow', rowId: 'finding:a:b:1' }, { type: 'revealRow', rowId: 'finding:a:b:1' }],
     [{ type: 'draft', body: 'x' }, { type: 'draft', body: 'x' }],
+    [{ type: 'openLink', url: 'https://github.com/o/r/runs/1' }, { type: 'openLink', url: 'https://github.com/o/r/runs/1' }],
   ];
   for (const [message, parsed] of ok) assert.deepEqual(parseMessage({ ...message, token: t, extra: 1 }, t), parsed);
   const bad = [
@@ -170,6 +179,9 @@ test('parseMessage accepts only the documented shapes with the current token', (
     { type: 'submit', event: 'COMMENT', body: 'x'.repeat(262145), approveAnyway: false, token: t },
     { type: 'revealThread', threadId: '', token: t }, { type: 'revealThread', threadId: 5, token: t },
     { type: 'revealRow', token: t }, { type: 'draft', token: t }, { type: 'merge', token: t },
+    { type: 'openLink', token: t }, { type: 'openLink', url: 5, token: t }, { type: 'openLink', url: '', token: t },
+    { type: 'openLink', url: 'http://github.com/x', token: t }, { type: 'openLink', url: 'file:///etc/passwd', token: t },
+    { type: 'openLink', url: 'javascript:alert(1)', token: t }, { type: 'openLink', url: `https://x/${'a'.repeat(3000)}`, token: t },
   ];
   for (const message of bad) assert.equal(parseMessage(message, t), null, JSON.stringify(message)?.slice(0, 80));
   assert.equal(parseMessage({ type: 'ready', token: null }, null), null, 'no page, no messages');
@@ -438,6 +450,42 @@ test('an attention row in the check goes to the row in the tree; Retry refreshes
   env.dispose();
 });
 
+const RUN_URL = 'https://github.com/o/r/runs/1';
+const withChecks = (checks) => ready(reviewModel({ overview: { ...CLEAN_OVERVIEW, checks } }));
+const oneCheck = () => withChecks({ kind: 'ready', total: 1, incomplete: null,
+  items: [{ name: 'lint', context: 'CI', state: 'passed', required: false, detail: null, url: RUN_URL }] });
+
+test('openLink opens a loaded check\'s https link, from the Details link, and nothing else', async () => {
+  const env = setup(oneCheck());
+  env.open();
+  env.page().click(env.page().all('[data-act="openLink"]')[0]);
+  await settle();
+  assert.deepEqual(env.seen.external, [RUN_URL]);
+  // A link the page makes up is not a check's: ignored and logged.
+  await env.send({ type: 'openLink', url: 'https://evil.example/phish' });
+  assert.deepEqual(env.seen.external, [RUN_URL]);
+  assert.match(env.seen.log.at(-1), /ignored a link/);
+  // Not https, or not a string: refused at the message boundary.
+  for (const url of ['http://github.com/o/r/runs/1', 'file:///etc/passwd', 5, undefined]) await env.send({ type: 'openLink', url });
+  assert.deepEqual(env.seen.external, [RUN_URL]);
+  // The token check applies as to every message.
+  env.panel().send({ type: 'openLink', url: RUN_URL, token: 'stale' });
+  await settle();
+  assert.deepEqual(env.seen.external, [RUN_URL]);
+  env.dispose();
+});
+
+test('openLink is ignored when the loaded checks are not ready, or no longer include that link', async () => {
+  const env = setup(oneCheck());
+  env.open();
+  env.store.set(withChecks({ kind: 'none' }));
+  await env.send({ type: 'openLink', url: RUN_URL });
+  env.store.set(ready(reviewModel({ overview: { kind: 'failed', error: new Error('x') } })));
+  await env.send({ type: 'openLink', url: RUN_URL });
+  assert.deepEqual(env.seen.external, []);
+  env.dispose();
+});
+
 // ---- status bar and context key -----------------------------------------------------
 
 test('the status bar shows a pending review with comments and opens the tab; the context key follows the review', () => {
@@ -537,6 +585,7 @@ function fakeGraphql() {
   const github = { pending: true, mutations: [] };
   github.graphql = async (query, variables) => {
     const name = /^(?:query|mutation) (\w+)/.exec(query)[1];
+    if (name === 'ImpactTreePullRequestOverview') return overviewAnswer(variables.headOid);
     if (query.startsWith('query')) return githubAnswer(github);
     github.mutations.push({ name, input: variables.input });
     if (name !== 'ImpactTreeSubmitReview') throw new Error(`unexpected mutation ${name}`);

@@ -40,13 +40,15 @@ const MAX_DRAFTS = 20;
  * @typedef {{ type: 'submit', event: ReviewEvent, body: string, approveAnyway: boolean }
  *   | { type: 'discard' } | { type: 'retry' } | { type: 'ready', body?: string }
  *   | { type: 'revealThread', threadId: string } | { type: 'revealRow', rowId: string }
- *   | { type: 'draft', body: string }} PageMessage
+ *   | { type: 'draft', body: string } | { type: 'openLink', url: string }} PageMessage
  */
 
 /** @param {unknown} v @returns {v is string} */
 const isBody = (v) => typeof v === 'string' && v.length <= MAX_BODY;
 /** @param {unknown} v @returns {v is string} */
 const isId = (v) => typeof v === 'string' && v !== '' && v.length <= 1024;
+/** @param {unknown} v @returns {v is string} */
+const isLink = (v) => typeof v === 'string' && v.length <= 2048 && v.startsWith('https://');
 
 /**
  * A message from the currently rendered page, or null for anything else: a message from an
@@ -68,6 +70,7 @@ function parseMessage(message, token) {
     case 'ready': return m.body === undefined ? { type: 'ready' } : isBody(m.body) ? { type: 'ready', body: m.body } : null;
     case 'revealThread': return isId(m.threadId) ? { type: 'revealThread', threadId: m.threadId } : null;
     case 'revealRow': return isId(m.rowId) ? { type: 'revealRow', rowId: m.rowId } : null;
+    case 'openLink': return isLink(m.url) ? { type: 'openLink', url: m.url } : null;
     case 'draft': return isBody(m.body) ? { type: 'draft', body: m.body } : null;
     default: return null;
   }
@@ -308,6 +311,17 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, revealThre
       case 'submit': await submit(owner, m); return;
       case 'discard': await discard(owner); return;
       case 'retry': await store.refresh(); return;
+      case 'openLink': {
+        // Only a link GitHub gave for a check of the loaded review, never a URL the page names.
+        const data = reviewDataOf(store.getState());
+        const checks = data && data.overview.kind === 'ready' ? data.overview.checks : null;
+        if (!checks || checks.kind !== 'ready' || !checks.items.some((c) => c.url === m.url)) {
+          log(`pull request tab: ignored a link that is not one of the loaded checks`);
+          return;
+        }
+        await vscode.env.openExternal(vscode.Uri.parse(m.url));
+        return;
+      }
       case 'revealThread': await vscode.commands.executeCommand('impactTree.revealReviewThread', m.threadId); return;
       case 'revealRow':
         if (!await revealRow(m.rowId)) vscode.window.showInformationMessage('Impact Tree: that change is not in the tree any more.');

@@ -46,12 +46,33 @@ const PENDING = { id: 'R_1', databaseId: 1, comments: { totalCount: 1 } };
 
 // ---- a GitHub client whose calls stay open until the test settles them --------------
 
+/** A good overview answer for the commit asked about. */
+const overviewAnswer = (headOid) => ({ repository: {
+  mergeCommitAllowed: true, squashMergeAllowed: true, rebaseMergeAllowed: true, viewerPermission: 'WRITE',
+  pullRequest: {
+    headRefOid: headOid, isDraft: false, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', reviewDecision: null,
+    isMergeQueueEnabled: false, isInMergeQueue: false,
+    labels: { totalCount: 0, nodes: [] }, reviewRequests: { totalCount: 0, nodes: [] }, latestReviews: { totalCount: 0, nodes: [] },
+  },
+  object: { statusCheckRollup: null },
+} });
+
 function fakeGitHub() {
   const calls = [];
+  const overviewCalls = [];
   const waiting = [];
   return {
     calls,
+    overviewCalls,
+    /** What the overview query answers; a test replaces it. */
+    overview: (variables) => Promise.resolve(overviewAnswer(variables.headOid)),
     graphql(query, variables, options = {}) {
+      // The overview follows every review load; it answers at once so each test's own
+      // calls (`calls`) stay the review's and the mutations'.
+      if (/^query ImpactTreePullRequestOverview\b/.test(query)) {
+        overviewCalls.push({ variables, signal: options.signal });
+        return this.overview(variables);
+      }
       let settle;
       const promise = new Promise((resolve, reject) => { settle = { resolve, reject }; });
       const call = {
@@ -199,6 +220,28 @@ test('refresh reloads, names only the files whose threads changed, and settles w
   await refreshed;
   assert.equal(store.getState().kind, 'ready');
   assert.deepEqual(changes, [{ paths: [] }, { paths: ['src/b.js'] }]);
+});
+
+test('an overview that changed is not a file change; one that fails does not fail the load', async () => {
+  const { gh, store, changes } = await ready();
+  gh.overview = (v) => {
+    const a = overviewAnswer(v.headOid);
+    a.repository.pullRequest.mergeStateStatus = 'BLOCKED';
+    return Promise.resolve(a);
+  };
+  const refreshed = store.refresh();
+  (await gh.call(1)).resolve(answer());
+  await refreshed;
+  assert.equal(reviewDataOf(store.getState()).overview.merge.mergeStateStatus, 'BLOCKED');
+  assert.deepEqual(changes, [{ paths: [] }, { paths: [] }], 'a pull-request-wide change names no file');
+  assert.equal(gh.overviewCalls.at(-1).variables.headOid, HEAD, 'the checks are those of the reviewed commit');
+
+  gh.overview = () => Promise.reject(new GitHubRateLimitError('/graphql', 403, null));
+  const again = store.refresh();
+  (await gh.call(2)).resolve(answer());
+  await again;
+  assert.equal(store.getState().kind, 'ready');
+  assert.equal(reviewDataOf(store.getState()).overview.kind, 'failed');
 });
 
 test('refresh during a load aborts it and only the newer answer is shown', async () => {

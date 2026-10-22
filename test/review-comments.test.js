@@ -10,7 +10,7 @@ const os = require('os');
 const path = require('path');
 
 const baseStub = require('./vscode-stub');
-const { createCommentsApi, withEnv } = require('./extension-env');
+const { createCommentsApi, withEnv, overviewAnswer } = require('./extension-env');
 const {
   commentingContextOf, documentSide, commentableLines, acceptsComment, threadSpecsFor,
   rowCommentPlace, chooseCommentLine, callerContextBlock, withCallerContext, callerDraftLabel,
@@ -49,7 +49,7 @@ const thread = (id, over = {}, comments = [comment(id)]) => ({ id: `T_${id}`, pa
 const reviewModel = ({ threads = [], pending = null } = {}) => ({
   pr: { id: 'PR_7', number: 7, title: 't', body: '', url: '', state: 'OPEN', author: null, viewerDidAuthor: false,
     headRefOid: HEAD, baseRefOid: BASE, headRefName: 'f', baseRefName: 'main' },
-  threads, pendingReview: pending, viewed: new Map(), timeline: [], incomplete: [],
+  threads, pendingReview: pending, viewed: new Map(), timeline: [], overview: { kind: 'failed', error: new Error('not loaded in this test') }, incomplete: [],
 });
 const PENDING = { id: 'R_1', databaseId: 1, commentCount: 1 };
 const ready = (m) => ({ kind: 'ready', target: TARGET, model: m });
@@ -679,6 +679,7 @@ function answeringGitHub(initial) {
   const github = { threads: initial.threads, pending: initial.pending, calls: [] };
   github.graphql = async (query, variables) => {
     const name = /^(?:query|mutation) (\w+)/.exec(query)[1];
+    if (name === 'ImpactTreePullRequestOverview') return overviewAnswer(variables.headOid); // not one of the calls asserted on
     github.calls.push({ name, input: variables.input });
     const { input } = variables;
     switch (name) {
