@@ -241,7 +241,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       showWarningMessage: async (message, options) => {
         if (options && options.modal) {
           seen.modals++;
-          return holds.modal.enter(() => 'Check out');
+          return holds.modal.enter(() => seen.modalAnswer ?? 'Check out');
         }
         seen.warnings.push(message);
         return undefined;

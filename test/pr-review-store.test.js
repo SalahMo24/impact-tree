@@ -6,9 +6,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
-  createPullRequestReviewStore, changedPaths, reviewDataOf, reviewTargetOf, ReviewStoreError,
+  createPullRequestReviewStore, changedPaths, reviewDataOf, reviewTargetOf, ReviewStoreError, MergeOutcomeUnknownError,
 } = require('../src/pr-review-store');
-const { GitHubGraphQLError, GitHubRateLimitError, GitHubResponseError } = require('../src/github-request');
+const { GitHubGraphQLError, GitHubAuthError, GitHubRateLimitError, GitHubResponseError, GitHubTimeoutError, GitHubHttpError } = require('../src/github-request');
 
 const HEAD = 'a'.repeat(40);
 const TARGET = Object.freeze({ owner: 'o', name: 'r', number: 7, headOid: HEAD });
@@ -727,4 +727,195 @@ test('a failed post-write reload blocks the next mutation until a fresh load suc
   (await gh.call(5)).resolve(answer());
   assert.equal((await retry).ok, true);
   store.dispose();
+});
+
+// ---- merging -------------------------------------------------------------------------
+
+const MERGE_OID = 'd'.repeat(40);
+const mergedAnswer = (over = {}) => ({ mergePullRequest: { pullRequest: { id: 'PR_7', state: 'MERGED', mergeCommit: { oid: MERGE_OID }, ...over } } });
+
+/**
+ * A store showing PR #7 whose overview GitHub answers with `repo` (repository fields) and
+ * `pr` (pull request fields) changed, and whose state is `state`.
+ */
+async function readyToMerge({ repo = {}, pr = {}, state = 'OPEN' } = {}) {
+  const env = setup();
+  env.gh.overview = (variables) => {
+    const base = overviewAnswer(variables.headOid);
+    return Promise.resolve({ repository: { ...base.repository, ...repo, pullRequest: { ...base.repository.pullRequest, ...pr } } });
+  };
+  env.store.sync();
+  const fixture = answer();
+  fixture.repository.pullRequest.state = state;
+  (await env.gh.call(0)).resolve(fixture);
+  await settle();
+  assert.equal(env.store.getState().kind, 'ready');
+  return env;
+}
+
+test('merge: sends the id, the method and the reviewed head only, then reloads and returns the merge commit', async () => {
+  const { gh, store } = await readyToMerge();
+  const merging = store.mergePullRequest({ method: 'SQUASH' });
+  const call = await gh.call(1);
+  assert.equal(call.name, 'ImpactTreeMerge');
+  assert.deepEqual(inputOf(call), { pullRequestId: 'PR_7', mergeMethod: 'SQUASH', expectedHeadOid: HEAD });
+  call.resolve(mergedAnswer());
+  const reload = await gh.call(2);
+  assert.equal(reload.name, 'ImpactTreePullRequestReview', 'GitHub changed, so the review is loaded again');
+  const after = answer();
+  after.repository.pullRequest.state = 'MERGED';
+  reload.resolve(after);
+  assert.deepEqual(await merging, { ok: true, value: MERGE_OID });
+  assert.equal(reviewDataOf(store.getState()).pr.state, 'MERGED');
+});
+
+test('merge: other mutations\' results carry no value', async () => {
+  const { gh, store } = await ready();
+  const result = store.setViewed({ path: 'src/a.js', viewed: true });
+  (await gh.call(1)).resolve({ markFileAsViewed: { pullRequest: { id: 'PR_7' } } });
+  (await gh.call(2)).resolve(answer());
+  assert.deepEqual(await result, { ok: true });
+});
+
+test('merge: a merge commit GitHub does not name is not invented', async () => {
+  const { gh, store } = await readyToMerge();
+  const merging = store.mergePullRequest({ method: 'MERGE' });
+  (await gh.call(1)).resolve(mergedAnswer({ mergeCommit: null }));
+  (await gh.call(2)).resolve(answer());
+  assert.deepEqual(await merging, { ok: true });
+});
+
+test('merge: the method must be one of the three, checked before anything is queued', async () => {
+  const { gh, store } = await readyToMerge();
+  for (const bad of [undefined, null, 'merge', 'FAST_FORWARD', '', 3, {}, { method: 'merge' }, { method: 'FAST_FORWARD' }, { method: null }]) {
+    const result = await store.mergePullRequest(bad);
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, 'invalid-input');
+  }
+  assert.equal(gh.calls.length, 1);
+});
+
+test('merge: each refusal is made before sending', async () => {
+  const cases = [
+    ['conflicts', { pr: { mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY' } }, 'SQUASH', /conflicts with main/],
+    ['blocked by branch protection', { pr: { mergeStateStatus: 'BLOCKED', reviewDecision: 'REVIEW_REQUIRED' } }, 'SQUASH', /blocked.*approving review is required/i],
+    ['behind the base', { pr: { mergeStateStatus: 'BEHIND' } }, 'SQUASH', /behind main/],
+    ['GitHub has not worked it out', { pr: { mergeable: 'UNKNOWN' } }, 'SQUASH', /still working out/],
+    ['a draft', { pr: { isDraft: true, mergeStateStatus: 'DRAFT' } }, 'SQUASH', /draft/],
+    ['a merge queue', { pr: { isMergeQueueEnabled: true } }, 'SQUASH', /merge queue: merge on GitHub/],
+    ['a method the repository does not allow', { repo: { rebaseMergeAllowed: false } }, 'REBASE', /does not allow that merge method/],
+    ['no write access', { repo: { viewerPermission: 'TRIAGE' } }, 'SQUASH', /You need write access to merge/],
+    ['unknown permission', { repo: { viewerPermission: null } }, 'SQUASH', /You need write access to merge/],
+    ['a closed pull request', { state: 'CLOSED' }, 'SQUASH', /closed/],
+    ['a merged pull request', { state: 'MERGED' }, 'SQUASH', /already merged/],
+    ['a head that moved', { pr: { headRefOid: 'e'.repeat(40) } }, 'SQUASH', /newer head/],
+  ];
+  for (const [name, setupOptions, method, message] of cases) {
+    const { gh, store } = await readyToMerge(setupOptions);
+    const result = await store.mergePullRequest({ method });
+    assert.equal(result.ok, false, name);
+    assert.equal(result.error.code, 'rule', name);
+    assert.match(result.error.message, message, name);
+    assert.equal(gh.calls.length, 1, `${name}: nothing sent`);
+  }
+});
+
+test('merge: a failed overview is never taken as mergeable', async () => {
+  const env = setup();
+  env.gh.overview = () => Promise.reject(new GitHubResponseError('/graphql', 'GitHub answered 502'));
+  env.store.sync();
+  (await env.gh.call(0)).resolve(answer());
+  await settle();
+  const result = await env.store.mergePullRequest({ method: 'SQUASH' });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'rule');
+  assert.match(result.error.message, /merge state is not known/);
+  assert.equal(env.gh.calls.length, 1);
+});
+
+test('merge: GitHub\'s own refusals come back as the error, reload the state and are not retried', async () => {
+  const refusals = [
+    new GitHubGraphQLError('/graphql', [{ message: 'Head branch was modified. Review and try the merge again.' }]),
+    new GitHubGraphQLError('/graphql', [{ message: 'Pull Request is not mergeable' }]),
+    new GitHubGraphQLError('/graphql', [{ message: 'Required status check "build" is expected.' }]),
+  ];
+  for (const refusal of refusals) {
+    const { gh, store, logs } = await readyToMerge();
+    const merging = store.mergePullRequest({ method: 'SQUASH' });
+    (await gh.call(1)).reject(refusal);
+    // GitHub's state differs from what the box shows: it is read again, so the box stops saying ready.
+    assert.equal((await gh.call(2)).name, 'ImpactTreePullRequestReview', 'reloads after the refusal');
+    gh.calls[2].resolve(answer());
+    const result = await merging;
+    assert.equal(result.ok, false);
+    assert.equal(result.error, refusal, 'still reported as GitHub\'s refusal');
+    assert.equal(gh.calls.filter((c) => c.name === 'ImpactTreeMerge').length, 1, 'not retried');
+    assert.ok(logs.some((m) => m.includes(refusal.message)));
+  }
+});
+
+test('merge: a refused token or a rate limit does not reload', async () => {
+  for (const refusal of [new GitHubAuthError(401), new GitHubRateLimitError('/graphql', 403, null)]) {
+    const { gh, store } = await readyToMerge();
+    const merging = store.mergePullRequest({ method: 'SQUASH' });
+    (await gh.call(1)).reject(refusal);
+    const result = await merging;
+    assert.equal(result.error, refusal);
+    assert.equal(gh.calls.length, 2, 'nothing reloads and nothing is retried');
+  }
+});
+
+test('merge: an answer without the pull request merged is an unknown outcome, never a refusal, and the store reloads', async () => {
+  for (const payload of [{ mergePullRequest: { pullRequest: { id: 'PR_7', state: 'OPEN', mergeCommit: null } } }, { mergePullRequest: { pullRequest: null } }, { mergePullRequest: null }]) {
+    const { gh, store } = await readyToMerge();
+    const merging = store.mergePullRequest({ method: 'SQUASH' });
+    (await gh.call(1)).resolve(payload);
+    assert.equal((await gh.call(2)).name, 'ImpactTreePullRequestReview');
+    gh.calls[2].resolve(answer());
+    const result = await merging;
+    assert.equal(result.ok, false);
+    assert.ok(result.error instanceof MergeOutcomeUnknownError);
+    assert.ok(result.error.cause instanceof GitHubResponseError);
+  }
+});
+
+test('merge: a lost answer (timeout, server error) may have merged: reloaded, never retried, never called a refusal', async () => {
+  for (const lost of [new GitHubTimeoutError('/graphql', 30000), new GitHubHttpError('/graphql', 502), new TypeError('fetch failed')]) {
+    const { gh, store } = await readyToMerge();
+    const merging = store.mergePullRequest({ method: 'MERGE' });
+    (await gh.call(1)).reject(lost);
+    assert.equal((await gh.call(2)).name, 'ImpactTreePullRequestReview', 'reloads to see what GitHub did');
+    gh.calls[2].resolve(answer());
+    const result = await merging;
+    assert.equal(result.ok, false);
+    assert.ok(result.error instanceof MergeOutcomeUnknownError);
+    assert.equal(result.error.cause, lost);
+    assert.equal(gh.calls.filter((c) => c.name === 'ImpactTreeMerge').length, 1, 'not retried');
+  }
+});
+
+test('merge: a 4xx answer is a refusal, not an unknown outcome; the state is read again', async () => {
+  const { gh, store } = await readyToMerge();
+  const merging = store.mergePullRequest({ method: 'MERGE' });
+  const refusal = new GitHubHttpError('/graphql', 422);
+  (await gh.call(1)).reject(refusal);
+  assert.equal((await gh.call(2)).name, 'ImpactTreePullRequestReview');
+  gh.calls[2].resolve(answer());
+  const result = await merging;
+  assert.equal(result.error, refusal);
+  assert.equal(gh.calls.filter((c) => c.name === 'ImpactTreeMerge').length, 1);
+});
+
+test('merge: the data the merge is judged on is the data loaded when its turn came', async () => {
+  const { gh, store } = await readyToMerge();
+  const resolving = store.setResolved({ threadId: 'T_1', resolved: true });
+  const merging = store.mergePullRequest({ method: 'SQUASH' });
+  (await gh.call(1)).resolve({ resolveReviewThread: { thread: { id: 'T_1', isResolved: true } } });
+  (await gh.call(2)).resolve(answer({ threads: [thread(1, { isResolved: true })] }));
+  assert.equal((await resolving).ok, true);
+  const call = await gh.call(3);
+  assert.equal(call.name, 'ImpactTreeMerge', 'the merge ran after the reload, in the same lane');
+  call.resolve(mergedAnswer());
+  (await gh.call(4)).resolve(answer());
+  assert.equal((await merging).ok, true);
 });

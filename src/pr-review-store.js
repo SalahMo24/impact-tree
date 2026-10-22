@@ -13,9 +13,11 @@
 // its AbortController and its answer is discarded even if it arrives later.
 
 const assert = require('node:assert/strict');
-const { loadPullRequestReview } = require('./pr-review-data');
-const { GitHubResponseError } = require('./github-request');
-const { throwIfCancelled } = require('./engine/cancellation');
+const { loadPullRequestReview, mergeStateOf } = require('./pr-review-data');
+const {
+  GitHubResponseError, GitHubGraphQLError, GitHubAuthError, GitHubRateLimitError, GitHubHttpError,
+} = require('./github-request');
+const { throwIfCancelled, isAnalysisCancelled } = require('./engine/cancellation');
 const { otherRepositoryProblem } = require('./github-remote');
 
 const ENDPOINT = '/graphql';
@@ -54,6 +56,10 @@ const MUTATIONS = Object.freeze({
   markViewed: `mutation ImpactTreeMarkViewed($input: MarkFileAsViewedInput!) {
   markFileAsViewed(input: $input) { pullRequest { id } }
 }`,
+  /** Merges the pull request; asks back the state and the merge commit to check the answer. */
+  merge: `mutation ImpactTreeMerge($input: MergePullRequestInput!) {
+  mergePullRequest(input: $input) { pullRequest { id state mergeCommit { oid } } }
+}`,
   unmarkViewed: `mutation ImpactTreeUnmarkViewed($input: UnmarkFileAsViewedInput!) {
   unmarkFileAsViewed(input: $input) { pullRequest { id } }
 }`,
@@ -61,6 +67,11 @@ const MUTATIONS = Object.freeze({
 
 const COMMENT_MODES = Object.freeze(['startReview', 'commentNow', 'addToReview']);
 const REVIEW_EVENTS = Object.freeze(['COMMENT', 'APPROVE', 'REQUEST_CHANGES']);
+const MERGE_METHODS = Object.freeze(['MERGE', 'SQUASH', 'REBASE']);
+// The repository setting that allows each merge method.
+const METHOD_SETTING = Object.freeze({ MERGE: 'merge', SQUASH: 'squash', REBASE: 'rebase' });
+// Permissions that let a viewer merge.
+const MERGE_PERMISSIONS = Object.freeze(['ADMIN', 'MAINTAIN', 'WRITE']);
 const SIDES = Object.freeze(['LEFT', 'RIGHT']);
 // A SHA-1 or SHA-256 commit id, as GitHub's GitObjectID.
 const OID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i;
@@ -91,7 +102,9 @@ const OID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i;
  *   state or pull-request-wide data (pending review, timeline, summary) changed; null when
  *   the shown data was replaced wholesale (first data, target change, dropped).
  *
- * @typedef {{ ok: true } | { ok: false, error: Error }} MutationResult
+ * @typedef {{ ok: true, value?: string } | { ok: false, error: Error }} MutationResult `value` is
+ *   set only by a mutation that has something to report: `mergePullRequest` gives the merge
+ *   commit's id (absent when GitHub did not name one).
  *
  * @typedef {object} StoreDeps
  * @property {{ graphql: (query: string, variables?: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<Record<string, unknown>> }} gh
@@ -250,6 +263,8 @@ function idIn(payload, field, mutation) {
  *   Sends one mutation and returns its payload object. Marks the context `applied`.
  * @property {boolean} applied Whether GitHub may now differ from `model`, so the store
  *   must reload. Cleared when a failed sequence was undone.
+ * @property {boolean} stale GitHub refused a write because `model` is out of date (say,
+ *   the branch moved), so the store reloads although nothing was applied.
  * @property {(message: string) => void} log
  */
 
@@ -424,6 +439,68 @@ async function performDiscardPendingReview(ctx) {
     'pullRequestReview', 'deletePullRequestReview');
 }
 
+/**
+ * A merge whose answer was lost: a timeout, a network failure, a server error, or an
+ * answer that could not be read. GitHub may have merged, so this is never shown as a
+ * refusal; the store reloads, and the reloaded state says whether it is merged.
+ */
+class MergeOutcomeUnknownError extends Error {
+  /** @param {Error} cause */
+  constructor(cause) {
+    super(`it is not known whether GitHub merged it (${cause.message}); the pull request was loaded again, see its state`);
+    this.name = 'MergeOutcomeUnknownError';
+    this.cause = cause;
+  }
+}
+
+/**
+ * Whether GitHub answered a write and did not apply it: errors it returned, a refused
+ * token, a rate limit, or a 4xx. Anything else may have been applied.
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+const refusedUnapplied = (error) => error instanceof GitHubGraphQLError || error instanceof GitHubAuthError
+  || error instanceof GitHubRateLimitError || (error instanceof GitHubHttpError && error.status >= 400 && error.status < 500);
+
+/**
+ * Merges the pull request, exactly the reviewed head. Nothing is sent unless GitHub says
+ * the merge is clean (`mergeStateOf`), the method is one the repository allows, the viewer
+ * may merge, the pull request is open and not in a merge queue, and its head is the
+ * reviewed one. GitHub still has the last word (it refuses if the branch moved meanwhile).
+ * @param {MutationContext} ctx
+ * @param {{ method: 'MERGE'|'SQUASH'|'REBASE' }} request
+ * @returns {Promise<string|undefined>} The merge commit's id, when GitHub named one.
+ */
+async function performMerge(ctx, { method }) {
+  const { pr, overview } = ctx.model;
+  if (pr.state !== 'OPEN') refuse(pr.state === 'MERGED' ? 'this pull request is already merged' : 'this pull request is closed');
+  if (overview.kind !== 'ready') refuse(`the merge state is not known: ${overview.error.message}`);
+  const { merge } = overview;
+  if (!merge.methods[METHOD_SETTING[method]]) refuse('this repository does not allow that merge method');
+  if (!merge.viewerPermission || !MERGE_PERMISSIONS.includes(merge.viewerPermission)) refuse('You need write access to merge.');
+  if (merge.isMergeQueueEnabled) refuse('This branch uses a merge queue: merge on GitHub.');
+  if (merge.headMoved) refuse('GitHub has a newer head than the one reviewed; refresh the analysis.');
+  const state = mergeStateOf(pr, overview);
+  if (state.tone !== 'clean') refuse([state.headline, ...state.reasons].join(' '));
+  try {
+    const payload = await ctx.write(MUTATIONS.merge,
+      { pullRequestId: pr.id, mergeMethod: method, expectedHeadOid: ctx.target.headOid }, 'mergePullRequest');
+    const merged = payload.pullRequest;
+    if (!isObject(merged) || merged.state !== 'MERGED') throw new GitHubResponseError(ENDPOINT, 'mergePullRequest answered without the pull request merged');
+    const commit = merged.mergeCommit;
+    return isObject(commit) && typeof commit.oid === 'string' && OID.test(commit.oid) ? commit.oid : undefined;
+  } catch (error) {
+    // GitHub refused on its own state ("Head branch was modified", a check now expected):
+    // what the box shows is out of date, so reload it. A refused token or a rate limit
+    // says nothing about the pull request, and a reload would fail the same way.
+    if (error instanceof GitHubGraphQLError || (error instanceof GitHubHttpError && error.status >= 400 && error.status < 500)) ctx.stale = true;
+    if (refusedUnapplied(error) || isAnalysisCancelled(error)) throw error;
+    // Never retried. The reload after this mutation shows what GitHub did.
+    ctx.applied = true;
+    throw new MergeOutcomeUnknownError(error instanceof Error ? error : new Error(String(error)));
+  }
+}
+
 /** @param {MutationContext} ctx @param {{ path: string, viewed: boolean }} request */
 async function performSetViewed(ctx, { path, viewed }) {
   const now = ctx.model.viewed.get(path);
@@ -510,6 +587,12 @@ function checkSubmitReview(raw) {
 }
 
 /** @param {unknown} raw */
+function checkMerge(raw) {
+  if (!isObject(raw) || !MERGE_METHODS.includes(/** @type {string} */ (raw.method))) return { problem: `\`method\` must be one of ${MERGE_METHODS.join(', ')}` };
+  return { request: { method: /** @type {'MERGE'|'SQUASH'|'REBASE'} */ (raw.method) } };
+}
+
+/** @param {unknown} raw */
 function checkSetViewed(raw) {
   if (!isObject(raw)) return { problem: 'expected an object' };
   const problem = pathProblem(raw.path);
@@ -540,7 +623,7 @@ function createPullRequestReviewStore({ gh, getTarget, getAnalysisId, log: logLi
   let busy = null;
   let loadSeq = 0;
   let loadWanted = false;
-  /** @type {Array<{ key: string, perform: (ctx: MutationContext) => Promise<void>, resolve: (r: MutationResult) => void, reject: (e: unknown) => void }>} */
+  /** @type {Array<{ key: string, perform: (ctx: MutationContext) => Promise<string|void>, resolve: (r: MutationResult) => void, reject: (e: unknown) => void }>} */
   const queue = [];
   /** @type {Set<(change: ReviewStoreChange) => void>} */
   const listeners = new Set();
@@ -673,7 +756,7 @@ function createPullRequestReviewStore({ gh, getTarget, getAnalysisId, log: logLi
     busy = { kind: 'mutation', controller };
     /** @type {MutationContext} */
     const ctx = {
-      model, target, signal: controller.signal, applied: false, log,
+      model, target, signal: controller.signal, applied: false, stale: false, log,
       write: async (query, input, field) => {
         throwIfCancelled(controller.signal);
         const payload = payloadOf(await gh.graphql(query, { input }, { signal: controller.signal }), field);
@@ -684,8 +767,8 @@ function createPullRequestReviewStore({ gh, getTarget, getAnalysisId, log: logLi
     /** @type {MutationResult} */
     let result;
     try {
-      await job.perform(ctx);
-      result = { ok: true };
+      const value = await job.perform(ctx);
+      result = value === undefined ? { ok: true } : { ok: true, value };
     } catch (error) {
       if (error instanceof assert.AssertionError) throw error;
       const cause = error instanceof Error ? error : new Error(String(error));
@@ -694,8 +777,9 @@ function createPullRequestReviewStore({ gh, getTarget, getAnalysisId, log: logLi
     } finally {
       busy = null;
     }
-    // GitHub changed (or may have): reload before the next mutation runs on this data.
-    const reload = ctx.applied && !disposed && job.key === keyOf(target);
+    // GitHub changed (or may have), or the data is out of date: reload before the next
+    // mutation runs on this data.
+    const reload = (ctx.applied || ctx.stale) && !disposed && job.key === keyOf(target);
     if (reload) { loadWanted = true; markLoading(); }
     const settled = reload ? whenLoadsSettle() : null;
     pump();
@@ -705,7 +789,7 @@ function createPullRequestReviewStore({ gh, getTarget, getAnalysisId, log: logLi
 
   /**
    * Queues a mutation for the current target.
-   * @param {(ctx: MutationContext) => Promise<void>} perform
+   * @param {(ctx: MutationContext) => Promise<string|void>} perform
    * @returns {Promise<MutationResult>}
    */
   function enqueue(perform) {
@@ -805,7 +889,7 @@ function createPullRequestReviewStore({ gh, getTarget, getAnalysisId, log: logLi
    * A public mutation: validates the argument at once, then queues the work.
    * @template T
    * @param {(raw: unknown) => { request: T } | { problem: string }} check
-   * @param {(ctx: MutationContext, request: T) => Promise<void>} perform
+   * @param {(ctx: MutationContext, request: T) => Promise<string|void>} perform
    * @returns {(raw: unknown) => Promise<MutationResult>}
    */
   const mutation = (check, perform) => (raw) => {
@@ -834,6 +918,8 @@ function createPullRequestReviewStore({ gh, getTarget, getAnalysisId, log: logLi
     submitReview: mutation(checkSubmitReview, performSubmitReview),
     /** @returns {Promise<MutationResult>} */
     discardPendingReview: () => enqueue(performDiscardPendingReview),
+    /** `{ method: 'MERGE'|'SQUASH'|'REBASE' }`; the result's `value` is the merge commit id. */
+    mergePullRequest: mutation(checkMerge, performMerge),
     /** `{ path, viewed }`. */
     setViewed: mutation(checkSetViewed, performSetViewed),
   };
@@ -842,5 +928,5 @@ function createPullRequestReviewStore({ gh, getTarget, getAnalysisId, log: logLi
 /** @typedef {ReturnType<typeof createPullRequestReviewStore>} PullRequestReviewStore */
 
 module.exports = {
-  MUTATIONS, ReviewStoreError, createPullRequestReviewStore, reviewDataOf, reviewTargetOf, validateTarget, changedPaths,
+  MUTATIONS, ReviewStoreError, MergeOutcomeUnknownError, createPullRequestReviewStore, reviewDataOf, reviewTargetOf, validateTarget, changedPaths,
 };

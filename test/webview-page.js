@@ -71,6 +71,7 @@ function createFormPage(html, send, state = { value: null }) {
     constructor(tag, attributes, text) {
       this.tagName = tag; this.attributes = attributes; this.textContent = text;
       this.value = tag === 'textarea' ? text : (attributes.value ?? '');
+      this.options = [];
       this.checked = 'checked' in attributes;
     }
     getAttribute(name) { return name in this.attributes ? this.attributes[name] : null; }
@@ -92,7 +93,13 @@ function createFormPage(html, send, state = { value: null }) {
     const start = match.index + match[0].length;
     // Text up to the first closing tag of the same name: exact for the leaf elements read.
     const text = tag === 'input' ? '' : decode(html.slice(start, html.indexOf(`</${tag}>`, start)).replace(/<[^>]*>/g, ''));
-    elements.push(new Element(tag, attributes, text));
+    const element = new Element(tag, attributes, text);
+    // A select starts on its first option, as a browser does.
+    if (tag === 'select') {
+      element.options = [...html.slice(start, html.indexOf('</select>', start)).matchAll(/<option value="([^"]*)"/g)].map((o) => decode(o[1]));
+      element.value = element.options[0] ?? '';
+    }
+    elements.push(element);
   }
   const listeners = { input: [], change: [], click: [], message: [] };
   const timers = new Map();

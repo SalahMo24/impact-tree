@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const { escapeHtml } = require('./detail-panel-html');
 const { reviewDataOf } = require('./pr-review-store');
-const { openCount } = require('./pr-review-data');
+const { openCount, mergeStateOf } = require('./pr-review-data');
 const { treeItemId } = require('./review-tree-model');
 const { attentionCountText } = require('./tree-row-models');
 
@@ -69,12 +69,28 @@ function buttonRules(facts) {
   };
 }
 
+/** @typedef {'MERGE'|'SQUASH'|'REBASE'} MergeMethod */
+
+/** GitHub's order and the words of its merge menu. */
+/** @type {Record<MergeMethod, string>} */
+const METHOD_WORDS = { MERGE: 'Create a merge commit', SQUASH: 'Squash and merge', REBASE: 'Rebase and merge' };
+/** @type {Record<MergeMethod, string>} */
+const METHOD_NOT_ALLOWED = {
+  MERGE: 'Merge commits are not allowed in this repository.',
+  SQUASH: 'Squash merging is not allowed in this repository.',
+  REBASE: 'Rebase is not allowed in this repository.',
+};
+
 /**
- * @typedef {object} MergeState
- * @property {'clean'|'blocked'|'conflict'|'unknown'|'done'} tone `clean` only when GitHub says so.
- * @property {string} headline
- * @property {string[]} reasons Why, plus notes (merge queue, a newer head).
- * @property {boolean} retry The headline is not an answer yet: offer Refresh or Retry.
+ * @typedef {object} MergeFacts What the page needs, beyond the merge state, to offer a merge.
+ * @property {MergeMethod[]} methods The methods the repository allows, in GitHub's order.
+ * @property {boolean} canMerge The viewer has write access.
+ * @property {boolean} queue The branch uses a merge queue.
+ * @property {boolean} headMoved
+ */
+
+/**
+ * @typedef {import('./pr-review-data').MergeState} MergeState
  *
  * @typedef {{ kind: 'none' } | { kind: 'failed', message: string }
  *   | { kind: 'ready', items: import('./pr-review-data').CheckItem[], total: number, incomplete: string|null }} ChecksView
@@ -124,11 +140,43 @@ function buttonRules(facts) {
  * @property {boolean} own The viewer opened the pull request.
  * @property {ApproveCheck|null} check
  * @property {OverviewView} overview Checks, merge state, reviewers and labels.
+ * @property {MergeFacts|null} mergeFacts Null when the overview did not load.
+ * @property {{ ok: boolean, text: string }|null} mergeResult The last merge's outcome, kept until the next action.
  * @property {string[]} incomplete Why the loaded data is not the whole story.
  * @property {string} draft The summary text to show.
  * @property {string|null} error The last submit or discard failure.
- * @property {null|'submit'|'discard'} busy The action running.
+ * @property {null|'submit'|'discard'|'merge'} busy The action running.
  */
+
+/**
+ * Whether Merge… can be pressed, which methods it offers, and why not. The single source
+ * of those rules, used by the page for the button, the picker and the reason (it is never
+ * more permissive than the store, which checks again before sending). Unknown never looks
+ * mergeable: the button is enabled only when GitHub's answer is clean, and the pull
+ * request is open, in no merge queue, at the reviewed head, and the viewer may merge. Pure.
+ * @param {PageModel} model
+ * @returns {{ show: boolean, methods: MergeMethod[], notes: string[], disabled: boolean, reason: string|null }}
+ *   `show`: false for a pull request that is merged or closed (no button there). `reason`
+ *   is null while enabled, and while busy (the page says what is running).
+ */
+function mergeRules(model) {
+  const facts = model.mergeFacts;
+  const methods = facts ? facts.methods : [];
+  const notes = facts ? /** @type {MergeMethod[]} */ (['MERGE', 'SQUASH', 'REBASE']).filter((m) => !methods.includes(m)).map((m) => METHOD_NOT_ALLOWED[m]) : [];
+  const off = (/** @type {string|null} */ reason) => ({ show: true, methods, notes, disabled: true, reason });
+  if (!model.pr || model.pr.state !== 'OPEN') return { show: false, methods: [], notes: [], disabled: true, reason: null };
+  if (model.busy !== null) return off(null);
+  const tone = model.overview.merge.tone;
+  if (!facts) return off('The merge state could not be loaded.');
+  if (!facts.canMerge) return off('You need write access to merge.');
+  if (facts.queue) return off('This branch uses a merge queue: merge on GitHub.');
+  if (facts.headMoved) return off('GitHub has a newer head than the one reviewed; refresh the analysis.');
+  if (tone === 'blocked') return off('Blocked: see the reasons above.');
+  if (tone === 'conflict') return off('Resolve the conflicts first.');
+  if (tone !== 'clean') return off('Waiting for GitHub\u2019s answer.');
+  if (!methods.length) return off('This repository allows no merge method.');
+  return { show: true, methods, notes, disabled: false, reason: null };
+}
 
 /**
  * `2026-01-02T03:04:05Z` as `2026-01-02 03:04`. Other text is shown as it is.
@@ -179,53 +227,6 @@ function approveCheckOf(data, { attentionLeft, counts }) {
 }
 
 /**
- * Whether the pull request can be merged, in words. Never `clean` when unsure. Pure.
- * @param {{ state: string, baseRefName: string }} pr
- * @param {import('./pr-review-data').PullRequestOverview} overview
- * @returns {MergeState}
- */
-function mergeStateOf(pr, overview) {
-  // The review query already says whether it is merged or closed; the overview is not needed for that.
-  if (pr.state === 'MERGED') return { tone: 'done', headline: 'Merged.', reasons: [], retry: false };
-  if (pr.state === 'CLOSED') return { tone: 'done', headline: 'Closed without merging.', reasons: [], retry: false };
-  if (overview.kind === 'failed') {
-    return { tone: 'unknown', headline: `Merge state could not be loaded: ${overview.error.message}`, reasons: [], retry: true };
-  }
-  const { merge, checks } = overview;
-  const base = pr.baseRefName;
-  /** @type {MergeState} */
-  let result;
-  if (merge.isDraft || merge.mergeStateStatus === 'DRAFT') {
-    result = { tone: 'blocked', headline: 'This pull request is a draft.', reasons: ['Mark it ready for review on GitHub.'], retry: false };
-  } else if (merge.mergeable === 'CONFLICTING' || merge.mergeStateStatus === 'DIRTY') {
-    result = { tone: 'conflict', headline: `This branch has conflicts with ${base}.`, reasons: ['Resolve them in the checkout and push, or on GitHub.'], retry: false };
-  } else if (merge.mergeable === 'UNKNOWN' || merge.mergeStateStatus === 'UNKNOWN') {
-    result = { tone: 'unknown', headline: 'GitHub is still working out whether this can merge.', reasons: [], retry: true };
-  } else if (merge.mergeStateStatus === 'BLOCKED') {
-    /** @type {string[]} */
-    const reasons = [];
-    const required = checks.kind === 'ready' ? checks.items.filter((c) => c.required) : [];
-    for (const c of required) if (c.state === 'failed') reasons.push(`Required check ${c.name} failed`);
-    for (const c of required) if (c.state === 'pending') reasons.push(`Required check ${c.name} has not finished`);
-    if (merge.reviewDecision === 'CHANGES_REQUESTED') reasons.push('Changes were requested');
-    if (merge.reviewDecision === 'REVIEW_REQUIRED') reasons.push('An approving review is required');
-    // Checks that were not read can only matter when nothing read explains the block.
-    const unread = checks.kind === 'failed' || (checks.kind === 'ready' && checks.incomplete !== null);
-    if (!reasons.length) reasons.push(unread ? 'The required checks could not all be read' : 'Branch protection blocks the merge; GitHub does not say why here.');
-    result = { tone: 'blocked', headline: 'Merging is blocked:', reasons, retry: false };
-  } else if (merge.mergeStateStatus === 'BEHIND') {
-    result = { tone: 'blocked', headline: `This branch is behind ${base} and must be updated first.`, reasons: [], retry: false };
-  } else if (merge.mergeStateStatus === 'UNSTABLE') {
-    result = { tone: 'clean', headline: `No conflicts with ${base}. Some checks that are not required are failing.`, reasons: [], retry: false };
-  } else {
-    result = { tone: 'clean', headline: `No conflicts with ${base}. Ready to merge.`, reasons: [], retry: false };
-  }
-  if (merge.isMergeQueueEnabled) result.reasons.push('This branch uses a merge queue: merge on GitHub.');
-  if (merge.headMoved) result.reasons.push('GitHub has a newer head than the one reviewed; refresh the analysis.');
-  return result;
-}
-
-/**
  * @param {import('./pr-review-data').PullRequestOverview} overview
  * @param {{ state: string, baseRefName: string }} pr
  * @returns {OverviewView}
@@ -242,11 +243,12 @@ function overviewViewOf(overview, pr) {
  * The page model for the store's state. Pure.
  * @param {ReviewStoreState} state
  * @param {{ attentionLeft: TreeRow[]|null, counts: { total: number, left: number }|null,
- *   draft: string, error: string|null, busy: null|'submit'|'discard' }} panel `attentionLeft`
+ *   draft: string, error: string|null, busy: null|'submit'|'discard'|'merge',
+ *   mergeResult?: { ok: boolean, text: string }|null }} panel `attentionLeft`
  *   and `counts` come from the tree (null while it shows no review); the rest is the panel's.
  * @returns {PageModel|null} Null when no pull request is under review.
  */
-function pageModelOf(state, { attentionLeft, counts, draft, error, busy }) {
+function pageModelOf(state, { attentionLeft, counts, draft, error, busy, mergeResult = null }) {
   if (state.kind === 'none') return null;
   const data = reviewDataOf(state);
   const number = state.target ? state.target.number : null;
@@ -257,6 +259,7 @@ function pageModelOf(state, { attentionLeft, counts, draft, error, busy }) {
     number, loadError, refreshing: state.kind === 'loading', pr: null, timeline: [], pending: null,
     own: false, check: null,
     overview: { kind: 'failed', message: 'not loaded', merge: { tone: 'unknown', headline: 'Merge state not loaded.', reasons: [], retry: true } }, incomplete: [], draft, error, busy,
+    mergeFacts: null, mergeResult,
   };
   if (!data) return model;
   const { pr } = data;
@@ -282,6 +285,14 @@ function pageModelOf(state, { attentionLeft, counts, draft, error, busy }) {
     model.pending = { commentCount: data.pendingReview.commentCount, comments };
   }
   model.overview = overviewViewOf(data.overview, pr);
+  if (data.overview.kind === 'ready') {
+    const m = data.overview.merge;
+    model.mergeFacts = {
+      methods: /** @type {MergeMethod[]} */ (['MERGE', 'SQUASH', 'REBASE']).filter((x) => m.methods[/** @type {'merge'|'squash'|'rebase'} */ (x.toLowerCase())]),
+      canMerge: m.viewerPermission === 'ADMIN' || m.viewerPermission === 'MAINTAIN' || m.viewerPermission === 'WRITE',
+      queue: m.isMergeQueueEnabled, headMoved: m.headMoved,
+    };
+  }
   model.own = pr.viewerDidAuthor;
   model.check = approveCheckOf(data, { attentionLeft, counts });
   model.incomplete = data.incomplete;
@@ -335,6 +346,8 @@ details summary { cursor: pointer; padding: 5px 10px; color: var(--vscode-descri
 .merge.blocked { border-left-color: var(--vscode-editorWarning-foreground); }
 .merge.conflict { border-left-color: var(--vscode-testing-iconFailed); }
 .merge.unknown, .merge.done { border-left-color: var(--vscode-descriptionForeground); }
+.merge-controls { justify-content: flex-start; align-items: center; }
+select { font: inherit; padding: 3px 6px; color: var(--vscode-dropdown-foreground); background: var(--vscode-dropdown-background); border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border)); }
 .merge ul { margin: 4px 0 4px 18px; padding: 0; }
 .side .p { display: flex; gap: 6px; align-items: baseline; margin: 3px 0; }
 .side .p .s { margin-left: auto; font-size: 12px; }
@@ -427,6 +440,10 @@ document.addEventListener('click', (event) => {
     saveDraft();
     post({ type: 'submit', event: target.getAttribute('data-event'), body: el('summary').value, approveAnyway: facts().approveAnyway });
   } else if (act === 'discard') { if (!target.hasAttribute('disabled')) post({ type: 'discard' }); }
+  else if (act === 'merge') {
+    const select = el('merge-method');
+    if (!target.hasAttribute('disabled') && select) post({ type: 'merge', method: select.value });
+  }
   else if (act === 'revealThread') post({ type: 'revealThread', threadId: target.getAttribute('data-thread') });
   else if (act === 'revealRow') post({ type: 'revealRow', rowId: target.getAttribute('data-row') });
   else if (act === 'retry') post({ type: 'retry' });
@@ -592,18 +609,38 @@ function checksHtml(checks) {
     + (checks.incomplete === null ? '' : `<div class="note" data-el="checks-incomplete">${escapeHtml(`Only the first ${checks.items.length} of ${checks.total} checks were loaded.`)}</div>`);
 }
 
-/** @param {OverviewView} view @returns {string} */
-function mergeHtml(view) {
+/**
+ * The method picker, the Merge… button, its reason and the last result.
+ * @param {PageModel} model
+ * @returns {string}
+ */
+function mergeControlsHtml(model) {
+  const rules = mergeRules(model);
+  const result = model.mergeResult
+    ? `<div class="${model.mergeResult.ok ? 'ok' : 'err'} text" data-el="merge-result" role="${model.mergeResult.ok ? 'status' : 'alert'}">${escapeHtml(model.mergeResult.text)}</div>` : '';
+  if (!rules.show) return result;
+  const options = rules.methods.map((m) => `<option value="${m}">${escapeHtml(METHOD_WORDS[m])}</option>`).join('');
+  const picker = rules.methods.length
+    ? `<select data-el="merge-method" aria-label="Merge method"${model.busy !== null ? ' disabled' : ''}>${options}</select> ` : '';
+  const busy = model.busy === 'merge' ? '<div class="note" data-el="merge-busy">Merging…</div>' : '';
+  return `<div class="btns merge-controls">${picker}<button data-act="merge" data-el="merge-button"${rules.disabled ? ' disabled' : ''}>Merge…</button></div>`
+    + (rules.reason ? `<div class="reason" data-el="merge-reason">${escapeHtml(rules.reason)}</div>` : '')
+    + rules.notes.map((n) => `<div class="note" data-el="merge-note">${escapeHtml(n)}</div>`).join('') + busy + result;
+}
+
+/** @param {PageModel} model @returns {string} */
+function mergeHtml(model) {
+  const view = model.overview;
   const m = view.merge;
   if (view.kind === 'failed' && m.tone !== 'done') {
     return '<h4>Merge</h4><div class="merge unknown" data-el="merge"><span class="unk">?</span> '
-      + `Merge state could not be loaded: <span class="text">${escapeHtml(view.message)}</span> ${retryButton}</div>`;
+      + `Merge state could not be loaded: <span class="text">${escapeHtml(view.message)}</span> ${retryButton}${mergeControlsHtml(model)}</div>`;
   }
   const icon = { clean: '<span class="ok">✓</span>', blocked: '<span class="wait">●</span>', conflict: '<span class="bad">✗</span>',
     unknown: '<span class="unk">?</span>', done: '<span class="unk">✓</span>' }[m.tone];
   const refresh = m.retry ? ' <a href="#" data-act="retry">Refresh</a> in a moment.' : '';
   const reasons = m.reasons.length ? `<ul>${m.reasons.map((r) => `<li>${escapeHtml(r)}</li>`).join('')}</ul>` : '';
-  return `<h4>Merge</h4><div class="merge ${m.tone}" data-el="merge">${icon} ${escapeHtml(m.headline)}${refresh}${reasons}</div>`;
+  return `<h4>Merge</h4><div class="merge ${m.tone}" data-el="merge">${icon} ${escapeHtml(m.headline)}${refresh}${reasons}${mergeControlsHtml(model)}</div>`;
 }
 
 /** @type {Record<string, { icon: string, cls: string, words: string }>} */
@@ -648,7 +685,7 @@ function bodyHtml(model) {
     + (model.refreshing ? '<p class="note">Refreshing from GitHub…</p>' : '')
     + incomplete + headerHtml(pr)
     + `<div class="cols"><div>${timelineHtml(model.timeline)}${checksHtml(model.overview.kind === 'ready' ? model.overview.checks : { kind: 'failed', message: model.overview.message })}`
-    + `${mergeHtml(model.overview)}${formHtml(model)}</div><div class="side">${reviewersHtml(model.overview)}${labelsHtml(model.overview)}</div></div>`;
+    + `${mergeHtml(model)}${formHtml(model)}</div><div class="side">${reviewersHtml(model.overview)}${labelsHtml(model.overview)}</div></div>`;
 }
 
 /**
@@ -668,6 +705,6 @@ function buildPullRequestHtml(model, { nonce, cspSource, draftKey = nonce }) {
 }
 
 module.exports = {
-  buildPullRequestHtml, pageModelOf, mergeStateOf, buttonRules, pendingStatusOf, submittedMessage, firstLineOf, formatWhen,
+  buildPullRequestHtml, pageModelOf, mergeStateOf, buttonRules, mergeRules, METHOD_WORDS, pendingStatusOf, submittedMessage, firstLineOf, formatWhen,
   OWN_PR_REASON,
 };
