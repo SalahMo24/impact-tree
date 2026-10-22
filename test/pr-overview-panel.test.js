@@ -832,6 +832,40 @@ test('wired: merging through the tab sends the reviewed head to GitHub, shows th
   }, { graphql: github.graphql });
 });
 
+test('wired: after GitHub refuses a merge, the tab reloads and stops offering it', async () => {
+  const { GitHubGraphQLError } = require('../src/github-request');
+  const NEWER = 'e'.repeat(40);
+  const github = { pending: false, state: 'OPEN', mutations: [], refused: false };
+  github.graphql = async (query, variables) => {
+    const name = /^(?:query|mutation) (\w+)/.exec(query)[1];
+    if (name === 'ImpactTreePullRequestOverview') {
+      // Someone pushed: once GitHub has refused, its answer names the newer head.
+      const answer = overviewAnswer(variables.headOid);
+      if (github.refused) answer.repository.pullRequest.headRefOid = NEWER;
+      return answer;
+    }
+    if (query.startsWith('query')) return githubAnswer(github);
+    github.mutations.push({ name, input: variables.input });
+    github.refused = true;
+    throw new GitHubGraphQLError('/graphql', [{ message: 'Head branch was modified. Review and try the merge again.' }]);
+  };
+  await withEnv(async (env) => {
+    await env.preview({ ...pull(7), headSha: HEAD });
+    await flushAll();
+    await env.run('impactTree.showPullRequest');
+    const panel = env.seen.panels[0];
+    assert.ok(!panel.page.el('merge-button').hasAttribute('disabled'));
+    env.seen.modalAnswer = 'Squash and merge';
+    panel.page.el('merge-method').value = 'SQUASH';
+    panel.page.click('merge-button');
+    await flushAll();
+    assert.equal(github.mutations.length, 1, 'sent once, not retried');
+    assert.match(textOf(panel), /GitHub refused the merge: .*Head branch was modified/);
+    assert.match(textOf(panel), /GitHub has a newer head than the one reviewed/, 'the reloaded state is shown');
+    assert.ok(panel.page.el('merge-button').hasAttribute('disabled'), 'Merge… is no longer offered');
+  }, { graphql: github.graphql });
+});
+
 test('package.json declares the commands, the tree-title entry and their when clauses', () => {
   const pkg = require('../package.json');
   const ids = pkg.contributes.commands.map((c) => c.command);

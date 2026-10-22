@@ -263,6 +263,8 @@ function idIn(payload, field, mutation) {
  *   Sends one mutation and returns its payload object. Marks the context `applied`.
  * @property {boolean} applied Whether GitHub may now differ from `model`, so the store
  *   must reload. Cleared when a failed sequence was undone.
+ * @property {boolean} stale GitHub refused a write because `model` is out of date (say,
+ *   the branch moved), so the store reloads although nothing was applied.
  * @property {(message: string) => void} log
  */
 
@@ -488,6 +490,10 @@ async function performMerge(ctx, { method }) {
     const commit = merged.mergeCommit;
     return isObject(commit) && typeof commit.oid === 'string' && OID.test(commit.oid) ? commit.oid : undefined;
   } catch (error) {
+    // GitHub refused on its own state ("Head branch was modified", a check now expected):
+    // what the box shows is out of date, so reload it. A refused token or a rate limit
+    // says nothing about the pull request, and a reload would fail the same way.
+    if (error instanceof GitHubGraphQLError || (error instanceof GitHubHttpError && error.status >= 400 && error.status < 500)) ctx.stale = true;
     if (refusedUnapplied(error) || isAnalysisCancelled(error)) throw error;
     // Never retried. The reload after this mutation shows what GitHub did.
     ctx.applied = true;
@@ -750,7 +756,7 @@ function createPullRequestReviewStore({ gh, getTarget, getAnalysisId, log: logLi
     busy = { kind: 'mutation', controller };
     /** @type {MutationContext} */
     const ctx = {
-      model, target, signal: controller.signal, applied: false, log,
+      model, target, signal: controller.signal, applied: false, stale: false, log,
       write: async (query, input, field) => {
         throwIfCancelled(controller.signal);
         const payload = payloadOf(await gh.graphql(query, { input }, { signal: controller.signal }), field);
@@ -771,8 +777,9 @@ function createPullRequestReviewStore({ gh, getTarget, getAnalysisId, log: logLi
     } finally {
       busy = null;
     }
-    // GitHub changed (or may have): reload before the next mutation runs on this data.
-    const reload = ctx.applied && !disposed && job.key === keyOf(target);
+    // GitHub changed (or may have), or the data is out of date: reload before the next
+    // mutation runs on this data.
+    const reload = (ctx.applied || ctx.stale) && !disposed && job.key === keyOf(target);
     if (reload) { loadWanted = true; markLoading(); }
     const settled = reload ? whenLoadsSettle() : null;
     pump();

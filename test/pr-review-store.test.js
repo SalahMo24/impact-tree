@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const {
   createPullRequestReviewStore, changedPaths, reviewDataOf, reviewTargetOf, ReviewStoreError, MergeOutcomeUnknownError,
 } = require('../src/pr-review-store');
-const { GitHubGraphQLError, GitHubRateLimitError, GitHubResponseError, GitHubTimeoutError, GitHubHttpError } = require('../src/github-request');
+const { GitHubGraphQLError, GitHubAuthError, GitHubRateLimitError, GitHubResponseError, GitHubTimeoutError, GitHubHttpError } = require('../src/github-request');
 
 const HEAD = 'a'.repeat(40);
 const TARGET = Object.freeze({ owner: 'o', name: 'r', number: 7, headOid: HEAD });
@@ -833,7 +833,7 @@ test('merge: a failed overview is never taken as mergeable', async () => {
   assert.equal(env.gh.calls.length, 1);
 });
 
-test('merge: GitHub\'s own refusals come back as the error and are not retried', async () => {
+test('merge: GitHub\'s own refusals come back as the error, reload the state and are not retried', async () => {
   const refusals = [
     new GitHubGraphQLError('/graphql', [{ message: 'Head branch was modified. Review and try the merge again.' }]),
     new GitHubGraphQLError('/graphql', [{ message: 'Pull Request is not mergeable' }]),
@@ -843,12 +843,25 @@ test('merge: GitHub\'s own refusals come back as the error and are not retried',
     const { gh, store, logs } = await readyToMerge();
     const merging = store.mergePullRequest({ method: 'SQUASH' });
     (await gh.call(1)).reject(refusal);
+    // GitHub's state differs from what the box shows: it is read again, so the box stops saying ready.
+    assert.equal((await gh.call(2)).name, 'ImpactTreePullRequestReview', 'reloads after the refusal');
+    gh.calls[2].resolve(answer());
     const result = await merging;
     assert.equal(result.ok, false);
-    assert.equal(result.error, refusal);
-    assert.equal(gh.calls.length, 2, 'a refused merge changed nothing, so nothing reloads and nothing is retried');
+    assert.equal(result.error, refusal, 'still reported as GitHub\'s refusal');
+    assert.equal(gh.calls.filter((c) => c.name === 'ImpactTreeMerge').length, 1, 'not retried');
     assert.ok(logs.some((m) => m.includes(refusal.message)));
-    assert.equal(store.getState().kind, 'ready');
+  }
+});
+
+test('merge: a refused token or a rate limit does not reload', async () => {
+  for (const refusal of [new GitHubAuthError(401), new GitHubRateLimitError('/graphql', 403, null)]) {
+    const { gh, store } = await readyToMerge();
+    const merging = store.mergePullRequest({ method: 'SQUASH' });
+    (await gh.call(1)).reject(refusal);
+    const result = await merging;
+    assert.equal(result.error, refusal);
+    assert.equal(gh.calls.length, 2, 'nothing reloads and nothing is retried');
   }
 });
 
@@ -881,14 +894,16 @@ test('merge: a lost answer (timeout, server error) may have merged: reloaded, ne
   }
 });
 
-test('merge: a 4xx answer is a refusal: nothing reloads', async () => {
+test('merge: a 4xx answer is a refusal, not an unknown outcome; the state is read again', async () => {
   const { gh, store } = await readyToMerge();
   const merging = store.mergePullRequest({ method: 'MERGE' });
   const refusal = new GitHubHttpError('/graphql', 422);
   (await gh.call(1)).reject(refusal);
+  assert.equal((await gh.call(2)).name, 'ImpactTreePullRequestReview');
+  gh.calls[2].resolve(answer());
   const result = await merging;
   assert.equal(result.error, refusal);
-  assert.equal(gh.calls.length, 2);
+  assert.equal(gh.calls.filter((c) => c.name === 'ImpactTreeMerge').length, 1);
 });
 
 test('merge: the data the merge is judged on is the data loaded when its turn came', async () => {
