@@ -46,7 +46,7 @@ function sampleResult() {
 }
 
 const comment = (id, over = {}) => ({ id: `C_${id}`, databaseId: id, author: { login: 'bob', avatarUrl: null }, body: `body ${id}`,
-  createdAt: '2026-01-02T03:04:05Z', pending: false, mine: false, canEdit: false, url: `https://x/${id}`, ...over });
+  createdAt: '2026-01-02T03:04:05Z', pending: false, mine: false, canEdit: false, url: `https://x/${id}`, commitOid: null, originalCommitOid: null, originalLine: null, originalStartLine: null, ...over });
 const thread = (id, over = {}, comments = [comment(id)]) => ({ id: `T_${id}`, path: 'src/a.ts', side: 'RIGHT', line: 12,
   originalLine: 12, startLine: null, isResolved: false, isOutdated: false, fileLevel: false,
   canResolve: true, canUnresolve: false, canReply: true, originalCode: null, comments, ...over });

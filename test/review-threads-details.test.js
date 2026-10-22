@@ -18,7 +18,7 @@ let github = null;
 const OPTIONS = { graphql: (...args) => github.graphql(...args) };
 
 const rawComment = (id, over = {}) => ({ id: `C_${id}`, databaseId: id, author: { login: 'bob', avatarUrl: null }, body: `body ${id}`,
-  createdAt: '2026-01-02T03:04:05Z', state: 'SUBMITTED', viewerDidAuthor: false, viewerCanUpdate: false, url: `https://x/${id}`, diffHunk: '', ...over });
+  createdAt: '2026-01-02T03:04:05Z', state: 'SUBMITTED', viewerDidAuthor: false, viewerCanUpdate: false, url: `https://x/${id}`, diffHunk: '', commit: null, originalCommit: null, originalLine: null, originalStartLine: null, ...over });
 const rawThread = (id, over = {}, comments = [rawComment(id)]) => ({ id: `T_${id}`, isResolved: false, isOutdated: false, path: 'a.ts',
   line: 11, originalLine: 11, startLine: null, originalStartLine: null, diffSide: 'RIGHT', subjectType: 'LINE',
   viewerCanResolve: true, viewerCanUnresolve: false, viewerCanReply: true,

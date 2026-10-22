@@ -57,7 +57,8 @@ const THREAD_FIELDS = `
     totalCount
     pageInfo { hasNextPage }
     nodes {
-      id databaseId author { ${AUTHOR_FIELDS} } body createdAt state viewerDidAuthor viewerCanUpdate url diffHunk
+      id databaseId author { ${AUTHOR_FIELDS} } body createdAt state viewerDidAuthor viewerCanUpdate url diffHunk commit { oid }
+      originalCommit { oid } originalLine originalStartLine
     }
   }`;
 
@@ -174,6 +175,12 @@ const CHECKS_PAGE_QUERY = `query ImpactTreeOverviewChecks($owner: String!, $name
  * @property {boolean} mine The viewer wrote it.
  * @property {boolean} canEdit The viewer wrote it and GitHub lets them change it.
  * @property {string} url
+ * @property {string|null} commitOid The commit GitHub now places the comment on (40 or 64
+ *   hex digits; GitHub moves it forward to newer commits), null when GitHub does not say.
+ * @property {string|null} originalCommitOid The commit the comment was written on, null
+ *   when GitHub does not say.
+ * @property {number|null} originalLine 1-based last line it was written on, in that commit.
+ * @property {number|null} originalStartLine 1-based first line there; null for one line.
  *
  * @typedef {object} ReviewThread
  * @property {string} id GraphQL node id.
@@ -321,6 +328,23 @@ function count(value, what) {
   return /** @type {number} */ (value);
 }
 
+/** A commit object id: 40 (SHA-1) or 64 (SHA-256) lower-case hex digits. */
+const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
+/**
+ * A comment's `commit { oid }`: null, or an object whose oid is a commit id. Absent is
+ * malformed: the query asks for it.
+ * @param {unknown} raw
+ * @param {string} what
+ * @returns {string|null}
+ */
+function commitOid(raw, what) {
+  if (raw === null) return null;
+  const oid = object(raw, what).oid;
+  if (!isString(oid) || !OID.test(oid)) bad(`${what}.oid is not a commit id`);
+  return oid;
+}
+
 /** @param {unknown} raw @param {string} what @returns {ReviewAuthor|null} */
 function author(raw, what) {
   if (raw == null) return null; // a deleted account
@@ -381,6 +405,10 @@ function normaliseComment(raw, what) {
     mine,
     canEdit: bool(c.viewerCanUpdate, `${what}.viewerCanUpdate`) && mine,
     url: str(c.url, `${what}.url`),
+    commitOid: commitOid(c.commit, `${what}.commit`),
+    originalCommitOid: commitOid(c.originalCommit, `${what}.originalCommit`),
+    originalLine: lineOrNull(c.originalLine, `${what}.originalLine`),
+    originalStartLine: lineOrNull(c.originalStartLine, `${what}.originalStartLine`),
   };
 }
 

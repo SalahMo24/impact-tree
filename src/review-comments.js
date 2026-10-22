@@ -22,16 +22,32 @@
 // submit sends a file-level thread), or a comment about a caller whose call is not in the
 // diff (its submit appends a block naming the caller; the thread's label says so, and its
 // title action drops it).
+//
+// Suggested changes (B2). "Suggest change" adds a thread whose one comment is a local
+// draft already open for editing, holding a ```suggestion block with the selected head
+// lines (VS Code cannot fill a comment box; a comment in edit mode is the way round it).
+// Its buttons send it as a new comment, or Cancel drops it. "Apply suggestion" on a
+// posted comment edits the checkout's file, unsaved, when the checkout is at the commit
+// the suggestion was written on and the lines still read as they did then. What a block
+// is and whether an apply may go ahead is decided in `suggestions.js`.
 
+const path = require('path');
 const { reviewDataOf } = require('./pr-review-store');
 const {
   commentingContextOf, documentSide, commentableLines, acceptsComment, threadSpecsFor,
   rowCommentPlace, chooseCommentLine, withCallerContext, callerDraftLabel,
 } = require('./review-comments-model');
+const {
+  parseSuggestions, suggestionBlock, applyDecision, linesChanged, suggestionEdit, splitLines, eolOf, linesOf,
+} = require('./suggestions');
 
 const CONTROLLER_ID = 'impactTree.review';
 /** Set while the viewer has a pending review, so a new comment offers "Add review comment". */
 const PENDING_CONTEXT_KEY = 'impactTree.reviewPending';
+/** Set while the active editor shows a head-side file of the pull request's diff, where a change can be suggested. */
+const SUGGEST_CONTEXT_KEY = 'impactTree.canSuggestChange';
+/** The contextValue of a suggestion draft's comment, matched by its buttons' `when` clauses. */
+const SUGGESTION_DRAFT = 'suggestionDraft';
 const COMMANDS = Object.freeze({
   startReview: 'impactTree.review.startReview',
   commentNow: 'impactTree.review.commentNow',
@@ -45,6 +61,8 @@ const COMMANDS = Object.freeze({
   saveEdit: 'impactTree.review.saveEdit',
   cancelEdit: 'impactTree.review.cancelEdit',
   removeCallerContext: 'impactTree.review.removeCallerContext',
+  suggestChange: 'impactTree.review.suggestChange',
+  applySuggestion: 'impactTree.review.applySuggestion',
 });
 /** The label of a draft whose submit sends a file-level comment. */
 const FILE_COMMENT_LABEL = 'File comment';
@@ -64,6 +82,8 @@ class CommentNotSentError extends Error {
 
 /** @param {unknown} v @returns {v is Record<string, any>} */
 const isObject = (v) => typeof v === 'object' && v !== null;
+/** @param {unknown} body A comment's body: text or a MarkdownString. @returns {string|null} */
+const bodyText = (body) => (typeof body === 'string' ? body : isObject(body) && typeof body.value === 'string' ? body.value : null);
 
 /**
  * @typedef {import('./review-comments-model').CommentingContext} CommentingContext
@@ -95,6 +115,9 @@ const isObject = (v) => typeof v === 'object' && v !== null;
  *   comments cannot be started from the tree or Details.
  * @property {(relPath: string, line: number|null) => Promise<void>} [openDiff] Opens a
  *   changed file's review diff at a 1-based head line, or at its start for null.
+ * @property {(oid: string, relPath: string) => Promise<string|null>} [readAtCommit] A file's
+ *   text at a commit of the checkout, or null when it cannot be read. Never rejects.
+ *   Without it, suggestions cannot be applied.
  */
 
 /**
@@ -112,7 +135,7 @@ const isObject = (v) => typeof v === 'object' && v !== null;
  *   the draft thread, or null when it could not be started (the reason is shown).
  *   `revealThread` opens a thread's file in the review diff at its line.
  */
-function createReviewComments(vscode, { store, getSession, repoRoot, readHead, contextEvents, log = () => {}, headUri, openDiff }) {
+function createReviewComments(vscode, { store, getSession, repoRoot, readHead, contextEvents, log = () => {}, headUri, openDiff, readAtCommit }) {
   let disposed = false;
   const makeController = () => {
     const next = vscode.comments.createCommentController(CONTROLLER_ID, 'Impact Tree: GitHub review comment');
@@ -145,6 +168,10 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
   // with "+" is not here, and is sent as a plain line comment.
   /** @type {WeakMap<object, Draft>} */
   const drafts = new WeakMap();
+  // The comments of suggestion drafts. Their threads are created on the controller and
+  // are not in `drawn`, so reconcile never redraws them; the controller disposes them.
+  /** @type {WeakSet<object>} */
+  const suggestionDrafts = new WeakSet();
 
   // What an earlier result of a checkout said about its base side, for the re-analysis.
   /** @type {{ headOid: string, baseSha: string, headPathOf: Record<string, string> }|null} */
@@ -299,6 +326,22 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
   let shownKey = null;
   /** @type {unknown} */
   let shownResult = null;
+  /** @type {CommentingContext|null} */
+  let shownContext = null;
+
+  /** @type {boolean|null} */
+  let suggestShown = null;
+  // Whether the active editor is the head side of a file in the diff, by the last draw's
+  // context (the command checks again when run).
+  function showSuggestKey() {
+    const editor = vscode.window.activeTextEditor;
+    const ctx = shownContext;
+    const at = ctx && editor && editor.document && reviewDataOf(store.getState()) ? documentSide(editor.document.uri, ctx) : null;
+    const can = !!(ctx && at && at.side === 'RIGHT' && at.exact && ctx.diffLines && ctx.diffLines[at.path]);
+    if (can === suggestShown) return;
+    suggestShown = can;
+    own(vscode.commands.executeCommand('setContext', SUGGEST_CONTEXT_KEY, can), 'setting the suggest-change context');
+  }
 
   /**
    * @param {{ all: boolean, paths: Set<string>, uris: Set<string> }} work
@@ -309,6 +352,8 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
     const key = ctx === null ? 'none'
       : JSON.stringify([ctx.kind, ctx.number, ctx.headOid, ctx.kind === 'pr' ? ctx.revision : ctx.baseSha, data !== null]);
     const result = ctx ? getSession().result : null;
+    shownContext = ctx;
+    showSuggestKey();
     const changed = key !== shownKey || result !== shownResult;
     if (changed) {
       shownKey = key;
@@ -407,6 +452,15 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
 
   /** @param {unknown} arg @returns {{ thread: any, text: string }|null} A comment box's thread and text. */
   const replyOf = (arg) => (isObject(arg) && isObject(arg.thread) && typeof arg.text === 'string' ? { thread: arg.thread, text: arg.text } : null);
+  /**
+   * A suggestion draft's thread and the text VS Code has put in its comment.
+   * @param {unknown} arg @returns {{ thread: any, text: string }|null}
+   */
+  const suggestionOf = (arg) => {
+    if (!isObject(arg) || !suggestionDrafts.has(arg)) return null;
+    const thread = commentThreads.get(arg), text = bodyText(arg.body);
+    return thread && text !== null ? { thread, text } : null;
+  };
   /** @param {unknown} arg @returns {any} The thread a title action or a comment box belongs to. */
   const threadOf = (arg) => (isObject(arg) && isObject(arg.thread) ? arg.thread : arg);
 
@@ -468,10 +522,11 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
    * A new thread from the comment box of a range the reviewer picked, or of a draft
    * started from the tree or Details.
    * @param {'startReview'|'commentNow'|'addToReview'} mode
-   * @param {unknown} arg VS Code's `CommentReply`: the new (empty) thread and the text.
+   * @param {unknown} arg VS Code's `CommentReply`: the new (empty) thread and the text; or
+   *   a suggestion draft's comment, from its buttons.
    */
   async function addComment(mode, arg) {
-    const reply = replyOf(arg);
+    const reply = replyOf(arg) || suggestionOf(arg);
     if (!reply || isBlank(reply.text)) return;
     const { thread, text } = reply;
     const forTarget = targetKey();
@@ -649,9 +704,6 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
     if (!result.ok) showError(`Impact Tree: could not delete the pending comment — ${result.error.message}`);
   }
 
-  /** @param {unknown} body A comment's body: text or a MarkdownString. @returns {string|null} */
-  const bodyText = (body) => (typeof body === 'string' ? body : isObject(body) && typeof body.value === 'string' ? body.value : null);
-
   /**
    * Leaves edit mode and draws the thread again from the data, which an edit may have held back.
    * @param {any} comment
@@ -688,14 +740,177 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
     endEdit(comment, thread);
   }
 
-  /** @param {unknown} arg The comment being edited. */
+  /** @param {unknown} arg The comment being edited. A suggestion draft is dropped. */
   function cancelEdit(arg) {
+    if (isObject(arg) && suggestionDrafts.has(arg)) {
+      const draft = commentThreads.get(arg);
+      if (draft) draft.dispose();
+      return;
+    }
     const thread = isObject(arg) ? commentThreads.get(arg) : undefined;
     const original = isObject(arg) ? originalBodies.get(arg) : undefined;
     if (!thread || original === undefined) return;
     const comment = /** @type {any} */ (arg);
     comment.body = markdown(original);
     endEdit(comment, thread);
+  }
+
+  // ---- suggested changes -----------------------------------------------------------------
+
+  /** @param {any} uri @returns {any} The open document at `uri`, if any. */
+  const openDocument = (uri) => (vscode.workspace.textDocuments || []).find((/** @type {any} */ d) => d.uri.toString() === uri.toString());
+
+  /**
+   * Adds a suggestion draft on lines of the head side: a thread whose one comment is open
+   * for editing, holding a ```suggestion block with the lines' current text.
+   * @param {unknown} arg From an empty new thread's title action, that thread (it becomes
+   *   the suggestion's, on its lines); otherwise the active editor's selection, or its
+   *   cursor line, is used.
+   * @returns {Promise<any>} The draft thread, or null after saying why not.
+   */
+  async function suggestChange(arg) {
+    const fromThread = isObject(arg) && isObject(arg.uri) && isObject(arg.range) && Array.isArray(arg.comments) ? arg : null;
+    /** @type {any} */
+    let uri;
+    // 1-based, inclusive.
+    let startLine, line;
+    if (fromThread) {
+      if (fromThread.comments.length) { tell('a change can be suggested only from a new comment.'); return null; }
+      const draft = drafts.get(fromThread);
+      if (draft && draft.fileLevel) { tell('a file comment cannot hold a suggestion; start a comment on the lines instead.'); return null; }
+      uri = fromThread.uri;
+      startLine = fromThread.range.start.line + 1;
+      line = fromThread.range.end.line + 1;
+    } else {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) { tell('open the head side of a file of the pull request to suggest a change.'); return null; }
+      const { start, end } = editor.selection;
+      uri = editor.document.uri;
+      startLine = start.line + 1;
+      // A selection ending at the start of a line (whole lines selected) does not take that line.
+      line = (end.line > start.line && end.character === 0 ? end.line - 1 : end.line) + 1;
+    }
+    const owner = controller;
+    const forTarget = targetKey();
+    const ctx = await contextNow();
+    if (disposed) return null;
+    if (!ctx) { tell('changes can be suggested only on the pull request under review, as previewed or checked out at its head.'); return null; }
+    if (owner !== controller || forTarget !== targetKey()) { tell('the pull request changed while the suggestion was being started.'); return null; }
+    if (!reviewDataOf(store.getState())) { tell('the review threads are not loaded yet, so a change cannot be suggested.'); return null; }
+    const at = documentSide(uri, ctx);
+    if (!at || at.side !== 'RIGHT') { tell('a change can be suggested only on the head side of the pull request\'s diff, where GitHub applies suggestions.'); return null; }
+    const document = openDocument(uri);
+    if (!document) { tell(`${at.path} is not open.`); return null; }
+    if (uri.scheme === 'file' && document.isDirty) { tell(`${at.path} has unsaved changes, so its lines are not the ones GitHub has; save or undo them first.`); return null; }
+    if (!acceptsComment(ctx, at, startLine, line)) {
+      tell(`${linesOf(at.path, startLine, line)} ${startLine === line ? 'is not' : 'are not all'} in one hunk of the pull request's diff, where GitHub takes comments.`);
+      return null;
+    }
+    const lines = splitLines(document.getText()).slice(startLine - 1, line);
+    if (fromThread) fromThread.dispose();
+    const thread = controller.createCommentThread(uri, new vscode.Range(startLine - 1, 0, line - 1, 0), []);
+    const comment = {
+      // The file's text, shown only while editing; untrusted all the same.
+      body: markdown(suggestionBlock(lines)), mode: vscode.CommentMode.Editing, contextValue: SUGGESTION_DRAFT,
+      author: { name: 'you' }, label: 'Suggestion · draft',
+    };
+    suggestionDrafts.add(comment);
+    commentThreads.set(comment, thread);
+    thread.comments = [comment];
+    thread.canReply = false;
+    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    return thread;
+  }
+
+  /**
+   * A thread and comment of the loaded review, by id.
+   * @param {string} threadId @param {string} commentId
+   */
+  function findComment(threadId, commentId) {
+    const data = reviewDataOf(store.getState());
+    const thread = data ? data.threads.find((t) => t.id === threadId) : undefined;
+    const comment = thread ? thread.comments.find((c) => c.id === commentId) : undefined;
+    return thread && comment ? { thread, comment } : null;
+  }
+
+  /** @param {string} message A sentence, shown as it is after "Impact Tree: ". */
+  const refuse = (message) => { tell(message); return false; };
+
+  /**
+   * Applies a comment's suggestion to the checkout's file: replaces the thread's lines with
+   * it in the document, unsaved, after `applyDecision` and `linesChanged` allow it. Every
+   * wait (HEAD, the document, the file at the commit) is followed by a check that the pull
+   * request, the comment and the document are still the ones decided on.
+   * @param {unknown} arg The comment, from its title action.
+   * @returns {Promise<boolean>} Whether the edit was made; false after saying why not.
+   */
+  async function applySuggestion(arg) {
+    const commentId = isObject(arg) ? commentIds.get(arg) : undefined;
+    const shown = isObject(arg) ? commentThreads.get(arg) : undefined;
+    const threadId = shown ? threadIds.get(shown) : undefined;
+    const found = commentId && threadId ? findComment(threadId, commentId) : null;
+    const state = store.getState();
+    if (!found || !commentId || !threadId || state.kind === 'none' || !state.target) {
+      return refuse('that suggestion is not in the loaded review any more; refresh and try again.');
+    }
+    const ids = { threadId, commentId };
+    const target = state.target;
+    const owner = controller;
+    const forTarget = targetKey();
+    const { source } = getSession();
+    const checkout = isObject(source) && source.kind === 'checkout';
+    const head = checkout ? await readHead() : null;
+    if (disposed) return false;
+    const plan = applyDecision({ checkout, suggestions: parseSuggestions(found.comment.body), thread: found.thread,
+      commitOid: found.comment.commitOid, head, targetHead: target.headOid,
+      origin: { commitOid: found.comment.originalCommitOid, startLine: found.comment.originalStartLine, line: found.comment.originalLine } });
+    if (!plan.ok) return refuse(plan.reason);
+    const commit = /** @type {string} */ (head);
+    if (!readAtCommit) return refuse('suggestions cannot be applied here.');
+    let root;
+    try { root = repoRoot(); } catch { return refuse('no repository is open, so the suggestion cannot be applied.'); }
+    const uri = vscode.Uri.file(path.join(root, ...plan.path.split('/')));
+    /** @type {any} */
+    let document;
+    try {
+      document = await vscode.workspace.openTextDocument(uri);
+    } catch (e) {
+      return refuse(`cannot open ${plan.path}: ${/** @type {Error} */ (e).message}`);
+    }
+    const version = document.version;
+    const text = document.getText();
+    // The commit checked above, not HEAD again, whatever the checkout does meanwhile.
+    // Two comparisons: the working file against the head (no local edit of those lines),
+    // and the head against the commit the suggestion was written on (GitHub moves a
+    // comment forward, so the lines the reviewer saw may differ from the head's).
+    const atCommit = await readAtCommit(commit, plan.path);
+    if (disposed) return false;
+    if (atCommit === null) return refuse(`${plan.path} could not be read at ${commit.slice(0, 7)}, so its lines cannot be compared.`);
+    const origin = plan.origin.commitOid === commit ? atCommit : await readAtCommit(plan.origin.commitOid, plan.path);
+    if (disposed) return false;
+    if (origin === null) {
+      return refuse(`${plan.path} could not be read at ${plan.origin.commitOid.slice(0, 7)}, the commit the suggestion was written on; fetch it, or apply the suggestion on GitHub.`);
+    }
+    const working = splitLines(text);
+    const headLines = splitLines(atCommit);
+    const changed = linesChanged(plan, working, headLines) || linesChanged(plan, headLines, splitLines(origin), plan.origin.startLine);
+    if (changed) return refuse(changed);
+    if (owner !== controller || forTarget !== targetKey()) return refuse('the pull request under review changed, so the suggestion was not applied.');
+    const again = findComment(ids.threadId, ids.commentId);
+    if (!again || again.comment.body !== found.comment.body || again.thread.line !== found.thread.line
+      || again.thread.startLine !== found.thread.startLine) {
+      return refuse('the suggestion changed on GitHub while it was being applied; try again.');
+    }
+    if (document.version !== version) return refuse(`${plan.path} changed while the suggestion was being applied; try again.`);
+    const e = suggestionEdit(working, plan.startLine, plan.line, plan.text, eolOf(text));
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(uri, new vscode.Range(e.start.line, e.start.character, e.end.line, e.end.character), e.text);
+    if (!(await vscode.workspace.applyEdit(edit))) return refuse(`VS Code did not apply the suggestion to ${plan.path}.`);
+    const where = plan.startLine === plan.line ? `line ${plan.line}` : `lines ${plan.startLine}–${plan.line}`;
+    own(vscode.window.showTextDocument(document, { preview: false, selection: new vscode.Range(plan.startLine - 1, 0, plan.startLine - 1, 0) }),
+      'showing the file');
+    own(vscode.window.showInformationMessage(`Impact Tree: Suggestion applied to ${plan.path} ${where}; save to keep it.`), 'showing a message');
+    return true;
   }
 
   /** @type {Disposable[]} */
@@ -720,6 +935,9 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
     vscode.commands.registerCommand(COMMANDS.saveEdit, saveEdit),
     vscode.commands.registerCommand(COMMANDS.cancelEdit, cancelEdit),
     vscode.commands.registerCommand(COMMANDS.removeCallerContext, removeCallerContext),
+    vscode.commands.registerCommand(COMMANDS.suggestChange, async (/** @type {unknown} */ arg) => { await suggestChange(arg); }),
+    vscode.commands.registerCommand(COMMANDS.applySuggestion, async (/** @type {unknown} */ arg) => { await applySuggestion(arg); }),
+    vscode.window.onDidChangeActiveTextEditor(() => showSuggestKey()),
   ];
 
   showPendingKey();
@@ -742,4 +960,4 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
   };
 }
 
-module.exports = { createReviewComments, CommentNotSentError, CONTROLLER_ID, PENDING_CONTEXT_KEY, COMMANDS, FILE_COMMENT_LABEL };
+module.exports = { createReviewComments, CommentNotSentError, CONTROLLER_ID, PENDING_CONTEXT_KEY, SUGGEST_CONTEXT_KEY, COMMANDS, FILE_COMMENT_LABEL, SUGGESTION_DRAFT };

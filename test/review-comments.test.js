@@ -15,8 +15,10 @@ const {
   commentingContextOf, documentSide, commentableLines, acceptsComment, threadSpecsFor,
   rowCommentPlace, chooseCommentLine, callerContextBlock, withCallerContext, callerDraftLabel,
 } = require('../src/review-comments-model');
-const { createReviewComments, CommentNotSentError, COMMANDS, PENDING_CONTEXT_KEY, CONTROLLER_ID, FILE_COMMENT_LABEL } = require('../src/review-comments');
-const { createPullRequestReviewStore } = require('../src/pr-review-store');
+const {
+  createReviewComments, CommentNotSentError, COMMANDS, PENDING_CONTEXT_KEY, SUGGEST_CONTEXT_KEY, CONTROLLER_ID, FILE_COMMENT_LABEL, SUGGESTION_DRAFT,
+} = require('../src/review-comments');
+const { createPullRequestReviewStore, reviewDataOf: reviewDataOfStore } = require('../src/pr-review-store');
 const { prQuery } = require('../src/pr-documents');
 
 const HEAD = 'a'.repeat(40);
@@ -42,7 +44,7 @@ const fileDoc = (relPath) => Uri.file(path.join(REPO, relPath));
 const baseDoc = (basePath, sha = BASE) => Uri.from({ scheme: 'impacttree-base', path: basePath, query: sha });
 
 const comment = (id, over = {}) => ({ id: `C_${id}`, databaseId: id, author: { login: 'bob', avatarUrl: null }, body: `body ${id}`,
-  createdAt: '2026-01-02T03:04:05Z', pending: false, mine: false, canEdit: false, url: `https://x/${id}`, ...over });
+  createdAt: '2026-01-02T03:04:05Z', pending: false, mine: false, canEdit: false, url: `https://x/${id}`, commitOid: null, originalCommitOid: null, originalLine: null, originalStartLine: null, ...over });
 const thread = (id, over = {}, comments = [comment(id)]) => ({ id: `T_${id}`, path: 'src/a.ts', side: 'RIGHT', line: 12,
   originalLine: 12, startLine: null, isResolved: false, isOutdated: false, fileLevel: false,
   canResolve: true, canUnresolve: false, canReply: true, comments, ...over });
@@ -152,16 +154,54 @@ class Range {
 function fakeEditor() {
   const comments = createCommentsApi();
   const commands = new Map();
-  const seen = { errors: [], warnings: [], contexts: {} };
+  const seen = { errors: [], warnings: [], infos: [], contexts: {}, shown: [] };
   const documents = [];
-  const handlers = { open: new Set(), close: new Set() };
+  // Files on disk by URI string, which openTextDocument opens.
+  const disk = new Map();
+  const handlers = { open: new Set(), close: new Set(), active: new Set() };
   const subscribe = (set) => (handler) => { set.add(handler); return { dispose: () => set.delete(handler) }; };
+  const makeDocument = (uri, { lineCount, isDirty = false, text = '' } = {}) => ({
+    uri, lineCount: lineCount === undefined ? text.split(/\r\n|\n/).length : lineCount, isDirty, text, version: 1,
+    getText() { return this.text; },
+  });
+  const open = (uri, options) => {
+    const document = makeDocument(uri, options);
+    documents.push(document);
+    for (const h of handlers.open) h(document);
+    return document;
+  };
+  // A WorkspaceEdit applied as VS Code does: positions are 0-based lines and characters.
+  const applyEdit = async (edit) => {
+    for (const { uri, range, newText } of edit.edits) {
+      const document = documents.find((d) => d.uri.toString() === uri.toString());
+      if (!document) return false;
+      const lines = document.text.split('\n');
+      const offset = ({ line, character }) => lines.slice(0, line).reduce((n, l) => n + l.length + 1, 0) + character;
+      document.text = document.text.slice(0, offset(range.start)) + newText + document.text.slice(offset(range.end));
+      document.version++;
+      document.isDirty = true;
+    }
+    seen.edits = (seen.edits || 0) + 1;
+    return true;
+  };
   const vscode = {
     ...baseStub, Range, comments: comments.api,
-    workspace: { textDocuments: documents, onDidOpenTextDocument: subscribe(handlers.open), onDidCloseTextDocument: subscribe(handlers.close) },
+    workspace: { textDocuments: documents, onDidOpenTextDocument: subscribe(handlers.open), onDidCloseTextDocument: subscribe(handlers.close),
+      openTextDocument: async (uri) => {
+        const existing = documents.find((d) => d.uri.toString() === uri.toString());
+        if (existing) return existing;
+        if (!disk.has(uri.toString())) throw new Error('file not found');
+        return open(uri, { text: disk.get(uri.toString()) });
+      },
+      applyEdit: (edit) => applyEdit(edit),
+    },
     window: {
+      activeTextEditor: undefined,
+      onDidChangeActiveTextEditor: subscribe(handlers.active),
       showErrorMessage: async (m) => { seen.errors.push(m); },
       showWarningMessage: async (m) => { seen.warnings.push(m); },
+      showInformationMessage: async (m) => { seen.infos.push(m); },
+      showTextDocument: async (document) => { seen.shown.push(document.uri.toString()); },
     },
     commands: {
       registerCommand: (name, fn) => { commands.set(name, fn); return { dispose: () => commands.delete(name) }; },
@@ -169,13 +209,13 @@ function fakeEditor() {
     },
   };
   return {
-    vscode, comments, commands, seen, handlers,
+    vscode, comments, commands, seen, handlers, disk,
     run: (name, ...args) => commands.get(name)(...args),
-    open(uri, { lineCount = 100, isDirty = false } = {}) {
-      const document = { uri, lineCount, isDirty };
-      documents.push(document);
-      for (const h of handlers.open) h(document);
-      return document;
+    open: (uri, { lineCount = 100, isDirty = false, text } = {}) => open(uri, { lineCount: text === undefined ? lineCount : undefined, isDirty, text }),
+    /** Makes `document` the active editor, with 1-based lines `from`..`to` selected (to the end of `to`). */
+    activate(document, from = 1, to = from, { endCharacter = 1 } = {}) {
+      vscode.window.activeTextEditor = { document, selection: { start: { line: from - 1, character: 0 }, end: { line: to - 1, character: endCharacter } } };
+      for (const h of handlers.active) h(vscode.window.activeTextEditor);
     },
     close(document) {
       documents.splice(documents.indexOf(document), 1);
@@ -209,7 +249,7 @@ function fakeStore(initial) {
   };
 }
 
-function setup({ state = ready(reviewModel({ threads: [thread(1)] })), source = prSource(), result = previewResult(), head = HEAD, open = [] } = {}) {
+function setup({ state = ready(reviewModel({ threads: [thread(1)] })), source = prSource(), result = previewResult(), head = HEAD, open = [], atCommit = {} } = {}) {
   const editor = fakeEditor();
   const store = fakeStore(state);
   const session = { source, result };
@@ -219,16 +259,19 @@ function setup({ state = ready(reviewModel({ threads: [thread(1)] })), source = 
   // The review diffs opened to start a comment, as (path, line).
   const opened = [];
   const failures = { open: null };
+  const reads = [];
   const comments = createReviewComments(editor.vscode, {
     store, getSession: () => session, repoRoot: () => REPO,
     readHead: async () => { heads.reads++; return heads.value; },
     contextEvents: [(listener) => { contextListeners.add(listener); return { dispose: () => contextListeners.delete(listener) }; }],
     headUri: (relPath) => (session.source.kind === 'checkout' ? fileDoc(relPath) : prDoc(relPath, 'head', session.result)),
     openDiff: async (relPath, line) => { if (failures.open) throw failures.open; opened.push([relPath, line]); },
+    // Files at a commit, by `${oid}:${relPath}`.
+    readAtCommit: async (oid, relPath) => { reads.push([oid, relPath]); return atCommit[`${oid}:${relPath}`] ?? null; },
   });
   const controller = editor.comments.controllers[0];
   return {
-    editor, store, session, heads, comments, controller, docs, opened, failures,
+    editor, store, session, heads, comments, controller, docs, opened, failures, reads, atCommit,
     idle: () => comments.whenIdle(),
     contextChanged() { for (const l of contextListeners) l(); },
     threadsOn: (uri) => editor.comments.threadsOn(controller, uri),
@@ -661,7 +704,7 @@ test('dispose disposes the controller, its threads and its subscriptions, and a 
 
 // GitHub-shaped answers, as the L2 normaliser reads them.
 const rawComment = (id, over = {}) => ({ id: `C_${id}`, databaseId: id, author: { login: 'bob', avatarUrl: null }, body: `body ${id}`,
-  createdAt: '2026-01-02T03:04:05Z', state: 'SUBMITTED', viewerDidAuthor: false, viewerCanUpdate: false, url: `https://x/${id}`, diffHunk: '', ...over });
+  createdAt: '2026-01-02T03:04:05Z', state: 'SUBMITTED', viewerDidAuthor: false, viewerCanUpdate: false, url: `https://x/${id}`, diffHunk: '', commit: null, originalCommit: null, originalLine: null, originalStartLine: null, ...over });
 const rawThread = (id, comments, over = {}) => ({ id: `T_${id}`, isResolved: false, isOutdated: false, path: 'src/a.ts', line: 12,
   originalLine: 12, startLine: null, originalStartLine: null, diffSide: 'RIGHT', subjectType: 'LINE',
   viewerCanResolve: true, viewerCanUnresolve: false, viewerCanReply: true,
@@ -927,4 +970,267 @@ test('editing a checkout after opening a draft refuses submission and keeps the 
   assert.equal(draft.input, 'about the edited content');
   assert.equal(env.store.calls.length, 0);
   env.comments.dispose();
+});
+
+// ---- suggested changes (B2) ---------------------------------------------------------------
+
+const FILE_TEXT = `${Array.from({ length: 50 }, (_, i) => `line ${i + 1}`).join('\n')}\n`;
+// Written on lines 11–12 of the head unless a test moves it.
+const suggesting = (body, over = {}) => comment(1, { body, commitOid: HEAD, originalCommitOid: HEAD, originalStartLine: 11, originalLine: 12, ...over });
+const ORIGINAL = 'c'.repeat(40);
+const draftsOn = (env, uri) => env.threadsOn(uri).filter((t) => t.comments.length === 1 && t.comments[0].contextValue === SUGGESTION_DRAFT);
+
+test('a posted comment with a suggestion block gets the hasSuggestion action; a pending one does not', () => {
+  const block = 'nit\n```suggestion\nx\n```';
+  const m = reviewModel({ threads: [thread(1, {}, [suggesting(block), comment(2, { body: block, pending: true, mine: true }),
+    comment(3, { body: block, mine: true, canEdit: true }), comment(4, { body: '```js\nx\n```' })])] });
+  const [spec] = threadSpecsFor(m, 'src/a.ts', 'RIGHT');
+  assert.deepEqual(spec.comments.map((c) => c.contextValue), ['hasSuggestion', 'pendingMine', 'canEdit hasSuggestion', '']);
+  const menus = require('../package.json').contributes.menus;
+  assert.ok(menus['comments/comment/title'].some((m) => m.command === COMMANDS.applySuggestion
+    && m.when === 'commentController == impactTree.review && comment =~ /\\bhasSuggestion\\b/'));
+  assert.ok(menus['editor/context'].some((m) => m.command === COMMANDS.suggestChange && m.when === SUGGEST_CONTEXT_KEY));
+  assert.ok(menus['comments/commentThread/title'].some((m) => m.command === COMMANDS.suggestChange && m.when.includes('commentThreadIsEmpty')));
+  const draftButtons = menus['comments/comment/context'].filter((m) => m.when.includes(`comment == ${SUGGESTION_DRAFT}`)).map((m) => m.command);
+  assert.deepEqual(draftButtons, [COMMANDS.startReview, COMMANDS.commentNow, COMMANDS.addToReview, COMMANDS.cancelEdit]);
+});
+
+test('Suggest change adds a draft in edit mode holding the selected lines in a suggestion block', async () => {
+  const env = setup();
+  await env.idle();
+  const doc = env.editor.open(prDoc('src/a.ts', 'head'), { text: FILE_TEXT });
+  const base = env.editor.open(prDoc('src/a.ts', 'base'), { text: FILE_TEXT });
+  await env.idle();
+  env.editor.activate(base, 11);
+  assert.equal(env.editor.seen.contexts[SUGGEST_CONTEXT_KEY], false, 'the base side');
+  env.editor.activate(doc, 11, 13);
+  assert.equal(env.editor.seen.contexts[SUGGEST_CONTEXT_KEY], true, 'the head side of a file in the diff');
+  await env.editor.run(COMMANDS.suggestChange);
+  const [draft] = draftsOn(env, doc.uri);
+  assert.deepEqual([draft.range.start.line, draft.range.end.line, draft.canReply], [10, 12, false]);
+  const [c] = draft.comments;
+  assert.equal(c.mode, baseStub.CommentMode.Editing);
+  assert.equal(c.body.value, '```suggestion\nline 11\nline 12\nline 13\n```');
+  assert.equal(c.body.isTrusted, false);
+  assert.deepEqual([c.author.name, c.label], ['you', 'Suggestion · draft']);
+  // The reviewer edits the block, then sends it with the new-comment buttons.
+  c.body = '```suggestion\nline eleven\n```';
+  await env.editor.run(COMMANDS.startReview, c);
+  assert.deepEqual(env.store.calls, [{ name: 'addComment',
+    input: { path: 'src/a.ts', side: 'RIGHT', line: 13, startLine: 11, body: '```suggestion\nline eleven\n```', mode: 'startReview' } }]);
+  assert.equal(draft.disposed, true, 'drawn from GitHub\'s data instead');
+  assert.equal(env.store.calls.length, 1);
+});
+
+test('whole lines selected up to the start of the next line do not take that line; the cursor line alone is one line', async () => {
+  const env = setup();
+  await env.idle();
+  const doc = env.editor.open(prDoc('src/a.ts', 'head'), { text: FILE_TEXT });
+  env.editor.activate(doc, 11, 13, { endCharacter: 0 });
+  await env.editor.run(COMMANDS.suggestChange);
+  env.editor.activate(doc, 15);
+  await env.editor.run(COMMANDS.suggestChange);
+  assert.deepEqual(draftsOn(env, doc.uri).map((t) => [t.range.start.line, t.range.end.line, t.comments[0].body.value]), [
+    [10, 11, '```suggestion\nline 11\nline 12\n```'],
+    [14, 14, '```suggestion\nline 15\n```'],
+  ]);
+});
+
+test('a "+" draft becomes a suggestion on its lines; with a pending review it is added to the review', async () => {
+  const env = setup({ state: ready(reviewModel({ threads: [], pending: PENDING })) });
+  await env.idle();
+  const doc = env.editor.open(prDoc('src/a.ts', 'head'), { text: FILE_TEXT });
+  await env.idle();
+  const plus = env.draft(doc.uri, 40, 41);
+  await env.editor.run(COMMANDS.suggestChange, plus);
+  assert.equal(plus.disposed, true);
+  const [draft] = draftsOn(env, doc.uri);
+  assert.deepEqual([draft.range.start.line, draft.range.end.line], [39, 40]);
+  const [c] = draft.comments;
+  assert.equal(c.body.value, '```suggestion\nline 40\nline 41\n```');
+  c.body = new baseStub.MarkdownString('```suggestion\nfixed\n```');
+  await env.editor.run(COMMANDS.addToReview, c);
+  assert.deepEqual(env.store.calls[0].input, { path: 'src/a.ts', side: 'RIGHT', line: 41, startLine: 40, body: '```suggestion\nfixed\n```', mode: 'addToReview' });
+  const file = await env.comments.commentOnRow({ type: 'reviewFile', relPath: 'src/a.ts' });
+  await env.editor.run(COMMANDS.suggestChange, file);
+  assert.equal(file.disposed, false);
+  assert.match(env.editor.seen.warnings.at(-1), /a file comment cannot hold a suggestion/);
+});
+
+test('a failed suggestion keeps its text in edit mode; Cancel drops the draft', async () => {
+  const env = setup();
+  await env.idle();
+  const doc = env.editor.open(prDoc('src/a.ts', 'head'), { text: FILE_TEXT });
+  env.editor.activate(doc, 12);
+  await env.editor.run(COMMANDS.suggestChange);
+  const [draft] = draftsOn(env, doc.uri);
+  const [c] = draft.comments;
+  c.body = '```suggestion\nmy careful line\n```';
+  env.store.answers.addComment = [{ ok: false, error: new Error('timeout') }];
+  await assert.rejects(env.editor.run(COMMANDS.commentNow, c), CommentNotSentError);
+  assert.equal(c.mode, baseStub.CommentMode.Editing);
+  assert.equal(bodyOf(c), '```suggestion\nmy careful line\n```');
+  assert.equal(draft.disposed, false);
+  assert.deepEqual(env.editor.seen.errors, ['Impact Tree: could not post this comment on src/a.ts line 12 — timeout. Your text is still in the comment box.']);
+  c.body = '  ';
+  await env.editor.run(COMMANDS.commentNow, c);
+  assert.equal(env.store.calls.length, 1, 'blank: not sent');
+  await env.editor.run(COMMANDS.cancelEdit, c);
+  assert.equal(draft.disposed, true);
+});
+
+test('Suggest change outside one hunk, on the base side, on unsaved edits or before the threads load says why and adds nothing', async () => {
+  const env = setup();
+  await env.idle();
+  const doc = env.editor.open(prDoc('src/a.ts', 'head'), { text: FILE_TEXT });
+  const base = env.editor.open(prDoc('src/a.ts', 'base'), { text: FILE_TEXT });
+  env.editor.activate(doc, 16, 40);
+  await env.editor.run(COMMANDS.suggestChange);
+  env.editor.activate(doc, 9);
+  await env.editor.run(COMMANDS.suggestChange);
+  env.editor.activate(base, 9);
+  await env.editor.run(COMMANDS.suggestChange);
+  assert.deepEqual(env.editor.seen.warnings, [
+    'Impact Tree: lines 16–40 of src/a.ts are not all in one hunk of the pull request\'s diff, where GitHub takes comments.',
+    'Impact Tree: line 9 of src/a.ts is not in one hunk of the pull request\'s diff, where GitHub takes comments.',
+    'Impact Tree: a change can be suggested only on the head side of the pull request\'s diff, where GitHub applies suggestions.',
+  ]);
+  const checkout = setup({ source: checkoutSource(), result: checkoutResult() });
+  await checkout.idle();
+  const file = checkout.editor.open(fileDoc('src/a.ts'), { text: FILE_TEXT, isDirty: true });
+  checkout.editor.activate(file, 12);
+  await checkout.editor.run(COMMANDS.suggestChange);
+  assert.match(checkout.editor.seen.warnings[0], /src\/a\.ts has unsaved changes/);
+  const loading = setup({ state: { kind: 'loading', target: TARGET, previous: null } });
+  const doc2 = loading.editor.open(prDoc('src/a.ts', 'head'), { text: FILE_TEXT });
+  loading.editor.activate(doc2, 12);
+  await loading.editor.run(COMMANDS.suggestChange);
+  assert.match(loading.editor.seen.warnings[0], /not loaded yet/);
+  const none = setup();
+  await none.editor.run(COMMANDS.suggestChange);
+  assert.match(none.editor.seen.warnings[0], /open the head side of a file/);
+  for (const e of [env, checkout, loading, none]) {
+    assert.equal(e.controller.threads.filter((t) => !t.disposed && t.comments.some((c) => c.contextValue === SUGGESTION_DRAFT)).length, 0);
+  }
+});
+
+// Apply: a checkout of #7 at HEAD whose src/a.ts has a thread on lines 11-12.
+async function applySetup({ body = 'nit:\n```suggestion\nNEW\n```', text = FILE_TEXT, atCommit = FILE_TEXT, atOriginal, commentOver = {}, source = checkoutSource(), threadOver = {} } = {}) {
+  const m = reviewModel({ threads: [thread(1, { startLine: 11, line: 12, ...threadOver }, [suggesting(body, commentOver)])] });
+  const result = source.kind === 'pr' ? previewResult() : checkoutResult();
+  const env = setup({ state: ready(m), source, result,
+    atCommit: { [`${HEAD}:src/a.ts`]: atCommit, ...(atOriginal === undefined ? {} : { [`${ORIGINAL}:src/a.ts`]: atOriginal }) } });
+  await env.idle();
+  const doc = env.editor.open(source.kind === 'pr' ? prDoc('src/a.ts', 'head') : fileDoc('src/a.ts'), { text, isDirty: false });
+  await env.idle();
+  const [t] = env.threadsOn(doc.uri);
+  return { env, doc, c: t.comments[0], apply: () => env.editor.run(COMMANDS.applySuggestion, t.comments[0]) };
+}
+
+test('Apply suggestion replaces the thread\'s lines in the checkout, unsaved, and says so', async () => {
+  const { env, doc, c, apply } = await applySetup();
+  assert.equal(c.contextValue, 'hasSuggestion');
+  await apply();
+  assert.equal(doc.text, FILE_TEXT.replace('line 11\nline 12\n', 'NEW\n'));
+  assert.equal(doc.isDirty, true, 'left unsaved, so the reviewer can see and undo it');
+  assert.deepEqual(env.editor.seen.infos, ['Impact Tree: Suggestion applied to src/a.ts lines 11–12; save to keep it.']);
+  assert.deepEqual(env.editor.seen.shown, [doc.uri.toString()]);
+  assert.deepEqual(env.reads, [[HEAD, 'src/a.ts']]);
+  assert.deepEqual(env.editor.seen.warnings, []);
+});
+
+test('Apply keeps a CRLF file\'s line breaks, and an empty suggestion deletes the lines', async () => {
+  const crlf = FILE_TEXT.replace(/\n/g, '\r\n');
+  const one = await applySetup({ body: '```suggestion\nA\nB\n```', text: crlf });
+  await one.apply();
+  assert.equal(one.doc.text, crlf.replace('line 11\r\nline 12\r\n', 'A\r\nB\r\n'));
+  const two = await applySetup({ body: '```suggestion\n```' });
+  await two.apply();
+  assert.equal(two.doc.text, FILE_TEXT.replace('line 11\nline 12\n', ''));
+  assert.match(two.env.editor.seen.infos[0], /lines 11–12/);
+});
+
+test('a stale apply is refused with the reason, and the file is left alone', async () => {
+  const cases = [
+    [{ atCommit: FILE_TEXT.replace('line 12', 'line twelve') }, 'Impact Tree: Lines 11–12 of src/a.ts changed since the suggestion was written.'],
+    [{ text: FILE_TEXT.replace('line 11', 'edited') }, 'Impact Tree: Lines 11–12 of src/a.ts changed since the suggestion was written.'],
+    [{ commentOver: { commitOid: OTHER_HEAD } }, 'Impact Tree: The checkout is at aaaaaaa, not bbbbbbb, where GitHub places the suggestion.'],
+    [{ source: prSource() }, 'Impact Tree: Check out the pull request to apply a suggestion.'],
+    [{ body: '```suggestion\na\n```\n```suggestion\nb\n```' }, 'Impact Tree: This comment has 2 suggestions; apply them on GitHub.'],
+  ];
+  for (const [over, message] of cases) {
+    const { env, doc, apply } = await applySetup(over);
+    const before = doc.text;
+    await apply();
+    assert.deepEqual(env.editor.seen.warnings, [message], message);
+    assert.equal(doc.text, before);
+    assert.equal(env.editor.seen.edits, undefined);
+  }
+  // The checkout moved off the commit after the thread was drawn.
+  const moved = await applySetup();
+  moved.env.heads.value = OTHER_HEAD;
+  await moved.apply();
+  assert.deepEqual(moved.env.editor.seen.warnings, ['Impact Tree: The checkout is at bbbbbbb, not aaaaaaa, where GitHub places the suggestion.']);
+  assert.equal(moved.doc.text, FILE_TEXT);
+});
+
+test('a suggestion GitHub moved to a later commit is checked against the lines it was written on', async () => {
+  // Written on lines 9–10 of an earlier commit; a later commit added two lines above them.
+  const moved = { originalCommitOid: ORIGINAL, originalStartLine: 9, originalLine: 10 };
+  const earlier = FILE_TEXT.replace('line 1\nline 2\n', '');
+  const same = await applySetup({ commentOver: moved, atOriginal: earlier });
+  await same.apply();
+  assert.deepEqual(same.env.editor.seen.warnings, []);
+  assert.equal(same.doc.text, FILE_TEXT.replace('line 11\nline 12\n', 'NEW\n'), 'the lines only moved, so it applies');
+  assert.deepEqual(same.env.reads, [[HEAD, 'src/a.ts'], [ORIGINAL, 'src/a.ts']]);
+
+  // A later commit changed one of those lines: the reviewer suggested against other text.
+  const changed = await applySetup({ commentOver: moved, atOriginal: earlier.replace('line 12', 'old 12') });
+  await changed.apply();
+  assert.deepEqual(changed.env.editor.seen.warnings, ['Impact Tree: Lines 11–12 of src/a.ts changed since the suggestion was written.']);
+  assert.equal(changed.doc.text, FILE_TEXT);
+
+  // The commit it was written on is not in the checkout (say, after a force-push).
+  const missing = await applySetup({ commentOver: moved });
+  await missing.apply();
+  assert.deepEqual(missing.env.editor.seen.warnings,
+    ['Impact Tree: src/a.ts could not be read at ccccccc, the commit the suggestion was written on; fetch it, or apply the suggestion on GitHub.']);
+  assert.equal(missing.doc.text, FILE_TEXT);
+
+  // GitHub gave no original lines.
+  const unknown = await applySetup({ commentOver: { originalCommitOid: null } });
+  await unknown.apply();
+  assert.match(unknown.env.editor.seen.warnings[0], /GitHub did not say which lines the suggestion was written on/);
+});
+
+test('an apply re-checks after its waits: a document edited or a comment changed meanwhile is not edited', async () => {
+  const edited = await applySetup();
+  // The reviewer types while the file is read at the commit.
+  const original = edited.env.reads.push.bind(edited.env.reads);
+  edited.env.reads.push = (entry) => { edited.doc.version++; return original(entry); };
+  await edited.apply();
+  assert.deepEqual(edited.env.editor.seen.warnings, ['Impact Tree: src/a.ts changed while the suggestion was being applied; try again.']);
+  assert.equal(edited.doc.text, FILE_TEXT);
+
+  const changed = await applySetup();
+  changed.env.reads.push = () => {
+    changed.env.store.publish(ready(reviewModel({ threads: [thread(1, { startLine: 11, line: 12 }, [suggesting('```suggestion\nOTHER\n```')])] })), []);
+  };
+  await changed.apply();
+  assert.deepEqual(changed.env.editor.seen.warnings, ['Impact Tree: the suggestion changed on GitHub while it was being applied; try again.']);
+  assert.equal(changed.doc.text, FILE_TEXT);
+});
+
+test('end to end: a posted suggestion from GitHub, with its commit, is drawn with Apply suggestion', async () => {
+  const github = answeringGitHub({ threads: [rawThread(1, [rawComment(1, { body: '```suggestion\nx\n```', commit: { oid: HEAD },
+    originalCommit: { oid: ORIGINAL }, originalLine: 10 })])], pending: false });
+  const env = await realStoreSetup(github);
+  const [t] = env.threadsOn();
+  assert.equal(t.comments[0].contextValue, 'hasSuggestion');
+  const [c] = reviewDataOfStore(env.store.getState()).threads[0].comments;
+  assert.deepEqual([c.commitOid, c.originalCommitOid, c.originalStartLine, c.originalLine], [HEAD, ORIGINAL, null, 10]);
+  await env.editor.run(COMMANDS.applySuggestion, t.comments[0]);
+  assert.deepEqual(env.editor.seen.warnings, ['Impact Tree: Check out the pull request to apply a suggestion.'], 'a preview has no working tree');
+  env.comments.dispose();
+  env.store.dispose();
 });
