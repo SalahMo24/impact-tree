@@ -64,7 +64,8 @@ silently-omitted optional parameter outranks a signature break that `tsc` alread
   attention (callers not updated, or callers to check by hand), unreviewed changes, or
   unresolved conversations.
 - For a GitHub PR, add review comments, reply to or resolve conversations, and
-  submit a review from the pull request tab.
+  submit a review from the pull request tab. Picking a PR from the list, to preview or to
+  check out, opens that tab with its description, checks, reviewers, labels and merge state.
 
 ### Feedback rounds with a coding agent
 
@@ -119,6 +120,7 @@ checkpoint, from a recorded SHA).
 | `impactTree.prewarm` | `true` | index at startup so the first run is fast |
 | `impactTree.reachDepth` | `2` | caller levels searched for test reachability, from 1 to 6 |
 | `impactTree.tierA.maxFiles` | `300` | maximum files fetched for a no-checkout PR preview |
+| `impactTree.openPullRequestTab` | `true` | open the pull request tab when you preview or check out a PR from the list |
 | `impactTree.agent` | `ask` | where **Send feedback** hands a round: `claude`, `codex`, `chat`, `clipboard`, `save`, or `ask` |
 
 ## Performance

@@ -327,6 +327,7 @@ function activate(context) {
     store: reviewStore, provider, revealRow: navigation.revealRow, revealThread: reviewComments.revealThread, log,
   });
   context.subscriptions.push(...pullRequestTab.disposables);
+  session.openPullRequestTabWhenLoaded = pullRequestTab.openWhenLoaded;
 
   // The drafts' count in the status bar, after the review's own items; a drafts change
   // repaints only the tree's "Feedback to send" group.

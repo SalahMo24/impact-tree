@@ -76,6 +76,10 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     decorate: null,
     provider: null,
     previewPullRequest: null,
+    // Set by extension.js: opens the Pull Request tab once PR `number`'s review is loading.
+    // Returns a function that stops waiting.
+    /** @type {((number: number) => () => void) | null} */
+    openPullRequestTabWhenLoaded: null,
     checkoutAndAnalyse: null,
     // The PR review store (src/pr-review-store.js). Set and disposed by extension.js,
     // which owns it; kept here only so later consumers can reach it.

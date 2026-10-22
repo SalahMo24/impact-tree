@@ -137,7 +137,7 @@ function fakeWebviewPanel(viewType, title, showOptions, options = {}) {
       },
       onDidReceiveMessage: (handler) => { received.push(handler); return { dispose() { const i = received.indexOf(handler); if (i >= 0) received.splice(i, 1); } }; },
     },
-    reveal() { panel.reveals++; panel.visible = true; panel.active = true; },
+    reveal(_column, preserveFocus) { panel.reveals++; panel.revealFocus = !preserveFocus; panel.visible = true; panel.active = true; },
     onDidDispose: (handler) => { disposed.push(handler); return disposable(); },
     onDidChangeViewState: () => disposable(),
     send: (message) => Promise.all(received.map((handler) => handler(message))),
