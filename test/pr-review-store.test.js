@@ -18,7 +18,7 @@ const OTHER = Object.freeze({ owner: 'o', name: 'r', number: 8, headOid: 'b'.rep
 
 const comment = (id, over = {}) => ({
   id: `C_${id}`, databaseId: id, author: { login: 'bob', avatarUrl: null }, body: `body ${id}`,
-  createdAt: '2026-01-02T03:04:05Z', state: 'SUBMITTED', viewerDidAuthor: false, url: `https://x/${id}`, diffHunk: '', ...over,
+  createdAt: '2026-01-02T03:04:05Z', state: 'SUBMITTED', viewerDidAuthor: false, viewerCanUpdate: false, url: `https://x/${id}`, diffHunk: '', ...over,
 });
 const thread = (id, over = {}, comments = [comment(id)]) => ({
   id: `T_${id}`, isResolved: false, isOutdated: false, path: 'src/a.js', line: 10, originalLine: 10,
@@ -383,6 +383,73 @@ test('an answer without the new review id fails the mutation and reloads, since 
   assert.ok(result.error instanceof GitHubResponseError);
 });
 
+// ---- editing a comment -------------------------------------------------------------
+
+const MINE = () => answer({ threads: [thread(1, {}, [comment(1, { viewerDidAuthor: true, viewerCanUpdate: true }), comment(2), comment(3, { viewerDidAuthor: true })])] });
+
+test('editing your own comment sends the update with the new text and reloads', async () => {
+  const { gh, store } = await ready(MINE());
+  const done = store.editComment({ commentId: 'C_1', body: 'better' });
+  const write = await gh.call(1);
+  assert.equal(write.name, 'ImpactTreeUpdateComment');
+  assert.deepEqual(inputOf(write), { pullRequestReviewCommentId: 'C_1', body: 'better' });
+  write.resolve({ updatePullRequestReviewComment: { pullRequestReviewComment: { id: 'C_1', body: 'better' } } });
+  (await gh.call(2)).resolve(MINE());
+  assert.deepEqual(await done, { ok: true });
+});
+
+test('editing a comment to the text it has sends nothing and reloads nothing', async () => {
+  const { gh, store } = await ready(MINE());
+  assert.deepEqual(await store.editComment({ commentId: 'C_1', body: 'body 1' }), { ok: true });
+  assert.equal(gh.calls.length, 1);
+});
+
+test('a comment that is not yours, or that GitHub will not let you update, is refused unsent', async () => {
+  for (const commentId of ['C_2', 'C_3']) {
+    const { gh, store } = await ready(MINE());
+    const result = await store.editComment({ commentId, body: 'x' });
+    assert.equal(result.ok, false, commentId);
+    assert.equal(result.error.code, 'rule');
+    assert.match(result.error.message, /only your own comments can be edited/);
+    assert.equal(gh.calls.length, 1);
+  }
+});
+
+test('editing a comment that is not in the loaded review is stale', async () => {
+  const { gh, store } = await ready(MINE());
+  const result = await store.editComment({ commentId: 'C_99', body: 'x' });
+  assert.equal(result.error.code, 'stale');
+  assert.equal(gh.calls.length, 1);
+});
+
+test('an update answered without this comment fails and reloads, since GitHub may have changed', async () => {
+  const answers = [{ updatePullRequestReviewComment: { pullRequestReviewComment: null } },
+    { updatePullRequestReviewComment: { pullRequestReviewComment: { id: 'C_2', body: 'x' } } }];
+  for (const reply of answers) {
+    const { gh, store } = await ready(MINE());
+    const done = store.editComment({ commentId: 'C_1', body: 'x' });
+    (await gh.call(1)).resolve(reply);
+    (await gh.call(2)).resolve(MINE());
+    const result = await done;
+    assert.equal(result.ok, false);
+    assert.ok(result.error instanceof GitHubResponseError);
+  }
+});
+
+test('a rejected update returns the error, reloads nothing, and the store stays usable', async () => {
+  const { gh, store } = await ready(MINE());
+  const done = store.editComment({ commentId: 'C_1', body: 'x' });
+  const error = new GitHubGraphQLError('/graphql', [{ message: 'nope', path: null, type: 'FORBIDDEN' }]);
+  (await gh.call(1)).reject(error);
+  assert.deepEqual(await done, { ok: false, error });
+  const next = store.editComment({ commentId: 'C_1', body: 'y' });
+  const write = await gh.call(2);
+  assert.deepEqual(inputOf(write), { pullRequestReviewCommentId: 'C_1', body: 'y' });
+  write.resolve({ updatePullRequestReviewComment: { pullRequestReviewComment: { id: 'C_1', body: 'y' } } });
+  (await gh.call(3)).resolve(MINE());
+  assert.deepEqual(await next, { ok: true });
+});
+
 // ---- serialisation ------------------------------------------------------------------
 
 test('mutations run one at a time, each after the reload of the one before', async () => {
@@ -441,6 +508,9 @@ test('malformed arguments are refused before anything is queued', async () => {
     store.reply({ threadId: '', body: 'x' }),
     store.setResolved({ threadId: 'T_1', resolved: 'yes' }),
     store.deletePendingComment({}),
+    store.editComment({ commentId: '', body: 'x' }),
+    store.editComment({ commentId: 'C_5', body: '  ' }),
+    store.editComment({ commentId: 'C_5' }),
     store.submitReview({ event: 'DISMISS' }),
     store.setViewed({ path: 'src\\a.js', viewed: true }),
   ];

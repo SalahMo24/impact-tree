@@ -284,6 +284,19 @@
         "icon": "$(trash)"
       },
       {
+        "command": "impactTree.review.editComment",
+        "title": "Edit",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "impactTree.review.saveEdit",
+        "title": "Save"
+      },
+      {
+        "command": "impactTree.review.cancelEdit",
+        "title": "Cancel"
+      },
+      {
         "command": "impactTree.review.removeCallerContext",
         "title": "Remove caller context",
         "icon": "$(close)"
@@ -583,6 +596,18 @@
           "when": "false"
         },
         {
+          "command": "impactTree.review.editComment",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.review.saveEdit",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.review.cancelEdit",
+          "when": "false"
+        },
+        {
           "command": "impactTree.review.removeCallerContext",
           "when": "false"
         },
@@ -707,6 +732,11 @@
       ],
       "comments/comment/title": [
         {
+          "command": "impactTree.review.editComment",
+          "group": "inline@0",
+          "when": "commentController == impactTree.review && comment =~ /\\bcanEdit\\b/"
+        },
+        {
           "command": "impactTree.review.deletePendingComment",
           "group": "inline@1",
           "when": "commentController == impactTree.review && comment =~ /\\bpendingMine\\b/"
@@ -795,6 +825,16 @@
         }
       ],
       "comments/comment/context": [
+        {
+          "command": "impactTree.review.saveEdit",
+          "group": "inline@1",
+          "when": "commentController == impactTree.review && comment =~ /\\bcanEdit\\b/"
+        },
+        {
+          "command": "impactTree.review.cancelEdit",
+          "group": "inline@2",
+          "when": "commentController == impactTree.review && comment =~ /\\bcanEdit\\b/"
+        },
         {
           "command": "impactTree.feedback.saveEdit",
           "group": "inline@1",

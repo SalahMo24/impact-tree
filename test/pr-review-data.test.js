@@ -15,7 +15,7 @@ const TARGET = { owner: 'o', name: 'r', number: 7 };
 
 const comment = (id, over = {}) => ({
   id: `C_${id}`, databaseId: 1000 + id, author: { login: 'bob', avatarUrl: 'https://a/bob' },
-  body: `body ${id}`, createdAt: '2026-01-02T03:04:05Z', state: 'SUBMITTED', viewerDidAuthor: false,
+  body: `body ${id}`, createdAt: '2026-01-02T03:04:05Z', state: 'SUBMITTED', viewerDidAuthor: false, viewerCanUpdate: false,
   url: `https://github.com/o/r/pull/7#discussion_r${id}`, diffHunk: '@@ -9,2 +9,2 @@\n context\n+const x = 1;', ...over,
 });
 
@@ -65,7 +65,7 @@ test('normalises every field of the pull request, thread, comment, review, file 
       viewerCanResolve: false, viewerCanUnresolve: true, viewerCanReply: false,
       comments: {
         totalCount: 2, pageInfo: { hasNextPage: false },
-        nodes: [comment(1, { state: 'PENDING', viewerDidAuthor: true }), comment(2, { author: null, databaseId: null })],
+        nodes: [comment(1, { state: 'PENDING', viewerDidAuthor: true, viewerCanUpdate: true }), comment(2, { author: null, databaseId: null })],
       },
     })]),
     reviews: { nodes: [{ id: 'R_1', databaseId: 55, comments: { totalCount: 3 } }] },
@@ -96,7 +96,7 @@ test('normalises every field of the pull request, thread, comment, review, file 
   });
   assert.deepEqual(t.comments[0], {
     id: 'C_1', databaseId: 1001, author: { login: 'bob', avatarUrl: 'https://a/bob' }, body: 'body 1',
-    createdAt: '2026-01-02T03:04:05Z', pending: true, mine: true, url: 'https://github.com/o/r/pull/7#discussion_r1',
+    createdAt: '2026-01-02T03:04:05Z', pending: true, mine: true, canEdit: true, url: 'https://github.com/o/r/pull/7#discussion_r1',
   });
   assert.equal(t.comments[1].author, null);
   assert.equal(t.comments[1].databaseId, null);
@@ -235,6 +235,15 @@ test('a thread with exactly 100 comments is complete', async () => {
   assert.deepEqual(model.incomplete, []);
 });
 
+test('a comment can be edited only when it is the viewer\'s and GitHub allows the update', async () => {
+  const flags = [[true, true], [true, false], [false, true], [false, false]];
+  const nodes = flags.map(([did, can], i) => comment(i, { viewerDidAuthor: did, viewerCanUpdate: can }));
+  const model = await loadPullRequestReview(fakeClient([envelope(pullRequest({
+    reviewThreads: page([thread(1, { comments: { totalCount: 4, pageInfo: { hasNextPage: false }, nodes } })]),
+  }))]), TARGET);
+  assert.deepEqual(model.threads[0].comments.map((c) => c.canEdit), [true, false, false, false]);
+});
+
 test('malformed nodes are a GitHubResponseError', async () => {
   const cases = {
     'thread without id': (pr) => { delete pr.reviewThreads.nodes[0].id; },
@@ -245,6 +254,7 @@ test('malformed nodes are a GitHubResponseError', async () => {
     'string boolean': (pr) => { pr.reviewThreads.nodes[0].isResolved = 'false'; },
     'unknown comment state': (pr) => { pr.reviewThreads.nodes[0].comments.nodes[0].state = 'DRAFT'; },
     'comment without body': (pr) => { delete pr.reviewThreads.nodes[0].comments.nodes[0].body; },
+    'comment without viewerCanUpdate': (pr) => { delete pr.reviewThreads.nodes[0].comments.nodes[0].viewerCanUpdate; },
     'comment without diffHunk': (pr) => { delete pr.reviewThreads.nodes[0].comments.nodes[0].diffHunk; },
     'diffHunk not a string': (pr) => { pr.reviewThreads.nodes[0].comments.nodes[0].diffHunk = null; },
     'author without login': (pr) => { pr.reviewThreads.nodes[0].comments.nodes[0].author = {}; },
