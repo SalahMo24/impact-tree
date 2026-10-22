@@ -61,8 +61,16 @@ function registerCommands(vscode, {
       ], { title: `#${pr.number}  ${pr.title}` });
       if (!pick) return;
       if (pick.id === 'open') { await vscode.env.openExternal(vscode.Uri.parse(pr.url)); return; }
-      if (pick.id === 'preview') { await session.previewPullRequest(pr); return; }
-      await session.checkoutAndAnalyse(pr);
+      // The Pull Request tab opens with the review it shows, before the analysis ends. It
+      // reads the same data the review loads anyway, so a preview costs no extra request.
+      const openTab = vscode.workspace.getConfiguration('impactTree').get('openPullRequestTab', true) === true;
+      const stopWaiting = openTab && session.openPullRequestTabWhenLoaded ? session.openPullRequestTabWhenLoaded(pr.number) : () => {};
+      try {
+        if (pick.id === 'preview') await session.previewPullRequest(pr);
+        else await session.checkoutAndAnalyse(pr);
+      } finally {
+        stopWaiting();
+      }
     }),
 
     vscode.commands.registerCommand('impactTree.clearReviewed', async () => {

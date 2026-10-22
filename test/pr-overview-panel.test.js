@@ -778,6 +778,77 @@ test('wired: a local review has no PR tab, and the pending-review bar stays hidd
   assert.match(env.seen.infos.at(-1), /no pull request is under review/);
 }));
 
+// ---- opening with a pull request picked from the list --------------------------------------
+
+const otherPr = () => ready(reviewModel(), { ...TARGET, number: 8 });
+
+test('openWhenLoaded: the tab opens once that review is in the store, without taking focus', () => {
+  const env = setup({ kind: 'none' });
+  env.created.openWhenLoaded(7);
+  assert.equal(env.seen.panels.length, 0, 'nothing to show yet');
+  env.store.set(otherPr());
+  assert.equal(env.seen.panels.length, 0, 'another pull request is not the one picked');
+  env.store.set(ready());
+  assert.equal(env.seen.panels.length, 1);
+  assert.equal(env.panel().title, 'Pull Request #7');
+  assert.deepEqual(env.panel().showOptions, { viewColumn: -1, preserveFocus: true }, 'focus stays in the tree');
+  // Picked once: closing it and loading the review again does not reopen it.
+  env.panel().dispose();
+  env.store.set(ready());
+  assert.equal(env.seen.panels.length, 1);
+});
+
+test('openWhenLoaded: a review already loaded opens at once; an open tab is revealed without focus', () => {
+  const env = setup(ready());
+  env.created.openWhenLoaded(7);
+  assert.equal(env.seen.panels.length, 1);
+  env.created.openWhenLoaded(7);
+  assert.equal(env.seen.panels.length, 1, 'the same tab, not a second one');
+  assert.deepEqual([env.panel().reveals, env.panel().revealFocus], [1, false]);
+});
+
+test('openWhenLoaded: a pick that stopped waiting opens nothing later', () => {
+  const env = setup({ kind: 'none' });
+  const stop = env.created.openWhenLoaded(7);
+  stop();
+  env.store.set(ready());
+  assert.equal(env.seen.panels.length, 0);
+  // Stopping an older pick does not cancel a newer one.
+  const older = env.created.openWhenLoaded(8);
+  env.created.openWhenLoaded(9);
+  older();
+  env.store.set(ready(reviewModel(), { ...TARGET, number: 9 }));
+  assert.equal(env.panel().title, 'Pull Request #9');
+});
+
+test('the commands still open the tab with focus', () => {
+  const env = setup(ready());
+  env.open();
+  assert.deepEqual(env.panel().showOptions, { viewColumn: -1, preserveFocus: false });
+});
+
+test('wired: picking a pull request opens its tab, for a preview and for a checkout, unless the setting is off', async () => {
+  for (const pick of ['preview', 'analyse']) {
+    await withEnv(async (env) => {
+      await env.openPullRequest({ ...pull(7), headSha: HEAD }, pick);
+      await flushAll();
+      assert.equal(env.seen.panels.length, 1, pick);
+      assert.equal(env.seen.panels[0].title, 'Pull Request #7');
+      assert.equal(env.seen.panels[0].showOptions.preserveFocus, true);
+      // A Refresh after closing it does not bring it back.
+      env.seen.panels[0].dispose();
+      await env.refresh();
+      await flushAll();
+      assert.equal(env.seen.panels.length, 1);
+    }, { graphql: fakeGraphql().graphql });
+  }
+  await withEnv(async (env) => {
+    await env.preview({ ...pull(7), headSha: HEAD });
+    await flushAll();
+    assert.equal(env.seen.panels.length, 0);
+  }, { graphql: fakeGraphql().graphql, settings: { openPullRequestTab: false } });
+});
+
 test('wired: a PR preview with a pending review shows the bar; the tab submits through the store to GitHub', async () => {
   const github = fakeGraphql();
   await withEnv(async (env) => {

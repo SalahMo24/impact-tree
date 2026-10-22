@@ -99,6 +99,8 @@ function parseMessage(message, token) {
  *
  * Commands:
  * - `impactTree.showPullRequest` and `impactTree.submitReview` open the tab, or reveal it.
+ * - `openWhenLoaded(number)`: a pull request picked from the list opens its tab once its
+ *   review is loading, keeping focus where it is.
  * - `impactTree.revealReviewThread(threadId: string)` opens the file of a thread of the
  *   loaded review in the review diff (`revealThread`, the comment controller's, which
  *   Details uses too). Resolves to false when the thread is not in the loaded review.
@@ -119,7 +121,8 @@ function parseMessage(message, token) {
  *   log: (message: string) => void,
  * }} deps `provider` is the change tree's; `revealRow` goes to a tree row by id;
  *   `revealThread` opens a thread of the loaded review in the review diff, saying why when it cannot.
- * @returns {{ disposables: Array<{ dispose(): any }>, open: () => void }}
+ * @returns {{ disposables: Array<{ dispose(): any }>, open: (options?: { preserveFocus?: boolean }) => void,
+ *   openWhenLoaded: (number: number) => () => void }}
  */
 function createPullRequestPanel(vscode, { store, provider, revealRow, revealThread, log }) {
   let disposed = false;
@@ -194,16 +197,42 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, revealThre
     bar.show();
   }
 
+  // The pull request the reviewer just picked from the list (`openWhenLoaded`): its tab
+  // opens as soon as the store has that review, without taking focus from the tree. Only
+  // that pick opens it; a Refresh or a later load never reopens a tab the reviewer closed.
+  /** @type {number|null} */
+  let wanted = null;
+  function openWanted() {
+    if (wanted === null || numberOf(store.getState()) !== wanted) return;
+    wanted = null;
+    open({ preserveFocus: true });
+  }
+
+  /**
+   * Opens the tab for pull request `number` once its review is in the store, which is at
+   * once if it already is. The returned function stops waiting, for a pick that ended
+   * without starting that review (say, a refused checkout).
+   * @param {number} number
+   * @returns {() => void}
+   */
+  function openWhenLoaded(number) {
+    wanted = number;
+    openWanted();
+    return () => { if (wanted === number) wanted = null; };
+  }
+
   function onStoreChange() {
     if (disposed) return;
     updateStatus();
+    openWanted();
     if (!current) return;
     // The tab belongs to one pull request review: when that ends, the tab goes with it.
     if (numberOf(store.getState()) !== current.number) { current.panel.dispose(); return; }
     render();
   }
 
-  function open() {
+  /** @param {{ preserveFocus?: boolean }} [options] */
+  function open({ preserveFocus = false } = {}) {
     if (disposed) return;
     const state = store.getState();
     if (state.kind === 'none') {
@@ -215,9 +244,9 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, revealThre
       vscode.window.showErrorMessage(`Impact Tree: the pull request under review cannot be shown: ${state.kind === 'failed' ? state.error.message : 'it has no number'}`);
       return;
     }
-    if (current && current.number === number) { current.panel.reveal(); return; }
+    if (current && current.number === number) { current.panel.reveal(undefined, preserveFocus); return; }
     if (current) current.panel.dispose();
-    const panel = vscode.window.createWebviewPanel(VIEW_TYPE, `Pull Request #${number}`, vscode.ViewColumn.Active,
+    const panel = vscode.window.createWebviewPanel(VIEW_TYPE, `Pull Request #${number}`, { viewColumn: vscode.ViewColumn.Active, preserveFocus },
       { enableScripts: true, localResourceRoots: [], retainContextWhenHidden: false });
     /** @type {OpenPanel} */
     const opened = { panel, number, draftKey: crypto.randomBytes(16).toString('base64'), token: null, renderedKey: null, error: null, mergeResult: null, busy: null, subscriptions: [] };
@@ -394,20 +423,22 @@ function createPullRequestPanel(vscode, { store, provider, revealRow, revealThre
   updateStatus();
   return {
     open,
+    openWhenLoaded,
     disposables: [
       bar,
       store.onDidChange(onStoreChange),
       // The approve check counts the tree's ticks, so a tick can change the page.
       provider.onDidChangeReview(repaint),
       provider.onDidChangePresentation(repaint),
-      vscode.commands.registerCommand('impactTree.showPullRequest', open),
-      vscode.commands.registerCommand('impactTree.submitReview', open),
+      vscode.commands.registerCommand('impactTree.showPullRequest', () => open()),
+      vscode.commands.registerCommand('impactTree.submitReview', () => open()),
       vscode.commands.registerCommand('impactTree.revealReviewThread', revealThread),
       {
         dispose() {
           if (current) current.panel.dispose();
           disposed = true;
           current = null;
+          wanted = null;
           drafts.clear();
         },
       },

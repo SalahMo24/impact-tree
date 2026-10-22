@@ -923,6 +923,11 @@
     "configuration": {
       "title": "Impact Tree",
       "properties": {
+        "impactTree.openPullRequestTab": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open the Pull Request tab (description, checks, reviewers, labels, merge and review submit) when you preview or check out a pull request from the list."
+        },
         "impactTree.githubRemote": {
           "type": "string",
           "default": "",
