@@ -133,6 +133,22 @@ const checkedRemote = (remote) => {
   return remote;
 };
 const stripRemote = (name, remote) => (name.startsWith(`${remote}/`) ? name.slice(remote.length + 1) : name);
+
+// The remote and branch a base name means. `<remote>/<branch>` with the default remote's
+// prefix is that remote's branch. A prefix naming another remote of the repository (say
+// `origin/main` while the GitHub remote is `upstream`) is kept as written: the base was
+// always `origin/main` before remotes were configurable, and an explicit remote is the
+// user's choice. Anything else is a branch on the default remote.
+function baseOn(git, name, remote) {
+  if (name.startsWith(`${remote}/`)) return { remote, branch: name.slice(remote.length + 1) };
+  const slash = name.indexOf('/');
+  if (slash > 0) {
+    const named = name.slice(0, slash);
+    const remotes = isSafeRemoteName(named) ? (git.tryRaw(['remote']) || '').split('\n').map((l) => l.trim()) : [];
+    if (remotes.includes(named)) return { remote: named, branch: name.slice(slash + 1) };
+  }
+  return { remote, branch: name };
+}
 const refspecFor = (name, remote = 'origin') => {
   checkedRemote(remote);
   const branch = stripRemote(name, remote);
@@ -142,9 +158,10 @@ const refspecFor = (name, remote = 'origin') => {
 // Async fetch of one branch into its remote-tracking ref. Never throws: returns a note.
 async function fetchBranch(git, name, { timeoutMs = DEFAULT_FETCH_TIMEOUT_MS, remote = 'origin' } = {}) {
   checkedRemote(remote);
-  const tracking = `${remote}/${stripRemote(name, remote)}`;
+  const on = baseOn(git, name, remote);
+  const tracking = `${on.remote}/${on.branch}`;
   try {
-    await git.rawAsync(['fetch', '--quiet', remote, refspecFor(name, remote)], { timeoutMs, env: FETCH_ENV });
+    await git.rawAsync(['fetch', '--quiet', on.remote, refspecFor(on.branch, on.remote)], { timeoutMs, env: FETCH_ENV });
     return { ok: true, note: `fetched ${tracking}` };
   } catch (e) {
     return { ok: false, note: `fetch of ${tracking} failed (${e.message}) — using cached remote ref` };
@@ -168,10 +185,11 @@ function resolveBase(git, spec, { fetch = false, allowLocal = false, remote: rem
     if (sha) return { ref: spec, sha, notes };
     throw new Error(`cannot resolve base revision '${spec}'`);
   }
-  const name = spec || 'main';
-  const remote = `${remoteName}/${stripRemote(name, remoteName)}`;
+  const on = baseOn(git, spec || 'main', remoteName);
+  const name = on.remote === remoteName ? spec || 'main' : on.branch;
+  const remote = `${on.remote}/${on.branch}`;
   if (fetch) {
-    const r = git.tryRaw(['fetch', '--quiet', remoteName, refspecFor(name, remoteName)]);
+    const r = git.tryRaw(['fetch', '--quiet', on.remote, refspecFor(on.branch, on.remote)]);
     notes.push(r === null ? `fetch of ${remote} failed — using cached remote ref` : `fetched ${remote}`);
   }
   const remoteSha = git.revParse(remote);

@@ -94,4 +94,33 @@ function describeRemoteProblem(choice) {
   }
 }
 
-module.exports = { parseRemoteList, chooseGitHubRemote, isSafeRemoteName, describeRemoteProblem };
+/**
+ * The remote the base branch is read from. A repository with no GitHub remote keeps
+ * `origin`, as before remotes were configurable. An ambiguous choice or a bad setting
+ * has no base remote: falling back to `origin` would diff against the user's fork in the
+ * setup the setting exists for, so the caller refuses with the problem instead.
+ * @param {RemoteChoice} choice
+ * @returns {{ name: string, problem: null } | { name: null, problem: string }}
+ */
+function baseRemoteOf(choice) {
+  if (choice.kind === 'ok') return { name: choice.name, problem: null };
+  if (choice.kind === 'none') return { name: 'origin', problem: null };
+  return { name: null, problem: describeRemoteProblem(choice) || 'No GitHub remote could be chosen.' };
+}
+
+/**
+ * Why a pull request cannot be used with the current GitHub remote, or null. The remote
+ * can change (impactTree.githubRemote) after the pull request was listed; the same number
+ * on the other repository is another pull request. A record without `baseRepo` is not
+ * checked.
+ * @param {{ number?: unknown, baseRepo?: unknown }} pr
+ * @param {{ owner: string, repo: string }} slug
+ * @returns {string|null}
+ */
+function otherRepositoryProblem(pr, slug) {
+  const current = `${slug.owner}/${slug.repo}`;
+  if (typeof pr.baseRepo !== 'string' || pr.baseRepo.toLowerCase() === current.toLowerCase()) return null;
+  return `Pull request #${pr.number} is in ${pr.baseRepo}, but the GitHub remote is now ${current}. Pick the pull request again from the list.`;
+}
+
+module.exports = { parseRemoteList, chooseGitHubRemote, isSafeRemoteName, describeRemoteProblem, baseRemoteOf, otherRepositoryProblem };

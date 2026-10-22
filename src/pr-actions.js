@@ -1,6 +1,6 @@
 'use strict';
 
-const { describeRemoteProblem } = require('./github-remote');
+const { describeRemoteProblem, otherRepositoryProblem } = require('./github-remote');
 
 // Unlike analyze.js's tryLoadTypeScript, a preview cannot skip TypeScript and
 // continue. Load from the repo root or abort the run.
@@ -60,8 +60,11 @@ function createPrActions(vscode, session, { log, gh, repoSlug, githubRemote, sou
             return true;
           };
 
+          const slug = repoSlug();
+          const other = slug && otherRepositoryProblem(pr, slug);
+          if (other) throw new Error(other);
           const result = await analyzeRemote({
-            ts, gh, slug: repoSlug(), pr, repoRoot: repo,
+            ts, gh, slug, pr, repoRoot: repo,
             maxFiles: cfg.get('tierA.maxFiles', 300),
             concurrency: cfg.get('concurrency', 8),
             onPrepared: (pending) => {
@@ -112,8 +115,9 @@ function createPrActions(vscode, session, { log, gh, repoSlug, githubRemote, sou
     };
     if (refuse()) return;
     const choice = githubRemote();
-    if (choice.kind !== 'ok') {
-      vscode.window.showErrorMessage(`Impact Tree: cannot check out PR #${pr.number}. ${describeRemoteProblem(choice)}`);
+    const problem = choice.kind === 'ok' ? otherRepositoryProblem(pr, choice) : describeRemoteProblem(choice);
+    if (problem) {
+      vscode.window.showErrorMessage(`Impact Tree: cannot check out PR #${pr.number}. ${problem}`);
       return;
     }
     const { makeGit } = require('./engine/git');

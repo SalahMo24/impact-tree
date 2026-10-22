@@ -11,7 +11,7 @@ const { readLineOfOffset, offsetToPosition } = require('./engine/textpos');
 const { createDecorationProvider } = require('./decorations');
 const { createReviewState } = require('./review-state');
 const { createGitHub } = require('./github');
-const { parseRemoteList, chooseGitHubRemote, describeRemoteProblem } = require('./github-remote');
+const { parseRemoteList, chooseGitHubRemote, describeRemoteProblem, baseRemoteOf } = require('./github-remote');
 const { createSourcesProvider } = require('./sources-provider');
 const { createPrDocuments } = require('./pr-documents');
 const { createSession } = require('./session');
@@ -187,11 +187,8 @@ function activate(context) {
     const text = describeRemoteProblem(choice);
     return text === null ? null : { none: choice.kind === 'none', text };
   };
-  // The base branch is read from the same remote; a repository with no usable choice keeps 'origin'.
-  session.githubRemoteName = () => {
-    const choice = githubRemote();
-    return choice.kind === 'ok' ? choice.name : null;
-  };
+  // The base branch is read from the same remote (see baseRemoteOf).
+  session.baseRemote = () => baseRemoteOf(githubRemote());
 
   // What GitHub says about the review of the PR being reviewed (threads, pending review,
   // viewed state). It follows the analysis: every new run, checkout claim or refreshed PR

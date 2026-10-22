@@ -886,7 +886,7 @@
         "impactTree.baseBranch": {
           "type": "string",
           "default": "main",
-          "description": "Base branch. Always resolved to <remote>/<branch>, where the remote is the GitHub remote (impactTree.githubRemote), else origin; an out-of-date local ref silently inflates the diff."
+          "description": "Base branch. Always resolved to <remote>/<branch>, where the remote is the GitHub remote (impactTree.githubRemote), else origin; an out-of-date local ref silently inflates the diff. Write <remote>/<branch>, for example origin/main, to read it from another remote."
         },
         "impactTree.fetchBase": {
           "type": "boolean",

@@ -104,6 +104,14 @@ const upstreamTip = run(origin, ['rev-parse', 'HEAD']).trim();
   check('an explicit upstream/ prefix is stripped, not doubled', again.ref === 'upstream/main', again.ref);
   check('the tracking refspec is the remote\'s own', refspecFor('upstream/main', 'upstream') === '+refs/heads/main:refs/remotes/upstream/main');
   check('and origin stays the default', refspecFor('main') === '+refs/heads/main:refs/remotes/origin/main');
+  // A base written as origin/main, as the setting was before remotes were configurable,
+  // still means origin's main when the GitHub remote is upstream.
+  const explicit = resolveBase(g, 'origin/main', { allowLocal: true, fetch: true, remote: 'upstream' });
+  check('an origin/ prefix keeps origin when the GitHub remote is upstream', explicit.ref === 'origin/main' && explicit.sha === g.revParse('refs/remotes/origin/main') && explicit.sha !== upstreamTip, `${explicit.ref} ${explicit.notes.join('; ')}`);
+  check('and fetches from origin, not refs/heads/origin/main on upstream', explicit.notes.some((n) => /fetched origin\/main/.test(n)), explicit.notes.join('; '));
+  let missing = null;
+  try { resolveBase(g, 'nosuchremote/main', { remote: 'upstream' }); } catch (e) { missing = e.message; }
+  check('a prefix that is not a remote is a branch name on the GitHub remote', /upstream\/nosuchremote\/main/.test(missing || ''), missing);
 }
 {
   const g = makeGit(forkClone);

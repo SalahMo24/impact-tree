@@ -22,9 +22,13 @@ function createReadiness(vscode, session, { log }) {
     const fs = require('fs');
     const git = makeGit(repo);
     const cfg = vscode.workspace.getConfiguration('impactTree');
+    // No base remote (an ambiguous choice or a bad setting): nothing to warm; the
+    // analysis itself reports the problem.
+    const baseRemote = session.baseRemote();
+    if (baseRemote.name === null) return null;
     let baseSha;
     try {
-      const b = resolveBase(git, cfg.get('baseBranch', 'main'), { fetch: false, allowLocal: true, remote: session.githubRemoteName() || 'origin' });
+      const b = resolveBase(git, cfg.get('baseBranch', 'main'), { fetch: false, allowLocal: true, remote: baseRemote.name });
       baseSha = git.mergeBase(b.sha, 'HEAD') || b.sha;
     } catch { return null; }
     // A file no config claims still warms the server: it opens an inferred project.

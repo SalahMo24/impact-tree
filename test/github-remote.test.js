@@ -3,7 +3,7 @@
 // the setting, and the sentence shown when there is no choice (src/github-remote.js).
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parseRemoteList, chooseGitHubRemote, isSafeRemoteName, describeRemoteProblem } = require('../src/github-remote');
+const { parseRemoteList, chooseGitHubRemote, isSafeRemoteName, describeRemoteProblem, baseRemoteOf, otherRepositoryProblem } = require('../src/github-remote');
 
 const remote = (name, url) => ({ name, url });
 const GH = (owner, repo = 'repo') => `https://github.com/${owner}/${repo}.git`;
@@ -88,4 +88,23 @@ test('describeRemoteProblem says what is wrong in one sentence, and nothing when
   assert.match(describeRemoteProblem({ kind: 'bad-setting', setting: 'x', reason: 'missing' }), /'x', which is not a remote of this repository/);
   assert.match(describeRemoteProblem({ kind: 'bad-setting', setting: 'x', reason: 'not-github' }), /'x', which does not point at github.com/);
   assert.match(describeRemoteProblem({ kind: 'bad-setting', setting: '-x', reason: 'unsafe' }), /not a valid remote name/);
+});
+
+test('baseRemoteOf: the chosen remote, origin when there is no GitHub remote, else the problem', () => {
+  assert.deepEqual(baseRemoteOf({ kind: 'ok', name: 'upstream', owner: 'o', repo: 'r' }), { name: 'upstream', problem: null });
+  assert.deepEqual(baseRemoteOf({ kind: 'none' }), { name: 'origin', problem: null });
+  assert.deepEqual(baseRemoteOf({ kind: 'ambiguous', names: ['a', 'b'] }),
+    { name: null, problem: 'Several remotes point at github.com (a, b); set impactTree.githubRemote to the one pull requests are opened against.' });
+  const bad = baseRemoteOf({ kind: 'bad-setting', setting: 'gone', reason: 'missing' });
+  assert.equal(bad.name, null);
+  assert.match(bad.problem, /'gone', which is not a remote/);
+});
+
+test('otherRepositoryProblem: a pull request from another repository than the current remote', () => {
+  const slug = { owner: 'org', repo: 'repo' };
+  assert.equal(otherRepositoryProblem({ number: 7, baseRepo: 'org/repo' }, slug), null);
+  assert.equal(otherRepositoryProblem({ number: 7, baseRepo: 'Org/Repo' }, slug), null, 'GitHub names are not case-sensitive');
+  assert.equal(otherRepositoryProblem({ number: 7 }, slug), null, 'a record without baseRepo is not checked');
+  assert.equal(otherRepositoryProblem({ number: 7, baseRepo: 'me/repo' }, slug),
+    'Pull request #7 is in me/repo, but the GitHub remote is now org/repo. Pick the pull request again from the list.');
 });

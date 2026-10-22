@@ -16,6 +16,7 @@ const assert = require('node:assert/strict');
 const { loadPullRequestReview } = require('./pr-review-data');
 const { GitHubResponseError } = require('./github-request');
 const { throwIfCancelled } = require('./engine/cancellation');
+const { otherRepositoryProblem } = require('./github-remote');
 
 const ENDPOINT = '/graphql';
 
@@ -175,6 +176,10 @@ function reviewTargetOf(source, repoSlug, problem = () => null) {
   const pr = isObject(source.pr) ? source.pr : {};
   const slug = repoSlug();
   if (!slug) throw new Error(`${problem() || 'The repository has no GitHub remote.'} Its review threads cannot be loaded.`);
+  // The GitHub remote can change while a review is open (impactTree.githubRemote). The
+  // same number on the other repository is another pull request, so never load it.
+  const other = otherRepositoryProblem(pr, slug);
+  if (other) throw new Error(other);
   return { owner: slug.owner, name: slug.repo, number: pr.number, headOid: source.kind === 'checkout' ? source.sha : pr.headSha };
 }
 

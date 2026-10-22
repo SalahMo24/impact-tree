@@ -164,3 +164,34 @@ test('a repository with no GitHub remote keeps origin as the base remote and say
     assert.match(row.label, /No GitHub remote/);
   }, { remotes: [['origin', 'https://gitlab.com/o/r.git']] });
 });
+
+test('an ambiguous choice or a bad setting stops the analysis instead of diffing against origin', async () => {
+  await withEnv(async (env) => {
+    await env.refresh();
+    assert.deepEqual(env.seen.analyzeRemotes, [], 'nothing was analysed');
+    assert.ok(env.seen.errors.some((m) => /Cannot resolve the base branch: Several remotes point at github\.com \(a, b\)/.test(m)), env.seen.errors.join('\n'));
+  }, { remotes: [['origin', 'https://gitlab.com/o/r.git'], ['a', 'https://github.com/x/repo.git'], ['b', 'https://github.com/y/repo.git']] });
+  await withEnv(async (env) => {
+    await env.refresh();
+    assert.deepEqual(env.seen.analyzeRemotes, []);
+    assert.ok(env.seen.errors.some((m) => /Cannot resolve the base branch: impactTree\.githubRemote is 'gone'/.test(m)), env.seen.errors.join('\n'));
+  }, forkSetup({ settings: { githubRemote: 'gone' } }));
+});
+
+test('a review stays on its repository when the setting moves the GitHub remote', async () => {
+  const calls = [];
+  await withEnv(async (env) => {
+    const pr = { ...pull(7), headSha: shaFor(7), baseRepo: 'org/repo' };
+    env.hooks.remoteResult = (p) => ({ ...require('./extension-env').previewResult(p), headSha: shaFor(7) });
+    await env.preview(pr);
+    await settle();
+    assert.ok(calls.length > 0 && calls.every((v) => v.owner === 'org'));
+    calls.length = 0;
+    env.changeSetting('githubRemote', 'origin');
+    await settle();
+    assert.ok(!calls.some((v) => v.owner === 'me'), 'the same number on the fork was never read');
+    await env.openPullRequest(pr, 'analyse');
+    assert.deepEqual(env.git.fetches, [], 'nor checked out');
+    assert.ok(env.seen.errors.some((m) => /PR #7\. Pull request #7 is in org\/repo, but the GitHub remote is now me\/repo/.test(m)), env.seen.errors.join('\n'));
+  }, forkSetup({ graphql: async (_query, variables) => { calls.push(variables); throw new Error('stop here'); } }));
+});
