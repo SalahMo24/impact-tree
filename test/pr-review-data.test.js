@@ -17,7 +17,7 @@ const comment = (id, over = {}) => ({
   id: `C_${id}`, databaseId: 1000 + id, author: { login: 'bob', avatarUrl: 'https://a/bob' },
   body: `body ${id}`, createdAt: '2026-01-02T03:04:05Z', state: 'SUBMITTED', viewerDidAuthor: false, viewerCanUpdate: false,
   url: `https://github.com/o/r/pull/7#discussion_r${id}`, diffHunk: '@@ -9,2 +9,2 @@\n context\n+const x = 1;',
-  commit: { oid: 'e'.repeat(40) }, ...over,
+  commit: { oid: 'e'.repeat(40) }, originalCommit: { oid: 'e'.repeat(40) }, originalLine: 10, originalStartLine: null, ...over,
 });
 
 const thread = (id, over = {}) => ({
@@ -137,7 +137,7 @@ test('normalises every field of the pull request, thread, comment, review, file 
   assert.deepEqual(t.comments[0], {
     id: 'C_1', databaseId: 1001, author: { login: 'bob', avatarUrl: 'https://a/bob' }, body: 'body 1',
     createdAt: '2026-01-02T03:04:05Z', pending: true, mine: true, canEdit: true, url: 'https://github.com/o/r/pull/7#discussion_r1',
-    commitOid: 'e'.repeat(40),
+    commitOid: 'e'.repeat(40), originalCommitOid: 'e'.repeat(40), originalLine: 10, originalStartLine: null,
   });
   assert.equal(t.comments[1].author, null);
   assert.equal(t.comments[1].databaseId, null);
@@ -291,6 +291,22 @@ test('a comment\'s commit is its oid (40 or 64 hex digits), or null when GitHub 
     reviewThreads: page([thread(1, { comments: { totalCount: 3, pageInfo: { hasNextPage: false }, nodes } })]),
   }))]), TARGET);
   assert.deepEqual(model.threads[0].comments.map((c) => c.commitOid), ['e'.repeat(40), 'f'.repeat(64), null]);
+});
+
+test('a comment keeps where it was written: its original commit and lines, which GitHub does not move', async () => {
+  const nodes = [comment(1, { commit: { oid: 'f'.repeat(40) }, originalCommit: { oid: 'a'.repeat(40) }, originalLine: 561, originalStartLine: 559 }),
+    comment(2, { originalCommit: null, originalLine: null })];
+  const model = await loadPullRequestReview(fakeClient([envelope(pullRequest({
+    reviewThreads: page([thread(1, { comments: { totalCount: 2, pageInfo: { hasNextPage: false }, nodes } })]),
+  }))]), TARGET);
+  const [moved, unknown] = model.threads[0].comments;
+  assert.deepEqual([moved.commitOid, moved.originalCommitOid, moved.originalStartLine, moved.originalLine], ['f'.repeat(40), 'a'.repeat(40), 559, 561]);
+  assert.deepEqual([unknown.originalCommitOid, unknown.originalLine], [null, null]);
+  for (const bad of [{ originalCommit: { oid: 'xyz' } }, { originalLine: 0 }, { originalStartLine: 'a' }]) {
+    await assert.rejects(loadPullRequestReview(fakeClient([envelope(pullRequest({
+      reviewThreads: page([thread(1, { comments: { totalCount: 1, pageInfo: { hasNextPage: false }, nodes: [comment(3, bad)] } })]),
+    }))]), TARGET), { name: 'GitHubResponseError' }, JSON.stringify(bad));
+  }
 });
 
 test('malformed nodes are a GitHubResponseError', async () => {

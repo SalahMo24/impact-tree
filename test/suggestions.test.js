@@ -59,12 +59,16 @@ test('a new suggestion\'s fence is one longer than any backtick run starting its
 
 const C = 'c'.repeat(40), D = 'd'.repeat(40);
 const thread = (over = {}) => ({ path: 'src/a.ts', side: 'RIGHT', line: 12, startLine: 10, isOutdated: false, fileLevel: false, ...over });
-const decide = (over = {}) => applyDecision({ checkout: true, suggestions: [{ text: 'x' }], thread: thread(), commitOid: C, head: C, targetHead: C, ...over });
+const B = 'b'.repeat(40);
+const origin = (over = {}) => ({ commitOid: B, startLine: 8, line: 10, ...over });
+const decide = (over = {}) => applyDecision({ checkout: true, suggestions: [{ text: 'x' }], thread: thread(), commitOid: C, origin: origin(), head: C, targetHead: C, ...over });
 const reason = (over) => { const d = decide(over); assert.equal(d.ok, false); return d.reason; };
 
 test('an apply is allowed on a checkout at the suggestion\'s commit, on the thread\'s lines', () => {
-  assert.deepEqual(decide(), { ok: true, path: 'src/a.ts', startLine: 10, line: 12, text: 'x' });
-  assert.deepEqual(decide({ thread: thread({ startLine: null }) }), { ok: true, path: 'src/a.ts', startLine: 12, line: 12, text: 'x' }, 'one line');
+  // Written on lines 8–10 of commit B; GitHub has moved it to lines 10–12 of the head C.
+  assert.deepEqual(decide(), { ok: true, path: 'src/a.ts', startLine: 10, line: 12, text: 'x', origin: { commitOid: B, startLine: 8, line: 10 } });
+  assert.deepEqual(decide({ thread: thread({ startLine: null }), origin: origin({ startLine: null }) }),
+    { ok: true, path: 'src/a.ts', startLine: 12, line: 12, text: 'x', origin: { commitOid: B, startLine: 10, line: 10 } }, 'one line');
 });
 
 test('each refused apply says why', () => {
@@ -74,10 +78,14 @@ test('each refused apply says why', () => {
   for (const t of [thread({ isOutdated: true, line: null }), thread({ fileLevel: true, line: null }), thread({ side: 'LEFT' }), thread({ line: null })]) {
     assert.equal(reason({ thread: t }), 'This suggestion is on lines that are no longer in the diff.');
   }
-  assert.equal(reason({ head: D }), 'The checkout is at ddddddd, not ccccccc the suggestion was written on.');
+  assert.equal(reason({ head: D }), 'The checkout is at ddddddd, not ccccccc, where GitHub places the suggestion.');
   assert.equal(reason({ head: D, commitOid: D }), 'The checkout is at ddddddd, not ccccccc, the head under review.');
   assert.match(reason({ head: null }), /HEAD could not be read/);
   assert.match(reason({ commitOid: null }), /GitHub did not say which commit/);
+  for (const o of [origin({ commitOid: null }), origin({ line: null })]) {
+    assert.equal(reason({ origin: o }), 'GitHub did not say which lines the suggestion was written on, so it cannot be checked against the checkout.');
+  }
+  assert.equal(reason({ origin: origin({ startLine: 9 }) }), 'Lines 10–12 of src/a.ts changed since the suggestion was written.', 'a different number of lines');
 });
 
 test('a stale apply is refused: the working lines differ from the lines at the commit', () => {
@@ -89,6 +97,15 @@ test('a stale apply is refused: the working lines differ from the lines at the c
   assert.equal(linesChanged(plan, ['one', 'two'], atCommit), 'Lines 2–3 of src/a.ts changed since the suggestion was written.', 'the file got shorter');
   assert.equal(linesChanged({ ...plan, startLine: 3 }, ['one', 'two', 'x'], atCommit), 'Line 3 of src/a.ts changed since the suggestion was written.');
   assert.equal(linesChanged(plan, splitLines('one\r\ntwo\r\nthree\r\n'), splitLines('one\ntwo\nthree\n')), null, 'line breaks are not the lines');
+});
+
+test('the head\'s lines are compared with the lines the suggestion was written on, which may be numbered differently', () => {
+  // Written on lines 2–3 of the original commit; a later commit added a line above them.
+  const plan = { path: 'src/a.ts', startLine: 3, line: 4 };
+  const original = ['one', 'two', 'three', 'four'];
+  assert.equal(linesChanged(plan, ['zero', 'one', 'two', 'three', 'four'], original, 2), null, 'shifted, not changed');
+  assert.equal(linesChanged(plan, ['zero', 'one', 'TWO', 'three', 'four'], original, 2), 'Lines 3–4 of src/a.ts changed since the suggestion was written.');
+  assert.equal(linesChanged(plan, ['zero', 'one', 'two', 'three'], original, 3), 'Lines 3–4 of src/a.ts changed since the suggestion was written.');
 });
 
 /** Applies a TextEdit to text, as VS Code would. */

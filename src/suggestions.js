@@ -28,8 +28,16 @@
  * @property {boolean} isOutdated
  * @property {boolean} fileLevel
  *
- * @typedef {{ ok: true, path: string, startLine: number, line: number, text: string|null }
- *   | { ok: false, reason: string }} ApplyDecision `startLine`..`line` are 1-based, inclusive.
+ * @typedef {object} SuggestionOrigin Where a suggestion was written, from its comment.
+ * @property {string|null} commitOid The commit it was written on (`originalCommit`).
+ * @property {number|null} startLine 1-based first line there; null for one line.
+ * @property {number|null} line 1-based last line there.
+ *
+ * @typedef {{ commitOid: string, startLine: number, line: number }} OriginLines
+ *
+ * @typedef {{ ok: true, path: string, startLine: number, line: number, text: string|null, origin: OriginLines }
+ *   | { ok: false, reason: string }} ApplyDecision `startLine`..`line` are 1-based,
+ *   inclusive, in the head; `origin` is the same lines where the suggestion was written.
  */
 
 /** @param {string} text @returns {string[]} */
@@ -114,19 +122,22 @@ const linesOf = (path, startLine, line) => (startLine === line ? `line ${line}` 
 
 /**
  * Whether a comment's suggestion may be applied to the checkout, before its lines are
- * compared: a checkout, one suggestion, a thread on head lines of the current diff, and
- * the checkout at the commit the suggestion was written on, which is the head under
- * review. Each refusal says why. Pure.
+ * compared: a checkout, one suggestion, a thread on head lines of the current diff, the
+ * checkout at the commit GitHub now places the comment on, which is the head under
+ * review, and a known place where it was written. GitHub moves a comment forward to newer
+ * commits (`commit`), and its lines may shift; the caller compares the lines at the head
+ * with the lines it was written on (`origin`). Each refusal says why. Pure.
  * @param {object} input
  * @param {boolean} input.checkout The review is of a checkout (a preview has no working tree).
  * @param {Suggestion[]} input.suggestions The comment's (`parseSuggestions`).
  * @param {SuggestionThread} input.thread
- * @param {string|null} input.commitOid The comment's commit, as GitHub gave it.
+ * @param {string|null} input.commitOid The commit GitHub now places the comment on (`commit`).
+ * @param {SuggestionOrigin} input.origin Where the suggestion was written.
  * @param {string|null} input.head The checkout's HEAD commit; null when it could not be read.
  * @param {string} input.targetHead The head commit under review.
  * @returns {ApplyDecision}
  */
-function applyDecision({ checkout, suggestions, thread, commitOid, head, targetHead }) {
+function applyDecision({ checkout, suggestions, thread, commitOid, origin, head, targetHead }) {
   if (!checkout) return { ok: false, reason: 'Check out the pull request to apply a suggestion.' };
   if (suggestions.length === 0) return { ok: false, reason: 'This comment has no suggestion.' };
   if (suggestions.length > 1) return { ok: false, reason: `This comment has ${suggestions.length} suggestions; apply them on GitHub.` };
@@ -135,24 +146,36 @@ function applyDecision({ checkout, suggestions, thread, commitOid, head, targetH
   }
   if (head === null) return { ok: false, reason: 'The checkout\'s HEAD could not be read, so the suggestion cannot be checked against it.' };
   if (commitOid === null) return { ok: false, reason: 'GitHub did not say which commit the suggestion was written on, so it cannot be checked against the checkout.' };
-  if (head !== commitOid) return { ok: false, reason: `The checkout is at ${short(head)}, not ${short(commitOid)} the suggestion was written on.` };
+  if (head !== commitOid) return { ok: false, reason: `The checkout is at ${short(head)}, not ${short(commitOid)}, where GitHub places the suggestion.` };
   if (head !== targetHead) return { ok: false, reason: `The checkout is at ${short(head)}, not ${short(targetHead)}, the head under review.` };
   const line = thread.line;
   const startLine = thread.startLine !== null && thread.startLine <= line ? thread.startLine : line;
-  return { ok: true, path: thread.path, startLine, line, text: suggestions[0].text };
+  if (origin.commitOid === null || origin.line === null) {
+    return { ok: false, reason: 'GitHub did not say which lines the suggestion was written on, so it cannot be checked against the checkout.' };
+  }
+  const originStart = origin.startLine !== null && origin.startLine <= origin.line ? origin.startLine : origin.line;
+  if (origin.line - originStart !== line - startLine) {
+    const where = linesOf(thread.path, startLine, line);
+    return { ok: false, reason: `${where[0].toUpperCase()}${where.slice(1)} changed since the suggestion was written.` };
+  }
+  return { ok: true, path: thread.path, startLine, line, text: suggestions[0].text,
+    origin: { commitOid: origin.commitOid, startLine: originStart, line: origin.line } };
 }
 
 /**
- * Why the working file's commented lines are not the lines the suggestion was written
- * on, or null when they are the same. Lines past either file's end differ. Pure.
+ * Why the commented lines `startLine`..`line` of a file are not the same lines of
+ * another version of it, or null when they are. The other version's lines start at
+ * `otherStart` (default `startLine`): the head and the commit a suggestion was written on
+ * can number them differently. Lines past either file's end differ. Pure.
  * @param {{ path: string, startLine: number, line: number }} plan 1-based, inclusive.
- * @param {string[]} workingLines The working file (the open document, else the file on disk).
- * @param {string[]} commitLines The file at the commit the suggestion was written on.
+ * @param {string[]} lines The file the plan's lines are in (the working file, or the head).
+ * @param {string[]} otherLines The version to compare with.
+ * @param {number} [otherStart] 1-based line of `otherLines` that matches `startLine`.
  * @returns {string|null}
  */
-function linesChanged({ path, startLine, line }, workingLines, commitLines) {
+function linesChanged({ path, startLine, line }, lines, otherLines, otherStart = startLine) {
   for (let n = startLine; n <= line; n++) {
-    const a = workingLines[n - 1], b = commitLines[n - 1];
+    const a = lines[n - 1], b = otherLines[otherStart + (n - startLine) - 1];
     if (a === undefined || b === undefined || a !== b) {
       const where = linesOf(path, startLine, line);
       return `${where[0].toUpperCase()}${where.slice(1)} changed since the suggestion was written.`;

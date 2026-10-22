@@ -224,7 +224,7 @@ function activate(context) {
       return makeGit(owned.repoRoot()).rawAsync(['rev-parse', '--verify', 'HEAD^{commit}'], { timeoutMs: 10000 })
         .then((out) => out.trim() || null, (e) => { log(`review comments: reading HEAD failed: ${e.message}`); return null; });
     },
-    // A suggestion is compared with its file at the commit it was written on.
+    // A suggestion is compared with its file at the head and at the commit it was written on.
     readAtCommit: (oid, relPath) => {
       const { makeGit } = require('./engine/git');
       return Promise.resolve()

@@ -44,7 +44,7 @@ const fileDoc = (relPath) => Uri.file(path.join(REPO, relPath));
 const baseDoc = (basePath, sha = BASE) => Uri.from({ scheme: 'impacttree-base', path: basePath, query: sha });
 
 const comment = (id, over = {}) => ({ id: `C_${id}`, databaseId: id, author: { login: 'bob', avatarUrl: null }, body: `body ${id}`,
-  createdAt: '2026-01-02T03:04:05Z', pending: false, mine: false, canEdit: false, url: `https://x/${id}`, commitOid: null, ...over });
+  createdAt: '2026-01-02T03:04:05Z', pending: false, mine: false, canEdit: false, url: `https://x/${id}`, commitOid: null, originalCommitOid: null, originalLine: null, originalStartLine: null, ...over });
 const thread = (id, over = {}, comments = [comment(id)]) => ({ id: `T_${id}`, path: 'src/a.ts', side: 'RIGHT', line: 12,
   originalLine: 12, startLine: null, isResolved: false, isOutdated: false, fileLevel: false,
   canResolve: true, canUnresolve: false, canReply: true, comments, ...over });
@@ -704,7 +704,7 @@ test('dispose disposes the controller, its threads and its subscriptions, and a 
 
 // GitHub-shaped answers, as the L2 normaliser reads them.
 const rawComment = (id, over = {}) => ({ id: `C_${id}`, databaseId: id, author: { login: 'bob', avatarUrl: null }, body: `body ${id}`,
-  createdAt: '2026-01-02T03:04:05Z', state: 'SUBMITTED', viewerDidAuthor: false, viewerCanUpdate: false, url: `https://x/${id}`, diffHunk: '', commit: null, ...over });
+  createdAt: '2026-01-02T03:04:05Z', state: 'SUBMITTED', viewerDidAuthor: false, viewerCanUpdate: false, url: `https://x/${id}`, diffHunk: '', commit: null, originalCommit: null, originalLine: null, originalStartLine: null, ...over });
 const rawThread = (id, comments, over = {}) => ({ id: `T_${id}`, isResolved: false, isOutdated: false, path: 'src/a.ts', line: 12,
   originalLine: 12, startLine: null, originalStartLine: null, diffSide: 'RIGHT', subjectType: 'LINE',
   viewerCanResolve: true, viewerCanUnresolve: false, viewerCanReply: true,
@@ -975,7 +975,9 @@ test('editing a checkout after opening a draft refuses submission and keeps the 
 // ---- suggested changes (B2) ---------------------------------------------------------------
 
 const FILE_TEXT = `${Array.from({ length: 50 }, (_, i) => `line ${i + 1}`).join('\n')}\n`;
-const suggesting = (body, over = {}) => comment(1, { body, commitOid: HEAD, ...over });
+// Written on lines 11–12 of the head unless a test moves it.
+const suggesting = (body, over = {}) => comment(1, { body, commitOid: HEAD, originalCommitOid: HEAD, originalStartLine: 11, originalLine: 12, ...over });
+const ORIGINAL = 'c'.repeat(40);
 const draftsOn = (env, uri) => env.threadsOn(uri).filter((t) => t.comments.length === 1 && t.comments[0].contextValue === SUGGESTION_DRAFT);
 
 test('a posted comment with a suggestion block gets the hasSuggestion action; a pending one does not', () => {
@@ -1113,10 +1115,11 @@ test('Suggest change outside one hunk, on the base side, on unsaved edits or bef
 });
 
 // Apply: a checkout of #7 at HEAD whose src/a.ts has a thread on lines 11-12.
-async function applySetup({ body = 'nit:\n```suggestion\nNEW\n```', text = FILE_TEXT, atCommit = FILE_TEXT, commentOver = {}, source = checkoutSource(), threadOver = {} } = {}) {
+async function applySetup({ body = 'nit:\n```suggestion\nNEW\n```', text = FILE_TEXT, atCommit = FILE_TEXT, atOriginal, commentOver = {}, source = checkoutSource(), threadOver = {} } = {}) {
   const m = reviewModel({ threads: [thread(1, { startLine: 11, line: 12, ...threadOver }, [suggesting(body, commentOver)])] });
   const result = source.kind === 'pr' ? previewResult() : checkoutResult();
-  const env = setup({ state: ready(m), source, result, atCommit: { [`${HEAD}:src/a.ts`]: atCommit } });
+  const env = setup({ state: ready(m), source, result,
+    atCommit: { [`${HEAD}:src/a.ts`]: atCommit, ...(atOriginal === undefined ? {} : { [`${ORIGINAL}:src/a.ts`]: atOriginal }) } });
   await env.idle();
   const doc = env.editor.open(source.kind === 'pr' ? prDoc('src/a.ts', 'head') : fileDoc('src/a.ts'), { text, isDirty: false });
   await env.idle();
@@ -1151,7 +1154,7 @@ test('a stale apply is refused with the reason, and the file is left alone', asy
   const cases = [
     [{ atCommit: FILE_TEXT.replace('line 12', 'line twelve') }, 'Impact Tree: Lines 11–12 of src/a.ts changed since the suggestion was written.'],
     [{ text: FILE_TEXT.replace('line 11', 'edited') }, 'Impact Tree: Lines 11–12 of src/a.ts changed since the suggestion was written.'],
-    [{ commentOver: { commitOid: OTHER_HEAD } }, 'Impact Tree: The checkout is at aaaaaaa, not bbbbbbb the suggestion was written on.'],
+    [{ commentOver: { commitOid: OTHER_HEAD } }, 'Impact Tree: The checkout is at aaaaaaa, not bbbbbbb, where GitHub places the suggestion.'],
     [{ source: prSource() }, 'Impact Tree: Check out the pull request to apply a suggestion.'],
     [{ body: '```suggestion\na\n```\n```suggestion\nb\n```' }, 'Impact Tree: This comment has 2 suggestions; apply them on GitHub.'],
   ];
@@ -1167,8 +1170,37 @@ test('a stale apply is refused with the reason, and the file is left alone', asy
   const moved = await applySetup();
   moved.env.heads.value = OTHER_HEAD;
   await moved.apply();
-  assert.deepEqual(moved.env.editor.seen.warnings, ['Impact Tree: The checkout is at bbbbbbb, not aaaaaaa the suggestion was written on.']);
+  assert.deepEqual(moved.env.editor.seen.warnings, ['Impact Tree: The checkout is at bbbbbbb, not aaaaaaa, where GitHub places the suggestion.']);
   assert.equal(moved.doc.text, FILE_TEXT);
+});
+
+test('a suggestion GitHub moved to a later commit is checked against the lines it was written on', async () => {
+  // Written on lines 9–10 of an earlier commit; a later commit added two lines above them.
+  const moved = { originalCommitOid: ORIGINAL, originalStartLine: 9, originalLine: 10 };
+  const earlier = FILE_TEXT.replace('line 1\nline 2\n', '');
+  const same = await applySetup({ commentOver: moved, atOriginal: earlier });
+  await same.apply();
+  assert.deepEqual(same.env.editor.seen.warnings, []);
+  assert.equal(same.doc.text, FILE_TEXT.replace('line 11\nline 12\n', 'NEW\n'), 'the lines only moved, so it applies');
+  assert.deepEqual(same.env.reads, [[HEAD, 'src/a.ts'], [ORIGINAL, 'src/a.ts']]);
+
+  // A later commit changed one of those lines: the reviewer suggested against other text.
+  const changed = await applySetup({ commentOver: moved, atOriginal: earlier.replace('line 12', 'old 12') });
+  await changed.apply();
+  assert.deepEqual(changed.env.editor.seen.warnings, ['Impact Tree: Lines 11–12 of src/a.ts changed since the suggestion was written.']);
+  assert.equal(changed.doc.text, FILE_TEXT);
+
+  // The commit it was written on is not in the checkout (say, after a force-push).
+  const missing = await applySetup({ commentOver: moved });
+  await missing.apply();
+  assert.deepEqual(missing.env.editor.seen.warnings,
+    ['Impact Tree: src/a.ts could not be read at ccccccc, the commit the suggestion was written on; fetch it, or apply the suggestion on GitHub.']);
+  assert.equal(missing.doc.text, FILE_TEXT);
+
+  // GitHub gave no original lines.
+  const unknown = await applySetup({ commentOver: { originalCommitOid: null } });
+  await unknown.apply();
+  assert.match(unknown.env.editor.seen.warnings[0], /GitHub did not say which lines the suggestion was written on/);
 });
 
 test('an apply re-checks after its waits: a document edited or a comment changed meanwhile is not edited', async () => {
@@ -1190,11 +1222,13 @@ test('an apply re-checks after its waits: a document edited or a comment changed
 });
 
 test('end to end: a posted suggestion from GitHub, with its commit, is drawn with Apply suggestion', async () => {
-  const github = answeringGitHub({ threads: [rawThread(1, [rawComment(1, { body: '```suggestion\nx\n```', commit: { oid: HEAD } })])], pending: false });
+  const github = answeringGitHub({ threads: [rawThread(1, [rawComment(1, { body: '```suggestion\nx\n```', commit: { oid: HEAD },
+    originalCommit: { oid: ORIGINAL }, originalLine: 10 })])], pending: false });
   const env = await realStoreSetup(github);
   const [t] = env.threadsOn();
   assert.equal(t.comments[0].contextValue, 'hasSuggestion');
-  assert.equal(reviewDataOfStore(env.store.getState()).threads[0].comments[0].commitOid, HEAD);
+  const [c] = reviewDataOfStore(env.store.getState()).threads[0].comments;
+  assert.deepEqual([c.commitOid, c.originalCommitOid, c.originalStartLine, c.originalLine], [HEAD, ORIGINAL, null, 10]);
   await env.editor.run(COMMANDS.applySuggestion, t.comments[0]);
   assert.deepEqual(env.editor.seen.warnings, ['Impact Tree: Check out the pull request to apply a suggestion.'], 'a preview has no working tree');
   env.comments.dispose();

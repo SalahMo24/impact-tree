@@ -862,7 +862,8 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
     const head = checkout ? await readHead() : null;
     if (disposed) return false;
     const plan = applyDecision({ checkout, suggestions: parseSuggestions(found.comment.body), thread: found.thread,
-      commitOid: found.comment.commitOid, head, targetHead: target.headOid });
+      commitOid: found.comment.commitOid, head, targetHead: target.headOid,
+      origin: { commitOid: found.comment.originalCommitOid, startLine: found.comment.originalStartLine, line: found.comment.originalLine } });
     if (!plan.ok) return refuse(plan.reason);
     const commit = /** @type {string} */ (head);
     if (!readAtCommit) return refuse('suggestions cannot be applied here.');
@@ -878,13 +879,21 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
     }
     const version = document.version;
     const text = document.getText();
-    // The commit checked above, not HEAD again: the lines are compared with what the
-    // suggestion was written on, whatever the checkout does meanwhile.
+    // The commit checked above, not HEAD again, whatever the checkout does meanwhile.
+    // Two comparisons: the working file against the head (no local edit of those lines),
+    // and the head against the commit the suggestion was written on (GitHub moves a
+    // comment forward, so the lines the reviewer saw may differ from the head's).
     const atCommit = await readAtCommit(commit, plan.path);
     if (disposed) return false;
     if (atCommit === null) return refuse(`${plan.path} could not be read at ${commit.slice(0, 7)}, so its lines cannot be compared.`);
+    const origin = plan.origin.commitOid === commit ? atCommit : await readAtCommit(plan.origin.commitOid, plan.path);
+    if (disposed) return false;
+    if (origin === null) {
+      return refuse(`${plan.path} could not be read at ${plan.origin.commitOid.slice(0, 7)}, the commit the suggestion was written on; fetch it, or apply the suggestion on GitHub.`);
+    }
     const working = splitLines(text);
-    const changed = linesChanged(plan, working, splitLines(atCommit));
+    const headLines = splitLines(atCommit);
+    const changed = linesChanged(plan, working, headLines) || linesChanged(plan, headLines, splitLines(origin), plan.origin.startLine);
     if (changed) return refuse(changed);
     if (owner !== controller || forTarget !== targetKey()) return refuse('the pull request under review changed, so the suggestion was not applied.');
     const again = findComment(ids.threadId, ids.commentId);
