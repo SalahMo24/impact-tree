@@ -549,7 +549,7 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      there is no other list. Enrolled today: `src/engine/concurrency.js`,
      `src/engine/call-sites.js`, `src/engine/caller-contract.js`,
      `src/engine/cancellation.js`, `src/engine/settings.js`, `src/engine/test-reach.js`,
-     `src/github-request.js`, `src/github.js`, and the tree's provider, pure row models,
+     `src/github-request.js`, `src/github.js`, `src/github-remote.js`, and the tree's provider, pure row models,
      grouping and renderer (`src/tree-provider.js`, `src/review-tree-model.js`,
      `src/tree-row-models.js`, `src/tree-grouping.js`, `src/tree-item-renderer.js`), the
      review navigation (`src/review-navigation.js`), and the detail panel and its HTML

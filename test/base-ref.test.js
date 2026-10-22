@@ -13,7 +13,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { makeGit, resolveBase } = require('../src/engine/git');
+const { makeGit, resolveBase, resolveBaseAsync, fetchBranch, refspecFor } = require('../src/engine/git');
 
 let fail = 0;
 const check = (name, cond, extra = '') => {
@@ -81,6 +81,57 @@ console.log('\n▸ unresolvable input fails loudly');
     !!threw && /cannot resolve base revision/.test(threw), String(threw));
 }
 
-fs.rmSync(tmp, { recursive: true, force: true });
-console.log(fail ? `\n${fail} failure(s)` : '\nall base-ref checks passed');
-process.exit(fail ? 1 : 0);
+console.log('\n▸ a GitHub remote that is not named origin');
+const forkClone = path.join(tmp, 'fork-clone');
+run(tmp, ['clone', '--quiet', origin, forkClone]);
+run(forkClone, ['remote', 'rename', 'origin', 'upstream']);
+// A stale `origin` that is not the base: the user's fork, one commit behind upstream.
+const forkOrigin = path.join(tmp, 'fork-origin');
+run(tmp, ['clone', '--quiet', '--bare', forkClone, forkOrigin]);
+run(forkClone, ['remote', 'add', 'origin', forkOrigin]);
+fs.writeFileSync(path.join(origin, 'newer.txt'), 'y\n');
+run(origin, ['add', '.']);
+run(origin, ['commit', '--quiet', '-m', 'newer']);
+const upstreamTip = run(origin, ['rev-parse', 'HEAD']).trim();
+{
+  const g = makeGit(forkClone);
+  const r = resolveBase(g, 'main', { allowLocal: true, fetch: true, remote: 'upstream' });
+  check('main resolves to upstream/main', r.ref === 'upstream/main', r.ref);
+  check('fetching moved refs/remotes/upstream/main to the new tip', g.revParse('refs/remotes/upstream/main') === upstreamTip);
+  check('the note names the remote', r.notes.some((n) => /fetched upstream\/main/.test(n)), r.notes.join('; '));
+  check('origin was not fetched for it', g.revParse('refs/remotes/origin/main') !== upstreamTip);
+  const again = resolveBase(g, 'upstream/main', { allowLocal: true, remote: 'upstream' });
+  check('an explicit upstream/ prefix is stripped, not doubled', again.ref === 'upstream/main', again.ref);
+  check('the tracking refspec is the remote\'s own', refspecFor('upstream/main', 'upstream') === '+refs/heads/main:refs/remotes/upstream/main');
+  check('and origin stays the default', refspecFor('main') === '+refs/heads/main:refs/remotes/origin/main');
+  // A base written as origin/main, as the setting was before remotes were configurable,
+  // still means origin's main when the GitHub remote is upstream.
+  const explicit = resolveBase(g, 'origin/main', { allowLocal: true, fetch: true, remote: 'upstream' });
+  check('an origin/ prefix keeps origin when the GitHub remote is upstream', explicit.ref === 'origin/main' && explicit.sha === g.revParse('refs/remotes/origin/main') && explicit.sha !== upstreamTip, `${explicit.ref} ${explicit.notes.join('; ')}`);
+  check('and fetches from origin, not refs/heads/origin/main on upstream', explicit.notes.some((n) => /fetched origin\/main/.test(n)), explicit.notes.join('; '));
+  let missing = null;
+  try { resolveBase(g, 'nosuchremote/main', { remote: 'upstream' }); } catch (e) { missing = e.message; }
+  check('a prefix that is not a remote is a branch name on the GitHub remote', /upstream\/nosuchremote\/main/.test(missing || ''), missing);
+}
+{
+  const g = makeGit(forkClone);
+  run(origin, ['commit', '--quiet', '--allow-empty', '-m', 'even newer']);
+  const tip = run(origin, ['rev-parse', 'HEAD']).trim();
+  resolveBaseAsync(g, 'main', { fetch: true, remote: 'upstream' }).then((r) => {
+    check('the async resolve fetches from the named remote', r.sha === tip && r.ref === 'upstream/main', `${r.ref} ${r.sha.slice(0, 8)}`);
+    return fetchBranch(g, 'main', { remote: 'nonexistent' });
+  }).then((f) => {
+    check('a fetch from a missing remote reports it by name, without throwing', !f.ok && /nonexistent\/main/.test(f.note), f.note);
+    for (const bad of ['-x', 'a b', '']) {
+      let threw = null;
+      try { resolveBase(g, 'main', { remote: bad }); } catch (e) { threw = e; }
+      check(`remote ${JSON.stringify(bad)} is refused`, threw instanceof RangeError);
+    }
+    return resolveBaseAsync(g, 'main', { fetch: true, remote: '--upload-pack=x' }).then(() => null, (e) => e);
+  }).then((e) => {
+    check('the async resolve refuses an option-like remote before running git', e instanceof RangeError);
+    fs.rmSync(tmp, { recursive: true, force: true });
+    console.log(fail ? `\n${fail} failure(s)` : '\nall base-ref checks passed');
+    process.exit(fail ? 1 : 0);
+  });
+}

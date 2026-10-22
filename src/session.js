@@ -80,6 +80,10 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     // The PR review store (src/pr-review-store.js). Set and disposed by extension.js,
     // which owns it; kept here only so later consumers can reach it.
     reviewStore: null,
+    // The git remote the base branch is read from, or the problem that leaves none.
+    // extension.js replaces it with the chosen GitHub remote (github-remote.js baseRemoteOf).
+    /** @type {() => ({ name: string, problem: null } | { name: null, problem: string })} */
+    baseRemote: () => ({ name: 'origin', problem: null }),
   };
 
   // The one lifecycle record. `run` is the current analysis's private record and
@@ -486,6 +490,8 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     const repo = repoRoot();
     const cfg = vscode.workspace.getConfiguration('impactTree');
     const base = source.kind === 'checkout' ? source.pr.baseRef : cfg.get('baseBranch', 'main');
+    const baseRemote = session.baseRemote();
+    if (baseRemote.name === null) throw new Error(`Cannot resolve the base branch: ${baseRemote.problem}`);
     if (!retry) {
       session.resolver.clear();
       session.localResolver = null;
@@ -507,7 +513,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
         if (p2.phase === 'component') report(`analysing ${p2.component}…`);
         else if (p2.total) report(`${p2.component}: resolving callers ${p2.done}/${p2.total}`);
       },
-      mode, base, fetch: !retry && cfg.get('fetchBase', true),
+      mode, base, remote: baseRemote.name, fetch: !retry && cfg.get('fetchBase', true),
       checkpoint: session.state && session.state.checkpoint,
       objectDirs: getObjectDirs(),
       tempDir: getTempDir(),

@@ -14,10 +14,11 @@ if (flag('help')) {
   --repo <path>        repo root (default: cwd)
   --mode <m>           ${Object.keys(MODES).join(' | ')}   (default: pr = Branch vs base)
 ${Object.entries(MODES).map(([k, v]) => `                         ${k.padEnd(11)} ${v.label}: ${v.desc}`).join('\n')}
-  --base <ref>         base branch for pr/branch modes (default: main; resolved to origin/<ref>)
+  --base <ref>         base branch for pr/branch modes (default: main; resolved to <remote>/<ref>)
+  --remote <name>      git remote the base branch lives on (default: origin)
   --checkpoint <sha>   base for checkpoint mode
   --fetch              git fetch the base before resolving
-  --allow-local-base   permit a local base ref when origin/<ref> is missing (unsafe)
+  --allow-local-base   permit a local base ref when <remote>/<ref> is missing (unsafe)
   --depth <n>          upward closure depth for blast radius / test reach (default ${DEFAULTS.depth})
   --roots <n>          roots that get a blast radius and a tree (default 6)
   --tree-depth <n>     rendered tree depth (default ${DEFAULTS.treeDepth})
@@ -33,7 +34,7 @@ const t0 = Date.now();
 let result;
 try {
   result = await analyze(repo, {
-    mode: arg('mode', 'pr'), base: arg('base', 'main'), checkpoint: arg('checkpoint'),
+    mode: arg('mode', 'pr'), base: arg('base', 'main'), remote: arg('remote', 'origin'), checkpoint: arg('checkpoint'),
     fetch: flag('fetch'), allowLocalBase: flag('allow-local-base'),
     depth: Number(arg('depth', DEFAULTS.depth)), treeDepth: Number(arg('tree-depth', DEFAULTS.treeDepth)),
     blastDepth: Number(arg('blast-depth', 1)), rankedRoots,

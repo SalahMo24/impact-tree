@@ -350,6 +350,8 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
       headSha: p.head && p.head.sha,
       headRepo: p.head && p.head.repo && p.head.repo.full_name,
       baseRef: p.base && p.base.ref,
+      // The repository the PR is opened against: a review stays bound to it.
+      baseRepo: p.base && p.base.repo && p.base.repo.full_name,
       baseSha: p.base && p.base.sha,
       draft: !!p.draft,
       url: p.html_url,

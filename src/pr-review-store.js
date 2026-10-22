@@ -16,6 +16,7 @@ const assert = require('node:assert/strict');
 const { loadPullRequestReview } = require('./pr-review-data');
 const { GitHubResponseError } = require('./github-request');
 const { throwIfCancelled } = require('./engine/cancellation');
+const { otherRepositoryProblem } = require('./github-remote');
 
 const ENDPOINT = '/graphql';
 
@@ -165,15 +166,20 @@ function validateTarget(raw) {
  * a checkout the commit it checked out. Anything else (local, agent) has none. The slug
  * is read only for a PR source, since reading it runs git.
  * @param {unknown} source The session's `state.source`.
- * @param {() => { owner: string, repo: string }|null} repoSlug origin's owner and name.
+ * @param {() => { owner: string, repo: string }|null} repoSlug The GitHub remote's owner and name.
+ * @param {() => string|null} [problem] Why there is no GitHub remote, when `repoSlug` gives none.
  * @returns {unknown} A raw target for `validateTarget` (which the store applies), or null.
- * @throws {Error} A PR review in a repository whose origin is not on GitHub.
+ * @throws {Error} A PR review in a repository with no GitHub remote to read it from.
  */
-function reviewTargetOf(source, repoSlug) {
+function reviewTargetOf(source, repoSlug, problem = () => null) {
   if (!isObject(source) || (source.kind !== 'pr' && source.kind !== 'checkout')) return null;
   const pr = isObject(source.pr) ? source.pr : {};
   const slug = repoSlug();
-  if (!slug) throw new Error('the repository\'s origin is not a GitHub repository, so its review threads cannot be loaded');
+  if (!slug) throw new Error(`${problem() || 'The repository has no GitHub remote.'} Its review threads cannot be loaded.`);
+  // The GitHub remote can change while a review is open (impactTree.githubRemote). The
+  // same number on the other repository is another pull request, so never load it.
+  const other = otherRepositoryProblem(pr, slug);
+  if (other) throw new Error(other);
   return { owner: slug.owner, name: slug.repo, number: pr.number, headOid: source.kind === 'checkout' ? source.sha : pr.headSha };
 }
 

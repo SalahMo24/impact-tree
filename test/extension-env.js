@@ -156,14 +156,15 @@ function fakeWebviewPanel(viewType, title, showOptions, options = {}) {
 // async git calls (fetch, rev-parse of FETCH_HEAD, checkout), so the worktree itself
 // never moves. `changedSource` puts a committed TypeScript change on a feature branch,
 // which is what readiness needs before it will warm the language server.
-function createEnv({ prewarm = false, changedSource = false, memento = new Map(), signIn = null, graphql = null, settings = {} } = {}) {
+function createEnv({ prewarm = false, changedSource = false, memento = new Map(), signIn = null, graphql = null, settings = {},
+  remotes = [['origin', 'https://github.com/example/repo.git']], authSession = null, fetch = null } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-ext-commands-'));
   const sh = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
   sh('init', '-q', '--initial-branch=main'); sh('config', 'user.name', 'Test'); sh('config', 'user.email', 'test@example.com');
   fs.writeFileSync(path.join(dir, 'README.md'), 'test');
   fs.writeFileSync(path.join(dir, 'tsconfig.json'), '{"include":["*.ts"]}');
   sh('add', '.'); sh('commit', '-qm', 'base');
-  sh('remote', 'add', 'origin', 'https://github.com/example/repo.git');
+  for (const [name, url] of remotes) sh('remote', 'add', name, url);
   if (changedSource) {
     sh('checkout', '-qb', 'feature');
     fs.writeFileSync(path.join(dir, 'a.ts'), 'export function warm() { return 1; }\n');
@@ -179,10 +180,11 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   // `executed` the commands run through `executeCommand`, with their arguments.
   // `statusBars` every status bar item created, in order (`statusBar` is the first, the
   // review progress); `panels` every webview panel created, in order.
-  const seen = { warnings: [], errors: [], infos: [], log: [], status: [], modals: 0, analyze: [], remote: [],
+  const seen = { warnings: [], errors: [], infos: [], log: [], status: [], modals: 0, analyze: [], remote: [], remoteSlugs: [], analyzeRemotes: [],
     signals: [], progress: [], callerQueries: [], warmUps: [], analyzeOptions: [], contexts: {}, revealed: [], statusBar: null, statusBars: [], panels: [], executed: [],
     focus: 'editor', focusedRow: null, editorSpaces: 0 };
-  const git = { fetches: [], checkouts: [], calls: [] };
+  // `fetchRemotes`: the remote each `fetch` named, in step with `fetches`.
+  const git = { fetches: [], fetchRemotes: [], checkouts: [], calls: [] };
   const holds = { fetch: gates(), modal: gates(), remote: gates(), analyze: gates(), callers: gates(), warmUp: gates() };
   const failures = new Map();
   const hooks = { beforeCheckout: null, headOf: shaFor, remoteResult: (pr) => previewResult(pr), localResult: (o) => localResult(o),
@@ -193,7 +195,9 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   const comments = createCommentsApi();
 
   const disposable = () => ({ dispose() {} });
-  const cfg = { get: (name, fallback) => ({ prewarm, analyseOnStartup: false, fetchBase: false, ...settings })[name] ?? fallback,
+  const liveSettings = { ...settings };
+  const configListeners = [];
+  const cfg = { get: (name, fallback) => ({ prewarm, analyseOnStartup: false, fetchBase: false, ...liveSettings })[name] ?? fallback,
     update: async () => {} };
   const vscode = { ...baseStub, ConfigurationTarget: { Workspace: 2 }, ProgressLocation: { SourceControl: 1, Window: 10, Notification: 15 }, ViewColumn: { Active: -1, Beside: -2, One: 1 },
     Position: class { constructor(line, character) { this.line = line; this.character = character; } },
@@ -209,7 +213,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       }
     },
     languages: { registerCodeLensProvider: (selector, provider) => { captured.lenses = { selector, provider }; return disposable(); } },
-    authentication: { getSession: async () => null },
+    authentication: { getSession: async () => authSession },
     window: {
       createOutputChannel: () => ({ appendLine: (m) => seen.log.push(m), dispose() {}, show() {} }),
       registerFileDecorationProvider: (provider) => { captured.decorations = provider; return disposable(); },
@@ -272,6 +276,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     env: { openExternal: async () => {} },
     comments: comments.api,
     workspace: { workspaceFolders: [{ uri: baseStub.Uri.file(dir) }], getConfiguration: () => cfg, onDidChangeWorkspaceFolders: disposable,
+      onDidChangeConfiguration: (listener) => { configListeners.push(listener); return disposable(); },
       registerTextDocumentContentProvider: disposable,
       textDocuments: [], onDidOpenTextDocument: disposable, onDidCloseTextDocument: disposable,
       createFileSystemWatcher: () => ({ onDidChange: disposable, onDidCreate: disposable, onDidDelete: disposable, dispose() {} }) },
@@ -281,6 +286,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     git.calls.push(args);
     const cmd = args[0];
     if (cmd === 'fetch') {
+      git.fetchRemotes.push(args[1]);
       git.fetches.push(Number(/pull\/(\d+)\/head/.exec(args.join(' '))[1]));
       await holds.fetch.enter(() => undefined);
       if (failures.has('fetch')) throw failures.get('fetch');
@@ -309,8 +315,9 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     let resolved = null;
     try { resolved = Module._resolveFilename(name, parent); } catch { /* not a file module */ }
     if (resolved === path.join(SRC, 'engine/analyze-remote.js')) {
-      return { analyzeRemote: async ({ pr, signal, onPrepared }) => {
+      return { analyzeRemote: async ({ pr, slug, signal, onPrepared }) => {
         seen.remote.push(pr.number);
+        seen.remoteSlugs.push(slug);
         seen.signals.push(signal);
         if (hooks.remotePrepared) await onPrepared(hooks.remotePrepared(pr));
         await holds.remote.enter(() => undefined);
@@ -320,6 +327,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     if (resolved === path.join(SRC, 'engine/analyze.js')) {
       return { ...originalLoad.call(this, name, parent, ...rest), analyze: async (_repo, o) => {
         seen.analyze.push({ mode: o.mode, base: o.base });
+        seen.analyzeRemotes.push(o.remote);
         seen.analyzeOptions.push({ fetch: o.fetch, early: typeof o.onPrepared === 'function' });
         seen.signals.push(o.signal);
         if (hooks.localPrepared) await o.onPrepared(hooks.localPrepared(o));
@@ -346,9 +354,9 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     // The silent sign-in at startup, replaced when a test needs it to fail in a way the real
     // one cannot; GitHub's GraphQL endpoint, replaced when a test answers it (the review store
     // reads and writes through it).
-    if ((signIn || graphql) && resolved === path.join(SRC, 'github.js')) {
+    if ((signIn || graphql || fetch) && resolved === path.join(SRC, 'github.js')) {
       const real = originalLoad.call(this, name, parent, ...rest);
-      return { ...real, createGitHub: (...args) => ({ ...real.createGitHub(...args), ...(signIn ? { signIn } : {}), ...(graphql ? { graphql } : {}) }) };
+      return { ...real, createGitHub: (vs, o) => ({ ...real.createGitHub(vs, fetch ? { ...o, fetch } : o), ...(signIn ? { signIn } : {}), ...(graphql ? { graphql } : {}) }) };
     }
     if (resolved === path.join(SRC, 'engine/git.js')) {
       const real = originalLoad.call(this, name, parent, ...rest);
@@ -367,6 +375,11 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
 
   const run = (name, ...args) => commands.get(name)(...args);
   return {
+    /** The user changes an impactTree setting; the extension is told as the editor would. */
+    changeSetting(name, value) {
+      liveSettings[name] = value;
+      for (const listener of configListeners) listener({ affectsConfiguration: (key) => key === `impactTree.${name}` || key === 'impactTree' });
+    },
     seen, git, holds, hooks, vscode, dir, memento, run, comments,
     /** The comment controller the extension created with this id. */
     commentController: (id) => comments.controllers.find((c) => c.id === id),
