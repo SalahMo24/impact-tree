@@ -408,11 +408,15 @@ test('mergeStateOf: blocked lists failed then pending required checks, then the 
   assert.deepEqual(blocked({ reviewDecision: 'CHANGES_REQUESTED' }, readyChecks(items)), { tone: 'blocked', headline: 'Merging is blocked:', retry: false,
     reasons: ['Required check failed-req failed', 'Required check pending-req has not finished', 'Changes were requested'] });
   assert.deepEqual(blocked({ reviewDecision: 'REVIEW_REQUIRED' }, readyChecks([])).reasons, ['An approving review is required']);
-  // Checks that could not be read, or only partly, are said so.
-  assert.deepEqual(blocked({ reviewDecision: 'REVIEW_REQUIRED' }, { kind: 'failed', error: new Error('x') }).reasons,
-    ['An approving review is required', 'The required checks could not all be read']);
+  // Checks that could not be read, or only partly, are said so when nothing read explains the block.
+  assert.deepEqual(blocked({}, { kind: 'failed', error: new Error('x') }).reasons, ['The required checks could not all be read']);
   assert.deepEqual(blocked({}, readyChecks([check('a', 'passed')], 'only the first 1 of 9 checks were loaded', 9)).reasons,
     ['The required checks could not all be read']);
+  // When the loaded checks or the review decision explain it, the unread checks add nothing.
+  assert.deepEqual(blocked({ reviewDecision: 'REVIEW_REQUIRED' }, { kind: 'failed', error: new Error('x') }).reasons,
+    ['An approving review is required']);
+  assert.deepEqual(blocked({}, readyChecks([check('r', 'failed', { required: true })], 'only the first 1 of 9 checks were loaded', 9)).reasons,
+    ['Required check r failed']);
   // No reason at all is not "clean": GitHub does not say.
   assert.deepEqual(blocked({}, { kind: 'none' }).reasons, ['Branch protection blocks the merge; GitHub does not say why here.']);
   assert.deepEqual(blocked({ reviewDecision: 'APPROVED' }, { kind: 'none' }).reasons, ['Branch protection blocks the merge; GitHub does not say why here.']);

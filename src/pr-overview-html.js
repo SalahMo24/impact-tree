@@ -209,8 +209,9 @@ function mergeStateOf(pr, overview) {
     for (const c of required) if (c.state === 'pending') reasons.push(`Required check ${c.name} has not finished`);
     if (merge.reviewDecision === 'CHANGES_REQUESTED') reasons.push('Changes were requested');
     if (merge.reviewDecision === 'REVIEW_REQUIRED') reasons.push('An approving review is required');
-    if (checks.kind === 'failed' || (checks.kind === 'ready' && checks.incomplete !== null)) reasons.push('The required checks could not all be read');
-    if (!reasons.length) reasons.push('Branch protection blocks the merge; GitHub does not say why here.');
+    // Checks that were not read can only matter when nothing read explains the block.
+    const unread = checks.kind === 'failed' || (checks.kind === 'ready' && checks.incomplete !== null);
+    if (!reasons.length) reasons.push(unread ? 'The required checks could not all be read' : 'Branch protection blocks the merge; GitHub does not say why here.');
     result = { tone: 'blocked', headline: 'Merging is blocked:', reasons, retry: false };
   } else if (merge.mergeStateStatus === 'BEHIND') {
     result = { tone: 'blocked', headline: `This branch is behind ${base} and must be updated first.`, reasons: [], retry: false };
