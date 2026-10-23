@@ -161,6 +161,7 @@ function createTreeProvider(vscode, {
       checkedOf,
       threadCountsOf,
       viewedOf,
+      layout: /** @type {'flat'|'tree'} */ (getLayout() === 'tree' ? 'tree' : 'flat'),
     };
   };
   // file:///path#offset — unique per symbol so decorations do not collide, while the

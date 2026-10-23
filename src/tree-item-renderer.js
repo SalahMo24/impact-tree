@@ -33,10 +33,13 @@ const { pathTreeMarkdown } = require('./path-tree');
  *   (no pull request review, or its threads are not loaded): then nothing is shown.
  * - `viewedOf(relPath, allTicked)`: where a file stands with GitHub's "viewed" mark, see
  *   `ViewedNote`; absent for a view that has no GitHub review.
+ * - `layout`: 'tree' when file rows sit under folder rows, so a file row does not repeat
+ *   its folder; 'flat' (the default) names the folder on the row.
  * @typedef {{
  *   rowDetail: string, iconMode: string, checkedOf: (row: TreeRow) => boolean|null,
  *   threadCountsOf?: (row: TreeRow) => import('./review-threads').ThreadCounts|null,
  *   viewedOf?: (relPath: string, allTicked: boolean) => ViewedNote|null,
+ *   layout?: 'flat'|'tree',
  * }} TreeView
  */
 
@@ -74,6 +77,15 @@ function viewedNote(view, relPath, allTicked) {
   const note = view.viewedOf ? view.viewedOf(relPath, allTicked) : null;
   return note ? { note, text: VIEWED_TEXT[note], tooltip: VIEWED_TOOLTIP[note] } : null;
 }
+
+/**
+ * The folder a file row names at its end: its last folder in the flat layout, nothing in
+ * the tree layout, where the folder row above it says so.
+ * @param {TreeRow} row
+ * @param {TreeView} view
+ * @returns {string|null}
+ */
+const folderNote = (row, view) => (view.layout === 'tree' ? null : lastFolder(row.relPath));
 
 /**
  * @param {string} label
@@ -177,7 +189,7 @@ function renderReviewFileItem(vscode, n, view) {
     ...threadParts(n, view),
     `${rows.length - left.length}/${rows.length}`,
     viewed && viewed.text,
-    lastFolder(n.relPath),
+    folderNote(n, view),
   ].filter(Boolean).join('  ·  ');
   item.tooltip = new vscode.MarkdownString([
     ...pathTreeMarkdown(n.relPath), ...(n.status ? ['', `_${n.status}_`] : []), '',
@@ -193,8 +205,8 @@ function renderReviewFileItem(vscode, n, view) {
 
 /**
  * A folder of the tree layout. Its checkbox is ticked when every file under it is; its
- * description counts the rows under it that still need attention, how many are done and
- * how many files it holds, so a closed folder reads like the files it hides.
+ * description is the count of rows under it that still need attention, nothing when
+ * none; how many are done and how many files it holds are in the tooltip.
  * @param {any} vscode
  * @param {TreeRow} n A `folder` row.
  * @param {TreeView} view
@@ -208,11 +220,9 @@ function renderFolderItem(vscode, n, view) {
   const left = rows.filter((r) => !view.checkedOf(r));
   const attention = left.filter(needsAttention);
   const files = `${n.fileCount} file${n.fileCount === 1 ? '' : 's'}`;
-  item.description = [
-    attention.length ? attentionCountText(attention.length) : null,
-    `${rows.length - left.length}/${rows.length}`,
-    files,
-  ].filter(Boolean).join('  ·  ');
+  // Only the attention count on the row, so a chain of nested folders stays readable as
+  // a path; progress and size are in the tooltip.
+  item.description = attention.length ? attentionCountText(attention.length) : '';
   item.tooltip = new vscode.MarkdownString([
     `**${n.relPath}/**`, '',
     `${files}, ${rows.length} change${rows.length === 1 ? '' : 's'}, ${attentionCountText(attention.length)}, ${left.length} left to review`,
@@ -241,7 +251,7 @@ function renderFileItem(vscode, n, view) {
     item.iconPath = vscode.ThemeIcon.File;
   }
   const viewed = viewedNote(view, n.relPath, view.checkedOf(n) === true);
-  item.description = [...threadParts(n, view), 'no call graph', viewed && viewed.text, lastFolder(n.relPath)].filter(Boolean).join('  ·  ');
+  item.description = [...threadParts(n, view), 'no call graph', viewed && viewed.text, folderNote(n, view)].filter(Boolean).join('  ·  ');
   item.tooltip = new vscode.MarkdownString([
     ...pathTreeMarkdown(n.relPath), '', `_${n.status}_`, '',
     '_No call graph (tests, config, docs): read the diff and mark the file reviewed._',

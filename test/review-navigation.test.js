@@ -267,7 +267,7 @@ test('package.json contributes the commands, the keybinding and the palette gate
   assert.equal(contributes.commands.find((c) => c.command === 'impactTree.previousUnreviewed').title, 'Impact Tree: Go to previous unreviewed change');
   assert.equal(contributes.commands.find((c) => c.command === 'impactTree.nextUnreviewed').title, 'Impact Tree: Go to next unreviewed change');
   assert.equal(env.seen.statusBar.tooltip, 'Go to the next unreviewed change');
-  // the title bar keeps refresh, the three filters, next, the layout toggle and (for a PR
+  // the title bar keeps refresh, the layout toggle, the three filters, next and (for a PR
   // review only) "Submit review…"; the rest is in the overflow menu
   const changes = contributes.menus['view/title'].filter((m) => m.when.startsWith('view == impactTree.changes'));
   const groupOf = (id) => changes.filter((m) => m.command === id).map((m) => m.group);
@@ -285,7 +285,8 @@ test('package.json contributes the commands, the keybinding and the palette gate
   const order = (id) => Number(changes.find((m) => m.command === id).group.split('@')[1]);
   assert.ok(order('impactTree.previousUnreviewed') < order('impactTree.nextUnreviewed'), 'previous is left of next');
   assert.ok(order('impactTree.showLegend') > order('impactTree.submitReview'), 'the legend is the rightmost icon');
-  assert.ok(order('impactTree.viewAsTree') > order('impactTree.nextUnreviewed') && order('impactTree.viewAsTree') < order('impactTree.showLegend'), 'the layout toggle sits after next, before the legend');
+  assert.ok(order('impactTree.refresh') < order('impactTree.viewAsTree') && order('impactTree.viewAsTree') < order('impactTree.filterAttention'), 'the layout toggle sits right after refresh, as in the GitHub Pull Requests view');
+  assert.equal(order('impactTree.viewAsList'), order('impactTree.viewAsTree'), 'the two layout icons take the same slot');
   assert.ok(order('impactTree.showLegend') > order('impactTree.sendFeedback'), 'the legend stays right of Send feedback');
   assert.deepEqual(['selectMode', 'setCheckpoint', 'showLog', 'clearReviewed', 'cleanUpStoredData'].map((c) => groupOf(`impactTree.${c}`)[0]),
     ['1_mode@1', '1_mode@2', '2_help@2', '3_progress@1', '3_progress@2']);

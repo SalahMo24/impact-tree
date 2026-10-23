@@ -444,24 +444,26 @@ test('in the tree layout the root holds folders and root files, ranked, with the
   assert.equal(provider.getParent(src), undefined);
   const [c] = await provider.getChildren(children[2]);
   assert.equal(provider.getParent(c), children[2]);
-  assert.equal(item(children[2]).description, '0/1  ·  1 file');
+  assert.equal(item(children[2]).description, '', 'a calm folder says nothing');
+  assert.equal(item(children[0]).description, '2 need attention  ·  0/4', 'a file under a folder does not repeat the folder');
 });
 
 test('a folder\'s checkbox ticks every counting row under it, and reads ticked only when all are', async () => {
   const { provider, review, item } = treeView(treeResult());
   const [src] = await provider.getChildren();
   assert.equal(item(src).checkboxState, Unchecked);
-  assert.equal(item(src).description, '2 need attention  ·  0/6  ·  3 files', 'the stale change and the deleted symbol');
+  assert.equal(item(src).description, '2 need attention', 'the stale change and the deleted symbol');
+  assert.match(item(src).tooltip.value, /3 files, 6 changes, 2 need attention, 6 left to review/);
   provider.setChecked(src, true);
   assert.equal(review.size(), 6, 'the four rows of a.ts, b.ts\'s one and engine/c.ts\'s one');
   assert.equal(item(src).checkboxState, Checked);
-  assert.equal(item(src).description, '6/6  ·  3 files');
+  assert.equal(item(src).description, '');
   const [a] = await provider.getChildren(src);
   const [bad] = await provider.getChildren(a);
   provider.setChecked(bad, false);
   assert.equal(item(src).checkboxState, Unchecked, 'one unticked row unticks the folder');
   assert.equal(item(a).checkboxState, Unchecked);
-  assert.equal(item(src).description, '1 needs attention  ·  5/6  ·  3 files');
+  assert.equal(item(src).description, '1 needs attention');
 });
 
 test('a tick repaints the root folder of the file, not the root, while the filter keeps the same files', async () => {

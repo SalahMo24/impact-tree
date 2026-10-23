@@ -429,57 +429,57 @@
         {
           "command": "impactTree.refresh",
           "when": "view == impactTree.changes",
-          "group": "navigation@1"
+          "group": "navigation@0"
         },
         {
           "command": "impactTree.filterAttention",
           "when": "view == impactTree.changes && impactTree.filter != attention",
-          "group": "navigation@2"
+          "group": "navigation@3"
         },
         {
           "command": "impactTree.filterAttentionOn",
           "when": "view == impactTree.changes && impactTree.filter == attention",
-          "group": "navigation@2"
+          "group": "navigation@3"
         },
         {
           "command": "impactTree.filterUnreviewed",
           "when": "view == impactTree.changes && impactTree.filter != unreviewed",
-          "group": "navigation@3"
+          "group": "navigation@4"
         },
         {
           "command": "impactTree.filterUnreviewedOn",
           "when": "view == impactTree.changes && impactTree.filter == unreviewed",
-          "group": "navigation@3"
+          "group": "navigation@4"
         },
         {
           "command": "impactTree.filterThreads",
           "when": "view == impactTree.changes && impactTree.filter != threads && impactTree.hasReviewThreads",
-          "group": "navigation@3"
+          "group": "navigation@4"
         },
         {
           "command": "impactTree.filterThreadsOn",
           "when": "view == impactTree.changes && impactTree.filter == threads",
-          "group": "navigation@3"
+          "group": "navigation@4"
         },
         {
           "command": "impactTree.previousUnreviewed",
           "when": "view == impactTree.changes",
-          "group": "navigation@4"
+          "group": "navigation@5"
         },
         {
           "command": "impactTree.nextUnreviewed",
           "when": "view == impactTree.changes",
-          "group": "navigation@5"
+          "group": "navigation@6"
         },
         {
           "command": "impactTree.viewAsTree",
           "when": "view == impactTree.changes && impactTree.fileListLayout != tree",
-          "group": "navigation@8"
+          "group": "navigation@1"
         },
         {
           "command": "impactTree.viewAsList",
           "when": "view == impactTree.changes && impactTree.fileListLayout == tree",
-          "group": "navigation@8"
+          "group": "navigation@1"
         },
         {
           "command": "impactTree.selectMode",
@@ -509,18 +509,18 @@
         {
           "command": "impactTree.submitReview",
           "when": "view == impactTree.changes && impactTree.hasPullRequestReview && !impactTree.pullRequestReviewLoading",
-          "group": "navigation@6"
+          "group": "navigation@7"
         },
         {
           "command": "impactTree.submitReviewUnavailable",
           "when": "view == impactTree.changes && impactTree.hasPullRequestReview && impactTree.pullRequestReviewLoading",
-          "group": "navigation@6"
+          "group": "navigation@7"
         },
         {
           "command": "impactTree.sendFeedback",
           "alt": "impactTree.sendFeedbackTo",
           "when": "view == impactTree.changes && impactTree.hasFeedbackDrafts",
-          "group": "navigation@6"
+          "group": "navigation@7"
         },
         {
           "command": "impactTree.showLegend",
