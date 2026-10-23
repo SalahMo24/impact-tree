@@ -148,14 +148,19 @@ server answers, while the review stays open; the view says so. Refresh asks agai
 See [the coding style guide](docs/CODING_STYLE.md) for implementation requirements,
 their rationale, examples, and verification expectations.
 
-The suite analyses a real repository; point it at one:
+`npm test` is self-contained: the stages that analyse a repository run against a small
+TypeScript monorepo that `test/fixture-repo.js` builds in a temporary directory, with a
+branch that changes signatures, bodies, a `.tsx` component and a README. To aim those
+stages at a real repository instead:
 
 ```bash
 IMPACT_TREE_TARGET_REPO=/path/to/repo npm test
 ```
 
-Recorded fixtures embed real paths and symbol names from whatever repo they were captured
-against, so they are gitignored. Regenerate locally with `npm run record`.
+Against the built-in fixture, or with `CI` set, a stage that finds nothing to check fails
+rather than skipping. Recorded fixtures embed real paths and symbol names from whatever
+repo they were captured against, so they are gitignored. Regenerate locally with
+`npm run record`.
 
 ## Limitations
 

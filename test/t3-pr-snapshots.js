@@ -2,7 +2,9 @@
 const fs = require('fs'), path = require('path'), assert = require('assert/strict'), { execFileSync } = require('child_process');
 // External checks use pinned real PR snapshots, independent of synthetic fixtures.
 // Requires an existing T3 Code clone with these commits and installed dependencies.
-const home = path.resolve(__dirname, '..'), source = require('./target-repo')();
+const targetRepo = require('./target-repo');
+if (!targetRepo.isExternal()) { console.error('IMPACT_TREE_TARGET_REPO must point at a clone of pingdotgg/t3code: these snapshots are of its pull requests.'); process.exit(1); }
+const home = path.resolve(__dirname, '..'), source = targetRepo();
 const repo = fs.realpathSync(fs.mkdtempSync(path.join(require('os').tmpdir(), 'impact-t3-prs-')));
 let missing = 0;
 const { analyze } = require(home + '/src/engine/analyze'), { analyzeRemote } = require(home + '/src/engine/analyze-remote'), { makeGit } = require(home + '/src/engine/git'), { changedFiles } = require(home + '/src/engine/diff');

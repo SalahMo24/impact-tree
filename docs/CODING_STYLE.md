@@ -544,7 +544,7 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
    CI. Broaden coverage as modules are brought into compliance.
    - Exists: `npm run lint` (ESLint flat config), `npm run typecheck` (`tsc` over
      `jsconfig.json`, strict, `checkJs` off), and `.github/workflows/ci.yml`, which runs
-     both plus `npm test` against a pinned `pingdotgg/t3code` commit.
+     both plus `npm test` against the synthetic target `test/fixture-repo.js` builds.
    - A file is enrolled in both checks by putting `// @ts-check` on its first line;
      there is no other list. Enrolled today: `src/engine/concurrency.js`,
      `src/engine/call-sites.js`, `src/engine/caller-contract.js`,
