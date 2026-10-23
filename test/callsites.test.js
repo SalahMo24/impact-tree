@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 // Call-site ranges drive navigation: clicking a caller must land on the line that calls
-// the changed symbol, not on the caller's own declaration. Verified against whatever
-// repo IMPACT_TREE_TARGET_REPO points at, so the suite carries no fixed codebase.
+// the changed symbol, not on the caller's own declaration. Verified against the target
+// repo (the built-in fixture, or whatever IMPACT_TREE_TARGET_REPO points at), so the
+// suite carries no fixed codebase.
 const path = require('path');
 const fs = require('fs');
 const targetRepo = require('./target-repo');
@@ -21,9 +22,8 @@ const check = (n, ok, extra = '') => { console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${
 
   const withCallers = r.allChanged.filter((c) => (c.callers || []).some((x) => (x.callSites || []).length));
   if (!withCallers.length) {
-    console.log('  skip  no changed symbol in this target has a resolvable caller');
-    console.log('        (point IMPACT_TREE_TARGET_REPO at a repo with a non-empty diff)');
-    process.exit(0);
+    targetRepo.skipOrFail('call-site', ['no changed symbol in this target has a resolvable caller',
+      '(point IMPACT_TREE_TARGET_REPO at a repo with a non-empty diff, or unset it for the built-in fixture)']);
   }
   check('found changed symbols with callers', true, `${withCallers.length} of ${r.allChanged.length}`);
 

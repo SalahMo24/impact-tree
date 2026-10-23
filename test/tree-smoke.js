@@ -40,7 +40,8 @@ const vscodeStub = {
   },
 };
 
-const repo = require('./target-repo')();
+const targetRepo = require('./target-repo');
+const repo = targetRepo();
 let fail = 0;
 const check = (name, cond, extra = '') => {
   console.log(`  ${cond ? 'ok  ' : 'FAIL'} ${name}${extra ? ' — ' + extra : ''}`);
@@ -54,12 +55,11 @@ const check = (name, cond, extra = '') => {
 
   const top = result.findings[0];
   if (!top) {
-    // An empty diff is a legitimate state of the target repo, not a failing assertion.
-    // Crashing here once hid a real regression behind a TypeError.
-    console.log(`  skip  target repo has no findings against '${process.env.IMPACT_TREE_BASE || 'main'}'`);
-    console.log('        (check out a branch with changes, or set IMPACT_TREE_BASE)');
-    console.log('\ntree checks did NOT run');
-    process.exit(0);
+    // An empty diff is a legitimate state of a hand-picked target repo, not a failing
+    // assertion; crashing here once hid a real regression behind a TypeError. The
+    // built-in fixture always has findings, so there it is a failure.
+    targetRepo.skipOrFail('tree', [`target repo has no findings against '${process.env.IMPACT_TREE_BASE || 'main'}'`,
+      '(check out a branch with changes, or set IMPACT_TREE_BASE)']);
   }
   // Route each lazy query to the TS project of the file it is asked about.
   const { loadTypeScript } = require('../src/engine/analyze');
@@ -191,10 +191,12 @@ const check = (name, cond, extra = '') => {
   check('legend distinguishes call-updated from changed-elsewhere',
     LEGEND.some(([, label, desc]) => /callers updated/i.test(`${label} ${desc}`)) && LEGEND.some(([, label, desc]) => /not on the call line/i.test(`${label} ${desc}`)));
   const summary = provider.summarize();
-  // `<mode> mode · ⛔ <attention> · <left> of <total> left` (41c383e); the numbers must be the counts.
+  // `<what is reviewed> · <n> need attention · <left> of <total> left` (P1 vocabulary); the
+  // words come from the model, and the numbers must be the counts.
   const counts = provider.reviewCounts();
+  const { MODE_LABELS, attentionCountText } = require('../src/tree-row-models');
   check('the summary is the view message',
-    summary.message === `${result.mode} mode · ⛔ ${counts.attention} · ${counts.left} of ${counts.total} left`, String(summary.message));
+    summary.message === `${MODE_LABELS[result.mode]} · ${attentionCountText(counts.attention)} · ${counts.left} of ${counts.total} left`, String(summary.message));
   check('the summary counts every counting row', counts.total === fileRows.length - graphFiles.length + graphFiles.reduce((n, f) => n + f.rows.length, 0), `${counts.total}`);
 
   console.log('▸ decorations (git badge + severity colour)');
@@ -250,8 +252,16 @@ const check = (name, cond, extra = '') => {
   // The default icon mode is 'symbol' (41c383e); 'file' keeps the file-type glyph so the theme resolves the extension.
   check('change row shows a symbol-kind icon by default', /^symbol-/.test(item.iconPath && item.iconPath.id), item.iconPath && item.iconPath.id);
   state.iconMode = 'file';
-  check('iconMode="file" gives change rows ThemeIcon.File so the icon theme resolves the extension',
-    provider.getTreeItem(worst).iconPath === vscodeStub.ThemeIcon.File);
+  // ThemeIcon.File cannot be tinted, so in file mode a red or amber row swaps it for the
+  // tinted error / warning icon (P2); a calm row keeps ThemeIcon.File.
+  {
+    const { LEVEL_TONES } = require('../src/tree-row-models');
+    const tone = LEVEL_TONES[classifyRowVerdict(worst).level];
+    const icon = provider.getTreeItem(worst).iconPath;
+    check('iconMode="file" gives a change row the file glyph, tinted error/warning when red or amber',
+      tone ? icon.id === tone.fileIcon && icon.color && icon.color.id === tone.color : icon === vscodeStub.ThemeIcon.File,
+      `level ${classifyRowVerdict(worst).level}: ${icon && icon.id}`);
+  }
   delete state.iconMode;
   check('change row still carries resourceUri for the theme to match on', !!item.resourceUri);
 

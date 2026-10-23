@@ -12,11 +12,6 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      # The target repo the tests analyse. Pinned so a change upstream cannot turn CI red
-      # or green; bump it deliberately, and re-run the suite when you do.
-      TARGET_REPO_URL: https://github.com/pingdotgg/t3code
-      TARGET_REPO_COMMIT: 9a609a4e444ba739d6fcd607769d68b679b0bcc5
     steps:
       - uses: actions/checkout@v4
 
@@ -33,18 +28,7 @@ jobs:
 
       - run: npm run test:smoke
 
-      - name: Fetch the pinned target repo
-        # The tests need only the target's source tree, not its dependencies. They resolve
-        # the base ref `main`, so the detached shallow checkout is put on a local `main`.
-        run: |
-          echo "Target repo: $TARGET_REPO_URL at $TARGET_REPO_COMMIT"
-          target="$RUNNER_TEMP/target-repo"
-          mkdir "$target"
-          git -C "$target" init --quiet
-          git -C "$target" remote add origin "$TARGET_REPO_URL"
-          git -C "$target" fetch --quiet --depth 1 origin "$TARGET_REPO_COMMIT"
-          git -C "$target" checkout --quiet -B main FETCH_HEAD
-          echo "Checked out $(git -C "$target" rev-parse HEAD)"
-          echo "IMPACT_TREE_TARGET_REPO=$target" >> "$GITHUB_ENV"
-
+      # The suite analyses the synthetic repository test/fixture-repo.js builds from its own
+      # literals, so the run needs no clone of another project and no network. With CI set,
+      # a stage that finds nothing to check fails instead of skipping.
       - run: npm test
