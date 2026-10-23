@@ -30,7 +30,7 @@ const thread = (id, over = {}) => ({
 const page = (nodes, next = null) => ({ nodes, pageInfo: { hasNextPage: next !== null, endCursor: next } });
 
 const pullRequest = (over = {}) => ({
-  id: 'PR_1', number: 7, title: 'Title', body: 'Body', url: 'https://github.com/o/r/pull/7', state: 'OPEN',
+  id: 'PR_1', number: 7, title: 'Title', body: 'Body', url: 'https://github.com/o/r/pull/7', state: 'OPEN', createdAt: '2026-01-05T06:07:08Z',
   author: { login: 'alice', avatarUrl: 'https://a/alice' }, viewerDidAuthor: true,
   headRefOid: 'h'.repeat(40), baseRefOid: 'b'.repeat(40), headRefName: 'feat', baseRefName: 'main',
   reviewThreads: page([thread(1)]),
@@ -123,7 +123,7 @@ test('normalises every field of the pull request, thread, comment, review, file 
   const model = await loadPullRequestReview(gh, TARGET);
 
   assert.deepEqual(model.pr, {
-    id: 'PR_1', number: 7, title: 'Title', body: 'Body', url: 'https://github.com/o/r/pull/7', state: 'OPEN',
+    id: 'PR_1', number: 7, title: 'Title', body: 'Body', url: 'https://github.com/o/r/pull/7', state: 'OPEN', createdAt: '2026-01-05T06:07:08Z',
     author: { login: 'alice', avatarUrl: 'https://a/alice' }, viewerDidAuthor: true,
     headRefOid: 'h'.repeat(40), baseRefOid: 'b'.repeat(40), headRefName: 'feat', baseRefName: 'main',
   });

@@ -5,6 +5,10 @@
 - **View as tree** in the Changes view folds the changed files into their folders, with the
   worst-first order kept at every level; **View as list** returns to the flat list. The
   choice is the `impactTree.fileListLayout` setting.
+- The **Pull Request tab** renders the description and the timeline's comments as
+  markdown (headings, lists, code, tables, task lists, links; `#123` links to that issue or
+  pull request), shows who opened the pull request and when, and has a Refresh button in
+  its header. The description sits beside the reviewers and labels column.
 
 ## 0.1.0
 

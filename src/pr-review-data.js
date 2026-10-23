@@ -77,7 +77,7 @@ const FILES_CONNECTION = `files(first: ${PAGE_SIZE}, after: $cursor) {
 const REVIEW_QUERY = `query ImpactTreePullRequestReview($owner: String!, $name: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      id number title body url state
+      id number title body url state createdAt
       author { ${AUTHOR_FIELDS} }
       viewerDidAuthor headRefOid baseRefOid headRefName baseRefName
       ${THREADS_CONNECTION}
@@ -220,6 +220,7 @@ const CHECKS_PAGE_QUERY = `query ImpactTreeOverviewChecks($owner: String!, $name
  * @property {string} body
  * @property {string} url
  * @property {'OPEN'|'CLOSED'|'MERGED'} state
+ * @property {string|null} createdAt ISO 8601; null when GitHub did not say.
  * @property {ReviewAuthor|null} author
  * @property {boolean} viewerDidAuthor
  * @property {string} headRefOid Pinned head commit.
@@ -472,6 +473,8 @@ function normalisePullRequestSummary(raw) {
     body: str(p.body, `${what}.body`),
     url: str(p.url, `${what}.url`),
     state: /** @type {'OPEN'|'CLOSED'|'MERGED'} */ (oneOf(p.state, ['OPEN', 'CLOSED', 'MERGED'], `${what}.state`)),
+    // Optional: shown when present, nothing said when not; an older recording has none.
+    createdAt: p.createdAt == null ? null : str(p.createdAt, `${what}.createdAt`),
     author: author(p.author, `${what}.author`),
     viewerDidAuthor: bool(p.viewerDidAuthor, `${what}.viewerDidAuthor`),
     headRefOid: str(p.headRefOid, `${what}.headRefOid`),

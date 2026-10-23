@@ -6,7 +6,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  buildPullRequestHtml, pageModelOf, mergeStateOf, buttonRules, mergeRules, pendingStatusOf, submittedMessage, firstLineOf, formatWhen, OWN_PR_REASON,
+  buildPullRequestHtml, pageModelOf, mergeStateOf, buttonRules, mergeRules, pendingStatusOf, submittedMessage, firstLineOf, formatWhen, refsBaseOf, OWN_PR_REASON,
 } = require('../src/pr-overview-html');
 const { createFormPage } = require('./webview-page');
 
@@ -55,7 +55,7 @@ const tagOf = (doc, name) => new RegExp(`<\\w+[^>]*data-el="${name}"[^>]*>`).exe
 const isDisabled = (doc, name) => / disabled(?=[\s>])/.test(tagOf(doc, name));
 const isHidden = (doc, name) => / hidden(?=[\s>])/.test(tagOf(doc, name));
 
-test('everything GitHub sends is escaped text; line breaks are kept by CSS, not markup', () => {
+test('everything GitHub sends is escaped text or rendered markdown that shows its HTML as text', () => {
   const evil = '<img src=x onerror="alert(1)"> & \'quotes\'\nline two';
   const model = reviewModel({
     body: evil,
@@ -73,8 +73,8 @@ test('everything GitHub sends is escaped text; line breaks are kept by CSS, not 
   assert.ok(!doc.includes('<b>.js'), 'no element from a path');
   assert.ok(doc.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
   assert.ok(doc.includes('&lt;/textarea&gt;&lt;script&gt;bad()&lt;/script&gt;</textarea>'), 'the draft cannot close its textarea');
-  assert.match(doc, /<div class="desc text" data-el="description">&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt; &amp; &#39;quotes&#39;\nline two<\/div>/,
-    'the description keeps its line break inside a pre-wrap element');
+  assert.match(doc, /<div class="md" data-el="description"><p>&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt; &amp; 'quotes'<br>\nline two<\/p>\n<\/div>/,
+    'the description is markdown: GitHub\'s HTML is text, and a single newline is a line break as GitHub draws it');
   assert.match(doc, /\.text \{ white-space: pre-wrap;/);
 });
 
@@ -122,7 +122,7 @@ test('a refresh shows the previous data with a note; a failed refresh keeps the 
 
 test('header: title, number, state, author and branches; an incomplete load says what is missing', () => {
   const text = textOf(html(ready(reviewModel({ incomplete: ['review threads: only the first 500 were loaded'] }))));
-  assert.match(text, /Make it better #7 Open alice wants to merge into main from feature Fixes things\./);
+  assert.match(text, /Make it better #7 Open alice wants to merge into main from feature Refresh alice opened this pull request Fixes things\./);
   assert.match(text, /Not everything was loaded: review threads: only the first 500 were loaded/);
   assert.match(textOf(html(ready(reviewModel({ body: '  ' })))), /No description provided\./);
 });
@@ -645,4 +645,62 @@ test('page: Merge… posts the chosen method; a disabled button posts nothing', 
   const before = blocked.sent.length;
   blocked.click('merge-button');
   assert.equal(blocked.sent.length, before);
+});
+
+test('the description and timeline bodies are markdown: headings, code, task lists, and #123 links into the repository', () => {
+  const model = reviewModel({
+    body: '## Problem\n\nSee #17063 and `branchPullRequest`.\n\n- [x] done\n- [ ] todo',
+    timeline: [{ kind: 'comment', id: 'I_1', author: { login: 'eve', avatarUrl: null }, createdAt: '2026-01-02T03:04:05Z', body: 'Fixes #24098, **really**', reviewState: null }],
+  });
+  model.pr.url = 'https://github.com/o/r/pull/7';
+  model.pr.createdAt = '2026-01-01T09:30:00Z';
+  const doc = html(ready(model));
+  assert.match(doc, /<div class="card desc"><div class="head"><span class="who">alice<\/span> opened this pull request <span class="when">2026-01-01 09:30<\/span><\/div><div class="md" data-el="description"><h2>Problem<\/h2>/);
+  assert.ok(doc.includes('<a href="https://github.com/o/r/issues/17063" class="ref">#17063</a>'));
+  assert.ok(doc.includes('<code>branchPullRequest</code>'));
+  assert.ok(doc.includes('<li class="task"><input type="checkbox" disabled checked> done</li>'));
+  assert.ok(doc.includes('<li class="task"><input type="checkbox" disabled> todo</li>'));
+  assert.match(doc, /<div class="ev"><b>eve<\/b> commented <span class="when">2026-01-02 03:04<\/span><div class="md"><p>Fixes <a href="https:\/\/github.com\/o\/r\/issues\/24098" class="ref">#24098<\/a>, <strong>really<\/strong><\/p>\n<\/div><\/div>/);
+  assert.ok(doc.indexOf('data-el="description"') > doc.indexOf('class="cols"'), 'the description sits in the main column, beside the side column');
+  // No creation time known: the card says who, nothing about when.
+  const plain = html(ready(reviewModel()));
+  assert.match(plain, /<div class="head"><span class="who">alice<\/span> opened this pull request<\/div>/);
+});
+
+test('links in a body: http(s) and mailto are anchors to their real target, anything else is text, an image is a link to it', () => {
+  const body = '[ok](https://x.y/z) [mail](mailto:a@b.c) [js](javascript:alert(1)) [file](file:///etc/passwd) ![pic](https://img/a.png) ![d](data:image/png;base64,AAAA)';
+  const doc = html(ready(reviewModel({ body })));
+  assert.ok(doc.includes('<a href="https://x.y/z">ok</a>'));
+  assert.ok(doc.includes('<a href="mailto:a@b.c">mail</a>'));
+  assert.ok(doc.includes('[js](javascript:alert(1))') && !doc.includes('href="javascript'), 'a javascript: link is the written text');
+  assert.ok(doc.includes('[file](file:///etc/passwd)') && !doc.includes('href="file:'));
+  assert.ok(doc.includes('<a href="https://img/a.png" class="img">[image: pic]</a>'), 'an image is a link that says what it was');
+  assert.ok(!doc.includes('<img') && !/href="data:/.test(doc), 'no image element, no data: target');
+  assert.ok(!/data-act="openLink"[^>]*https:\/\/x\.y/.test(doc), 'a body link is not sent through the page\'s openLink message, which is for a check\'s link only');
+});
+
+test('a body adds no inline style or handler, whatever it holds: raw HTML, an aligned table, a form', () => {
+  const body = '<div style="x" onclick="y()">hi</div>\n\n| a | b |\n|:-:|--:|\n| 1 | 2 |\n\n<form><input onfocus=z></form>';
+  const doc = html(ready(reviewModel({ body })));
+  assert.ok(!/<[^>]*\sstyle=/.test(doc), 'no style= attribute in any tag');
+  assert.ok(!/<[^>]*\son\w+=/.test(doc), 'no on…= attribute in any tag');
+  assert.ok(doc.includes('<th class="ac">a</th>') && doc.includes('<td class="ar">2</td>'), 'alignment is a class');
+  assert.ok(!doc.includes('<form') && !doc.includes('<div style'), 'GitHub\'s HTML is text');
+});
+
+test('refsBaseOf: the repository under a pull request URL, on any host; nothing for another shape', () => {
+  assert.equal(refsBaseOf('https://github.com/o/r/pull/7'), 'https://github.com/o/r');
+  assert.equal(refsBaseOf('https://ghe.example.com/team/repo/pull/123/'), 'https://ghe.example.com/team/repo');
+  for (const url of ['https://x/7', 'https://github.com/o/r/issues/7', 'http://github.com/o/r/pull/7', 'https://github.com/o/r/pull/7/files', '']) {
+    assert.equal(refsBaseOf(url), null, url);
+  }
+});
+
+test('page: the header\'s Refresh asks GitHub again, and is disabled while a refresh runs', () => {
+  const p = page(ready());
+  p.click('refresh');
+  assert.deepEqual(lastSent(p), { type: 'retry', token: NONCE });
+  const refreshing = html({ kind: 'loading', target: TARGET, previous: reviewModel() });
+  assert.ok(isDisabled(refreshing, 'refresh'));
+  assert.match(tagOf(refreshing, 'refresh') + 'Refreshing…', /Refreshing…/);
 });
