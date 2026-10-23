@@ -2,7 +2,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const { escapeHtml } = require('./detail-panel-html');
-const { renderMarkdown } = require('./markdown-html');
+const { renderMarkdown, IMAGE_ORIGINS } = require('./markdown-html');
 const { reviewDataOf } = require('./pr-review-store');
 const { openCount, mergeStateOf } = require('./pr-review-data');
 const { treeItemId } = require('./review-tree-model');
@@ -399,6 +399,7 @@ code { font-family: var(--vscode-editor-font-family); }
 .md .al { text-align: left; } .md .ac { text-align: center; } .md .ar { text-align: right; }
 .md hr { border: 0; border-top: 1px solid var(--vscode-panel-border); margin: 14px 0; }
 .md a.img::before { content: '🖼 '; }
+.md img { max-width: 100%; height: auto; vertical-align: middle; }
 .md details, .md dl, .md figure, .md div { margin: 0 0 10px; }
 .md summary { cursor: pointer; font-weight: 600; }
 .md kbd { font-family: var(--vscode-editor-font-family); font-size: .9em; padding: .1em .4em; border: 1px solid var(--vscode-panel-border); border-bottom-width: 2px; border-radius: 3px; background: var(--vscode-textCodeBlock-background); }
@@ -762,7 +763,8 @@ function bodyHtml(model) {
  */
 function buildPullRequestHtml(model, { nonce, cspSource, draftKey = nonce }) {
   assert.match(nonce, /^[A-Za-z0-9+/=]+$/, 'the nonce must be base64 so it cannot break out of the CSP');
-  const csp = `default-src 'none'; style-src ${escapeHtml(cspSource)} 'nonce-${nonce}'; script-src 'nonce-${nonce}';`;
+  // Images only from GitHub's hosts, the same list the markdown renderer lets an <img> keep.
+  const csp = `default-src 'none'; img-src ${IMAGE_ORIGINS.join(' ')}; style-src ${escapeHtml(cspSource)} 'nonce-${nonce}'; script-src 'nonce-${nonce}';`;
   return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'
     + `<meta http-equiv="Content-Security-Policy" content="${csp}">`
     + '<meta name="viewport" content="width=device-width, initial-scale=1.0">'

@@ -2,10 +2,10 @@
 // Markdown from GitHub as the Pull Request tab's HTML: what is rendered, including the
 // raw HTML GitHub allows in a comment, and what can never come out of it (a tag or
 // attribute off the allowlist, a non-http link, an inline style or handler, an image
-// element). Through the public function only.
+// from anywhere but GitHub). Through the public function only.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { renderMarkdown, MAX_MARKDOWN_CHARS } = require('../src/markdown-html');
+const { renderMarkdown, MAX_MARKDOWN_CHARS, IMAGE_ORIGINS } = require('../src/markdown-html');
 
 const BASE = 'https://github.com/o/r';
 
@@ -45,7 +45,7 @@ test('a raw <a> is an anchor only with a safe target, a raw <img> is a link like
   assert.ok(html.includes('<a href="https://x/1">ok</a>'), 'target, rel and name are dropped');
   assert.ok(html.includes('<span>js</span>') && html.includes('<span>rel</span>') && html.includes('<span>cased</span>'), 'an unsafe target is text');
   assert.ok(!/href="(javascript|data|\/\/)/i.test(html));
-  assert.ok(html.includes('<a href="https://x/l.png" class="img">[image: logo]</a>'), 'the picture is its image, as a link');
+  assert.ok(html.includes('<a href="https://x/l.png" class="img">[image: logo]</a>'), 'the picture is its image, as a link since the host is not GitHub');
   assert.ok(html.includes('<span>[image: d]</span>') && html.includes('<span>[image: image]</span>'), 'an image with no safe source is its placeholder');
   assert.ok(!html.includes('<img') && !html.includes('<picture') && !html.includes('<source') && !html.includes('onerror'));
 });
@@ -71,11 +71,24 @@ test('links: http, https and mailto become anchors; javascript, data, file and v
   assert.ok(html.includes('<a href="https://auto.link/p?q=1">https://auto.link/p?q=1</a>'));
 });
 
-test('an image is a link to it that names the alt text; a data: image is text', () => {
+test('an image from anywhere but GitHub is a link to it that names the alt text; a data: image is text', () => {
   const html = renderMarkdown('![shot](https://img/a.png) ![](https://img/b.png) ![x](data:image/png;base64,AAAA)');
   assert.ok(html.includes('<a href="https://img/a.png" class="img">[image: shot]</a>'));
   assert.ok(html.includes('<a href="https://img/b.png" class="img">[image: image]</a>'));
   assert.ok(!html.includes('<img') && html.includes('![x](data:image/png;base64,AAAA)'));
+});
+
+test('an image GitHub hosts is an element, with a pixel size kept and anything else dropped; the hosts are the CSP\'s', () => {
+  const html = renderMarkdown('![shot](https://user-images.githubusercontent.com/1/a.png) <img src="https://github.com/user-attachments/assets/u" alt="att" width="400" height="20%" style="x" onerror="y()" loading="lazy"> ![](https://avatars.githubusercontent.com/u/1?v=4) <img src="https://raw.githubusercontent.com/o/r/main/p.svg" alt="" width="99999"> <img src="http://github.com/i.png" alt="plain"> <img src="https://github.com.evil/i.png" alt="look">');
+  assert.ok(html.includes('<img src="https://user-images.githubusercontent.com/1/a.png" alt="shot">'));
+  assert.ok(html.includes('<img src="https://github.com/user-attachments/assets/u" alt="att" width="400">'), 'a pixel width stays, a percent height, style, handler and loading do not');
+  assert.ok(html.includes('<img src="https://avatars.githubusercontent.com/u/1?v=4" alt="">'));
+  assert.ok(html.includes('<img src="https://raw.githubusercontent.com/o/r/main/p.svg" alt="">'), 'an absurd width is dropped');
+  assert.ok(html.includes('<a href="http://github.com/i.png" class="img">[image: plain]</a>'), 'not over http');
+  assert.ok(html.includes('<a href="https://github.com.evil/i.png" class="img">[image: look]</a>'), 'not a host that merely starts with GitHub\'s');
+  assert.ok(!/\s(style|on\w+|loading)=/.test(html));
+  assert.deepEqual(IMAGE_ORIGINS, ['https://github.com', 'https://*.githubusercontent.com']);
+  for (const src of html.match(/<img src="([^"]+)"/g) || []) assert.match(src, /src="https:\/\/(github\.com|[a-z-]+\.githubusercontent\.com)\//, 'every element\'s source is within the CSP\'s origins');
 });
 
 test('#123 links into the repository given, not inside a link or code, not as part of a word; none without a repository', () => {

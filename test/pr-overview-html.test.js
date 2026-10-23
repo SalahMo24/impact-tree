@@ -91,7 +91,7 @@ test('no inline style or event-handler attributes in any state; the CSP names th
     assert.ok(!/\son\w+=/.test(doc), `${state.kind}: no on…= attribute`);
     assert.match(doc, new RegExp(`script-src 'nonce-${NONCE}'`));
     assert.match(doc, new RegExp(`<script nonce="${NONCE}">`));
-    assert.match(doc, /default-src 'none'/);
+    assert.match(doc, /default-src 'none'; img-src https:\/\/github\.com https:\/\/\*\.githubusercontent\.com; style-src /);
   }
   assert.throws(() => buildPullRequestHtml(pageModelOf(ready(), panel()), { nonce: 'x"><script>', cspSource: 's' }), /base64/);
 });
