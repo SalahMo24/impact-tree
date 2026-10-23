@@ -7,7 +7,7 @@
 // function that does I/O, `loadPullRequestReview`, takes the GitHub client as a dependency.
 
 const { AssertionError } = require('node:assert');
-const { GitHubResponseError } = require('./github-request');
+const { GitHubResponseError, GitHubGraphQLError } = require('./github-request');
 const { throwIfCancelled, isAnalysisCancelled } = require('./engine/cancellation');
 
 const ENDPOINT = '/graphql';
@@ -123,18 +123,29 @@ const CONTEXT_FIELDS = `
     ... on StatusContext { context state targetUrl description isRequired(pullRequestNumber: $number) }
   }`;
 
+/** The name of a requested team when the session cannot read team names. */
+const TEAM_UNNAMED = 'A team';
+
 /**
  * The overview: merge state, labels, reviewers and page 1 of the checks of `$headOid`,
  * the reviewed commit (not the pull request's current head, which may have moved).
+ *
+ * A team's name needs the `read:org` scope, which the editor's shared GitHub session
+ * often lacks; asked without it, GitHub answers the whole query with INSUFFICIENT_SCOPES
+ * errors. So the Team fields are selected only with `teamNames`, as the GitHub extension
+ * does; without them a requested team is still counted, just not named.
+ * @param {boolean} teamNames
  */
-const OVERVIEW_QUERY = `query ImpactTreePullRequestOverview($owner: String!, $name: String!, $number: Int!, $headOid: GitObjectID!, $cursor: String) {
+const overviewQuery = (teamNames) => `query ImpactTreePullRequestOverview($owner: String!, $name: String!, $number: Int!, $headOid: GitObjectID!, $cursor: String) {
   repository(owner: $owner, name: $name) {
     mergeCommitAllowed squashMergeAllowed rebaseMergeAllowed viewerPermission
     pullRequest(number: $number) {
       headRefOid isDraft mergeable mergeStateStatus reviewDecision isMergeQueueEnabled isInMergeQueue
       labels(first: ${PAGE_SIZE}) { totalCount nodes { name color } }
-      reviewRequests(first: ${PAGE_SIZE}) { totalCount nodes { requestedReviewer { __typename ... on User { login } ... on Bot { login } ... on Mannequin { login } ... on Team { name combinedSlug } } } }
-      latestReviews(first: ${PAGE_SIZE}) { totalCount nodes { author { login } state } }
+      assignees(first: ${PAGE_SIZE}) { totalCount nodes { login avatarUrl } }
+      milestone { title }
+      reviewRequests(first: ${PAGE_SIZE}) { totalCount nodes { requestedReviewer { __typename ... on User { login avatarUrl } ... on Bot { login avatarUrl } ... on Mannequin { login avatarUrl }${teamNames ? ' ... on Team { name combinedSlug }' : ''} } } }
+      latestReviews(first: ${PAGE_SIZE}) { totalCount nodes { author { login avatarUrl } state } }
     }
     object(oid: $headOid) {
       ... on Commit {
@@ -244,7 +255,12 @@ const CHECKS_PAGE_QUERY = `query ImpactTreeOverviewChecks($owner: String!, $name
  *
  * @typedef {{ name: string, color: string|null }} LabelItem `color` is 6 lower-case hex digits, else null.
  * @typedef {'AWAITING'|'APPROVED'|'CHANGES_REQUESTED'|'COMMENTED'|'DISMISSED'} ReviewerState
- * @typedef {{ name: string, kind: 'user'|'team', state: ReviewerState }} ReviewerItem
+ * @typedef {{ name: string, kind: 'user'|'team', state: ReviewerState, avatarUrl: string|null }} ReviewerItem
+ *   A team whose name GitHub did not give (no `read:org`) is named `TEAM_UNNAMED`; a team
+ *   has no avatar.
+ * @typedef {{ login: string, avatarUrl: string|null }} AssigneeItem
+ * @typedef {{ items: ReviewerItem[], more: number, note?: string }} ReviewersInfo `note`:
+ *   why the list says less than GitHub knows (unnamed teams).
  *
  * @typedef {object} CheckItem
  * @property {string} name
@@ -259,7 +275,8 @@ const CHECKS_PAGE_QUERY = `query ImpactTreeOverviewChecks($owner: String!, $name
  *   | { kind: 'failed', error: Error }} ChecksInfo `none`: GitHub reports no checks for the commit.
  *
  * @typedef {{ kind: 'ready', merge: MergeInfo, labels: { items: LabelItem[], more: number },
- *   reviewers: { items: ReviewerItem[], more: number }, checks: ChecksInfo }
+ *   assignees: { items: AssigneeItem[], more: number }, milestone: string|null,
+ *   reviewers: ReviewersInfo, checks: ChecksInfo }
  *   | { kind: 'failed', error: Error }} PullRequestOverview What the Pull Request tab shows
  *   besides the review: a failure here fails only this part, never the review data.
  *
@@ -662,24 +679,25 @@ function normaliseReviewers(rawRequests, rawReviews, authorLogin) {
     const r = object(n, what).requestedReviewer;
     /** @type {ReviewerItem} */
     let item;
-    if (r == null) item = { name: 'ghost', kind: 'user', state: 'AWAITING' };
+    if (r == null) item = { name: 'ghost', kind: 'user', state: 'AWAITING', avatarUrl: null };
     else {
       const who = object(r, `${what}.requestedReviewer`);
       const type = oneOf(who.__typename, ['User', 'Bot', 'Mannequin', 'Team'], `${what}.requestedReviewer.__typename`);
-      item = type === 'Team'
-        ? { name: str(who.combinedSlug, `${what} team slug`), kind: 'team', state: 'AWAITING' }
-        : { name: str(who.login, `${what} login`), kind: 'user', state: 'AWAITING' };
+      if (type !== 'Team') { const a = /** @type {ReviewAuthor} */ (author(who, `${what}.requestedReviewer`)); item = { name: a.login, kind: 'user', state: 'AWAITING', avatarUrl: a.avatarUrl }; }
+      else if (who.combinedSlug === undefined) item = { name: TEAM_UNNAMED, kind: 'team', state: 'AWAITING', avatarUrl: null };
+      else item = { name: str(who.combinedSlug, `${what} team slug`), kind: 'team', state: 'AWAITING', avatarUrl: null };
     }
-    byKey.set(`${item.kind}:${item.name}`, item);
+    // Unnamed teams cannot be told apart, so each keeps its own row.
+    byKey.set(item.name === TEAM_UNNAMED ? `team:#${i}` : `${item.kind}:${item.name}`, item);
   });
   reviews.nodes.forEach((n, i) => {
     const what = `latest review ${i}`;
     const r = object(n, what);
     const state = oneOf(r.state, ['PENDING', 'COMMENTED', 'APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'], `${what}.state`);
-    const a = r.author == null ? null : object(r.author, `${what}.author`);
-    const name = a ? str(a.login, `${what}.author.login`) : 'ghost';
+    const a = r.author == null ? null : author(r.author, `${what}.author`);
+    const name = a ? a.login : 'ghost';
     if (state === 'PENDING' || name === authorLogin || byKey.has(`user:${name}`)) return;
-    byKey.set(`user:${name}`, { name, kind: 'user', state: /** @type {ReviewerState} */ (state) });
+    byKey.set(`user:${name}`, { name, kind: 'user', state: /** @type {ReviewerState} */ (state), avatarUrl: a ? a.avatarUrl : null });
   });
   const items = [...byKey.values()].sort((a, b) => REVIEWER_ORDER.indexOf(a.state) - REVIEWER_ORDER.indexOf(b.state)
     || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
@@ -691,7 +709,7 @@ function normaliseReviewers(rawRequests, rawReviews, authorLogin) {
  * @param {unknown} rawData The `data` object of the answer.
  * @param {{ number: number, reviewedHead: string, authorLogin: string|null }} facts
  * @returns {{ merge: MergeInfo, labels: { items: LabelItem[], more: number },
- *   reviewers: { items: ReviewerItem[], more: number },
+ *   assignees: { items: AssigneeItem[], more: number }, milestone: string|null, reviewers: ReviewersInfo,
  *   contexts: null | undefined | ReturnType<typeof normaliseContexts> }} `contexts`: null when the
  *   commit has no checks, undefined when GitHub does not know the commit.
  */
@@ -728,6 +746,9 @@ function normaliseOverview(rawData, { number, reviewedHead, authorLogin }) {
     more: labelList.more,
   };
   const reviewers = normaliseReviewers(p.reviewRequests, p.latestReviews, authorLogin);
+  const assigneeList = shortList(p.assignees, 'assignees');
+  const assignees = { items: assigneeList.nodes.map((n, i) => /** @type {ReviewAuthor} */ (author(object(n, `assignee ${i}`), `assignee ${i}`))), more: assigneeList.more };
+  const milestone = p.milestone == null ? null : str(object(p.milestone, 'milestone').title, 'milestone.title');
   let contexts;
   if (repo.object != null) {
     const commit = object(repo.object, 'the reviewed commit');
@@ -735,7 +756,7 @@ function normaliseOverview(rawData, { number, reviewedHead, authorLogin }) {
     contexts = commit.statusCheckRollup == null ? null
       : normaliseContexts(object(commit.statusCheckRollup, 'statusCheckRollup').contexts);
   }
-  return { merge, labels, reviewers, contexts };
+  return { merge, labels, assignees, milestone, reviewers, contexts };
 }
 
 /**
@@ -760,10 +781,21 @@ function mustPropagate(error, signal) {
  */
 async function loadOverview(gh, base, { pr, signal, maxCheckPages }) {
   const vars = { ...base, headOid: pr.headRefOid };
+  const context = { number: base.number, reviewedHead: pr.headRefOid, authorLogin: pr.author ? pr.author.login : null };
   try {
     throwIfCancelled(signal);
-    const first = normaliseOverview(await gh.graphql(OVERVIEW_QUERY, { ...vars, cursor: null }, { signal }),
-      { number: base.number, reviewedHead: pr.headRefOid, authorLogin: pr.author ? pr.author.login : null });
+    let teamNames = typeof gh.scopes === 'function' && gh.scopes().includes('read:org');
+    let first;
+    try {
+      first = normaliseOverview(await gh.graphql(overviewQuery(teamNames), { ...vars, cursor: null }, { signal }), context);
+    } catch (e) {
+      // The scope list was wrong about team names (another host, an older session): ask
+      // once more without them rather than lose the whole overview.
+      if (!teamNames || !onlyInsufficientScopes(e)) throw e;
+      teamNames = false;
+      throwIfCancelled(signal);
+      first = normaliseOverview(await gh.graphql(overviewQuery(false), { ...vars, cursor: null }, { signal }), context);
+    }
     /** @type {ChecksInfo} */
     let checks;
     if (first.contexts === undefined) {
@@ -793,12 +825,18 @@ async function loadOverview(gh, base, { pr, signal, maxCheckPages }) {
         checks = { kind: 'failed', error: /** @type {Error} */ (e) };
       }
     }
-    return { kind: 'ready', merge: first.merge, labels: first.labels, reviewers: first.reviewers, checks };
+    const unnamed = first.reviewers.items.some((r) => r.name === TEAM_UNNAMED);
+    const reviewers = unnamed ? { ...first.reviewers, note: 'Team names need the read:org scope, which the GitHub sign-in does not have.' } : first.reviewers;
+    return { kind: 'ready', merge: first.merge, labels: first.labels, assignees: first.assignees, milestone: first.milestone, reviewers, checks };
   } catch (e) {
     if (mustPropagate(e, signal)) throw e;
     return { kind: 'failed', error: e instanceof Error ? e : new Error(String(e)) };
   }
 }
+
+/** Whether GitHub refused only for scopes: every error is `INSUFFICIENT_SCOPES`. */
+/** @param {unknown} e @returns {boolean} */
+const onlyInsufficientScopes = (e) => e instanceof GitHubGraphQLError && e.errors.length > 0 && e.errors.every((x) => x.type === 'INSUFFICIENT_SCOPES');
 
 /**
  * @param {Partial<typeof DEFAULT_BUDGETS>|undefined} overrides
@@ -820,7 +858,8 @@ function resolveBudgets(overrides) {
  * spent, then the overview (checks, reviewers, labels, merge state), whose failure is
  * reported in `overview` and does not fail the load. Does I/O only through `gh.graphql`, and lets its errors (typed GitHub errors,
  * cancellation) propagate: a failed read is never an empty model.
- * @param {{ graphql: (query: string, variables?: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<Record<string, unknown>> }} gh
+ * @param {{ graphql: (query: string, variables?: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<Record<string, unknown>>,
+ *   scopes?: () => string[] }} gh `scopes`, when given, says which OAuth scopes the session has.
  * @param {{ owner: string, name: string, number: number }} target Repository owner and name,
  *   and the pull request number.
  * @param {{ signal?: AbortSignal, budgets?: Partial<typeof DEFAULT_BUDGETS> }} [options]
@@ -978,7 +1017,7 @@ function mergeStateOf(pr, overview) {
 
 module.exports = {
   DEFAULT_BUDGETS, MAX_BUDGET, PAGE_SIZE, COMMENTS_PER_THREAD, TIMELINE_WINDOW,
-  REVIEW_QUERY, THREADS_PAGE_QUERY, FILES_PAGE_QUERY, OVERVIEW_QUERY, CHECKS_PAGE_QUERY,
+  REVIEW_QUERY, THREADS_PAGE_QUERY, FILES_PAGE_QUERY, overviewQuery, CHECKS_PAGE_QUERY, TEAM_UNNAMED,
   loadPullRequestReview, normaliseFirstPage, normaliseThread, commentedLineOf,
   threadsForRange, threadsForFile, openCount, pendingCount, mergeStateOf,
 };

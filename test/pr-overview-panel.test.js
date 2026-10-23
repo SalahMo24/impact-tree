@@ -19,7 +19,7 @@ const CLEAN_OVERVIEW = Object.freeze({
   kind: 'ready',
   merge: { mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', reviewDecision: null, isDraft: false, isMergeQueueEnabled: false,
     isInMergeQueue: false, methods: { merge: true, squash: true, rebase: true }, viewerPermission: 'WRITE', headMoved: false },
-  labels: { items: [], more: 0 }, reviewers: { items: [], more: 0 }, checks: { kind: 'none' },
+  labels: { items: [], more: 0 }, assignees: { items: [], more: 0 }, milestone: null, reviewers: { items: [], more: 0 }, checks: { kind: 'none' },
 });
 function reviewModel({ number = 7, threads = [], pending = null, own = false, title = 'Make it better', overview = CLEAN_OVERVIEW } = {}) {
   return {

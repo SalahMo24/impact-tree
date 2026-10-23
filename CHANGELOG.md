@@ -15,6 +15,12 @@
   attribute outside the list, no inline style or handler, and no link other than
   http(s) or mailto reaches the tab. An image GitHub hosts (a screenshot, an attachment,
   an avatar) is shown; one from anywhere else is drawn as a link to it.
+- The **Pull Request tab** loads its side column again when the GitHub sign-in lacks the
+  `read:org` scope: team reviewers' names are asked for only when the scope is there
+  (otherwise a requested team is listed as "A team" with a note), as the GitHub extension
+  does. The tab also shows avatars, assignees and the milestone, coloured label chips,
+  the timeline as comment cards with approvals and change requests marked, an "Open on
+  GitHub" link, and one note instead of four when the side column cannot load.
 
 ## 0.1.0
 

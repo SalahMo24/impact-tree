@@ -242,4 +242,10 @@ function renderMarkdown(text, { refsBase = null } = {}) {
   return cut ? `${html}<p class="note">… the rest of this text (${whole.length - MAX_MARKDOWN_CHARS} more characters) is not shown.</p>` : html;
 }
 
-module.exports = { renderMarkdown, MAX_MARKDOWN_CHARS, ALLOWED_TAGS, IMAGE_ORIGINS };
+/**
+ * Whether an image at `url` may load in the tab: https, on one of `IMAGE_ORIGINS`.
+ * @param {string} url @returns {boolean}
+ */
+const imageMayLoad = (url) => IMAGE_URL.test(String(url).trim());
+
+module.exports = { renderMarkdown, MAX_MARKDOWN_CHARS, ALLOWED_TAGS, IMAGE_ORIGINS, imageMayLoad };

@@ -22,7 +22,7 @@ const CLEAN_OVERVIEW = Object.freeze({
   kind: 'ready',
   merge: { mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', reviewDecision: null, isDraft: false, isMergeQueueEnabled: false,
     isInMergeQueue: false, methods: { merge: true, squash: true, rebase: true }, viewerPermission: 'WRITE', headMoved: false },
-  labels: { items: [], more: 0 }, reviewers: { items: [], more: 0 }, checks: { kind: 'none' },
+  labels: { items: [], more: 0 }, assignees: { items: [], more: 0 }, milestone: null, reviewers: { items: [], more: 0 }, checks: { kind: 'none' },
 });
 
 /** A normalised review model, as the store holds it. */
@@ -122,7 +122,7 @@ test('a refresh shows the previous data with a note; a failed refresh keeps the 
 
 test('header: title, number, state, author and branches; an incomplete load says what is missing', () => {
   const text = textOf(html(ready(reviewModel({ incomplete: ['review threads: only the first 500 were loaded'] }))));
-  assert.match(text, /Make it better #7 Open alice wants to merge into main from feature Refresh alice opened this pull request Fixes things\./);
+  assert.match(text, /Make it better #7 Open alice wants to merge into main from feature Refresh Open on GitHub alice opened this pull request Fixes things\./);
   assert.match(text, /Not everything was loaded: review threads: only the first 500 were loaded/);
   assert.match(textOf(html(ready(reviewModel({ body: '  ' })))), /No description provided\./);
 });
@@ -488,13 +488,15 @@ test('Reviewers: state words, none, more, and failed', () => {
     { name: 'amy', kind: 'user', state: 'APPROVED' }, { name: 'sara', kind: 'user', state: 'COMMENTED' }, { name: 'dan', kind: 'user', state: 'DISMISSED' },
   ], more: 2 };
   const text = textOf(pageOf(overviewWith({ reviewers })));
-  assert.match(text, /Reviewers ✗ omar Changes requested ● mylo\/mobile Awaiting review ✓ amy Approved 💬 sara Commented ○ dan Dismissed 2 more reviewers were not loaded\./);
+  assert.match(text, /Reviewers omar ✗ mylo\/mobile ● amy ✓ sara 💬 dan ○ 2 more reviewers were not loaded\./);
+  const doc = pageOf(overviewWith({ reviewers }));
+  assert.match(doc, /<div class="p" title="Changes requested"><span class="av ph"><\/span><span class="n">omar<\/span><span class="s bad">✗<\/span><\/div>/, 'the state in words is the row\'s title');
   assert.match(textOf(pageOf(overviewWith())), /Reviewers No reviewers\./);
   assert.match(textOf(pageOf(overviewWith({ reviewers: { items: [], more: 1 } }))), /1 more reviewer was not loaded/);
   const failed = textOf(pageOf({ kind: 'failed', error: new Error('boom') }));
-  assert.match(failed, /Reviewers could not be loaded: boom/);
-  assert.match(failed, /Labels could not be loaded: boom/);
-  assert.ok(!/No reviewers|No labels/.test(failed), 'a failed part is never shown as empty');
+  assert.match(failed, /Reviewers, assignees, labels and milestone could not be loaded: boom Retry/);
+  assert.equal((failed.match(/Reviewers, assignees, labels and milestone could not be loaded/g) || []).length, 1, 'said once for the side column, not once per section');
+  assert.ok(!/No reviewers|No labels|No one assigned|No milestone/.test(failed), 'a failed part is never shown as empty');
 });
 
 test('Labels: chips with a class per valid colour, a generated rule only for 6 hex digits', () => {
@@ -505,10 +507,12 @@ test('Labels: chips with a class per valid colour, a generated rule only for 6 h
   const doc = pageOf(overviewWith({ labels }));
   assert.match(doc, /<span class="lbl lbl-0">bug<\/span><span class="lbl">plain<\/span><span class="lbl">sneaky<\/span><span class="lbl">upper<\/span><span class="lbl lbl-4">ok<\/span>/);
   const style = /<style[^>]*>([\s\S]*?)<\/style>/.exec(doc)[1];
-  assert.match(style, /\.lbl-0 \{ border-color: #d73a4a; \}/);
-  assert.match(style, /\.lbl-4 \{ border-color: #0e8a16; \}/);
+  assert.match(style, /\.lbl-0 \{ background: #d73a4a; border-color: #d73a4a; color: #fff; \}/);
+  assert.match(style, /\.lbl-4 \{ background: #0e8a16; border-color: #0e8a16; color: #fff; \}/);
+  const light = /<style[^>]*>([\s\S]*?)<\/style>/.exec(pageOf(overviewWith({ labels: { items: [{ name: 'docs', color: 'fbca04' }], more: 0 } })))[1];
+  assert.match(light, /\.lbl-0 \{ background: #fbca04; border-color: #fbca04; color: #000; \}/, 'dark text on a light label');
   assert.equal((style.match(/\.lbl-\d+ \{/g) || []).length, 2, 'rules only for the valid colours');
-  assert.ok(!style.includes('sneaky') && !style.includes('<script') && !style.includes('fff'));
+  assert.ok(!style.includes('sneaky') && !style.includes('<script') && !style.includes('#fff;}'), 'the sneaky colour never reaches the stylesheet');
   assert.equal((doc.match(/<script/g) || []).length, 1);
   assert.ok(!/\sstyle=/.test(doc));
   assert.match(textOf(doc), /3 more labels were not loaded/);
@@ -660,7 +664,7 @@ test('the description and timeline bodies are markdown: headings, code, task lis
   assert.ok(doc.includes('<code>branchPullRequest</code>'));
   assert.ok(doc.includes('<li class="task"><input type="checkbox" disabled checked> done</li>'));
   assert.ok(doc.includes('<li class="task"><input type="checkbox" disabled> todo</li>'));
-  assert.match(doc, /<div class="ev"><b>eve<\/b> commented <span class="when">2026-01-02 03:04<\/span><div class="md"><p>Fixes <a href="https:\/\/github.com\/o\/r\/issues\/24098" class="ref">#24098<\/a>, <strong>really<\/strong><\/p>\n<\/div><\/div>/);
+  assert.match(doc, /<div class="card ev"><div class="head"><span class="who">eve<\/span> commented <span class="when">2026-01-02 03:04<\/span><\/div><div class="md"><p>Fixes <a href="https:\/\/github.com\/o\/r\/issues\/24098" class="ref">#24098<\/a>, <strong>really<\/strong><\/p>\n<\/div><\/div>/);
   assert.ok(doc.indexOf('data-el="description"') > doc.indexOf('class="cols"'), 'the description sits in the main column, beside the side column');
   // No creation time known: the card says who, nothing about when.
   const plain = html(ready(reviewModel()));
@@ -703,4 +707,51 @@ test('page: the header\'s Refresh asks GitHub again, and is disabled while a ref
   const refreshing = html({ kind: 'loading', target: TARGET, previous: reviewModel() });
   assert.ok(isDisabled(refreshing, 'refresh'));
   assert.match(tagOf(refreshing, 'refresh') + 'Refreshing…', /Refreshing…/);
+});
+
+test('avatars: shown for the author, a commenter, a reviewer and an assignee when GitHub hosts them, asked at 40px; never from another host', () => {
+  const gh = 'https://avatars.githubusercontent.com/u/1?v=4';
+  const model = reviewModel({
+    timeline: [{ kind: 'comment', id: 'I_1', author: { login: 'eve', avatarUrl: gh }, createdAt: '2026-01-02T03:04:05Z', body: 'hi', reviewState: null }],
+    overview: overviewWith({
+      reviewers: { items: [{ name: 'amy', kind: 'user', state: 'APPROVED', avatarUrl: gh }, { name: 'o/t', kind: 'team', state: 'AWAITING', avatarUrl: null }], more: 0 },
+      assignees: { items: [{ login: 'bob', avatarUrl: 'https://evil.example/a.png' }, { login: 'cat', avatarUrl: gh }], more: 1 },
+    }),
+  });
+  model.pr.author = { login: 'alice', avatarUrl: gh };
+  const doc = html(ready(model));
+  const img = '<img class="av" src="https://avatars.githubusercontent.com/u/1?v=4&amp;s=40" alt="">';
+  assert.ok(doc.includes(`${img}<span class="who">alice</span> wants to merge`), 'header');
+  assert.ok(doc.includes(`<div class="head">${img}<span class="who">alice</span> opened this pull request`), 'description');
+  assert.ok(doc.includes(`<div class="head">${img}<span class="who">eve</span> commented`), 'timeline');
+  assert.ok(doc.includes(`<div class="p" title="Approved">${img}<span class="n">amy</span>`), 'reviewer');
+  assert.ok(doc.includes('<div class="p" title="Awaiting review"><span class="av ph"></span><span class="n">o/t</span>'), 'a team has no avatar, only the placeholder');
+  assert.ok(doc.includes('<div class="p"><span class="av ph"></span><span class="n">bob</span></div>') && doc.includes(`<div class="p">${img}<span class="n">cat</span></div>`), 'assignees; not from another host');
+  assert.equal((doc.match(/<img /g) || []).length, 5);
+  for (const src of doc.match(/<img class="av" src="([^"]+)"/g)) assert.match(src, /src="https:\/\/avatars\.githubusercontent\.com\//);
+  assert.match(textOf(doc), /Assignees bob cat 1 more assignee was not loaded\./);
+  // The header's own CSP lets exactly these hosts load images.
+  assert.match(doc, /img-src https:\/\/github\.com https:\/\/\*\.githubusercontent\.com;/);
+});
+
+test('milestone: the title, or none; Open on GitHub links the pull request\'s https URL only', () => {
+  assert.match(textOf(pageOf(overviewWith({ milestone: 'v1.0' }))), /Milestone v1\.0/);
+  assert.match(textOf(pageOf(overviewWith())), /Milestone No milestone\./);
+  const doc = html(ready(reviewModel()));
+  assert.ok(doc.includes('<a href="https://x/7" data-el="open-on-github">Open on GitHub</a>'));
+  const model = reviewModel();
+  model.pr.url = 'javascript:alert(1)';
+  assert.equal(tagOf(html(ready(model)), 'open-on-github'), null, 'no link for a URL that is not https');
+});
+
+test('timeline: a review without a body is one coloured line; one with a body is a card with the same colour', () => {
+  const model = reviewModel({ timeline: [
+    { kind: 'review', id: 'R_a', author: { login: 'omar', avatarUrl: null }, createdAt: '2026-01-01T10:00:00Z', body: '', reviewState: 'CHANGES_REQUESTED' },
+    { kind: 'review', id: 'R_b', author: { login: 'amy', avatarUrl: null }, createdAt: '2026-01-02T10:00:00Z', body: 'Nice', reviewState: 'APPROVED' },
+    { kind: 'review', id: 'R_c', author: { login: 'sara', avatarUrl: null }, createdAt: '2026-01-03T10:00:00Z', body: '', reviewState: 'COMMENTED' },
+  ] });
+  const doc = html(ready(model));
+  assert.ok(doc.includes('<div class="ev line changes"><span class="who">omar</span> requested changes <span class="when">2026-01-01 10:00</span></div>'));
+  assert.ok(doc.includes('<div class="card ev approved"><div class="head"><span class="who">amy</span> approved <span class="when">2026-01-02 10:00</span></div><div class="md"><p>Nice</p>\n</div></div>'));
+  assert.ok(doc.includes('<div class="ev line"><span class="who">sara</span> reviewed <span class="when">2026-01-03 10:00</span></div>'));
 });

@@ -2,7 +2,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const { escapeHtml } = require('./detail-panel-html');
-const { renderMarkdown, IMAGE_ORIGINS } = require('./markdown-html');
+const { renderMarkdown, IMAGE_ORIGINS, imageMayLoad } = require('./markdown-html');
 const { reviewDataOf } = require('./pr-review-store');
 const { openCount, mergeStateOf } = require('./pr-review-data');
 const { treeItemId } = require('./review-tree-model');
@@ -99,7 +99,8 @@ const METHOD_NOT_ALLOWED = {
  *   | { kind: 'ready', items: import('./pr-review-data').CheckItem[], total: number, incomplete: string|null }} ChecksView
  *
  * @typedef {{ kind: 'failed', message: string, merge: MergeState } | { kind: 'ready', merge: MergeState, checks: ChecksView,
- *   reviewers: { items: import('./pr-review-data').ReviewerItem[], more: number },
+ *   reviewers: import('./pr-review-data').ReviewersInfo,
+ *   assignees: { items: import('./pr-review-data').AssigneeItem[], more: number }, milestone: string|null,
  *   labels: { items: import('./pr-review-data').LabelItem[], more: number } }} OverviewView
  */
 
@@ -125,9 +126,11 @@ const METHOD_NOT_ALLOWED = {
  *
  * @typedef {object} TimelineEntry
  * @property {string} who
+ * @property {string|null} avatar The author's avatar URL, when GitHub gave one.
  * @property {string} what
  * @property {string} when `YYYY-MM-DD HH:MM` UTC, or GitHub's text when not ISO 8601.
  * @property {string} body
+ * @property {'APPROVED'|'CHANGES_REQUESTED'|null} tone A review's verdict, for its colour.
  *
  * @typedef {object} PageModel
  * @property {'loading'|'failed'|'ready'} kind `loading`/`failed`: no review data to show
@@ -135,8 +138,8 @@ const METHOD_NOT_ALLOWED = {
  * @property {number|null} number The pull request number; null only for an invalid target.
  * @property {string|null} loadError The last load's failure, if it failed.
  * @property {boolean} refreshing A load is running; shown data is the previous load's.
- * @property {{ title: string, number: number, state: string, author: string, headRefName: string,
- *   baseRefName: string, body: string, createdAt: string|null, refsBase: string|null }|null} pr
+ * @property {{ title: string, number: number, state: string, author: string, avatar: string|null, url: string,
+ *   headRefName: string, baseRefName: string, body: string, createdAt: string|null, refsBase: string|null }|null} pr
  *   `createdAt` as `formatWhen` gives it, null when GitHub did not say; `refsBase` the
  *   repository's URL that `#123` in a body links against, null when the pull request's
  *   URL has an unexpected shape.
@@ -253,7 +256,7 @@ function overviewViewOf(overview, pr) {
   const c = overview.checks;
   /** @type {ChecksView} */
   const checks = c.kind === 'failed' ? { kind: 'failed', message: c.error.message } : c;
-  return { kind: 'ready', merge: mergeStateOf(pr, overview), checks, reviewers: overview.reviewers, labels: overview.labels };
+  return { kind: 'ready', merge: mergeStateOf(pr, overview), checks, reviewers: overview.reviewers, assignees: overview.assignees, milestone: overview.milestone, labels: overview.labels };
 }
 
 /**
@@ -281,13 +284,16 @@ function pageModelOf(state, { attentionLeft, counts, draft, error, busy, mergeRe
   if (!data) return model;
   const { pr } = data;
   model.pr = { title: pr.title, number: pr.number, state: pr.state, author: pr.author ? pr.author.login : 'ghost',
+    avatar: pr.author ? pr.author.avatarUrl : null, url: pr.url,
     headRefName: pr.headRefName, baseRefName: pr.baseRefName, body: pr.body,
     createdAt: pr.createdAt ? formatWhen(pr.createdAt) : null, refsBase: refsBaseOf(pr.url) };
   model.timeline = data.timeline.map((item) => ({
     who: item.author ? item.author.login : 'ghost',
+    avatar: item.author ? item.author.avatarUrl : null,
     what: item.kind === 'comment' ? 'commented' : REVIEW_STATE_WORDS[item.reviewState || ''] || 'reviewed',
     when: formatWhen(item.createdAt),
     body: item.body,
+    tone: item.reviewState === 'APPROVED' || item.reviewState === 'CHANGES_REQUESTED' ? item.reviewState : null,
   }));
   if (data.pendingReview) {
     /** @type {PendingComment[]} */
@@ -367,15 +373,21 @@ details summary { cursor: pointer; padding: 5px 10px; color: var(--vscode-descri
 .merge-controls { justify-content: flex-start; align-items: center; }
 select { font: inherit; padding: 3px 6px; color: var(--vscode-dropdown-foreground); background: var(--vscode-dropdown-background); border: 1px solid var(--vscode-dropdown-border, var(--vscode-panel-border)); }
 .merge ul { margin: 4px 0 4px 18px; padding: 0; }
-.side .p { display: flex; gap: 6px; align-items: baseline; margin: 3px 0; }
-.side .p .s { margin-left: auto; font-size: 12px; }
-.lbl { display: inline-block; border-radius: 10px; padding: 0 8px; font-size: 12px; margin: 2px 3px 2px 0; border: 1px solid var(--vscode-panel-border); }
-.meta { margin-bottom: 12px; }
+.side .p { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
+.side .p .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side .p .s { font-size: 12px; }
+.av { width: 20px; height: 20px; border-radius: 50%; vertical-align: middle; margin-right: 6px; flex: none; }
+.side .av { margin-right: 0; }
+.av.ph { display: inline-block; background: var(--vscode-badge-background); opacity: .5; }
+.lbl { display: inline-block; border-radius: 10px; padding: 0 8px; font-size: 12px; font-weight: 500; margin: 2px 4px 2px 0; border: 1px solid var(--vscode-panel-border); }
+.meta { margin-bottom: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 0 4px; }
+.meta .who { font-weight: 600; }
+.br { font-family: var(--vscode-editor-font-family); font-size: .95em; padding: 1px 6px; border-radius: 4px; background: var(--vscode-textCodeBlock-background); }
 .state { border-radius: 10px; padding: 1px 9px; font-size: 12px; margin-right: 6px; color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); }
 .state.OPEN { color: var(--vscode-button-foreground); background: var(--vscode-testing-iconPassed); }
 code { font-family: var(--vscode-editor-font-family); }
 .text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.bar { display: flex; gap: 6px; margin: 0 0 14px; }
+.bar { display: flex; gap: 12px; align-items: center; margin: 0 0 14px; }
 .card { border: 1px solid var(--vscode-panel-border); border-radius: 4px; }
 .card .head { padding: 6px 12px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-textBlockQuote-background); }
 .card .head .who { font-weight: 600; }
@@ -406,9 +418,12 @@ code { font-family: var(--vscode-editor-font-family); }
 .md mark { background: var(--vscode-editor-findMatchHighlightBackground); color: inherit; }
 .md dt { font-weight: 600; } .md dd { margin: 0 0 6px 20px; }
 .md figcaption, .md caption { color: var(--vscode-descriptionForeground); font-size: .95em; }
-.tl { border-left: 2px solid var(--vscode-panel-border); margin-left: 8px; padding-left: 14px; }
-.ev { margin: 10px 0; }
-.ev .text { margin-top: 2px; }
+.tl { display: flex; flex-direction: column; gap: 10px; }
+.ev.line { padding: 4px 12px; border-left: 3px solid var(--vscode-panel-border); color: var(--vscode-descriptionForeground); }
+.ev.line .who { color: var(--vscode-foreground); }
+.ev.approved .head, .ev.line.approved { border-left: 3px solid var(--vscode-testing-iconPassed); }
+.ev.changes .head, .ev.line.changes { border-left: 3px solid var(--vscode-testing-iconFailed); }
+.card.ev .head { display: flex; align-items: center; gap: 0 4px; flex-wrap: wrap; }
 .pending a { display: block; padding: 4px 8px; margin: 4px 0; border-left: 3px solid var(--vscode-editorWarning-foreground); background: var(--vscode-textBlockQuote-background); }
 textarea { box-sizing: border-box; width: 100%; min-height: 90px; padding: 6px; font: inherit; resize: vertical;
   color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border, var(--vscode-panel-border)); }
@@ -521,11 +536,30 @@ const retryBanner = (loadError) => (loadError === null ? ''
  */
 function headerHtml(pr, refreshing) {
   const stateWords = PR_STATE_WORDS[pr.state] || pr.state;
+  // The pull request's own URL is a real link: the editor opens it, as it does a link in a body.
+  const open = /^https:\/\//.test(pr.url) ? ` <a href="${escapeHtml(pr.url)}" data-el="open-on-github">Open on GitHub</a>` : '';
   return `<h2>${escapeHtml(pr.title)} <span class="num">#${pr.number}</span></h2>`
     + `<div class="meta"><span class="state ${escapeHtml(pr.state)}">${escapeHtml(stateWords)}</span>`
-    + `${escapeHtml(pr.author)} wants to merge into <code>${escapeHtml(pr.baseRefName)}</code>`
-    + ` from <code>${escapeHtml(pr.headRefName)}</code></div>`
-    + `<div class="bar"><button class="secondary" data-act="retry" data-el="refresh"${refreshing ? ' disabled' : ''}>${refreshing ? 'Refreshing…' : 'Refresh'}</button></div>`;
+    + `${avatarHtml(pr.avatar)}<span class="who">${escapeHtml(pr.author)}</span> wants to merge into <span class="br">${escapeHtml(pr.baseRefName)}</span>`
+    + ` from <span class="br">${escapeHtml(pr.headRefName)}</span></div>`
+    + `<div class="bar"><button class="secondary" data-act="retry" data-el="refresh"${refreshing ? ' disabled' : ''}>${refreshing ? 'Refreshing…' : 'Refresh'}</button>${open}</div>`;
+}
+
+/** Keeps a side-column row's name aligned when there is no avatar (a team, another host). */
+const PLACEHOLDER_AVATAR = '<span class="av ph"></span>';
+
+/**
+ * An avatar image when GitHub gave a URL on a host the tab's CSP lets images load from
+ * (GitHub's own), else nothing: a broken image says less than no image. Asked at 40px,
+ * GitHub's size parameter, for a sharp 20px circle.
+ * @param {string|null} url
+ * @returns {string}
+ */
+function avatarHtml(url) {
+  if (url === null || !imageMayLoad(url)) return '';
+  let sized;
+  try { const u = new URL(url); u.searchParams.set('s', '40'); sized = u.toString(); } catch { return ''; }
+  return `<img class="av" src="${escapeHtml(sized)}" alt="">`;
 }
 
 /**
@@ -535,7 +569,7 @@ function headerHtml(pr, refreshing) {
  * @returns {string}
  */
 function descriptionHtml(pr) {
-  const head = `<div class="head"><span class="who">${escapeHtml(pr.author)}</span> opened this pull request`
+  const head = `<div class="head">${avatarHtml(pr.avatar)}<span class="who">${escapeHtml(pr.author)}</span> opened this pull request`
     + (pr.createdAt === null ? '' : ` <span class="when">${escapeHtml(pr.createdAt)}</span>`) + '</div>';
   const body = pr.body.trim() === '' ? '<div class="note">No description provided.</div>'
     : `<div class="md" data-el="description">${renderMarkdown(pr.body, { refsBase: pr.refsBase })}</div>`;
@@ -545,8 +579,14 @@ function descriptionHtml(pr) {
 /** @param {TimelineEntry[]} timeline @param {string|null} refsBase @returns {string} */
 function timelineHtml(timeline, refsBase) {
   if (!timeline.length) return '';
-  const items = timeline.map((e) => `<div class="ev"><b>${escapeHtml(e.who)}</b> ${escapeHtml(e.what)} `
-    + `<span class="when">${escapeHtml(e.when)}</span>${e.body.trim() === '' ? '' : `<div class="md">${renderMarkdown(e.body, { refsBase })}</div>`}</div>`).join('');
+  // A comment or a review with a body is a card like the description; a bare verdict
+  // (approved, requested changes) is one line, coloured by what it says.
+  const items = timeline.map((e) => {
+    const tone = e.tone === 'APPROVED' ? ' approved' : e.tone === 'CHANGES_REQUESTED' ? ' changes' : '';
+    const head = `${avatarHtml(e.avatar)}<span class="who">${escapeHtml(e.who)}</span> ${escapeHtml(e.what)} <span class="when">${escapeHtml(e.when)}</span>`;
+    return e.body.trim() === '' ? `<div class="ev line${tone}">${head}</div>`
+      : `<div class="card ev${tone}"><div class="head">${head}</div><div class="md">${renderMarkdown(e.body, { refsBase })}</div></div>`;
+  }).join('');
   return `<h4>Timeline</h4><div class="tl">${items}</div>`;
 }
 
@@ -622,10 +662,24 @@ const hasColor = (label) => label.color !== null && RE_HEX.test(label.color);
  */
 function labelCss(model) {
   if (model.overview.kind !== 'ready') return '';
-  return model.overview.labels.items.map((l, i) => (hasColor(l) ? `.lbl-${i} { border-color: #${l.color}; }\n` : '')).join('');
+  return model.overview.labels.items.map((l, i) => (hasColor(l) ? `.lbl-${i} { background: #${l.color}; border-color: #${l.color}; color: ${textOn(/** @type {string} */ (l.color))}; }\n` : '')).join('');
 }
 
 const retryButton = '<button class="secondary" data-act="retry">Retry</button>';
+
+/**
+ * Black or white text for a label's background, by its relative luminance (WCAG's
+ * formula), as GitHub picks it.
+ * @param {string} hex 6 lower-case hex digits.
+ * @returns {'#000'|'#fff'}
+ */
+function textOn(hex) {
+  const channel = (/** @type {number} */ i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4) > 0.45 ? '#000' : '#fff';
+}
 
 /** @type {Record<string, { icon: string, cls: string, words: string }>} */
 const CHECK_LOOK = {
@@ -721,19 +775,45 @@ const REVIEWER_LOOK = {
 
 /** @param {OverviewView} view @returns {string} */
 function reviewersHtml(view) {
-  if (view.kind === 'failed') return `<h4>Reviewers</h4><div class="note" data-el="reviewers">Reviewers could not be loaded: ${escapeHtml(view.message)}</div>`;
+  if (view.kind === 'failed') return '';
   const { items, more } = view.reviewers;
   const rows = items.map((r) => {
     const look = REVIEWER_LOOK[r.state];
-    return `<div class="p"><span class="${look.cls}">${look.icon}</span><span>${escapeHtml(r.name)}</span><span class="s ${look.cls}">${look.words}</span></div>`;
+    return `<div class="p" title="${look.words}">${avatarHtml(r.avatarUrl) || PLACEHOLDER_AVATAR}<span class="n">${escapeHtml(r.name)}</span><span class="s ${look.cls}">${look.icon}</span></div>`;
   }).join('');
-  const note = more ? `<div class="note">${more} more reviewer${more === 1 ? ' was' : 's were'} not loaded.</div>` : '';
+  const note = (more ? `<div class="note">${more} more reviewer${more === 1 ? ' was' : 's were'} not loaded.</div>` : '')
+    + (view.reviewers.note ? `<div class="note" data-el="reviewers-note">${escapeHtml(view.reviewers.note)}</div>` : '');
   return `<h4>Reviewers</h4><div data-el="reviewers">${rows || '<div class="note">No reviewers.</div>'}${note}</div>`;
 }
 
 /** @param {OverviewView} view @returns {string} */
+function assigneesHtml(view) {
+  if (view.kind === 'failed') return '';
+  const { items, more } = view.assignees;
+  const rows = items.map((a) => `<div class="p">${avatarHtml(a.avatarUrl) || PLACEHOLDER_AVATAR}<span class="n">${escapeHtml(a.login)}</span></div>`).join('');
+  const note = more ? `<div class="note">${more} more assignee${more === 1 ? ' was' : 's were'} not loaded.</div>` : '';
+  return `<h4>Assignees</h4><div data-el="assignees">${rows || '<div class="note">No one assigned.</div>'}${note}</div>`;
+}
+
+/** @param {OverviewView} view @returns {string} */
+function milestoneHtml(view) {
+  if (view.kind === 'failed') return '';
+  return `<h4>Milestone</h4><div data-el="milestone">${view.milestone === null ? '<div class="note">No milestone.</div>' : escapeHtml(view.milestone)}</div>`;
+}
+
+/**
+ * The side column: reviewers, assignees, labels and milestone, or one note when the
+ * overview did not load (the merge box in the main column carries the error and Retry).
+ * @param {OverviewView} view @returns {string}
+ */
+function sideHtml(view) {
+  if (view.kind === 'failed') return `<div class="note" data-el="side-failed">Reviewers, assignees, labels and milestone could not be loaded: <span class="text">${escapeHtml(view.message)}</span> ${retryButton}</div>`;
+  return reviewersHtml(view) + assigneesHtml(view) + labelsHtml(view) + milestoneHtml(view);
+}
+
+/** @param {OverviewView} view @returns {string} */
 function labelsHtml(view) {
-  if (view.kind === 'failed') return `<h4>Labels</h4><div class="note" data-el="labels">Labels could not be loaded: ${escapeHtml(view.message)}</div>`;
+  if (view.kind === 'failed') return '';
   const { items, more } = view.labels;
   const chips = items.map((l, i) => `<span class="lbl${hasColor(l) ? ` lbl-${i}` : ''}">${escapeHtml(l.name)}</span>`).join('');
   const note = more ? `<div class="note">${more} more label${more === 1 ? ' was' : 's were'} not loaded.</div>` : '';
@@ -752,7 +832,7 @@ function bodyHtml(model) {
     + (model.refreshing ? '<p class="note">Refreshing from GitHub…</p>' : '')
     + incomplete + headerHtml(pr, model.refreshing)
     + `<div class="cols"><div>${descriptionHtml(pr)}${timelineHtml(model.timeline, pr.refsBase)}${checksHtml(model.overview.kind === 'ready' ? model.overview.checks : { kind: 'failed', message: model.overview.message })}`
-    + `${mergeHtml(model)}${formHtml(model)}</div><div class="side">${reviewersHtml(model.overview)}${labelsHtml(model.overview)}</div></div>`;
+    + `${mergeHtml(model)}${formHtml(model)}</div><div class="side">${sideHtml(model.overview)}</div></div>`;
 }
 
 /**

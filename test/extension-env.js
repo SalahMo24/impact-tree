@@ -485,7 +485,7 @@ const overviewAnswer = (headOid) => ({ repository: {
   pullRequest: {
     headRefOid: headOid, isDraft: false, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', reviewDecision: null,
     isMergeQueueEnabled: false, isInMergeQueue: false,
-    labels: { totalCount: 0, nodes: [] }, reviewRequests: { totalCount: 0, nodes: [] }, latestReviews: { totalCount: 0, nodes: [] },
+    labels: { totalCount: 0, nodes: [] }, assignees: { totalCount: 0, nodes: [] }, milestone: null, reviewRequests: { totalCount: 0, nodes: [] }, latestReviews: { totalCount: 0, nodes: [] },
   },
   object: { statusCheckRollup: null },
 } });
