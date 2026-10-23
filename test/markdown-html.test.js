@@ -1,6 +1,7 @@
 'use strict';
-// Markdown from GitHub as the Pull Request tab's HTML: what is rendered, and what can
-// never come out of it (GitHub's own HTML, a non-http link, an inline style, an image
+// Markdown from GitHub as the Pull Request tab's HTML: what is rendered, including the
+// raw HTML GitHub allows in a comment, and what can never come out of it (a tag or
+// attribute off the allowlist, a non-http link, an inline style or handler, an image
 // element). Through the public function only.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -19,11 +20,47 @@ test('GitHub-flavoured markdown: headings, emphasis, code, lists, quotes, rules,
   assert.ok(html.includes('<s>gone</s>'));
 });
 
-test('raw HTML is shown as text, never passed through', () => {
-  const html = renderMarkdown('<img src=x onerror="alert(1)"> and <script>bad()</script>\n\n<div style="color:red" onclick="x()">block</div>');
-  assert.ok(!html.includes('<img') && !html.includes('<script') && !html.includes('<div'));
-  assert.ok(html.includes('&lt;img src=x onerror=&quot;alert(1)&quot;&gt;'));
-  assert.ok(!/<[^>]*\sstyle=/.test(html) && !/<[^>]*\son\w+=/.test(html), 'no attribute inside a tag; the words survive only as escaped text');
+test('GitHub\'s raw HTML is rendered: a template comment vanishes, details fold, kbd and sub survive, align becomes a class', () => {
+  const html = renderMarkdown('<!-- Describe the change -->\nFixes it.\n\n<details open><summary>More</summary>\n\n| a |\n|---|\n| 1 |\n\n</details>\n\n<p align="center">Press <kbd>Cmd</kbd> H<sub>2</sub>O <abbr title="pull request">PR</abbr></p>\n\n<table><tr><td align="right">r</td><td align="LEFT" class="al bogus">l</td></tr></table>');
+  assert.ok(!html.includes('Describe the change'), 'an HTML comment is dropped');
+  assert.ok(html.startsWith('<p>Fixes it.</p>'));
+  assert.ok(html.includes('<details open><summary>More</summary>\n<table>'), 'markdown inside a details block is rendered');
+  assert.ok(html.includes('<p class="ac">Press <kbd>Cmd</kbd> H<sub>2</sub>O <abbr title="pull request">PR</abbr></p>'));
+  assert.ok(html.includes('<td class="ar">r</td><td class="al">l</td>'), 'align is a class; an unknown class is dropped');
+  assert.ok(!/\salign=/.test(html));
+});
+
+test('a tag off the allowlist is dropped and its text kept; script and style go with their text; no attribute survives but the allowed few', () => {
+  const html = renderMarkdown('<div style="position:fixed" onclick="x()" id="top" data-x="1">block</div>\n\n<span style="color:red" title="t">s</span> <script>bad()</script><style>p{}</style><iframe src="https://e"></iframe><object data="x"></object><svg onload="y()"><a href="https://z">in svg</a></svg><base href="https://evil/"><meta http-equiv="refresh" content="0"><form action="https://evil"><input type="text" onfocus="z()"><button>go</button></form><textarea>t</textarea><h2 id="h" class="anything">H</h2>');
+  assert.ok(html.includes('<div>block</div>'));
+  assert.ok(html.includes('<span>s</span>'), 'a span keeps no attribute');
+  for (const gone of ['<script', '<style', '<iframe', '<object', '<svg', '<base', '<meta', '<form', '<input', '<button', '<textarea', 'bad()', 'p{}']) assert.ok(!html.includes(gone), gone);
+  assert.ok(html.includes('<a href="https://z">in svg</a>') && html.includes('go'), 'text inside a dropped tag stays');
+  assert.ok(html.includes('<h2>H</h2>'), 'a heading keeps no id or class');
+  assert.ok(!/<[^>]*\s(style|on\w+|id|name|target|data-\w+)=/.test(html), 'no style, handler, id, name, target or data attribute inside any tag');
+});
+
+test('a raw <a> is an anchor only with a safe target, a raw <img> is a link like a markdown image, a <picture> collapses to it', () => {
+  const html = renderMarkdown('<a href="https://x/1" target="_blank" rel="noopener" name="n">ok</a> <a href="javascript:alert(1)" onclick="y()">js</a> <a href="//evil/p">rel</a> <a href=" JAVASCRIPT:x">cased</a>\n\n<p><picture><source srcset="https://x/d.png" media="(prefers-color-scheme: dark)"><img src="https://x/l.png" alt="logo" width="100" height="20"></picture> <img src="data:image/png;base64,AAAA" alt="d"> <img src=x onerror="alert(1)"></p>');
+  assert.ok(html.includes('<a href="https://x/1">ok</a>'), 'target, rel and name are dropped');
+  assert.ok(html.includes('<span>js</span>') && html.includes('<span>rel</span>') && html.includes('<span>cased</span>'), 'an unsafe target is text');
+  assert.ok(!/href="(javascript|data|\/\/)/i.test(html));
+  assert.ok(html.includes('<a href="https://x/l.png" class="img">[image: logo]</a>'), 'the picture is its image, as a link');
+  assert.ok(html.includes('<span>[image: d]</span>') && html.includes('<span>[image: image]</span>'), 'an image with no safe source is its placeholder');
+  assert.ok(!html.includes('<img') && !html.includes('<picture') && !html.includes('<source') && !html.includes('onerror'));
+});
+
+test('a raw <input> is only ever a disabled checkbox', () => {
+  const html = renderMarkdown('<input type="checkbox" checked onchange="x()"> a <input type="checkbox" name="n"> b <input type="text" value="v"> c <input type="submit">');
+  assert.ok(html.includes('<input type="checkbox" disabled checked> a <input type="checkbox" disabled> b  c '));
+  assert.ok(!/type="(text|submit)"/.test(html) && !html.includes('value='));
+});
+
+test('#123 is not linked inside a raw <a>, and GitHub\'s HTML cannot add a class the tab does not know', () => {
+  const html = renderMarkdown('<a href="https://x/9">see #9</a> and #10 <p class="note ac">n</p> <a href="https://x" class="ref img other">c</a> <li class="task x">i</li>', { refsBase: BASE });
+  assert.ok(html.includes('<a href="https://x/9">see #9</a>') && !html.includes('issues/9'));
+  assert.ok(html.includes(`<a href="${BASE}/issues/10" class="ref">#10</a>`));
+  assert.ok(html.includes('<p class="ac">n</p>') && html.includes('<a href="https://x" class="ref img">c</a>') && html.includes('<li class="task">i</li>'));
 });
 
 test('links: http, https and mailto become anchors; javascript, data, file and vbscript stay text; bare URLs are linked', () => {

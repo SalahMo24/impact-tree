@@ -9,6 +9,11 @@
   markdown (headings, lists, code, tables, task lists, links; `#123` links to that issue or
   pull request), shows who opened the pull request and when, and has a Refresh button in
   its header. The description sits beside the reviewers and labels column.
+- The **Pull Request tab** also renders the raw HTML GitHub allows in a description or
+  comment: a `<details>` fold, `<kbd>`, `<sub>`, a centred paragraph of badges, a template's
+  `<!-- comment -->` (hidden). The output passes an allowlist sanitizer, so no tag or
+  attribute outside the list, no inline style or handler, and no link other than
+  http(s) or mailto reaches the tab; images are still drawn as links.
 
 ## 0.1.0
 
