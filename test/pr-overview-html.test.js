@@ -55,7 +55,7 @@ const tagOf = (doc, name) => new RegExp(`<\\w+[^>]*data-el="${name}"[^>]*>`).exe
 const isDisabled = (doc, name) => / disabled(?=[\s>])/.test(tagOf(doc, name));
 const isHidden = (doc, name) => / hidden(?=[\s>])/.test(tagOf(doc, name));
 
-test('everything GitHub sends is escaped text or rendered markdown that shows its HTML as text', () => {
+test('everything GitHub sends is escaped text or sanitized markdown', () => {
   const evil = '<img src=x onerror="alert(1)"> & \'quotes\'\nline two';
   const model = reviewModel({
     body: evil,
@@ -73,8 +73,8 @@ test('everything GitHub sends is escaped text or rendered markdown that shows it
   assert.ok(!doc.includes('<b>.js'), 'no element from a path');
   assert.ok(doc.includes('&lt;script&gt;alert(1)&lt;/script&gt;'));
   assert.ok(doc.includes('&lt;/textarea&gt;&lt;script&gt;bad()&lt;/script&gt;</textarea>'), 'the draft cannot close its textarea');
-  assert.match(doc, /<div class="md" data-el="description"><p>&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt; &amp; 'quotes'<br>\nline two<\/p>\n<\/div>/,
-    'the description is markdown: GitHub\'s HTML is text, and a single newline is a line break as GitHub draws it');
+  assert.match(doc, /<div class="md" data-el="description"><p><span>\[image: image\]<\/span> &amp; 'quotes'<br>\nline two<\/p>\n<\/div>/,
+    'the description is sanitized markdown: an image with no safe source is its placeholder, its handler is gone, and a single newline is a line break as GitHub draws it');
   assert.match(doc, /\.text \{ white-space: pre-wrap;/);
 });
 
@@ -685,7 +685,7 @@ test('a body adds no inline style or handler, whatever it holds: raw HTML, an al
   assert.ok(!/<[^>]*\sstyle=/.test(doc), 'no style= attribute in any tag');
   assert.ok(!/<[^>]*\son\w+=/.test(doc), 'no on…= attribute in any tag');
   assert.ok(doc.includes('<th class="ac">a</th>') && doc.includes('<td class="ar">2</td>'), 'alignment is a class');
-  assert.ok(!doc.includes('<form') && !doc.includes('<div style'), 'GitHub\'s HTML is text');
+  assert.ok(!doc.includes('<form') && !doc.includes('<input') && doc.includes('<div>hi</div>'), 'GitHub\'s HTML is sanitized: the div stays bare, the form and its input are gone');
 });
 
 test('refsBaseOf: the repository under a pull request URL, on any host; nothing for another shape', () => {

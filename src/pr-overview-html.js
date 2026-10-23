@@ -399,6 +399,12 @@ code { font-family: var(--vscode-editor-font-family); }
 .md .al { text-align: left; } .md .ac { text-align: center; } .md .ar { text-align: right; }
 .md hr { border: 0; border-top: 1px solid var(--vscode-panel-border); margin: 14px 0; }
 .md a.img::before { content: '🖼 '; }
+.md details, .md dl, .md figure, .md div { margin: 0 0 10px; }
+.md summary { cursor: pointer; font-weight: 600; }
+.md kbd { font-family: var(--vscode-editor-font-family); font-size: .9em; padding: .1em .4em; border: 1px solid var(--vscode-panel-border); border-bottom-width: 2px; border-radius: 3px; background: var(--vscode-textCodeBlock-background); }
+.md mark { background: var(--vscode-editor-findMatchHighlightBackground); color: inherit; }
+.md dt { font-weight: 600; } .md dd { margin: 0 0 6px 20px; }
+.md figcaption, .md caption { color: var(--vscode-descriptionForeground); font-size: .95em; }
 .tl { border-left: 2px solid var(--vscode-panel-border); margin-left: 8px; padding-left: 14px; }
 .ev { margin: 10px 0; }
 .ev .text { margin-top: 2px; }
