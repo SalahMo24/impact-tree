@@ -40,7 +40,7 @@ const {
  * @property {string} [sha]
  * @property {number} additions
  * @property {number} deletions
- * @typedef {{ accessToken: string, account?: { label?: string } }} AuthSession The
+ * @typedef {{ accessToken: string, account?: { label?: string }, scopes?: readonly string[] }} AuthSession The
  *   fields read from the editor's GitHub authentication session.
  */
 
@@ -184,6 +184,14 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
 
   const isSignedIn = () => !!session;
   const account = () => (session && session.account && session.account.label) || null;
+  /**
+   * The session's OAuth scopes as the editor reports them, or none when signed out. The
+   * editor's GitHub session is shared with other extensions, so it often carries more than
+   * the `repo` asked for; a query can select fields a scope unlocks (team names need
+   * `read:org`) only when the scope is here.
+   * @returns {string[]}
+   */
+  const scopes = () => (session && Array.isArray(session.scopes) ? session.scopes.filter(isString) : []);
   function signOutLocally() { session = null; }
 
   /**
@@ -474,7 +482,7 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
   }
 
   return {
-    signIn, isSignedIn, account, signOutLocally, graphql, listOpenPullRequests, listMyTeams,
+    signIn, scopes, isSignedIn, account, signOutLocally, graphql, listOpenPullRequests, listMyTeams,
     listPullRequestFiles, fileAtRef, parseRemote, getPullRequest, mergeBase,
   };
 }

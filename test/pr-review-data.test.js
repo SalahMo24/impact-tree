@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 const {
   loadPullRequestReview, threadsForRange, threadsForFile, openCount, pendingCount,
   DEFAULT_BUDGETS, COMMENTS_PER_THREAD,
+  TEAM_UNNAMED,
 } = require('../src/pr-review-data');
 const { GitHubResponseError, GitHubGraphQLError, GitHubRateLimitError } = require('../src/github-request');
 const { isAnalysisCancelled, AnalysisCancelledError } = require('../src/engine/cancellation');
@@ -51,7 +52,8 @@ const overviewAnswer = (over = {}, { pr = {}, repo = {} } = {}) => ({
     pullRequest: {
       headRefOid: 'h'.repeat(40), isDraft: false, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', reviewDecision: null,
       isMergeQueueEnabled: false, isInMergeQueue: false,
-      labels: { totalCount: 0, nodes: [] }, reviewRequests: { totalCount: 0, nodes: [] }, latestReviews: { totalCount: 0, nodes: [] },
+      labels: { totalCount: 0, nodes: [] }, assignees: { totalCount: 0, nodes: [] }, milestone: null,
+      reviewRequests: { totalCount: 0, nodes: [] }, latestReviews: { totalCount: 0, nodes: [] },
       ...pr,
     },
     object: { statusCheckRollup: { state: 'SUCCESS', contexts: { totalCount: 1, ...page([checkRun('lint')]) } } },
@@ -434,6 +436,49 @@ test('a check carries name, workflow or app context, required, description and a
   assert.deepEqual(items.slice(2, 5).map((c) => c.url), [null, null, null]);
   assert.deepEqual(items[5], { name: 'ci/legacy', context: null, state: 'passed', required: false, detail: 'Build ok', url: 'https://ci.example/9' });
   assert.deepEqual([items[6].url, items[6].detail], [null, null]);
+});
+
+test('team names are asked for only with the read:org scope; without it a requested team is "A team" and the list says why', async () => {
+  const requests = { totalCount: 2, nodes: [
+    { requestedReviewer: { __typename: 'Team' } }, { requestedReviewer: { __typename: 'Team' } },
+  ] };
+  const gh = fakeClient(REVIEW, [overviewAnswer({}, { pr: { reviewRequests: requests } })]);
+  const { overview } = await loadPullRequestReview(gh, TARGET);
+  assert.ok(!gh.overviewCalls[0].query.includes('on Team'), 'no scopes known: no Team fields');
+  assert.equal(overview.kind, 'ready');
+  assert.deepEqual(overview.reviewers.items.map((r) => `${r.kind}:${r.name}:${r.state}`), [`team:${TEAM_UNNAMED}:AWAITING`, `team:${TEAM_UNNAMED}:AWAITING`], 'each unnamed team keeps its row');
+  assert.match(overview.reviewers.note, /read:org/);
+
+  const repoOnly = Object.assign(fakeClient(REVIEW), { scopes: () => ['repo', 'workflow'] });
+  await loadPullRequestReview(repoOnly, TARGET);
+  assert.ok(!repoOnly.overviewCalls[0].query.includes('on Team'), 'repo only: no Team fields');
+
+  const org = Object.assign(fakeClient(REVIEW, [overviewAnswer({}, { pr: { reviewRequests: { totalCount: 1, nodes: [{ requestedReviewer: { __typename: 'Team', name: 'Mobile', combinedSlug: 'o/mobile' } }] } } })]), { scopes: () => ['repo', 'read:org'] });
+  const named = (await loadPullRequestReview(org, TARGET)).overview;
+  assert.ok(org.overviewCalls[0].query.includes('... on Team { name combinedSlug }'), 'read:org: Team fields');
+  assert.deepEqual(named.reviewers, { items: [{ name: 'o/mobile', kind: 'team', state: 'AWAITING', avatarUrl: null }], more: 0 }, 'named, and no note');
+});
+
+test('a scopes answer GitHub contradicts (INSUFFICIENT_SCOPES) is asked once more without team names; any other error fails the overview', async () => {
+  const scopeError = new GitHubGraphQLError('/graphql', [
+    { message: "The 'name' field requires one of the following scopes: ['read:org']", path: ['repository', 'pullRequest', 'reviewRequests'], type: 'INSUFFICIENT_SCOPES' },
+    { message: "The 'combinedSlug' field requires one of the following scopes: ['read:org']", path: null, type: 'INSUFFICIENT_SCOPES' },
+  ]);
+  const gh = Object.assign(fakeClient(REVIEW, [scopeError, overviewAnswer({}, { pr: { reviewRequests: { totalCount: 1, nodes: [{ requestedReviewer: { __typename: 'Team' } }] } } })]), { scopes: () => ['read:org'] });
+  const { overview } = await loadPullRequestReview(gh, TARGET);
+  assert.equal(gh.overviewCalls.length, 2);
+  assert.ok(gh.overviewCalls[0].query.includes('on Team') && !gh.overviewCalls[1].query.includes('on Team'));
+  assert.equal(overview.kind, 'ready');
+  assert.equal(overview.reviewers.items[0].name, TEAM_UNNAMED);
+
+  const mixed = new GitHubGraphQLError('/graphql', [{ message: 'x', path: null, type: 'INSUFFICIENT_SCOPES' }, { message: 'y', path: null, type: 'NOT_FOUND' }]);
+  const other = Object.assign(fakeClient(REVIEW, [mixed]), { scopes: () => ['read:org'] });
+  const failed = (await loadPullRequestReview(other, TARGET)).overview;
+  assert.equal(failed.kind, 'failed');
+  assert.equal(other.overviewCalls.length, 1, 'not retried: not only a scopes refusal');
+  const noScopes = fakeClient(REVIEW, [scopeError]);
+  assert.equal((await loadPullRequestReview(noScopes, TARGET)).overview.kind, 'failed');
+  assert.equal(noScopes.overviewCalls.length, 1, 'not retried: team names were never asked for');
 });
 
 test('labels: names, a colour only when it is 6 hex digits (lower-cased), and the count not loaded', async () => {
