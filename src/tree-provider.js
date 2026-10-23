@@ -6,6 +6,7 @@ const { viewStateOf } = require('./view-state');
 const models = require('./tree-row-models');
 const reviewTree = require('./review-tree-model');
 const { groupCallerRowsByFile } = require('./tree-grouping');
+const { foldFileRows, markFirstPathOpen } = require('./folder-tree');
 const { renderTreeItem } = require('./tree-item-renderer');
 const threadsModel = require('./review-threads');
 const { buildFeedbackGroup, renderFeedbackItem, buildRoundGroup, renderRoundItem } = require('./feedback-tree');
@@ -39,7 +40,10 @@ const { buildFeedbackGroup, renderFeedbackItem, buildRoundGroup, renderRoundItem
  */
 
 // The view is file first: one row per changed file, worst first, holding that file's
-// changes; under a change, its callers and what is known of its tests. A caller row
+// changes; under a change, its callers and what is known of its tests. In the tree layout
+// (`getLayout`) the file rows are folded into folder rows, ranked the same way; the folding
+// is presentation only, over the same file rows, so ticks, counts, filters and the walk
+// read the flat rows in both layouts. A caller row
 // resolves its own callers on expand. That laziness is the whole reason the extension
 // is cheap where the CLI is not: the CLI pre-walked 152 positions (123s); a reviewer
 // expands maybe a dozen.
@@ -68,6 +72,7 @@ const { buildFeedbackGroup, renderFeedbackItem, buildRoundGroup, renderRoundItem
  *   getRepoStatus?: () => import('./view-state').RepoStatus,
  *   getFeedbackDrafts?: () => readonly import('./feedback-drafts').FeedbackItem[],
  *   getFeedbackRound?: () => import('./feedback-round-view').RoundView|null,
+ *   getLayout?: () => 'flat'|'tree',
  * }} deps `getThreads` is what is known of the review threads of the pull request under
  *   review (`threadsViewOf` of the review store); a review without one has none. Call
  *   `threadsChanged` whenever its answer may have changed. `viewedOf` says what a file row
@@ -76,12 +81,15 @@ const { buildFeedbackGroup, renderFeedbackItem, buildRoundGroup, renderRoundItem
  *   `getFeedbackDrafts` lists the feedback drafts, shown as the "Feedback to send" group at
  *   the top; call `feedbackChanged` whenever its answer changes. `getFeedbackRound` is what
  *   happened to the last sent round, shown as the "Feedback round N" group above it; call
- *   `feedbackChanged` whenever it changes too.
+ *   `feedbackChanged` whenever it changes too. `getLayout` says how the file rows are laid
+ *   out, read on each root read: `flat` (the default) lists them, `tree` folds them into
+ *   folders; call `refresh('layout')` when its answer changes.
  */
 function createTreeProvider(vscode, {
   getState, resolver, isBusy = () => false, decorate = null, getPhase = () => 'ready', review = null,
   getAnalysisId = () => 0, isCurrentAnalysis = () => true, getThreads = () => threadsModel.NO_THREADS,
   viewedOf = () => null, getRepoStatus = () => 'ok', getFeedbackDrafts = () => [], getFeedbackRound = () => null,
+  getLayout = () => 'flat',
 }) {
   // The "Feedback to send" group: one row object for the provider's life, so a drafts change
   // can repaint it alone (`feedbackChanged`); its text is refreshed each time the root is
@@ -236,6 +244,13 @@ function createTreeProvider(vscode, {
   // handed to consumers are borrowed: only this provider may change their UI metadata.
   /** @type {{ analysisId: number, result: any, rows: TreeRow[], decorations: DecorationRequest[], parents: WeakMap<TreeRow, TreeRow>, childIds: WeakMap<TreeRow, string> }|null} */
   let built = null;
+  // The folding of the last root read: the folder rows handed out (so a tick on one is
+  // accepted) and the folder each folder or file row sits under. Owner: this provider.
+  // Replaced whole on every root read, so a flat read leaves no folder parent behind and a
+  // reveal in the flat list never climbs into a folder of an earlier tree read. Garbage
+  // with the provider.
+  /** @type {{ folders: Set<TreeRow>, parents: WeakMap<TreeRow, TreeRow> }} */
+  let folded = { folders: new Set(), parents: new WeakMap() };
   // Cache: which row each review thread belongs to, per file. Owner: this provider. Key:
   // the file rows (`built`) and the threads array the store's model holds; the store
   // replaces the model on every load, so a new array is new data. Invalidation: dropped
@@ -350,15 +365,48 @@ function createTreeProvider(vscode, {
     publishDecorations(analysisId, made.decorations);
     const kept = reviewTree.filterFileRows(made.rows, filter, isReviewed, openThreadsOf).map((e) => e.file);
     shownRoots = kept;
-    // Only the worst file starts open, so the first thing on screen is the thing to look at.
     // These rows are provider-owned. Keep the canonical objects so getParent,
     // actions and subsequent reads all refer to the same file, including the first.
-    const files = kept;
-    for (const [index, file] of files.entries()) file.expanded = index === 0 && file.type === 'reviewFile';
+    const files = layoutRows(st, kept);
+    // Only the worst path starts open, so the first thing on screen is the thing to look at.
+    markFirstPathOpen(files);
     const notices = models.buildNoticeRows(st.result);
     if (filter !== 'all' && files.length === 0) return [...notices, reviewTree.buildEmptyFilterRow(filter, getThreads().status)];
     return [...notices, ...files];
   }
+
+  /**
+   * The root rows for the file rows the filter kept: the rows themselves in the flat
+   * layout, or their folders in the tree layout. Records the folding (`folded`) either way.
+   * @param {ProviderState} state
+   * @param {TreeRow[]} kept
+   * @returns {TreeRow[]}
+   */
+  function layoutRows(state, kept) {
+    if (getLayout() !== 'tree') {
+      folded = { folders: new Set(), parents: new WeakMap() };
+      return kept;
+    }
+    const folderUriOf = (/** @type {string} */ dir) => (state.absPath ? uriFor(state.absPath(dir), null) : null);
+    const made = foldFileRows(kept, { folderUriOf });
+    const parents = new WeakMap();
+    for (const folder of made.folders) for (const child of folder.children) parents.set(child, folder);
+    folded = { folders: new Set(made.folders), parents };
+    return made.rows;
+  }
+
+  /**
+   * The row to repaint for a change in what a file row says: the file itself in the flat
+   * layout, or the root folder it sits under in the tree layout, whose own description
+   * (attention count, progress) changes with it.
+   * @param {TreeRow} file
+   * @returns {TreeRow}
+   */
+  const repaintTargetOf = (file) => {
+    let row = file;
+    for (let up = folded.parents.get(row); up; up = folded.parents.get(row)) row = up;
+    return row;
+  };
 
   /**
    * The rows of a file that the filter shows.
@@ -441,8 +489,8 @@ function createTreeProvider(vscode, {
   }
 
   /**
-   * Full presentation invalidation, reserved for analysis, phase and filter changes.
-   * @param {'analysis'|'filter'} [reason]
+   * Full presentation invalidation, reserved for analysis, phase, filter and layout changes.
+   * @param {'analysis'|'filter'|'layout'} [reason]
    */
   function refresh(reason = 'analysis') {
     if (disposed) return;
@@ -461,7 +509,7 @@ function createTreeProvider(vscode, {
     if (disposed || !state || !review) return;
     const current = builtFor(state);
     const rootsBefore = reviewTree.filterFileRows(current.rows, filter, isReviewed, openThreadsOf).map((e) => e.file);
-    const canonical = new Set(current.rows.flatMap((file) => [file, ...(file.rows || [])]));
+    const canonical = new Set([...current.rows.flatMap((file) => [file, ...(file.rows || [])]), ...folded.folders]);
     /** @type {Map<TreeRow, boolean>} */
     const requested = new Map();
     for (const { row, on } of changes) {
@@ -486,7 +534,7 @@ function createTreeProvider(vscode, {
       _emitter.fire(); // A file appeared/disappeared, including the empty-filter hint.
       return;
     }
-    for (const file of files) if (rootsAfter.includes(file)) _emitter.fire(file);
+    for (const file of files) if (rootsAfter.includes(file)) _emitter.fire(repaintTargetOf(file));
   }
 
   /**
@@ -613,13 +661,14 @@ function createTreeProvider(vscode, {
      * @param {TreeRow} n
      * @returns {TreeRow|undefined}
      */
-    getParent: (n) => feedbackParents.get(n) || built?.parents.get(n),
+    getParent: (n) => feedbackParents.get(n) || folded.parents.get(n) || built?.parents.get(n),
     /** @param {TreeRow} [node] */
     async getChildren(node) {
       const analysisId = getAnalysisId();
       if (disposed) return [];
       if (!node) return rootRows(getState(), analysisId);
       switch (node.type) {
+        case 'folder': return node.children;
         case 'reviewFile': return adopt(node, fileChildren(node));
         case 'finding': return adopt(node, impactRows(node, analysisId));
         case 'caller': return node.cycle ? [] : adopt(node, await callerRows(node, analysisId));
@@ -687,6 +736,8 @@ function createTreeProvider(vscode, {
     reviewVersion: () => (shownState() ? getAnalysisId() : null),
     /** @returns {import('./review-tree-model').ReviewFilter} */
     getFilter: () => filter,
+    /** @returns {'flat'|'tree'} The layout the next root read uses. */
+    getLayout: () => (getLayout() === 'tree' ? 'tree' : 'flat'),
     /**
      * Turns a filter on, turning the others off, or returns to all when it was on, and
      * repaints the view.

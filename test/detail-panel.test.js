@@ -581,3 +581,23 @@ test('the Check out and analyse message does nothing once the shown result is no
   await details.send({ type: 'checkoutAndAnalyse', token });
   assert.equal(env.seen.modals, 0, 'no checkout was started');
 }));
+
+test('selecting a folder of the tree layout changes nothing in Details', () => withEnv(async (env) => {
+  // a.ts and b.ts moved under src/, so the tree layout has a folder to select
+  const a = path.join(env.dir, 'src', 'a.ts'), b = path.join(env.dir, 'src', 'b.ts');
+  const bad = { ...finding('bad', a, 10), relPath: 'src/a.ts', startLine: 10, endLine: 12, staleCallers: 1, callers: [caller(b)], throwsAdded: [] };
+  const quiet = { ...finding('quiet', b, 5), relPath: 'src/b.ts', startLine: 5, endLine: 6, kinds: [{ id: 'body', label: 'body' }], throwsAdded: [] };
+  env.hooks.localResult = (o) => ({ ...localResult(o), allChanged: [bad, quiet], findings: [bad], fileStatus: { 'src/a.ts': 'modified', 'src/b.ts': 'modified' } });
+  await env.refresh();
+  const details = env.openDetails();
+  const [src] = await env.tree().getChildren();
+  assert.equal(src.type, 'folder');
+  const [fileA] = await env.tree().getChildren(src);
+  const [badRow] = (await env.tree().getChildren(fileA)).filter((r) => r.type !== 'spacer');
+  env.select([badRow]);
+  const shown = details.displayHtml;
+  assert.match(textOf(details), /^selected in tree bad /);
+  env.select([src]);
+  assert.equal(details.displayHtml, shown, 'the previous row stays shown');
+  assert.deepEqual(env.seen.revealed, []);
+}, { settings: { fileListLayout: 'tree' } }));

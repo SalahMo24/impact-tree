@@ -201,7 +201,7 @@ function createReviewLens(vscode, { provider, getState, callerUri, positionOf, l
     disposables: [
       vscode.languages.registerCodeLensProvider([{ scheme: 'file' }, { scheme: 'impacttree-pr' }], lenses),
       provider.onDidChangePresentation((/** @type {{ reason: string }} */ event) => {
-        if (event.reason === 'filter') return;
+        if (event.reason !== 'analysis') return;
         cancelProgress(); changed.fire();
       }),
       provider.onDidChangeReview(progressChanged),

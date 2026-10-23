@@ -60,7 +60,10 @@ silently-omitted optional parameter outranks a signature break that `tsc` alread
   analysis using the editor's language server. A no-checkout preview searches the
   files supplied by the PR and cannot establish callers outside those files.
 - Use the **Changes** and **Details** views to inspect findings, open diffs, and
-  navigate to callers. Track progress by marking changes reviewed, and filter for what needs
+  navigate to callers. Changed files are listed worst first; **View as tree** (title bar, or
+  `impactTree.fileListLayout`) folds them into their folders, as the GitHub Pull Requests
+  extension does, with folders and files still ordered worst first at every level and a
+  folder ranked by its worst file. Track progress by marking changes reviewed, and filter for what needs
   attention (callers not updated, or callers to check by hand), unreviewed changes, or
   unresolved conversations.
 - For a GitHub PR, add review comments, reply to or resolve conversations, and

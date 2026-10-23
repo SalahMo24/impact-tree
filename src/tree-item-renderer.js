@@ -17,7 +17,7 @@ const path = require('path');
 const {
   CALL_STATE, LEVEL_TONES, attentionCountText, CHANGED_ELSEWHERE_TONE, toneOf, classifyChangeVerdict, classifyDeletedVerdict,
 } = require('./tree-row-models');
-const { needsAttention } = require('./review-tree-model');
+const { needsAttention, collectCountingRows } = require('./review-tree-model');
 const { describeThreadCounts } = require('./review-threads');
 const { pathTreeMarkdown } = require('./path-tree');
 
@@ -188,6 +188,37 @@ function renderReviewFileItem(vscode, n, view) {
   item.contextValue = viewed && viewed.note === 'failed' ? 'reviewFileViewedFailed' : 'reviewFile';
   applyCheckbox(vscode, item, n, view);
   item.command = { command: 'impactTree.openFile', title: 'Open diff', arguments: [n] };
+  return item;
+}
+
+/**
+ * A folder of the tree layout. Its checkbox is ticked when every file under it is; its
+ * description counts the rows under it that still need attention, how many are done and
+ * how many files it holds, so a closed folder reads like the files it hides.
+ * @param {any} vscode
+ * @param {TreeRow} n A `folder` row.
+ * @param {TreeView} view
+ */
+function renderFolderItem(vscode, n, view) {
+  const open = n.expanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
+  const item = n.decorationUri ? new vscode.TreeItem(n.decorationUri, open) : new vscode.TreeItem(n.label, open);
+  item.label = n.label;
+  item.iconPath = vscode.ThemeIcon.Folder;
+  const rows = collectCountingRows(n.files);
+  const left = rows.filter((r) => !view.checkedOf(r));
+  const attention = left.filter(needsAttention);
+  const files = `${n.fileCount} file${n.fileCount === 1 ? '' : 's'}`;
+  item.description = [
+    attention.length ? attentionCountText(attention.length) : null,
+    `${rows.length - left.length}/${rows.length}`,
+    files,
+  ].filter(Boolean).join('  ·  ');
+  item.tooltip = new vscode.MarkdownString([
+    `**${n.relPath}/**`, '',
+    `${files}, ${rows.length} change${rows.length === 1 ? '' : 's'}, ${attentionCountText(attention.length)}, ${left.length} left to review`,
+  ].join('\n'));
+  item.contextValue = 'folder';
+  applyCheckbox(vscode, item, n, view);
   return item;
 }
 
@@ -416,6 +447,7 @@ function renderSpacerItem(vscode) {
  * @returns {any} A new vscode.TreeItem.
  */
 function renderTreeItem(vscode, n, view) {
+  if (n.type === 'folder') return renderFolderItem(vscode, n, view);
   if (n.type === 'reviewFile') return renderReviewFileItem(vscode, n, view);
   if (n.type === 'file') return renderFileItem(vscode, n, view);
   if (n.type === 'spacer') return renderSpacerItem(vscode);

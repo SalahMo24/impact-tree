@@ -5,9 +5,10 @@ const { attentionCountText } = require('./tree-row-models');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 
-// Walking a review without the mouse: the three filter toggles, "next" and "previous unreviewed", and the
-// status bar item that shows how much is left. The state lives in the provider (the filter,
-// the ticks); this module only connects it to commands, context keys and the status bar.
+// Walking a review without the mouse: the three filter toggles, "next" and "previous unreviewed", the
+// layout toggle (flat list or folder tree) and the status bar item that shows how much is
+// left. The state lives in the provider (the filter, the ticks) or in the settings (the
+// layout); this module only connects it to commands, context keys and the status bar.
 
 /**
  * The key that runs "next unreviewed", as the status bar names it.
@@ -63,10 +64,12 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
 
   // The row the walk starts after: the selection when it is a counting row or a file row,
   // else the change a caller or tests row sits under, or the last row of a spacer's file.
+  // A folder (tree layout) stands just before its first file, as a file stands before its rows.
   /** @returns {TreeRow|null} */
   const startOfWalk = () => {
     /** @type {TreeRow|undefined} */
     let row = view.selection[0];
+    if (row && row.type === 'folder') row = row.files[0];
     // A file's spacer stands for the end of the file it closes: the walk goes on after it.
     if (row && row.type === 'spacer') row = provider.changeRowsOf(row.relPath).at(-1) || provider.getParent(row);
     while (row && treeItemId(row) === undefined) row = provider.getParent(row);
@@ -101,10 +104,16 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
 
   /** @param {'attention'|'unreviewed'|'threads'} name */
   const toggle = (name) => () => provider.toggleFilter(name);
+  // The layout is a setting, as the GitHub Pull Requests extension's is, so it is the same
+  // in every window and the extension's own configuration listener repaints the view.
+  /** @param {'flat'|'tree'} layout */
+  const setLayout = (layout) => () => vscode.workspace.getConfiguration('impactTree')
+    .update('fileListLayout', layout, vscode.ConfigurationTarget.Global);
   const on = (/** @type {string} */ id, /** @type {() => any} */ fn) => vscode.commands.registerCommand(id, fn);
   return {
     disposables: [
       bar,
+      on('impactTree.viewAsTree', setLayout('tree')), on('impactTree.viewAsList', setLayout('flat')),
       // Each filter is two commands, one per state of its title icon: a command contribution
       // cannot show on/off by itself, so package.json shows the one that matches the filter.
       on('impactTree.filterAttention', toggle('attention')), on('impactTree.filterAttentionOn', toggle('attention')),
@@ -117,6 +126,7 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
     update() {
       const counts = provider.reviewCounts();
       setContext('impactTree.filter', provider.getFilter());
+      setContext('impactTree.fileListLayout', provider.getLayout());
       setContext('impactTree.hasReview', counts !== null);
       // The threads filter is offered only once a pull request's threads are loaded.
       setContext('impactTree.hasReviewThreads', counts !== null && provider.threadsView().status === 'ready');
