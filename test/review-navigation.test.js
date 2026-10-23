@@ -254,7 +254,7 @@ test('next unreviewed with no review shown does nothing', () => withEnv(async (e
 
 test('package.json contributes the commands, the keybinding and the palette gates', () => withEnv(async (env) => {
   const { contributes } = require('../package.json');
-  const mine = ['filterAttention', 'filterAttentionOn', 'filterUnreviewed', 'filterUnreviewedOn', 'filterThreads', 'filterThreadsOn', 'nextUnreviewed', 'previousUnreviewed']
+  const mine = ['filterAttention', 'filterAttentionOn', 'filterUnreviewed', 'filterUnreviewedOn', 'filterThreads', 'filterThreadsOn', 'nextUnreviewed', 'previousUnreviewed', 'viewAsTree', 'viewAsList']
     .map((c) => `impactTree.${c}`);
   for (const id of mine) {
     assert.ok(contributes.commands.some((c) => c.command === id && c.icon), `${id} is contributed with an icon`);
@@ -267,20 +267,26 @@ test('package.json contributes the commands, the keybinding and the palette gate
   assert.equal(contributes.commands.find((c) => c.command === 'impactTree.previousUnreviewed').title, 'Impact Tree: Go to previous unreviewed change');
   assert.equal(contributes.commands.find((c) => c.command === 'impactTree.nextUnreviewed').title, 'Impact Tree: Go to next unreviewed change');
   assert.equal(env.seen.statusBar.tooltip, 'Go to the next unreviewed change');
-  // the title bar keeps refresh, the three filters, next and (for a PR review only)
-  // "Submit review…"; the rest is in the overflow menu
+  // the title bar keeps refresh, the layout toggle, the three filters, next and (for a PR
+  // review only) "Submit review…"; the rest is in the overflow menu
   const changes = contributes.menus['view/title'].filter((m) => m.when.startsWith('view == impactTree.changes'));
   const groupOf = (id) => changes.filter((m) => m.command === id).map((m) => m.group);
   assert.deepEqual(changes.filter((m) => m.group.startsWith('navigation')).map((m) => m.command),
     ['impactTree.refresh', 'impactTree.filterAttention', 'impactTree.filterAttentionOn', 'impactTree.filterUnreviewed', 'impactTree.filterUnreviewedOn',
       'impactTree.filterThreads', 'impactTree.filterThreadsOn', 'impactTree.previousUnreviewed', 'impactTree.nextUnreviewed',
+      'impactTree.viewAsTree', 'impactTree.viewAsList',
       'impactTree.submitReview', 'impactTree.submitReviewUnavailable', 'impactTree.sendFeedback', 'impactTree.showLegend']);
+  // one of the two layout icons shows, by the setting
+  assert.equal(changes.find((m) => m.command === 'impactTree.viewAsTree').when, 'view == impactTree.changes && impactTree.fileListLayout != tree');
+  assert.equal(changes.find((m) => m.command === 'impactTree.viewAsList').when, 'view == impactTree.changes && impactTree.fileListLayout == tree');
   // Send feedback shows only with drafts; holding ⌥ turns it into "Send feedback to…".
   assert.equal(changes.find((m) => m.command === 'impactTree.sendFeedback').when, 'view == impactTree.changes && impactTree.hasFeedbackDrafts');
   assert.equal(changes.find((m) => m.command === 'impactTree.sendFeedback').alt, 'impactTree.sendFeedbackTo');
   const order = (id) => Number(changes.find((m) => m.command === id).group.split('@')[1]);
   assert.ok(order('impactTree.previousUnreviewed') < order('impactTree.nextUnreviewed'), 'previous is left of next');
   assert.ok(order('impactTree.showLegend') > order('impactTree.submitReview'), 'the legend is the rightmost icon');
+  assert.ok(order('impactTree.refresh') < order('impactTree.viewAsTree') && order('impactTree.viewAsTree') < order('impactTree.filterAttention'), 'the layout toggle sits right after refresh, as in the GitHub Pull Requests view');
+  assert.equal(order('impactTree.viewAsList'), order('impactTree.viewAsTree'), 'the two layout icons take the same slot');
   assert.ok(order('impactTree.showLegend') > order('impactTree.sendFeedback'), 'the legend stays right of Send feedback');
   assert.deepEqual(['selectMode', 'setCheckpoint', 'showLog', 'clearReviewed', 'cleanUpStoredData'].map((c) => groupOf(`impactTree.${c}`)[0]),
     ['1_mode@1', '1_mode@2', '2_help@2', '3_progress@1', '3_progress@2']);
@@ -335,3 +341,23 @@ test('going to a row by its tree id reveals it as next unreviewed does; an unkno
 
 /** The first view/title entry of a command. */
 const title0 = (contributes, id) => contributes.menus['view/title'].find((m) => m.command === id);
+
+test('View as tree writes the layout setting; the setting folds the view and sets the context key', () => withEnv(async (env) => {
+  useResult(env);
+  await env.refresh();
+  assert.equal(env.seen.contexts['impactTree.fileListLayout'], 'flat');
+  assert.deepEqual((await env.tree().getChildren()).map((r) => r.type), ['reviewFile', 'reviewFile', 'file']);
+  const updates = [];
+  env.vscode.workspace.getConfiguration('impactTree').update = async (name, value, target) => { updates.push([name, value, target]); };
+  await env.run('impactTree.viewAsTree');
+  assert.deepEqual(updates, [['fileListLayout', 'tree', 1]], 'the command only writes the setting, for every window');
+  env.changeSetting('fileListLayout', 'tree');
+  assert.equal(env.seen.contexts['impactTree.fileListLayout'], 'tree');
+  const roots = await env.tree().getChildren();
+  assert.deepEqual(roots.map((r) => [r.type, r.label]), [['reviewFile', 'a.ts'], ['reviewFile', 'b.ts'], ['file', 'notes.md']],
+    'every file is at the repository root here, so the tree has no folder to show');
+  await env.run('impactTree.viewAsList');
+  assert.deepEqual(updates.at(-1), ['fileListLayout', 'flat', 1]);
+  env.changeSetting('fileListLayout', 'flat');
+  assert.equal(env.seen.contexts['impactTree.fileListLayout'], 'flat');
+}));

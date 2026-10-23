@@ -237,9 +237,9 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log, revi
   /** @param {{ selection: readonly TreeRow[] }} e */
   function onSelection(e) {
     const picked = e.selection[0];
-    // A cleared selection says nothing about what to explain, and a spacer has nothing to show:
-    // the panel stays on the row it had.
-    if (!picked || picked.type === 'spacer') return;
+    // A cleared selection says nothing about what to explain, and a spacer or a folder (tree
+    // layout) has nothing of its own to show: the panel stays on the row it had.
+    if (!picked || picked.type === 'spacer' || picked.type === 'folder') return;
     if (revealedFromCursor !== null && treeItemId(picked) === revealedFromCursor) return;
     revealedFromCursor = null;
     const owner = ownerOf(picked);
@@ -450,7 +450,7 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log, revi
       vscode.commands.registerCommand('impactTree.showChange', showChange),
       view.onDidChangeSelection(onSelection),
       view.onDidChangeVisibility(onTreeVisible),
-      provider.onDidChangePresentation((/** @type {{ reason: string }} */ event) => { if (event.reason !== 'filter') render(); }),
+      provider.onDidChangePresentation((/** @type {{ reason: string }} */ event) => { if (event.reason === 'analysis') render(); }),
       provider.onDidChangeReview(onProgress),
       provider.onDidChangeThreads(onThreads),
       vscode.window.onDidChangeTextEditorSelection(onCursor),

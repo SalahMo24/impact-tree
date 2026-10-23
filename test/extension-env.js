@@ -199,7 +199,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   const configListeners = [];
   const cfg = { get: (name, fallback) => ({ prewarm, analyseOnStartup: false, fetchBase: false, ...liveSettings })[name] ?? fallback,
     update: async () => {} };
-  const vscode = { ...baseStub, ConfigurationTarget: { Workspace: 2 }, ProgressLocation: { SourceControl: 1, Window: 10, Notification: 15 }, ViewColumn: { Active: -1, Beside: -2, One: 1 },
+  const vscode = { ...baseStub, ConfigurationTarget: { Global: 1, Workspace: 2 }, ProgressLocation: { SourceControl: 1, Window: 10, Notification: 15 }, ViewColumn: { Active: -1, Beside: -2, One: 1 },
     Position: class { constructor(line, character) { this.line = line; this.character = character; } },
     Range: class { constructor(...args) { this.args = args; [this.start, this.end] = [{ line: args[0], character: args[1] }, { line: args[2], character: args[3] }]; } },
     OverviewRulerLane: { Center: 2 },

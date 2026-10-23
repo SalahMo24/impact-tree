@@ -246,12 +246,14 @@ const buildSpacerRow = (file) => ({ type: 'spacer', label: '', relPath: file.rel
 
 /**
  * The counting rows a checkbox on `row` stands for. A `reviewFile`'s checkbox is derived
- * from its rows, so it stands for all of them; a counting row stands for itself; any other
- * row (a caller, a message, a tests row) has no checkbox and stands for nothing.
+ * from its rows, so it stands for all of them; a `folder` row's (tree layout) from every
+ * file under it; a counting row stands for itself; any other row (a caller, a message, a
+ * tests row) has no checkbox and stands for nothing.
  * @param {TreeRow} row
  * @returns {TreeRow[]}
  */
-const collectTickTargets = (row) => (row.type === 'reviewFile' ? row.rows : COUNTING_TYPES.has(row.type) ? [row] : []);
+const collectTickTargets = (row) => (row.type === 'folder' ? collectCountingRows(row.files)
+  : row.type === 'reviewFile' ? row.rows : COUNTING_TYPES.has(row.type) ? [row] : []);
 
 /**
  * Whether a counting row needs attention: a verdict at level 0 or 1. A file without a call
@@ -378,12 +380,14 @@ function buildEmptyFilterRow(filter, threads = 'ready') {
 
 /**
  * The id a row has in the tree view, which keeps a row's expansion across a refresh and
- * lets the view reveal it. Only file rows, counting rows and a file's spacer have one: caller, caller-file
- * and tests rows can repeat under several parents, and an id is unique in a tree.
+ * lets the view reveal it. Only folder rows, file rows, counting rows and a file's spacer
+ * have one: caller, caller-file and tests rows can repeat under several parents, and an id
+ * is unique in a tree.
  * @param {TreeRow} row
  * @returns {string|undefined}
  */
 function treeItemId(row) {
+  if (row.type === 'folder') return `folder:${row.relPath}`;
   if (row.type === 'reviewFile') return `file:${row.relPath}`;
   if (row.type === 'spacer') return `spacer:${row.relPath}`;
   if (!COUNTING_TYPES.has(row.type)) return undefined;

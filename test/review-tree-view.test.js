@@ -413,3 +413,123 @@ test('the counts of a shown review, and none while a placeholder is shown', asyn
   assert.equal(none.nextUnreviewed(null), null);
   assert.equal(none.previousUnreviewed(null), null);
 });
+
+// ---- the tree layout: file rows folded into folders, over the same rows -----------------
+
+// src/a.ts and src/b.ts as in sampleResult, plus a change in src/engine/c.ts; notes.md at the root.
+function treeResult() {
+  const base = sampleResult();
+  const engine = change('src/engine/c.ts', 'deep', 3);
+  return { ...base, allChanged: [...base.allChanged, engine], fileStatus: { ...base.fileStatus, 'src/engine/c.ts': 'modified' } };
+}
+const treeView = (result, opts = {}) => viewOf(result, { ...opts, deps: { getLayout: () => 'tree', ...(opts.deps || {}) } });
+
+test('in the tree layout the root holds folders and root files, ranked, with the canonical file rows inside', async () => {
+  const { provider, item } = treeView(treeResult());
+  const roots = await provider.getChildren();
+  assert.deepEqual(roots.map((r) => [r.type, r.label]), [['folder', 'src'], ['file', 'notes.md']]);
+  const [src] = roots;
+  assert.equal(item(src).collapsibleState, Expanded, 'the worst folder starts open');
+  assert.equal(item(src).iconPath, vscode.ThemeIcon.Folder);
+  assert.equal(item(src).id, 'folder:src');
+  assert.equal(item(src).resourceUri.fsPath, '/r/src', 'the folder resource, for the icon theme');
+  const children = await provider.getChildren(src);
+  assert.deepEqual(children.map((r) => [r.type, r.label]), [['reviewFile', 'a.ts'], ['reviewFile', 'b.ts'], ['folder', 'engine']],
+    'a.ts (needs attention) first; b.ts and engine/ hold one quiet row each, so the path decides');
+  assert.equal(item(children[0]).collapsibleState, Expanded, 'and its worst file');
+  assert.equal(item(children[1]).collapsibleState, Collapsed);
+  assert.equal(provider.fileRows().includes(children[0]), true, 'the file row is the canonical one');
+  assert.equal(provider.getParent(children[0]), src);
+  assert.equal(provider.getParent(children[2]), src);
+  assert.equal(provider.getParent(src), undefined);
+  const [c] = await provider.getChildren(children[2]);
+  assert.equal(provider.getParent(c), children[2]);
+  assert.equal(item(children[2]).description, '', 'a calm folder says nothing');
+  assert.equal(item(children[0]).description, '2 need attention  ·  0/4', 'a file under a folder does not repeat the folder');
+});
+
+test('a folder\'s checkbox ticks every counting row under it, and reads ticked only when all are', async () => {
+  const { provider, review, item } = treeView(treeResult());
+  const [src] = await provider.getChildren();
+  assert.equal(item(src).checkboxState, Unchecked);
+  assert.equal(item(src).description, '2 need attention', 'the stale change and the deleted symbol');
+  assert.match(item(src).tooltip.value, /3 files, 6 changes, 2 need attention, 6 left to review/);
+  provider.setChecked(src, true);
+  assert.equal(review.size(), 6, 'the four rows of a.ts, b.ts\'s one and engine/c.ts\'s one');
+  assert.equal(item(src).checkboxState, Checked);
+  assert.equal(item(src).description, '');
+  const [a] = await provider.getChildren(src);
+  const [bad] = await provider.getChildren(a);
+  provider.setChecked(bad, false);
+  assert.equal(item(src).checkboxState, Unchecked, 'one unticked row unticks the folder');
+  assert.equal(item(a).checkboxState, Unchecked);
+  assert.equal(item(src).description, '1 needs attention');
+});
+
+test('a tick repaints the root folder of the file, not the root, while the filter keeps the same files', async () => {
+  // The shared stub's emitter delivers nothing; this one does, so the repaint scope shows.
+  const delivering = { ...vscode, EventEmitter: class {
+    constructor() { const listeners = []; this.event = (l) => { listeners.push(l); return { dispose() {} }; }; this.fire = (v) => { for (const l of listeners) l(v); }; this.dispose = () => { listeners.length = 0; }; }
+  } };
+  const result = treeResult();
+  const provider = createTreeProvider(delivering, {
+    getState: () => ({ result, rowDetail: 'hover', rel: (f) => f.replace('/r/', ''), absPath: (p) => `/r/${p}` }),
+    resolver: { incomingWithStatus: async () => ({ callers: [], complete: true }) }, review: memoryReview(), getLayout: () => 'tree',
+  });
+  const fired = [];
+  provider.onDidChangeTreeData((row) => fired.push(row === undefined ? 'root' : `${row.type}:${row.label}`));
+  const [src] = await provider.getChildren();
+  const [a, , engine] = await provider.getChildren(src);
+  const [c] = await provider.getChildren(engine);
+  provider.setChecked(c, true);
+  assert.deepEqual(fired, ['folder:src'], 'the folder\'s own counts changed too');
+  fired.length = 0;
+  provider.setChecked(a, true);
+  assert.deepEqual(fired, ['folder:src']);
+});
+
+test('the flat layout after a tree read has no folder parents left, and the layout can change between reads', async () => {
+  let layout = 'tree';
+  const { provider } = viewOf(treeResult(), { deps: { getLayout: () => layout } });
+  const [src] = await provider.getChildren();
+  const [a] = await provider.getChildren(src);
+  assert.equal(provider.getParent(a), src);
+  assert.equal(provider.getLayout(), 'tree');
+  layout = 'flat';
+  const flat = await provider.getChildren();
+  assert.deepEqual(flat.map((r) => r.label), ['a.ts', 'b.ts', 'c.ts', 'notes.md']);
+  assert.equal(flat[0], a, 'the same file row');
+  assert.equal(provider.getParent(a), undefined, 'a reveal in the flat list does not climb into an old folder');
+  assert.equal(provider.getLayout(), 'flat');
+  const [badFlat] = await provider.getChildren(a);
+  assert.equal(provider.getParent(badFlat), a, 'a change row still sits under its file');
+});
+
+test('the filter folds only the files it keeps, and an empty filter shows its message, not empty folders', async () => {
+  const { provider } = treeView(treeResult());
+  provider.toggleFilter('attention');
+  const roots = await provider.getChildren();
+  assert.deepEqual(roots.map((r) => [r.type, r.label]), [['folder', 'src']]);
+  assert.deepEqual((await provider.getChildren(roots[0])).map((r) => r.label), ['a.ts'], 'b.ts and engine/ have nothing needing attention');
+  const [a] = await provider.getChildren(roots[0]);
+  provider.setChecked(a, true);
+  const after = await provider.getChildren();
+  assert.deepEqual(after.map((r) => r.type), ['message'], 'nothing needs attention: no empty folder, the filter\'s message');
+});
+
+test('next unreviewed walks the flat order whatever the layout, and a row is revealed through its file and folder', async () => {
+  const { provider } = treeView(treeResult());
+  const [src] = await provider.getChildren();
+  const [a, , engine] = await provider.getChildren(src);
+  await provider.getChildren(a);
+  const first = provider.nextUnreviewed(null);
+  assert.equal(first.label, 'bad');
+  assert.equal(provider.getParent(first), a, 'change -> file');
+  assert.equal(provider.getParent(a), src, 'file -> folder');
+  const [c] = await provider.getChildren(engine);
+  await provider.getChildren(c);
+  const last = provider.previousUnreviewed(null);
+  assert.equal(last.label, 'notes.md', 'the flat order ends with the root file, whatever the folders');
+  const counts = provider.reviewCounts();
+  assert.deepEqual([counts.total, counts.left], [7, 7], 'counts read the flat rows: six rows and notes.md');
+});

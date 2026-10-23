@@ -94,6 +94,8 @@ function activate(context) {
     resolver: owned.treeResolver,
     getFeedbackDrafts: () => feedbackDrafts.list(),
     getFeedbackRound: () => (feedbackRound ? feedbackRound.current() : null),
+    // Read on each root read; a value that is not `tree` is the flat list (the default).
+    getLayout: () => (vscode.workspace.getConfiguration('impactTree').get('fileListLayout', 'flat') === 'tree' ? 'tree' : 'flat'),
   });
   session.provider = provider;
   context.subscriptions.push(provider, decorate);
@@ -233,7 +235,7 @@ function activate(context) {
     },
     contextEvents: [
       owned.onDidChangeAnalysis,
-      (listener) => provider.onDidChangePresentation((e) => { if (e.reason !== 'filter') listener(); }),
+      (listener) => provider.onDidChangePresentation((e) => { if (e.reason === 'analysis') listener(); }),
     ],
   });
   context.subscriptions.push(reviewComments);
@@ -250,7 +252,7 @@ function activate(context) {
     openDiff: (relPath, line) => openReview.openFile({ relPath, ranges: line === null ? [] : [[line, line]] }),
     contextEvents: [
       owned.onDidChangeAnalysis,
-      (listener) => provider.onDidChangePresentation((e) => { if (e.reason !== 'filter') listener(); }),
+      (listener) => provider.onDidChangePresentation((e) => { if (e.reason === 'analysis') listener(); }),
     ],
   });
   context.subscriptions.push(feedbackComments);
@@ -301,6 +303,11 @@ function activate(context) {
     }
   };
 
+  // The layout toggle writes the setting; the view follows it here, so a change made in
+  // the settings editor or another window repaints the same way.
+  context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
+    if (e.affectsConfiguration('impactTree.fileListLayout')) provider.refresh('layout');
+  }));
   // A change of the GitHub remote setting moves the pull request list (and the review
   // being read) to the other repository. Disposed with the window.
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
