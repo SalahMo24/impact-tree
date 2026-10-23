@@ -2,6 +2,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const { escapeHtml } = require('./detail-panel-html');
+const { renderMarkdown } = require('./markdown-html');
 const { reviewDataOf } = require('./pr-review-store');
 const { openCount, mergeStateOf } = require('./pr-review-data');
 const { treeItemId } = require('./review-tree-model');
@@ -12,11 +13,13 @@ const { attentionCountText } = require('./tree-row-models');
 // summary draft, the nonce and the webview's CSP source, so the page can be tested
 // without VS Code.
 //
-// Safety: everything from GitHub (title, description, timeline and comment bodies, names,
-// branch names, paths) is text: it goes through `escapeHtml`, and line breaks are kept by
-// CSS (`white-space: pre-wrap`), never by injecting GitHub's HTML or rendering its
-// markdown. The CSP allows nothing remote; the one style and the one script carry a nonce.
-// Nothing uses an inline `style=` or `on…=` attribute, which that CSP would block.
+// Safety: everything from GitHub (title, names, branch names, paths, messages) is text: it
+// goes through `escapeHtml`, and line breaks are kept by CSS (`white-space: pre-wrap`).
+// The description and the timeline bodies are markdown, rendered by `renderMarkdown`
+// (markdown-html.js), which never passes GitHub's HTML through and links only to http(s)
+// and mailto targets. The CSP allows nothing remote; the one style and the one script
+// carry a nonce. Nothing uses an inline `style=` or `on…=` attribute, which that CSP would
+// block.
 
 /** @typedef {import('./pr-review-store').ReviewStoreState} ReviewStoreState */
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
@@ -133,7 +136,10 @@ const METHOD_NOT_ALLOWED = {
  * @property {string|null} loadError The last load's failure, if it failed.
  * @property {boolean} refreshing A load is running; shown data is the previous load's.
  * @property {{ title: string, number: number, state: string, author: string, headRefName: string,
- *   baseRefName: string, body: string }|null} pr
+ *   baseRefName: string, body: string, createdAt: string|null, refsBase: string|null }|null} pr
+ *   `createdAt` as `formatWhen` gives it, null when GitHub did not say; `refsBase` the
+ *   repository's URL that `#123` in a body links against, null when the pull request's
+ *   URL has an unexpected shape.
  * @property {TimelineEntry[]} timeline Oldest first.
  * @property {{ commentCount: number, comments: PendingComment[] }|null} pending The viewer's
  *   pending review, when there is one.
@@ -186,6 +192,17 @@ function mergeRules(model) {
 function formatWhen(iso) {
   const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(iso);
   return m ? `${m[1]} ${m[2]}` : iso;
+}
+
+/**
+ * The repository URL a pull request's URL sits under: `https://github.com/o/r/pull/7`
+ * gives `https://github.com/o/r`; any other shape gives null.
+ * @param {string} url
+ * @returns {string|null}
+ */
+function refsBaseOf(url) {
+  const m = /^(https:\/\/[^/?#]+\/[^/?#]+\/[^/?#]+)\/pull\/\d+\/?$/.exec(url);
+  return m ? m[1] : null;
 }
 
 /**
@@ -264,7 +281,8 @@ function pageModelOf(state, { attentionLeft, counts, draft, error, busy, mergeRe
   if (!data) return model;
   const { pr } = data;
   model.pr = { title: pr.title, number: pr.number, state: pr.state, author: pr.author ? pr.author.login : 'ghost',
-    headRefName: pr.headRefName, baseRefName: pr.baseRefName, body: pr.body };
+    headRefName: pr.headRefName, baseRefName: pr.baseRefName, body: pr.body,
+    createdAt: pr.createdAt ? formatWhen(pr.createdAt) : null, refsBase: refsBaseOf(pr.url) };
   model.timeline = data.timeline.map((item) => ({
     who: item.author ? item.author.login : 'ghost',
     what: item.kind === 'comment' ? 'commented' : REVIEW_STATE_WORDS[item.reviewState || ''] || 'reviewed',
@@ -357,7 +375,30 @@ select { font: inherit; padding: 3px 6px; color: var(--vscode-dropdown-foregroun
 .state.OPEN { color: var(--vscode-button-foreground); background: var(--vscode-testing-iconPassed); }
 code { font-family: var(--vscode-editor-font-family); }
 .text { white-space: pre-wrap; overflow-wrap: anywhere; }
-.desc { border: 1px solid var(--vscode-panel-border); border-radius: 4px; padding: 10px 12px; }
+.bar { display: flex; gap: 6px; margin: 0 0 14px; }
+.card { border: 1px solid var(--vscode-panel-border); border-radius: 4px; }
+.card .head { padding: 6px 12px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-textBlockQuote-background); }
+.card .head .who { font-weight: 600; }
+.card .md, .card .note { padding: 8px 12px; }
+.md { overflow-wrap: anywhere; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { font-weight: 600; line-height: 1.25; margin: 18px 0 8px; color: var(--vscode-foreground); text-transform: none; letter-spacing: 0; }
+.md h1 { font-size: 1.5em; } .md h2 { font-size: 1.3em; } .md h3 { font-size: 1.15em; } .md h4, .md h5, .md h6 { font-size: 1em; }
+.md p, .md ul, .md ol, .md pre, .md table, .md blockquote { margin: 0 0 10px; }
+.md ul, .md ol { padding-left: 24px; }
+.md li.task { list-style: none; margin-left: -20px; }
+.md li.task input { vertical-align: middle; margin: 0 6px 0 0; }
+.md code { font-family: var(--vscode-editor-font-family); font-size: .95em; padding: .1em .3em; border-radius: 3px; background: var(--vscode-textCodeBlock-background); }
+.md pre { padding: 10px 12px; border-radius: 4px; overflow: auto; background: var(--vscode-textCodeBlock-background); }
+.md pre code { padding: 0; background: none; }
+.md blockquote { margin-left: 0; padding: 2px 12px; border-left: 3px solid var(--vscode-panel-border); color: var(--vscode-descriptionForeground); }
+.md table { border-collapse: collapse; display: block; max-width: 100%; overflow: auto; }
+.md th, .md td { border: 1px solid var(--vscode-panel-border); padding: 4px 10px; }
+.md th { font-weight: 600; }
+.md .al { text-align: left; } .md .ac { text-align: center; } .md .ar { text-align: right; }
+.md hr { border: 0; border-top: 1px solid var(--vscode-panel-border); margin: 14px 0; }
+.md a.img::before { content: '🖼 '; }
 .tl { border-left: 2px solid var(--vscode-panel-border); margin-left: 8px; padding-left: 14px; }
 .ev { margin: 10px 0; }
 .ev .text { margin-top: 2px; }
@@ -464,22 +505,41 @@ const retryBanner = (loadError) => (loadError === null ? ''
   : `<div class="banner" role="alert">Could not load the review from GitHub: <span class="text">${escapeHtml(loadError)}</span> `
     + '<button class="secondary" data-act="retry">Retry</button></div>');
 
-/** @param {NonNullable<PageModel['pr']>} pr @returns {string} */
-function headerHtml(pr) {
+/**
+ * The title, the state and branches line, and the tab's own actions. Refresh asks the
+ * store again (the `retry` message), as the failed-load banner's button does.
+ * @param {NonNullable<PageModel['pr']>} pr
+ * @param {boolean} refreshing
+ * @returns {string}
+ */
+function headerHtml(pr, refreshing) {
   const stateWords = PR_STATE_WORDS[pr.state] || pr.state;
   return `<h2>${escapeHtml(pr.title)} <span class="num">#${pr.number}</span></h2>`
     + `<div class="meta"><span class="state ${escapeHtml(pr.state)}">${escapeHtml(stateWords)}</span>`
     + `${escapeHtml(pr.author)} wants to merge into <code>${escapeHtml(pr.baseRefName)}</code>`
     + ` from <code>${escapeHtml(pr.headRefName)}</code></div>`
-    + (pr.body.trim() === '' ? '<div class="desc note">No description provided.</div>'
-      : `<div class="desc text" data-el="description">${escapeHtml(pr.body)}</div>`);
+    + `<div class="bar"><button class="secondary" data-act="retry" data-el="refresh"${refreshing ? ' disabled' : ''}>${refreshing ? 'Refreshing…' : 'Refresh'}</button></div>`;
 }
 
-/** @param {TimelineEntry[]} timeline @returns {string} */
-function timelineHtml(timeline) {
+/**
+ * The description as a comment card: who opened the pull request and when, then the
+ * body as rendered markdown.
+ * @param {NonNullable<PageModel['pr']>} pr
+ * @returns {string}
+ */
+function descriptionHtml(pr) {
+  const head = `<div class="head"><span class="who">${escapeHtml(pr.author)}</span> opened this pull request`
+    + (pr.createdAt === null ? '' : ` <span class="when">${escapeHtml(pr.createdAt)}</span>`) + '</div>';
+  const body = pr.body.trim() === '' ? '<div class="note">No description provided.</div>'
+    : `<div class="md" data-el="description">${renderMarkdown(pr.body, { refsBase: pr.refsBase })}</div>`;
+  return `<div class="card desc">${head}${body}</div>`;
+}
+
+/** @param {TimelineEntry[]} timeline @param {string|null} refsBase @returns {string} */
+function timelineHtml(timeline, refsBase) {
   if (!timeline.length) return '';
   const items = timeline.map((e) => `<div class="ev"><b>${escapeHtml(e.who)}</b> ${escapeHtml(e.what)} `
-    + `<span class="when">${escapeHtml(e.when)}</span>${e.body.trim() === '' ? '' : `<div class="text">${escapeHtml(e.body)}</div>`}</div>`).join('');
+    + `<span class="when">${escapeHtml(e.when)}</span>${e.body.trim() === '' ? '' : `<div class="md">${renderMarkdown(e.body, { refsBase })}</div>`}</div>`).join('');
   return `<h4>Timeline</h4><div class="tl">${items}</div>`;
 }
 
@@ -683,8 +743,8 @@ function bodyHtml(model) {
     ? `<div class="banner">Not everything was loaded:<ul>${model.incomplete.map((r) => `<li>${escapeHtml(r)}</li>`).join('')}</ul></div>` : '';
   return retryBanner(model.loadError)
     + (model.refreshing ? '<p class="note">Refreshing from GitHub…</p>' : '')
-    + incomplete + headerHtml(pr)
-    + `<div class="cols"><div>${timelineHtml(model.timeline)}${checksHtml(model.overview.kind === 'ready' ? model.overview.checks : { kind: 'failed', message: model.overview.message })}`
+    + incomplete + headerHtml(pr, model.refreshing)
+    + `<div class="cols"><div>${descriptionHtml(pr)}${timelineHtml(model.timeline, pr.refsBase)}${checksHtml(model.overview.kind === 'ready' ? model.overview.checks : { kind: 'failed', message: model.overview.message })}`
     + `${mergeHtml(model)}${formHtml(model)}</div><div class="side">${reviewersHtml(model.overview)}${labelsHtml(model.overview)}</div></div>`;
 }
 
@@ -706,5 +766,5 @@ function buildPullRequestHtml(model, { nonce, cspSource, draftKey = nonce }) {
 
 module.exports = {
   buildPullRequestHtml, pageModelOf, mergeStateOf, buttonRules, mergeRules, METHOD_WORDS, pendingStatusOf, submittedMessage, firstLineOf, formatWhen,
-  OWN_PR_REASON,
+  refsBaseOf, OWN_PR_REASON,
 };
