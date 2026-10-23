@@ -23,9 +23,11 @@ const sanitizeHtml = require('sanitize-html');
 //   never opens a URL the page named (the tab's `openLink` message stays reserved for a
 //   check's link GitHub gave). `#123` becomes a link to that issue or pull request in the
 //   same repository.
-// - An image cannot load (no `img-src`), so it is drawn as a link reading `[image: alt]`
-//   to its source, which says what was there instead of a broken glyph. A raw `<img>` is
-//   drawn the same way, and a `<picture>` collapses to its `<img>`.
+// - An image loads only from GitHub's own hosts (`IMAGE_ORIGINS`, which the tab's CSP
+//   `img-src` repeats): a screenshot or attachment, an avatar, a raw file. Any other
+//   image is drawn as a link reading `[image: alt]` to its source, which says what was
+//   there instead of a broken glyph and lets no third party learn the tab was opened. A
+//   raw `<img>` follows the same rule, and a `<picture>` collapses to its `<img>`.
 // - Alignment, which markdown-it writes as `style="text-align:…"` on a table cell and
 //   GitHub's HTML as `align="…"` on a cell or paragraph, is a class instead.
 // - Single newlines are line breaks, as GitHub renders comments. Task-list items get a
@@ -40,6 +42,14 @@ const MAX_MARKDOWN_CHARS = 65536;
 /** A link target the tab lets through. Shared by markdown links and raw `<a>`/`<img>`. */
 const SAFE_URL = /^(https?:|mailto:)/i;
 
+/**
+ * Where an image may load from, as CSP sources: github.com (an attachment under
+ * `/user-attachments/`, which redirects into githubusercontent.com) and GitHub's image
+ * hosts (`user-images`, `private-user-images`, `avatars`, `raw`, `camo`, `objects`).
+ */
+const IMAGE_ORIGINS = ['https://github.com', 'https://*.githubusercontent.com'];
+const IMAGE_URL = /^https:\/\/(github\.com|[a-z0-9-]+\.githubusercontent\.com)\//i;
+
 const ALIGN_CLASS = { left: 'al', center: 'ac', right: 'ar' };
 
 /**
@@ -51,7 +61,7 @@ const ALLOWED_TAGS = [
   'ul', 'ol', 'li', 'dl', 'dt', 'dd', 'input',
   'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption',
   'a', 'strong', 'em', 'b', 'i', 's', 'del', 'ins', 'mark', 'sub', 'sup', 'kbd', 'samp', 'var',
-  'q', 'cite', 'abbr', 'dfn', 'small', 'span', 'time', 'details', 'summary', 'figure', 'figcaption',
+  'q', 'cite', 'abbr', 'dfn', 'small', 'span', 'time', 'details', 'summary', 'figure', 'figcaption', 'img',
 ];
 
 /** Per tag, the only attributes kept. `class` values are further limited by `ALLOWED_CLASSES`. */
@@ -61,6 +71,7 @@ const ALLOWED_ATTRIBUTES = {
   code: ['class'],
   details: ['open'],
   div: ['class'],
+  img: ['src', 'alt', 'width', 'height'],
   input: ['type', 'disabled', 'checked'],
   li: ['class'],
   ol: ['start'],
@@ -80,14 +91,22 @@ const ALLOWED_CLASSES = {
   th: ALIGN_CLASSES,
 };
 
-/** @param {string} value @returns {string} */
-const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] || c);
-
-/** `[image: alt]` as a link to the image when its source is safe, as plain text otherwise. */
-/** @param {string} src @param {string} alt @returns {sanitizeHtml.Tag} */
-const imageAsLink = (src, alt) => {
-  const text = `[image: ${alt.trim() || 'image'}]`;
-  return SAFE_URL.test(src.trim()) ? { tagName: 'a', attribs: { href: src, class: 'img' }, text } : { tagName: 'span', attribs: {}, text };
+/**
+ * An image: the element when GitHub hosts it (its size kept when given in pixels), a link
+ * reading `[image: alt]` for another safe source, plain text for an unsafe one.
+ * @param {Record<string, string>} attribs @returns {sanitizeHtml.Tag}
+ */
+const imageOf = (attribs) => {
+  const src = String(attribs.src || '').trim();
+  const alt = String(attribs.alt || '').trim();
+  if (IMAGE_URL.test(src)) {
+    /** @type {Record<string, string>} */
+    const out = { src, alt };
+    for (const side of ['width', 'height']) if (/^\d{1,4}$/.test(String(attribs[side] || ''))) out[side] = String(attribs[side]);
+    return { tagName: 'img', attribs: out };
+  }
+  const text = `[image: ${alt || 'image'}]`;
+  return SAFE_URL.test(src) ? { tagName: 'a', attribs: { href: src, class: 'img' }, text } : { tagName: 'span', attribs: {}, text };
 };
 
 /** An `align="…"` attribute as the matching class; the attribute itself never survives. */
@@ -113,7 +132,7 @@ const SANITIZE = {
   transformTags: {
     // A link whose target is not safe is its text, not an anchor without a target.
     a: (tagName, attribs) => (SAFE_URL.test(String(attribs.href || '').trim()) ? { tagName, attribs } : { tagName: 'span', attribs: {} }),
-    img: (tagName, attribs) => imageAsLink(String(attribs.src || ''), String(attribs.alt || '')),
+    img: (tagName, attribs) => imageOf(attribs),
     // A checkbox is always disabled; any other kind of input is dropped (`exclusiveFilter`).
     input: (tagName, attribs) => ({ tagName, attribs: { type: String(attribs.type || '').toLowerCase(), disabled: '', ...('checked' in attribs ? { checked: '' } : {}) } }),
     p: alignAsClass,
@@ -129,15 +148,6 @@ const SANITIZE = {
  */
 const md = new MarkdownIt({ html: true, linkify: true, breaks: true, typographer: false });
 md.validateLink = (/** @type {string} */ url) => SAFE_URL.test(url.trim());
-
-// An image as a link to it, since the page may not load images.
-/** @type {import('markdown-it').RendererRule} */
-md.renderer.rules.image = (tokens, idx, options, env, self) => {
-  const token = tokens[idx];
-  const src = String(token.attrGet('src') || '');
-  const alt = self.renderInlineAsText(token.children || [], options, env).trim() || 'image';
-  return SAFE_URL.test(src.trim()) ? `<a href="${escapeHtml(src)}" class="img">[image: ${escapeHtml(alt)}]</a>` : `[image: ${escapeHtml(alt)}]`;
-};
 
 // A table cell's alignment as a class, never an inline style.
 /** @type {import('markdown-it').RendererRule} */
@@ -215,7 +225,7 @@ function textToken(state, content) {
  * ` />` can only end a tag.
  * @param {string} html @returns {string}
  */
-const plainVoidTags = (html) => html.replace(/<(br|hr|input)(\s[^<>]*)? \/>/g, '<$1$2>');
+const plainVoidTags = (html) => html.replace(/<(br|hr|input|img)(\s[^<>]*)? \/>/g, '<$1$2>');
 
 /**
  * Markdown as HTML, safe for the tab (see the header).
@@ -232,4 +242,4 @@ function renderMarkdown(text, { refsBase = null } = {}) {
   return cut ? `${html}<p class="note">… the rest of this text (${whole.length - MAX_MARKDOWN_CHARS} more characters) is not shown.</p>` : html;
 }
 
-module.exports = { renderMarkdown, MAX_MARKDOWN_CHARS, ALLOWED_TAGS };
+module.exports = { renderMarkdown, MAX_MARKDOWN_CHARS, ALLOWED_TAGS, IMAGE_ORIGINS };

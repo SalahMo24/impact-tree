@@ -13,7 +13,8 @@
   comment: a `<details>` fold, `<kbd>`, `<sub>`, a centred paragraph of badges, a template's
   `<!-- comment -->` (hidden). The output passes an allowlist sanitizer, so no tag or
   attribute outside the list, no inline style or handler, and no link other than
-  http(s) or mailto reaches the tab; images are still drawn as links.
+  http(s) or mailto reaches the tab. An image GitHub hosts (a screenshot, an attachment,
+  an avatar) is shown; one from anywhere else is drawn as a link to it.
 
 ## 0.1.0
 
