@@ -241,13 +241,15 @@ function createVscodeServices({
 
   // State of the server as these services have seen it. Owner: these services, which the
   // resolver keeps for the window (src/readiness.js). Reset: `expectReload()`.
-  // `serverWarm`: see isServerWarm(). `callersReady`: see isWarm(). `symbolsAnswered`: a
-  // document-symbol request has answered, so the server is running; until then a symbol
-  // request may wait for the server to start and gets `coldQueryTimeoutMs`, after it
-  // `queryTimeoutMs`. Not reset by `expectReload()`: symbols need no project load.
+  // `serverWarm`: see isServerWarm(). `callersReady`: see isWarm(). `symbolsAnsweredFor`:
+  // the file extensions (`.go`, …) whose server has answered a document-symbol request
+  // with a list, so it is running; see `askSymbols`. Each language has its own server, so
+  // one answering says nothing about another. Not reset by `expectReload()`: symbols need
+  // no project load.
   let serverWarm = false;
   let callersReady = false;
-  let symbolsAnswered = false;
+  /** @type {Set<string>} */
+  const symbolsAnsweredFor = new Set();
   if (scratchDir) {
     sweepBaseCopies(scratchDir).then(
       (removed) => { if (removed) trace(`removed ${removed} leftover base-side cop${removed === 1 ? 'y' : 'ies'} from ${scratchDir}`); },
@@ -503,8 +505,11 @@ function createVscodeServices({
    * The symbols of a document, as ServerSymbols with offsets and LSP kind numbers (the
    * editor's `SymbolKind` is the LSP number minus one). A head document is asked about
    * as it is on disk; a base one through a temporary copy of its `text` (see
-   * createVscodeServices), its offsets converted against that `text`. An answer in the
-   * flat `SymbolInformation` form uses its location's range for both ranges. A malformed
+   * createVscodeServices), its offsets converted against that `text`. VS Code's answer
+   * objects carry both forms (a `location` holding the whole declaration, and `range` /
+   * `selectionRange`); the hierarchical ranges are used whenever present, since only
+   * `selectionRange` is the name callers are asked at. An answer in the flat
+   * `SymbolInformation` form alone uses its location's range for both ranges. A malformed
    * answer is no answer. The tree is walked with an explicit stack; its size is the
    * answer's.
    * @param {import('./languages/types').DocRef} doc
@@ -518,12 +523,41 @@ function createVscodeServices({
     return toServerSymbols(answer, (line, character) => positionToOffset(doc.file, line, character));
   }
 
-  /** @param {string} file @returns {Promise<unknown>} The provider's answer for that file. */
+  /**
+   * The provider's answer for a file's symbols. VS Code answers `undefined` both when no
+   * provider is registered yet (the language's extension is still starting its server)
+   * and when the file has no symbols. So until this kind of file has had a list once, an
+   * `undefined` is "not ready": it is asked again, waiting 250 ms × attempt (at most 2 s)
+   * between tries, all within `coldQueryTimeoutMs`; when that runs out the request
+   * rejects, retryable, and the file is reported as not analysed, never as having no
+   * symbols. Once a list has come, `undefined` means no symbols: `[]`. A file with no
+   * symbols asked before any list has come waits until another file's answer arrives or
+   * the time runs out.
+   * @param {string} file Absolute path.
+   * @returns {Promise<unknown>}
+   */
   async function askSymbols(file) {
-    const answer = await ask('vscode.executeDocumentSymbolProvider', [vscode.Uri.file(file)],
-      symbolsAnswered ? queryTimeoutMs : coldQueryTimeoutMs);
-    if (Array.isArray(answer)) symbolsAnswered = true;
-    return answer;
+    const kind = path.extname(file).toLowerCase();
+    const uri = vscode.Uri.file(file);
+    if (symbolsAnsweredFor.has(kind)) {
+      const answer = await ask('vscode.executeDocumentSymbolProvider', [uri], queryTimeoutMs);
+      return answer === undefined ? [] : answer;
+    }
+    const started = Date.now();
+    const left = () => coldQueryTimeoutMs - (Date.now() - started);
+    for (let attempt = 1; ; attempt++) {
+      const answer = await ask('vscode.executeDocumentSymbolProvider', [uri], Math.max(1, left()));
+      if (Array.isArray(answer)) { symbolsAnsweredFor.add(kind); return answer; }
+      // Anything but `undefined` is a malformed answer: `toServerSymbols` makes it no answer.
+      if (answer !== undefined) return answer;
+      // Another file of this kind got its list while this one waited: the server is up.
+      if (symbolsAnsweredFor.has(kind)) return [];
+      if (left() <= 0) {
+        throw new ServiceError(`the language server listed no symbols within ${Math.round(coldQueryTimeoutMs / 1000)} s; it may still be starting`, { retryable: true });
+      }
+      onRetry();
+      await sleep(Math.min(250 * attempt, 2000, left()));
+    }
   }
 
   /**
@@ -581,8 +615,10 @@ function createVscodeServices({
     while (stack.length) {
       const { raw, into } = /** @type {{ raw: unknown, into: import('./languages/types').ServerSymbol[] }} */ (stack.pop());
       if (!isObject(raw) || typeof raw.name !== 'string' || !Number.isInteger(raw.kind)) return null;
-      const rawRange = isObject(raw.location) ? raw.location.range : raw.range;
-      const rawSelection = isObject(raw.location) ? raw.location.range : raw.selectionRange;
+      const hierarchical = isRange(raw.range) && isRange(raw.selectionRange);
+      const flat = isObject(raw.location) ? raw.location.range : undefined;
+      const rawRange = hierarchical ? raw.range : flat;
+      const rawSelection = hierarchical ? raw.selectionRange : flat;
       if (!isRange(rawRange) || !isRange(rawSelection)) return null;
       const range = offsets(rawRange);
       const selectionRange = offsets(rawSelection);

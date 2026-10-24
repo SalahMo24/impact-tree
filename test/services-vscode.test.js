@@ -230,19 +230,26 @@ test('the temporary copy is removed when the request fails, and concurrent reque
     pending.push(d);
     return d.promise;
   });
+  // Whatever an assertion leaves unanswered is answered when the test ends, so a failure
+  // reports at once instead of waiting out the 120 s deadline.
+  t.after(() => { for (const d of pending) d.resolve([]); });
   const scratchDir = path.join(dir, 'scratch');
   const services = create({ scratchDir, coldQueryTimeoutMs: 120000 });
   const first = services.documentSymbols({ file, side: 'base', text: 'one\n' }).then(() => assert.fail('it failed'), (e) => e);
   const second = services.documentSymbols({ file, side: 'base', text: 'two\n' });
   await until(() => asked.length === 2, 'both were asked');
-  assert.notEqual(path.dirname(asked[0]), path.dirname(asked[1]), 'each request has its own subdirectory');
-  assert.equal(fs.readFileSync(asked[1], 'utf8'), 'two\n');
-  pending[0].reject(new Error('the provider failed'));
+  // The two requests write their copies concurrently, so either may reach the editor first:
+  // tell them apart by what their copy holds, not by order.
+  const index = Object.fromEntries(asked.map((copy, i) => [fs.readFileSync(copy, 'utf8'), i]));
+  const one = index['one\n'], two = index['two\n'];
+  assert.deepEqual([one, two].sort(), [0, 1], 'each copy holds its own text');
+  assert.notEqual(path.dirname(asked[one]), path.dirname(asked[two]), 'each request has its own subdirectory');
+  pending[one].reject(new Error('the provider failed'));
   const error = await first;
   assert.equal(error.message, 'the provider failed');
-  assert.equal(fs.existsSync(asked[0]), false, 'removed although the request failed');
-  assert.equal(fs.existsSync(asked[1]), true, 'the other request still has its copy');
-  pending[1].resolve([]);
+  assert.equal(fs.existsSync(asked[one]), false, 'removed although the request failed');
+  assert.equal(fs.existsSync(asked[two]), true, 'the other request still has its copy');
+  pending[two].resolve([]);
   assert.deepEqual(await second, []);
   assert.deepEqual(fs.readdirSync(scratchDir), []);
 });
@@ -330,4 +337,44 @@ test('callers are rows with offsets, deduplicated, and test callers marked', asy
   ] });
   assert.deepEqual((await callersFromHierarchy(services, { doc, pos: 16, withTests: false })).callers.map((c) => c.label), ['mod.other']);
   assert.equal(services.isWarm(), true);
+});
+
+// VS Code's executeDocumentSymbolProvider answers objects with both forms: a `location`
+// holding the whole declaration, and the hierarchical `range` / `selectionRange`. The name
+// callers are asked at is `selectionRange`; reading `location` put it at `func`.
+test('document symbols in VS Code\'s merged form take the name from selectionRange, not the location', async (t) => {
+  const text = 'package a\n\nfunc Target() {}\n';
+  const { create, doc } = setup(t, () => [{
+    name: 'Target', detail: 'func()', kind: 11,
+    location: { uri: { fsPath: 'ignored' }, range: range(2, 0, 2, 16) },
+    range: range(2, 0, 2, 16), selectionRange: range(2, 5, 2, 11), children: [],
+  }], text);
+  const [symbol] = await create().documentSymbols(doc);
+  assert.equal(text.slice(symbol.selectionRange.start, symbol.selectionRange.end), 'Target');
+  assert.equal(text.slice(symbol.range.start, symbol.range.end), 'func Target() {}');
+  assert.equal(symbol.kind, 12, 'LSP Function');
+});
+
+// While a language's extension is still starting its server, VS Code answers `undefined`
+// (no provider yet). That is "not ready", not "no symbols".
+test('document symbols are asked again while the server starts, then an empty answer means none', async (t) => {
+  const symbol = { name: 'f', kind: 11, range: range(0, 0, 0, 5), selectionRange: range(0, 0, 0, 1), children: [] };
+  let listFrom = 3;
+  const { create, doc, sent } = setup(t, () => (sent.length < listFrom ? undefined : [symbol]), 'f() {}\n');
+  let retries = 0;
+  const services = create({ onRetry: () => { retries++; } });
+  assert.equal((await services.documentSymbols(doc)).length, 1, 'the third answer is the list');
+  assert.equal(sent.length, 3);
+  assert.equal(retries, 2);
+  listFrom = Infinity;
+  assert.deepEqual(await services.documentSymbols(doc), [], 'once a list has come, undefined is no symbols');
+  assert.equal(sent.length, 4, 'asked once, not polled');
+});
+
+test('a server that never lists symbols within the cold deadline is reported, retryable, not as no symbols', async (t) => {
+  const { create, doc } = setup(t, () => undefined, 'f() {}\n');
+  const services = create({ coldQueryTimeoutMs: 300 });
+  const error = await services.documentSymbols(doc).then(() => null, (e) => e);
+  assert.match(error.message, /listed no symbols within 0 s; it may still be starting/);
+  assert.equal(error.retryable, true);
 });
