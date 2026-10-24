@@ -28,6 +28,23 @@ test('parseRemoteList reads real `git remote -v` output: ssh and https, push lin
   assert.deepEqual(parseRemoteList(undefined), []);
 });
 
+test('parseRemoteList reads a partial clone, whose fetch lines end with the filter', () => {
+  const text = [
+    'origin\thttps://github.com/cli/cli.git (fetch) [blob:none]',
+    'origin\thttps://github.com/cli/cli.git (push)',
+    'upstream\tgit@github.com:org/repo.git (fetch) [tree:0]',
+    'fork\thttps://github.com/me/repo.git (fetch) [blob:limit=1m]',
+    'odd\thttps://github.com/x/y.git (fetch) trailing words',
+  ].join('\n');
+  assert.deepEqual(parseRemoteList(text), [
+    remote('origin', 'https://github.com/cli/cli.git'),
+    remote('upstream', 'git@github.com:org/repo.git'),
+    remote('fork', 'https://github.com/me/repo.git'),
+  ], 'a line with anything else after (fetch) is still not a remote line');
+  assert.deepEqual(chooseGitHubRemote(parseRemoteList(text).slice(0, 1), ''),
+    { kind: 'ok', name: 'origin', owner: 'cli', repo: 'cli' });
+});
+
 test('chooseGitHubRemote: origin only', () => {
   assert.deepEqual(chooseGitHubRemote([remote('origin', GH('me'))], ''),
     { kind: 'ok', name: 'origin', owner: 'me', repo: 'repo' });
