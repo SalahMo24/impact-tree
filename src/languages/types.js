@@ -176,6 +176,11 @@
  * @property {(file: string, pos: number) => Promise<string|null>} unseenUsers Asked before
  *   "none": the reason the answer is unknown after all, or null. Never rejects.
  * @property {() => void} clear A new analysis starts: drop what was learnt.
+ * @property {(reason: string) => string|null} [explainIncomplete] For a query the server did
+ *   not answer (a rejection, no item): the reason to show instead of the server's, when the
+ *   language knows what that failure means (Go: a file outside the active build), or null
+ *   to keep the server's reason. An explained failure is a lasting condition of the
+ *   workspace, so the answer is incomplete and not retryable. Absent: never explained.
  */
 
 /**
@@ -183,7 +188,9 @@
  * @property {() => boolean} isSuppressed True: do not ask the server; an empty answer stands
  *   and its verdict is unknown (`suppressedReason`).
  * @property {(callers: import('../engine/caller-contract').CallerRow[]) => { kept: import('../engine/caller-contract').CallerRow[], dropped: number }} filter
- *   Removes callers the server reports wrongly.
+ *   Removes callers the server reports wrongly. `kept` replaces the callers, so a kept
+ *   caller may be a copy with fewer `callSites` (Go keeps only a caller's calls);
+ *   `dropped` counts the callers removed.
  * @property {(() => Promise<{ callers: import('../engine/caller-contract').CallerRow[], incompleteReason: string|null }>)|null} moreCallers
  *   Callers the server cannot see; `incompleteReason` when that search failed. Never rejects.
  *   Null when there is nothing to search, so the answer needs no wait.

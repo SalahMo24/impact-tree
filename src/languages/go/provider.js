@@ -3,10 +3,11 @@
 // Go as a language provider (src/languages/types.js; docs/MULTI_LANGUAGE_PLAN.md, G2). Go
 // needs a language server: its symbols come from the editor's (gopls through the Go
 // extension) via the shared `prepareFromServerSymbols` (../server-symbols.js), and its
-// callers from the editor's resolver, which answers Go targets with `callersFromHierarchy`.
-// What is Go's own here: which server symbols are changed-symbol candidates and how they
-// are keyed (`collectGoSymbols`), how a header is compared (`goKindsOf`) and shown, and
-// which module a file belongs to (`goModuleOf`).
+// callers from the editor's resolver, which answers Go targets with `callersFromHierarchy`
+// and Go's caller extras (`editorCallers`, ./editor-extras.js). What is Go's own here:
+// which server symbols are changed-symbol candidates and how they are keyed
+// (`collectGoSymbols`), how a header is compared (`goKindsOf`) and shown, which module a
+// file belongs to (`goModuleOf`), and how gopls' callers are read (`editorCallers`).
 //
 // Engine modules and the signature parser are required where they are used: the registry
 // (../index.js) loads this file, and src/engine/diff.js loads the registry.
@@ -223,11 +224,20 @@ function goSpec(parser) {
  */
 const prepare = (ctx) => require('../server-symbols').prepareFromServerSymbols(ctx, goSpec());
 
+/**
+ * Go's caller extras for the editor's resolver (./editor-extras.js): value uses are not
+ * calls, and a file outside the active build says so. Required here, not at the top, for
+ * the same reason as the engine modules above.
+ * @type {NonNullable<import('../types').LanguageProvider['editorCallers']>}
+ */
+const editorCallers = ({ trace }) => require('./editor-extras').createGoEditorExtras({ trace });
+
 /** @type {import('../types').LanguageProvider} */
 const goProvider = Object.freeze({
   ...goRules,
   needsServer: true,
   prepare,
+  editorCallers,
 });
 
 module.exports = { goProvider, goSpec, collectGoSymbols, goKindsOf, goModuleOf, renderGoSymbolSig };
