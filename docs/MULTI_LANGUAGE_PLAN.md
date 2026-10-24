@@ -137,7 +137,8 @@ the design: TypeScript results must not change.
 
 ## Gates (owner decisions)
 
-- **L1. Base-side symbols.** Depends on G0's findings. Options, in order of preference:
+- **L1. Base-side symbols.** **Decided after G0: (b).** gopls and the Go extension only
+  serve `file:` documents. (c) stays the fallback when the file cannot be written. Options, in order of preference:
   (a) a virtual document, if the servers answer for it; (b) the base text written to a
   temporary file in the extension's storage, with the same file name, asked once and
   deleted; (c) no base symbols: match the head symbol's header against the removed lines
@@ -202,6 +203,24 @@ through the harness:
 
 Acceptance: a "Measured" section under G0 with the answers; L1 decided.
 
+**Measured (2026-10-24, done).** Full numbers in `test/lsp-harness/G0-REPORT.md`, reproduced
+by `node test/lsp-harness/g0-spike.js <cli clone>` (gopls v0.21.0, Intel i7-9750H, warm
+gopls disk cache; the real VS Code Go extension was not run).
+1. Symbols: hierarchical; functions and methods all present; `range` is `func` to `}` (doc
+   comment excluded); `selectionRange` is the bare name; methods are named with their
+   receiver (`(*AuthConfig).reload`); `detail` is the signature without name or receiver;
+   function literals are not listed (they are part of the parent's body).
+2. Base side: gopls refuses any non-`file:` URI (`-32700`), and the Go extension only
+   forwards `file:` documents. A temporary file outside the module is answered correctly
+   (first one 684 ms, then fast). **L1 decided: (b)**, temporary file outside the module.
+3. Callers: calls through an interface are included (concrete and interface method give the
+   same 7 callers) but are not marked as such; `_test.go` callers are included; a function in
+   a file excluded by build tags fails `prepareCallHierarchy` with "no package metadata".
+4. Values: the call hierarchy already lists value uses (`Args: noArgsConstraint`: 11 callers,
+   11 references), so it does not miss them, but it cannot tell a call from a mention.
+5. Time: spawn + initialize 216 ms; first symbols 2.2 s; warm queries a few ms
+   (`implementations` median 16–59 ms, up to 1.5 s).
+
 ### G1. The Go provider: file rules
 
 Acceptance: `src/languages/go/` registered after TypeScript; `handles` `.go`; `isTest`
@@ -231,15 +250,19 @@ generics `[T any]` parsed) and calls the shared `diffSignature`; a receiver chan
 
 ### G4. Go callers and their blind spots
 
+G0 changed this task: gopls lists interface calls and value uses as callers, so the risk
+is not missing them but reading them wrongly.
+
 Acceptance: `callers` wraps `callersFromHierarchy`:
 - callers in `_test.go` are tests (from `isTest`), so they don't count as not updated and
   they feed test reach;
-- a method that implements an interface (`implementations` says so) is amber "callers may
-  be missing: calls through the interface are not listed", never "no callers";
-- a function referenced as a value (references beyond the call sites) is amber with that
-  reason;
-- a function in a build-tagged file says the other tags' callers were not searched, if G0
-  shows gopls skips them.
+- a caller whose range is not followed by a call (`(` after the name, generics allowed) is a
+  value use, not a call: the change is amber "used as a value, its calls cannot be traced",
+  as TS's `referenced-as-value`, and that caller is not counted as "not updated at the call";
+- a function in a file the current build tags exclude ("no package metadata") is amber
+  "not in the active build; callers were not searched", never "no callers";
+- a method that implements an interface needs no extra state (its interface callers are
+  listed), but G7 checks against `callgraph -algo=vta` that this holds beyond PR #14752.
 
 ### G5. Row identity and warm-up for Go
 
