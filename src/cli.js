@@ -28,6 +28,7 @@ ${Object.entries(MODES).map(([k, v]) => `                         ${k.padEnd(11)
 
 const rankedRoots = Number(arg('roots', 6));
 const repo = path.resolve(arg('repo', process.cwd()));
+// wall-clock: log-only — the CLI's elapsed time, printed at the end
 const t0 = Date.now();
 
 (async () => {
@@ -124,5 +125,6 @@ for (const c of result.components) {
   const s = c.stats || {};
   console.log(`  ${c.component.padEnd(24)} LS: ${s.incomingCalls} incoming (${((s.incomingMs||0)/1000).toFixed(1)}s) · ${s.refCalls} findRefs (${((s.refMs||0)/1000).toFixed(1)}s) · ${s.cacheHits} cache hits`);
 }
+// wall-clock: log-only — the CLI's elapsed time
 console.log(`  elapsed ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 })().catch((e) => { console.error(e); process.exit(1); });

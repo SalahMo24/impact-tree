@@ -1,5 +1,6 @@
 // @ts-check
 'use strict';
+const { realClock } = require('./engine/clock');
 // "Send feedback" (docs/UX_PLAN.md F3): turns the drafts into a round file, takes the
 // round's snapshot and makes it the checkpoint, hands the round to an agent, and offers
 // once per repository to point AGENTS.md / CLAUDE.md at the feedback folder.
@@ -68,7 +69,7 @@ function createSendFeedback(vscode, deps) {
  * @param {{ ask: boolean, pointerAsked: () => boolean, markPointerAsked: () => void }} o
  */
 async function send(vscode, deps, o) {
-  const { drafts, session, log, now = Date.now } = deps;
+  const { drafts, session, log, now = realClock.now } = deps;
   const items = drafts.list();
   if (!items.length) { vscode.window.showInformationMessage('Impact Tree: there is no feedback to send. Add feedback on a change first.'); return; }
   let repo;
@@ -151,7 +152,7 @@ function reviewedLabel(source, mode) {
  * @param {{ repo: string, store: any, items: FeedbackItem[], branch: string|null, reviewed: string, now?: () => number }} o
  *   `now` dates the round, in epoch milliseconds; omitted: Date.now.
  */
-async function saveRound({ repo, store, items, branch, reviewed, now = Date.now }) {
+async function saveRound({ repo, store, items, branch, reviewed, now = realClock.now }) {
   const { files } = await listRounds(repo);
   const expected = nextRoundNumber(files.map((f) => f.name));
   const record = store ? await store.take({ round: expected }) : null;

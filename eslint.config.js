@@ -33,8 +33,20 @@ function scan(dir) {
 
 const { enrolled, other } = scan('src');
 
+// Project rules, applied to every file in src/ whether or not it is enrolled.
+const local = { rules: { 'no-wall-clock': require('./eslint-local/no-wall-clock') } };
+
 module.exports = [
-  { ignores: other },
+  // The wall-clock rule covers all of src/: time must come from the injected clock
+  // (src/engine/clock.js, which is exempt) unless an allowlist comment says why not.
+  {
+    files: [...enrolled, ...other].filter((file) => file !== 'src/engine/clock.js'),
+    languageOptions: { sourceType: 'commonjs', ecmaVersion: 2022, globals: globals.node },
+    plugins: { local },
+    linterOptions: { reportUnusedDisableDirectives: 'error' },
+    rules: { 'local/no-wall-clock': 'error' },
+  },
+  // Every other rule covers enrolled files only.
   {
     files: enrolled,
     languageOptions: { sourceType: 'commonjs', ecmaVersion: 2022, globals: globals.node },

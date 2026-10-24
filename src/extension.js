@@ -43,6 +43,7 @@ const BUILD = '0.1.0+targeted-review-updates';
 let session = null;
 let prDocuments = null;
 let out = null;
+// wall-clock: display — the time of day prefixed to each log line
 const log = (m) => { if (out) out.appendLine(`[${new Date().toISOString().slice(11, 19)}] ${m}`); };
 
 /**
@@ -171,9 +172,11 @@ function activate(context, { clock = realClock } = {}) {
     owned.onDidChangeAnalysis(() => { recheckRepo(); publishContext(); }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => { recheckRepo(); publishContext(); }));
   context.subscriptions.push(view.onDidChangeCheckboxState((e) => {
+    // wall-clock: log-only — how long a checkbox change took, for the log
     const started = Date.now();
     // A file's checkbox ticks its changes; a change's ticks only itself, not its callers.
     provider.setCheckedBatch(e.items.map(([row, state]) => ({ row, on: state === vscode.TreeItemCheckboxState.Checked })));
+    // wall-clock: log-only — the duration logged
     log(`checkbox: ${e.items.length} row(s), analysis=${owned.getAnalysisId()}, ${Date.now() - started}ms`);
   }));
 

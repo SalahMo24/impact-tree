@@ -110,6 +110,7 @@ const SUITE = [
   { file: 'test/feedback-round-view.test.js', tier: 'quick' },  // 2.4s
   { file: 'test/snapshot-store.test.js', tier: 'full' },  // 11.4s
   { file: 'test/fake-clock.test.js', tier: 'quick' },  // 0.1s
+  { file: 'test/no-wall-clock-rule.test.js', tier: 'quick' },  // 0.2s
 ];
 
 /**

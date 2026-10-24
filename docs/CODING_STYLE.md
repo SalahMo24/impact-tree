@@ -511,6 +511,16 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      `DEFAULT_LIMITS`. Not done: retries (there are none) and the language-server limit
      above.
    - Exists: an injected clock (`src/engine/clock.js`) times every deadline, budget, retry wait and tick; tests pass `test/fake-clock.js` and fast-forward it instead of waiting.
+   - Exists: the lint rule `local/no-wall-clock` (`eslint-local/no-wall-clock.js`), applied
+     to every file in `src/` whether enrolled or not, rejects `Date.now`, `new Date()`,
+     `performance.now`, `process.hrtime` and the global `setTimeout`/`setInterval`/
+     `clearTimeout`/`clearInterval` outside `src/engine/clock.js`. The documented allowlist
+     is a comment on the line or the line above, `// wall-clock: <category> — <reason>`,
+     with one of four categories: `log-only` (a duration only logged or counted in stats),
+     `next-turn` (`setTimeout(fn, 0)` batching into the next event-loop turn; the delay must
+     be the literal 0), `display` (the current date shown to a person) and `subprocess` (a
+     timeout the operating system enforces). An allowlist comment without a reason, with an
+     unknown category, or covering nothing is itself an error.
 4. Make cache identity and retention policies explicit; address expensive editor
    work using measurements.
    - Exists: every cache has a comment at its definition stating owner, what its key

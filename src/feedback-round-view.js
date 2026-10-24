@@ -76,6 +76,7 @@ function createFeedbackRoundView({ workspaceState, session, getSnapshotStore, on
 /** @param {number} ms */
 function defaultTime(ms) {
   const d = new Date(ms);
+  // wall-clock: display — whether a round's date is today, to label it with a time or a date
   const sameDay = new Date().toDateString() === d.toDateString();
   const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
   return sameDay ? time : `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${time}`;

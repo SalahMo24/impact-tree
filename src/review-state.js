@@ -1,4 +1,5 @@
 'use strict';
+const { realClock } = require('./engine/clock');
 // Progress is scoped to the review (repository/branch or PR). Row identities
 // include both revisions of the symbol and its parent review context.
 
@@ -88,7 +89,7 @@ async function deleteReviewKeys(memento, keys) {
  * @param {{ now?: () => number, log?: ((m: string) => void)|null }} [opts] `now` is the clock for
  *   last-use stamps.
  */
-function createReviewState(memento, { now = Date.now, log = null } = {}) {
+function createReviewState(memento, { now = realClock.now, log = null } = {}) {
   let baseKey = null;
   let reviewed = new Set();
   let identity = null;

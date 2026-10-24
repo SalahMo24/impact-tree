@@ -1,5 +1,6 @@
 // @ts-check
 'use strict';
+const { realClock } = require('./clock');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -89,7 +90,7 @@ function validateRecord(value, root) {
  *   tempDir: () => string,
  * }}
  */
-function createSnapshotStore({ root, repo, log = () => {}, timeoutMs = DEFAULT_TIMEOUT_MS, now = Date.now }) {
+function createSnapshotStore({ root, repo, log = () => {}, timeoutMs = DEFAULT_TIMEOUT_MS, now = realClock.now }) {
   if (typeof root !== 'string' || !path.isAbsolute(root)) throw new TypeError(`snapshot store root must be an absolute path, got ${JSON.stringify(root)}`);
   const manifestFile = path.join(root, 'manifest.json');
   const snapshotsDir = path.join(root, 'snapshots');

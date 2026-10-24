@@ -1,5 +1,6 @@
 // @ts-check
 'use strict';
+const { realClock } = require('./engine/clock');
 // Carries out the retention policy of storage-cleanup.js (docs/UX_PLAN.md F5): gathers what
 // is stored, applies the plan, and offers the "Clean up stored data" command. Feedback files
 // in `.impact-tree/feedback/` are never listed, moved or deleted here.
@@ -52,7 +53,7 @@ async function gather(deps, { includeCurrent = false } = {}) {
   const snapshots = store ? store.list() : [];
   const reviewKeys = listReviewKeys(deps.workspaceState, deps.log);
   const plan = planCleanup({
-    nowMs: (deps.now || Date.now)(),
+    nowMs: (deps.now || realClock.now)(),
     snapshots,
     currentCheckpointSha: (deps.session.state && deps.session.state.checkpoint) || null,
     liveBranches: repo ? await liveBranchesOf(repo) : null,

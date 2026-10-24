@@ -57,10 +57,12 @@ function registerContentProviders(vscode, { prDocuments, repoRoot, gh, repoSlug,
     vscode.workspace.registerTextDocumentContentProvider('impacttree-base', {
       provideTextDocumentContent(uri) {
         const { makeGit } = require('./engine/git');
+        // wall-clock: log-only — how long reading a base document took, for the log
         const started = Date.now();
         const text = makeGit(repoRoot(), { objectDirs: getObjectDirs() }).show(uri.query, uri.path);
         // A missing blob is expected for added files. Preserve the existing empty side,
         // but record it so a failed base read can be distinguished during diagnosis.
+        // wall-clock: log-only — the duration logged
         log(`editor: base content ${uri.toString()} ${text === null ? 'unavailable or absent' : `${text.length} characters`} in ${Date.now() - started}ms`);
         return text || '';
       },
