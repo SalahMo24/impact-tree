@@ -27,7 +27,9 @@ const isSafeRemoteName = (name) => isSafeName(name);
 
 /**
  * The fetch URLs of `git remote -v` output, one entry per remote name (the first seen).
- * Push lines and lines that are not `name<TAB>url (fetch)` are ignored.
+ * Push lines and lines that are not `name<TAB>url (fetch)` are ignored. A partial clone's
+ * fetch line ends with its filter (`(fetch) [blob:none]`, `[tree:0]`): the line is still
+ * that remote's fetch URL.
  * @param {string} text
  * @returns {Remote[]}
  */
@@ -36,7 +38,7 @@ function parseRemoteList(text) {
   const remotes = [];
   const seen = new Set();
   for (const line of String(text || '').split('\n')) {
-    const m = /^(\S+)\s+(\S+)\s+\(fetch\)\s*$/.exec(line.trim());
+    const m = /^(\S+)\s+(\S+)\s+\(fetch\)(?:\s+\[[^\]]*\])?\s*$/.exec(line.trim());
     if (!m || seen.has(m[1])) continue;
     seen.add(m[1]);
     remotes.push({ name: m[1], url: m[2] });
