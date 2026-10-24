@@ -2,40 +2,8 @@
 const fs = require('fs');
 const path = require('path');
 const { createHash } = require('crypto');
-const { makeSymbols } = require('./engine/symbols');
+const { typescriptReviewSymbols } = require('./languages/typescript/review-symbols');
 const hash = (s) => createHash('sha256').update(s == null ? '<absent>' : s).digest('hex');
-
-// Text without its callables, null staying null. Whole lines are cut, from the line a
-// callable starts on to the line it ends on, so a function added or removed leaves no
-// `export const ;` behind. Blank separator lines are ignored, but lines inside literal
-// text (including template chunks and JSX text) keep their meaningful whitespace.
-function blankSpans(ts, sf, symbols) {
-  if (!sf) return null;
-  const literalKinds = new Set([
-    ts.SyntaxKind.StringLiteral, ts.SyntaxKind.NoSubstitutionTemplateLiteral,
-    ts.SyntaxKind.TemplateHead, ts.SyntaxKind.TemplateMiddle, ts.SyntaxKind.TemplateTail,
-    ts.SyntaxKind.JsxText,
-  ]);
-  const literalLines = new Set();
-  const stack = [sf];
-  while (stack.length) {
-    const node = stack.pop();
-    if (literalKinds.has(node.kind)) {
-      const first = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line;
-      const last = sf.getLineAndCharacterOfPosition(node.getEnd()).line;
-      for (let line = first; line <= last; line++) literalLines.add(line + 1);
-    }
-    ts.forEachChild(node, (child) => { stack.push(child); });
-  }
-  const spans = symbols.slice().sort((a, b) => a.startLine - b.startLine || b.endLine - a.endLine);
-  let at = 0;
-  return sf.text.split('\n').filter((line, index) => {
-    const number = index + 1;
-    while (at < spans.length && spans[at].endLine < number) at++;
-    if (at < spans.length && spans[at].startLine <= number) return false;
-    return line.trim() !== '' || literalLines.has(number);
-  }).join('\n');
-}
 
 const symbolHash = (text, symbol) => hash((symbol.reviewPrefix || '') + text.slice(symbol.start, symbol.end));
 
@@ -44,7 +12,12 @@ const symbolHash = (text, symbol) => hash((symbol.reviewPrefix || '') + text.sli
  * each identity is built from the content that was reviewed, so a change to that
  * content, or to its base, makes the row unreviewed again.
  *
- * @param {object} ts
+ * Parsing, symbols and declarations come from the TypeScript provider's helpers
+ * (src/languages/typescript/review-symbols.js), the only language with symbol rows.
+ *
+ * @param {object|null} ts The TypeScript module. Null: loaded from `repo` the first time
+ *   a symbol, deleted or outside row is identified, so a review whose rows are all files
+ *   never loads it.
  * @param {string} repo Absolute repository root.
  * @param {object} revisions What was reviewed, by repository-relative path.
  * @param {(rel: string) => string|null} revisions.headText Head-side text; null when the file is absent there.
@@ -55,7 +28,12 @@ const symbolHash = (text, symbol) => hash((symbol.reviewPrefix || '') + text.sli
  * @returns {(node: object) => string|null}
  */
 function createReviewIdentity(ts, repo, { headText, baseText, fileRevision }) {
-  const S = makeSymbols(ts);
+  /** @type {ReturnType<typeof typescriptReviewSymbols>|null} */
+  let steps = null;
+  const typescript = () => {
+    if (!steps) steps = typescriptReviewSymbols(ts || require('./languages/typescript/load').loadTypeScript(repo, repo));
+    return steps;
+  };
   // Cache: one entry per file with the ids and hashes of its symbols. Owner: this
   // identity, built by the session for one completed analysis and replaced by the next
   // (`review.configure`). Key: absolute file path; its head and base text come from the
@@ -65,17 +43,17 @@ function createReviewIdentity(ts, repo, { headText, baseText, fileRevision }) {
   // Invalidation: none; the next analysis builds a new identity. Disposal: garbage with
   // the identity.
   const cache = new Map();
-  const parse = (file, text) => ts.createSourceFile(file, text, ts.ScriptTarget.ES2021, true);
   // An entry keeps ids and hashes, not syntax trees: it lives as long as the review does.
   const read = (file) => {
     if (cache.has(file)) return cache.get(file);
     const rel = path.relative(repo, file).split(path.sep).join('/');
     const head = headText(rel);
     const base = baseText(rel);
+    const { parse, collect, blankSpans } = typescript();
     const headSf = head == null ? null : parse(file, head);
     const baseSf = base == null ? null : base === head ? headSf : parse(file, base);
-    const headSymbols = headSf ? S.collect(headSf) : [];
-    const baseSymbols = baseSf ? baseSf === headSf ? headSymbols : S.collect(baseSf) : [];
+    const headSymbols = headSf ? collect(headSf) : [];
+    const baseSymbols = baseSf ? baseSf === headSf ? headSymbols : collect(baseSf) : [];
     const baseSliceHash = new Map(baseSymbols.map((b) => [b.key, symbolHash(base, b)]));
     const byNamePos = new Map(), byClassPos = new Map();
     for (const s of headSymbols) {
@@ -86,7 +64,7 @@ function createReviewIdentity(ts, repo, { headText, baseText, fileRevision }) {
     const entry = {
       file, rel, head, baseHash: hash(base), baseSliceHash, byNamePos, byClassPos, declHashes: null,
       // Of everything outside the callables, on each side; see `outsideId`.
-      outsideHash: `${hash(blankSpans(ts, headSf, headSymbols))}:${hash(blankSpans(ts, baseSf, baseSymbols))}`,
+      outsideHash: `${hash(blankSpans(headSf, headSymbols))}:${hash(blankSpans(baseSf, baseSymbols))}`,
     };
     cache.set(file, entry);
     return entry;
@@ -95,7 +73,10 @@ function createReviewIdentity(ts, repo, { headText, baseText, fileRevision }) {
   // module-level code -- is identified by its own declaration, or by the whole file
   // when it is the module itself.
   const unrecordedId = (entry, n) => {
-    if (!entry.declHashes) entry.declHashes = entry.head == null ? new Map() : declarationHashes(parse(entry.file, entry.head));
+    if (!entry.declHashes) {
+      const { parse, declarationHashes } = typescript();
+      entry.declHashes = entry.head == null ? new Map() : declarationHashes(parse(entry.file, entry.head));
+    }
     return `${entry.rel}#@${n.label}:${entry.declHashes.get(n.pos) || hash(entry.head)}:${entry.baseHash}`;
   };
 
@@ -120,23 +101,6 @@ function createReviewIdentity(ts, repo, { headText, baseText, fileRevision }) {
     }
     return entry.byNamePos.get(n.pos) || entry.byClassPos.get(n.pos) || unrecordedId(entry, n);
   };
-
-  // Callers are anchored at their declaration's name: name start -> hash of that
-  // declaration's text, for every named node in the file. One parse per file, which is
-  // then dropped; an explicit stack, so a deep file cannot overflow the call stack.
-  function declarationHashes(sf) {
-    const out = new Map();
-    const stack = [sf];
-    while (stack.length) {
-      const node = stack.pop();
-      if (node.name && ts.isIdentifier(node.name)) {
-        const at = node.name.getStart(sf);
-        if (!out.has(at)) out.set(at, hash(node.getText(sf)));
-      }
-      ts.forEachChild(node, (k) => { stack.push(k); });
-    }
-    return out;
-  }
 }
 
 /**

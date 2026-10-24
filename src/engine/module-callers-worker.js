@@ -5,7 +5,7 @@ const path = require('path');
 const { createHash } = require('crypto');
 const { worktreeFiles, isSourcePath, clearProjectCache } = require('./diff');
 const { makeGit } = require('./git');
-const { loadTypeScript } = require('./analyze');
+const { loadTypeScript } = require('../languages/typescript/load');
 const { createModuleCallers } = require('./module-callers');
 
 const repo = workerData.repo;

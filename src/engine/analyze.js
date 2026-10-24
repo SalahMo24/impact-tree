@@ -1,79 +1,24 @@
 'use strict';
-const fs = require('fs');
+const assert = require('assert/strict');
 const path = require('path');
 const { makeGit, resolveBaseAsync } = require('./git');
 const { createDiffIndex } = require('./diff-index');
 const {
-  changedFiles, untrackedFiles, worktreeFiles, allHunks, hunkDiffArgs, wholeFileRange, isTestPath, isSourcePath,
-  projectRootOf, projectConfigIn, clearProjectCache, projectLabel, INFERRED_PROJECT,
+  changedFiles, untrackedFiles, allHunks, hunkDiffArgs, wholeFileRange, isTestPath, isSourcePath,
 } = require('./diff');
+const { languageFor, registeredLanguages } = require('../languages');
 const { batchPaths } = require('./cmdline');
-const { makeSymbols } = require('./symbols');
 const { score } = require('./signature');
-const { changedSymbolsIn, changedSymbolKeys } = require('./changed-symbols');
-const { createTsResolver } = require('./resolver-ts');
-const { createModuleCallers, withModuleCallers } = require('./module-callers');
+const { changedSymbolKeys } = require('./changed-symbols');
 const { seedRoots, nestedIds, blastRadius, buildTree } = require('./forest');
 const { readLineOfOffset, clearVirtualText } = require('./textpos');
 const { classifyCallSiteUpdates, classifyCallerUpdateState } = require('./call-sites');
 const { mapLimit } = require('./concurrency');
 const { validateConcurrency, validateReachDepth } = require('./settings');
-const { throwIfCancelled } = require('./cancellation');
+const { throwIfCancelled, isAnalysisCancelled } = require('./cancellation');
 const { walkTestReach, DEFAULT_REACH_BUDGET } = require('./test-reach');
 const { diffLinesFromChanges } = require('./diff-lines');
 const { MODE_LABELS, modeLabel } = require('./mode-labels');
-
-// Prefer the project's own TypeScript so analysis matches what the editor sees; fall
-// back to the repo root, then to whatever this extension was installed with.
-// Prefer the repo's OWN TypeScript so we parse with the version the project compiles
-// with, and fall back to the copy shipped with the extension. A monorepo commonly has
-// no install at its root -- every package has its own -- so the repo root alone is not
-// a sufficient place to look.
-function loadTypeScript(repo, projectDir) {
-  // TypeScript 7 is the native rewrite: its package exports only `unstable/*` plus a
-  // version stub, with no createSourceFile and no createLanguageService. Loading it
-  // and discovering that three call frames later produces a baffling error, so any
-  // candidate that does not expose the compiler API is rejected and we keep looking.
-  const usable = (m) => !!m && typeof m.createSourceFile === 'function'
-    && typeof m.createLanguageService === 'function';
-  const rejected = [];
-  const tryAt = (base) => {
-    if (!base) return null;
-    let m = null;
-    try { m = require(require.resolve('typescript', { paths: [base] })); } catch { return null; }
-    if (usable(m)) return m;
-    if (m && m.version) rejected.push(`${m.version} at ${base}`);
-    return null;
-  };
-  for (const base of [projectDir, repo]) {
-    const hit = tryAt(base);
-    if (hit) return hit;
-  }
-  // Two levels of subdirectory: `packages/foo`, `components/bar`, `apps/web`.
-  if (repo) {
-    const kids = (d) => {
-      try {
-        return fs.readdirSync(d, { withFileTypes: true })
-          .filter((e) => e.isDirectory() && e.name !== 'node_modules' && !e.name.startsWith('.'))
-          .map((e) => path.join(d, e.name));
-      } catch { return []; }
-    };
-    for (const a of kids(repo)) {
-      if (fs.existsSync(path.join(a, 'node_modules'))) { const hit = tryAt(a); if (hit) return hit; }
-      for (const b of kids(a)) {
-        if (!fs.existsSync(path.join(b, 'node_modules'))) continue;
-        const hit = tryAt(b);
-        if (hit) return hit;
-      }
-    }
-  }
-  const own = tryAt(__dirname);
-  if (own) return own;
-  try { return require('typescript'); } catch { /* not bundled */ }
-  throw new Error('typescript not resolvable — install it in the project or the repo, '
-    + 'or reinstall the extension (it ships its own copy)'
-    + (rejected.length ? `. Rejected: ${rejected.join(', ')} (no classic compiler API)` : ''));
-}
 
 // One `git diff` for every file, split only so a huge PR stays under the OS command-line
 // limit (Windows: 32,767 characters for the whole line). A rename's two paths always
@@ -157,15 +102,6 @@ function resolveEffectiveMode(mode, cfg, dirty, onDirty, warnings) {
   return { effectiveMode: 'branch', effectiveCfg: MODES.branch };
 }
 
-function tryLoadTypeScript(repo, dir, warnings, unanalysable, comp, compFiles) {
-  try { return { ts: loadTypeScript(repo, dir), ok: true }; }
-  catch (e) {
-    unanalysable.set(comp, (unanalysable.get(comp) || 0) + compFiles.length);
-    warnings.push(`${compFiles.length} changed file(s) in '${comp}' NOT analysed — ${e.message}`);
-    return { ts: null, ok: false };
-  }
-}
-
 /**
  * One path from `git diff --name-status`, or an untracked file appended for a worktree diff.
  * `path` and `oldPath` are repository-relative.
@@ -237,45 +173,52 @@ function withoutUntrackedCallers(resolver, isUntracked, onDropped) {
 }
 
 /**
- * Changed source files grouped by the project the TypeScript server would put them in.
- * Tests are left out of both results.
- * @param {string} repo Absolute filesystem path of the repository root.
+ * The changed files each language analyses, in registry order. Tests and files no language
+ * handles are left out.
  * @param {ChangedPath[]} changes
- * @returns {{
- *   files: ChangedPath[],
- *   byComponent: Map<string, {root: string, config: string|null, files: ChangedPath[]}>
- * }} `byComponent` is keyed by `'(root)'`, the repository-relative project directory, or
- *   `INFERRED_PROJECT` for files no tsconfig.json or jsconfig.json claims. `root` is `''`
- *   for the repository root and that directory otherwise; `config` is the config file
- *   name, `null` for the inferred project.
+ * @returns {{ files: ChangedPath[], byLanguage: Map<import('../languages/types').LanguageProvider, ChangedPath[]> }}
  */
-function changedSourceByProject(repo, changes) {
+function changedSourceByLanguage(changes) {
   const files = changes.filter((file) => isSourcePath(file.path) && !isTestPath(file.path));
-  const byComponent = new Map();
-  for (const file of files) {
-    const root = projectRootOf(repo, file.path);
-    const label = root === null ? INFERRED_PROJECT : projectLabel(root);
-    let entry = byComponent.get(label);
-    if (!entry) {
-      entry = root === null
-        ? { root: '', config: null, files: [] }
-        : { root, config: projectConfigIn(path.join(repo, root)), files: [] };
-      byComponent.set(label, entry);
-    }
-    entry.files.push(file);
+  const byLanguage = new Map();
+  for (const language of registeredLanguages()) {
+    const own = files.filter((file) => languageFor(file.path) === language);
+    if (own.length) byLanguage.set(language, own);
   }
-  return { files, byComponent };
+  return { files, byLanguage };
 }
 
 /**
- * Absolute paths of the worktree's source files that no config claims: the members of
- * the inferred project. `null` when git could not list the files.
+ * Asks every language for its analysis units, one language after another. A language's
+ * warnings and unanalysable counts reach the run only when its `prepare` succeeds; when it
+ * rejects (other than by cancellation), every one of its files is reported as not analysed
+ * with the reason instead, and the other languages are still analysed.
+ * @param {Map<import('../languages/types').LanguageProvider, ChangedPath[]>} byLanguage
+ * @param {Omit<import('../languages/types').PrepareContext, 'files'|'warnings'|'unanalysable'>} shared
+ * @param {{ warnings: string[], unanalysable: Map<string, number>, prepared: import('../languages/types').PreparedLanguage[] }} into
+ *   `prepared` gets each successful answer as soon as it arrives, so the caller can
+ *   dispose of it even when a later language rejects.
  */
-function inferredProjectFiles(repo, git) {
-  const listed = worktreeFiles(git);
-  if (listed == null) return null;
-  return listed.filter((rel) => isSourcePath(rel) && projectRootOf(repo, rel) === null
-    && fs.existsSync(path.join(repo, rel))).map((rel) => path.join(repo, rel));
+async function prepareLanguages(byLanguage, shared, { warnings, unanalysable, prepared }) {
+  for (const [language, files] of byLanguage) {
+    throwIfCancelled(shared.signal);
+    const own = { warnings: [], unanalysable: new Map() };
+    let answer;
+    try {
+      answer = await language.prepare({ ...shared, files, ...own });
+    } catch (e) {
+      if (isAnalysisCancelled(e)) throw e;
+      const reason = (e && e.message) || String(e);
+      unanalysable.set(language.displayName, (unanalysable.get(language.displayName) || 0) + files.length);
+      warnings.push(`${files.length} changed ${language.displayName} file(s) NOT analysed — ${reason}`);
+      continue;
+    }
+    // A provider that answers without units is a bug in it, not a failed analysis.
+    assert.ok(answer && Array.isArray(answer.units), `${language.id} prepare returned no units`);
+    prepared.push(answer);
+    warnings.push(...own.warnings);
+    for (const [component, count] of own.unanalysable) unanalysable.set(component, (unanalysable.get(component) || 0) + count);
+  }
 }
 
 /**
@@ -365,13 +308,16 @@ function inferredProjectFiles(repo, git) {
  * @param {number} [opts.treeDepth=2] Depth of each rendered tree.
  * @param {number} [opts.maxChildren=8] Callers shown under one tree node. Further callers are counted as truncated.
  * @param {(event: {phase: string, component?: string, done?: number, total?: number, label?: string}) => void} [opts.onProgress]
- * @param {(ctx: {ts: object, componentDir: string, component: string, repoRoot: string}) => object|null} [opts.makeResolver]
- *   Editor resolver for this project. When omitted, a language service is created per project.
- *   Returning null skips the project.
+ * @param {Function} [opts.makeResolver] Passed to every language's `prepare`
+ *   (`ctx.hooks`): the environment's resolver for a batch of that language's symbols. The
+ *   TypeScript provider (src/languages/typescript/provider.js) documents what it is called
+ *   with; when omitted it creates a language service per project, and a null return skips
+ *   the project.
  * @param {(result: object) => Promise<void>|void} [opts.onPrepared] Publishes a detached
  *   snapshot of changed rows before caller queries. Coverage is explicitly pending.
- * @param {(ctx: {ts: object, repo: string, git: object}) => object} [opts.makeModuleCallers]
- *   Editor-owned worker index; omitted for the CLI's synchronous index.
+ * @param {Function} [opts.makeModuleCallers] Passed to every language's `prepare` as
+ *   well: the editor-owned worker index of TypeScript's module callers; omitted for the
+ *   CLI's synchronous index.
  * @param {AbortSignal} [opts.signal] Stops the run: no caller query starts once it is
  *   aborted. A query already running is awaited, because the resolvers' services are
  *   disposed when the run ends; the editor's language server cannot be told to stop, so
@@ -409,6 +355,9 @@ function inferredProjectFiles(repo, git) {
  *   `untested` is the `testState` `'uncovered'` subset and `testUnknown` the `'unknown'`
  *   one. `unknownCallers` is the `callerState` `'unknown'` subset.
  *   `testReachComputed` is false only when every symbol was left `'not-computed'`.
+ *   `unanalysable` counts changed files not analysed by the component they belong to, or
+ *   by the language's display name when that language could not prepare any of its files
+ *   (a warning gives the reason); those files are listed in `otherFiles`.
  *   `concurrency` is the worker count actually used after validating `opts.concurrency`;
  *   `reachDepth` is the same for `opts.depth`.
  * @throws {Error} Unknown `mode`.
@@ -428,10 +377,9 @@ async function analyze(repo, opts = {}) {
   const warnings = [];
   const depth = validateReachDepth(opts.depth, warnings);
   const concurrency = validateConcurrency(opts.concurrency, warnings);
-  // Per-run caches. The extension host lives for hours: a tsconfig added since the last
-  // run must be seen, and text a Tier A preview registered for a PR must not stand in
-  // for the file on disk (it moved every call-site line of a local run).
-  clearProjectCache();
+  // Per-run cache. The extension host lives for hours: text a Tier A preview registered
+  // for a PR must not stand in for the file on disk (it moved every call-site line of a
+  // local run). A language's own per-run caches are its provider's to clear.
   clearVirtualText();
 
   const base = await cfg.resolveBase(git, opts, warnings);
@@ -452,12 +400,12 @@ async function analyze(repo, opts = {}) {
   const diffIndex = viaIndex ? createDiffIndex(repo, { tempDir: opts.tempDir }) : null;
   const deletions = {};
   const hunkHeaders = {};
-  let untracked, everything, files, byComponent, ranges;
+  let untracked, everything, files, byLanguage, ranges;
   try {
     const diffGit = diffIndex ? makeGit(repo, { objectDirs: opts.objectDirs, env: diffIndex.env }) : git;
     untracked = new Set(viaIndex ? [] : untrackedFiles(git));
     everything = includeUntrackedFiles(changedFiles(diffGit, base.sha, headRev, null), untracked, headRev);
-    ({ files, byComponent } = changedSourceByProject(repo, everything));
+    ({ files, byLanguage } = changedSourceByLanguage(everything));
     const trackedForDiff = files.filter((f) => !f.untracked);
     ranges = trackedForDiff.length ? rangesFor(diffGit, base.sha, headRev, trackedForDiff, { deletionsOut: deletions, changesOut: hunkHeaders }) : {};
   } finally {
@@ -484,86 +432,28 @@ async function analyze(repo, opts = {}) {
   const components = [];
   const outside = [];
   let droppedUntracked = 0;
-  const outsideProgram = new Set();
-  // Cache: language services and document registries shared by the projects of this
-  // run. Owner: this `analyze()` call. Key: TypeScript version and config path for a
-  // service, the TypeScript module for a registry; the config is read once, and a file's
-  // version is its mtime, so an edit during the run is seen by the service. Invalidation:
-  // none; the next run builds a new pool. Disposal: the `finally` below disposes every
-  // service, including on failure and cancellation.
-  const servicePool = { services: new Map(), registries: new Map() };
-  let workspaceGraph;
-  // Shared by every project: the index it builds on first use covers the whole worktree.
-  let moduleCallers = null;
+  // Each language's answer: its units, and what they share until the caller stage ends.
+  // Owner: this `analyze()` call; the `finally` below disposes every one, including on
+  // failure and cancellation.
+  /** @type {import('../languages/types').PreparedLanguage[]} */
+  const prepared = [];
   const plans = [];
-  let compIndex = 0;
   const report = opts.onProgress || (() => {});
   try {
-    for (const [comp, entry] of byComponent) {
-      throwIfCancelled(signal);
-      const compFiles = entry.files;
-      report({
-        phase: 'component',
-        component: comp,
-        done: compIndex++,
-        total: byComponent.size,
-      });
-      const dir = path.join(repo, entry.root);
-      // A project can have node_modules without typescript in it. Aborting the whole run
-      // for one such project blanks the view; report it and analyse the rest.
-      const { ts, ok } = tryLoadTypeScript(repo, dir, warnings, unanalysable, comp, compFiles);
-      if (!ok) continue;
-
-      const S = makeSymbols(ts);
-      if (!moduleCallers) moduleCallers = opts.makeModuleCallers
-        ? opts.makeModuleCallers({ ts, repo, git }) : createModuleCallers(ts, repo, git);
-      if (entry.config === null) {
-        warnings.push(`${compFiles.length} changed file(s) have no tsconfig.json or jsconfig.json — analysed as one inferred JavaScript project, as the editor does; callers in other files come from static import and require() statements`);
+    await prepareLanguages(byLanguage, {
+      repo, git, baseTexts, changedRanges, deletions, report, signal,
+      hooks: { makeResolver: opts.makeResolver, makeModuleCallers: opts.makeModuleCallers },
+    }, { warnings, unanalysable, prepared });
+    for (const { units } of prepared) {
+      for (const unit of units) {
+        outside.push(...unit.outside);
+        require('./pending-analysis').initialisePending(unit.changed);
+        // Against a commit, callers in untracked files are not part of the change.
+        const resolver = headRev !== null && untracked.size
+          ? withoutUntrackedCallers(unit.resolver, (x) => untracked.has(relOf(x.file)), (n) => { droppedUntracked += n; })
+          : unit.resolver;
+        plans.push({ comp: unit.component, changed: unit.changed, deleted: unit.deleted, resolver });
       }
-      let projectResolver;
-      if (opts.makeResolver) {
-        projectResolver = opts.makeResolver({ ts, componentDir: dir, component: comp, repoRoot: repo });
-      } else if (entry.config === null) {
-        const members = inferredProjectFiles(repo, git);
-        projectResolver = members && createTsResolver(ts, dir, { repoRoot: repo, servicePool, inferredFiles: members });
-      } else {
-        if (!workspaceGraph) workspaceGraph = require('./workspace-projects').workspaceProjects(ts, repo);
-        projectResolver = createTsResolver(ts, dir, { tsconfig: entry.config, repoRoot: repo, workspaceGraph, servicePool });
-      }
-      if (!projectResolver) { warnings.push(`'${comp}': no TypeScript project could be loaded — skipped`); continue; }
-      const withModules = withModuleCallers(projectResolver, moduleCallers);
-      const resolver = headRev !== null && untracked.size
-        ? withoutUntrackedCallers(withModules, (x) => untracked.has(relOf(x.file)), (n) => { droppedUntracked += n; })
-        : withModules;
-      const changed = [], deleted = [];
-      for (const f of compFiles) {
-        const abs = path.join(repo, f.path);
-        let headText = null;
-        if (f.status !== 'deleted') {
-          try { headText = fs.readFileSync(abs, 'utf8'); } catch { headText = null; }
-        }
-        // One file the parser or symbol walk chokes on must not blank the whole view.
-        try {
-          const r = changedSymbolsIn(ts, S, {
-            absPath: abs, relPath: f.path, oldPath: f.oldPath, status: f.status,
-            headText,
-            baseText: f.status === 'added' ? null : baseTexts.get(f.oldPath || f.path) ?? null,
-            hunkRanges: changedRanges[f.path] || [],
-            hunkDeletions: deletions[f.path] || [],
-            component: comp,
-            projectRoot: entry.root,
-          });
-          changed.push(...r.changed);
-          deleted.push(...r.deleted);
-          if (r.outside.length) outside.push({ file: abs, relPath: f.path, ranges: r.outside });
-        } catch (e) {
-          warnings.push(`${f.path}: could not be analysed — ${e && e.message}`);
-        }
-      }
-
-      for (const c of changed) moduleCallers.hint(c);
-      require('./pending-analysis').initialisePending(changed);
-      plans.push({ comp, changed, deleted, resolver });
     }
     if (opts.onPrepared) {
       const pendingComponents = plans.map(({ comp, changed, deleted }) => ({
@@ -586,7 +476,6 @@ async function analyze(repo, opts = {}) {
           cs = { state: 'unknown', callers: [], complete: false, reason: (e && e.message) || 'caller resolution failed' };
           warnings.push(`caller resolution failed for ${c.label} (${c.relPath}): ${e && e.message}`);
         }
-        if (cs.reason === 'not-in-program') outsideProgram.add(`${comp}\u0000${c.relPath}`);
         c.callerState = cs.state;
         c.callersComplete = cs.complete === true;
         c.callersIncompleteReason = c.callersComplete ? null : cs.reason ?? null;
@@ -662,15 +551,11 @@ async function analyze(repo, opts = {}) {
     }
 
   } finally {
-    for (const svc of servicePool.services.values()) svc.dispose();
+    for (const { extras } of prepared) if (extras && extras.dispose) extras.dispose();
   }
   throwIfCancelled(signal);
 
-  for (const k of outsideProgram) {
-    const [comp, rel] = k.split('\u0000');
-    warnings.push(`${rel} is not included by the tsconfig.json or jsconfig.json in '${comp}' — its callers are unknown`);
-  }
-  if (moduleCallers) warnings.push(...moduleCallers.notes());
+  for (const { extras } of prepared) if (extras && extras.notes) warnings.push(...extras.notes());
   if (droppedUntracked) warnings.push(`${droppedUntracked} caller(s) in untracked files ignored — they are not part of the committed change`);
   return makeResult(components, false);
 
@@ -727,10 +612,14 @@ async function analyze(repo, opts = {}) {
       testReachComputed: all.length === 0 || all.some((c) => c.testState !== 'not-computed'),
       unknownCallers: all.filter((c) => c.callerState === 'unknown'),
     };
-    // The editor expands rows lazily through its own resolver; it must add the same
-    // module callers. Not enumerable: it is a live object, not part of the JSON result.
-    Object.defineProperty(result, 'moduleCallers', { value: moduleCallers, enumerable: false });
+    // Live objects a language hands the environment (TypeScript's `moduleCallers`, which
+    // the editor's lazy expansions add). Not enumerable: not part of the JSON result.
+    for (const { extras } of prepared) {
+      for (const [name, value] of Object.entries((extras && extras.resultProperties) || {})) {
+        Object.defineProperty(result, name, { value, enumerable: false });
+      }
+    }
     return result;
   }
 }
-module.exports = { analyze, MODES, modeLabel, loadTypeScript, rangesFor, withoutUntrackedCallers };
+module.exports = { analyze, MODES, modeLabel, rangesFor, withoutUntrackedCallers };

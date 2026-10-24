@@ -152,13 +152,11 @@ function wholeFileRange(absPath) {
   } catch { return []; }
 }
 
-const SOURCE_EXT = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
-const DECLARATION_EXT = /\.d\.(ts|mts|cts)$/;
-const isSourcePath = (f) => SOURCE_EXT.test(f) && !DECLARATION_EXT.test(f);
-// Must be given a REPO-RELATIVE path. On an absolute one, any directory above the repo
-// named `tests/` classified every caller in it as a test.
-const isTestPath = (f) => /(^|\/)(tests?|__tests__|__mocks__)\//.test(String(f).replace(/\\/g, '/'))
-  || /\.(spec|test|e2e-spec)\.(ts|tsx|js|jsx|mts|cts|mjs|cjs)$/.test(f);
+// Which files are source and which are tests is the language registry's answer
+// (`src/languages`). `isTestPath` must be given a REPO-RELATIVE path: on an absolute one,
+// any directory above the repo named `tests/` classified every caller in it as a test.
+const { isSourcePath, isTestPath } = require('../languages');
+const { SOURCE_EXT } = require('../languages/typescript/rules');
 // Test check for an absolute path, relative to the repo it lives in
 const isTestFile = (repo, abs) => isTestPath(repo ? path.relative(repo, abs) : abs);
 

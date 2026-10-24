@@ -1,5 +1,4 @@
 'use strict';
-const path = require('path');
 
 /**
  * Language-server warmup shared across local analysis runs and prewarm. Concurrent
@@ -12,14 +11,14 @@ const path = require('path');
  * @param {{ log: (m: string) => void }} opts
  */
 function createReadiness(vscode, session, { log }) {
-  const { loadTypeScript } = require('./engine/analyze');
+  const { loadTypeScript } = require('./languages/typescript/load');
+  const { warmUpTarget } = require('./languages/typescript/warm-up');
   const { createVscodeResolver } = require('./resolver-vscode');
 
   // Warming needs a real symbol position in a file the server will have to load anyway.
   async function warmTarget(repo) {
     const { makeGit, resolveBase } = require('./engine/git');
-    const { changedFiles, isSourcePath, projectRootOf } = require('./engine/diff');
-    const fs = require('fs');
+    const { changedFiles, isSourcePath } = require('./engine/diff');
     const git = makeGit(repo);
     const cfg = vscode.workspace.getConfiguration('impactTree');
     // No base remote (an ambiguous choice or a bad setting): nothing to warm; the
@@ -34,20 +33,12 @@ function createReadiness(vscode, session, { log }) {
     // A file no config claims still warms the server: it opens an inferred project.
     const files = changedFiles(git, baseSha, 'HEAD', null)
       .filter((f) => isSourcePath(f.path) && f.status !== 'deleted');
+    // Only TypeScript/JavaScript files warm the server yet (the TypeScript provider's
+    // `warmUpTarget`); a file of another language is passed over.
     for (const f of files) {
-      const abs = path.join(repo, f.path);
-      const root = projectRootOf(repo, f.path) ?? '';
       try {
-        const ts = loadTypeScript(repo, path.join(repo, root));
-        const sf = ts.createSourceFile(abs, fs.readFileSync(abs, 'utf8'), ts.ScriptTarget.ES2021, true);
-        let pos = null;
-        const visit = (n) => {
-          if (pos != null) return;
-          if ((ts.isFunctionDeclaration(n) || ts.isMethodDeclaration(n)) && n.name) pos = n.name.getStart(sf);
-          else ts.forEachChild(n, visit);
-        };
-        ts.forEachChild(sf, visit);
-        if (pos != null) return { file: abs, pos };
+        const target = warmUpTarget(repo, f.path);
+        if (target) return target;
       } catch { /* try the next file */ }
     }
     return null;
