@@ -161,11 +161,16 @@ function buildFileRows(result, { uriOf, absPath = null }) {
     files.push(made.file);
     decorations.push(made.decoration);
   }
-  const others = new Map((result.otherFiles || []).map((/** @type {any} */ f) => [f.path, f.status]));
+  const others = new Map((result.otherFiles || []).map((/** @type {any} */ f) => [f.path, f]));
   const leaves = collectChangedPaths(result).filter((p) => !byPath.has(p))
-    .map((p) => ({ path: p, status: String(others.get(p) ?? models.getFileStatus(result, p)) }));
+    .map((p) => ({
+      path: p, status: String(others.get(p)?.status ?? models.getFileStatus(result, p)),
+      ...(others.get(p)?.notAnalysed ? { notAnalysed: others.get(p).notAnalysed } : {}),
+    }));
   const leafRows = models.buildFileLeafRows(leaves, { absPath, uriOf });
-  files.push(...leafRows.rows.map((r) => ({ ...r, level: NO_GRAPH_LEVEL })));
+  // A file that was not analysed is amber (level 1) and counts toward attention, so it sorts
+  // with the other "check by hand" files and never sits among the quiet ones.
+  files.push(...leafRows.rows.map((r) => (r.notAnalysed ? { ...r, level: 1, attention: 1 } : { ...r, level: NO_GRAPH_LEVEL })));
   decorations.push(...leafRows.decorations);
   return { rows: files.sort(compareFiles), decorations };
 }
@@ -257,11 +262,12 @@ const collectTickTargets = (row) => (row.type === 'folder' ? collectCountingRows
 
 /**
  * Whether a counting row needs attention: a verdict at level 0 or 1. A file without a call
- * graph has no verdict and never does.
+ * graph has no verdict and does not, unless it was not analysed: nothing was established
+ * about it, so it needs a look (amber, "check by hand").
  * @param {TreeRow} row A counting row.
  * @returns {boolean}
  */
-const needsAttention = (row) => row.type !== 'file' && models.classifyRowVerdict(row).level <= 1;
+const needsAttention = (row) => (row.type === 'file' ? Boolean(row.notAnalysed) : models.classifyRowVerdict(row).level <= 1);
 
 /**
  * How far a review has got.

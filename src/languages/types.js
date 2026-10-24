@@ -121,6 +121,10 @@
  * @property {string[]} warnings Sink for warnings, shown in order after the run's own.
  * @property {Map<string, number>} unanalysable Sink: changed files not analysed, counted by
  *   the component (project) they belong to.
+ * @property {Map<string, string>} notAnalysedFiles Sink: the reason, by path, for each changed
+ *   file this language could not analyse. The result carries it on the file's `otherFiles`
+ *   entry (`notAnalysed`), so a file that was not analysed never reads as one with no impact.
+ *   A file listed here is also counted in `unanalysable`.
  * @property {(event: { phase: string, component?: string, done?: number, total?: number }) => void} report Progress.
  * @property {AbortSignal|undefined} signal Checked between steps; an aborted run rejects
  *   with `AnalysisCancelledError`, which the pipeline never reads as a provider failure.

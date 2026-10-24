@@ -189,20 +189,27 @@ function changedSourceByLanguage(changes) {
 }
 
 /**
+ * Why a changed file of a known language was not analysed: the language's display name
+ * ("Go") and the reason as a reviewer reads it after "not analysed — ".
+ * @typedef {{ language: string, reason: string }} NotAnalysed
+ */
+
+/**
  * Asks every language for its analysis units, one language after another. A language's
  * warnings and unanalysable counts reach the run only when its `prepare` succeeds; when it
  * rejects (other than by cancellation), every one of its files is reported as not analysed
- * with the reason instead, and the other languages are still analysed.
+ * with the reason instead, and the other languages are still analysed. Each file not
+ * analysed gets its entry in `into.notAnalysedFiles`, with its language and reason.
  * @param {Map<import('../languages/types').LanguageProvider, ChangedPath[]>} byLanguage
- * @param {Omit<import('../languages/types').PrepareContext, 'files'|'warnings'|'unanalysable'>} shared
- * @param {{ warnings: string[], unanalysable: Map<string, number>, prepared: import('../languages/types').PreparedLanguage[] }} into
+ * @param {Omit<import('../languages/types').PrepareContext, 'files'|'warnings'|'unanalysable'|'notAnalysedFiles'>} shared
+ * @param {{ warnings: string[], unanalysable: Map<string, number>, notAnalysedFiles: Map<string, NotAnalysed>, prepared: import('../languages/types').PreparedLanguage[] }} into
  *   `prepared` gets each successful answer as soon as it arrives, so the caller can
  *   dispose of it even when a later language rejects.
  */
-async function prepareLanguages(byLanguage, shared, { warnings, unanalysable, prepared }) {
+async function prepareLanguages(byLanguage, shared, { warnings, unanalysable, notAnalysedFiles, prepared }) {
   for (const [language, files] of byLanguage) {
     throwIfCancelled(shared.signal);
-    const own = { warnings: [], unanalysable: new Map() };
+    const own = { warnings: [], unanalysable: new Map(), notAnalysedFiles: new Map() };
     let answer;
     try {
       answer = await language.prepare({ ...shared, files, ...own });
@@ -211,6 +218,7 @@ async function prepareLanguages(byLanguage, shared, { warnings, unanalysable, pr
       const reason = (e && e.message) || String(e);
       unanalysable.set(language.displayName, (unanalysable.get(language.displayName) || 0) + files.length);
       warnings.push(`${files.length} changed ${language.displayName} file(s) NOT analysed — ${reason}`);
+      for (const f of files) notAnalysedFiles.set(f.path, { language: language.displayName, reason });
       continue;
     }
     // A provider that answers without units is a bug in it, not a failed analysis.
@@ -218,6 +226,7 @@ async function prepareLanguages(byLanguage, shared, { warnings, unanalysable, pr
     prepared.push(answer);
     warnings.push(...own.warnings);
     for (const [component, count] of own.unanalysable) unanalysable.set(component, (unanalysable.get(component) || 0) + count);
+    for (const [file, reason] of own.notAnalysedFiles) notAnalysedFiles.set(file, { language: language.displayName, reason });
   }
 }
 
@@ -346,7 +355,7 @@ async function prepareLanguages(byLanguage, shared, { warnings, unanalysable, pr
  *   outside: Array<{file: string, relPath: string, ranges: Array<[number, number]>}>,
  *   baseTexts: Map<string, string|null>,
  *   excludedCallerPaths: string[],
- *   otherFiles: Array<{path: string, status: string, noCallable?: true}>,
+ *   otherFiles: Array<{path: string, status: string, noCallable?: true, notAnalysed?: NotAnalysed}>,
  *   unanalysable: Array<{component: string, count: number}>,
  *   components: object[],
  *   allChanged: object[],
@@ -364,6 +373,10 @@ async function prepareLanguages(byLanguage, shared, { warnings, unanalysable, pr
  *   `unanalysable` counts changed files not analysed by the component they belong to, or
  *   by the language's display name when that language could not prepare any of its files
  *   (a warning gives the reason); those files are listed in `otherFiles`.
+ *   An `otherFiles` entry has `notAnalysed: { language, reason }` when it is a changed file
+ *   of a known language that was not analysed (its provider could not prepare it, or the
+ *   language server gave no symbols for it): it must never read as a file with no impact.
+ *   A file listed but deliberately skipped (a generated file, a test file) has none.
  *   `concurrency` is the worker count actually used after validating `opts.concurrency`;
  *   `reachDepth` is the same for `opts.depth`.
  * @throws {Error} Unknown `mode`.
@@ -418,6 +431,8 @@ async function analyze(repo, opts = {}) {
     if (diffIndex) diffIndex.dispose();
   }
   const unanalysable = new Map();
+  /** @type {Map<string, NotAnalysed>} */
+  const notAnalysedFiles = new Map();
 
   // relPath -> [[startLine, endLine], ...] of the new-side changed ranges
   const changedRanges = {};
@@ -452,7 +467,7 @@ async function analyze(repo, opts = {}) {
         makeResolver: opts.makeResolver, makeModuleCallers: opts.makeModuleCallers,
         ...(opts.languageServices ? { services: opts.languageServices } : {}),
       },
-    }, { warnings, unanalysable, prepared });
+    }, { warnings, unanalysable, notAnalysedFiles, prepared });
     for (const { units } of prepared) {
       for (const unit of units) {
         outside.push(...unit.outside);
@@ -596,7 +611,11 @@ async function analyze(repo, opts = {}) {
     const analysedPaths = new Set(files.map((f) => f.path).filter((p2) => withSymbols.has(p2)));
     const otherFiles = everything
       .filter((f) => !analysedPaths.has(f.path))
-      .map((f) => ({ path: f.path, status: f.status, noCallable: withSymbols.has(f.path) ? undefined : true }));
+      .map((f) => ({
+        path: f.path, status: f.status, noCallable: withSymbols.has(f.path) ? undefined : true,
+        // Only a file that was not analysed carries it, so other results are unchanged.
+        ...(notAnalysedFiles.has(f.path) ? { notAnalysed: notAnalysedFiles.get(f.path) } : {}),
+      }));
     const result = {
       callersPending,
       allChanged: all.slice().sort((a, b) => b.score - a.score || a.label.localeCompare(b.label)),

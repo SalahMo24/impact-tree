@@ -207,6 +207,13 @@ test('a file with no answer, a failed answer or an empty answer for its function
     assert.deepEqual(result.allChanged.map((c) => [c.relPath, c.label]), [['ok.go', 'Plain']], 'the others are still analysed');
     // Not analysed files stay listed as files; none of them reads as "nothing changed".
     assert.deepEqual(result.otherFiles.map((f) => f.path).sort(), ['empty.go', 'flaky.go', 'nil.go']);
+    // ... and each carries its own reason, so the tree can say it on the file's row.
+    assert.deepEqual(Object.fromEntries(result.otherFiles.map((f) => [f.path, f.notAnalysed])), {
+      'empty.go': { language: 'Go', reason: 'the Go language server listed no symbols, though the file declares functions' },
+      'flaky.go': { language: 'Go', reason: 'the Go language server could not list the symbols for its base version: gopls crashed' },
+      'nil.go': { language: 'Go', reason: 'the Go language server gave no symbols' },
+    });
+    assert.equal('notAnalysed' in (result.allChanged[0] || {}), false);
   } finally {
     repo.remove();
   }
@@ -222,6 +229,7 @@ test('a generated file is listed, not analysed, and counted in one warning', asy
     assert.deepEqual(result.unanalysable, [], 'deliberately not analysed is not a failure');
     assert.ok(!services.asked.some(([file]) => file === 'api.pb.go'), 'the server is not asked about it');
     assert.deepEqual(result.otherFiles.map((f) => [f.path, f.noCallable]), [['api.pb.go', true]]);
+    assert.equal(result.otherFiles[0].notAnalysed, undefined, 'a deliberate skip is not a failure to analyse');
     assert.deepEqual(result.allChanged.map((c) => c.label), ['Plain']);
   } finally {
     repo.remove();
@@ -232,13 +240,17 @@ test('without language services (the CLI) every Go file is reported as not analy
   const repo = goRepo();
   try {
     const result = await run(repo.dir);
-    assert.ok(result.warnings.includes("4 changed Go file(s) NOT analysed — Go needs the editor's language server; not analysed in the command line"),
+    assert.ok(result.warnings.includes("4 changed Go file(s) NOT analysed — Go needs the editor's language server; open the repository in the editor to analyse it"),
       result.warnings.join('\n'));
     assert.deepEqual(result.unanalysable, [{ component: 'Go', count: 4 }]);
     assert.deepEqual(result.allChanged, []);
     assert.deepEqual(result.deleted, []);
     assert.deepEqual(result.otherFiles.filter((f) => f.path.endsWith('.go')).map((f) => f.path).sort(),
       ['auth.go', 'auth_test.go', 'fresh.go', 'gone.go', 'tools/tool.go']);
+    const reason = "Go needs the editor's language server; open the repository in the editor to analyse it";
+    assert.deepEqual(result.otherFiles.filter((f) => f.notAnalysed).map((f) => [f.path, f.notAnalysed]).sort(),
+      ['auth.go', 'fresh.go', 'gone.go', 'tools/tool.go'].map((p) => [p, { language: 'Go', reason }]),
+      'every file the provider was given carries the reason; the test file was never its to analyse');
   } finally {
     repo.remove();
   }

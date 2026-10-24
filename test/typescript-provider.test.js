@@ -142,6 +142,9 @@ test('a language whose prepare throws is reported as not analysed; the other lan
     assert.deepEqual(result.unanalysable, [{ component: 'Fake', count: 1 }]);
     assert.deepEqual(result.otherFiles.map((f) => [f.path, f.noCallable]), [['src/b.fake', true]], 'the file stays visible');
     assert.ok(result.changedPaths.includes('src/b.fake'));
+    assert.deepEqual(result.otherFiles.map((f) => f.notAnalysed),
+      [{ language: 'Fake', reason: 'the fake language server is not installed' }], 'the reason is on the file itself');
+    assert.equal(result.otherFiles.some((f) => f.path === 'src/a.ts'), false);
     assert.deepEqual(result.allChanged.map((c) => [c.relPath, c.label, c.kinds.map((k) => k.id).join('+')]),
       [['src/a.ts', 'target', 'required-param']], 'the TypeScript file is analysed');
     assert.equal(result.allChanged[0].callerState, 'none', 'and its callers searched');

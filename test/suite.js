@@ -29,6 +29,7 @@ const SUITE = [
   { file: 'test/typescript-provider.test.js', tier: 'full' },  // 8.2s
   { file: 'test/go-rules.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/go-signature.test.js', tier: 'quick' },  // 0.2s
+  { file: 'test/not-analysed.test.js', tier: 'full' },
   { file: 'test/server-symbols.test.js', tier: 'quick' },  // 4.6s
   { file: 'test/caller-retry.test.js', tier: 'quick' },  // 3.7s
   { file: 'test/services-vscode.test.js', tier: 'quick' },  // 1.9s

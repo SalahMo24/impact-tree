@@ -1,7 +1,7 @@
 // @ts-check
 'use strict';
 const assert = require('node:assert/strict');
-const { classifyRowVerdict, stateNameOf, toneOf, LEVEL_TONES, PREVIEW_LIMITS_NOTE, attentionCountText } = require('./tree-row-models');
+const { classifyRowVerdict, stateNameOf, toneOf, LEVEL_TONES, previewLimitsNote, attentionCountText } = require('./tree-row-models');
 
 // The detail panel's whole document: the review's progress, and the row shown in the tree
 // with the reason it needs a look. Pure: the caller supplies the nonce and the webview's
@@ -136,6 +136,18 @@ function verdictHtml(row) {
 }
 
 /**
+ * The notice on a file that was not analysed: amber, never the quiet look of a file with
+ * nothing to find.
+ * @param {TreeRow} row
+ * @returns {string} Nothing for a row that was analysed.
+ */
+function notAnalysedHtml(row) {
+  if (row.type !== 'file' || !row.notAnalysed) return '';
+  return `<div class="verdict" data-not-analysed><b>Not analysed.</b> ${escapeHtml(row.notAnalysed.language)}: ${escapeHtml(row.notAnalysed.reason)}. `
+    + 'Nothing was established about this file, so read its diff by hand.</div>';
+}
+
+/**
  * What a Preview cannot see, with the way out. A Preview searches only the pull request's
  * own files, so a change with no callers here may still have callers elsewhere: the page
  * must not let that read as "no impact".
@@ -144,7 +156,7 @@ function verdictHtml(row) {
  */
 function previewLimitsHtml(result) {
   if (!result || !result.tierA) return '';
-  return `<div class="note" data-preview-limits>${escapeHtml(PREVIEW_LIMITS_NOTE)}</div>`
+  return `<div class="note" data-preview-limits>${escapeHtml(previewLimitsNote(result))}</div>`
     + '<div class="actions"><button data-act="checkout">Check out and analyse</button></div>';
 }
 
@@ -172,7 +184,7 @@ function headHtml(row) {
 function bodyHtml(row, result) {
   if (!row) return `<p class="where">${NO_ROW_HINT}</p>`;
   const isFile = row.type === 'reviewFile' || row.type === 'file';
-  return headHtml(row) + (isFile ? '' : verdictHtml(row)) + previewLimitsHtml(result);
+  return headHtml(row) + (isFile ? notAnalysedHtml(row) : verdictHtml(row)) + previewLimitsHtml(result);
 }
 
 /**

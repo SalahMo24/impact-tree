@@ -15,7 +15,7 @@
 // after the attention count on a file row, after the state on a change row.
 const path = require('path');
 const {
-  CALL_STATE, LEVEL_TONES, attentionCountText, CHANGED_ELSEWHERE_TONE, toneOf, classifyChangeVerdict, classifyDeletedVerdict,
+  CALL_STATE, LEVEL_TONES, NOT_ANALYSED_DESC, notAnalysedText, attentionCountText, CHANGED_ELSEWHERE_TONE, toneOf, classifyChangeVerdict, classifyDeletedVerdict,
 } = require('./tree-row-models');
 const { needsAttention, collectCountingRows } = require('./review-tree-model');
 const { describeThreadCounts } = require('./review-threads');
@@ -251,10 +251,17 @@ function renderFileItem(vscode, n, view) {
     item.iconPath = vscode.ThemeIcon.File;
   }
   const viewed = viewedNote(view, n.relPath, view.checkedOf(n) === true);
-  item.description = [...threadParts(n, view), 'no call graph', viewed && viewed.text, folderNote(n, view)].filter(Boolean).join('  ·  ');
+  const notAnalysed = n.notAnalysed || null;
+  if (notAnalysed) {
+    // Amber, like every "check by hand": nothing was established about this file.
+    const tone = /** @type {import('./tree-row-models').IconTone} */ (LEVEL_TONES[1]);
+    item.iconPath = new vscode.ThemeIcon(tone.fileIcon, new vscode.ThemeColor(tone.color));
+  }
+  item.description = [...threadParts(n, view), notAnalysed ? NOT_ANALYSED_DESC : 'no call graph', viewed && viewed.text, folderNote(n, view)].filter(Boolean).join('  ·  ');
   item.tooltip = new vscode.MarkdownString([
     ...pathTreeMarkdown(n.relPath), '', `_${n.status}_`, '',
-    '_No call graph (tests, config, docs): read the diff and mark the file reviewed._',
+    notAnalysed ? `_${notAnalysedText(notAnalysed)}. Read the diff by hand and mark the file reviewed._`
+      : '_No call graph (tests, config, docs): read the diff and mark the file reviewed._',
     ...(viewed ? ['', `_${viewed.tooltip}_`] : []),
   ].join('\n'));
   if (viewed && viewed.note === 'failed') item.contextValue = 'fileViewedFailed';
