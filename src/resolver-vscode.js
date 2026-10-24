@@ -13,9 +13,15 @@ const { callersFromHierarchy, queryHierarchy, callerRows } = require('./language
 // cache, the analysis generation and the stats, and applies a language's own extras
 // (`LanguageProvider.editorCallers`, such as TypeScript's inheritance filter, command-bus
 // edges and unseen users) to the targets of that language only.
+//
+// `scratchDir` (absolute, or null) is where the services write temporary base-side copies
+// to ask a server about (see createVscodeServices). The services are exposed as
+// `resolver.services`: the analysis reads server-backed languages' symbols (Go) through
+// them (`analyze()`'s `languageServices`), sharing this resolver's request cap and
+// deadlines.
 function createVscodeResolver({
   retries = 4, retryDelayMs = 250, queryTimeoutMs = 5000, coldQueryTimeoutMs = 60000, coldBudgetMs = 120000,
-  ts = null, trace = () => {}, filterInherited = true, repoRoot = null,
+  ts = null, trace = () => {}, filterInherited = true, repoRoot = null, scratchDir = null,
 } = {}) {
   // incomingMs sums concurrent durations, so it exceeds wall time once queries overlap.
   // Keep it for cost, but record the distribution and let the caller time the phase.
@@ -29,7 +35,7 @@ function createVscodeResolver({
   // what happens when it runs out). Owner: this resolver; the server state it tracks lives
   // as long as the resolver, and clear() starts a new analysis in it.
   const services = createVscodeServices({
-    vscode, repoRoot, retries, retryDelayMs, queryTimeoutMs, coldQueryTimeoutMs, coldBudgetMs, trace,
+    vscode, scratchDir, repoRoot, retries, retryDelayMs, queryTimeoutMs, coldQueryTimeoutMs, coldBudgetMs, trace,
     onRetry: () => { stats.warmupRetries++; },
   });
   /** Every file this resolver is asked about is the one on disk. */
@@ -151,6 +157,7 @@ function createVscodeResolver({
 
   return {
     kind: 'vscode-callhierarchy',
+    services,
     incoming,
     incomingWithStatus,
     warmUp,

@@ -194,49 +194,53 @@ function makeSymbols(ts) {
     return out;
   }
 
-  // Innermost enclosing declaration wins: smallest span containing the hunk.
-  function mapHunk(callables, lo, hi) {
-    let best = null;
-    for (const c of callables) {
-      if (c.startLine <= hi && c.endLine >= lo && (!best || c.span < best.span)) best = c;
-    }
-    return best;
-  }
-
-  // Every callable a changed range touches, innermost per line. One range can cover
-  // several functions (an added file, two adjacent one-liners edited together), and
-  // returning only the smallest silently dropped the rest.
-  //
-  // A pure deletion is a fractional marker `N + 0.5` -- the gap between lines N and
-  // N+1. It belongs only to a callable spanning both neighbours, never to the function
-  // that merely ends before it or starts after it.
-  function mapRange(callables, lo, hi) {
-    const bySpan = callables.slice().sort((a, b) => a.span - b.span || (a.end - a.start) - (b.end - b.start));
-    const out = [];
-    const add = (c) => { if (c && !out.includes(c)) out.push(c); };
-    if (!Number.isInteger(lo) || !Number.isInteger(hi)) {
-      add(bySpan.find((c) => c.startLine < lo && c.endLine > hi) || null);
-      return out;
-    }
-    // Fast path: most ranges are a few lines. For a large one only lines where a
-    // callable starts or ends can change the answer, so probe those plus the ends.
-    const probes = new Set([lo, hi]);
-    if (hi - lo > 64) {
-      for (const c of callables) {
-        for (const l of [c.startLine, c.endLine, c.endLine + 1]) if (l >= lo && l <= hi) probes.add(l);
-      }
-    } else {
-      for (let l = lo; l <= hi; l++) probes.add(l);
-    }
-    for (const l of [...probes].sort((a, b) => a - b)) {
-      const onLine = bySpan.filter((c) => c.startLine <= l && c.endLine >= l);
-      for (const c of onLine) {
-        if (!onLine.some((d) => d !== c && d.start >= c.start && d.end <= c.end && d.end - d.start < c.end - c.start)) add(c);
-      }
-    }
-    return out;
-  }
-
   return { collect, mapHunk, mapRange, renderSig, funcLike, modifiersOf, decoratorNodes };
 }
-module.exports = { makeSymbols };
+
+// Innermost enclosing declaration wins: smallest span containing the hunk.
+function mapHunk(callables, lo, hi) {
+  let best = null;
+  for (const c of callables) {
+    if (c.startLine <= hi && c.endLine >= lo && (!best || c.span < best.span)) best = c;
+  }
+  return best;
+}
+
+// Every callable a changed range touches, innermost per line. One range can cover
+// several functions (an added file, two adjacent one-liners edited together), and
+// returning only the smallest silently dropped the rest.
+//
+// A pure deletion is a fractional marker `N + 0.5` -- the gap between lines N and
+// N+1. It belongs only to a callable spanning both neighbours, never to the function
+// that merely ends before it or starts after it.
+function mapRange(callables, lo, hi) {
+  const bySpan = callables.slice().sort((a, b) => a.span - b.span || (a.end - a.start) - (b.end - b.start));
+  const out = [];
+  const add = (c) => { if (c && !out.includes(c)) out.push(c); };
+  if (!Number.isInteger(lo) || !Number.isInteger(hi)) {
+    add(bySpan.find((c) => c.startLine < lo && c.endLine > hi) || null);
+    return out;
+  }
+  // Fast path: most ranges are a few lines. For a large one only lines where a
+  // callable starts or ends can change the answer, so probe those plus the ends.
+  const probes = new Set([lo, hi]);
+  if (hi - lo > 64) {
+    for (const c of callables) {
+      for (const l of [c.startLine, c.endLine, c.endLine + 1]) if (l >= lo && l <= hi) probes.add(l);
+    }
+  } else {
+    for (let l = lo; l <= hi; l++) probes.add(l);
+  }
+  for (const l of [...probes].sort((a, b) => a - b)) {
+    const onLine = bySpan.filter((c) => c.startLine <= l && c.endLine >= l);
+    for (const c of onLine) {
+      if (!onLine.some((d) => d !== c && d.start >= c.start && d.end <= c.end && d.end - d.start < c.end - c.start)) add(c);
+    }
+  }
+  return out;
+}
+
+// Language-neutral: they read only the `CollectedSymbol` fields (`startLine`, `endLine`,
+// `span`, `start`, `end`), so server-backed languages (src/languages/server-symbols.js)
+// map hunks with them too.
+module.exports = { makeSymbols, mapHunk, mapRange };

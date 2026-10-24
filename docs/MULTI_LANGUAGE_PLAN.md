@@ -224,7 +224,7 @@ gopls disk cache; the real VS Code Go extension was not run).
 5. Time: spawn + initialize 216 ms; first symbols 2.2 s; warm queries a few ms
    (`implementations` median 16–59 ms, up to 1.5 s).
 
-### G1. The Go provider: file rules
+### G1. The Go provider: file rules (done)
 
 Acceptance: `src/languages/go/` registered after TypeScript; `handles` `.go`; `isTest`
 `_test.go` (and `testdata/` is neither source nor test); `isGenerated` for `.pb.go`,
@@ -233,7 +233,19 @@ Acceptance: `src/languages/go/` registered after TypeScript; `handles` `.go`; `i
 failing gives one "Install the Go extension to analyse Go files" note, not a row of
 unknowns; tests for each rule.
 
-### G2. Go symbols
+### G2. Go symbols (done)
+
+Done 2026-10-24. `src/languages/server-symbols.js` (`prepareFromServerSymbols`) is the
+shared `prepare` for server-backed languages; `src/engine/changed-symbols.js` was split so
+its matcher (`changedFromSymbols`) takes collected symbols, TypeScript output unchanged
+(14-case baseline). Base sides go through a temporary copy in the extension's storage
+(`src/services-vscode.js`, at most 2 Mi characters, removed in `finally`, leftovers swept
+at startup). A Go method's key uses its receiver's base type (`(Config).Size` for
+`(*Config).Size`), so a `T` ↔ `*T` change is one `type-changed` method, not a delete and an
+add. Checked end to end against gopls on cli/cli PR #14752 (`test/lsp-harness/go-e2e.js`):
+every added and deleted function the diff shows, nothing more. Go rows get a conservative
+review identity (any edit to the file unticks them) until G5.
+
 
 Acceptance: `collectSymbols` builds `CollectedSymbol`s from `documentSymbols`: functions
 and methods only; `namePos` from `selectionRange.start`; methods labelled `(*T).Name` and
@@ -243,7 +255,13 @@ server gave no symbols"), never "nothing changed". The pipeline then lists chang
 deleted and outside-function changes for Go as for TS. Unit tests run on recorded
 `ServerSymbol` fixtures, no editor needed.
 
-### G3. Go signatures
+### G3. Go signatures (done)
+
+Done 2026-10-24: `src/languages/go/signature.js`. Agrees with `go/parser` on 6621 of 6621
+declarations in cli/cli and 61356 of 61356 in the Go standard library
+(`test/go-signature-oracle.js`). Known limit: type text is compared as written, so
+reformatting a multi-line struct type in a signature reads as a type change.
+
 
 Acceptance: `signatureKinds` parses each declaration header —
 `func (r *T) Name(a, b int, opts ...Opt) (T, error)` — into a `sig` (grouped names

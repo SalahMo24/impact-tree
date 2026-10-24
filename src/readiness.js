@@ -8,9 +8,12 @@
  *
  * @param {*} vscode
  * @param {object} session
- * @param {{ log: (m: string) => void }} opts
+ * @param {{ log: (m: string) => void, getScratchDir?: () => string|null }} opts
+ *   `getScratchDir`: the absolute folder the resolver's services write temporary
+ *   base-side copies in (src/services-vscode.js); null or omitted: none, and base-side
+ *   symbols are not served.
  */
-function createReadiness(vscode, session, { log }) {
+function createReadiness(vscode, session, { log, getScratchDir = () => null }) {
   const { loadTypeScript } = require('./languages/typescript/load');
   const { warmUpTarget } = require('./languages/typescript/warm-up');
   const { createVscodeResolver } = require('./resolver-vscode');
@@ -50,7 +53,7 @@ function createReadiness(vscode, session, { log }) {
     let ts = null;
     try { ts = loadTypeScript(repo, repo); }
     catch (e) { log(`typescript not resolvable — CQRS edges disabled: ${e.message}`); }
-    session.resolver = createVscodeResolver({ ts, repoRoot: repo, trace: m => log(`  · ${m}`),
+    session.resolver = createVscodeResolver({ ts, repoRoot: repo, scratchDir: getScratchDir(), trace: m => log(`  · ${m}`),
       filterInherited: vscode.workspace.getConfiguration('impactTree').get('filterInheritedOverReports', true) });
     log(`resolver created  cqrs=${ts ? 'on' : 'off'}`);
     return session.resolver;

@@ -55,10 +55,11 @@ function filesByProject(repo, files) {
  * @returns {string[]|null}
  */
 function inferredProjectFiles(repo, git) {
-  const { worktreeFiles, isSourcePath, projectRootOf } = require('../../engine/diff');
+  const { worktreeFiles, projectRootOf } = require('../../engine/diff');
   const listed = worktreeFiles(git);
   if (listed == null) return null;
-  return listed.filter((/** @type {string} */ rel) => isSourcePath(rel) && projectRootOf(repo, rel) === null
+  // TypeScript/JavaScript files only: other languages' files are no project's members.
+  return listed.filter((/** @type {string} */ rel) => typescriptRules.handles(rel) && projectRootOf(repo, rel) === null
     && fs.existsSync(path.join(repo, rel))).map((/** @type {string} */ rel) => path.join(repo, rel));
 }
 

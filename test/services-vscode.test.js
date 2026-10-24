@@ -4,7 +4,10 @@
 // - a deadline that runs out and the outstanding-request cap reject, retryable;
 // - while cold, caller queries go one at a time within a budget, and a new analysis
 //   drops the ones still queued;
-// - base-side documents and malformed answers are "no answer", never "nothing";
+// - malformed answers, and base-side documents without a scratch folder, are "no answer",
+//   never "nothing";
+// - base-side symbols are asked through a temporary copy, removed even when the request
+//   fails; a text above the limit is refused; stale leftovers are swept;
 // - document symbols come back as offsets; an empty call hierarchy is "none" only when no
 //   reference outside the declaration exists.
 const test = require('node:test');
@@ -13,7 +16,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const vscodeStub = require('./vscode-stub');
-const { createVscodeServices, MAX_OUTSTANDING_REQUESTS } = require('../src/services-vscode');
+const {
+  createVscodeServices, sweepBaseCopies, MAX_OUTSTANDING_REQUESTS, MAX_BASE_TEXT_CHARS, STALE_BASE_COPY_MS,
+} = require('../src/services-vscode');
 const { callersFromHierarchy, queryHierarchy } = require('../src/languages/callers-from-hierarchy');
 
 const flush = () => new Promise(setImmediate);
@@ -132,7 +137,7 @@ test('a server that is up with no item at the symbol gives "no call hierarchy it
   assert.deepEqual(await queryHierarchy(services, doc, 40), { ready: false, reason: 'no call hierarchy item', retryable: false });
 });
 
-test('base-side documents have no answer yet, and nothing is asked for them', async (t) => {
+test('without a scratch folder, base-side documents have no answer, and nothing is asked for them', async (t) => {
   const { create, file, sent } = setup(t, () => assert.fail('nothing is sent for the base side'));
   const services = create();
   const base = { file, side: 'base', text: 'export function target() {}\n' };
@@ -188,6 +193,97 @@ test('document symbols come back as UTF-16 offsets with LSP kinds, children nest
   ]);
   assert.equal(text.slice(symbols[0].range.start, symbols[0].range.end), 'const s = "é😀";');
   assert.equal(text.slice(symbols[1].children[0].selectionRange.start, symbols[1].children[0].selectionRange.end), 'm');
+});
+
+test('base-side symbols are asked through a temporary copy of the text, removed afterwards', async (t) => {
+  // The base text differs from the file on disk: offsets must come from the text.
+  const baseText = '// base\nexport function target() {}\n';
+  let seen = null;
+  const { create, file, dir } = setup(t, (name, uri) => {
+    assert.equal(name, 'vscode.executeDocumentSymbolProvider');
+    assert.notEqual(uri.fsPath, file, 'the head file on disk is not what is asked');
+    seen = { path: uri.fsPath, exists: fs.existsSync(uri.fsPath), text: fs.readFileSync(uri.fsPath, 'utf8') };
+    return [{ name: 'target', detail: '', kind: 11, range: range(1, 0, 1, 28), selectionRange: range(1, 16, 1, 22), children: [] }];
+  });
+  const scratchDir = path.join(dir, 'scratch');
+  const services = create({ scratchDir });
+  const symbols = await services.documentSymbols({ file, side: 'base', text: baseText });
+  assert.equal(seen.exists, true, 'the copy exists while the server is asked');
+  assert.equal(seen.text, baseText);
+  assert.equal(path.basename(seen.path), 'a.ts', 'with the same file name');
+  assert.equal(path.dirname(path.dirname(seen.path)), scratchDir, 'in its own subdirectory of the scratch folder');
+  assert.ok(path.basename(path.dirname(seen.path)).startsWith('base-'));
+  assert.equal(fs.existsSync(seen.path), false, 'and is removed afterwards');
+  assert.deepEqual(fs.readdirSync(scratchDir), []);
+  assert.deepEqual(symbols, [{ name: 'target', detail: '', kind: 12, range: { start: 8, end: 36 }, selectionRange: { start: 24, end: 30 }, children: [] }]);
+  assert.equal(baseText.slice(symbols[0].selectionRange.start, symbols[0].selectionRange.end), 'target');
+  // Other base-side questions still have no answer.
+  assert.equal(await services.references({ file, side: 'base', text: baseText }, 24), null);
+});
+
+test('the temporary copy is removed when the request fails, and concurrent requests have their own', async (t) => {
+  const asked = [];
+  const pending = [];
+  const { create, file, dir } = setup(t, (name, uri) => {
+    asked.push(uri.fsPath);
+    const d = deferred();
+    pending.push(d);
+    return d.promise;
+  });
+  const scratchDir = path.join(dir, 'scratch');
+  const services = create({ scratchDir, coldQueryTimeoutMs: 120000 });
+  const first = services.documentSymbols({ file, side: 'base', text: 'one\n' }).then(() => assert.fail('it failed'), (e) => e);
+  const second = services.documentSymbols({ file, side: 'base', text: 'two\n' });
+  await until(() => asked.length === 2, 'both were asked');
+  assert.notEqual(path.dirname(asked[0]), path.dirname(asked[1]), 'each request has its own subdirectory');
+  assert.equal(fs.readFileSync(asked[1], 'utf8'), 'two\n');
+  pending[0].reject(new Error('the provider failed'));
+  const error = await first;
+  assert.equal(error.message, 'the provider failed');
+  assert.equal(fs.existsSync(asked[0]), false, 'removed although the request failed');
+  assert.equal(fs.existsSync(asked[1]), true, 'the other request still has its copy');
+  pending[1].resolve([]);
+  assert.deepEqual(await second, []);
+  assert.deepEqual(fs.readdirSync(scratchDir), []);
+});
+
+test('a base text above the limit is refused with its size, before anything is written', async (t) => {
+  const { create, file, dir, sent } = setup(t, () => assert.fail('nothing is asked'));
+  const scratchDir = path.join(dir, 'scratch');
+  const services = create({ scratchDir });
+  const text = 'x'.repeat(MAX_BASE_TEXT_CHARS + 1);
+  await assert.rejects(services.documentSymbols({ file, side: 'base', text }),
+    { message: `its base version has ${MAX_BASE_TEXT_CHARS + 1} characters, above the ${MAX_BASE_TEXT_CHARS} a temporary copy may have` });
+  assert.deepEqual(sent, []);
+  assert.equal(fs.existsSync(scratchDir), false);
+  // Exactly at the limit is asked.
+  const atLimit = setup(t, () => []);
+  assert.deepEqual(await atLimit.create({ scratchDir: path.join(atLimit.dir, 'scratch') })
+    .documentSymbols({ file: atLimit.file, side: 'base', text: 'x'.repeat(MAX_BASE_TEXT_CHARS) }), []);
+});
+
+test('without a scratch folder base-side symbols have no answer; a relative one is refused', async (t) => {
+  const { create, file, sent } = setup(t, () => assert.fail('nothing is asked'));
+  assert.equal(await create().documentSymbols({ file, side: 'base', text: 'x' }), null);
+  assert.deepEqual(sent, []);
+  assert.throws(() => create({ scratchDir: 'relative/dir' }), /absolute path/);
+});
+
+test('leftover copies older than the sweep age are removed; fresh ones and other files stay', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-sweep-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  for (const name of ['base-old', 'base-new', 'keep-old']) {
+    fs.mkdirSync(path.join(dir, name));
+    fs.writeFileSync(path.join(dir, name, 'a.go'), 'package a\n');
+  }
+  fs.writeFileSync(path.join(dir, 'base-file'), 'not a directory');
+  const nowMs = Date.now();
+  const old = new Date(nowMs - STALE_BASE_COPY_MS - 60000);
+  fs.utimesSync(path.join(dir, 'base-old'), old, old);
+  fs.utimesSync(path.join(dir, 'keep-old'), old, old);
+  assert.equal(await sweepBaseCopies(dir, { nowMs }), 1);
+  assert.deepEqual(fs.readdirSync(dir).sort(), ['base-file', 'base-new', 'keep-old']);
+  assert.equal(await sweepBaseCopies(path.join(dir, 'missing')), 0, 'a missing folder is nothing to sweep');
 });
 
 test('an empty call hierarchy is "none" only when no reference lies outside the declaration', async (t) => {

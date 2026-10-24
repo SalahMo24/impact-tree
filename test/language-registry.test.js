@@ -1,7 +1,8 @@
 'use strict';
 // The language registry (src/languages): which language analyses a file, and the source
-// and test rules `src/engine/diff.js` now takes from it. TypeScript is the only language,
-// so every answer must equal the rules diff.js had before the registry existed.
+// and test rules `src/engine/diff.js` now takes from it. For every path but Go's, each
+// answer must equal the rules diff.js had before the registry existed; Go (G1/G2) is
+// registered after TypeScript and owns `.go` files.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { LANGUAGES, languageFor, isSourcePath, isTestPath } = require('../src/languages');
@@ -23,8 +24,18 @@ const PATHS = [
   'a/testing/h.ts', 'a/contest/i.ts', 'a\\tests\\j.ts', 'a\\b.spec.ts', 'café/ünïcode.ts',
 ];
 
-test('every source and test answer equals the rules diff.js had before the registry', () => {
+// Go's paths: source since the Go provider was registered (G2), tests by Go's `_test.go`.
+const GO_PATHS = { 'a/b.go': { source: true, test: false }, 'a/b_test.go': { source: true, test: true }, 'tests/g.go': { source: true, test: true } };
+
+test('every source and test answer equals the rules diff.js had before the registry, except Go\'s', () => {
   for (const p of PATHS) {
+    if (GO_PATHS[p]) {
+      assert.equal(isSourcePath(p), GO_PATHS[p].source, `isSourcePath(${p})`);
+      assert.equal(isTestPath(p), GO_PATHS[p].test, `isTestPath(${p})`);
+      assert.equal(diff.isSourcePath(p), GO_PATHS[p].source, `diff.isSourcePath(${p})`);
+      assert.equal(diff.isTestPath(p), GO_PATHS[p].test, `diff.isTestPath(${p})`);
+      continue;
+    }
     assert.equal(isSourcePath(p), oldIsSourcePath(p), `isSourcePath(${p})`);
     assert.equal(isTestPath(p), oldIsTestPath(p), `isTestPath(${p})`);
     assert.equal(diff.isSourcePath(p), oldIsSourcePath(p), `diff.isSourcePath(${p})`);
@@ -32,15 +43,16 @@ test('every source and test answer equals the rules diff.js had before the regis
   }
 });
 
-test('TypeScript is the only registered language, and it owns every source path', () => {
-  assert.deepEqual(LANGUAGES.map((l) => l.id), ['typescript']);
+test('TypeScript is registered first and owns its source paths; Go comes after it', () => {
+  assert.deepEqual(LANGUAGES.map((l) => l.id), ['typescript', 'go']);
+  assert.equal(languageFor('a/b.go').id, 'go');
   assert.ok(Object.isFrozen(LANGUAGES), 'the registry cannot be changed by a consumer');
   assert.equal(languageFor('a/b.tsx').id, 'typescript');
   assert.equal(languageFor('a/b.tsx').displayName, 'TypeScript/JavaScript');
 });
 
 test('a file no language handles has no language, and is not source', () => {
-  for (const p of ['a/b.go', 'a/b.py', 'a/B.java', 'README.md', 'a/b.d.ts', '']) {
+  for (const p of ['a/b.py', 'a/B.java', 'README.md', 'a/b.d.ts', 'a/testdata/b.go', '']) {
     assert.equal(languageFor(p), null, p);
     assert.equal(isSourcePath(p), false, p);
   }
@@ -49,7 +61,8 @@ test('a file no language handles has no language, and is not source', () => {
 test('a test directory makes any file a test; a test name only counts for the language that handles the file', () => {
   assert.equal(isTestPath('tests/fixture.json'), true, 'by directory, whatever the language');
   assert.equal(isTestPath('a/b.spec.md'), false, 'a test-like name of a file no language handles');
-  assert.equal(isTestPath('a/b_test.go'), false, 'Go has no rules yet');
+  assert.equal(isTestPath('a/b_test.go'), true, 'a Go test, by Go\'s rules');
+  assert.equal(isTestPath('a/b_test.py'), false, 'a test-like name of a language with no provider');
 });
 
 test('TypeScript marks nothing as generated yet', () => {

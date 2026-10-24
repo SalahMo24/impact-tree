@@ -6,7 +6,10 @@
 // fetched from the GitHub API) share one implementation. Everything here is pure --
 // it never reads a file or shells out — so the caller decides where text comes from.
 const { diffSignature, newThrows, KIND } = require('./signature');
+const { mapRange } = require('./symbols');
 
+// A line that is only a comment or blank, in TypeScript/JavaScript (and every language
+// with `//` and `/* */` comments): what a deleted symbol's row may take along with it.
 const TRIVIA_LINE = /^\s*(\/\/|\/\*|\*|$)/;
 
 // The part of a diff no row represents: changed lines that no changed callable's span
@@ -25,7 +28,8 @@ const TRIVIA_LINE = /^\s*(\/\/|\/\*|\*|$)/;
 // Replacements also retain their removed base lines. If their added lines are all
 // callable lines but their removed lines include outside content, report the gap
 // before the replacement; the head spans alone cannot account for that content.
-function outsideRanges({ spans, baseCallables, hunkRanges, hunkDeletions, deleted, baseText }) {
+// `trivia` is the language's comment-or-blank line test; TypeScript's by default.
+function outsideRanges({ spans, baseCallables, hunkRanges, hunkDeletions, deleted, baseText, trivia = TRIVIA_LINE }) {
   const sorted = spans.slice().sort((a, b) => a[0] - b[0]);
   const baseLines = baseText == null ? null : baseText.split('\n');
   const inDeleted = (line) => deleted.some((d) => d.startLine <= line && line <= d.endLine);
@@ -34,7 +38,7 @@ function outsideRanges({ spans, baseCallables, hunkRanges, hunkDeletions, delete
     let touchesCallable = false;
     for (let line = del.oldStart; line <= del.oldEnd; line++) {
       if (inDeleted(line)) touchesCallable = true;
-      else if (!TRIVIA_LINE.test(baseLines[line - 1] ?? '')) return false;
+      else if (!trivia.test(baseLines[line - 1] ?? '')) return false;
     }
     return touchesCallable;
   };
@@ -66,7 +70,7 @@ function outsideRanges({ spans, baseCallables, hunkRanges, hunkDeletions, delete
       if (baseCallables.some((c) => c.startLine <= line && line <= c.endLine)) continue;
       // A replacement may edit a surviving function and delete another together.
       // The deleted row still owns its accompanying comments and separator lines.
-      if (touchesDeleted && baseLines && TRIVIA_LINE.test(baseLines[line - 1] ?? '')) continue;
+      if (touchesDeleted && baseLines && trivia.test(baseLines[line - 1] ?? '')) continue;
       markers.push([del.at, del.at]);
       break;
     }
@@ -87,9 +91,7 @@ function outsideRanges({ spans, baseCallables, hunkRanges, hunkDeletions, delete
 // Returns { changed, deleted, outside }; `outside` is `outsideRanges`' answer for a file with at
 // least one changed or deleted symbol, and [] otherwise: a file with none is listed whole.
 function changedSymbolsIn(ts, S, file) {
-  const {
-    absPath, relPath, oldPath, status, headText, baseText, hunkRanges = [], hunkDeletions = [], component, projectRoot,
-  } = file;
+  const { absPath, status, headText, baseText } = file;
 
   const parse = (text) => {
     if (text == null) return null;
@@ -102,12 +104,39 @@ function changedSymbolsIn(ts, S, file) {
   const headSf = status === 'deleted' ? null : parse(headText);
   const baseSf = status === 'added' ? null : parse(baseText);
 
-  const headCallables = headSf ? S.collect(headSf) : [];
-  const baseCallables = baseSf ? S.collect(baseSf) : [];
+  return changedFromSymbols(file, {
+    headCallables: headSf ? S.collect(headSf) : null,
+    baseCallables: baseSf ? S.collect(baseSf) : [],
+    renderSig: (symbol) => S.renderSig(symbol.sig),
+  });
+}
+
+/**
+ * The language-neutral half of `changedSymbolsIn`: given the symbols already collected
+ * from each side of a file (by a parser or a language server), which changed (by hunk),
+ * which were added or deleted (by `key`), how (signature kinds), and which changed lines
+ * lie outside every changed symbol. Pure.
+ * @param {object} file As `changedSymbolsIn`'s; `headText` is not read.
+ * @param {object} sides
+ * @param {object[]|null} sides.headCallables The head side's symbols; null when there is no
+ *   head to map hunks to (a deleted file, or one that could not be read or parsed): nothing
+ *   is then reported as changed, and no outside ranges.
+ * @param {object[]} sides.baseCallables The base side's symbols; [] for no base.
+ * @param {(symbol: object) => string} sides.renderSig The symbol's signature as shown.
+ * @param {(base: object|undefined, head: object) => object[]} [sides.kindsOf] The
+ *   signature kinds of a change, `diffSignature` by default; [] reads as a body change.
+ * @param {RegExp} [sides.trivia] The language's comment-or-blank line; TypeScript's by default.
+ * @returns {{ changed: object[], deleted: object[], outside: Array<[number, number]> }}
+ */
+function changedFromSymbols(file, { headCallables, baseCallables, renderSig, kindsOf = diffSignature, trivia = TRIVIA_LINE }) {
+  const {
+    absPath, relPath, oldPath, status, baseText, hunkRanges = [], hunkDeletions = [], component, projectRoot,
+  } = file;
+  const heads = headCallables || [];
   // Matched on `key`, not `label`: a label repeats for a get/set pair, overloads, or
   // same-named helpers in two methods, and matching on it diffed against the wrong one.
   const baseByKey = new Map(baseCallables.map((c) => [c.key, c]));
-  const headKeys = new Set(headCallables.map((c) => c.key));
+  const headKeys = new Set(heads.map((c) => c.key));
 
   const deleted = [];
   for (const b of baseCallables) {
@@ -117,11 +146,11 @@ function changedSymbolsIn(ts, S, file) {
   }
 
   const changed = [];
-  if (headSf) {
+  if (headCallables) {
     const picked = new Set();
     const hits = [];
     for (const [lo, hi] of hunkRanges) {
-      for (const hit of S.mapRange(headCallables, lo, hi)) {
+      for (const hit of mapRange(heads, lo, hi)) {
         if (picked.has(hit.key)) continue;
         picked.add(hit.key);
         hits.push(hit);
@@ -129,23 +158,23 @@ function changedSymbolsIn(ts, S, file) {
     }
     for (const hit of hits) {
       const b = baseByKey.get(hit.key);
-      const kinds = diffSignature(b, hit);
+      const kinds = kindsOf(b, hit);
       const throwsAdded = newThrows(b, hit);
       if (throwsAdded.length) kinds.push(KIND.NEW_THROW);
       changed.push({
         ...hit,
         file: absPath, relPath, oldPath, component, projectRoot, fileStatus: status,
         added: !b,
-        baseSig: b ? S.renderSig(b.sig) : null,
-        headSig: S.renderSig(hit.sig),
+        baseSig: b ? renderSig(b) : null,
+        headSig: renderSig(hit),
         kinds: kinds.length ? kinds : [KIND.BODY],
         throwsAdded,
       });
     }
   }
 
-  const outside = headSf && (changed.length || deleted.length)
-    ? outsideRanges({ spans: changed.map((c) => [c.startLine, c.endLine]), baseCallables, hunkRanges, hunkDeletions, deleted, baseText })
+  const outside = headCallables && (changed.length || deleted.length)
+    ? outsideRanges({ spans: changed.map((c) => [c.startLine, c.endLine]), baseCallables, hunkRanges, hunkDeletions, deleted, baseText, trivia })
     : [];
   return { changed, deleted, outside };
 }
@@ -156,4 +185,4 @@ function changedSymbolKeys(symbols) {
     ...(c.isConstructor && c.classNamePos != null ? [`${c.file}#${c.classNamePos}`] : []),
   ]));
 }
-module.exports = { changedSymbolsIn, changedSymbolKeys };
+module.exports = { changedSymbolsIn, changedFromSymbols, changedSymbolKeys, TRIVIA_LINE };

@@ -19,7 +19,11 @@ const { createSyntacticIndex } = require('./syntactic-index');
 const { createSyntacticResolver } = require('./resolver-syntactic');
 const { hunkRangesFromPatch, hunkDeletionsFromPatch } = require('./patch');
 const { diffLinesFromPatch } = require('./diff-lines');
-const { isSourcePath, isTestPath, isTestFile } = require('./diff');
+const { isTestPath, isTestFile } = require('./diff');
+// The preview analyses TypeScript/JavaScript only (gate L2): a file of another language
+// (Go) is listed as a file, as before that language had a provider; G6 says so in the view.
+const { typescriptRules } = require('../languages/typescript/rules');
+const isSourcePath = typescriptRules.handles;
 const { seedRoots, nestedIds } = require('./forest');
 const { registerVirtualText, readLineOfOffset } = require('./textpos');
 const { classifyCallSiteUpdates, classifyCallerUpdateState } = require('./call-sites');

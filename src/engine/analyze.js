@@ -315,6 +315,12 @@ async function prepareLanguages(byLanguage, shared, { warnings, unanalysable, pr
  *   the project.
  * @param {(result: object) => Promise<void>|void} [opts.onPrepared] Publishes a detached
  *   snapshot of changed rows before caller queries. Coverage is explicitly pending.
+ * @param {import('../languages/types').LanguageServices} [opts.languageServices] The
+ *   environment's language servers, passed to every language's `prepare` as
+ *   `ctx.hooks.services`. Languages that need a server (Go) read their symbols through it;
+ *   without it (the CLI) their files are reported as not analysed, with the reason. The
+ *   editor's resolver for a Go unit is `makeResolver`'s answer, called with
+ *   `{ language, component, repoRoot, projectRoot }` (src/languages/server-symbols.js).
  * @param {Function} [opts.makeModuleCallers] Passed to every language's `prepare` as
  *   well: the editor-owned worker index of TypeScript's module callers; omitted for the
  *   CLI's synchronous index.
@@ -442,7 +448,10 @@ async function analyze(repo, opts = {}) {
   try {
     await prepareLanguages(byLanguage, {
       repo, git, baseTexts, changedRanges, deletions, report, signal,
-      hooks: { makeResolver: opts.makeResolver, makeModuleCallers: opts.makeModuleCallers },
+      hooks: {
+        makeResolver: opts.makeResolver, makeModuleCallers: opts.makeModuleCallers,
+        ...(opts.languageServices ? { services: opts.languageServices } : {}),
+      },
     }, { warnings, unanalysable, prepared });
     for (const { units } of prepared) {
       for (const unit of units) {

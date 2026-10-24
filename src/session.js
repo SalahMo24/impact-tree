@@ -43,7 +43,7 @@ function untilCancelled(signal, promise) {
  *
  * @param {*} vscode
  * @param {{ log: (m: string) => void, review: object, checkpoint?: string, indexingTickMs?: number, callerRetryWaitMs?: number,
- *   getObjectDirs?: () => string[], getTempDir?: () => string|undefined }} opts
+ *   getObjectDirs?: () => string[], getTempDir?: () => string|undefined, getScratchDir?: () => string|null }} opts
  *   `checkpoint` is the review checkpoint restored from the workspace. `indexingTickMs` is
  *   how often the first-index elapsed time is refreshed; tests shorten it. `callerRetryWaitMs`
  *   bounds the wait for the language server before timed-out caller searches are retried
@@ -51,10 +51,12 @@ function untilCancelled(signal, promise) {
  *   the absolute snapshot object directories that reading the checkpoint revision needs; it is
  *   asked at each use, so a snapshot taken after startup is visible. `getTempDir` names the
  *   folder for an analysis's temporary index (the snapshot store's, so its startup sweep
- *   removes what a crash leaves); undefined uses the OS temp folder.
+ *   removes what a crash leaves); undefined uses the OS temp folder. `getScratchDir` names the
+ *   absolute folder for the language services' temporary base-side copies (asked once, when
+ *   the resolver is created; see src/services-vscode.js); null serves no base-side symbols.
  */
 function createSession(vscode, { log: logToChannel, review, checkpoint, indexingTickMs = 1000, callerRetryWaitMs = 120000,
-  getObjectDirs = () => [], getTempDir = () => undefined }) {
+  getObjectDirs = () => [], getTempDir = () => undefined, getScratchDir = () => null }) {
   if (!Number.isSafeInteger(callerRetryWaitMs) || callerRetryWaitMs < 1 || callerRetryWaitMs > 120000) throw new RangeError('callerRetryWaitMs must be 1..120000');
   // Required here rather than at module load: tests intercept analyze/git per activate.
   const { analyze } = require('./engine/analyze');
@@ -531,6 +533,9 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
       concurrency: cfg.get('concurrency', 8),
       onDirty: 'fallback',                   // never blank the view because a file is edited
       makeResolver: () => session.resolver,
+      // The same services the resolver asks: server-backed languages (Go) read their
+      // symbols through them, under the same request cap and deadlines.
+      languageServices: session.resolver.services,
       makeModuleCallers: ({ ts, git }) => {
         if (!modulePool || moduleRepo !== repo) {
           modulePool?.dispose();
@@ -757,7 +762,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     isCurrentAnalysis, getAnalysisId, beginCheckout, endCheckout, checkoutInProgress, isBusy, getPhase,
     prewarmInBackground, dispose, treeResolver, onDidChangeAnalysis,
   });
-  const { ensureReady, ensureResolver, isIndexing } = createReadiness(vscode, session, { log });
+  const { ensureReady, ensureResolver, isIndexing } = createReadiness(vscode, session, { log, getScratchDir });
   session.ensureReady = ensureReady;
   session.ensureResolver = ensureResolver;
   session.isIndexing = isIndexing;

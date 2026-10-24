@@ -1,6 +1,7 @@
 'use strict';
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const vscode = require('vscode');
 const { MODES } = require('./engine/analyze');
 const { createTreeProvider } = require('./tree-provider');
@@ -60,7 +61,13 @@ function activate(context) {
   const getSnapshotStore = createSnapshotStoreGetter(context, () => owned.repoRoot(), log);
   const getObjectDirs = () => { const s = getSnapshotStore(); return s ? s.objectDirs() : []; };
   const getTempDir = () => { const s = getSnapshotStore(); return s ? s.tempDir() : undefined; };
-  const owned = createSession(vscode, { log, review, checkpoint: context.workspaceState.get('impactTree.checkpoint'), getObjectDirs, getTempDir });
+  // Temporary base-side copies the language services ask a server about (gate L1): the
+  // per-workspace storage, or a folder in the OS temp folder for a window without one.
+  // Each request removes its own copy; the services sweep stale leftovers when created.
+  const getScratchDir = () => (context.storageUri
+    ? path.join(context.storageUri.fsPath, 'impact-tree-base-documents')
+    : path.join(os.tmpdir(), 'impact-tree-base-documents'));
+  const owned = createSession(vscode, { log, review, checkpoint: context.workspaceState.get('impactTree.checkpoint'), getObjectDirs, getTempDir, getScratchDir });
   session = owned;
   getSnapshotStore();   // creates the store and sweeps leftover temporary files in the background
   // The last sent round's read-back (F4); created below, once the tree exists.
