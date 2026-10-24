@@ -1,4 +1,5 @@
 'use strict';
+const { realClock } = require('./engine/clock');
 
 /**
  * Language-server warmup shared across local analysis runs and prewarm. Concurrent
@@ -8,12 +9,12 @@
  *
  * @param {*} vscode
  * @param {object} session
- * @param {{ log: (m: string) => void, getScratchDir?: () => string|null }} opts
+ * @param {{ log: (m: string) => void, getScratchDir?: () => string|null, clock?: import('./engine/clock').Clock }} opts
  *   `getScratchDir`: the absolute folder the resolver's services write temporary
  *   base-side copies in (src/services-vscode.js); null or omitted: none, and base-side
- *   symbols are not served.
+ *   symbols are not served. `clock` is the resolver's (see src/resolver-vscode.js).
  */
-function createReadiness(vscode, session, { log, getScratchDir = () => null }) {
+function createReadiness(vscode, session, { log, getScratchDir = () => null, clock = realClock }) {
   const { loadTypeScript } = require('./languages/typescript/load');
   const { warmUpTarget } = require('./languages/typescript/warm-up');
   const { createVscodeResolver } = require('./resolver-vscode');
@@ -53,7 +54,7 @@ function createReadiness(vscode, session, { log, getScratchDir = () => null }) {
     let ts = null;
     try { ts = loadTypeScript(repo, repo); }
     catch (e) { log(`typescript not resolvable — CQRS edges disabled: ${e.message}`); }
-    session.resolver = createVscodeResolver({ ts, repoRoot: repo, scratchDir: getScratchDir(), trace: m => log(`  · ${m}`),
+    session.resolver = createVscodeResolver({ ts, repoRoot: repo, scratchDir: getScratchDir(), clock, trace: m => log(`  · ${m}`),
       filterInherited: vscode.workspace.getConfiguration('impactTree').get('filterInheritedOverReports', true) });
     log(`resolver created  cqrs=${ts ? 'on' : 'off'}`);
     return session.resolver;

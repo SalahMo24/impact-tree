@@ -20,6 +20,7 @@ const {
   createVscodeServices, sweepBaseCopies, MAX_OUTSTANDING_REQUESTS, MAX_BASE_TEXT_CHARS, STALE_BASE_COPY_MS,
 } = require('../src/services-vscode');
 const { callersFromHierarchy, queryHierarchy } = require('../src/languages/callers-from-hierarchy');
+const { createFakeClock } = require('./fake-clock');
 
 const flush = () => new Promise(setImmediate);
 const deferred = () => {
@@ -30,6 +31,12 @@ const deferred = () => {
 const until = async (cond, what) => {
   for (let i = 0; i < 2000 && !cond(); i++) await flush();
   assert.ok(cond(), what);
+};
+/** `promise`, recording the fake clock's time when it settles (`at`, null until then). */
+const timed = (clock, promise) => {
+  const t = { at: null, value: undefined, error: undefined };
+  t.done = promise.then((value) => { t.value = value; t.at = clock.now(); }, (error) => { t.error = error; t.at = clock.now(); });
+  return t;
 };
 
 /** A repository with one source file; `answer(name, ...args)` plays the editor's commands. */
@@ -51,15 +58,18 @@ function setup(t, answer, text = 'export function target() {}\nexport function o
 const range = (sl, sc, el, ec) => ({ start: { line: sl, character: sc }, end: { line: el, character: ec } });
 
 test('a command past its deadline rejects as retryable, with the deadline in its reason', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const clock = createFakeClock();
   const { create, doc } = setup(t, () => new Promise(() => {}));
-  const services = create({ queryTimeoutMs: 20 });
-  const asked = services.references(doc, 16).then(() => assert.fail('a stalled server must not answer'), (e) => e);
-  await flush();
-  t.mock.timers.tick(20);
-  const error = await asked;
-  assert.equal(error.message, 'vscode.executeReferenceProvider timed out after 20 ms');
-  assert.equal(error.retryable, true);
+  const services = create({ queryTimeoutMs: 20, clock });
+  const asked = timed(clock, services.references(doc, 16));
+  await clock.advance(19);
+  assert.equal(asked.at, null, 'still waiting one millisecond before the deadline');
+  await clock.advance(1);
+  await asked.done;
+  assert.equal(asked.at, 20, 'rejected at the deadline');
+  assert.equal(asked.error.message, 'vscode.executeReferenceProvider timed out after 20 ms');
+  assert.equal(asked.error.retryable, true);
+  assert.equal(clock.pending(), 0);
 });
 
 test(`at most ${MAX_OUTSTANDING_REQUESTS} requests are outstanding; the next is refused, retryable, until one settles`, async (t) => {
@@ -106,26 +116,39 @@ test('the cold phase ends with its budget: each cold query gets what is left, th
   // A server that never has an item: not up.
   const { create, doc } = setup(t, (name) => (name === 'vscode.prepareCallHierarchy' ? [] : []));
   let retries = 0;
-  // The second query has 50 ms of budget left against a 300 ms deadline, so the bound below
-  // has a wide margin: it fails only if the second query is given the full deadline, not
-  // when a busy machine runs slowly.
-  const services = create({ coldQueryTimeoutMs: 300, coldBudgetMs: 350, retries: 0, onRetry: () => { retries++; } });
-  const started = Date.now();
-  const first = await queryHierarchy(services, doc, 7);
-  assert.deepEqual(first, { ready: false, reason: 'language server not ready after 0 s', retryable: true });
-  assert.ok(Date.now() - started >= 300, 'the first cold query had its full deadline');
-  const secondStarted = Date.now();
-  const second = await queryHierarchy(services, doc, 7);
-  assert.equal(second.retryable, true);
-  assert.ok(Date.now() - secondStarted < 250, 'the second had only what was left of the budget');
+  // The server answers at once, so all the time is the polling waits: 250 ms, then what is
+  // left of the query's deadline. The second query has only the 50 ms left of the budget.
+  const clock = createFakeClock();
+  const services = create({ coldQueryTimeoutMs: 300, coldBudgetMs: 350, retries: 0, onRetry: () => { retries++; }, clock });
+  const first = timed(clock, queryHierarchy(services, doc, 7));
+  await clock.advance(299);
+  assert.equal(first.at, null, 'the first cold query is still polling before its deadline');
+  await clock.advance(1);
+  await first.done;
+  assert.deepEqual(first.value, { ready: false, reason: 'language server not ready after 0 s', retryable: true });
+  assert.equal(first.at, 300, 'the first cold query had its full deadline');
+  assert.equal(retries, 2, 'asked at 0 and 250 ms');
+  const second = timed(clock, queryHierarchy(services, doc, 7));
+  await clock.advance(50);
+  await second.done;
+  assert.equal(second.value.retryable, true);
+  assert.equal(second.at - 300, 50, 'the second had only what was left of the budget');
   // The budget is spent: the ordinary path, which with no retries gives up at once.
-  assert.deepEqual(await queryHierarchy(services, doc, 7), { ready: false, reason: 'language server not ready', retryable: true });
+  const third = timed(clock, queryHierarchy(services, doc, 7));
+  await clock.advance(0);
+  await third.done;
+  assert.deepEqual(third.value, { ready: false, reason: 'language server not ready', retryable: true });
+  assert.equal(third.at, 350, 'without waiting');
   assert.ok(retries > 0);
   assert.equal(services.isWarm(), false);
   // A new analysis gets the whole budget again.
   services.beginAnalysis();
-  const again = await queryHierarchy(services, doc, 7);
-  assert.equal(again.reason, 'language server not ready after 0 s');
+  const again = timed(clock, queryHierarchy(services, doc, 7));
+  await clock.advance(300);
+  await again.done;
+  assert.equal(again.value.reason, 'language server not ready after 0 s');
+  assert.equal(again.at - 350, 300);
+  assert.equal(clock.pending(), 0, 'no timer left behind');
 });
 
 test('a server that is up with no item at the symbol gives "no call hierarchy item"', async (t) => {
@@ -362,8 +385,16 @@ test('document symbols are asked again while the server starts, then an empty an
   let listFrom = 3;
   const { create, doc, sent } = setup(t, () => (sent.length < listFrom ? undefined : [symbol]), 'f() {}\n');
   let retries = 0;
-  const services = create({ onRetry: () => { retries++; } });
-  assert.equal((await services.documentSymbols(doc)).length, 1, 'the third answer is the list');
+  const clock = createFakeClock();
+  const services = create({ onRetry: () => { retries++; }, clock });
+  const listed = timed(clock, services.documentSymbols(doc));
+  await clock.advance(250);
+  assert.equal(sent.length, 2, 'asked again after 250 ms');
+  assert.equal(listed.at, null);
+  await clock.advance(500);
+  await listed.done;
+  assert.equal(listed.value.length, 1, 'the third answer is the list');
+  assert.equal(listed.at, 750, 'after waiting 250 ms, then 500 ms');
   assert.equal(sent.length, 3);
   assert.equal(retries, 2);
   listFrom = Infinity;
@@ -373,8 +404,15 @@ test('document symbols are asked again while the server starts, then an empty an
 
 test('a server that never lists symbols within the cold deadline is reported, retryable, not as no symbols', async (t) => {
   const { create, doc } = setup(t, () => undefined, 'f() {}\n');
-  const services = create({ coldQueryTimeoutMs: 300 });
-  const error = await services.documentSymbols(doc).then(() => null, (e) => e);
-  assert.match(error.message, /listed no symbols within 0 s; it may still be starting/);
-  assert.equal(error.retryable, true);
+  const clock = createFakeClock();
+  const services = create({ coldQueryTimeoutMs: 300, clock });
+  const asked = timed(clock, services.documentSymbols(doc));
+  await clock.advance(299);
+  assert.equal(asked.at, null, 'still asking before the deadline');
+  await clock.advance(1);
+  await asked.done;
+  assert.equal(asked.at, 300, 'gave up at the deadline');
+  assert.match(asked.error.message, /listed no symbols within 0 s; it may still be starting/);
+  assert.equal(asked.error.retryable, true);
+  assert.equal(clock.pending(), 0);
 });

@@ -11,9 +11,7 @@ const { createInheritanceFilter } = require('../../engine/inheritance');
 const { findUnseenUsers, unseenUsersReason, gitGrep } = require('../../engine/unseen-users');
 const { makeGit } = require('../../engine/git');
 const { isTestFile } = require('../../engine/diff');
-
-/** @param {number} ms Duration in milliseconds. */
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const { realClock } = require('../../engine/clock');
 
 /**
  * @param {object} options See `LanguageProvider.editorCallers` (src/languages/types.js).
@@ -26,9 +24,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * @param {(message: string) => void} options.trace
  * @param {boolean} options.filterInherited
  * @param {() => void} options.onWarmupRetry
+ * @param {import('../../engine/clock').Clock} [options.clock] Times the waits between
+ *   reference retries (src/engine/clock.js).
  * @returns {import('../types').EditorCallerExtras}
  */
-function createTypescriptEditorExtras({ ts, services, repoRoot, trace, filterInherited, onWarmupRetry }) {
+function createTypescriptEditorExtras({ ts, services, repoRoot, trace, filterInherited, onWarmupRetry, clock = realClock }) {
   /**
    * Every file this resolver is asked about is the one on disk.
    * @param {string} file Absolute path.
@@ -78,7 +78,7 @@ function createTypescriptEditorExtras({ ts, services, repoRoot, trace, filterInh
         if (locs.length) break;
         if (services.isServerWarm()) break;
         onWarmupRetry();
-        await sleep(250 * (attempt + 1));
+        await clock.sleep(250 * (attempt + 1));
       }
       if (!locs.length) trace(`references: none for ${require('path').basename(file)}@${offset}${services.isServerWarm() ? '' : ' (server never warmed)'}`);
       const out = [];

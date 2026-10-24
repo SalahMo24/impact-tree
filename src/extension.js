@@ -34,6 +34,7 @@ const { createFeedbackStatus, SHOW_DRAFTS_COMMAND } = require('./feedback-tree')
 const { createFeedbackRoundView } = require('./feedback-round-view');
 const { createSendFeedback } = require('./feedback-send');
 const { createAutoCleanup, createCleanupCommand } = require('./storage-cleanup-run');
+const { realClock } = require('./engine/clock');
 
 // Bumped whenever extension-side behaviour changes, so the exthost log proves which
 // build is actually loaded instead of us inferring it from timestamps.
@@ -44,8 +45,16 @@ let prDocuments = null;
 let out = null;
 const log = (m) => { if (out) out.appendLine(`[${new Date().toISOString().slice(11, 19)}] ${m}`); };
 
-function activate(context) {
-  const review = createReviewState(context.workspaceState, { log });
+/**
+ * @param {*} context The editor's ExtensionContext.
+ * @param {{ clock?: import('./engine/clock').Clock }} [testSeams] Never passed by the editor,
+ *   which calls `activate(context)`. `clock` (src/engine/clock.js; default the real clock)
+ *   times every deadline, wait and background timer this activation starts, so a test
+ *   (test/extension-env.js) can move time forward instead of waiting for it.
+ */
+function activate(context, { clock = realClock } = {}) {
+  const now = () => clock.now();
+  const review = createReviewState(context.workspaceState, { log, now });
   // The disposable holds its own reference: deactivate() drops the module's before the
   // editor disposes the subscriptions.
   const documents = createPrDocuments();
@@ -58,7 +67,7 @@ function activate(context) {
   // Local, so the closures below keep this activation's session after deactivate().
   // Snapshot checkpoints live in the extension's per-workspace storage, never in .git. Without a
   // storage folder there is no store and a checkpoint stays a plain HEAD commit.
-  const getSnapshotStore = createSnapshotStoreGetter(context, () => owned.repoRoot(), log);
+  const getSnapshotStore = createSnapshotStoreGetter(context, () => owned.repoRoot(), log, { now });
   const getObjectDirs = () => { const s = getSnapshotStore(); return s ? s.objectDirs() : []; };
   const getTempDir = () => { const s = getSnapshotStore(); return s ? s.tempDir() : undefined; };
   // Temporary base-side copies the language services ask a server about (gate L1): the
@@ -67,14 +76,14 @@ function activate(context) {
   const getScratchDir = () => (context.storageUri
     ? path.join(context.storageUri.fsPath, 'impact-tree-base-documents')
     : path.join(os.tmpdir(), 'impact-tree-base-documents'));
-  const owned = createSession(vscode, { log, review, checkpoint: context.workspaceState.get('impactTree.checkpoint'), getObjectDirs, getTempDir, getScratchDir });
+  const owned = createSession(vscode, { log, review, checkpoint: context.workspaceState.get('impactTree.checkpoint'), getObjectDirs, getTempDir, getScratchDir, clock });
   session = owned;
   getSnapshotStore();   // creates the store and sweeps leftover temporary files in the background
   // The last sent round's read-back (F4); created below, once the tree exists.
   /** @type {ReturnType<typeof createFeedbackRoundView>|null} */
   let feedbackRound = null;
   // Feedback drafts on local reviews (F1), kept in workspace state; disposed with the window.
-  const feedbackDrafts = createFeedbackDrafts(context.workspaceState, { log });
+  const feedbackDrafts = createFeedbackDrafts(context.workspaceState, { log, now });
   context.subscriptions.push(feedbackDrafts);
 
   const decorate = createDecorationProvider(vscode);
@@ -169,7 +178,7 @@ function activate(context) {
   }));
 
   // ---- source picker: local modes and open pull requests -------------------
-  const gh = createGitHub(vscode, { log });
+  const gh = createGitHub(vscode, { log, clock });
   let prs = [];
   let prsTruncated = false;
   let prError = null;
@@ -377,15 +386,19 @@ function activate(context) {
 
   // Cleanup of stored data (F5): in the background a minute after startup and after each
   // send; never feedback files, never the current checkpoint.
-  const cleanupDeps = { getSnapshotStore, workspaceState: context.workspaceState, session: owned, review, log };
+  const cleanupDeps = { getSnapshotStore, workspaceState: context.workspaceState, session: owned, review, log, now };
   const autoCleanup = createAutoCleanup(cleanupDeps);
-  const cleanupTimer = setTimeout(() => { autoCleanup(); }, 60000);
-  context.subscriptions.push({ dispose: () => clearTimeout(cleanupTimer) });
+  const cleanupTimer = clock.setTimeout(() => { autoCleanup(); }, 60000);
+  // Background housekeeping must not hold a process open on its own: the editor's
+  // extension host stays up anyway, and a test that ends before the minute is over (or
+  // cannot clear the timer because it mocks timers) exits at once.
+  clock.unref?.(cleanupTimer);
+  context.subscriptions.push({ dispose: () => clock.clearTimeout(cleanupTimer) });
 
   // Send feedback (F3): the round file, its snapshot as the checkpoint, the hand-off.
   const sendFeedback = createSendFeedback(vscode, {
     drafts: feedbackDrafts, getSnapshotStore, session: owned, workspaceState: context.workspaceState, log,
-    afterSend: () => { refreshRound(); autoCleanup(); },
+    afterSend: () => { refreshRound(); autoCleanup(); }, now,
   });
   context.subscriptions.push(
     vscode.commands.registerCommand('impactTree.sendFeedback', () => sendFeedback()),
@@ -444,11 +457,11 @@ function activate(context) {
   );
 
   if (vscode.workspace.getConfiguration('impactTree').get('prewarm', true)) {
-    const timer = setTimeout(() => {
+    const timer = clock.setTimeout(() => {
       log('preparing in the background so the first refresh is fast');
       owned.prewarmInBackground().catch((e) => log(`prewarm failed: ${e.message}`));
     }, 2000);
-    context.subscriptions.push({ dispose: () => clearTimeout(timer) });
+    context.subscriptions.push({ dispose: () => clock.clearTimeout(timer) });
   }
   if (vscode.workspace.getConfiguration('impactTree').get('analyseOnStartup', false)) session.refresh();
 }

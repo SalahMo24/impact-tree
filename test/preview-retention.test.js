@@ -11,6 +11,7 @@ const { createPrDocuments, prQuery } = require('../src/pr-documents');
 const { registerContentProviders } = require('../src/content-providers');
 const { callerOpen } = require('../src/review-open');
 const { createOpenReview } = require('../src/open-review');
+const { createFakeClock } = require('./fake-clock');
 
 const SLUG = { owner: 'o', repo: 'r' };
 const pr = (n, headSha, mergeBase, texts = new Map()) => ({ prNumber: n, headSha, base: { sha: mergeBase }, texts });
@@ -23,14 +24,14 @@ const textBody = (s) => ({
 const status = (code) => ({ status: code, ok: false, headers: { get: () => '' }, body: null });
 
 // A GitHub whose `fetch` is `respond`; every requested path and ref is recorded.
-async function github(respond, { signedIn = true, limits } = {}) {
+async function github(respond, { signedIn = true, limits, clock } = {}) {
   const requests = [];
   const fetch = async (url) => {
     const u = new URL(url);
     requests.push({ path: decodeURIComponent(u.pathname.replace(`/repos/${SLUG.owner}/${SLUG.repo}/contents/`, '')), ref: u.searchParams.get('ref') });
     return respond(requests.at(-1));
   };
-  const gh = createGitHub({ authentication: { getSession: async () => (signedIn ? { accessToken: 't' } : undefined) } }, { fetch, limits });
+  const gh = createGitHub({ authentication: { getSession: async () => (signedIn ? { accessToken: 't' } : undefined) } }, { fetch, limits, clock });
   if (signedIn) await gh.signIn();
   return { gh, requests };
 }
@@ -182,9 +183,13 @@ test('each failure shows a message naming its cause, never an empty document', a
     ['server error', { respond: () => status(500) }, /500/, /reopen/i],
   ];
   for (const [name, { respond, signedIn, limits }, expected, recovery] of cases) {
-    const { gh } = await github(respond, { signedIn, limits });
+    // The stalled request's deadline passes on a fake clock, fast-forwarded below.
+    const clock = createFakeClock();
+    const { gh } = await github(respond, { signedIn, limits, clock });
     for (const side of ['head', 'base']) {
-      const shown = await provider(createPrDocuments(), gh).provideTextDocumentContent(addressOf(gone, side, 'a.ts', { path: 'a.ts', status: 'modified' }));
+      const reading = provider(createPrDocuments(), gh).provideTextDocumentContent(addressOf(gone, side, 'a.ts', { path: 'a.ts', status: 'modified' }));
+      if (name === 'timeout') await clock.advance(limits.requestTimeoutMs);
+      const shown = await reading;
       assert.match(shown, expected, `${name} (${side})`);
       assert.match(shown, recovery, `${name} (${side}) says what to do next`);
     }

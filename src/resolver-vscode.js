@@ -3,6 +3,7 @@ const vscode = require('vscode');
 const path = require('path');
 const { languageFor } = require('./languages');
 const { createVscodeServices } = require('./services-vscode');
+const { realClock } = require('./engine/clock');
 const { callersFromHierarchy, queryHierarchy, callerRows } = require('./languages/callers-from-hierarchy');
 
 // Callers from the editor's already-running language server, for any language. Talking to
@@ -19,9 +20,12 @@ const { callersFromHierarchy, queryHierarchy, callerRows } = require('./language
 // `resolver.services`: the analysis reads server-backed languages' symbols (Go) through
 // them (`analyze()`'s `languageServices`), sharing this resolver's request cap and
 // deadlines.
+//
+// `clock` (src/engine/clock.js) times the services' deadlines, budgets and retries, the
+// language extras' retry waits, and the durations in the stats.
 function createVscodeResolver({
   retries = 4, retryDelayMs = 250, queryTimeoutMs = 5000, coldQueryTimeoutMs = 60000, coldBudgetMs = 120000,
-  ts = null, trace = () => {}, filterInherited = true, repoRoot = null, scratchDir = null,
+  ts = null, trace = () => {}, filterInherited = true, repoRoot = null, scratchDir = null, clock = realClock,
 } = {}) {
   // incomingMs sums concurrent durations, so it exceeds wall time once queries overlap.
   // Keep it for cost, but record the distribution and let the caller time the phase.
@@ -35,7 +39,7 @@ function createVscodeResolver({
   // what happens when it runs out). Owner: this resolver; the server state it tracks lives
   // as long as the resolver, and clear() starts a new analysis in it.
   const services = createVscodeServices({
-    vscode, scratchDir, repoRoot, retries, retryDelayMs, queryTimeoutMs, coldQueryTimeoutMs, coldBudgetMs, trace,
+    vscode, scratchDir, repoRoot, retries, retryDelayMs, queryTimeoutMs, coldQueryTimeoutMs, coldBudgetMs, trace, clock,
     onRetry: () => { stats.warmupRetries++; },
   });
   /** Every file this resolver is asked about is the one on disk. */
@@ -62,7 +66,7 @@ function createVscodeResolver({
   /** @type {Map<string, import('./languages/types').EditorCallerExtras>} */
   const extrasByLanguage = new Map();
   const extrasOptions = {
-    ts, services, repoRoot, trace, filterInherited, onWarmupRetry: () => { stats.warmupRetries++; },
+    ts, services, repoRoot, trace, filterInherited, clock, onWarmupRetry: () => { stats.warmupRetries++; },
   };
   /** @returns {import('./languages/types').EditorCallerExtras|null} */
   function extrasFor(file) {
@@ -78,9 +82,9 @@ function createVscodeResolver({
 
   async function warmUp(file, pos, options) {
     const wasWarm = services.isWarm();
-    const started = Date.now();
+    const started = clock.now();
     const warm = await services.warmUp(headDoc(file), pos, options);
-    if (warm && !wasWarm) stats.warmUpMs = Date.now() - started;
+    if (warm && !wasWarm) stats.warmUpMs = clock.now() - started;
     return warm;
   }
 
@@ -93,7 +97,7 @@ function createVscodeResolver({
     const extras = extrasFor(file)?.query(file, pos) ?? null;
     const key = `${withTests ? 'A' : 'P'}${file}#${pos}`;
     if (cache.has(key)) { stats.cacheHits++; return { callers: cache.get(key), complete: true }; }
-    const t = Date.now();
+    const t = clock.now();
     stats.incomingCalls++;
     // A query the language's extras know the server answers wrongly (a TypeScript
     // command-bus handler) is not asked; its empty answer settles as unknown.
@@ -106,7 +110,7 @@ function createVscodeResolver({
     const retryable = !answer.ready && answer.retryable;
     queryStates.set(key, { ready, reason, isHandler, retryable });
     if (answer.ready && !answer.rows.length) { stats.resolvedEmpty++; stats.emptyAt.push({ file, pos }); }
-    const dt = Date.now() - t;
+    const dt = clock.now() - t;
     stats.incomingMs += dt;
     stats.durations.push(dt);
     if (!stats.slowest || dt > stats.slowest.ms) stats.slowest = { ms: dt, file, pos };

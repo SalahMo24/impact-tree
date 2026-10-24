@@ -9,6 +9,7 @@ const assert = require('node:assert/strict');
 const path = require('path');
 const { MODES } = require('../src/engine/analyze');
 const { pull, localResult, finding, withEnv, refusals } = require('./extension-env');
+const { createFakeClock } = require('./fake-clock');
 
 const flush = () => new Promise(setImmediate);
 const rootRows = (env) => env.tree().getChildren();
@@ -225,11 +226,14 @@ test('8. prewarm running during a PR preview does not change the displayed phase
   }
 });
 
-test('8b. a prewarm on its own shows Preparing, and Ready once it ends, even when it fails', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+test('8b. a prewarm on its own shows Preparing, and Ready once it ends, even when it fails', async () => {
+  // activate()'s timers run on a fake clock passed through its test seam.
+  const clock = createFakeClock();
   await withEnv(async (env) => {
     const warm = env.holds.warmUp.next();
-    t.mock.timers.tick(2000);
+    await clock.advance(1999);
+    assert.deepEqual(env.seen.warmUps, [], 'prewarm waits two seconds');
+    await clock.advance(1);
     await warm.reached;
     assert.deepEqual(await rootLabels(env), ['Preparing…']);
     warm.fail(new Error('server went away'));
@@ -238,7 +242,9 @@ test('8b. a prewarm on its own shows Preparing, and Ready once it ends, even whe
     assert.deepEqual(await rootLabels(env), []);
     assert.equal(env.seen.contexts['impactTree.state'], 'idle');
     assert.deepEqual(env.seen.errors, []);
-  }, { prewarm: true, changedSource: true });
+    assert.equal(clock.pending(), 1, 'the minute-long cleanup timer is still set');
+  }, { prewarm: true, changedSource: true, clock });
+  assert.equal(clock.pending(), 0, 'disposal clears the activation\'s timers');
 });
 
 test('9. deactivating during a run publishes nothing and shows no error', async (t) => {

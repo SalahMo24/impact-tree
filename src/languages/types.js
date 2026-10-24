@@ -205,12 +205,13 @@
  * - `editorCallers` (optional, editor only): the extras the editor's resolver applies to
  *   this language's targets (`EditorCallerExtras`). The options are the resolver's: the
  *   TypeScript module it was given (`ts`, may be null), its `services`, `repoRoot`,
- *   `trace`, `filterInherited`, and `onWarmupRetry`, called when a lookup waits for the
- *   server.
+ *   `trace`, `filterInherited`, `onWarmupRetry`, called when a lookup waits for the
+ *   server, and `clock`, which times those waits (src/engine/clock.js; omitted: the real
+ *   clock).
  * @typedef {LanguageFileRules & {
  *   needsServer: boolean,
  *   prepare: (ctx: PrepareContext) => Promise<PreparedLanguage>,
- *   editorCallers?: (options: { ts: any, services: any, repoRoot: string|null, trace: (message: string) => void, filterInherited: boolean, onWarmupRetry: () => void }) => EditorCallerExtras,
+ *   editorCallers?: (options: { ts: any, services: any, repoRoot: string|null, trace: (message: string) => void, filterInherited: boolean, onWarmupRetry: () => void, clock?: import('../engine/clock').Clock }) => EditorCallerExtras,
  * }} LanguageProvider
  */
 

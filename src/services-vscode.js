@@ -5,6 +5,7 @@ const path = require('path');
 const { isTestFile } = require('./engine/diff');
 const { offsetToPosition, positionToOffset } = require('./engine/textpos');
 const { withDeadline } = require('./engine/deadline');
+const { realClock } = require('./engine/clock');
 
 // The editor's language servers, as `LanguageServices` (src/languages/types.js): the
 // editor's provider commands (`vscode.prepareCallHierarchy`, …), so any language whose
@@ -152,10 +153,11 @@ function offsetsInText(text) {
  * `base-…` last modified more than `maxAgeMs` ago. Looks at most MAX_SWEEP_ENTRIES
  * entries. A missing folder is nothing to sweep; any other failure rejects.
  * @param {string} scratchDir Absolute.
- * @param {{ nowMs?: number, maxAgeMs?: number }} [options]
+ * @param {{ nowMs?: number, maxAgeMs?: number, clock?: import('./engine/clock').Clock }} [options]
+ *   `nowMs` defaults to `clock.now()` (src/engine/clock.js).
  * @returns {Promise<number>} How many it removed.
  */
-async function sweepBaseCopies(scratchDir, { nowMs = Date.now(), maxAgeMs = STALE_BASE_COPY_MS } = {}) {
+async function sweepBaseCopies(scratchDir, { clock = realClock, nowMs = clock.now(), maxAgeMs = STALE_BASE_COPY_MS } = {}) {
   /** @type {fs.Dirent[]} */
   let entries;
   try { entries = await fs.promises.readdir(scratchDir, { withFileTypes: true }); }
@@ -226,11 +228,13 @@ async function sweepBaseCopies(scratchDir, { nowMs = Date.now(), maxAgeMs = STAL
  * @param {(message: string) => void} [options.trace]
  * @param {() => void} [options.onRetry] Called for each empty answer asked again while the
  *   server is not up (the resolver's `warmupRetries`).
+ * @param {import('./engine/clock').Clock} [options.clock] Times every deadline, budget,
+ *   retry wait and poll here, and the sweep's age (src/engine/clock.js).
  * @returns {VscodeServices}
  */
 function createVscodeServices({
   vscode, scratchDir = null, repoRoot = null, retries = 4, retryDelayMs = 250, queryTimeoutMs = 5000,
-  coldQueryTimeoutMs = 60000, coldBudgetMs = 120000, trace = () => {}, onRetry = () => {},
+  coldQueryTimeoutMs = 60000, coldBudgetMs = 120000, trace = () => {}, onRetry = () => {}, clock = realClock,
 }) {
   if (scratchDir !== null && (typeof scratchDir !== 'string' || !path.isAbsolute(scratchDir))) throw new TypeError('scratchDir must be an absolute path or null');
   if (!Number.isSafeInteger(queryTimeoutMs) || queryTimeoutMs < 1 || queryTimeoutMs > 120000) throw new RangeError('query timeout must be 1..120000 ms');
@@ -251,7 +255,7 @@ function createVscodeServices({
   /** @type {Set<string>} */
   const symbolsAnsweredFor = new Set();
   if (scratchDir) {
-    sweepBaseCopies(scratchDir).then(
+    sweepBaseCopies(scratchDir, { clock }).then(
       (removed) => { if (removed) trace(`removed ${removed} leftover base-side cop${removed === 1 ? 'y' : 'ies'} from ${scratchDir}`); },
       (e) => trace(`sweeping leftover base-side copies in ${scratchDir} failed: ${e && e.message}`));
   }
@@ -267,7 +271,8 @@ function createVscodeServices({
   const coldPhase = () => !callersReady && coldSpentMs < coldBudgetMs;
   // Requests sent and not yet settled (see MAX_OUTSTANDING_REQUESTS).
   let providerRequests = 0;
-  const sleep = (/** @type {number} */ ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  // Never negative: time may pass between checking what is left and waiting for it.
+  const sleep = (/** @type {number} */ ms) => clock.sleep(Math.max(0, ms));
 
   /** @param {string} name @param {unknown[]} args */
   async function requestProvider(name, args) {
@@ -285,7 +290,7 @@ function createVscodeServices({
    * @param {string} [label] Names the command in a timeout's reason.
    */
   async function ask(name, args, timeoutMs, label = name) {
-    try { return await withDeadline(() => requestProvider(name, args), timeoutMs, label); }
+    try { return await withDeadline(() => requestProvider(name, args), timeoutMs, label, clock); }
     catch (e) { throw asServiceError(e); }
   }
 
@@ -430,8 +435,8 @@ function createVscodeServices({
    * @returns {import('./languages/types').LanguageServices}
    */
   function coldScope(budgetMs) {
-    const started = Date.now();
-    const left = () => budgetMs - (Date.now() - started);
+    const started = clock.now();
+    const left = () => budgetMs - (clock.now() - started);
     return {
       ...warmScope,
       async prepareCallHierarchy(doc, pos) {
@@ -442,7 +447,7 @@ function createVscodeServices({
           if (Array.isArray(items) && items.length) { serverWarm = true; return items; }
           if (serverWarm) return [];
           onRetry();
-          await sleep(Math.max(0, Math.min(250 * attempt, 2000, left())));
+          await sleep(Math.min(250 * attempt, 2000, left()));
         }
         throw new ServiceError(`language server not ready after ${Math.round(budgetMs / 1000)} s`, { retryable: true });
       },
@@ -475,11 +480,11 @@ function createVscodeServices({
       if (startedAnalysis !== analysis) throw new ServiceError('caller query belongs to an earlier analysis');
       // The server came up while this query waited: let the next one go at once.
       if (!coldPhase()) { release(); return await run(warmScope); }
-      const t = Date.now();
+      const t = clock.now();
       try {
         return await run(coldScope(Math.min(coldQueryTimeoutMs, coldBudgetMs - coldSpentMs)));
       } finally {
-        coldSpentMs += Date.now() - t;
+        coldSpentMs += clock.now() - t;
         if (callersReady) trace(`language server answered caller queries after ${coldSpentMs}ms of cold queries`);
       }
     } finally {
@@ -543,8 +548,8 @@ function createVscodeServices({
       const answer = await ask('vscode.executeDocumentSymbolProvider', [uri], queryTimeoutMs);
       return answer === undefined ? [] : answer;
     }
-    const started = Date.now();
-    const left = () => coldQueryTimeoutMs - (Date.now() - started);
+    const started = clock.now();
+    const left = () => coldQueryTimeoutMs - (clock.now() - started);
     for (let attempt = 1; ; attempt++) {
       const answer = await ask('vscode.executeDocumentSymbolProvider', [uri], Math.max(1, left()));
       if (Array.isArray(answer)) { symbolsAnsweredFor.add(kind); return answer; }
@@ -659,20 +664,20 @@ function createVscodeServices({
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120000) throw new RangeError('warm-up timeout must be 1..120000 ms');
     if (callersReady) return true;
     if (unserved(doc)) return false;
-    const started = Date.now();
-    const left = () => timeoutMs - (Date.now() - started);
+    const started = clock.now();
+    const left = () => timeoutMs - (clock.now() - started);
     let attempt = 0;
     while (left() > 0) {
       const p = offsetToPosition(doc.file, pos);
       if (!p) return false;
       const at = { uri: vscode.Uri.file(doc.file), position: new vscode.Position(p.line, p.character) };
       try {
-        const items = await withDeadline(() => requestProvider('vscode.prepareCallHierarchy', [at.uri, at.position]), left(), 'language-server warm-up');
+        const items = await withDeadline(() => requestProvider('vscode.prepareCallHierarchy', [at.uri, at.position]), left(), 'language-server warm-up', clock);
         if (Array.isArray(items) && items.length && left() > 0) {
           serverWarm = true;
-          await withDeadline(() => requestProvider('vscode.provideIncomingCalls', [items[0]]), left(), 'language-server warm-up');
+          await withDeadline(() => requestProvider('vscode.provideIncomingCalls', [items[0]]), left(), 'language-server warm-up', clock);
           callersReady = true;
-          trace(`language server warm after ${Date.now() - started}ms`);
+          trace(`language server warm after ${clock.now() - started}ms`);
           return true;
         }
       } catch { /* server still starting */ }

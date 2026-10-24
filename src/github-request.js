@@ -5,6 +5,7 @@
 // endpoint is called or what the JSON means; src/github.js decides that.
 
 const { AnalysisCancelledError } = require('./engine/cancellation');
+const { realClock } = require('./engine/clock');
 
 /**
  * Limits on what one GitHub call may cost. Owner: src/github.js (`createGitHub` takes
@@ -141,16 +142,17 @@ class GitHubResponseError extends Error {
  * over `x-ratelimit-reset` (epoch seconds). Headers that are not whole numbers are
  * ignored rather than trusted.
  * @param {{ get: (name: string) => string|null }} headers
+ * @param {number} nowMs Epoch milliseconds the response arrived at.
  * @returns {number|null}
  */
-function rateLimitResetAt(headers) {
+function rateLimitResetAt(headers, nowMs) {
   /** @param {string} name */
   const whole = (name) => {
     const raw = headers.get(name);
     return raw !== null && /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : null;
   };
   const retryAfter = whole('retry-after');
-  if (retryAfter !== null) return Date.now() + retryAfter * 1000;
+  if (retryAfter !== null) return nowMs + retryAfter * 1000;
   const reset = whole('x-ratelimit-reset');
   return reset !== null ? reset * 1000 : null;
 }
@@ -178,6 +180,8 @@ function rateLimitResetAt(headers) {
  * @param {AbortSignal} [bounds.signal]
  * @param {number[]} [bounds.passStatuses] Statuses returned with `text: null` instead of
  *   rejecting, e.g. 404 where "absent" is an answer.
+ * @param {import('./engine/clock').Clock} [bounds.clock] Times the deadline and dates a
+ *   rate limit's `retry-after` (src/engine/clock.js).
  * @returns {Promise<BoundedResponse>}
  * @throws {GitHubCancelledError} `bounds.signal` was aborted.
  * @throws {GitHubTimeoutError} The deadline passed.
@@ -188,7 +192,7 @@ function rateLimitResetAt(headers) {
  * @throws {GitHubHttpError} Any other unaccepted non-2xx status.
  */
 async function fetchBounded(fetchImpl, url, init, bounds) {
-  const { endpoint, deadlineMs, maxBytes, signal, passStatuses = [] } = bounds;
+  const { endpoint, deadlineMs, maxBytes, signal, passStatuses = [], clock = realClock } = bounds;
   if (signal && signal.aborted) throw new GitHubCancelledError(endpoint);
 
   const controller = new AbortController();
@@ -199,7 +203,7 @@ async function fetchBounded(fetchImpl, url, init, bounds) {
   };
   const onCallerAbort = () => stop(new GitHubCancelledError(endpoint));
   if (signal) signal.addEventListener('abort', onCallerAbort, { once: true });
-  const timer = setTimeout(() => stop(new GitHubTimeoutError(endpoint, deadlineMs)), deadlineMs);
+  const timer = clock.setTimeout(() => stop(new GitHubTimeoutError(endpoint, deadlineMs)), deadlineMs);
 
   // Raced against every await, so a fetch that ignores its signal still stops on time.
   const stopped = new Promise((_, reject) => {
@@ -218,7 +222,7 @@ async function fetchBounded(fetchImpl, url, init, bounds) {
     // A secondary rate limit is a 403 with `retry-after` and requests still remaining.
     const limited = res.status === 429 || (res.status === 403
       && (String(res.headers.get('x-ratelimit-remaining')).trim() === '0' || res.headers.get('retry-after') !== null));
-    if (limited) throw new GitHubRateLimitError(endpoint, res.status, rateLimitResetAt(res.headers));
+    if (limited) throw new GitHubRateLimitError(endpoint, res.status, rateLimitResetAt(res.headers, clock.now()));
     if (!res.ok) throw new GitHubHttpError(endpoint, res.status);
     if (!res.body) throw new GitHubResponseError(endpoint, 'no response body');
 
@@ -243,7 +247,7 @@ async function fetchBounded(fetchImpl, url, init, bounds) {
     // A fetch aborted by us rejects with its own AbortError; report the real reason.
     throw cause || error;
   } finally {
-    clearTimeout(timer);
+    clock.clearTimeout(timer);
     if (signal) signal.removeEventListener('abort', onCallerAbort);
     // Frees the connection when we stopped early; harmless after a complete read.
     if (reader) reader.cancel().catch(() => {});

@@ -6,6 +6,7 @@ const { withModuleCallers } = require('./engine/module-callers');
 const { classifyCallSiteUpdates } = require('./engine/call-sites');
 const { readLineOfOffset } = require('./engine/textpos');
 const { AnalysisCancelledError, isAnalysisCancelled, throwIfCancelled } = require('./engine/cancellation');
+const { realClock } = require('./engine/clock');
 
 // A run that is cancelled stops waiting for `promise` and rejects with the cancellation
 // error. The work behind `promise` is not stopped: it belongs to whoever started it.
@@ -43,7 +44,8 @@ function untilCancelled(signal, promise) {
  *
  * @param {*} vscode
  * @param {{ log: (m: string) => void, review: object, checkpoint?: string, indexingTickMs?: number, callerRetryWaitMs?: number,
- *   getObjectDirs?: () => string[], getTempDir?: () => string|undefined, getScratchDir?: () => string|null }} opts
+ *   getObjectDirs?: () => string[], getTempDir?: () => string|undefined, getScratchDir?: () => string|null,
+ *   clock?: import('./engine/clock').Clock }} opts
  *   `checkpoint` is the review checkpoint restored from the workspace. `indexingTickMs` is
  *   how often the first-index elapsed time is refreshed; tests shorten it. `callerRetryWaitMs`
  *   bounds the wait for the language server before timed-out caller searches are retried
@@ -54,9 +56,11 @@ function untilCancelled(signal, promise) {
  *   removes what a crash leaves); undefined uses the OS temp folder. `getScratchDir` names the
  *   absolute folder for the language services' temporary base-side copies (asked once, when
  *   the resolver is created; see src/services-vscode.js); null serves no base-side symbols.
+ *   `clock` (src/engine/clock.js) times the elapsed-seconds ticks, the caller-retry wait and
+ *   the logged durations, and is handed to the resolver and the cross-file caller pool.
  */
 function createSession(vscode, { log: logToChannel, review, checkpoint, indexingTickMs = 1000, callerRetryWaitMs = 120000,
-  getObjectDirs = () => [], getTempDir = () => undefined, getScratchDir = () => null }) {
+  getObjectDirs = () => [], getTempDir = () => undefined, getScratchDir = () => null, clock = realClock }) {
   if (!Number.isSafeInteger(callerRetryWaitMs) || callerRetryWaitMs < 1 || callerRetryWaitMs > 120000) throw new RangeError('callerRetryWaitMs must be 1..120000');
   // Required here rather than at module load: tests intercept analyze/git per activate.
   const { analyze } = require('./engine/analyze');
@@ -373,7 +377,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     log(`run mode=${result.mode}${result.requestedMode !== result.mode ? ` (requested ${result.requestedMode})` : ''} base=${result.base.ref}@${String(result.base.sha).slice(0, 10)} files=${result.changedFileCount} findings=${result.findings.length}`);
     result.warnings.forEach((w) => log(`  warn: ${w}`));
     const st = session.resolver.stats();
-    const wall = (Date.now() - tStart) / 1000;
+    const wall = (clock.now() - tStart) / 1000;
     if (st.warmUpMs) log(`  server warm-up ${(st.warmUpMs / 1000).toFixed(1)}s (paid once per window)`);
     log(`  WALL ${wall.toFixed(1)}s   (query time sums to ${(st.incomingMs / 1000).toFixed(1)}s across ${result.concurrency} workers — overlapping, not additive)`);
     log(`  queries: ${st.incomingCalls}  min ${st.minMs}ms / median ${st.medianMs}ms / max ${st.maxMs}ms`);
@@ -467,7 +471,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
    */
   async function untilReady(run, ready) {
     if (!session.isIndexing()) return untilCancelled(run.signal, ready);
-    const since = Date.now();
+    const since = clock.now();
     let timer = null;
     try {
       return await vscode.window.withProgress(
@@ -475,16 +479,16 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
         async (windowProgress) => {
           const tick = () => {
             if (!owns(run)) return;
-            const text = `Indexing the workspace, first run only — usually 10–35 s… ${Math.floor((Date.now() - since) / 1000)} s`;
+            const text = `Indexing the workspace, first run only — usually 10–35 s… ${Math.floor((clock.now() - since) / 1000)} s`;
             windowProgress.report({ message: text });
             setIndexing(run, text);
           };
           tick();
-          timer = setInterval(tick, indexingTickMs);
+          timer = clock.setInterval(tick, indexingTickMs);
           return untilCancelled(run.signal, ready);
         });
     } finally {
-      clearInterval(timer);
+      clock.clearInterval(timer);
       if (indexing.run === run) setIndexing(run, null);
     }
   }
@@ -506,7 +510,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
       session.resolver.clear();
       session.localResolver = null;
     }
-    const tStart = Date.now();
+    const tStart = clock.now();
     const report = (m) => { if (!run.signal.aborted && progress) progress.report({ message: m }); };
     // vscode.commands.executeCommand takes no cancellation token, so the language
     // server cannot be told to stop. The signal stops new queries; one already sent
@@ -516,7 +520,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
         if (!completeAnalysisRun(run, { result: pending, repo, expansionResolver: null })) return;
         configureLocalReview(source, repo, pending, base);
         session.provider.refresh();
-        log(`changed files ready in ${Date.now() - tStart}ms; caller analysis continues`);
+        log(`changed files ready in ${clock.now() - tStart}ms; caller analysis continues`);
         if (pending.allChanged.length) await untilReady(run, session.ensureReady(progress));
       },
       onProgress: (p2) => {
@@ -540,7 +544,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
         if (!modulePool || moduleRepo !== repo) {
           modulePool?.dispose();
           moduleRepo = repo;
-          modulePool = require('./module-caller-pool').createModuleCallerPool(repo);
+          modulePool = require('./module-caller-pool').createModuleCallerPool(repo, { clock });
         }
         return modulePool.forAnalysis(ts, git, run.signal);
       },
@@ -579,20 +583,20 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     const searches = `${count} caller search${count === 1 ? '' : 'es'}`;
     log(`${searches} did not finish (the language server did not answer in time); retrying once it answers`);
     const token = {};
-    const since = Date.now();
+    const since = clock.now();
     const tick = () => {
-      if (stillShown()) setIndexing(token, `${searches} timed out — retrying when TypeScript has loaded… ${Math.floor((Date.now() - since) / 1000)} s`);
+      if (stillShown()) setIndexing(token, `${searches} timed out — retrying when TypeScript has loaded… ${Math.floor((clock.now() - since) / 1000)} s`);
       else if (indexing.run === token) setIndexing(token, null);
     };
     tick();
-    const timer = setInterval(tick, indexingTickMs);
+    const timer = clock.setInterval(tick, indexingTickMs);
     let ready = false;
     try {
       ready = await session.resolver.warmUp(target.file, target.namePos, { timeoutMs: callerRetryWaitMs });
     } catch (e) {
       log(`caller retry: waiting for the language server failed: ${e && e.message}`);
     } finally {
-      clearInterval(timer);
+      clock.clearInterval(timer);
       if (indexing.run === token) setIndexing(token, null);
     }
     await ended;
@@ -762,7 +766,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     isCurrentAnalysis, getAnalysisId, beginCheckout, endCheckout, checkoutInProgress, isBusy, getPhase,
     prewarmInBackground, dispose, treeResolver, onDidChangeAnalysis,
   });
-  const { ensureReady, ensureResolver, isIndexing } = createReadiness(vscode, session, { log, getScratchDir });
+  const { ensureReady, ensureResolver, isIndexing } = createReadiness(vscode, session, { log, getScratchDir, clock });
   session.ensureReady = ensureReady;
   session.ensureResolver = ensureResolver;
   session.isIndexing = isIndexing;

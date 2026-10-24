@@ -75,8 +75,9 @@ function validateRecord(value, root) {
  * `<root>/tmp/`. Owner: the extension activation that created the store. Retention: none here
  * (the cleanup policy removes records through `remove`).
  *
- * @param {{ root: string, repo: string, log?: (message: string) => void, timeoutMs?: number }} options
- *   `root` absolute folder we own; `repo` the repository root; `log` receives validation problems.
+ * @param {{ root: string, repo: string, log?: (message: string) => void, timeoutMs?: number, now?: () => number }} options
+ *   `root` absolute folder we own; `repo` the repository root; `log` receives validation problems;
+ *   `now` (epoch milliseconds; omitted: Date.now) dates snapshots and the temp sweep.
  * @returns {{
  *   take: (options?: { round?: number|null }) => Promise<SnapshotRecord>,
  *   list: () => SnapshotRecord[],
@@ -88,7 +89,7 @@ function validateRecord(value, root) {
  *   tempDir: () => string,
  * }}
  */
-function createSnapshotStore({ root, repo, log = () => {}, timeoutMs = DEFAULT_TIMEOUT_MS }) {
+function createSnapshotStore({ root, repo, log = () => {}, timeoutMs = DEFAULT_TIMEOUT_MS, now = Date.now }) {
   if (typeof root !== 'string' || !path.isAbsolute(root)) throw new TypeError(`snapshot store root must be an absolute path, got ${JSON.stringify(root)}`);
   const manifestFile = path.join(root, 'manifest.json');
   const snapshotsDir = path.join(root, 'snapshots');
@@ -163,7 +164,7 @@ function createSnapshotStore({ root, repo, log = () => {}, timeoutMs = DEFAULT_T
 
   /** @param {{ round?: number|null }} options @returns {Promise<SnapshotRecord>} */
   async function doTake({ round = null }) {
-    const id = `${Date.now().toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
+    const id = `${now().toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
     const objectsDir = path.join(snapshotsDir, id, 'objects');
     fs.mkdirSync(objectsDir, { recursive: true });
     fs.mkdirSync(tmpDir, { recursive: true });
@@ -187,7 +188,7 @@ function createSnapshotStore({ root, repo, log = () => {}, timeoutMs = DEFAULT_T
       if (!SHA_PATTERN.test(sha)) throw new Error(`git commit-tree returned ${JSON.stringify(sha.slice(0, 80))}`);
       const branch = (await git.rawAsync(['symbolic-ref', '--quiet', '--short', 'HEAD'], { timeoutMs }).catch(() => '')).trim() || null;
       /** @type {SnapshotRecord} */
-      const record = { id, sha, objectsDir, createdAtMs: Date.now(), branch, headSha, round, bytes: directoryBytes(path.join(snapshotsDir, id)) };
+      const record = { id, sha, objectsDir, createdAtMs: now(), branch, headSha, round, bytes: directoryBytes(path.join(snapshotsDir, id)) };
       writeManifest([...readManifest(), record]);
       return record;
     } catch (e) {
@@ -234,7 +235,7 @@ function createSnapshotStore({ root, repo, log = () => {}, timeoutMs = DEFAULT_T
      * @param {{ nowMs?: number }} [options]
      * @returns {Promise<void>}
      */
-    sweepTemp: ({ nowMs = Date.now() } = {}) => serialized(async () => {
+    sweepTemp: ({ nowMs = now() } = {}) => serialized(async () => {
       let names;
       try { names = fs.readdirSync(tmpDir); } catch { return; }
       for (const name of names) {

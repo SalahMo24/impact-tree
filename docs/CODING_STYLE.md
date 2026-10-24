@@ -510,6 +510,7 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      limit's unit, owner, enforcement point and exhaustion behaviour is documented at
      `DEFAULT_LIMITS`. Not done: retries (there are none) and the language-server limit
      above.
+   - Exists: an injected clock (`src/engine/clock.js`) times every deadline, budget, retry wait and tick; tests pass `test/fake-clock.js` and fast-forward it instead of waiting.
 4. Make cache identity and retention policies explicit; address expensive editor
    work using measurements.
    - Exists: every cache has a comment at its definition stating owner, what its key
