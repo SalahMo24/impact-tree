@@ -103,6 +103,8 @@ function createTypescriptEditorExtras({ ts, services, repoRoot, trace, filterInh
     // a handler's execute() resolves through ICommandHandler.execute, so the call
     // hierarchy returns every bus.execute() site; none of them reach this handler
     suppressedReason: 'command-bus handler',
+    // Callers the inheritance filter drops: sibling-subclass dispatch reported as a call.
+    droppedStat: 'inheritedDropped',
     query(file, pos) {
       const queryCqrs = cqrs;
       return {

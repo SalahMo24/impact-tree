@@ -132,7 +132,7 @@ function createVscodeResolver({
       const { kept, dropped } = extras.filter(out);
       // What a language's filter drops: TypeScript's inherited-member over-reports, Go's
       // callers that only use the function as a value.
-      if (languageOf(file)?.id === 'go') stats.valueUsesDropped += dropped; else stats.inheritedDropped += dropped;
+      stats[languageExtras ? languageExtras.droppedStat : 'inheritedDropped'] += dropped;
       // A copy: `kept` may be `out` itself (a filter that keeps everything returns its
       // input), and `out` is added to below.
       out = kept.slice();

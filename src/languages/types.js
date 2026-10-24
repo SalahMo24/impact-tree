@@ -173,6 +173,8 @@
  * @property {(file: string, pos: number) => EditorCallerQuery} query One per caller query,
  *   taken when the query starts, so a query that outlives `clear()` keeps its own state.
  * @property {string} suppressedReason Why a suppressed query's empty answer is unknown.
+ * @property {'inheritedDropped'|'valueUsesDropped'} droppedStat The resolver stat that counts
+ *   the callers `filter` drops for this language, so the resolver names no language.
  * @property {(file: string, pos: number) => Promise<string|null>} unseenUsers Asked before
  *   "none": the reason the answer is unknown after all, or null. Never rejects.
  * @property {() => void} clear A new analysis starts: drop what was learnt.

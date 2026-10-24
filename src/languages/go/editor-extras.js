@@ -93,6 +93,8 @@ function createGoEditorExtras({ trace = () => {}, readText = (file) => readTextO
   return {
     // Go never suppresses a query (`isSuppressed` is always false).
     suppressedReason: 'caller query not asked',
+    // Callers dropped for using the function only as a value.
+    droppedStat: 'valueUsesDropped',
     query() {
       let sawValueUse = false;
       return {
