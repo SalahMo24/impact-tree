@@ -4,7 +4,7 @@
   "displayName": "Impact Tree",
   "icon": "images/icon.png",
   "description": "Review a diff as an inverted call graph — see what each change affects and which callers weren't updated.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "engines": {
     "vscode": "^1.84.0"
