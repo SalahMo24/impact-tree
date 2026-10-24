@@ -58,11 +58,14 @@
  * @property {number} namePos Offset of the name; the position callers are asked at.
  * @property {number} startLine One-based, inclusive.
  * @property {number} endLine One-based, inclusive.
+ * @property {number} span `endLine - startLine`; the hunk mapping prefers the smallest.
  * @property {number} start Offset of the declaration's start.
  * @property {number} end Offset just past the declaration.
  * @property {boolean} isConstructor
  * @property {boolean} exported
- * @property {{ async: boolean, params: Array<{ name: string, type: string|null, optional: boolean, rest: boolean }>, returns: string|null }} sig
+ * @property {{ async: boolean, params: Array<{ name: string, type: string|null, optional: boolean, rest: boolean }>, returns: string|null }|null} sig
+ *   Null when the language's header parser could not read the declaration; the provider
+ *   then decides the signature kinds itself (Go: `kindsOf` in src/languages/go/provider.js).
  * @property {Set<string>} throws
  */
 
@@ -121,9 +124,11 @@
  * @property {(event: { phase: string, component?: string, done?: number, total?: number }) => void} report Progress.
  * @property {AbortSignal|undefined} signal Checked between steps; an aborted run rejects
  *   with `AnalysisCancelledError`, which the pipeline never reads as a provider failure.
- * @property {{ makeResolver?: Function, makeModuleCallers?: Function }} hooks The
+ * @property {{ makeResolver?: Function, makeModuleCallers?: Function, services?: LanguageServices }} hooks The
  *   environment's `analyze()` options that choose how callers are found (the editor passes
- *   its language-server resolver). Each provider documents the ones it reads.
+ *   its language-server resolver) and, as `services`, the environment's language servers
+ *   (`analyze()`'s `languageServices`; absent in the CLI). Each provider documents the ones
+ *   it reads.
  */
 
 /**
@@ -190,22 +195,23 @@
  * rejection other than cancellation reports every file of this provider as not analysed,
  * with the reason; other providers' units are still analysed.
  *
- * Server-backed languages (Go, …) will implement `prepare` with a shared helper (G2 in
- * docs/MULTI_LANGUAGE_PLAN.md) that collects symbols through `LanguageServices`'
- * `documentSymbols`, maps hunks with `changedSymbolsIn`'s rules, and answers callers with
- * `callersFromHierarchy`. That helper does not exist yet.
+ * Server-backed languages (Go, …) implement `prepare` with the shared helper
+ * `prepareFromServerSymbols` (./server-symbols.js): symbols through `LanguageServices`'
+ * `documentSymbols`, hunks mapped with `changedSymbolsIn`'s rules (`changedFromSymbols`),
+ * and callers from the environment's resolver.
  *
  * - `needsServer` false: works without a language server (the CLI, the no-checkout
  *   preview).
  * - `editorCallers` (optional, editor only): the extras the editor's resolver applies to
  *   this language's targets (`EditorCallerExtras`). The options are the resolver's: the
  *   TypeScript module it was given (`ts`, may be null), its `services`, `repoRoot`,
- *   `trace`, `filterInherited`, and `onWarmupRetry`, called when a lookup waits for the
- *   server.
+ *   `trace`, `filterInherited`, `onWarmupRetry`, called when a lookup waits for the
+ *   server, and `clock`, which times those waits (src/engine/clock.js; omitted: the real
+ *   clock).
  * @typedef {LanguageFileRules & {
  *   needsServer: boolean,
  *   prepare: (ctx: PrepareContext) => Promise<PreparedLanguage>,
- *   editorCallers?: (options: { ts: any, services: any, repoRoot: string|null, trace: (message: string) => void, filterInherited: boolean, onWarmupRetry: () => void }) => EditorCallerExtras,
+ *   editorCallers?: (options: { ts: any, services: any, repoRoot: string|null, trace: (message: string) => void, filterInherited: boolean, onWarmupRetry: () => void, clock?: import('../engine/clock').Clock }) => EditorCallerExtras,
  * }} LanguageProvider
  */
 

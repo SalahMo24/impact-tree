@@ -178,6 +178,7 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
   function incomingSync(file, pos, withTests = true) {
     const key = `${withTests ? 'A' : 'P'}${file}#${pos}`;
     if (cache.has(key)) { stats.cacheHits++; return cache.get(key); }
+    // wall-clock: log-only — query time summed into stats, which nothing decides on
     const t = Date.now();
     stats.incomingCalls++;
     const seen = new Map();
@@ -206,6 +207,7 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
       stats.inheritedDropped += dropped;
       out = kept;
     }
+    // wall-clock: log-only — query time summed into stats
     stats.incomingMs += Date.now() - t;
     const answer = { callers: out, failed };
     if (!failed) cache.set(key, answer);
@@ -216,6 +218,7 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
   // but never *called*, so call hierarchy returns nothing. That is unknown, not uncovered.
   // `failed` means a service threw, so `count` may be short.
   function referenceCount(file, pos) {
+    // wall-clock: log-only — reference time summed into stats
     const t = Date.now(); stats.refCalls++;
     let count = 0;
     let failed = false;
@@ -224,6 +227,7 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
       try { refs = ls.findReferences(file, pos) || []; } catch { failed = true; refs = []; }
       for (const r of refs) count += r.references.filter((x) => !x.isDefinition).length;
     }
+    // wall-clock: log-only — reference time summed into stats
     stats.refMs += Date.now() - t;
     return { count, failed };
   }

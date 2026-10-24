@@ -12,6 +12,7 @@ const { createSourcesProvider } = require('../src/sources-provider');
 const { analyzeRemote } = require('../src/engine/analyze-remote');
 const { clearVirtualText } = require('../src/engine/textpos');
 const { findTypeScript, missingPrerequisite } = require('./find-typescript');
+const { createFakeClock } = require('./fake-clock');
 
 // A test written against code that ignores the seam must fail, not reach api.github.com.
 global.fetch = () => { throw new Error('the real network was reached'); };
@@ -19,9 +20,23 @@ global.fetch = () => { throw new Error('the real network was reached'); };
 const SLUG = { owner: 'o', repo: 'r' };
 const flush = () => new Promise(setImmediate);
 
-async function client(fetchImpl, limits) {
+/**
+ * Settles `promise` on a fake clock: advances to one millisecond before `deadlineMs`, checks it
+ * is still pending, then to the deadline. Returns the rejection and the clock's time then.
+ */
+async function rejectedAtDeadline(clock, promise, deadlineMs) {
+  const outcome = { at: null, error: null };
+  const done = promise.then(() => assert.fail('it must not answer'), (e) => { outcome.error = e; outcome.at = clock.now(); });
+  await clock.advance(deadlineMs - 1);
+  assert.equal(outcome.at, null, 'still pending one millisecond before the deadline');
+  await clock.advance(1);
+  await done;
+  return outcome;
+}
+
+async function client(fetchImpl, limits, clock) {
   const vscode = { authentication: { getSession: async () => ({ accessToken: 'secret-token', account: { label: 'me' } }) } };
-  const gh = createGitHub(vscode, { fetch: fetchImpl, limits });
+  const gh = createGitHub(vscode, { fetch: fetchImpl, limits, clock });
   await gh.signIn();
   return gh;
 }
@@ -57,28 +72,34 @@ const pr = (n, over = {}) => ({
 // ---- deadline ---------------------------------------------------------------------
 test('a response slower than the deadline rejects with the timeout error naming the endpoint', async () => {
   for (const stall of ['headers', 'body']) {
+    const clock = createFakeClock();
     const gh = await client(async () => (stall === 'headers' ? new Promise(() => {}) : streamed((i) => (i === 0 ? '[' : new Promise(() => {}))).res),
-      { requestTimeoutMs: 20 });
-    const started = Date.now();
-    await assert.rejects(gh.getPullRequest(SLUG, 7), (e) => e.name === 'GitHubTimeoutError'
-      && e.message.includes('/repos/o/r/pulls/7') && !e.message.includes('secret-token') && !isAnalysisCancelled(e));
-    assert.ok(Date.now() - started < 2000, `${stall}: rejected promptly`);
+      { requestTimeoutMs: 20 }, clock);
+    const { at, error: e } = await rejectedAtDeadline(clock, gh.getPullRequest(SLUG, 7), 20);
+    assert.ok(e.name === 'GitHubTimeoutError'
+      && e.message.includes('/repos/o/r/pulls/7') && !e.message.includes('secret-token') && !isAnalysisCancelled(e), `${stall}: ${e}`);
+    assert.equal(at, 20, `${stall}: rejected at the deadline`);
+    assert.equal(clock.pending(), 0, `${stall}: the deadline timer is cleared`);
   }
 });
 
 test('a fetch that honours its signal is aborted by the deadline', async () => {
   let seen;
+  const clock = createFakeClock();
   const gh = await client((_, init) => new Promise((_, reject) => {
     seen = init.signal;
     init.signal.addEventListener('abort', () => reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' })));
-  }), { requestTimeoutMs: 20 });
-  await assert.rejects(gh.mergeBase(SLUG, 'a', 'b'), (e) => e.name === 'GitHubTimeoutError');
+  }), { requestTimeoutMs: 20 }, clock);
+  const { error } = await rejectedAtDeadline(clock, gh.mergeBase(SLUG, 'a', 'b'), 20);
+  assert.equal(error.name, 'GitHubTimeoutError');
   assert.equal(seen.aborted, true, 'the underlying request was aborted, not just abandoned');
 });
 
 test('a file fetch times out under the same deadline', async () => {
-  const gh = await client(() => new Promise(() => {}), { requestTimeoutMs: 20 });
-  await assert.rejects(gh.fileAtRef(SLUG, 'src/a.ts', 'head'), (e) => e.name === 'GitHubTimeoutError' && e.message.includes('src/a.ts'));
+  const clock = createFakeClock();
+  const gh = await client(() => new Promise(() => {}), { requestTimeoutMs: 20 }, clock);
+  const { error: e } = await rejectedAtDeadline(clock, gh.fileAtRef(SLUG, 'src/a.ts', 'head'), 20);
+  assert.ok(e.name === 'GitHubTimeoutError' && e.message.includes('src/a.ts'), String(e));
 });
 
 // ---- size, enforced while streaming -----------------------------------------------
@@ -457,18 +478,19 @@ test('rate limits become GitHubRateLimitError with the reset time when given, an
     // a secondary rate limit: requests remain, but GitHub asks to wait
     [withHeaders(403, { 'x-ratelimit-remaining': '4000', 'retry-after': '0' }), 403, 'now'],
   ];
+  // `retry-after` counts from when the response arrived: the clock's time then.
+  const clock = createFakeClock({ startMs: 1700000000000 });
   for (const [res, status, resetAt] of cases) {
-    const gh = await client(async () => res);
+    const gh = await client(async () => res, undefined, clock);
     await assert.rejects(gh.graphql('{ x }'), (e) => e.name === 'GitHubRateLimitError'
-      && e.status === status && (resetAt === 'now' ? Math.abs(e.resetAt - Date.now()) < 5000 : e.resetAt === resetAt));
+      && e.status === status && e.resetAt === (resetAt === 'now' ? clock.now() : resetAt));
     assert.equal(gh.isSignedIn(), true);
   }
-  const before = Date.now();
-  const gh = await client(async () => withHeaders(429, { 'retry-after': '60' }));
+  const gh = await client(async () => withHeaders(429, { 'retry-after': '60' }), undefined, clock);
   await assert.rejects(gh.graphql('{ x }'), (e) => e.name === 'GitHubRateLimitError'
-    && e.resetAt >= before + 60000 && e.resetAt <= Date.now() + 60000);
-  const rest = await client(async () => withHeaders(429, { 'retry-after': '5', 'x-ratelimit-reset': resetSeconds }));
-  await assert.rejects(rest.getPullRequest(SLUG, 1), (e) => e.name === 'GitHubRateLimitError' && e.resetAt < resetSeconds * 1000);
+    && e.resetAt === clock.now() + 60000);
+  const rest = await client(async () => withHeaders(429, { 'retry-after': '5', 'x-ratelimit-reset': resetSeconds }), undefined, clock);
+  await assert.rejects(rest.getPullRequest(SLUG, 1), (e) => e.name === 'GitHubRateLimitError' && e.resetAt === clock.now() + 5000);
 });
 
 test('a rate-limited request is sent once, never retried', async () => {
@@ -479,8 +501,10 @@ test('a rate-limited request is sent once, never retried', async () => {
 });
 
 test('graphql honours the deadline, the size limit and the caller signal', async () => {
-  const slow = await client(() => new Promise(() => {}), { requestTimeoutMs: 20 });
-  await assert.rejects(slow.graphql('{ x }'), (e) => e.name === 'GitHubTimeoutError' && e.message.includes('/graphql'));
+  const clock = createFakeClock();
+  const slow = await client(() => new Promise(() => {}), { requestTimeoutMs: 20 }, clock);
+  const { error: e } = await rejectedAtDeadline(clock, slow.graphql('{ x }'), 20);
+  assert.ok(e.name === 'GitHubTimeoutError' && e.message.includes('/graphql'), String(e));
 
   const { res, read } = streamed(['{"data":{"a":"', 'x'.repeat(50), '"}}']);
   const big = await client(async () => res, { maxJsonBytes: 20 });

@@ -11,6 +11,7 @@ const { viewStateOf, contextKeysOf, allUnanalysable, isNothingChanged } = requir
 const { buildPlaceholderRows } = require('../src/tree-row-models');
 const { blastText } = require('../src/cli-format');
 const { localResult, finding, withEnv } = require('./extension-env');
+const { createFakeClock } = require('./fake-clock');
 const manifest = require('../package.json');
 
 const rootLabels = async (env) => (await env.tree().getChildren()).map((n) => n.label);
@@ -177,8 +178,8 @@ test('the engine keeps its guard for callers outside the extension, now with a c
 
 const prepared = (env) => (o) => localResult(o, { findings: [finding('warm', path.join(env.dir, 'a.ts'), 1)] });
 
-test('a user-started first index shows elapsed seconds in the status bar and the view, with no percentage, and clears them', async (t) => {
-  t.mock.timers.enable({ apis: ['setInterval', 'Date'] });
+test('a user-started first index shows elapsed seconds in the status bar and the view, with no percentage, and clears them', async () => {
+  const clock = createFakeClock();
   await withEnv(async (env) => {
     env.hooks.warm = false;
     env.hooks.localPrepared = prepared(env);
@@ -189,7 +190,7 @@ test('a user-started first index shows elapsed seconds in the status bar and the
     assert.equal(windowProgress.length, 1, 'one status-bar progress');
     assert.equal(windowProgress[0].options.title, 'Impact Tree');
     assert.match(env.view().message, /(^| · )Indexing the workspace, first run only — usually 10–35 s… 0 s$/);
-    t.mock.timers.tick(3000);
+    await clock.advance(3000);
     assert.match(env.view().message, /(^| · )Indexing the workspace, first run only — usually 10–35 s… 3 s$/);
     assert.equal(windowProgress[0].messages.at(-1), 'Indexing the workspace, first run only — usually 10–35 s… 3 s');
     assert.ok(![...windowProgress[0].messages, env.view().message].some((m) => /%/.test(m)), 'no invented percentage');
@@ -197,13 +198,13 @@ test('a user-started first index shows elapsed seconds in the status bar and the
     await running;
     assert.equal(windowProgress[0].settled, true);
     assert.ok(!/Indexing/.test(env.view().message ?? ''), 'the message is cleared');
-    t.mock.timers.tick(5000);
+    await clock.advance(5000);
     assert.ok(!/Indexing/.test(env.view().message ?? ''), 'the timer is gone');
-  }, { changedSource: true });
+  }, { changedSource: true, clock });
 });
 
-test('a failed or replaced first index clears the progress and its timer', async (t) => {
-  t.mock.timers.enable({ apis: ['setInterval', 'Date'] });
+test('a failed or replaced first index clears the progress and its timer', async () => {
+  const clock = createFakeClock();
   await withEnv(async (env) => {
     env.hooks.warm = false;
     env.hooks.localPrepared = prepared(env);
@@ -217,21 +218,21 @@ test('a failed or replaced first index clears the progress and its timer', async
     warm.fail(new Error('server went away'));
     await Promise.all([older, newer]);
     assert.ok(env.seen.progress.filter((p) => p.options.location === env.vscode.ProgressLocation.Window).every((p) => p.settled), 'no progress left open');
-    t.mock.timers.tick(5000);
+    await clock.advance(5000);
     assert.ok(!/Indexing/.test(env.view().message ?? ''), 'no timer survives the runs');
-  }, { changedSource: true });
+  }, { changedSource: true, clock });
 });
 
-test('a background prewarm shows no window progress', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+test('a background prewarm shows no window progress', async () => {
+  const clock = createFakeClock();
   await withEnv(async (env) => {
     const warm = env.holds.warmUp.next();
-    t.mock.timers.tick(2000);
+    await clock.advance(2000);
     await warm.reached;
     assert.deepEqual(env.seen.progress.filter((p) => p.options.location === env.vscode.ProgressLocation.Window), []);
     assert.ok(!/Indexing/.test(env.view().message ?? ''));
     warm.release();
-  }, { prewarm: true, changedSource: true });
+  }, { prewarm: true, changedSource: true, clock });
 });
 
 // ---- context keys on transitions ---------------------------------------------------------

@@ -155,9 +155,11 @@ function fakeWebviewPanel(viewType, title, showOptions, options = {}) {
 // the two analysers, the editor's language-server resolver, and the network-facing
 // async git calls (fetch, rev-parse of FETCH_HEAD, checkout), so the worktree itself
 // never moves. `changedSource` puts a committed TypeScript change on a feature branch,
-// which is what readiness needs before it will warm the language server.
+// which is what readiness needs before it will warm the language server. `clock` (a fake
+// clock, test/fake-clock.js) is handed to activate() through its test seam, so the
+// activation's timers and deadlines move only when the test advances it.
 function createEnv({ prewarm = false, changedSource = false, memento = new Map(), signIn = null, graphql = null, settings = {},
-  remotes = [['origin', 'https://github.com/example/repo.git']], authSession = null, fetch = null } = {}) {
+  remotes = [['origin', 'https://github.com/example/repo.git']], authSession = null, fetch = null, clock = null } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-ext-commands-'));
   const sh = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
   sh('init', '-q', '--initial-branch=main'); sh('config', 'user.name', 'Test'); sh('config', 'user.email', 'test@example.com');
@@ -354,10 +356,13 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     }
     // The silent sign-in at startup, replaced when a test needs it to fail in a way the real
     // one cannot; GitHub's GraphQL endpoint, replaced when a test answers it (the review store
-    // reads and writes through it).
-    if ((signIn || graphql || fetch) && resolved === path.join(SRC, 'github.js')) {
+    // reads and writes through it). GitHub's HTTP client is always replaced: a test's own
+    // `fetch`, or one that refuses, so no test reaches api.github.com (the PR list loads at
+    // startup) and none depends on the network or on GitHub's answer to a made-up repository.
+    if (resolved === path.join(SRC, 'github.js')) {
       const real = originalLoad.call(this, name, parent, ...rest);
-      return { ...real, createGitHub: (vs, o) => ({ ...real.createGitHub(vs, fetch ? { ...o, fetch } : o), ...(signIn ? { signIn } : {}), ...(graphql ? { graphql } : {}) }) };
+      const client = fetch || offlineFetch;
+      return { ...real, createGitHub: (vs, o) => ({ ...real.createGitHub(vs, { ...o, fetch: client }), ...(signIn ? { signIn } : {}), ...(graphql ? { graphql } : {}) }) };
     }
     if (resolved === path.join(SRC, 'engine/git.js')) {
       const real = originalLoad.call(this, name, parent, ...rest);
@@ -372,7 +377,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   reload();
   const extension = require('../src/extension');
   const context = { subscriptions: [], workspaceState: { get: (k) => memento.get(k), update: async (k, v) => { memento.set(k, v); } } };
-  extension.activate(context);
+  extension.activate(context, clock ? { clock } : undefined);
 
   const run = (name, ...args) => commands.get(name)(...args);
   return {
@@ -465,6 +470,11 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       fs.rmSync(dir, { recursive: true, force: true });
     },
   };
+}
+
+/** GitHub's HTTP client in a test that gave none: every request fails, as offline. */
+async function offlineFetch(url) {
+  throw new TypeError(`fetch failed: tests do not reach the network (${url})`);
 }
 
 async function withEnv(fn, options) {

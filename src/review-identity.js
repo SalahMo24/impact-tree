@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { createHash } = require('crypto');
 const { typescriptReviewSymbols } = require('./languages/typescript/review-symbols');
+const { typescriptRules } = require('./languages/typescript/rules');
 const hash = (s) => createHash('sha256').update(s == null ? '<absent>' : s).digest('hex');
 
 const symbolHash = (text, symbol) => hash((symbol.reviewPrefix || '') + text.slice(symbol.start, symbol.end));
@@ -13,7 +14,10 @@ const symbolHash = (text, symbol) => hash((symbol.reviewPrefix || '') + text.sli
  * content, or to its base, makes the row unreviewed again.
  *
  * Parsing, symbols and declarations come from the TypeScript provider's helpers
- * (src/languages/typescript/review-symbols.js), the only language with symbol rows.
+ * (src/languages/typescript/review-symbols.js). A file of another language (Go) is never
+ * parsed as TypeScript: until its provider supplies review symbols (G5), each of its
+ * symbol, deleted and outside rows is identified by the whole file's head and base text,
+ * so any edit to the file makes them unreviewed again (conservative, never stale).
  *
  * @param {object|null} ts The TypeScript module. Null: loaded from `repo` the first time
  *   a symbol, deleted or outside row is identified, so a review whose rows are all files
@@ -49,6 +53,11 @@ function createReviewIdentity(ts, repo, { headText, baseText, fileRevision }) {
     const rel = path.relative(repo, file).split(path.sep).join('/');
     const head = headText(rel);
     const base = baseText(rel);
+    if (!typescriptRules.handles(rel)) {
+      const entry = { file, rel, head, baseHash: hash(base), wholeFile: `${hash(head)}:${hash(base)}` };
+      cache.set(file, entry);
+      return entry;
+    }
     const { parse, collect, blankSpans } = typescript();
     const headSf = head == null ? null : parse(file, head);
     const baseSf = base == null ? null : base === head ? headSf : parse(file, base);
@@ -94,6 +103,11 @@ function createReviewIdentity(ts, repo, { headText, baseText, fileRevision }) {
     const file = n.file || n.absPath || (n.relPath && path.join(repo, n.relPath));
     if (!file) return null;
     const entry = read(file);
+    if (entry.wholeFile) {
+      if (n.type === 'outside') return `${entry.rel}#outside:${entry.wholeFile}`;
+      if (n.type === 'deleted') return `deleted:${entry.rel}#${n.key || n.label}:${entry.wholeFile}`;
+      return `${entry.rel}#@${n.label}:${entry.wholeFile}`;
+    }
     if (n.type === 'outside') return outsideId(entry);
     if (n.type === 'deleted') {
       const key = n.key || n.label;

@@ -13,6 +13,8 @@ const Module = require('module');
 const vscodeStub = require('./vscode-stub');
 const { withEnv, localResult, finding, deferred, pull } = require('./extension-env');
 
+const { createFakeClock } = require('./fake-clock');
+
 const flush = () => new Promise(setImmediate);
 const until = async (cond, what) => {
   for (let i = 0; i < 2000 && !cond(); i++) await flush();
@@ -67,31 +69,31 @@ test('while cold, caller queries go one at a time; once one answers, the rest go
   });
 });
 
-test('a cold query gets the long deadline; one that still times out is retryable', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+test('a cold query gets the long deadline; one that still times out is retryable', async () => {
+  const clock = createFakeClock();
   await withResolver(() => new Promise(() => {}), async ({ create, file }) => {
-    const resolver = create({ queryTimeoutMs: 20, coldQueryTimeoutMs: 1000 });
+    const resolver = create({ queryTimeoutMs: 20, coldQueryTimeoutMs: 1000, clock });
     let settled = false;
     const answer = resolver.callerState(file, 16).then((a) => { settled = true; return a; });
-    await flush(); t.mock.timers.tick(20); await flush();
+    await flush(); await clock.advance(20); await flush();
     assert.equal(settled, false, 'the warm deadline does not apply while cold');
-    t.mock.timers.tick(1000);
+    await clock.advance(1000);
     const cs = await answer;
     assert.deepEqual([cs.state, cs.complete, cs.retryable], ['unknown', false, true]);
     assert.match(cs.reason, /timed out/);
   });
 });
 
-test('past the cold budget, queries run in parallel again', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+test('past the cold budget, queries run in parallel again', async () => {
+  const clock = createFakeClock();
   await withResolver(() => new Promise(() => {}), async ({ create, file, calls }) => {
-    const resolver = create({ queryTimeoutMs: 20, coldQueryTimeoutMs: 30, coldBudgetMs: 30 });
+    const resolver = create({ queryTimeoutMs: 20, coldQueryTimeoutMs: 30, coldBudgetMs: 30, clock });
     const queries = [7, 35, 63].map((pos) => resolver.incomingWithStatus(file, pos));
     await flush(); await flush();
     assert.equal(calls.incoming, 1);
-    t.mock.timers.tick(30);
+    await clock.advance(30);
     await until(() => calls.incoming === 3, 'the budget is spent: the waiting two go together');
-    t.mock.timers.tick(20);
+    await clock.advance(20);
     const answers = await Promise.all(queries);
     assert.ok(answers.every((a) => !a.complete && a.retryable === true));
   });
@@ -111,13 +113,13 @@ test('a query waiting its cold turn when the analysis is cleared asks nothing', 
   });
 });
 
-test('warm-up needs a caller answer, and a checkout makes the server cold again', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+test('warm-up needs a caller answer, and a checkout makes the server cold again', async () => {
+  const clock = createFakeClock();
   let hang = true;
   await withResolver(() => (hang ? new Promise(() => {}) : []), async ({ create, file }) => {
-    const resolver = create({});
+    const resolver = create({ clock });
     const warming = resolver.warmUp(file, 16, { timeoutMs: 50 });
-    await flush(); t.mock.timers.tick(50);
+    await flush(); await clock.advance(50);
     assert.equal(await warming, false, 'a hierarchy item alone is not ready');
     assert.equal(resolver.isWarm(), false);
     hang = false;

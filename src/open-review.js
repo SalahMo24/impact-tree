@@ -16,6 +16,7 @@ function createOpenReview(vscode, session, { log = () => {} } = {}) {
   let openId = 0;
   async function trackOpen(kind, uri, open) {
     const id = ++openId;
+    // wall-clock: log-only — how long opening an editor took, for the log
     const started = Date.now();
     log(`editor #${id}: request ${kind} ${uri.toString()}`);
     try {
@@ -23,6 +24,7 @@ function createOpenReview(vscode, session, { log = () => {} } = {}) {
       const input = vscode.window.tabGroups?.activeTabGroup?.activeTab?.input;
       const activeKind = input?.original && input?.modified ? 'diff' : input?.uri ? 'file' : 'unknown';
       const activeUri = input?.modified || input?.uri;
+      // wall-clock: log-only — the duration logged
       log(`editor #${id}: completed ${kind} in ${Date.now() - started}ms; active=${activeKind}${activeUri ? ` ${activeUri.toString()}` : ''}`);
     } catch (e) {
       log(`editor #${id}: failed ${kind}: ${e && e.message || 'unknown error'}`);

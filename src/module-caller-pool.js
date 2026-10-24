@@ -3,13 +3,15 @@ const path = require('path');
 const { Worker } = require('worker_threads');
 const { createModuleCallers } = require('./engine/module-callers');
 const { AnalysisCancelledError, throwIfCancelled } = require('./engine/cancellation');
+const { realClock } = require('./engine/clock');
 
 // One worker per session/repository. A 30 s deadline bounds each prepare/query,
 // including index construction (measured at 14.9 s on the large workspace). A 1 GiB
 // old-generation heap limit bounds retained ASTs. Failure terminates the worker and
 // returns incomplete coverage; the next analysis can build another one. Idle workers
 // are unreferenced and are terminated when the session closes or a run is cancelled.
-function createModuleCallerPool(repo, { timeoutMs = 30000, makeWorker = (file, options) => new Worker(file, options) } = {}) {
+// `clock` (src/engine/clock.js) times the deadline.
+function createModuleCallerPool(repo, { timeoutMs = 30000, makeWorker = (file, options) => new Worker(file, options), clock = realClock } = {}) {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120000) throw new RangeError('worker timeout must be 1..120000 ms');
   let worker = null;
   let generation = 0;
@@ -20,7 +22,7 @@ function createModuleCallerPool(repo, { timeoutMs = 30000, makeWorker = (file, o
   function stop(error) {
     const old = worker;
     worker = null;
-    for (const request of pending.values()) { clearTimeout(request.timer); request.reject(error); }
+    for (const request of pending.values()) { clock.clearTimeout(request.timer); request.reject(error); }
     pending.clear();
     // terminate() owns an asynchronous shutdown; its error cannot escape disposal.
     if (old) old.terminate().catch(() => {});
@@ -36,7 +38,7 @@ function createModuleCallerPool(repo, { timeoutMs = 30000, makeWorker = (file, o
       const request = pending.get(id);
       if (!request || worker !== created) return;
       pending.delete(id);
-      clearTimeout(request.timer);
+      clock.clearTimeout(request.timer);
       if (!pending.size) created.unref();
       if (error) request.reject(new Error(error)); else request.resolve(value);
     });
@@ -50,7 +52,7 @@ function createModuleCallerPool(repo, { timeoutMs = 30000, makeWorker = (file, o
     return new Promise((resolve, reject) => {
       const target = getWorker();
       const id = ++nextId;
-      const timer = setTimeout(() => stop(new Error(`cross-file caller search exceeded ${timeoutMs} ms`)), timeoutMs);
+      const timer = clock.setTimeout(() => stop(new Error(`cross-file caller search exceeded ${timeoutMs} ms`)), timeoutMs);
       pending.set(id, { resolve, reject, timer });
       target.ref();
       try { target.postMessage({ ...message, id }); }

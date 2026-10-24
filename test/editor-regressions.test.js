@@ -9,6 +9,7 @@ const os = require('os');
 const { createTreeProvider } = require('../src/tree-provider');
 const { clearVirtualText } = require('../src/engine/textpos');
 const { ts, root, response } = require('./bug-regressions-helpers');
+const { createFakeClock } = require('./fake-clock');
 
 test('editor commands refresh the selected PR, preserve preview documents, and restore workspace checkpoints', async () => {
   const Module = require('module');
@@ -173,8 +174,13 @@ test('editor distinguishes no references, callbacks, failed queries, and unsuppo
     delete require.cache[require.resolve('../src/resolver-vscode')];
     const {createVscodeResolver}=require('../src/resolver-vscode');
     for(const [m,expected] of [['none','none'],['callback','unknown'],['failed','unknown'],['refs-failed','unknown'],['unsupported','unknown'],['no-result','unknown']]) {
-      mode=m; const resolver=createVscodeResolver({repoRoot:dir,retries:0});
-      assert.equal((await resolver.callerState(file,9)).state,expected,m);
+      // The default cold phase, on a fake clock: a server that never has an item polls for
+      // the whole cold deadline, which the test fast-forwards instead of waiting out.
+      mode=m; const clock=createFakeClock(); const resolver=createVscodeResolver({repoRoot:dir,retries:0,clock});
+      const state=resolver.callerState(file,9);
+      await clock.advance(120000);
+      assert.equal((await state).state,expected,m);
+      assert.equal(clock.pending(),0,`${m}: no timer left behind`);
     }
   } finally { Module._load=original; delete require.cache[require.resolve('../src/resolver-vscode')]; fs.rmSync(dir,{recursive:true,force:true}); }
 });

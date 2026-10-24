@@ -1,8 +1,11 @@
 // @ts-check
 'use strict';
+const fs = require('fs');
+const path = require('path');
 const { isTestFile } = require('./engine/diff');
 const { offsetToPosition, positionToOffset } = require('./engine/textpos');
 const { withDeadline } = require('./engine/deadline');
+const { realClock } = require('./engine/clock');
 
 // The editor's language servers, as `LanguageServices` (src/languages/types.js): the
 // editor's provider commands (`vscode.prepareCallHierarchy`, …), so any language whose
@@ -62,6 +65,35 @@ const RETRYABLE = /timed out|outstanding requests/;
  */
 const MAX_OUTSTANDING_REQUESTS = 32;
 
+/**
+ * Budget: the longest base-side text written to a temporary file to be asked about
+ * (`documentSymbols` with `side: 'base'`). Unit: UTF-16 code units (`text.length`).
+ * Default and only value: 2 Mi (2,097,152), the size the PR preview fetches per file
+ * (src/github-request.js); a source file larger than that is generated or vendored code.
+ * Enforced before anything is written. Exhausted: the request rejects with the size in
+ * its reason (not retryable), so the file is reported as not analysed, never as having
+ * no symbols.
+ */
+const MAX_BASE_TEXT_CHARS = 2 * 1024 * 1024;
+
+/**
+ * Temporary base-side copies older than this are leftovers of a window that stopped
+ * before its `finally` ran, and are removed when services are created. Unit: ms. Ten
+ * minutes is far above any request deadline here (at most 120 s), so a copy another
+ * window is still asking about (the OS temp folder is shared) is never removed.
+ */
+const STALE_BASE_COPY_MS = 10 * 60 * 1000;
+
+/**
+ * Budget: directory entries the leftover sweep looks at in one run. Unit: entries.
+ * Default and only value: 1000. Each request removes its own copy, so leftovers come only
+ * from crashes; past the cap the rest wait for the next window's sweep.
+ */
+const MAX_SWEEP_ENTRIES = 1000;
+
+/** Prefix of the per-request subdirectory a base-side copy is written in. */
+const BASE_COPY_PREFIX = 'base-';
+
 /** A failed request, with the reason shown to the reviewer as its message. */
 class ServiceError extends Error {
   /**
@@ -101,6 +133,51 @@ const isRange = (r) => isObject(r) && isPosition(r.start) && isPosition(r.end);
 const fsPathOf = (uri) => (isObject(uri) && typeof uri.fsPath === 'string' ? uri.fsPath : null);
 
 /**
+ * Offset conversion against a given text rather than a file on disk, with the clamping
+ * src/engine/textpos.js applies: a line past the end is the last line, a character past
+ * the end of the text is its end.
+ * @param {string} text
+ * @returns {(line: number, character: number) => number}
+ */
+function offsetsInText(text) {
+  const starts = [0];
+  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) starts.push(i + 1);
+  return (line, character) => {
+    const l = Math.max(0, Math.min(line, starts.length - 1));
+    return Math.min(starts[l] + Math.max(0, character), text.length);
+  };
+}
+
+/**
+ * Removes the base-side copies a stopped window left in `scratchDir`: subdirectories named
+ * `base-…` last modified more than `maxAgeMs` ago. Looks at most MAX_SWEEP_ENTRIES
+ * entries. A missing folder is nothing to sweep; any other failure rejects.
+ * @param {string} scratchDir Absolute.
+ * @param {{ nowMs?: number, maxAgeMs?: number, clock?: import('./engine/clock').Clock }} [options]
+ *   `nowMs` defaults to `clock.now()` (src/engine/clock.js).
+ * @returns {Promise<number>} How many it removed.
+ */
+async function sweepBaseCopies(scratchDir, { clock = realClock, nowMs = clock.now(), maxAgeMs = STALE_BASE_COPY_MS } = {}) {
+  /** @type {fs.Dirent[]} */
+  let entries;
+  try { entries = await fs.promises.readdir(scratchDir, { withFileTypes: true }); }
+  catch (e) {
+    if (/** @type {NodeJS.ErrnoException} */ (e).code === 'ENOENT') return 0;
+    throw e;
+  }
+  let removed = 0;
+  for (const entry of entries.slice(0, MAX_SWEEP_ENTRIES)) {
+    if (!entry.isDirectory() || !entry.name.startsWith(BASE_COPY_PREFIX)) continue;
+    const dir = path.join(scratchDir, entry.name);
+    const { mtimeMs } = await fs.promises.stat(dir);
+    if (nowMs - mtimeMs <= maxAgeMs) continue;
+    await fs.promises.rm(dir, { recursive: true, force: true });
+    removed++;
+  }
+  return removed;
+}
+
+/**
  * Creates the services. Budgets (all validated here; a value outside its range throws a
  * RangeError):
  * - `queryTimeoutMs` (default 5000, 1..120000): the wait for one provider command once
@@ -112,7 +189,9 @@ const fsPathOf = (uri) => (isObject(uri) && typeof uri.fsPath === 'string' ? uri
  *   projects (after the window opens or a checkout), every query waits behind that load;
  *   eight parallel queries at five seconds each all time out. Until one caller query has
  *   answered (`isWarm()`), caller queries run one at a time (`callerQuery`), each allowed
- *   this long for the whole query.
+ *   this long for the whole query. It is also the deadline of a document-symbol request
+ *   until one has answered (the first may wait for the server to start); later ones get
+ *   `queryTimeoutMs`.
  * - `coldBudgetMs` (default 120000, 0..600000): the total time cold caller queries may take
  *   in one analysis (`beginAnalysis()` resets it). Past it caller queries run in parallel
  *   at `queryTimeoutMs` again, and what times out is retryable (the session retries it
@@ -121,8 +200,25 @@ const fsPathOf = (uri) => (isObject(uri) && typeof uri.fsPath === 'string' ? uri
  *   server is up, an empty call-hierarchy answer outside the cold phase is asked again up
  *   to `retries` times, waiting `retryDelayMs × attempt` between. Exhausted: rejects
  *   "language server not ready", retryable.
+ *
+ * Base-side documents (gate L1, decided (b)): the language servers serve only `file:`
+ * documents (G0: gopls refuses any other scheme, and the Go extension forwards only
+ * `file:` ones), so `documentSymbols` of a base side writes its `text` to a temporary file
+ * with the same base name, asks for that file's symbols, converts their positions against
+ * `text`, and removes the file in `finally`, whether the request answered, failed or timed
+ * out. Owner: the request; each gets its own new subdirectory of `scratchDir`
+ * (`base-XXXXXX`), so concurrent requests, of this window or another sharing the folder,
+ * never touch each other's copy. Text over MAX_BASE_TEXT_CHARS is refused before writing.
+ * A window that stops mid-request leaves its copy behind; creating the services sweeps
+ * copies older than STALE_BASE_COPY_MS (`sweepBaseCopies`), in the background, logging a
+ * failure through `trace`. Without `scratchDir` base sides have no answer (`null`). Every
+ * other base-side question (call hierarchy, references, …) has no answer either: callers
+ * are always asked on the head.
  * @param {object} options
  * @param {VscodeApi} options.vscode
+ * @param {string|null} [options.scratchDir] Absolute folder for the temporary base-side
+ *   copies, created when first needed: the extension's storage (src/extension.js). Null:
+ *   base-side symbols are not served.
  * @param {string|null} [options.repoRoot] Decides which callers are tests.
  * @param {number} [options.retries]
  * @param {number} [options.retryDelayMs]
@@ -132,12 +228,15 @@ const fsPathOf = (uri) => (isObject(uri) && typeof uri.fsPath === 'string' ? uri
  * @param {(message: string) => void} [options.trace]
  * @param {() => void} [options.onRetry] Called for each empty answer asked again while the
  *   server is not up (the resolver's `warmupRetries`).
+ * @param {import('./engine/clock').Clock} [options.clock] Times every deadline, budget,
+ *   retry wait and poll here, and the sweep's age (src/engine/clock.js).
  * @returns {VscodeServices}
  */
 function createVscodeServices({
-  vscode, repoRoot = null, retries = 4, retryDelayMs = 250, queryTimeoutMs = 5000,
-  coldQueryTimeoutMs = 60000, coldBudgetMs = 120000, trace = () => {}, onRetry = () => {},
+  vscode, scratchDir = null, repoRoot = null, retries = 4, retryDelayMs = 250, queryTimeoutMs = 5000,
+  coldQueryTimeoutMs = 60000, coldBudgetMs = 120000, trace = () => {}, onRetry = () => {}, clock = realClock,
 }) {
+  if (scratchDir !== null && (typeof scratchDir !== 'string' || !path.isAbsolute(scratchDir))) throw new TypeError('scratchDir must be an absolute path or null');
   if (!Number.isSafeInteger(queryTimeoutMs) || queryTimeoutMs < 1 || queryTimeoutMs > 120000) throw new RangeError('query timeout must be 1..120000 ms');
   if (!Number.isSafeInteger(coldQueryTimeoutMs) || coldQueryTimeoutMs < 1 || coldQueryTimeoutMs > 120000) throw new RangeError('cold query timeout must be 1..120000 ms');
   if (!Number.isSafeInteger(coldBudgetMs) || coldBudgetMs < 0 || coldBudgetMs > 600000) throw new RangeError('cold budget must be 0..600000 ms');
@@ -146,9 +245,20 @@ function createVscodeServices({
 
   // State of the server as these services have seen it. Owner: these services, which the
   // resolver keeps for the window (src/readiness.js). Reset: `expectReload()`.
-  // `serverWarm`: see isServerWarm(). `callersReady`: see isWarm().
+  // `serverWarm`: see isServerWarm(). `callersReady`: see isWarm(). `symbolsAnsweredFor`:
+  // the file extensions (`.go`, …) whose server has answered a document-symbol request
+  // with a list, so it is running; see `askSymbols`. Each language has its own server, so
+  // one answering says nothing about another. Not reset by `expectReload()`: symbols need
+  // no project load.
   let serverWarm = false;
   let callersReady = false;
+  /** @type {Set<string>} */
+  const symbolsAnsweredFor = new Set();
+  if (scratchDir) {
+    sweepBaseCopies(scratchDir, { clock }).then(
+      (removed) => { if (removed) trace(`removed ${removed} leftover base-side cop${removed === 1 ? 'y' : 'ies'} from ${scratchDir}`); },
+      (e) => trace(`sweeping leftover base-side copies in ${scratchDir} failed: ${e && e.message}`));
+  }
   // The cold phase (see coldQueryTimeoutMs). Owner: these services. `coldTurn` is the end
   // of the queue of cold caller queries; each waits for the one before it. `coldSpentMs` is
   // the time cold queries took in this analysis. `analysis` counts beginAnalysis() calls:
@@ -161,7 +271,8 @@ function createVscodeServices({
   const coldPhase = () => !callersReady && coldSpentMs < coldBudgetMs;
   // Requests sent and not yet settled (see MAX_OUTSTANDING_REQUESTS).
   let providerRequests = 0;
-  const sleep = (/** @type {number} */ ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  // Never negative: time may pass between checking what is left and waiting for it.
+  const sleep = (/** @type {number} */ ms) => clock.sleep(Math.max(0, ms));
 
   /** @param {string} name @param {unknown[]} args */
   async function requestProvider(name, args) {
@@ -179,7 +290,7 @@ function createVscodeServices({
    * @param {string} [label] Names the command in a timeout's reason.
    */
   async function ask(name, args, timeoutMs, label = name) {
-    try { return await withDeadline(() => requestProvider(name, args), timeoutMs, label); }
+    try { return await withDeadline(() => requestProvider(name, args), timeoutMs, label, clock); }
     catch (e) { throw asServiceError(e); }
   }
 
@@ -193,9 +304,9 @@ function createVscodeServices({
     return { uri: vscode.Uri.file(doc.file), position: new vscode.Position(p.line, p.character) };
   }
 
-  // Base-side documents are not on disk, and gopls and the Go extension serve only `file:`
-  // documents (gate L1, decided: a temporary file in the extension's storage). Until G2
-  // implements that, every base-side question has no answer: `null`, never "nothing".
+  // Base-side documents are not on disk. Only `documentSymbols` serves them, through a
+  // temporary copy (see createVscodeServices); every other base-side question has no
+  // answer: `null`, never "nothing".
   /** @param {import('./languages/types').DocRef} doc */
   const unserved = (doc) => doc.side !== 'head';
 
@@ -324,8 +435,8 @@ function createVscodeServices({
    * @returns {import('./languages/types').LanguageServices}
    */
   function coldScope(budgetMs) {
-    const started = Date.now();
-    const left = () => budgetMs - (Date.now() - started);
+    const started = clock.now();
+    const left = () => budgetMs - (clock.now() - started);
     return {
       ...warmScope,
       async prepareCallHierarchy(doc, pos) {
@@ -336,7 +447,7 @@ function createVscodeServices({
           if (Array.isArray(items) && items.length) { serverWarm = true; return items; }
           if (serverWarm) return [];
           onRetry();
-          await sleep(Math.max(0, Math.min(250 * attempt, 2000, left())));
+          await sleep(Math.min(250 * attempt, 2000, left()));
         }
         throw new ServiceError(`language server not ready after ${Math.round(budgetMs / 1000)} s`, { retryable: true });
       },
@@ -369,11 +480,11 @@ function createVscodeServices({
       if (startedAnalysis !== analysis) throw new ServiceError('caller query belongs to an earlier analysis');
       // The server came up while this query waited: let the next one go at once.
       if (!coldPhase()) { release(); return await run(warmScope); }
-      const t = Date.now();
+      const t = clock.now();
       try {
         return await run(coldScope(Math.min(coldQueryTimeoutMs, coldBudgetMs - coldSpentMs)));
       } finally {
-        coldSpentMs += Date.now() - t;
+        coldSpentMs += clock.now() - t;
         if (callersReady) trace(`language server answered caller queries after ${coldSpentMs}ms of cold queries`);
       }
     } finally {
@@ -396,22 +507,110 @@ function createVscodeServices({
   }
 
   /**
-   * The symbols of a head document, as ServerSymbols with offsets and LSP kind numbers
-   * (the editor's `SymbolKind` is the LSP number minus one). An answer in the flat
-   * `SymbolInformation` form uses its location's range for both ranges. A malformed answer
-   * is no answer. The tree is walked with an explicit stack; its size is the answer's.
+   * The symbols of a document, as ServerSymbols with offsets and LSP kind numbers (the
+   * editor's `SymbolKind` is the LSP number minus one). A head document is asked about
+   * as it is on disk; a base one through a temporary copy of its `text` (see
+   * createVscodeServices), its offsets converted against that `text`. VS Code's answer
+   * objects carry both forms (a `location` holding the whole declaration, and `range` /
+   * `selectionRange`); the hierarchical ranges are used whenever present, since only
+   * `selectionRange` is the name callers are asked at. An answer in the flat
+   * `SymbolInformation` form alone uses its location's range for both ranges. A malformed
+   * answer is no answer. The tree is walked with an explicit stack; its size is the
+   * answer's.
    * @param {import('./languages/types').DocRef} doc
    * @returns {Promise<import('./languages/types').ServerSymbol[]|null>}
    */
   async function documentSymbols(doc) {
+    if (doc.side === 'base') return baseDocumentSymbols(doc);
     if (unserved(doc)) return null;
     if (!offsetToPosition(doc.file, 0)) throw new ServiceError('unreadable');
-    const answer = await ask('vscode.executeDocumentSymbolProvider', [vscode.Uri.file(doc.file)], queryTimeoutMs);
+    const answer = await askSymbols(doc.file);
+    return toServerSymbols(answer, (line, character) => positionToOffset(doc.file, line, character));
+  }
+
+  /**
+   * The provider's answer for a file's symbols. VS Code answers `undefined` both when no
+   * provider is registered yet (the language's extension is still starting its server)
+   * and when the file has no symbols. So until this kind of file has had a list once, an
+   * `undefined` is "not ready": it is asked again, waiting 250 ms × attempt (at most 2 s)
+   * between tries, all within `coldQueryTimeoutMs`; when that runs out the request
+   * rejects, retryable, and the file is reported as not analysed, never as having no
+   * symbols. Once a list has come, `undefined` means no symbols: `[]`. A file with no
+   * symbols asked before any list has come waits until another file's answer arrives or
+   * the time runs out.
+   * @param {string} file Absolute path.
+   * @returns {Promise<unknown>}
+   */
+  async function askSymbols(file) {
+    const kind = path.extname(file).toLowerCase();
+    const uri = vscode.Uri.file(file);
+    if (symbolsAnsweredFor.has(kind)) {
+      const answer = await ask('vscode.executeDocumentSymbolProvider', [uri], queryTimeoutMs);
+      return answer === undefined ? [] : answer;
+    }
+    const started = clock.now();
+    const left = () => coldQueryTimeoutMs - (clock.now() - started);
+    for (let attempt = 1; ; attempt++) {
+      const answer = await ask('vscode.executeDocumentSymbolProvider', [uri], Math.max(1, left()));
+      if (Array.isArray(answer)) { symbolsAnsweredFor.add(kind); return answer; }
+      // Anything but `undefined` is a malformed answer: `toServerSymbols` makes it no answer.
+      if (answer !== undefined) return answer;
+      // Another file of this kind got its list while this one waited: the server is up.
+      if (symbolsAnsweredFor.has(kind)) return [];
+      if (left() <= 0) {
+        throw new ServiceError(`the language server listed no symbols within ${Math.round(coldQueryTimeoutMs / 1000)} s; it may still be starting`, { retryable: true });
+      }
+      onRetry();
+      await sleep(Math.min(250 * attempt, 2000, left()));
+    }
+  }
+
+  /**
+   * A base document's symbols, through a temporary copy (see createVscodeServices).
+   * @param {import('./languages/types').DocRef} doc
+   * @returns {Promise<import('./languages/types').ServerSymbol[]|null>}
+   */
+  async function baseDocumentSymbols(doc) {
+    if (!scratchDir) return null;
+    const { text } = doc;
+    if (typeof text !== 'string') throw new ServiceError('a base-side document needs its text');
+    if (text.length > MAX_BASE_TEXT_CHARS) {
+      throw new ServiceError(`its base version has ${text.length} characters, above the ${MAX_BASE_TEXT_CHARS} a temporary copy may have`);
+    }
+    /** @type {string} */
+    let dir;
+    try {
+      await fs.promises.mkdir(scratchDir, { recursive: true });
+      dir = await fs.promises.mkdtemp(path.join(scratchDir, BASE_COPY_PREFIX));
+    } catch (e) {
+      throw new ServiceError(`could not create a temporary copy of its base version: ${e instanceof Error ? e.message : String(e)}`, { cause: e });
+    }
+    try {
+      const copy = path.join(dir, path.basename(doc.file));
+      try { await fs.promises.writeFile(copy, text, 'utf8'); }
+      catch (e) {
+        throw new ServiceError(`could not write a temporary copy of its base version: ${e instanceof Error ? e.message : String(e)}`, { cause: e });
+      }
+      return toServerSymbols(await askSymbols(copy), offsetsInText(text));
+    } finally {
+      // A failed removal leaves a copy for the next window's sweep; the answer stands.
+      await fs.promises.rm(dir, { recursive: true, force: true })
+        .catch((e) => trace(`could not remove the temporary base-side copy ${dir}: ${e && e.message}`));
+    }
+  }
+
+  /**
+   * A document-symbol answer as ServerSymbols; null when it is not a list or malformed.
+   * @param {unknown} answer
+   * @param {(line: number, character: number) => number|null} offsetOf
+   * @returns {import('./languages/types').ServerSymbol[]|null}
+   */
+  function toServerSymbols(answer, offsetOf) {
     if (!Array.isArray(answer)) return null;
     /** @param {{ start: { line: number, character: number }, end: { line: number, character: number } }} r */
     const offsets = (r) => {
-      const start = positionToOffset(doc.file, r.start.line, r.start.character);
-      const end = positionToOffset(doc.file, r.end.line, r.end.character);
+      const start = offsetOf(r.start.line, r.start.character);
+      const end = offsetOf(r.end.line, r.end.character);
       return start == null || end == null ? null : { start, end };
     };
     /** @type {import('./languages/types').ServerSymbol[]} */
@@ -421,8 +620,10 @@ function createVscodeServices({
     while (stack.length) {
       const { raw, into } = /** @type {{ raw: unknown, into: import('./languages/types').ServerSymbol[] }} */ (stack.pop());
       if (!isObject(raw) || typeof raw.name !== 'string' || !Number.isInteger(raw.kind)) return null;
-      const rawRange = isObject(raw.location) ? raw.location.range : raw.range;
-      const rawSelection = isObject(raw.location) ? raw.location.range : raw.selectionRange;
+      const hierarchical = isRange(raw.range) && isRange(raw.selectionRange);
+      const flat = isObject(raw.location) ? raw.location.range : undefined;
+      const rawRange = hierarchical ? raw.range : flat;
+      const rawSelection = hierarchical ? raw.selectionRange : flat;
       if (!isRange(rawRange) || !isRange(rawSelection)) return null;
       const range = offsets(rawRange);
       const selectionRange = offsets(rawSelection);
@@ -463,20 +664,20 @@ function createVscodeServices({
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 120000) throw new RangeError('warm-up timeout must be 1..120000 ms');
     if (callersReady) return true;
     if (unserved(doc)) return false;
-    const started = Date.now();
-    const left = () => timeoutMs - (Date.now() - started);
+    const started = clock.now();
+    const left = () => timeoutMs - (clock.now() - started);
     let attempt = 0;
     while (left() > 0) {
       const p = offsetToPosition(doc.file, pos);
       if (!p) return false;
       const at = { uri: vscode.Uri.file(doc.file), position: new vscode.Position(p.line, p.character) };
       try {
-        const items = await withDeadline(() => requestProvider('vscode.prepareCallHierarchy', [at.uri, at.position]), left(), 'language-server warm-up');
+        const items = await withDeadline(() => requestProvider('vscode.prepareCallHierarchy', [at.uri, at.position]), left(), 'language-server warm-up', clock);
         if (Array.isArray(items) && items.length && left() > 0) {
           serverWarm = true;
-          await withDeadline(() => requestProvider('vscode.provideIncomingCalls', [items[0]]), left(), 'language-server warm-up');
+          await withDeadline(() => requestProvider('vscode.provideIncomingCalls', [items[0]]), left(), 'language-server warm-up', clock);
           callersReady = true;
-          trace(`language server warm after ${Date.now() - started}ms`);
+          trace(`language server warm after ${clock.now() - started}ms`);
           return true;
         }
       } catch { /* server still starting */ }
@@ -505,4 +706,6 @@ function createVscodeServices({
   };
 }
 
-module.exports = { createVscodeServices, ServiceError, MAX_OUTSTANDING_REQUESTS };
+module.exports = {
+  createVscodeServices, sweepBaseCopies, ServiceError, MAX_OUTSTANDING_REQUESTS, MAX_BASE_TEXT_CHARS, STALE_BASE_COPY_MS,
+};

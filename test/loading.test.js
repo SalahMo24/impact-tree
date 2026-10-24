@@ -13,6 +13,7 @@ const { analyzeRemote } = require('../src/engine/analyze-remote');
 const { createModuleCallerPool } = require('../src/module-caller-pool');
 const { makeGit } = require('../src/engine/git');
 const { withEnv, localResult, previewResult, finding, pull, deferred } = require('./extension-env');
+const { createFakeClock } = require('./fake-clock');
 const flush = () => new Promise(setImmediate);
 
 function temporaryRepo() {
@@ -173,13 +174,13 @@ class HeldWorker extends EventEmitter {
   async terminate() { this.terminated++; }
 }
 
-test('worker deadlines terminate stalled indexing and report incomplete coverage without starting more work', async t => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+test('worker deadlines terminate stalled indexing and report incomplete coverage without starting more work', async () => {
+  const clock = createFakeClock();
   const worker = new HeldWorker();
-  const pool = createModuleCallerPool('/repo', { timeoutMs: 20, makeWorker: () => worker });
+  const pool = createModuleCallerPool('/repo', { timeoutMs: 20, makeWorker: () => worker, clock });
   const adapter = pool.forAnalysis(ts, {}, new AbortController().signal);
   const run = adapter.incomingWithStatus('/repo/a.js', 0);
-  t.mock.timers.tick(20);
+  await clock.advance(20);
   const answer = await run;
   assert.equal(answer.complete, false);
   assert.match(answer.reason, /exceeded 20 ms/);
@@ -224,18 +225,18 @@ async function withResolver(executeCommand, fn) {
   } finally { Module._load = original; delete require.cache[id]; if (previous) require.cache[id] = previous; }
 }
 
-test('provider query deadlines retain unknown coverage and observe late rejection; the next query can succeed', async t => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+test('provider query deadlines retain unknown coverage and observe late rejection; the next query can succeed', async () => {
+  const clock = createFakeClock();
   const repo = temporaryRepo();
   const held = deferred();
   let hanging = true;
   try {
     await withResolver(async name => name === 'vscode.prepareCallHierarchy' ? [{}]
       : hanging ? held.promise : [], async create => {
-      const resolver = create({ repoRoot: repo.dir, queryTimeoutMs: 20, coldBudgetMs: 0, filterInherited: false });
+      const resolver = create({ repoRoot: repo.dir, queryTimeoutMs: 20, coldBudgetMs: 0, filterInherited: false, clock });
       const run = resolver.callerState(path.join(repo.dir, 'a.js'), 9);
       await flush();
-      t.mock.timers.tick(20);
+      await clock.advance(20);
       const answer = await run;
       assert.equal(answer.state, 'unknown'); assert.equal(answer.complete, false);
       assert.match(answer.reason, /timed out/);
@@ -247,14 +248,14 @@ test('provider query deadlines retain unknown coverage and observe late rejectio
   } finally { repo.remove(); }
 });
 
-test('warm-up total deadline bounds an in-flight command and drops its late answer', async t => {
-  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+test('warm-up total deadline bounds an in-flight command and drops its late answer', async () => {
+  const clock = createFakeClock();
   const repo = temporaryRepo(), held = deferred();
   try {
     await withResolver(() => held.promise, async create => {
-      const resolver = create({ repoRoot: repo.dir, filterInherited: false });
+      const resolver = create({ repoRoot: repo.dir, filterInherited: false, clock });
       const run = resolver.warmUp(path.join(repo.dir, 'a.js'), 9, { timeoutMs: 20 });
-      await flush(); t.mock.timers.tick(20);
+      await flush(); await clock.advance(20);
       assert.equal(await run, false);
       held.resolve([{}]); await flush();
       assert.equal(resolver.isWarm(), false);
@@ -262,8 +263,8 @@ test('warm-up total deadline bounds an in-flight command and drops its late answ
   } finally { repo.remove(); }
 });
 
-test('timed-out provider commands keep their admission slots until the provider actually settles', async t => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+test('timed-out provider commands keep their admission slots until the provider actually settles', async () => {
+  const clock = createFakeClock();
   const repo = temporaryRepo(), held = deferred();
   let calls = 0, hanging = true;
   try {
@@ -272,7 +273,7 @@ test('timed-out provider commands keep their admission slots until the provider 
       if (hanging) return held.promise;
       return name === 'vscode.prepareCallHierarchy' ? [{}] : [];
     }, async create => {
-      const resolver = create({ repoRoot: repo.dir, queryTimeoutMs: 20, coldBudgetMs: 0, filterInherited: false });
+      const resolver = create({ repoRoot: repo.dir, queryTimeoutMs: 20, coldBudgetMs: 0, filterInherited: false, clock });
       const file = path.join(repo.dir, 'a.js');
       const running = Array.from({ length: 32 }, () => resolver.incomingWithStatus(file, 9));
       await flush();
@@ -280,7 +281,7 @@ test('timed-out provider commands keep their admission slots until the provider 
       const blocked = await resolver.incomingWithStatus(file, 9);
       assert.equal(blocked.complete, false);
       assert.match(blocked.reason, /32 outstanding requests/);
-      t.mock.timers.tick(20);
+      await clock.advance(20);
       assert.ok((await Promise.all(running)).every(answer => !answer.complete));
       resolver.clear();
       assert.match((await resolver.incomingWithStatus(file, 9)).reason, /32 outstanding requests/);

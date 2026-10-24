@@ -1,7 +1,11 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { worktreeFiles, isSourcePath, isTestFile, projectRootOf } = require('./diff');
+const { worktreeFiles, isTestFile, projectRootOf } = require('./diff');
+// TypeScript/JavaScript files only: this index parses with the TypeScript compiler, and
+// other languages' files (Go, …) are never its business.
+const { typescriptRules } = require('../languages/typescript/rules');
+const isSourcePath = typescriptRules.handles;
 const { createSyntacticIndex } = require('./syntactic-index');
 const { createSyntacticResolver } = require('./resolver-syntactic');
 

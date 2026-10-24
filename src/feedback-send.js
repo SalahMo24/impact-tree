@@ -1,5 +1,6 @@
 // @ts-check
 'use strict';
+const { realClock } = require('./engine/clock');
 // "Send feedback" (docs/UX_PLAN.md F3): turns the drafts into a round file, takes the
 // round's snapshot and makes it the checkpoint, hands the round to an agent, and offers
 // once per repository to point AGENTS.md / CLAUDE.md at the feedback folder.
@@ -36,7 +37,9 @@ const errorText = (e) => (e instanceof Error ? e.message : String(e));
  *   workspaceState: { get: (k: string) => any, update: (k: string, v: any) => PromiseLike<void> },
  *   log: (m: string) => void,
  *   afterSend?: () => void,
+ *   now?: () => number,
  * }} SendDeps
+ * `now` dates the round, in epoch milliseconds; omitted: Date.now.
  */
 
 /**
@@ -66,7 +69,7 @@ function createSendFeedback(vscode, deps) {
  * @param {{ ask: boolean, pointerAsked: () => boolean, markPointerAsked: () => void }} o
  */
 async function send(vscode, deps, o) {
-  const { drafts, session, log } = deps;
+  const { drafts, session, log, now = realClock.now } = deps;
   const items = drafts.list();
   if (!items.length) { vscode.window.showInformationMessage('Impact Tree: there is no feedback to send. Add feedback on a change first.'); return; }
   let repo;
@@ -87,7 +90,7 @@ async function send(vscode, deps, o) {
   try {
     sent = await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: 'Saving feedback…' },
-      () => saveRound({ repo, store, items, branch: branch ? branch.trim() : null, reviewed }));
+      () => saveRound({ repo, store, items, branch: branch ? branch.trim() : null, reviewed, now }));
   } catch (e) {
     log(`feedback: send failed: ${errorText(e)}`);
     vscode.window.showErrorMessage(`Impact Tree: the feedback was not sent (${errorText(e)}). Your drafts are kept.`);
@@ -98,7 +101,7 @@ async function send(vscode, deps, o) {
   if (sent.checkpointSha) {
     const stored = readSentRounds(deps.workspaceState.get(ROUNDS_KEY)).rounds;
     await deps.workspaceState.update(ROUNDS_KEY, withSentRound(stored, {
-      round: sent.round, relPath: sent.relPath, checkpointSha: sent.checkpointSha, sentAtMs: Date.now(),
+      round: sent.round, relPath: sent.relPath, checkpointSha: sent.checkpointSha, sentAtMs: now(),
       items: items.map((i) => ({ id: i.id, file: i.file, line: i.line, symbol: i.symbol, summary: summaryOf(i.body) })),
     }));
     session.setCheckpoint(sent.checkpointSha);
@@ -146,13 +149,14 @@ function reviewedLabel(source, mode) {
 
 /**
  * Snapshot, then file. A snapshot whose file could not be written is removed again.
- * @param {{ repo: string, store: any, items: FeedbackItem[], branch: string|null, reviewed: string }} o
+ * @param {{ repo: string, store: any, items: FeedbackItem[], branch: string|null, reviewed: string, now?: () => number }} o
+ *   `now` dates the round, in epoch milliseconds; omitted: Date.now.
  */
-async function saveRound({ repo, store, items, branch, reviewed }) {
+async function saveRound({ repo, store, items, branch, reviewed, now = realClock.now }) {
   const { files } = await listRounds(repo);
   const expected = nextRoundNumber(files.map((f) => f.name));
   const record = store ? await store.take({ round: expected }) : null;
-  const sentAtMs = Date.now();
+  const sentAtMs = now();
   try {
     const written = await writeRound({
       repoRoot: repo, now: sentAtMs,

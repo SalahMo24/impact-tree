@@ -20,7 +20,7 @@ test.after(() => fs.rmSync(H.TMP, { recursive: true, force: true }));
 
 // A repo with: committed.ts + mod.ts + keep.ts committed; then mod.ts edited, staged.ts
 // staged, untracked.ts + steady.ts untracked, debug.log ignored, and a file under .impact-tree.
-function fixture() {
+function fixture({ now } = {}) {
   const repo = H.mkRepo({
     '.gitignore': 'node_modules\n*.log\n',
     'src/committed.ts': FN('committed', 1),
@@ -36,7 +36,7 @@ function fixture() {
   });
   H.run(repo, ['add', 'src/staged.ts']);
   const root = fs.mkdtempSync(path.join(H.TMP, 'store-'));
-  return { repo, root, store: createSnapshotStore({ root, repo }) };
+  return { repo, root, store: createSnapshotStore({ root, repo, ...(now ? { now } : {}) }) };
 }
 
 const lsTree = (repo, record) => makeGit(repo, { objectDirs: [record.objectsDir] })
@@ -57,8 +57,11 @@ function repoState(repo) {
 const indexHash = (repo) => crypto.createHash('sha256').update(fs.readFileSync(path.join(repo, '.git', 'index'))).digest('hex');
 
 test('a snapshot holds committed, modified, staged and untracked files, not ignored or .impact-tree', async () => {
-  const { repo, store } = fixture();
+  const NOW = 1700000000000;
+  const { repo, store } = fixture({ now: () => NOW });
   const rec = await store.take();
+  assert.equal(rec.createdAtMs, NOW, 'dated by the injected clock');
+  assert.ok(rec.id.startsWith(`${NOW.toString(36)}-`));
   assert.deepEqual(lsTree(repo, rec), [
     '.gitignore', 'src/committed.ts', 'src/mod.ts', 'src/staged.ts', 'src/steady.ts', 'src/untracked.ts',
   ]);
@@ -217,17 +220,21 @@ test('two take() calls at once both land in the manifest', async () => {
 });
 
 test('sweepTemp removes leftovers; withDiffIndex always removes its index', async () => {
-  const { root, store } = fixture();
+  // The store's clock and the entries' modification times are both set here, so the ages
+  // compared are exact.
+  const NOW = 1700000000000;
+  const { root, store } = fixture({ now: () => NOW });
   fs.mkdirSync(path.join(root, 'tmp', 'take-stale'), { recursive: true });
   fs.writeFileSync(path.join(root, 'tmp', 'take-stale', 'index'), 'x');
   fs.mkdirSync(path.join(root, 'tmp', 'idx-in-use'), { recursive: true });
   const { TEMP_STALE_MS } = require('../src/engine/snapshot-store');
-  const old = (Date.now() - TEMP_STALE_MS - 1000) / 1000;
-  fs.utimesSync(path.join(root, 'tmp', 'take-stale'), old, old);
+  const at = (ms) => ms / 1000;
+  fs.utimesSync(path.join(root, 'tmp', 'take-stale'), at(NOW - TEMP_STALE_MS - 1000), at(NOW - TEMP_STALE_MS - 1000));
+  fs.utimesSync(path.join(root, 'tmp', 'idx-in-use'), at(NOW), at(NOW));
   await store.sweepTemp();
   // A fresh entry may belong to an analysis running right now; only the stale one goes.
   assert.deepEqual(fs.readdirSync(path.join(root, 'tmp')), ['idx-in-use']);
-  await store.sweepTemp({ nowMs: Date.now() + TEMP_STALE_MS + 1000 });
+  await store.sweepTemp({ nowMs: NOW + TEMP_STALE_MS + 1000 });
   assert.deepEqual(fs.readdirSync(path.join(root, 'tmp')), []);
   let seen;
   await store.withDiffIndex((env) => { seen = env.GIT_INDEX_FILE; assert.ok(fs.existsSync(seen)); });

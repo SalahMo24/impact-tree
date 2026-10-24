@@ -8,12 +8,19 @@
  */
 
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL, fileURLToPath } = require('node:url');
 const { LspClient } = require('./lsp-client');
 
 /** Default per-request deadline; cold gopls on cli/cli needs minutes for the first call. */
 const DEFAULT_DEADLINE_MS = 240000;
+
+/**
+ * Longest base-side text written to a temporary file (UTF-16 code units), as in the
+ * editor's services (src/services-vscode.js MAX_BASE_TEXT_CHARS); larger is refused.
+ */
+const MAX_BASE_TEXT_CHARS = 2 * 1024 * 1024;
 
 /** LSP SymbolKind names by number. */
 const SYMBOL_KINDS = [
@@ -26,7 +33,8 @@ const SYMBOL_KINDS = [
 /**
  * @typedef {{ file?: string, uri?: string, side?: 'head'|'base', text: string }} DocRef
  *   `uri`, when given, is sent to the server as is (virtual and untitled documents);
- *   otherwise `file` (absolute) becomes a file: URI.
+ *   otherwise `file` (absolute) becomes a file: URI. A `side: 'base'` document's symbols
+ *   are asked through a temporary copy (see `documentSymbols`).
  * @typedef {{ start: number, end: number }} OffsetRange
  * @typedef {{ name: string, detail: string, kind: number, kindName: string,
  *   range: OffsetRange, selectionRange: OffsetRange, children: ServerSymbol[] }} ServerSymbol
@@ -76,10 +84,13 @@ function positionToOffset(text, pos) {
 
 /**
  * @param {{ repo: string, goplsPath: string, deadlineMs?: number, env?: NodeJS.ProcessEnv,
- *   onNotification?: (method: string, params: any) => void }} options
+ *   scratchDir?: string, onNotification?: (method: string, params: any) => void }} options
+ *   `scratchDir`: absolute folder for temporary base-side copies, outside the module (G0:
+ *   gopls answers a file there correctly); default `<os tmp>/impact-tree-harness-base`.
  */
 function createGoplsServices(options) {
   const deadlineMs = options.deadlineMs || DEFAULT_DEADLINE_MS;
+  const scratchDir = options.scratchDir || path.join(os.tmpdir(), 'impact-tree-harness-base');
   const repoUri = pathToFileURL(options.repo).toString();
   /** @type {Map<string, string>} uri -> text of every document opened here */
   const open = new Map();
@@ -171,6 +182,13 @@ function createGoplsServices(options) {
     return (Array.isArray(result) ? result : [result]).map(convertLocation);
   }
 
+  /** @param {string} uri @returns {Promise<ServerSymbol[]|null>} */
+  async function symbolsOf(uri) {
+    const result = await client.request('textDocument/documentSymbol', { textDocument: { uri } }, deadlineMs);
+    if (result === null) return null;
+    return result.map((/** @type {any} */ raw) => convertSymbol(uri, raw));
+  }
+
   return {
     client,
 
@@ -188,12 +206,32 @@ function createGoplsServices(options) {
       return languageId === 'go' ? { ok: true } : { ok: false, reason: `gopls does not serve ${languageId}` };
     },
 
-    /** @param {DocRef} doc @returns {Promise<ServerSymbol[]|null>} */
+    /**
+     * The document's symbols. A base-side document (gate L1 (b), as in the editor's
+     * services): its `text` is written to a temporary file with the same base name in a
+     * new subdirectory of `scratchDir` (one per request, so concurrent requests never
+     * share one), opened, asked about, closed and removed in `finally`; offsets are
+     * converted against `text`. Text over MAX_BASE_TEXT_CHARS is refused.
+     * @param {DocRef} doc @returns {Promise<ServerSymbol[]|null>}
+     */
     async documentSymbols(doc) {
-      const uri = ensureOpen(doc);
-      const result = await client.request('textDocument/documentSymbol', { textDocument: { uri } }, deadlineMs);
-      if (result === null) return null;
-      return result.map((raw) => convertSymbol(uri, raw));
+      if (doc.side !== 'base') return symbolsOf(ensureOpen(doc));
+      if (typeof doc.text !== 'string' || !doc.file) throw new TypeError('a base-side DocRef needs its file and text');
+      if (doc.text.length > MAX_BASE_TEXT_CHARS) {
+        throw new Error(`its base version has ${doc.text.length} characters, above the ${MAX_BASE_TEXT_CHARS} a temporary copy may have`);
+      }
+      fs.mkdirSync(scratchDir, { recursive: true });
+      const dir = fs.mkdtempSync(path.join(scratchDir, 'base-'));
+      const copy = path.join(dir, path.basename(doc.file));
+      const uri = pathToFileURL(copy).toString();
+      try {
+        fs.writeFileSync(copy, doc.text, 'utf8');
+        ensureOpen({ uri, text: doc.text });
+        return await symbolsOf(uri);
+      } finally {
+        if (open.has(uri)) { client.didClose(uri); open.delete(uri); }
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
     },
 
     /** @param {DocRef} doc @param {number} pos @returns {Promise<CallItem[]|null>} */
@@ -243,4 +281,4 @@ function createGoplsServices(options) {
   };
 }
 
-module.exports = { createGoplsServices, offsetToPosition, positionToOffset, SYMBOL_KINDS };
+module.exports = { createGoplsServices, offsetToPosition, positionToOffset, SYMBOL_KINDS, MAX_BASE_TEXT_CHARS };

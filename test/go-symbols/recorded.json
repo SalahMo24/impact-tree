@@ -1,0 +1,495 @@
+{
+ "recordedWith": "golang.org/x/tools/gopls v0.21.0",
+ "texts": {
+  "auth.go@base": {
+   "sha256": "d20c03b5f337bd3fa35e1f1ad51134f954d5807c42906aebc91e47e47f9df2cc",
+   "symbols": [
+    {
+     "name": "limit",
+     "detail": "",
+     "kind": 14,
+     "range": {
+      "start": 39,
+      "end": 48
+     },
+     "selectionRange": {
+      "start": 39,
+      "end": 44
+     },
+     "children": []
+    },
+    {
+     "name": "verbose",
+     "detail": "",
+     "kind": 13,
+     "range": {
+      "start": 54,
+      "end": 69
+     },
+     "selectionRange": {
+      "start": 54,
+      "end": 61
+     },
+     "children": []
+    },
+    {
+     "name": "init",
+     "detail": "func()",
+     "kind": 12,
+     "range": {
+      "start": 71,
+      "end": 102
+     },
+     "selectionRange": {
+      "start": 76,
+      "end": 80
+     },
+     "children": []
+    },
+    {
+     "name": "init",
+     "detail": "func()",
+     "kind": 12,
+     "range": {
+      "start": 104,
+      "end": 142
+     },
+     "selectionRange": {
+      "start": 109,
+      "end": 113
+     },
+     "children": []
+    },
+    {
+     "name": "Login",
+     "detail": "func(user string) error",
+     "kind": 12,
+     "range": {
+      "start": 162,
+      "end": 207
+     },
+     "selectionRange": {
+      "start": 167,
+      "end": 172
+     },
+     "children": []
+    },
+    {
+     "name": "helper",
+     "detail": "func(a, b int) int",
+     "kind": 12,
+     "range": {
+      "start": 209,
+      "end": 252
+     },
+     "selectionRange": {
+      "start": 214,
+      "end": 220
+     },
+     "children": []
+    },
+    {
+     "name": "removed",
+     "detail": "func()",
+     "kind": 12,
+     "range": {
+      "start": 254,
+      "end": 271
+     },
+     "selectionRange": {
+      "start": 259,
+      "end": 266
+     },
+     "children": []
+    },
+    {
+     "name": "oldName",
+     "detail": "func(x int) int",
+     "kind": 12,
+     "range": {
+      "start": 273,
+      "end": 310
+     },
+     "selectionRange": {
+      "start": 278,
+      "end": 285
+     },
+     "children": []
+    },
+    {
+     "name": "Config",
+     "detail": "struct{...}",
+     "kind": 23,
+     "range": {
+      "start": 317,
+      "end": 339
+     },
+     "selectionRange": {
+      "start": 317,
+      "end": 323
+     },
+     "children": [
+      {
+       "name": "n",
+       "detail": "int",
+       "kind": 8,
+       "range": {
+        "start": 332,
+        "end": 337
+       },
+       "selectionRange": {
+        "start": 332,
+        "end": 333
+       },
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "(*Config).Reload",
+     "detail": "func() error",
+     "kind": 6,
+     "range": {
+      "start": 341,
+      "end": 395
+     },
+     "selectionRange": {
+      "start": 358,
+      "end": 364
+     },
+     "children": []
+    },
+    {
+     "name": "(Config).Size",
+     "detail": "func() int",
+     "kind": 6,
+     "range": {
+      "start": 397,
+      "end": 439
+     },
+     "selectionRange": {
+      "start": 413,
+      "end": 417
+     },
+     "children": []
+    },
+    {
+     "name": "run",
+     "detail": "func()",
+     "kind": 12,
+     "range": {
+      "start": 441,
+      "end": 494
+     },
+     "selectionRange": {
+      "start": 446,
+      "end": 449
+     },
+     "children": []
+    }
+   ]
+  },
+  "auth.go@head": {
+   "sha256": "eca81036a8e4f361e527bb78e579ba5068d5d2bdcc59a7db0258d5e1cbeba41f",
+   "symbols": [
+    {
+     "name": "limit",
+     "detail": "",
+     "kind": 14,
+     "range": {
+      "start": 45,
+      "end": 54
+     },
+     "selectionRange": {
+      "start": 45,
+      "end": 50
+     },
+     "children": []
+    },
+    {
+     "name": "verbose",
+     "detail": "",
+     "kind": 13,
+     "range": {
+      "start": 60,
+      "end": 75
+     },
+     "selectionRange": {
+      "start": 60,
+      "end": 67
+     },
+     "children": []
+    },
+    {
+     "name": "init",
+     "detail": "func()",
+     "kind": 12,
+     "range": {
+      "start": 77,
+      "end": 108
+     },
+     "selectionRange": {
+      "start": 82,
+      "end": 86
+     },
+     "children": []
+    },
+    {
+     "name": "init",
+     "detail": "func()",
+     "kind": 12,
+     "range": {
+      "start": 110,
+      "end": 157
+     },
+     "selectionRange": {
+      "start": 115,
+      "end": 119
+     },
+     "children": []
+    },
+    {
+     "name": "Login",
+     "detail": "func(user string, force bool) error",
+     "kind": 12,
+     "range": {
+      "start": 177,
+      "end": 234
+     },
+     "selectionRange": {
+      "start": 182,
+      "end": 187
+     },
+     "children": []
+    },
+    {
+     "name": "helper",
+     "detail": "func(a, b int) int",
+     "kind": 12,
+     "range": {
+      "start": 236,
+      "end": 287
+     },
+     "selectionRange": {
+      "start": 241,
+      "end": 247
+     },
+     "children": []
+    },
+    {
+     "name": "newName",
+     "detail": "func(x int) int",
+     "kind": 12,
+     "range": {
+      "start": 289,
+      "end": 326
+     },
+     "selectionRange": {
+      "start": 294,
+      "end": 301
+     },
+     "children": []
+    },
+    {
+     "name": "Config",
+     "detail": "struct{...}",
+     "kind": 23,
+     "range": {
+      "start": 333,
+      "end": 355
+     },
+     "selectionRange": {
+      "start": 333,
+      "end": 339
+     },
+     "children": [
+      {
+       "name": "n",
+       "detail": "int",
+       "kind": 8,
+       "range": {
+        "start": 348,
+        "end": 353
+       },
+       "selectionRange": {
+        "start": 348,
+        "end": 349
+       },
+       "children": []
+      }
+     ]
+    },
+    {
+     "name": "(*Config).Reload",
+     "detail": "func() error",
+     "kind": 6,
+     "range": {
+      "start": 357,
+      "end": 414
+     },
+     "selectionRange": {
+      "start": 374,
+      "end": 380
+     },
+     "children": []
+    },
+    {
+     "name": "(*Config).Size",
+     "detail": "func() int",
+     "kind": 6,
+     "range": {
+      "start": 416,
+      "end": 459
+     },
+     "selectionRange": {
+      "start": 433,
+      "end": 437
+     },
+     "children": []
+    },
+    {
+     "name": "run",
+     "detail": "func()",
+     "kind": 12,
+     "range": {
+      "start": 461,
+      "end": 514
+     },
+     "selectionRange": {
+      "start": 466,
+      "end": 469
+     },
+     "children": []
+    },
+    {
+     "name": "Added",
+     "detail": "func()",
+     "kind": 12,
+     "range": {
+      "start": 516,
+      "end": 531
+     },
+     "selectionRange": {
+      "start": 521,
+      "end": 526
+     },
+     "children": []
+    }
+   ]
+  },
+  "tool.go@base": {
+   "sha256": "caa40556c5c274012569614cb7393aaa1b188c55cec9da979a3ad5a429199c0e",
+   "symbols": [
+    {
+     "name": "Tool",
+     "detail": "func() int",
+     "kind": 12,
+     "range": {
+      "start": 14,
+      "end": 42
+     },
+     "selectionRange": {
+      "start": 19,
+      "end": 23
+     },
+     "children": []
+    }
+   ]
+  },
+  "tool.go@head": {
+   "sha256": "35d22c04068020d31c0abe8dc96675956a58e3b831e06eb0870e5c6bb1d7019a",
+   "symbols": [
+    {
+     "name": "Tool",
+     "detail": "func() int",
+     "kind": 12,
+     "range": {
+      "start": 14,
+      "end": 42
+     },
+     "selectionRange": {
+      "start": 19,
+      "end": 23
+     },
+     "children": []
+    }
+   ]
+  },
+  "plain.go@base": {
+   "sha256": "1db8abb85947320667166ea237efe150f24c997027a09452b0598d1d337d073e",
+   "symbols": [
+    {
+     "name": "Plain",
+     "detail": "func() int",
+     "kind": 12,
+     "range": {
+      "start": 14,
+      "end": 43
+     },
+     "selectionRange": {
+      "start": 19,
+      "end": 24
+     },
+     "children": []
+    }
+   ]
+  },
+  "plain.go@head": {
+   "sha256": "05aa0d248aab14d5d8a7d57e75227ccde73095f21acadf26478e732f453c348e",
+   "symbols": [
+    {
+     "name": "Plain",
+     "detail": "func() int",
+     "kind": 12,
+     "range": {
+      "start": 14,
+      "end": 43
+     },
+     "selectionRange": {
+      "start": 19,
+      "end": 24
+     },
+     "children": []
+    }
+   ]
+  },
+  "api.pb.go@base": {
+   "sha256": "6d458d60be914e70a72a73a2125cc9ada8bc71e8b73f87c807c2a9837086fdbc",
+   "symbols": [
+    {
+     "name": "Generated",
+     "detail": "func() int",
+     "kind": 12,
+     "range": {
+      "start": 14,
+      "end": 47
+     },
+     "selectionRange": {
+      "start": 19,
+      "end": 28
+     },
+     "children": []
+    }
+   ]
+  },
+  "api.pb.go@head": {
+   "sha256": "cb95eacf34daccd3037ba3caa287159258602002b4612153f4a0dbea1000de02",
+   "symbols": [
+    {
+     "name": "Generated",
+     "detail": "func() int",
+     "kind": 12,
+     "range": {
+      "start": 14,
+      "end": 47
+     },
+     "selectionRange": {
+      "start": 19,
+      "end": 28
+     },
+     "children": []
+    }
+   ]
+  }
+ }
+}

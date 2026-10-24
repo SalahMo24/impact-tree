@@ -214,6 +214,7 @@ function createTreeProvider(vscode, {
   let decorationTimer = null;
   const scheduleDecorationFlush = () => {
     if (disposed || !decorate || decorationTimer !== null) return;
+    // wall-clock: next-turn — batches this turn's decoration reads into one flush
     decorationTimer = setTimeout(() => { decorationTimer = null; decorate.flush(); }, 0);
   };
   const _emitter = new vscode.EventEmitter();
@@ -629,6 +630,7 @@ function createTreeProvider(vscode, {
     threadsOfRow,
     dispose() {
       disposed = true;
+      // wall-clock: next-turn — clears the pending flush on disposal
       if (decorationTimer !== null) clearTimeout(decorationTimer);
       decorationTimer = null;
       built = null;

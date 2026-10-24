@@ -31,4 +31,5 @@ jobs:
       # The suite analyses the synthetic repository test/fixture-repo.js builds from its own
       # literals, so the run needs no clone of another project and no network. With CI set,
       # a stage that finds nothing to check fails instead of skipping.
+      # `npm test` is the parallel runner (test/run.js, full tier); it exits 1 on any failure or hang.
       - run: npm test

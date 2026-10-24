@@ -39,6 +39,7 @@ function createPrActions(vscode, session, { log, gh, repoSlug, githubRemote, sou
       await vscode.window.withProgress(
         { location: { viewId: 'impactTree.changes' }, title: `Impact Tree: PR #${pr.number}` },
         async (progress) => {
+          // wall-clock: log-only — preview timings, for the log
           const t0 = Date.now();
           const repo = session.repoRoot();
           const cfg = vscode.workspace.getConfiguration('impactTree');
@@ -68,6 +69,7 @@ function createPrActions(vscode, session, { log, gh, repoSlug, githubRemote, sou
             maxFiles: cfg.get('tierA.maxFiles', 300),
             concurrency: cfg.get('concurrency', 8),
             onPrepared: (pending) => {
+              // wall-clock: log-only — the duration logged
               if (publish(pending)) log(`preview: changed files ready in ${Date.now() - t0}ms; caller analysis continues`);
             },
             onProgress: (p2) => { if (!run.signal.aborted) progress.report({
@@ -83,6 +85,7 @@ function createPrActions(vscode, session, { log, gh, repoSlug, githubRemote, sou
 
           log(`preview: PR #${pr.number} ${result.changedFileCount} file(s), `
             + `${result.allChanged.length} changed symbol(s), ${result.findings.length} finding(s) `
+            // wall-clock: log-only — the duration logged
             + `in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
           result.warnings.forEach((w) => log(`  warn: ${w}`));
           const st = result.resolver ? result.resolver.stats() : {};

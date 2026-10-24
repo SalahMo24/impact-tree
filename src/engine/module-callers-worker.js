@@ -3,7 +3,10 @@ const { parentPort, workerData } = require('worker_threads');
 const fs = require('fs');
 const path = require('path');
 const { createHash } = require('crypto');
-const { worktreeFiles, isSourcePath, clearProjectCache } = require('./diff');
+const { worktreeFiles, clearProjectCache } = require('./diff');
+// The TypeScript module-caller index's files: TypeScript/JavaScript only (./module-callers.js).
+const { typescriptRules } = require('../languages/typescript/rules');
+const isSourcePath = typescriptRules.handles;
 const { makeGit } = require('./git');
 const { loadTypeScript } = require('../languages/typescript/load');
 const { createModuleCallers } = require('./module-callers');

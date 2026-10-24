@@ -57,8 +57,10 @@ test('a file that cannot be written removes the snapshot and throws', async (t) 
 test('without a store the round is saved with no checkpoint', async (t) => {
   const { tmp, repo } = fixture();
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
-  const sent = await saveRound({ repo, store: null, items: [item], branch: null, reviewed: 'x' });
+  // Dated by the injected `now`: noon UTC is the same calendar day in nearly every zone.
+  const sent = await saveRound({ repo, store: null, items: [item], branch: null, reviewed: 'x', now: () => Date.UTC(2026, 9, 20, 12) });
   assert.equal(sent.checkpointSha, null);
+  assert.match(sent.relPath, /2026-10-20/);
   const parsed = parseRound(fs.readFileSync(sent.absPath, 'utf8'));
   assert.equal(parsed.ok && parsed.checkpointSha, null);
 });

@@ -1,5 +1,6 @@
 // @ts-check
 'use strict';
+const { realClock } = require('./engine/clock');
 // The feedback drafts of a workspace (docs/UX_PLAN.md F1): what the reviewer wrote for the
 // agent on local results, not sent yet. Pure over an injected Memento (VS Code's
 // `workspaceState`): no editor API, so it is tested without one.
@@ -182,7 +183,7 @@ const randomId = () => crypto.randomUUID().replace(/-/g, '').slice(0, 12);
  * @param {{ log?: (message: string) => void, now?: () => number, newId?: () => string }} [options]
  *   `now` (milliseconds since the epoch) and `newId` are injected by tests.
  */
-function createFeedbackDrafts(memento, { log = () => {}, now = Date.now, newId = randomId } = {}) {
+function createFeedbackDrafts(memento, { log = () => {}, now = realClock.now, newId = randomId } = {}) {
   const loaded = readStored(memento.get(STORAGE_KEY));
   if (loaded.log) log(loaded.log);
   /** @type {readonly FeedbackItem[]} Oldest first; replaced, never mutated, on each change. */

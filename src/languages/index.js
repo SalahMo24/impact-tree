@@ -5,13 +5,14 @@
 // adding its provider here, not editing the engine.
 
 const { typescriptProvider } = require('./typescript/provider');
+const { goProvider } = require('./go/provider');
 
 /**
  * Registered languages, in the order they are asked. The first whose `handles` is true
  * owns the file.
  * @type {ReadonlyArray<import('./types').LanguageProvider>}
  */
-const LANGUAGES = Object.freeze([typescriptProvider]);
+const LANGUAGES = Object.freeze([typescriptProvider, goProvider]);
 
 // The languages every answer below comes from: `LANGUAGES`, except while a test has put
 // others in their place (`useLanguagesForTest`). Owner: this module. Never changed by

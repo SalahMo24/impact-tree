@@ -107,11 +107,13 @@ function createReviewLens(vscode, { provider, getState, callerUri, positionOf, l
   /** @type {NodeJS.Timeout|null} */
   let progressTimer = null;
   const cancelProgress = () => {
+    // wall-clock: next-turn — clears the pending batch below
     if (progressTimer !== null) clearTimeout(progressTimer);
     progressTimer = null;
   };
   const progressChanged = (/** @type {import('./tree-provider').ReviewProgress} */ event) => {
     if (!event.filePaths.length || progressTimer !== null) return;
+    // wall-clock: next-turn — coalesces this turn's progress events into one lens refresh
     progressTimer = setTimeout(() => { progressTimer = null; changed.fire(); }, 0);
   };
 

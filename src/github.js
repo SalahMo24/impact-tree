@@ -159,8 +159,10 @@ function checkTeam(t, endpoint) {
  *   looked up per request. A seam so the request path can be driven by a fake.
  * @param {Partial<typeof DEFAULT_LIMITS>} [options.limits] Overrides for DEFAULT_LIMITS;
  *   omitted limits keep their defaults. The extension passes none.
+ * @param {import('./engine/clock').Clock} [options.clock] Times each request's deadline and
+ *   dates rate-limit resets (src/engine/clock.js); omitted: the real clock.
  */
-function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overrides } = {}) {
+function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overrides, clock } = {}) {
   /** @type {AuthSession | null | undefined} */
   let session = null;
   const limits = { ...DEFAULT_LIMITS, ...overrides };
@@ -224,7 +226,7 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
           ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      }, { endpoint, deadlineMs: limits.requestTimeoutMs, maxBytes, signal, passStatuses });
+      }, { endpoint, deadlineMs: limits.requestTimeoutMs, maxBytes, signal, passStatuses, clock });
     } catch (e) {
       // A revoked or under-scoped token looks identical to "no PRs" unless we say so.
       if (e instanceof GitHubAuthError) session = null;
