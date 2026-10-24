@@ -16,11 +16,19 @@ const { realClock } = require('./engine/clock');
  */
 function createReadiness(vscode, session, { log, getScratchDir = () => null, clock = realClock }) {
   const { loadTypeScript } = require('./languages/typescript/load');
-  const { warmUpTarget } = require('./languages/typescript/warm-up');
   const { createVscodeResolver } = require('./resolver-vscode');
 
+  // The server the current warm-up waits for, as its language names it (`serverLabel`), or
+  // null for TypeScript's wording. Owner: this module; set by `warmTarget` before it asks
+  // a language for a target, and cleared with `indexing` in the same `finally`.
+  /** @type {string|null} */
+  let waitingFor = null;
+
   // Warming needs a real symbol position in a file the server will have to load anyway.
-  async function warmTarget(repo) {
+  // Each language in registry order (TypeScript first) that has changed files and a
+  // `warmUpTarget` is asked in turn until one gives a target; a language whose answer
+  // fails is logged and passed over. Never rejects.
+  async function warmTarget(repo, services) {
     const { makeGit, resolveBase } = require('./engine/git');
     const { changedFiles, isSourcePath } = require('./engine/diff');
     const git = makeGit(repo);
@@ -37,14 +45,21 @@ function createReadiness(vscode, session, { log, getScratchDir = () => null, clo
     // A file no config claims still warms the server: it opens an inferred project.
     const files = changedFiles(git, baseSha, 'HEAD', null)
       .filter((f) => isSourcePath(f.path) && f.status !== 'deleted');
-    // Only TypeScript/JavaScript files warm the server yet (the TypeScript provider's
-    // `warmUpTarget`); a file of another language is passed over.
-    for (const f of files) {
+    const { registeredLanguages, languageFor } = require('./languages');
+    for (const language of registeredLanguages()) {
+      if (!language.warmUpTarget) continue;
+      const own = files.filter((f) => languageFor(f.path) === language).map((f) => f.path);
+      if (!own.length) continue;
+      // Set before the first wait, so the progress shown from now on names this server.
+      waitingFor = language.serverLabel || null;
       try {
-        const target = warmUpTarget(repo, f.path);
+        const target = await language.warmUpTarget({ repo, files: own, services: services || null, log });
         if (target) return target;
-      } catch { /* try the next file */ }
+      } catch (e) {
+        log(`warm-up: no ${language.displayName} target — ${e && e.message ? e.message : e}`);
+      }
     }
+    waitingFor = null;
     return null;
   }
 
@@ -83,15 +98,16 @@ function createReadiness(vscode, session, { log, getScratchDir = () => null, clo
         say('indexing the workspace (first run only)');
         indexing = true;
         try {
-          const t = await warmTarget(repo);
+          const t = await warmTarget(repo, resolver.services);
           if (t) {
             const ok = await resolver.warmUp(t.file, t.pos);
             if (!ok) log('language server still loading after the warm-up; caller searches wait for it one at a time, and any that time out are retried once it answers');
           } else {
-            log('no changed TypeScript file to warm with — skipping warm-up');
+            log('no changed file to warm the language server with — skipping warm-up');
           }
         } finally {
           indexing = false;
+          waitingFor = null;
         }
       }
       return true;
@@ -105,7 +121,7 @@ function createReadiness(vscode, session, { log, getScratchDir = () => null, clo
     return prepare;
   }
 
-  return { ensureReady, ensureResolver, warmTarget, isIndexing: () => indexing };
+  return { ensureReady, ensureResolver, warmTarget, isIndexing: () => indexing, indexingServer: () => (indexing ? waitingFor : null) };
 }
 
 module.exports = { createReadiness };

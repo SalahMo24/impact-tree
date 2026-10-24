@@ -17,11 +17,13 @@
 
 const fs = require('fs');
 const path = require('path');
+const { createHash } = require('crypto');
 
 /** @typedef {import('./types').PrepareContext} PrepareContext */
 /** @typedef {import('./types').ServerSymbol} ServerSymbol */
 /** @typedef {import('./types').CollectedSymbol} CollectedSymbol */
 /** @typedef {import('./types').AnalysisUnit} AnalysisUnit */
+/** @typedef {import('./types').RecordedSymbols} RecordedSymbols */
 /** @typedef {import('../engine/analyze').ChangedPath} ChangedPath */
 
 /**
@@ -58,12 +60,24 @@ const path = require('path');
  */
 const SYMBOL_CONCURRENCY = 4;
 
+/**
+ * One side as the review identity reads it (`RecordedSide`): the text's hash and where
+ * each symbol is, nothing else, since the result keeps it as long as the review.
+ * @param {string} text
+ * @param {CollectedSymbol[]} symbols
+ * @returns {import('./types').RecordedSide}
+ */
+const recordedSide = (text, symbols) => ({
+  textHash: createHash('sha256').update(text).digest('hex'),
+  symbols: symbols.map(({ key, namePos, start, end, startLine, endLine }) => ({ key, namePos, start, end, startLine, endLine })),
+});
+
 /** @param {unknown} e */
 const messageOf = (e) => (e && typeof e === 'object' && 'message' in e ? String(e.message) : String(e));
 
 /**
  * How one file ended: analysed, skipped as generated, or not analysed with the reason.
- * @typedef {{ kind: 'analysed', changed: object[], deleted: object[], outside: Array<[number, number]> }
+ * @typedef {{ kind: 'analysed', changed: object[], deleted: object[], outside: Array<[number, number]>, recorded: RecordedSymbols }
  *   | { kind: 'generated' } | { kind: 'failed', reason: string }} FileOutcome
  */
 
@@ -85,6 +99,9 @@ const messageOf = (e) => (e && typeof e === 'object' && 'message' in e ? String(
  * declares symbols), makes the file not analysed: counted in `ctx.unanalysable` under its
  * unit, named in a warning with the reason, and given to `ctx.notAnalysedFiles` with that
  * reason, so the result carries it on the file itself.
+ *
+ * Every analysed file's symbols, both sides, are returned as `extras.reviewSymbols` (see
+ * `PreparedLanguage`), so its review rows are identified by content without a re-parse.
  *
  * Rejects with the reason when the services are absent or the editor does not know the
  * language, and with `AnalysisCancelledError` when `ctx.signal` aborts. An error thrown by
@@ -183,7 +200,11 @@ async function prepareFromServerSymbols(ctx, spec) {
       ...(spec.kindsOf ? { kindsOf: spec.kindsOf } : {}),
       ...(spec.trivia ? { trivia: spec.trivia } : {}),
     });
-    return { kind: 'analysed', ...result };
+    const recorded = {
+      head: headText == null ? null : recordedSide(headText, /** @type {CollectedSymbol[]} */ (headCallables)),
+      base: baseText == null ? null : recordedSide(baseText, baseCallables),
+    };
+    return { kind: 'analysed', ...result, recorded };
   }
 
   /** @param {string} component @param {number} count */
@@ -192,6 +213,8 @@ async function prepareFromServerSymbols(ctx, spec) {
   const generated = [];
   /** @type {AnalysisUnit[]} */
   const units = [];
+  /** @type {Map<string, RecordedSymbols>} */
+  const reviewSymbols = new Map();
   let done = 0;
   for (const [component, group] of groups) {
     throwIfCancelled(signal);
@@ -206,6 +229,8 @@ async function prepareFromServerSymbols(ctx, spec) {
     const outside = [];
     /** @type {string[]} */
     const analysedPaths = [];
+    /** @type {Array<[string, RecordedSymbols]>} */
+    const recorded = [];
     group.files.forEach((f, i) => {
       const outcome = /** @type {FileOutcome} */ (outcomes[i]);
       if (outcome.kind === 'generated') { generated.push(f.path); return; }
@@ -216,6 +241,7 @@ async function prepareFromServerSymbols(ctx, spec) {
         return;
       }
       analysedPaths.push(f.path);
+      recorded.push([f.path, outcome.recorded]);
       changed.push(...outcome.changed);
       deleted.push(...outcome.deleted);
       if (outcome.outside.length) outside.push({ file: path.join(repo, f.path), relPath: f.path, ranges: outcome.outside });
@@ -231,12 +257,13 @@ async function prepareFromServerSymbols(ctx, spec) {
       continue;
     }
     units.push({ component, projectRoot: group.projectRoot, changed, deleted, outside, resolver });
+    for (const [relPath, sides] of recorded) reviewSymbols.set(relPath, sides);
   }
   if (generated.length) {
     const shown = generated.slice(0, 3).join(', ');
     warnings.push(`${generated.length} generated ${rules.displayName} file(s) listed but not analysed: ${shown}${generated.length > 3 ? ', …' : ''}`);
   }
-  return { units };
+  return { units, extras: { reviewSymbols } };
 }
 
 module.exports = { prepareFromServerSymbols, SYMBOL_CONCURRENCY };

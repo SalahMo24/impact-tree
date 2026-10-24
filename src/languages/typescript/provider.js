@@ -251,12 +251,19 @@ async function prepare(ctx) {
  */
 const editorCallers = (options) => require('./editor-extras').createTypescriptEditorExtras(options);
 
+/**
+ * Where the editor's TypeScript server is warmed; see ./warm-up.js.
+ * @type {NonNullable<import('../types').LanguageProvider['warmUpTarget']>}
+ */
+const warmUpTarget = (ctx) => require('./warm-up').typescriptWarmUpTarget(ctx);
+
 /** @type {import('../types').LanguageProvider} */
 const typescriptProvider = Object.freeze({
   ...typescriptRules,
   needsServer: false,
   prepare,
   editorCallers,
+  warmUpTarget,
 });
 
 module.exports = { typescriptProvider, changedSymbolsWith };

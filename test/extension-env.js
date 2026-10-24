@@ -39,6 +39,16 @@ function gates() {
   };
 }
 
+// The Go change `changedSource: 'go'` commits, and the symbols the language server gives
+// for it by default (ServerSymbols: a type first, so the warm-up must skip to the function).
+const GO_SOURCE = 'package a\n\ntype T struct{}\n\nfunc Warm() int { return 1 }\n';
+const goSymbol = (name, kind, declaration) => {
+  const start = GO_SOURCE.indexOf(declaration);
+  const at = GO_SOURCE.indexOf(name, start);
+  return { name, detail: '', kind, range: { start, end: start + declaration.length }, selectionRange: { start: at, end: at + name.length }, children: [] };
+};
+const GO_SYMBOLS = [goSymbol('T', 23, 'type T struct{}'), goSymbol('Warm', 12, 'func Warm() int { return 1 }')];
+
 const shaFor = (n) => String(n).repeat(40).slice(0, 40);
 const pull = (n) => ({ number: n, headRef: `head${n}`, baseRef: `base${n}`, title: `PR ${n}`, url: `https://example.test/${n}` });
 
@@ -155,7 +165,9 @@ function fakeWebviewPanel(viewType, title, showOptions, options = {}) {
 // the two analysers, the editor's language-server resolver, and the network-facing
 // async git calls (fetch, rev-parse of FETCH_HEAD, checkout), so the worktree itself
 // never moves. `changedSource` puts a committed TypeScript change on a feature branch,
-// which is what readiness needs before it will warm the language server. `clock` (a fake
+// which is what readiness needs before it will warm the language server; `'go'` puts a
+// Go change there instead (with `go.mod`), warmed through the resolver's `services`, whose
+// answers a test sets in `hooks.goAvailable` and `hooks.goSymbols`. `clock` (a fake
 // clock, test/fake-clock.js) is handed to activate() through its test seam, so the
 // activation's timers and deadlines move only when the test advances it.
 function createEnv({ prewarm = false, changedSource = false, memento = new Map(), signIn = null, graphql = null, settings = {},
@@ -167,7 +179,12 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   fs.writeFileSync(path.join(dir, 'tsconfig.json'), '{"include":["*.ts"]}');
   sh('add', '.'); sh('commit', '-qm', 'base');
   for (const [name, url] of remotes) sh('remote', 'add', name, url);
-  if (changedSource) {
+  if (changedSource === 'go') {
+    sh('checkout', '-qb', 'feature');
+    fs.writeFileSync(path.join(dir, 'go.mod'), 'module example.com/a\n\ngo 1.22\n');
+    fs.writeFileSync(path.join(dir, 'a.go'), GO_SOURCE);
+    sh('add', '.'); sh('commit', '-qm', 'feature');
+  } else if (changedSource) {
     sh('checkout', '-qb', 'feature');
     fs.writeFileSync(path.join(dir, 'a.ts'), 'export function warm() { return 1; }\n');
     sh('add', '.'); sh('commit', '-qm', 'feature');
@@ -183,13 +200,13 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   // `statusBars` every status bar item created, in order (`statusBar` is the first, the
   // review progress); `panels` every webview panel created, in order.
   const seen = { warnings: [], errors: [], infos: [], log: [], status: [], modals: 0, analyze: [], remote: [], remoteSlugs: [], analyzeRemotes: [],
-    signals: [], progress: [], callerQueries: [], warmUps: [], analyzeOptions: [], contexts: {}, revealed: [], statusBar: null, statusBars: [], panels: [], executed: [],
+    signals: [], progress: [], callerQueries: [], warmUps: [], warmUpAt: [], servicesAsked: [], analyzeOptions: [], contexts: {}, revealed: [], statusBar: null, statusBars: [], panels: [], executed: [],
     focus: 'editor', focusedRow: null, editorSpaces: 0 };
   // `fetchRemotes`: the remote each `fetch` named, in step with `fetches`.
   const git = { fetches: [], fetchRemotes: [], checkouts: [], calls: [] };
   const holds = { fetch: gates(), modal: gates(), remote: gates(), analyze: gates(), callers: gates(), warmUp: gates() };
   const failures = new Map();
-  const hooks = { beforeCheckout: null, headOf: shaFor, remoteResult: (pr) => previewResult(pr), localResult: (o) => localResult(o),
+  const hooks = { goAvailable: () => ({ ok: true }), goSymbols: () => GO_SYMBOLS, beforeCheckout: null, headOf: shaFor, remoteResult: (pr) => previewResult(pr), localResult: (o) => localResult(o),
     warm: !changedSource, clearResolver: () => {}, onCommand: null };
   const captured = { tree: null, view: null, decorations: null, checkbox: null, sources: null, webviews: new Map(),
     selection: [], cursor: [], treeVisibility: [], lenses: null };
@@ -344,7 +361,11 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       return { createVscodeResolver: () => ({
         isWarm: () => hooks.warm,
         expectReload: () => { seen.reloads = (seen.reloads || 0) + 1; },
-        warmUp: (file) => { seen.warmUps.push(file); return holds.warmUp.enter(() => true); },
+        warmUp: (file, pos) => { seen.warmUps.push(file); seen.warmUpAt.push({ file, pos }); return holds.warmUp.enter(() => true); },
+        services: {
+          available: async (languageId) => { seen.servicesAsked.push(['available', languageId]); return hooks.goAvailable(); },
+          documentSymbols: async (doc) => { seen.servicesAsked.push(['documentSymbols', doc.file, doc.side]); return hooks.goSymbols(doc); },
+        },
         clear: () => hooks.clearResolver(),
         stats: () => ({}),
         incoming: async () => [],
@@ -500,4 +521,4 @@ const overviewAnswer = (headOid) => ({ repository: {
   object: { statusCheckRollup: null },
 } });
 
-module.exports = { overviewAnswer, fakeWebviewPanel, deferred, gates, shaFor, pull, localResult, finding, previewResult, createEnv, withEnv, refusals, createCommentsApi };
+module.exports = { GO_SOURCE, overviewAnswer, fakeWebviewPanel, deferred, gates, shaFor, pull, localResult, finding, previewResult, createEnv, withEnv, refusals, createCommentsApi };

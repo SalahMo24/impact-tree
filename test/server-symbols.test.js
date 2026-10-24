@@ -263,6 +263,9 @@ test('an editor that does not know Go says to install the Go extension', async (
     const result = await run(repo.dir, { languageServices: services, makeResolver: noCallers([]) });
     assert.ok(result.warnings.includes('4 changed Go file(s) NOT analysed — Install the Go extension to analyse Go files (the editor has no support for go installed)'),
       result.warnings.join('\n'));
+    assert.equal(result.warnings.filter((w) => /Install the Go extension/.test(w)).length, 1, 'said once, as one notice');
+    assert.deepEqual(result.allChanged, [], 'not a row of unknowns: no Go symbol is listed at all');
+    assert.deepEqual(result.deleted, []);
     assert.deepEqual(services.asked, []);
   } finally {
     repo.remove();

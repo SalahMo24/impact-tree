@@ -647,6 +647,14 @@ async function analyze(repo, opts = {}) {
         Object.defineProperty(result, name, { value, enumerable: false });
       }
     }
+    // The symbols each provider recorded for the review identity (`PreparedLanguage`'s
+    // `reviewSymbols`), by path. Not enumerable, as above. Owner: the result; never changed
+    // after `prepare`, so an early result shares it.
+    const reviewSymbols = new Map();
+    for (const { extras } of prepared) {
+      for (const [relPath, sides] of (extras && extras.reviewSymbols) || []) reviewSymbols.set(relPath, sides);
+    }
+    Object.defineProperty(result, 'reviewSymbols', { value: reviewSymbols, enumerable: false });
     return result;
   }
 }
