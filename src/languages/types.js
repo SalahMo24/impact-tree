@@ -21,7 +21,19 @@
  * @typedef {object} DocRef
  * @property {string} file Absolute path the document has (or had) in the repository.
  * @property {'head'|'base'} side
- * @property {string} text
+ * @property {string} [text] Required for the base side. For the head side the services
+ *   convert offsets from the file on disk (or the text registered with
+ *   `src/engine/textpos.js`); `text`, when given, must equal it.
+ */
+
+/**
+ * A place a language server pointed at, converted to offsets into `file` as it is on disk.
+ * `start`/`end` are null when that file could not be read to convert the position; the
+ * location was still reported, so it still counts as found.
+ * @typedef {object} ServerLocation
+ * @property {string} file Absolute path.
+ * @property {number|null} start
+ * @property {number|null} end Exclusive.
  */
 
 /**
@@ -57,15 +69,24 @@
 /**
  * What a language server supplies. Every method's answer `null` means the server gave no
  * answer (not installed, not ready, timed out, refused the document); it is never read as
- * "nothing found". A failed request rejects.
+ * "nothing found". A failed request rejects; when the error has `retryable: true`, it
+ * failed because the server did not answer in time or was not ready, and the same request
+ * may succeed later. The error's `message` is the reason shown to the reviewer.
  * @typedef {object} LanguageServices
  * @property {(languageId: string) => Promise<{ ok: true }|{ ok: false, reason: string }>} available
  * @property {(doc: DocRef) => Promise<ServerSymbol[]|null>} documentSymbols
  * @property {(doc: DocRef, pos: number) => Promise<unknown[]|null>} prepareCallHierarchy
- *   Opaque call-hierarchy items, passed back to `incomingCalls` unchanged.
+ *   Opaque call-hierarchy items, passed back to `incomingCalls` unchanged. Empty: the
+ *   server is up and has no item at `pos`.
  * @property {(item: unknown) => Promise<import('../engine/caller-contract').CallerRow[]|null>} incomingCalls
- * @property {(doc: DocRef, pos: number) => Promise<Array<{ file: string, start: number, end: number }>|null>} references
- * @property {(doc: DocRef, pos: number) => Promise<Array<{ file: string, start: number, end: number }>|null>} implementations
+ * @property {(doc: DocRef, pos: number) => Promise<ServerLocation[]|null>} references
+ * @property {(doc: DocRef, pos: number) => Promise<ServerLocation[]|null>} implementations
+ * @property {(doc: DocRef, pos: number) => Promise<ServerLocation[]|null>} definitions
+ *   Where the symbol used at `pos` is declared.
+ * @property {<T>(run: (scope: LanguageServices) => Promise<T>) => Promise<T>} [callerQuery]
+ *   Runs one caller query (a `prepareCallHierarchy` and the `incomingCalls` of its item)
+ *   as a unit, asking through `scope`, so an adapter can schedule and bound the whole
+ *   query while the server is still loading. Absent: `run` is given the services.
  */
 
 /**
