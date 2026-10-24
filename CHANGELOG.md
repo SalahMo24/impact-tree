@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **A quieter Changes title bar**: only Refresh, the tree/list toggle and Submit review (or
+  Send feedback, while you have drafts) stay as icons. The filters, Previous/Next unreviewed
+  and the legend moved to the `…` menu; `⌥N` / `⇧⌥N` still move between unreviewed changes.
+- **A smaller Details view**: the progress bar with the reviewed and needs-attention counts,
+  the selected row's name and path, and, for a red or amber row, the sentence saying why.
+  A preview keeps its limits note and **Check out and analyse**. The callers table,
+  signatures, tests line, threads, feedback and action buttons are gone from Details; each
+  is still in the tree, its context menu or the diff.
+- **Comment on this call** in a caller row's right-click menu starts a comment about that
+  call: a GitHub review comment for a pull request under review, or a feedback draft for a
+  local review. It goes on the call's line when the diff shows it, else on the change with
+  the caller named. This replaces the 💬 that was in Details' callers table.
 - **View as tree** in the Changes view folds the changed files into their folders, with the
   worst-first order kept at every level; **View as list** returns to the flat list. The
   choice is the `impactTree.fileListLayout` setting.

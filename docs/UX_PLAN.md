@@ -102,7 +102,7 @@ Numbered after `RELEASE_PLAN.md`'s G1–G7.
   callers (a topological order of the changed symbols on the call graph), ties broken by
   risk score; tests last; cycles kept together. Alternative: risk first, which is today's
   file order.
-- **G12. Posting to the PR (E1).** Off by default and posted on a button press only, or
+- **G12. Posting to the PR (E1).** Deferred with E1 (2026-10-24). Was: off by default and posted on a button press only, or
   also a setting to post on every submit? One comment, edited in place on re-post, or a
   new one each time?
 - **G3 / G4 from `RELEASE_PLAN.md`**: decided 2026-10-20. No per-agent turn hook; feedback
@@ -338,6 +338,9 @@ VS Code's native equivalent of the mocked checkbox dialog.
 
 ### E1. Post an impact summary to the PR (gate G12; README roadmap)
 
+Deferred 2026-10-24 by the owner: not in v1. It moves to the later version that adds the
+AI integration and MCP server, and will be designed as part of that.
+
 Acceptance: from the PR tab, **Post impact summary** posts the result's counts and a table of
 ⛔ and ? changes (symbol, file, callers not updated) as one comment inside a collapsed
 `<details>`, under 40 lines whatever the PR size; it states when it came from a preview
@@ -369,6 +372,25 @@ reviewed. Tested with two heads of a fixture repo.
 5. **B** (review loop part 2), the rest of U (U2 rows, U4, U5, U8), then R.
 
 S2 is optional and can drop out of v1.
+
+**v1 scope (decided 2026-10-24, owner).** v1 ships what is merged on `main` (P1–P5,
+F1–F5, B1–B5, the PR-tab work), with no new features before release. W1–W2, I1 (with
+A4) and S2 come after v1. E1 moves to the version that adds the AI integration and MCP
+server.
+
+**Minimal pass (2026-10-24, owner).** After reviewing several PRs and agent runs, the owner
+used only Details' progress bar. So:
+- The Changes title bar keeps only Refresh, the tree/list toggle and the submit action
+  (Submit review…, or Send feedback while drafts exist). Filters, Previous/Next unreviewed
+  and the legend move to the `…` menu. This undoes P4's legend icon in the title bar.
+- Details keeps the progress strip (bar, reviewed count, attention count), the row's name
+  and path, the verdict sentence for red/amber rows only, and a Preview's limits note with
+  Check out and analyse. Removed: the origin header, percentage, source line, signatures,
+  new throws, callers table, tests line, Threads section, Feedback button, and the Mark
+  reviewed / Next unreviewed / Show callers / Compute test reachability buttons. This
+  undoes P4's Details link and button and F1's 💬 in Details; each action stays in the
+  tree, its context menu, the keyboard or the diff. The callers' 💬 moved to **Comment on
+  this call** on a direct caller row's context menu (PR review comment, else feedback draft).
 
 If the owner agrees, `RELEASE_PLAN.md` gets a short note pointing here and its U section
 is updated to say which tasks moved; nothing in C or R changes.

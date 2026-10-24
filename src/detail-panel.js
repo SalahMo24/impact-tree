@@ -4,15 +4,14 @@ const path = require('path');
 const crypto = require('crypto');
 const { treeItemId } = require('./review-tree-model');
 const { prKey, parsePrAddress } = require('./pr-documents');
-const { buildDetailHtml, listCallerRows, describeOrigin, reviewPresentation, progressPresentation } = require('./detail-panel-html');
-const { buildThreadSection } = require('./review-threads');
+const { buildDetailHtml, progressPresentation } = require('./detail-panel-html');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 
-// The Details view under the change tree: one row explained in sentences. It shows the
-// row selected in the tree, or the row under the cursor in a review diff, and reveals that
-// row in the tree. The HTML is built by detail-panel-html; this module owns the webview,
-// the events it follows and the messages its buttons send.
+// The Details view under the change tree: the review's progress, and why the row selected
+// in the tree (or under the cursor in a review diff) needs a look. It reveals that row in
+// the tree. The HTML is built by detail-panel-html; this module owns the webview, the
+// events it follows and the one message its button sends.
 
 /**
  * The repo-relative path of a document when it is the head side of a file the shown result
@@ -38,49 +37,19 @@ function headRelPath(uri, { result, rel }) {
 
 /**
  * A message from the currently rendered page. Its nonce also serves as an action token:
- * an older page cannot act on a new selection or revision, even at the same tree id.
+ * an older page cannot act on a new analysis.
  * @param {unknown} message
  * @param {string|null} token The current page's nonce; null when the view is disposed.
- * @returns {{ type: 'tick', id: string, on: boolean }|{ type: 'next' }|{ type: 'ready' }|{ type: 'showCallers', id: string }
- *   |{ type: 'computeTestReach' }|{ type: 'openCaller', index: number }|{ type: 'revealThread', id: string }|{ type: 'comment', id: string }
- *   |{ type: 'feedback', id: string }|{ type: 'commentCaller', index: number }|{ type: 'checkoutAndAnalyse' }|null}
+ * @returns {{ type: 'ready' }|{ type: 'checkoutAndAnalyse' }|null}
  */
 function parseMessage(message, token) {
   if (!message || typeof message !== 'object') return null;
   const m = /** @type {Record<string, unknown>} */ (message);
   if (token === null || m.token !== token) return null;
-  if (m.type === 'tick' && typeof m.id === 'string' && typeof m.on === 'boolean') return { type: 'tick', id: m.id, on: m.on };
-  if (m.type === 'next') return { type: 'next' };
   if (m.type === 'ready') return { type: 'ready' };
   if (m.type === 'checkoutAndAnalyse') return { type: 'checkoutAndAnalyse' };
-  if (m.type === 'showCallers' && typeof m.id === 'string') return { type: 'showCallers', id: m.id };
-  if (m.type === 'computeTestReach') return { type: 'computeTestReach' };
-  if (m.type === 'openCaller' && Number.isSafeInteger(m.index) && Number(m.index) >= 0) return { type: 'openCaller', index: Number(m.index) };
-  if (m.type === 'revealThread' && typeof m.id === 'string' && m.id !== '') return { type: 'revealThread', id: m.id };
-  if (m.type === 'comment' && typeof m.id === 'string') return { type: 'comment', id: m.id };
-  if (m.type === 'feedback' && typeof m.id === 'string') return { type: 'feedback', id: m.id };
-  if (m.type === 'commentCaller' && Number.isSafeInteger(m.index) && Number(m.index) >= 0) return { type: 'commentCaller', index: Number(m.index) };
   return null;
 }
-
-/**
- * What Details asks of the review comments (`createReviewComments`).
- * @typedef {{
- *   commentOnRow: (row: TreeRow) => Promise<unknown>,
- *   commentOnCaller: (row: TreeRow, caller: import('./review-comments-model').CallerContext) => Promise<unknown>,
- *   revealThread: (threadId: string) => Promise<boolean>,
- * }} ReviewActions
- */
-
-/**
- * What Details asks of the feedback drafts (`createFeedbackComments`): whether a local
- * review is shown, and starting a draft on a row or about a caller.
- * @typedef {{
- *   available: () => boolean,
- *   commentOnRow: (row: TreeRow) => Promise<unknown>,
- *   commentOnCaller: (row: TreeRow, caller: import('./review-comments-model').CallerContext) => Promise<unknown>,
- * }} FeedbackActions
- */
 
 /**
  * Registers the Details view and makes it follow the tree and the cursor.
@@ -89,11 +58,10 @@ function parseMessage(message, token) {
  * paint, so a tick, a filter or a new analysis shows the current row, or the hint when the
  * shown review no longer has it.
  *
- * A cursor moving inside the row shown changes only the header's line, so the header is
- * updated by a message to the page instead of a new document, which would reload it and
- * flicker. Progress patches text and attributes (the shown row's button and summary, and the
- * progress strip, which any tick can change); a new row or analysis paints the whole
- * document. A tree filter changes neither the shown row nor its contents.
+ * A cursor moving inside the row shown changes nothing. Progress patches the strip's text
+ * and attributes (any tick can change it) instead of a new document, which would reload it
+ * and flicker; a new row or analysis paints the whole document. A tree filter changes
+ * neither the shown row nor its contents.
  *
  * Feedback loop: revealing the cursor's row selects it in the tree, and VS Code reports
  * that as a selection change. The id revealed is remembered, and a selection of exactly
@@ -105,21 +73,13 @@ function parseMessage(message, token) {
  *     onDidChangeSelection: (listener: (e: { selection: readonly TreeRow[] }) => void) => { dispose(): any },
  *     onDidChangeVisibility: (listener: (e: { visible: boolean }) => void) => { dispose(): any } },
  *   getState: () => { result: any, rel: (file: string) => string, source?: any }|null,
- *   lineOf: (file: string, offset: number) => number|null,
  *   log: (message: string) => void,
- *   reviewActions?: () => ReviewActions|null,
- *   feedbackActions?: () => FeedbackActions|null,
  *   checkoutAndAnalyse?: (pr: any) => Promise<unknown>,
- * }} deps `view` is the change view; `getState` the session state; `lineOf` the 1-based
- *   line of an offset in a file, or null when unreadable. `reviewActions` starts comments
- *   and opens threads; without it the Threads section's buttons do nothing. `feedbackActions`
- *   starts feedback drafts: a row of a local review (no Threads section) offers it through
- *   the same 💬 buttons. `checkoutAndAnalyse`
+ * }} deps `view` is the change view; `getState` the session state. `checkoutAndAnalyse`
  *   checks out a pull request and analyses it; a Preview's page offers it for the PR shown.
  * @returns {{ disposables: Array<{ dispose(): any }> }}
  */
-function createDetailPanel(vscode, { provider, view, getState, lineOf, log, reviewActions = () => null, feedbackActions = () => null,
-  checkoutAndAnalyse = async () => undefined }) {
+function createDetailPanel(vscode, { provider, view, getState, log, checkoutAndAnalyse = async () => undefined }) {
   /** @type {any} */
   let webviewView = null;
   /** @type {Array<{ dispose(): any }>} */
@@ -128,21 +88,16 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log, revi
   let shown = { id: null, origin: 'tree' };
   /** @type {string|null} */
   let revealedFromCursor = null;
-  // Owned by this panel; replaced on every full render, preserved for header-only updates,
-  // and cleared on disposal. It identifies the exact page whose actions are still valid.
+  // Owned by this panel; replaced on every full render and cleared on disposal. It
+  // identifies the exact page whose actions are still valid.
   /** @type {string|null} */
   let renderToken = null;
   // Panel-owned display model, replaced on render/patch and cleared on disposal.
   // It covers progress only; the session remains authoritative for analysis content.
-  /** @type {import('./detail-panel-html').ReviewPresentation|null} */
-  let lastReview = null;
   /** @type {import('./detail-panel-html').ProgressPresentation|null} */
   let lastProgress = null;
   /** @type {number|null|undefined} */
   let renderedVersion;
-  // The Threads section the page shows, as JSON: a thread change repaints only when it differs.
-  /** @type {string|null} */
-  let lastThreads = null;
 
   /** @param {object} message */
   const post = (message) => {
@@ -150,17 +105,6 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log, revi
     Promise.resolve(webviewView.webview.postMessage(message))
       .then(undefined, (/** @type {any} */ err) => log(`details: could not update the page: ${err && err.message}`));
   };
-
-  /** @param {boolean} [force] */
-  function patchReview(force = false) {
-    if (!webviewView || renderedVersion !== provider.reviewVersion()) return;
-    const next = reviewPresentation(currentRow(), provider.isReviewed);
-    if (!next) return;
-    if (!force && lastReview && next.id === lastReview.id && next.reviewed === lastReview.reviewed
-        && next.buttonText === lastReview.buttonText && next.summaryText === lastReview.summaryText) return;
-    lastReview = next;
-    post({ type: 'review', token: renderToken, model: next });
-  }
 
   // The strip counts every row, so any tick can change it, not only a tick of the shown row.
   /** @param {boolean} [force] */
@@ -178,20 +122,9 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log, revi
   function onProgress(event) {
     if (event.analysisId !== renderedVersion) return;
     patchProgress();
-    if (shown.id && event.changedIds.includes(shown.id)) patchReview();
   }
 
   const currentRow = () => (shown.id ? provider.rowById(shown.id) : null);
-  // Whether the rows shown are of a review of the files on disk, which take feedback drafts.
-  const feedbackShown = () => { const actions = feedbackActions(); return !!(actions && actions.available()); };
-  /** @param {TreeRow|null} row */
-  const threadSectionOf = (row) => buildThreadSection(row, provider.threadsView(), (row && provider.threadsOfRow(row)) || []);
-
-  // The review threads changed: the page is rebuilt only when its Threads section did.
-  function onThreads() {
-    if (!webviewView || renderedVersion !== provider.reviewVersion()) return;
-    if (JSON.stringify(threadSectionOf(currentRow())) !== lastThreads) render();
-  }
   // The row a selected row stands for: itself when it has a tree id, else the change it sits under.
   /** @param {TreeRow|undefined} row @returns {TreeRow|null} */
   const ownerOf = (row) => {
@@ -205,33 +138,17 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log, revi
     const state = getState();
     const progress = progressPresentation(provider.reviewProgress());
     const nonce = crypto.randomBytes(16).toString('base64');
-    const threads = threadSectionOf(row);
-    const html = buildDetailHtml(row, {
-      result: state && state.result, isReviewed: provider.isReviewed,
-      impactRows: row && row.type === 'finding' ? provider.impactRowsOf(row) : [],
-      nonce, cspSource: webviewView.webview.cspSource, origin: shown.origin, lineOf, progress, threads, feedback: feedbackShown(),
-    });
-    lastThreads = JSON.stringify(threads);
+    const html = buildDetailHtml(row, { result: state && state.result, nonce, cspSource: webviewView.webview.cspSource, progress });
     renderToken = nonce;
     renderedVersion = provider.reviewVersion();
-    lastReview = reviewPresentation(row, provider.isReviewed);
     lastProgress = progress;
     webviewView.webview.html = html;
   }
   /** @param {string|null} id @param {string} origin */
   const show = (id, origin) => {
-    if (id === shown.id && renderedVersion === provider.reviewVersion()) {
-      if (origin !== shown.origin) moveOrigin(origin);
-      return;
-    }
+    const same = id === shown.id && renderedVersion === provider.reviewVersion();
     shown = { id, origin };
-    render();
-  };
-  // The same row from another place: only the header's text changes.
-  /** @param {string} origin */
-  const moveOrigin = (origin) => {
-    shown = { id: shown.id, origin };
-    post({ type: 'origin', token: renderToken, text: describeOrigin(origin) });
+    if (!same) render();
   };
 
   /** @param {{ selection: readonly TreeRow[] }} e */
@@ -266,12 +183,8 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log, revi
     const row = provider.rowAtLine(relPath, line);
     const id = row && treeItemId(row);
     if (!row || !id) return;
-    const origin = `cursor:${line}`;
-    if (id === shown.id) {
-      if (origin !== shown.origin) moveOrigin(origin);
-      return;
-    }
-    show(id, origin);
+    if (id === shown.id) return;
+    show(id, `cursor:${line}`);
     if (treeVisible) revealShown(row, id);
   }
 
@@ -312,40 +225,8 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log, revi
   async function onMessage(message) {
     const m = parseMessage(message, renderToken);
     if (!m || renderedVersion !== provider.reviewVersion()) return;
-    if (m.type === 'ready') {
-      patchReview(true);
-      patchProgress(true);
-      if (shown.id) post({ type: 'origin', token: renderToken, text: describeOrigin(shown.origin) });
-      return;
-    }
-    if (m.type === 'next') { await vscode.commands.executeCommand('impactTree.nextUnreviewed'); return; }
-    const row = currentRow();
-    if (!row) return;
-    if (m.type === 'checkoutAndAnalyse') { await onCheckout(); return; }
-    // A click that left the page before the panel moved on to another row ticks nothing.
-    if (m.type === 'tick') {
-      if (m.id !== shown.id) return;
-      provider.setChecked(row, m.on);
-      return;
-    }
-    if (m.type === 'showCallers') {
-      if (m.id === shown.id) await vscode.commands.executeCommand('impactTree.showCallers', m.id);
-      return;
-    }
-    if (m.type === 'computeTestReach') {
-      // Offered only on a change of a local result whose test reach is not computed; a page
-      // drawn before the analysis changed has an older nonce and never gets here.
-      const state = getState();
-      if (row.type === 'finding' && state && state.result && !state.result.tierA && !state.result.testReachComputed) {
-        await vscode.commands.executeCommand('impactTree.computeTestReach');
-      }
-      return;
-    }
-    if (m.type === 'feedback') { await onFeedbackAction({ type: 'comment', id: m.id }, row); return; }
-    if (m.type === 'revealThread' || m.type === 'comment' || m.type === 'commentCaller') { await onReviewAction(m, row); return; }
-    if (row.type !== 'finding') return;
-    const caller = listCallerRows(provider.impactRowsOf(row))[m.index];
-    if (caller) await vscode.commands.executeCommand('impactTree.openCaller', caller);
+    if (m.type === 'ready') { patchProgress(true); return; }
+    if (m.type === 'checkoutAndAnalyse' && currentRow()) await onCheckout();
   }
 
   // The Preview limits button. The page that sent it has the current token and version, but
@@ -358,74 +239,9 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log, revi
     await checkoutAndAnalyse(source.pr);
   }
 
-  /**
-   * A thread or comment button of the shown row. Only a thread the shown section lists is
-   * opened, and only the shown row is commented on.
-   * @param {{ type: 'revealThread', id: string }|{ type: 'comment', id: string }|{ type: 'commentCaller', index: number }} m
-   * @param {TreeRow} row The shown row.
-   */
-  async function onReviewAction(m, row) {
-    const actions = reviewActions();
-    const section = threadSectionOf(row);
-    if (!section) { if (m.type !== 'revealThread') await onFeedbackAction(m, row); return; }
-    if (!actions) return;
-    if (m.type === 'revealThread') {
-      if (section.threads.some((t) => t.id === m.id)) await actions.revealThread(m.id);
-      return;
-    }
-    if (!section.action) return;
-    if (m.type === 'comment') {
-      if (m.id === shown.id) await actions.commentOnRow(row);
-      return;
-    }
-    const caller = callerContextOf(row, m.index, 'a comment');
-    if (caller) await actions.commentOnCaller(row, caller);
-  }
-
-  /**
-   * A 💬 button of a local review's row: starts a feedback draft on the shown row, or about
-   * one of its callers. Only while a local review is shown, as the page was drawn for.
-   * @param {{ type: 'comment', id: string }|{ type: 'commentCaller', index: number }} m
-   * @param {TreeRow} row The shown row.
-   */
-  async function onFeedbackAction(m, row) {
-    const actions = feedbackActions();
-    if (!actions || !actions.available()) return;
-    if (m.type === 'comment') {
-      if (m.id === shown.id) await actions.commentOnRow(row);
-      return;
-    }
-    const caller = callerContextOf(row, m.index, 'a feedback draft');
-    if (caller) await actions.commentOnCaller(row, caller);
-  }
-
-  /**
-   * The caller a 💬 in the callers table names, with the line of its call; null (after
-   * saying why, when the line cannot be read) when there is none.
-   * @param {TreeRow} row The shown row.
-   * @param {number} index
-   * @param {string} what What would be started, for the warning.
-   * @returns {import('./review-comments-model').CallerContext|null}
-   */
-  function callerContextOf(row, index, what) {
-    if (row.type !== 'finding') return null;
-    const caller = listCallerRows(provider.impactRowsOf(row))[index];
-    const state = getState();
-    if (!caller || !state) return null;
-    const offset = caller.callSites && caller.callSites[0] ? caller.callSites[0].start : caller.pos;
-    const siteLine = typeof offset === 'number' ? lineOf(caller.file, offset) : null;
-    const relPath = caller.relPath ?? state.rel(caller.file);
-    if (siteLine == null || !relPath) {
-      vscode.window.showWarningMessage(`Impact Tree: the line of ${caller.label}'s call could not be read, so ${what} about it cannot be started.`);
-      return null;
-    }
-    return { label: caller.label, test: !!caller.test, relPath, siteLine, callState: caller.callState };
-  }
-
   const disposeView = () => {
     for (const s of viewSubscriptions) s.dispose();
-    viewSubscriptions = []; webviewView = null; renderToken = null; lastReview = null; lastProgress = null; renderedVersion = undefined;
-    lastThreads = null;
+    viewSubscriptions = []; webviewView = null; renderToken = null; lastProgress = null; renderedVersion = undefined;
   };
   const webviewProvider = {
     /** @param {any} resolved */
@@ -437,7 +253,7 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log, revi
         resolved.webview.onDidReceiveMessage((/** @type {unknown} */ m) => onMessage(m)
           .catch((/** @type {any} */ err) => log(`details: ${err && err.message}`))),
         resolved.onDidDispose(() => { if (webviewView === resolved) disposeView(); }),
-        // A page shown again is rebuilt from the last document, which may hold an older header.
+        // A page shown again is rebuilt from the last document, which may hold older counts.
         resolved.onDidChangeVisibility(() => { if (resolved.visible) render(); }),
       ];
       render();
@@ -452,7 +268,6 @@ function createDetailPanel(vscode, { provider, view, getState, lineOf, log, revi
       view.onDidChangeVisibility(onTreeVisible),
       provider.onDidChangePresentation((/** @type {{ reason: string }} */ event) => { if (event.reason === 'analysis') render(); }),
       provider.onDidChangeReview(onProgress),
-      provider.onDidChangeThreads(onThreads),
       vscode.window.onDidChangeTextEditorSelection(onCursor),
       { dispose: disposeView },
     ],

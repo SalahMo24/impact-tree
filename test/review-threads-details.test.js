@@ -1,15 +1,13 @@
 'use strict';
 // Review threads through the real activate() (L5): the real review store loads a PR
 // preview's threads from a fake GraphQL client, and the test reads what the tree, its
-// message, the context keys and Details show, and drives Details' thread and comment
-// buttons through the comment controller to GitHub and back.
+// message and the context keys show. Details shows no threads: they are in the tree and
+// the diff.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { withEnv, finding, previewResult, pull, overviewAnswer } = require('./extension-env');
-const { treeItemId } = require('../src/review-tree-model');
-const { CONTROLLER_ID, COMMANDS } = require('../src/review-comments');
 
 const HEAD = 'a'.repeat(40);
 const PR = { ...pull(7), headSha: HEAD };
@@ -69,11 +67,8 @@ function usePreview(env) {
 }
 
 const settle = async () => { for (let i = 0; i < 20; i++) await new Promise((resolve) => setImmediate(resolve)); };
-const tokenOf = (details) => /<script nonce="([^"]+)"/.exec(details.webview.html)[1];
-const send = (details, message) => details.send({ ...message, token: tokenOf(details) });
 const textOf = (details) => details.displayHtml.replace(/<style[\s\S]*?<\/style>|<script[\s\S]*?<\/script>/g, ' ')
   .replace(/<[^>]*>/g, ' ').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
-const threadsTextOf = (details) => /Threads[^]*$/.exec(textOf(details))?.[0] ?? null;
 
 async function start(env) {
   usePreview(env);
@@ -85,7 +80,6 @@ async function start(env) {
   const [bad] = (await tree.getChildren(aFile)).filter((r) => r.type === 'finding');
   return { tree, aFile, bFile, bad };
 }
-const lastDraft = (env) => env.commentController(CONTROLLER_ID).threads.filter((t) => !t.disposed && t.comments.length === 0).at(-1);
 
 const THREADS = () => [
   rawThread(1, {}, [rawComment(1, { body: 'Why not reuse x?\nsecond line' })]),
@@ -112,79 +106,15 @@ test('a failed load shows no counts and says so; the threads filter is not offer
   assert.doesNotMatch(String(tree.getTreeItem(aFile).description), /💬|✎/);
   assert.match(env.view().message, / · ⚠ threads not loaded$/);
   assert.equal(env.seen.contexts['impactTree.hasReviewThreads'], false);
-  const details = env.openDetails();
-  env.select([aFile]);
-  assert.match(threadsTextOf(details), /^Threads The review threads could not be loaded: .*rate limited.*This does not mean there are none/);
-  assert.doesNotMatch(details.displayHtml, /data-act="comment"/, 'no comment button without the threads');
 }, OPTIONS));
 
-test('Details lists the shown row\'s threads; an outdated one with its original line; a click opens the thread', () => withEnv(async (env) => {
+test('Details shows no threads section and no comment buttons, with threads loaded', () => withEnv(async (env) => {
   github = fakeGitHub(THREADS());
   const { aFile, bad } = await start(env);
   const details = env.openDetails();
-  env.select([bad]);
-  assert.equal(threadsTextOf(details).replace(/ Mark reviewed.*$/, ''),
-    'Threads (1) bob: Why not reuse x? line 11 · 1 comment Unresolved Comment on this change');
-  env.select([aFile]);
-  assert.match(threadsTextOf(details), /^Threads \(2\) bob: Why not reuse x\? line 11 · 1 comment Unresolved bob: body 2 line 9 · 1 comment Unresolved Outdated old\(\); Comment on this file/);
-  assert.match(details.displayHtml, /<div class="orig"[^>]*> {2}old\(\);<\/div>/, 'the code as it was, indentation kept');
-  await send(details, { type: 'revealThread', id: 'T_1' });
-  await send(details, { type: 'revealThread', id: 'T_2' });
-  await send(details, { type: 'revealThread', id: 'T_3' });   // b.ts: not in the shown section
-  const diffs = env.seen.executed.filter(([name]) => name === 'vscode.diff');
-  assert.equal(diffs.length, 2);
-  assert.equal(diffs[0][2].path, 'a.ts');
-  assert.deepEqual(diffs[0][4].selection.start, { line: 10, character: 0 }, 'at the thread\'s line');
-  assert.equal(diffs[1][4], undefined, 'an outdated thread opens the file');
-}, OPTIONS));
-
-test('comments from Details reach GitHub; the tree repaints the named file, and Details only when its section changed', () => withEnv(async (env) => {
-  github = fakeGitHub(THREADS());
-  const { tree, aFile, bFile, bad } = await start(env);
-  const details = env.openDetails();
-  env.select([bFile]);
-  await send(details, { type: 'comment', id: treeItemId(bFile) });
-  const fileDraft = lastDraft(env);
-  assert.equal(fileDraft.label, 'File comment');
-  env.select([bad]);
-  const loads = details.loads;
-  const events = [];
-  let refreshes = 0;
-  tree.onDidChangeTreeData((row) => events.push(row));
-  tree.onDidChangePresentation(() => refreshes++);
-  assert.deepEqual(await env.comments.submit(env.run, COMMANDS.startReview, fileDraft, 'the whole file'), { sent: true });
-  await settle();
-  assert.deepEqual(github.calls.slice(-3).map((c) => c.name), ['ImpactTreeAddReview', 'ImpactTreeAddThread', 'ImpactTreePullRequestReview']);
-  assert.equal(github.calls.at(-2).input.subjectType, 'FILE');
-  assert.deepEqual(events, [bFile], 'only the file whose threads changed');
-  assert.equal(refreshes, 0);
-  assert.match(tree.getTreeItem(bFile).description, /^✎ 1/);
-  assert.equal(details.loads, loads, 'the shown change\'s section did not change');
-  assert.match(env.view().message, / · 💬 2 · ✎ 1$/);
-
-  await send(details, { type: 'comment', id: treeItemId(bad) });
-  const draft = lastDraft(env);
-  assert.deepEqual([draft.range.start.line, draft.label], [9, undefined], 'the change\'s first line');
-  await env.comments.submit(env.run, COMMANDS.addToReview, draft, 'on the change');
-  await settle();
-  assert.equal(details.loads, loads + 1, 'its section changed');
-  assert.match(threadsTextOf(details), /^Threads \(2\) .* bob: on the change line 10 · 1 comment Pending/);
-  assert.ok(events.every((row) => row === bFile || row === aFile));
-}, OPTIONS));
-
-test('a caller whose call is outside the diff gets a draft on the change, labelled with the caller', () => withEnv(async (env) => {
-  github = fakeGitHub(THREADS());
-  const { bad } = await start(env);
-  const details = env.openDetails();
-  env.select([bad]);
-  assert.match(details.displayHtml, /data-act="caller-comment" data-index="0"/);
-  await send(details, { type: 'commentCaller', index: 0 });
-  const draft = lastDraft(env);
-  assert.equal(draft.label, 'About caller user (b.ts:3) — added after your text · remove');
-  assert.equal(draft.range.start.line, 9);
-  await env.comments.submit(env.run, COMMANDS.startReview, draft, 'Check user');
-  await settle();
-  assert.equal(github.calls.find((c) => c.name === 'ImpactTreeAddThread').input.body,
-    'Check user\n\n---\n**Caller outside this PR\'s diff:** `user` in `b.ts`, line 3: not changed by this PR.\n'
-    + `https://github.com/example/repo/blob/${HEAD}/b.ts#L3`);
+  for (const row of [bad, aFile]) {
+    env.select([row]);
+    assert.doesNotMatch(textOf(details), /Threads|Why not reuse/, row.type);
+    assert.doesNotMatch(details.displayHtml, /data-act="(comment|caller-comment|thread)"/, row.type);
+  }
 }, OPTIONS));

@@ -29,7 +29,11 @@ async function prepare(env) {
   const [user] = await tree.getChildren(bFile);
   return { tree, first, second, user, aFile, bFile, notes: files.find(f => f.relPath === 'notes.md') };
 }
-const tokenOf = details => /<script nonce="([^"]+)"/.exec(details.webview.html)[1];
+// The strip's text as the page shows it.
+const stripOf = (details) => {
+  const text = (name) => new RegExp(`data-progress-${name}[^>]*>([^<]*)<`).exec(details.displayHtml)[1];
+  return { count: text('count'), attention: text('attention') };
+};
 
 // Timers are advanced explicitly: batching and disposal tests never depend on elapsed
 // wall time. Start after analysis so only UI notifications are under the fake clock.
@@ -54,7 +58,7 @@ test('all marking routes patch Details, refresh one file, and leave unchanged de
   const loads = details.loads, beforeCommands = env.seen.executed.length;
   for (const [on, mark] of [
     [true, () => env.tick(first, true)],
-    [false, () => details.send({ type: 'tick', token: tokenOf(details), id: treeItemId(first), on: false })],
+    [false, () => env.tick(first, false)],
     [true, () => env.run('impactTree.setReviewed', treeItemId(first), true, tree.reviewVersion())],
   ]) {
     await mark();
@@ -63,7 +67,7 @@ test('all marking routes patch Details, refresh one file, and leave unchanged de
     await tree.getChildren(current[0]);
     tickClock();
     assert.equal(env.isTicked(first), on);
-    assert.match(details.displayHtml, on ? />Mark not reviewed<\/button>/ : />Mark reviewed<\/button>/);
+    assert.equal(stripOf(details).count, on ? '1 of 4 reviewed' : '0 of 4 reviewed');
   }
   assert.deepEqual(treeEvents, [aFile, aFile, aFile]);
   assert.equal(progress.length, 3);
@@ -80,7 +84,7 @@ test('all marking routes patch Details, refresh one file, and leave unchanged de
   assert.equal(env.seen.executed.slice(beforeCommands).filter(([name]) => name === 'vscode.diff' || name === 'vscode.open').length, 0);
 }));
 
-test('one file gesture updates its visible summary, and repeated marks publish nothing', t => withEnv(async env => {
+test('one file gesture updates the progress strip, and repeated marks publish nothing', t => withEnv(async env => {
   const { tree, first, second, aFile, notes } = await prepare(env);
   const details = env.openDetails();
   env.select([aFile]);
@@ -92,8 +96,7 @@ test('one file gesture updates its visible summary, and repeated marks publish n
   env.lensProvider().provider.onDidChangeCodeLenses(() => lenses++);
   tree.setCheckedBatch([{ row: aFile, on: true }, { row: notes, on: true }]);
   assert.ok(env.isTicked(first) && env.isTicked(second));
-  assert.match(details.displayHtml, /0 left to review\./);
-  assert.match(details.displayHtml, />Mark file not reviewed<\/button>/);
+  assert.equal(stripOf(details).count, '3 of 4 reviewed');
   assert.equal(details.loads, loads);
   assert.deepEqual(events, [aFile, notes]);
   assert.equal(progress.length, 1, 'one notification for the gesture');
@@ -111,7 +114,7 @@ test('one file gesture updates its visible summary, and repeated marks publish n
   tree.clearReviewed();
   assert.equal(env.seen.statusBar.text.split(' ')[1], '4');
   assert.equal(env.isTicked(first), false);
-  assert.match(details.displayHtml, /2 left to review\./);
+  assert.equal(stripOf(details).count, '0 of 4 reviewed');
   assert.equal(details.loads, loads);
 }));
 
@@ -130,7 +133,7 @@ test('filtered progress refreshes the parent until root membership changes; Deta
   env.tick(second, true);
   assert.deepEqual(events, [aFile, undefined]);
   assert.ok(!(await tree.getChildren()).some(r => r === aFile));
-  await details.send({ type: 'tick', token: tokenOf(details), id: treeItemId(first), on: false });
+  env.tick(first, false);
   assert.equal(events.at(-1), undefined, 'the file is restored at the root');
   assert.ok((await tree.getChildren()).includes(aFile));
   tree.toggleFilter('attention');
@@ -182,32 +185,6 @@ test('rapid marks batch lens invalidation and disposal cancels queued lens and d
   // withEnv disposes once more; disposal must remain harmless.
 }));
 
-test('the ready handshake recovers a missed patch, and browser patches reject stale tokens without replacing nodes', t => withEnv(async env => {
-  const { tree, first } = await prepare(env);
-  const details = env.openDetails();
-  env.select([first]);
-  const html = details.webview.html, token = tokenOf(details), loads = details.loads;
-  uiClock(t);
-  const page = createPage(html);
-  const button = page.nodes.get('[data-act="tick"]');
-  const initialOrigin = page.nodes.get('.origin').textContent;
-  env.tick(first, true); // This update never reaches `page`, simulating script startup.
-  const before = details.posted.length;
-  await details.send(page.sent[0]);
-  for (const message of details.posted.slice(before)) page.receive(message);
-  assert.equal(button.textContent, 'Mark not reviewed');
-  assert.equal(button.getAttribute('data-on'), 'false');
-  assert.equal(page.nodes.get('[data-act="tick"]'), button, 'the same DOM node');
-  assert.equal(details.loads, loads);
-  const patch = details.posted.slice(before).find(m => m.type === 'review');
-  page.receive({ ...patch, token: 'obsolete', model: { ...patch.model, reviewed: false, buttonText: 'wrong' } });
-  page.receive({ type: 'origin', token: 'obsolete', text: 'wrong origin' });
-  assert.equal(button.textContent, 'Mark not reviewed');
-  assert.equal(page.nodes.get('.origin').textContent, initialOrigin);
-  page.click('[data-act="tick"]');
-  assert.deepEqual(page.sent.at(-1), { type: 'tick', id: treeItemId(first), on: false, token });
-}));
-
 test('decoration changes are scoped, deduplicated, and flushed once across repeated row reads', t => withEnv(async env => {
   const tickClock = uiClock(t);
   const { tree, first } = await prepare(env);
@@ -244,30 +221,22 @@ test('decoration changes are scoped, deduplicated, and flushed once across repea
   assert.equal(new Set(events[1].map(u => u.toString())).size, events[1].length);
 }));
 
-// The strip's text as the page shows it, and the meter's numbers.
-const stripOf = (details) => {
-  const text = (name) => new RegExp(`data-progress-${name}[^>]*>([^<]*)<`).exec(details.displayHtml)[1];
-  return { line: text('line'), count: text('count'), attention: text('attention'), percent: text('percent') };
-};
 
 test('any tick updates the progress strip by a patch, also a tick of a row other than the one shown', t => withEnv(async env => {
   const { first, second, user } = await prepare(env);
   const details = env.openDetails();
   env.select([first]);
   const loads = details.loads, page = details.webview.html;
-  assert.deepEqual(stripOf(details), { line: 'Branch vs base against main', count: '0 of 4 reviewed', attention: '1 needs attention', percent: '0%' });
+  assert.deepEqual(stripOf(details), { count: '0 of 4 reviewed', attention: '1 needs attention' });
   uiClock(t);
 
   env.tick(user, true);
   assert.equal(stripOf(details).count, '1 of 4 reviewed');
-  assert.equal(stripOf(details).percent, '25%');
-  assert.deepEqual(details.posted.map(m => m.type), ['progress'], 'the shown row is unaffected, so no review patch');
-  assert.match(details.displayHtml, />Mark reviewed<\/button>/);
+  assert.deepEqual(details.posted.map(m => m.type), ['progress']);
 
   env.tick(first, true);
-  assert.deepEqual(stripOf(details), { line: 'Branch vs base against main', count: '2 of 4 reviewed', attention: 'nothing needs attention', percent: '50%' });
-  assert.deepEqual(details.posted.map(m => m.type), ['progress', 'progress', 'review']);
-  assert.match(details.displayHtml, />Mark not reviewed<\/button>/);
+  assert.deepEqual(stripOf(details), { count: '2 of 4 reviewed', attention: 'nothing needs attention' });
+  assert.deepEqual(details.posted.map(m => m.type), ['progress', 'progress'], 'only strip patches: the page has no per-row fields');
 
   details.posted.length = 0;
   env.tick(second, false); // already unreviewed: nothing changes

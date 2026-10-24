@@ -267,15 +267,13 @@ test('package.json contributes the commands, the keybinding and the palette gate
   assert.equal(contributes.commands.find((c) => c.command === 'impactTree.previousUnreviewed').title, 'Impact Tree: Go to previous unreviewed change');
   assert.equal(contributes.commands.find((c) => c.command === 'impactTree.nextUnreviewed').title, 'Impact Tree: Go to next unreviewed change');
   assert.equal(env.seen.statusBar.tooltip, 'Go to the next unreviewed change');
-  // the title bar keeps refresh, the layout toggle, the three filters, next and (for a PR
-  // review only) "Submit review…"; the rest is in the overflow menu
+  // the title bar keeps only refresh, the layout toggle and the submit actions ("Submit
+  // review…" for a PR, Send feedback with drafts); the rest is in the overflow menu
   const changes = contributes.menus['view/title'].filter((m) => m.when.startsWith('view == impactTree.changes'));
   const groupOf = (id) => changes.filter((m) => m.command === id).map((m) => m.group);
   assert.deepEqual(changes.filter((m) => m.group.startsWith('navigation')).map((m) => m.command),
-    ['impactTree.refresh', 'impactTree.filterAttention', 'impactTree.filterAttentionOn', 'impactTree.filterUnreviewed', 'impactTree.filterUnreviewedOn',
-      'impactTree.filterThreads', 'impactTree.filterThreadsOn', 'impactTree.previousUnreviewed', 'impactTree.nextUnreviewed',
-      'impactTree.viewAsTree', 'impactTree.viewAsList',
-      'impactTree.submitReview', 'impactTree.submitReviewUnavailable', 'impactTree.sendFeedback', 'impactTree.showLegend']);
+    ['impactTree.refresh', 'impactTree.viewAsTree', 'impactTree.viewAsList',
+      'impactTree.submitReview', 'impactTree.submitReviewUnavailable', 'impactTree.sendFeedback']);
   // one of the two layout icons shows, by the setting
   assert.equal(changes.find((m) => m.command === 'impactTree.viewAsTree').when, 'view == impactTree.changes && impactTree.fileListLayout != tree');
   assert.equal(changes.find((m) => m.command === 'impactTree.viewAsList').when, 'view == impactTree.changes && impactTree.fileListLayout == tree');
@@ -283,13 +281,14 @@ test('package.json contributes the commands, the keybinding and the palette gate
   assert.equal(changes.find((m) => m.command === 'impactTree.sendFeedback').when, 'view == impactTree.changes && impactTree.hasFeedbackDrafts');
   assert.equal(changes.find((m) => m.command === 'impactTree.sendFeedback').alt, 'impactTree.sendFeedbackTo');
   const order = (id) => Number(changes.find((m) => m.command === id).group.split('@')[1]);
-  assert.ok(order('impactTree.previousUnreviewed') < order('impactTree.nextUnreviewed'), 'previous is left of next');
-  assert.ok(order('impactTree.showLegend') > order('impactTree.submitReview'), 'the legend is the rightmost icon');
-  assert.ok(order('impactTree.refresh') < order('impactTree.viewAsTree') && order('impactTree.viewAsTree') < order('impactTree.filterAttention'), 'the layout toggle sits right after refresh, as in the GitHub Pull Requests view');
+  assert.ok(order('impactTree.refresh') < order('impactTree.viewAsTree') && order('impactTree.viewAsTree') < order('impactTree.submitReview'), 'the layout toggle sits right after refresh, as in the GitHub Pull Requests view');
   assert.equal(order('impactTree.viewAsList'), order('impactTree.viewAsTree'), 'the two layout icons take the same slot');
-  assert.ok(order('impactTree.showLegend') > order('impactTree.sendFeedback'), 'the legend stays right of Send feedback');
-  assert.deepEqual(['selectMode', 'setCheckpoint', 'showLog', 'clearReviewed', 'cleanUpStoredData'].map((c) => groupOf(`impactTree.${c}`)[0]),
-    ['1_mode@1', '1_mode@2', '2_help@2', '3_progress@1', '3_progress@2']);
+  // overflow menu: filters, then previous/next, then mode, help (legend first), progress
+  assert.deepEqual(['filterAttention', 'filterAttentionOn', 'filterUnreviewed', 'filterUnreviewedOn', 'filterThreads', 'filterThreadsOn',
+    'previousUnreviewed', 'nextUnreviewed', 'selectMode', 'setCheckpoint', 'showLegend', 'showLog', 'clearReviewed', 'cleanUpStoredData']
+    .map((c) => groupOf(`impactTree.${c}`)[0]),
+  ['0_filter@1', '0_filter@1', '0_filter@2', '0_filter@2', '0_filter@3', '0_filter@3',
+    '0_go@1', '0_go@2', '1_mode@1', '1_mode@2', '2_help@1', '2_help@2', '3_progress@1', '3_progress@2']);
   const palette = Object.fromEntries(contributes.menus.commandPalette.map((m) => [m.command, m.when]));
   for (const id of ['impactTree.filterAttention', 'impactTree.filterUnreviewed', 'impactTree.nextUnreviewed', 'impactTree.previousUnreviewed']) assert.equal(palette[id], 'impactTree.hasReview', id);
   for (const id of ['impactTree.filterAttentionOn', 'impactTree.filterUnreviewedOn', 'impactTree.filterThreadsOn']) assert.equal(palette[id], 'false', id);

@@ -444,6 +444,8 @@ test('the contributions: a keybinding in a review editor, a context menu on chan
     [{ command: 'impactTree.showCallers', key: 'shift+alt+c', when: 'editorTextFocus && impactTree.hasReview' }]);
   assert.deepEqual(contributes.menus['view/item/context'].map((m) => [m.command, m.when, m.group]), [
     ['impactTree.showCallers', 'view == impactTree.changes && viewItem == finding', 'navigation@1'],
+    // a caller row (changed or not): Comment on this call (test/caller-comment.test.js)
+    ['impactTree.commentOnCall', 'view == impactTree.changes && viewItem =~ /^(caller|changedCaller)$/', 'navigation@2'],
     // the inline icon passes the same change row as the context menu (tested below)
     ['impactTree.showCallers', 'view == impactTree.changes && viewItem == finding', 'inline@1'],
     ['impactTree.retryViewedSync', 'view == impactTree.changes && viewItem =~ /ViewedFailed$/', 'inline'],

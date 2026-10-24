@@ -59,21 +59,25 @@ silently-omitted optional parameter outranks a signature break that `tsc` alread
 - Preview a GitHub pull request without a checkout, or check out its branch for
   analysis using the editor's language server. A no-checkout preview searches the
   files supplied by the PR and cannot establish callers outside those files.
-- Use the **Changes** and **Details** views to inspect findings, open diffs, and
-  navigate to callers. Changed files are listed worst first; **View as tree** (title bar, or
+- Use the **Changes** view to inspect findings, open diffs, and navigate to callers.
+  **Details** below it shows your review progress and, for a change that needs a look,
+  why. Changed files are listed worst first; **View as tree** (title bar, or
   `impactTree.fileListLayout`) folds them into their folders, as the GitHub Pull Requests
   extension does, with folders and files still ordered worst first at every level and a
   folder ranked by its worst file. Track progress by marking changes reviewed, and filter for what needs
   attention (callers not updated, or callers to check by hand), unreviewed changes, or
-  unresolved conversations.
-- For a GitHub PR, add review comments, reply to or resolve conversations, and
+  unresolved conversations. The title bar keeps Refresh, the tree/list toggle and Submit;
+  the filters, Previous/Next unreviewed (`⇧⌥N` / `⌥N`) and the legend are in its `…` menu.
+- For a GitHub PR, add review comments (in the diff, or **Comment on this call** on a
+  caller row, which names the caller when its call is outside the diff), reply to or resolve conversations, and
   submit a review from the pull request tab. Picking a PR from the list, to preview or to
   check out, opens that tab with its description, checks, reviewers, labels and merge state.
 
 ### Feedback rounds with a coding agent
 
 - While reviewing local changes or a checked-out pull request, leave **feedback** in the
-  diff's comment box or with 💬 in Details. Drafts collect in **Feedback to send** at the
+  diff's comment box, or right-click a caller in the tree and pick **Comment on this call**.
+  Drafts collect in **Feedback to send** at the
   top of Changes. In a checked-out pull request, VS Code asks whether a new comment is a
   GitHub review comment or feedback for your agent.
 - **Send feedback** (✈ in the title bar; hold ⌥ for **Send feedback to…**) writes the drafts
