@@ -151,48 +151,23 @@ const textOf = (details) => details.displayHtml.replace(/<style[\s\S]*?<\/style>
   .replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 const feedbackBoxes = (env) => env.commentController('impactTree.feedback').threads.filter((t) => !t.disposed && t.comments.length === 0);
 
-test('Details of a local review: 💬 on a change and on each caller start a feedback draft in the diff', () => withEnv(async (env) => {
-  useResult(env);
-  await env.refresh();
-  const details = env.openDetails();
-  const files = (await env.tree().getChildren()).filter((r) => r.type === 'reviewFile');
-  const [bad] = (await env.tree().getChildren(files[0])).filter((r) => r.type === 'finding');
-  env.select([bad]);
-  assert.match(textOf(details), /Feedback 💬 Feedback on this change/);
-  assert.match(details.displayHtml, /data-act="caller-comment" data-index="0" title="Start a feedback draft about this call/);
-  assert.doesNotMatch(details.displayHtml, /Comment on this change/, 'no pull request comment in a local review');
-
-  await details.send(pageAction(details, { type: 'comment', id: treeItemId(bad) }));
-  assert.equal(env.seen.executed.filter(([name]) => name === 'vscode.diff').length, 1, 'the review diff opened');
-  let [box] = feedbackBoxes(env);
-  assert.equal(box.range.start.line, 9, 'on the change\'s first line');
-  assert.match(box.uri.fsPath, /a\.ts$/);
-  box.dispose();
-
-  await details.send(pageAction(details, { type: 'commentCaller', index: 0 }));
-  [box] = feedbackBoxes(env);
-  assert.equal(box.range.start.line, 2, 'on the call, line 3 of b.ts, a file of the result');
-  assert.match(box.uri.fsPath, /b\.ts$/);
-  assert.match(box.label, /about caller user \(b\.ts:3\)/);
-  assert.equal(env.commentController('impactTree.review').threads.length, 0, 'the pull request controller is not used');
-}));
-
-test('Details of a file row of a local review offers feedback on the whole file', () => withEnv(async (env) => {
+// Feedback is started from the diff's comment box; Details offers none.
+test('Details of a local review offers no feedback, and the old 💬 messages start none', () => withEnv(async (env) => {
   useResult(env);
   await env.refresh();
   const details = env.openDetails();
   const [file] = (await env.tree().getChildren()).filter((r) => r.type === 'reviewFile');
-  env.select([file]);
-  assert.match(textOf(details), /Feedback 💬 Feedback on this file/);
-  await details.send(pageAction(details, { type: 'comment', id: treeItemId(file) }));
-  const [box] = feedbackBoxes(env);
-  assert.equal(box.range.start.line, 0);
-  assert.equal(box.label, 'New feedback · on the whole file');
-  box.dispose();
-  // The Feedback button sends its own message, which starts the same draft.
-  assert.match(details.displayHtml, /data-act="feedback"/);
-  await details.send(pageAction(details, { type: 'feedback', id: treeItemId(file) }));
-  assert.equal(feedbackBoxes(env).length, 1);
+  const [bad] = (await env.tree().getChildren(file)).filter((r) => r.type === 'finding');
+  for (const row of [bad, file]) {
+    env.select([row]);
+    assert.doesNotMatch(textOf(details), /Feedback/, row.type);
+    assert.doesNotMatch(details.displayHtml, /data-act="(feedback|comment|caller-comment)"/, row.type);
+    for (const message of [{ type: 'comment', id: treeItemId(row) }, { type: 'feedback', id: treeItemId(row) }, { type: 'commentCaller', index: 0 }]) {
+      await details.send(pageAction(details, message));
+    }
+  }
+  assert.equal(feedbackBoxes(env).length, 0);
+  assert.equal(env.seen.executed.filter(([name]) => name === 'vscode.diff').length, 0, 'no diff opened');
 }));
 
 test('Details of a Preview offers no feedback, and its 💬 messages start none', () => withEnv(async (env) => {

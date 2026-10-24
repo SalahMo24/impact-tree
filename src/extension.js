@@ -6,6 +6,7 @@ const { MODES } = require('./engine/analyze');
 const { createTreeProvider } = require('./tree-provider');
 const { createReviewNavigation } = require('./review-navigation');
 const { createDetailPanel } = require('./detail-panel');
+const { createCallerComment } = require('./caller-comment');
 const { createReviewLens } = require('./review-lens');
 const { readLineOfOffset, offsetToPosition } = require('./engine/textpos');
 const { createDecorationProvider } = require('./decorations');
@@ -104,12 +105,11 @@ function activate(context) {
   context.subscriptions.push(view);
   const navigation = createReviewNavigation(vscode, { provider, view });
   context.subscriptions.push(...navigation.disposables);
-  // Details starts comments and opens threads through the review comments, and starts
-  // feedback drafts through the feedback comments, both created below.
+  // "Comment on this call" starts comments through the review comments, and feedback drafts
+  // through the feedback comments, both created below.
   let reviewComments = null;
   let feedbackComments = null;
-  const details = createDetailPanel(vscode, { provider, view, getState: () => owned.state, lineOf: readLineOfOffset, log,
-    reviewActions: () => reviewComments, feedbackActions: () => feedbackComments,
+  const details = createDetailPanel(vscode, { provider, view, getState: () => owned.state, log,
     checkoutAndAnalyse: (pr) => session.checkoutAndAnalyse(pr) });
   context.subscriptions.push(...details.disposables);
   // Counts follow presentation and progress events, independently of tree repaint scope.
@@ -256,6 +256,10 @@ function activate(context) {
     ],
   });
   context.subscriptions.push(feedbackComments);
+  context.subscriptions.push(createCallerComment(vscode, {
+    provider, getState: () => owned.state, lineOf: readLineOfOffset,
+    reviewComments: () => reviewComments, feedbackComments: () => feedbackComments,
+  }));
 
   const sources = createSourcesProvider(vscode, {
     getRepoStatus: () => repoStatus,
