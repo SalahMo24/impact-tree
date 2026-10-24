@@ -200,8 +200,8 @@ test('7. a lazy expansion that resolves after a newer analysis returns no rows a
 
 test('8. prewarm running during a PR preview does not change the displayed phase', async (t) => {
   for (const warmUp of ['succeeds', 'fails']) {
-    await t.test(`the warm-up ${warmUp}`, async (t2) => {
-      t2.mock.timers.enable({ apis: ['setTimeout'] });
+    await t.test(`the warm-up ${warmUp}`, async () => {
+      const clock = createFakeClock();
       await withEnv(async (env) => {
         const remote = env.holds.remote.next();
         const preview = env.preview(pull(7));
@@ -209,7 +209,7 @@ test('8. prewarm running during a PR preview does not change the displayed phase
         assert.deepEqual(await rootLabels(env), ['Analysing…']);
 
         const warm = env.holds.warmUp.next();
-        t2.mock.timers.tick(2000);              // activate() schedules prewarm two seconds in
+        await clock.advance(2000);              // activate() schedules prewarm two seconds in
         await warm.reached;
         assert.deepEqual(await rootLabels(env), ['Analysing…'], 'prewarm did not take over the phase');
         if (warmUp === 'succeeds') warm.release(true); else warm.fail(new Error('server went away'));
@@ -221,7 +221,7 @@ test('8. prewarm running during a PR preview does not change the displayed phase
         assert.ok((await rootLabels(env)).some((l) => PREVIEW_ROW.test(l)));
         assert.deepEqual(env.seen.errors, [], 'a prewarm failure is not an analysis error');
         if (warmUp === 'fails') assert.ok(env.seen.log.some((m) => /prepare failed: server went away/.test(m)), 'it is logged');
-      }, { prewarm: true, changedSource: true });
+      }, { prewarm: true, changedSource: true, clock });
     });
   }
 });

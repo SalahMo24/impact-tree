@@ -35,19 +35,21 @@ const stripOf = (details) => {
   return { count: text('count'), attention: text('attention') };
 };
 
-// Timers are advanced explicitly: batching and disposal tests never depend on elapsed
-// wall time. Start after analysis so only UI notifications are under the fake clock.
-function uiClock(t) {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
-  return () => t.mock.timers.tick(1);
-}
+// The tree and the lens batch their change events with `setTimeout(…, 0)` (the next turn of
+// the event loop, not a wait), so a test lets that turn pass before it counts the events.
+// A timer set after the batching timer, with the same delay, runs after it.
+const settleBatches = () => new Promise((resolve) => { setTimeout(resolve, 0); });
 
-test('all marking routes patch Details, refresh one file, and leave unchanged decorations alone', t => withEnv(async env => {
+test('all marking routes patch Details, refresh one file, and leave unchanged decorations alone', () => withEnv(async env => {
   const { tree, first, aFile, user } = await prepare(env);
   const details = env.openDetails();
   env.select([first]);
-  env.decorations().flush(); // Drain the initial registrations before measuring a mark.
-  const tickClock = uiClock(t);
+  // Drain the initial registrations before measuring a mark: read the rows the loop below
+  // reads again (that is what first registers their caller decorations), then let the batch
+  // timers those reads set run.
+  await tree.getChildren(await tree.getChildren(aFile).then(rows => rows[0]));
+  env.decorations().flush();
+  await settleBatches();
   const treeEvents = [], progress = [], decorations = [];
   let fullPresentations = 0, lenses = 0;
   tree.onDidChangeTreeData(row => treeEvents.push(row));
@@ -65,7 +67,7 @@ test('all marking routes patch Details, refresh one file, and leave unchanged de
     // Recreate expanded subtree reads performed by the editor after a file refresh.
     const current = await tree.getChildren(aFile);
     await tree.getChildren(current[0]);
-    tickClock();
+    await settleBatches();
     assert.equal(env.isTicked(first), on);
     assert.equal(stripOf(details).count, on ? '1 of 4 reviewed' : '0 of 4 reviewed');
   }
@@ -78,20 +80,19 @@ test('all marking routes patch Details, refresh one file, and leave unchanged de
   assert.deepEqual(decorations, []);
   const posted = details.posted.length;
   env.tick(user, true);
-  tickClock();
+  await settleBatches();
   assert.deepEqual(details.posted.slice(posted).map(m => m.type), ['progress'], 'an unrelated tick patches only the strip');
   assert.equal(details.loads, loads);
   assert.equal(env.seen.executed.slice(beforeCommands).filter(([name]) => name === 'vscode.diff' || name === 'vscode.open').length, 0);
 }));
 
-test('one file gesture updates the progress strip, and repeated marks publish nothing', t => withEnv(async env => {
+test('one file gesture updates the progress strip, and repeated marks publish nothing', () => withEnv(async env => {
   const { tree, first, second, aFile, notes } = await prepare(env);
   const details = env.openDetails();
   env.select([aFile]);
   const loads = details.loads, events = [], progress = [];
   tree.onDidChangeTreeData(row => events.push(row));
   tree.onDidChangeReview(e => progress.push(e));
-  const tickClock = uiClock(t);
   let lenses = 0;
   env.lensProvider().provider.onDidChangeCodeLenses(() => lenses++);
   tree.setCheckedBatch([{ row: aFile, on: true }, { row: notes, on: true }]);
@@ -100,16 +101,16 @@ test('one file gesture updates the progress strip, and repeated marks publish no
   assert.equal(details.loads, loads);
   assert.deepEqual(events, [aFile, notes]);
   assert.equal(progress.length, 1, 'one notification for the gesture');
-  tickClock();
+  await settleBatches();
   assert.equal(lenses, 1);
   env.tick(first, true);
-  tickClock();
+  await settleBatches();
   assert.equal(progress.length, 1, 'same state is a no-op');
   tree.setCheckedBatch([{ row: first, on: false }, { row: first, on: true }]);
-  tickClock();
+  await settleBatches();
   assert.equal(progress.length, 1, 'the net result of a batch is a no-op');
   env.tick(notes, false);
-  tickClock();
+  await settleBatches();
   assert.equal(lenses, 1, 'a plain file has no review lenses');
   tree.clearReviewed();
   assert.equal(env.seen.statusBar.text.split(' ')[1], '4');
@@ -118,7 +119,7 @@ test('one file gesture updates the progress strip, and repeated marks publish no
   assert.equal(details.loads, loads);
 }));
 
-test('filtered progress refreshes the parent until root membership changes; Details stays mounted', t => withEnv(async env => {
+test('filtered progress refreshes the parent until root membership changes; Details stays mounted', () => withEnv(async env => {
   const { tree, first, second, aFile } = await prepare(env);
   const details = env.openDetails();
   env.select([first]);
@@ -126,7 +127,6 @@ test('filtered progress refreshes the parent until root membership changes; Deta
   const events = [];
   tree.toggleFilter('unreviewed');
   tree.onDidChangeTreeData(row => events.push(row));
-  uiClock(t);
   env.tick(first, true);
   assert.deepEqual(events, [aFile]);
   assert.deepEqual((await tree.getChildren(aFile)).map(r => r.label), ['second', ''], 'the visible row, then the spacer');
@@ -144,7 +144,7 @@ test('filtered progress refreshes the parent until root membership changes; Deta
   assert.equal(details.loads, loads, 'neither a filter nor hidden progress reloads the selected row');
 }));
 
-test('row identities survive repaint, while old analysis checkboxes cannot change a new review', t => withEnv(async env => {
+test('row identities survive repaint, while old analysis checkboxes cannot change a new review', () => withEnv(async env => {
   const { tree, first, aFile } = await prepare(env);
   const firstChildren = await tree.getChildren(first);
   const ids = firstChildren.map(r => tree.getTreeItem(r).id);
@@ -154,7 +154,6 @@ test('row identities survive repaint, while old analysis checkboxes cannot chang
   await env.refresh();
   const events = [];
   tree.onDidChangeReview(e => events.push(e));
-  uiClock(t);
   env.tick(first, true);
   assert.deepEqual(events, []);
   const [newFirst] = await tree.getChildren((await tree.getChildren()).find(f => f.relPath === 'a.ts'));
@@ -163,33 +162,31 @@ test('row identities survive repaint, while old analysis checkboxes cannot chang
   assert.equal(env.isTicked(newFirst), true);
 }));
 
-test('rapid marks batch lens invalidation and disposal cancels queued lens and decoration work', t => withEnv(async env => {
+test('rapid marks batch lens invalidation and disposal cancels queued lens and decoration work', () => withEnv(async env => {
   const { tree, first, second, aFile } = await prepare(env);
   env.decorations().flush();
-  const tickClock = uiClock(t);
   let lenses = 0, decorations = 0;
   env.lensProvider().provider.onDidChangeCodeLenses(() => lenses++);
   env.decorations().onDidChangeFileDecorations(() => decorations++);
   env.tick(first, true);
   env.tick(second, true);
-  tickClock();
+  await settleBatches();
   assert.equal(lenses, 1);
   env.tick(first, false);
   env.decorations().register(env.vscode.Uri.file('/new.ts'), { status: 'added' });
   await tree.getChildren(aFile);
   await tree.getChildren();
   env.dispose();
-  tickClock();
+  await settleBatches();
   assert.equal(lenses, 1);
   assert.equal(decorations, 0);
   // withEnv disposes once more; disposal must remain harmless.
 }));
 
-test('decoration changes are scoped, deduplicated, and flushed once across repeated row reads', t => withEnv(async env => {
-  const tickClock = uiClock(t);
+test('decoration changes are scoped, deduplicated, and flushed once across repeated row reads', () => withEnv(async env => {
   const { tree, first } = await prepare(env);
   const decorate = env.decorations();
-  tickClock(); // Drain the initial tree decorations under the controlled clock.
+  await settleBatches(); // Drain the initial tree decorations under the controlled clock.
   const events = [];
   decorate.onDidChangeFileDecorations(uris => events.push(uris));
   const uri = env.vscode.Uri.file(path.join(env.dir, 'extra.ts'));
@@ -200,36 +197,34 @@ test('decoration changes are scoped, deduplicated, and flushed once across repea
   decorate.flush = () => { flushes++; originalFlush(); };
   await tree.getChildren();
   await tree.getChildren();
-  tickClock();
+  await settleBatches();
   assert.equal(flushes, 1);
   assert.deepEqual(events, [[uri]], 'only the changed URI, once');
   decorate.register(uri, { status: 'modified', tooltip: 'changed file' });
   await tree.getChildren();
-  tickClock();
+  await settleBatches();
   assert.equal(events.length, 1, 'unchanged values produce no decoration event');
   decorate.register(uri, { status: 'added', tooltip: 'temporary value' });
   decorate.register(uri, { status: 'modified', tooltip: 'changed file' });
   await tree.getChildren();
-  tickClock();
+  await settleBatches();
   assert.equal(events.length, 1, 'restoring the published value within a batch is also a no-op');
   // Expanding a finding genuinely materializes caller decorations for the first time.
   await tree.getChildren(first);
   await tree.getChildren(first);
-  tickClock();
+  await settleBatches();
   assert.equal(events.length, 2);
   assert.ok(Array.isArray(events[1]) && events[1].length > 0);
   assert.equal(new Set(events[1].map(u => u.toString())).size, events[1].length);
 }));
 
 
-test('any tick updates the progress strip by a patch, also a tick of a row other than the one shown', t => withEnv(async env => {
+test('any tick updates the progress strip by a patch, also a tick of a row other than the one shown', () => withEnv(async env => {
   const { first, second, user } = await prepare(env);
   const details = env.openDetails();
   env.select([first]);
   const loads = details.loads, page = details.webview.html;
   assert.deepEqual(stripOf(details), { count: '0 of 4 reviewed', attention: '1 needs attention' });
-  uiClock(t);
-
   env.tick(user, true);
   assert.equal(stripOf(details).count, '1 of 4 reviewed');
   assert.deepEqual(details.posted.map(m => m.type), ['progress']);
@@ -246,12 +241,11 @@ test('any tick updates the progress strip by a patch, also a tick of a row other
   assert.equal(details.webview.html, page, 'the stored document is untouched');
 }));
 
-test('the strip is on the page with nothing selected and the meter follows ticks', t => withEnv(async env => {
+test('the strip is on the page with nothing selected and the meter follows ticks', () => withEnv(async env => {
   const { first, second } = await prepare(env);
   const details = env.openDetails();
   assert.match(details.displayHtml, /Select a change in the tree/);
   assert.equal(stripOf(details).count, '0 of 4 reviewed');
-  uiClock(t);
   env.tick(first, true);
   env.tick(second, true);
   assert.equal(stripOf(details).count, '2 of 4 reviewed');
@@ -263,11 +257,10 @@ test('the strip is on the page with nothing selected and the meter follows ticks
   assert.equal(page.nodes.get('[data-progress-meter]').getAttribute('max'), '4');
 }));
 
-test('the progress patch is token checked, and the ready handshake restores a missed strip update', t => withEnv(async env => {
+test('the progress patch is token checked, and the ready handshake restores a missed strip update', () => withEnv(async env => {
   const { first, user } = await prepare(env);
   const details = env.openDetails();
   env.select([first]);
-  uiClock(t);
   const page = createPage(details.webview.html);
   const count = page.nodes.get('[data-progress-count]');
   env.tick(user, true); // never reaches `page`, as before its script started
@@ -284,7 +277,7 @@ test('the progress patch is token checked, and the ready handshake restores a mi
   assert.equal(page.nodes.get('[data-progress-meter]').getAttribute('value'), '1');
 }));
 
-test('an analysis without counting rows has no strip', t => withEnv(async env => {
+test('an analysis without counting rows has no strip', () => withEnv(async env => {
   env.hooks.localResult = o => ({ ...localResult(o, { findings: [] }) });
   await env.refresh();
   const details = env.openDetails();

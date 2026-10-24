@@ -17,6 +17,8 @@ const changeRow = (label, startLine, extra = {}) => {
   return { type: 'finding', label, finding, file: '/r/a.ts', pos: finding.namePos };
 };
 const never = () => false;
+// One turn of the event loop: a timer set earlier with a 0 ms delay has run by the time it ends.
+const nextTurn = () => new Promise((resolve) => { setTimeout(resolve, 0); });
 
 // One row per verdict level 0..4, in the order of the levels.
 const LEVELS = [
@@ -198,16 +200,14 @@ test('in a preview only the head side of the pull request has lenses', () => wit
   assert.deepEqual(env.lensesFor(fileUri(env, 'a.ts')), [], 'the worktree file is not the pull request');
 }));
 
-test('the lenses follow ticks and results; filtering the tree does not invalidate them', t => withEnv(async (env) => {
+test('the lenses follow ticks and results; filtering the tree does not invalidate them', () => withEnv(async (env) => {
   useResult(env);
   await env.refresh();
   let fired = 0;
   env.lensProvider().provider.onDidChangeCodeLenses(() => { fired++; });
   const [bad] = await rowsOf(env);
-  t.mock.timers.enable({ apis: ['setTimeout'] });
   env.tick(bad, true);
-  t.mock.timers.tick(1);
-  t.mock.timers.reset();
+  await nextTurn();   // the lens batches its change event with setTimeout(…, 0)
   assert.equal(fired, 1, 'a batched tick');
   env.tree().toggleFilter('attention');
   assert.equal(fired, 1, 'a tree filter changes no lens data');
