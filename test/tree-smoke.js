@@ -62,7 +62,7 @@ const check = (name, cond, extra = '') => {
       '(check out a branch with changes, or set IMPACT_TREE_BASE)']);
   }
   // Route each lazy query to the TS project of the file it is asked about.
-  const { loadTypeScript } = require('../src/engine/analyze');
+  const { loadTypeScript } = require('../src/languages/typescript/load');
   const { projectRootOf } = require('../src/engine/diff');
   const resolvers = new Map();
   const resolver = {

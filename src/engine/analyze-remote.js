@@ -11,9 +11,10 @@
 // outside the PR are invisible here.
 const path = require('path');
 const { createHash } = require('crypto');
-const { makeSymbols } = require('./symbols');
 const { score } = require('./signature');
-const { changedSymbolsIn, changedSymbolKeys } = require('./changed-symbols');
+const { changedSymbolKeys } = require('./changed-symbols');
+// TypeScript/JavaScript only (gate L2): the symbols come from the TypeScript provider.
+const { changedSymbolsWith } = require('../languages/typescript/provider');
 const { createSyntacticIndex } = require('./syntactic-index');
 const { createSyntacticResolver } = require('./resolver-syntactic');
 const { hunkRangesFromPatch, hunkDeletionsFromPatch } = require('./patch');
@@ -192,7 +193,7 @@ async function analyzeRemote({
   for (const f of testFiles) changedRanges[f.path] = hunkRangesFromPatch(f.patch);
 
   // ---- symbols -------------------------------------------------------------------
-  const S = makeSymbols(ts);
+  const symbolsOf = changedSymbolsWith(ts);
   const changed = [];
   const deleted = [];
   const outside = [];
@@ -202,7 +203,7 @@ async function analyzeRemote({
     if (!ranges.length && f.status !== 'deleted' && !f.patch && f.headText !== f.baseText) {
       warnings.push(`${f.path}: GitHub returned no patch (binary or too large) — symbols not mapped`);
     }
-    const r = changedSymbolsIn(ts, S, {
+    const r = symbolsOf({
       absPath: abs(f.path), relPath: f.path, status: f.status,
       headText: f.headText, baseText: f.baseText,
       hunkRanges: ranges, hunkDeletions: hunkDeletionsFromPatch(f.patch),

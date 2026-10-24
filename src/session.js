@@ -57,7 +57,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
   getObjectDirs = () => [], getTempDir = () => undefined }) {
   if (!Number.isSafeInteger(callerRetryWaitMs) || callerRetryWaitMs < 1 || callerRetryWaitMs > 120000) throw new RangeError('callerRetryWaitMs must be 1..120000');
   // Required here rather than at module load: tests intercept analyze/git per activate.
-  const { analyze, loadTypeScript } = require('./engine/analyze');
+  const { analyze } = require('./engine/analyze');
 
   const session = {
     state: { checkpoint },
@@ -394,7 +394,11 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     if (!review) return;
     const { makeGit } = require('./engine/git');
     const { createReviewIdentity, localRevisions } = require('./review-identity');
-    const identity = createReviewIdentity(loadTypeScript(repo, repo), repo, localRevisions(repo, result, makeGit(repo, { objectDirs: getObjectDirs() })));
+    // A review without TypeScript or JavaScript files does not load the compiler here; the
+    // identity loads it only if a row ever needs it.
+    const { loadTypeScriptIfUsed } = require('./languages/typescript/load');
+    const ts = loadTypeScriptIfUsed(repo, Object.keys(result.fileStatus || {}));
+    const identity = createReviewIdentity(ts, repo, localRevisions(repo, result, makeGit(repo, { objectDirs: getObjectDirs() })));
     const { key, replaces, branch } = reviewKeys(source, repo, result, base);
     review.configure(key, identity, { migrateFrom: replaces, branch });
   }

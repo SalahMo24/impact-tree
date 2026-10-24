@@ -6,7 +6,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { loadTypeScript } = require('../src/engine/analyze');
+const { loadTypeScript } = require('../src/languages/typescript/load');
 
 let fail = 0;
 const check = (name, cond, extra = '') => {

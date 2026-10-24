@@ -2,10 +2,10 @@
 
 const { describeRemoteProblem, otherRepositoryProblem } = require('./github-remote');
 
-// Unlike analyze.js's tryLoadTypeScript, a preview cannot skip TypeScript and
-// continue. Load from the repo root or abort the run.
+// Unlike the TypeScript provider's per-project loading, a preview cannot skip TypeScript
+// and continue. Load from the repo root or abort the run.
 function loadTypeScriptForPreview(repo) {
-  const { loadTypeScript } = require('./engine/analyze');
+  const { loadTypeScript } = require('./languages/typescript/load');
   try {
     return loadTypeScript(repo, repo);
   } catch (e) {

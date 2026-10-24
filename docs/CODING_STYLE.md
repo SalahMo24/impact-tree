@@ -562,7 +562,8 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      (`src/engine/snapshot-store.js`, `src/engine/diff-index.js`, `src/snapshot-storage.js`) the
      cleanup of stored data (`src/storage-cleanup.js`, `src/storage-cleanup-run.js`), the
      search for users the editor's language server did not reach (`src/engine/unseen-users.js`),
-     and the suggested changes in review comments (`src/suggestions.js`).
+     the suggested changes in review comments (`src/suggestions.js`), and the language
+     registry, providers and editor services (`src/languages/**`, `src/services-vscode.js`).
    - Planned: type-aware lint rules such as `no-floating-promises` (whether to add them
      before the review loop is an open decision), and enrolling the remaining modules.
 

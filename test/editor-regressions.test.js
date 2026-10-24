@@ -255,7 +255,7 @@ test('editor caller queries report whether they completed, and retry incomplete 
 
 // ---- readiness: a failed warm-up must be retried, not remembered ---------------------
 test('ensureReady retries after a failed prepare, shares a running one, and keeps a successful one', async () => {
-  const analyzeModule = require('../src/engine/analyze');
+  const analyzeModule = require('../src/languages/typescript/load');
   const resolverPath = require.resolve('../src/resolver-vscode');
   const realLoad = analyzeModule.loadTypeScript, realResolver = require.cache[resolverPath];
   let creations = 0, failNext = true;

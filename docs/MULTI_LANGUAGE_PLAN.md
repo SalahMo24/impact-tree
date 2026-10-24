@@ -89,37 +89,35 @@ What a language server supplies, and nothing language-specific:
 
 ### LanguageProvider (one per language) and the registry
 
-Only what differs between languages. A provider is handed `services` and never talks to
-a server itself: it decides what to ask and how to read the answer.
+Only what differs between languages. Revised in T3 (2026-10-24): TypeScript analyses per
+tsconfig project in batches, each with its own resolver, so per-symbol hooks did not fit.
+A provider has one coarse method instead (`src/languages/types.js` is authoritative):
 
 ```js
-/** @typedef {{
- *   id: string, displayName: string, serverHint: string,   // "Install the Go extension"
- *   handles(relPath: string): boolean,
- *   isTest(relPath: string): boolean,
- *   isGenerated(relPath: string, text: string): boolean,
- *   trivia: RegExp,                                          // comment-only lines
- *   collectSymbols(doc: DocRef, services: LanguageServices): Promise<CollectedSymbol[]|null>,
- *   signatureKinds(base: CollectedSymbol, head: CollectedSymbol): Kind[],
- *   callers(symbol: CollectedSymbol, services: LanguageServices, ctx): Promise<CallerAnswer>,
- *   needsServer: boolean,                                    // false: works in CLI / preview
- * }} LanguageProvider */
+/** @typedef {LanguageFileRules & {
+ *   needsServer: boolean,                     // false: works in the CLI and preview
+ *   prepare(ctx: PrepareContext): Promise<{ units: AnalysisUnit[],
+ *     extras?: { notes?(): string[], dispose?(): void, resultProperties?: object } }>,
+ *   editorCallers?(options): EditorCallerExtras,   // editor only, optional
+ * }} LanguageProvider
+ * AnalysisUnit: { component, projectRoot?, changed, deleted, outside, resolver } —
+ * a batch of changed symbols with the resolver that finds their callers. */
 ```
 
-- `CollectedSymbol` is today's `symbols.js` shape (`key`, `label`, `namePos`,
-  `startLine`/`endLine`, `start`/`end`, `sig`, `throws`, `isConstructor`, `exported`), so
-  `changedSymbolsIn`'s hunk mapping and matching are reused for every language.
-- `signatureKinds` returns `signature.js` kinds (`param-removed`, `type-changed`,
-  `return-changed`, `new-throw`, …). Most providers build a `sig` from the declaration
-  header and call the shared `diffSignature`; the method exists so a language can add its
-  own (Java's checked `throws`).
-- `callers` returns the existing resolver answer (`{ state, callers, complete, reason }`).
-  The shared default (`callersFromHierarchy`) asks `prepareCallHierarchy` /
-  `incomingCalls` / `references` and marks test callers with `isTest`; a provider wraps it
-  for its blind spots (Go interfaces, Python dynamic calls) or replaces it (TypeScript's
-  own language service in the CLI).
+- `prepare` gets this provider's changed (non-test) files and the run's base texts, hunk
+  ranges, warning sinks, progress, cancellation and environment hooks (`makeResolver`,
+  `makeModuleCallers`). A provider whose `prepare` rejects has its files reported as not
+  analysed, with the reason; the other languages still run.
+- `editorCallers` lets a language adjust the editor's caller answers for its own files
+  (TypeScript's inheritance filter, command-bus edges and unseen users; Go's value uses and
+  build tags in G4). The editor resolver applies it only to that language's targets.
+- Server-backed languages (Go, Python, Java) implement `prepare` with a shared helper,
+  built in G2: document symbols for base and head → the `CollectedSymbol` shape
+  (`src/engine/symbols.js`'s) → the existing hunk mapping and matching; a per-language
+  header parser → `sig` → the shared `diffSignature`; callers from `callersFromHierarchy`
+  (`src/languages/callers-from-hierarchy.js`).
 - **Registry** (`src/languages/index.js`): an ordered list of providers;
-  `providerFor(relPath)` returns the first whose `handles` is true. TypeScript is first.
+  `languageFor(relPath)` returns the first whose `handles` is true. TypeScript is first.
   Each language lives in `src/languages/<id>/` with its tests.
 
 Keep the provider interface small: every method is written once per language. A need
@@ -158,14 +156,14 @@ No new language yet. Every task leaves TypeScript's results identical: the
 characterization snapshot (`tree-characterization.test.js`), `run-fixtures.js` and the
 `t3-pr-snapshots` suite pass unchanged.
 
-### T1. Interfaces and the registry
+### T1. Interfaces and the registry (done)
 
 Acceptance: `LanguageServices`, `LanguageProvider`, `DocRef`, `CollectedSymbol` and
 `CallerAnswer` typedefs in `src/languages/types.js`; `src/languages/index.js` with the
 registry and `providerFor`; `diff.js`'s `isSourcePath` / `isTestPath` delegate to it;
 tests for the registry order and for a path no provider handles.
 
-### T2. The services adapter for the editor
+### T2. The services adapter for the editor (done)
 
 Acceptance: `services-vscode.js` implements `LanguageServices` from the editor commands;
 the deadline, retry, warm-up and cancellation code moves there from `resolver-vscode.js`;
@@ -173,7 +171,12 @@ the deadline, retry, warm-up and cancellation code moves there from `resolver-vs
 today's resolver on the existing resolver tests; base-side `DocRef`s are refused with
 `null` until L1 is decided.
 
-### T3. TypeScript behind its provider
+### T3. TypeScript behind its provider (done)
+
+Verified 2026-10-24: the full suite (82 files) passes with no expected value changed, and
+the CLI's `--json` output is identical before and after on 14 cases (12 merged PRs or
+merges of `pingdotgg/t3code` and `honojs/hono`, up to 245 changed files and 639 changed
+functions, plus the synthetic fixture), timings aside.
 
 Acceptance: `src/languages/typescript/` provides every method from the current modules;
 the inheritance filter, CQRS, unseen users and module callers are called from its

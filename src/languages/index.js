@@ -2,16 +2,41 @@
 'use strict';
 // The registry of languages: which language, if any, analyses a changed file. The
 // pipeline asks this instead of testing extensions itself, so adding a language means
-// adding its rules here, not editing the engine.
+// adding its provider here, not editing the engine.
 
-const { typescriptRules } = require('./typescript/rules');
+const { typescriptProvider } = require('./typescript/provider');
 
 /**
  * Registered languages, in the order they are asked. The first whose `handles` is true
  * owns the file.
- * @type {ReadonlyArray<import('./types').LanguageFileRules>}
+ * @type {ReadonlyArray<import('./types').LanguageProvider>}
  */
-const LANGUAGES = Object.freeze([typescriptRules]);
+const LANGUAGES = Object.freeze([typescriptProvider]);
+
+// The languages every answer below comes from: `LANGUAGES`, except while a test has put
+// others in their place (`useLanguagesForTest`). Owner: this module. Never changed by
+// production code.
+/** @type {ReadonlyArray<import('./types').LanguageProvider>} */
+let active = LANGUAGES;
+
+/**
+ * Test seam: answer from `languages` instead of `LANGUAGES` until the returned function
+ * is called, so a test can add a language (a provider that fails, say) without one
+ * existing. Tests only; nothing in `src/` calls it.
+ * @param {ReadonlyArray<import('./types').LanguageProvider>} languages
+ * @returns {() => void} Restores the registered languages.
+ */
+function useLanguagesForTest(languages) {
+  const previous = active;
+  active = Object.freeze(languages.slice());
+  return () => { active = previous; };
+}
+
+/**
+ * The languages asked, in order.
+ * @returns {ReadonlyArray<import('./types').LanguageProvider>}
+ */
+const registeredLanguages = () => active;
 
 // A directory that holds tests, in any language. Matched against a repository-relative
 // path: on an absolute one, any directory above the repository named `tests/` would make
@@ -24,10 +49,10 @@ const slashed = (relPath) => String(relPath).replace(/\\/g, '/');
 /**
  * The language that analyses a file, or null when none does.
  * @param {string} relPath Repository-relative.
- * @returns {import('./types').LanguageFileRules|null}
+ * @returns {import('./types').LanguageProvider|null}
  */
 function languageFor(relPath) {
-  for (const language of LANGUAGES) if (language.handles(relPath)) return language;
+  for (const language of active) if (language.handles(relPath)) return language;
   return null;
 }
 
@@ -48,4 +73,4 @@ function isTestPath(relPath) {
   return language !== null && language.isTest(relPath);
 }
 
-module.exports = { LANGUAGES, languageFor, isSourcePath, isTestPath };
+module.exports = { LANGUAGES, languageFor, registeredLanguages, isSourcePath, isTestPath, useLanguagesForTest };
