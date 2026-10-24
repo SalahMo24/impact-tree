@@ -68,6 +68,30 @@ function readLineOfOffset(file, offset) {
   return position ? position.line + 1 : null;
 }
 
+/**
+ * The text offsets into `file` refer to: the registered text, or the file on disk read as
+ * UTF-8 (as `lineStarts` reads it). `null` when it cannot be read, when the file on disk is
+ * larger than `maxBytes`, or when it changed while being read (its length no longer
+ * matches the line starts just taken). The disk text is not cached: the caller owns it.
+ * @param {string} file Absolute path.
+ * @param {{ maxBytes: number }} options `maxBytes`: the largest file read, in bytes of the
+ *   file on disk; a positive integer. Registered text is already in memory and is returned
+ *   whatever its size.
+ * @returns {string|null}
+ */
+function readTextOfOffsets(file, { maxBytes }) {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new RangeError(`maxBytes must be a positive integer, got ${maxBytes}`);
+  const v = virtual.get(file);
+  if (v) return v.text;
+  let st;
+  try { st = fs.statSync(file); } catch { return null; }
+  if (!st.isFile() || st.size > maxBytes) return null;
+  let text;
+  try { text = fs.readFileSync(file, 'utf8'); } catch { return null; }
+  const entry = lineStarts(file);
+  return entry && entry.length === text.length ? text : null;
+}
+
 function positionToOffset(file, line, character) {
   const e = lineStarts(file);
   if (!e) return null;
@@ -76,7 +100,7 @@ function positionToOffset(file, line, character) {
 }
 
 module.exports = {
-  offsetToPosition, positionToOffset, readLineOfOffset,
+  offsetToPosition, positionToOffset, readLineOfOffset, readTextOfOffsets,
   registerVirtualText, clearVirtualText, virtualText,
   _clear: () => { cache.clear(); virtual.clear(); },
 };

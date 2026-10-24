@@ -18,6 +18,7 @@ const path = require('node:path');
 const { analyze } = require('../../src/engine/analyze');
 const { createGoplsServices } = require('./gopls-services');
 const { languageServicesOver, createHierarchyResolver } = require('./harness-languages');
+const { goProvider } = require('../../src/languages/go/provider');
 
 /** Whole run, cold gopls included (G0: first answers within seconds on a warm disk cache). */
 const OVERALL_DEADLINE_MS = 15 * 60 * 1000;
@@ -48,7 +49,12 @@ async function main() {
       languageServices: services,
       makeResolver: (/** @type {{ language: string, component: string }} */ { language, component }) => {
         resolvers.push(`${language}:${component}`);
-        return createHierarchyResolver(services);
+        // The Go provider's caller extras, applied as the editor's resolver applies them
+        // (G4: value uses are not calls; a file outside the active build says so).
+        const extras = language === 'go' && goProvider.editorCallers
+          ? goProvider.editorCallers({ ts: null, services, repoRoot: repo, trace: () => {}, filterInherited: false, onWarmupRetry: () => {} })
+          : null;
+        return createHierarchyResolver(services, { extras });
       },
     });
     const rel = (/** @type {string} */ f) => path.relative(repo, f);

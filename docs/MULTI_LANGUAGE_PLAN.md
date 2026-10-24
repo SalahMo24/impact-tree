@@ -269,7 +269,20 @@ expanded, unnamed params named by position, variadic as `rest`, results as `retu
 generics `[T any]` parsed) and calls the shared `diffSignature`; a receiver change
 (`T` ↔ `*T`) is `type-changed`; tests cover each form from real `cli/cli` headers.
 
-### G4. Go callers and their blind spots
+### G4. Go callers and their blind spots (done)
+
+Done 2026-10-24: `src/languages/go/editor-extras.js` (`goProvider.editorCallers`), applied by
+the editor resolver and, the same way, by the harness resolver. A site is a call when the
+text after its identifier (past space, same-line comments and a generic `[...]`, within
+4096 characters; a newline ends the expression) is `(` (`src/languages/go/call-sites.js`);
+caller files are read through `textpos` up to 2 MiB, and a site that cannot be read is kept.
+Callers that only use the function as a value are dropped, mixed ones keep only their
+calls, and any value use makes the answer incomplete with `referenced-as-value` (so a
+function used only as a value is unknown, never "no callers"). A "no package metadata"
+rejection reads "not in the active build (build tags); callers were not searched", not
+retryable (`EditorCallerExtras.explainIncomplete`). On cli/cli: `noArgsConstraint` goes from
+11 callers, complete, to unknown / `referenced-as-value`; `debug.Config` in
+`config_enabled.go` shows the build-tag reason.
 
 G0 changed this task: gopls lists interface calls and value uses as callers, so the risk
 is not missing them but reading them wrongly.

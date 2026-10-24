@@ -383,6 +383,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     log(`  queries: ${st.incomingCalls}  min ${st.minMs}ms / median ${st.medianMs}ms / max ${st.maxMs}ms`);
     log(`  ${st.cacheHits} cache hits · ${st.warmupRetries} warmup retries · ${st.skipped} unresolved · ${st.resolvedEmpty} resolved-but-empty${st.unseenUsers ? ` · ${st.unseenUsers} used in files the editor does not search` : ''}`);
     log(`  cqrs: +${st.cqrsEdges} edges / ${st.cqrsSuppressed} handlers de-noised`);
+    if (st.valueUsesDropped) log(`  precision: -${st.valueUsesDropped} Go caller(s) that only use the function as a value, not call it`);
     if (st.inheritedDropped) log(`  precision: -${st.inheritedDropped} inherited-member over-report(s) (sibling subclasses the call hierarchy wrongly attributes to an override)`);
     if (st.slowest) log(`  slowest query ${st.slowest.ms}ms -> ${path.relative(repo, st.slowest.file)}@${st.slowest.pos}`);
     if (st.resolvedEmpty) {
