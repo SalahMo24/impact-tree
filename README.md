@@ -161,6 +161,12 @@ stages at a real repository instead:
 IMPACT_TREE_TARGET_REPO=/path/to/repo npm test
 ```
 
+`npm test` runs every file in `test/suite.js` in parallel child processes, slowest first
+(about 90 s on 12 cores; `--concurrency N`, `--only <substring>`, `--verbose` and `--deadline-s N`
+tune it). `npm run test:quick` runs only the files that finish in a few seconds, and
+`npm run test:serial` runs one file at a time. A test file missing from `test/suite.js` fails
+the run, so list new files there.
+
 Against the built-in fixture, or with `CI` set, a stage that finds nothing to check fails
 rather than skipping. Recorded fixtures embed real paths and symbol names from whatever
 repo they were captured against, so they are gitignored. Regenerate locally with

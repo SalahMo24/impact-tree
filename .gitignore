@@ -18,3 +18,5 @@ ACCEPTANCE.md
 
 docs/distribution-checklist.md
 docs/CODE_DESIGN_PROPOSAL.md
+# Last run time of each test file, written by test/run.js to order the next run.
+test/.timings.json
