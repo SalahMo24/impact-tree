@@ -60,7 +60,8 @@
 //   counted too, with its own words, not added as a caller: which function it is in is
 //   not known here, and a test caller left out of a no-tests query looks the same (that
 //   query's completeness is not shown). Module functions are not searched: a call by name
-//   is resolved through its import (P0: `httpx.get` re-exports resolve).
+//   is resolved through its import (P0: `httpx.get` re-exports resolve); Pyright's project
+//   is what limits them (next).
 //   Budgets (CODING_STYLE §2; owner: this module; enforced in `duckTypingReason` before
 //   each unit of work is admitted): DUCK_MAX_FILES files read, DUCK_MAX_FILE_BYTES per
 //   file, DUCK_MAX_TOTAL_BYTES in all, DUCK_MAX_DEFINITIONS code hits examined (one
@@ -69,6 +70,36 @@
 //   checked", "M of N files with calls by this name not checked"), never
 //   silently complete. A search that fails (git grep) makes the answer incomplete with
 //   that reason.
+// - Files outside Pyright's project (A7). A `pyrightconfig.json` or `[tool.pyright]` with
+//   `include`/`exclude` (./pyright-project.js) limits what Pyright analyses, and its call
+//   hierarchy never lists a caller in a file outside (pydantic: most of `tests/`). For a
+//   module function (and a nested one), and for a class's `__init__` by its class's name
+//   (constructions `Cls(...)` there are not among the class's references either), the
+//   repository's Python files outside the project (the provider's `handles`) are searched
+//   for the name as a call (`name(`, `mod.name(`; not `def name(`/`class name(`) or in an
+//   import, in code, not at a listed site (in a file that defines the name at module
+//   level and does not import it, only `mod.name(` counts: its bare calls are its own
+//   function's, as in pydantic's `v1/` copy): each is counted, not resolved (which function a
+//   call by that name is cannot be asked of a server that does not analyse the file), and
+//   the answer is incomplete, "N call(s) by this name in files outside the language
+//   server's project (<config>)". Methods are not searched again: the duck-typing search
+//   reads every file, outside the project too, and `definition` answers there (A6: 9 calls
+//   of `Color.as_rgb_tuple` in `tests/test_color.py`). A property's attribute uses outside
+//   the project are not searched (not detectable). No config, or one with neither key:
+//   nothing is outside (Pyright's default excludes hold folders the provider does not
+//   handle); no search. A config that cannot be read or parsed: the project is unknown,
+//   and every Python file is searched the same way, the reason naming the config's error,
+//   so a broken config never makes an answer complete. The config is read once per extras
+//   instance (two bounded file reads at most), and each name's file list is searched once
+//   per instance (a target is asked more than once per analysis); both are dropped at
+//   `clear()`.
+//   Budgets (CODING_STYLE §2; owner: this module; enforced in `outsideProjectReason` before
+//   each file is read): OUTSIDE_MAX_FILES files read, OUTSIDE_MAX_FILE_BYTES per file,
+//   OUTSIDE_MAX_TOTAL_BYTES in all, OUTSIDE_DEADLINE_MS for the whole search (git grep
+//   included). Exhaustion: incomplete, "M of K files outside the language server's
+//   project with this name not checked" (with any count found), never silently complete.
+//   A failed search (git grep) is incomplete with that reason. Not found: an import alias
+//   in a parenthesised multi-line import whose line holds more than the name.
 // - `null` vs `[]`. Pyright answers `null` when there are no incoming calls (P0); the
 //   harness keeps it ("no incoming-call result", incomplete) and VS Code's
 //   `vscode.provideIncomingCalls` may turn it into `[]`. On `[]` `moreCallers` runs, and
@@ -82,6 +113,7 @@ const { realClock } = require('../../engine/clock');
 const { pythonRules } = require('./rules');
 const { nonCodeRanges: lexerNonCodeRanges } = require('./lexer');
 const { messageOf } = require('../text');
+const { readPyrightProject } = require('./pyright-project');
 
 /** @typedef {import('../../engine/caller-contract').CallerRow} CallerRow */
 /** @typedef {import('../types').LanguageServices} LanguageServices */
@@ -101,6 +133,13 @@ const DUCK_MAX_TOTAL_BYTES = 16 * 1024 * 1024; // bytes over all searched files
 const DUCK_MAX_DEFINITIONS = 50;     // code hits outside listed sites examined, one `definition` query each
 const DUCK_DEADLINE_MS = 10000;      // whole search, git grep included
 const GREP_TIMEOUT_MS = 5000;        // the git grep alone (within the deadline)
+// Search of files outside Pyright's project (see the header). No `definition` query is
+// asked, so the bound is on files and bytes; defaults as the duck search's (pydantic's
+// tests: about 300 files, a name is in a handful).
+const OUTSIDE_MAX_FILES = 200;          // files outside the project holding the name, read in git's order
+const OUTSIDE_MAX_FILE_BYTES = MAX_FILE_BYTES; // bytes per file
+const OUTSIDE_MAX_TOTAL_BYTES = 16 * 1024 * 1024; // bytes over all searched files
+const OUTSIDE_DEADLINE_MS = 10000;      // whole search, git grep included
 
 const PROTOCOL_REASON = 'called by Python itself (protocol method); its callers cannot be traced';
 const REGISTRATION_REASON = 'registered by a decorator; its callers cannot be traced';
@@ -171,6 +210,29 @@ function attributeCallHits(text, name) {
   let ranges = null;
   for (const m of text.matchAll(re)) {
     const at = /** @type {number} */ (m.index) + m[0].indexOf(name, 1);
+    ranges = ranges || nonCodeRanges(text);
+    if (inCode(ranges, at)) hits.push(at);
+  }
+  return hits;
+}
+
+/**
+ * Offsets of `name` in `text` used as a call (`name(`, `mod.name(`; not `def name(` or
+ * `class name(`) or named in an import statement, in code. Pure.
+ * @param {string} text @param {string} name
+ * @returns {number[]}
+ */
+function nameUseHits(text, name) {
+  const re = new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRe(name)}(?![\\p{L}\\p{N}_])`, 'gu');
+  /** @type {number[]} */
+  const hits = [];
+  let ranges = null;
+  for (const m of text.matchAll(re)) {
+    const at = /** @type {number} */ (m.index);
+    const end = at + name.length;
+    const lineStart = text.lastIndexOf('\n', at - 1) + 1;
+    const called = isCalledAt(text, at, end) === true && !/(?:^|[^\w.])(?:def|class)[ \t]+$/.test(text.slice(lineStart, at));
+    if (!called && !isImportAt(text, at)) continue;
     ranges = ranges || nonCodeRanges(text);
     if (inCode(ranges, at)) hits.push(at);
   }
@@ -410,21 +472,95 @@ function isImportAt(text, start) {
 }
 
 /**
- * Python's caller extras. Holds no state between queries.
+ * Python's caller extras. Holds no state between queries but Pyright's project, read once
+ * and dropped at `clear()`.
  * @param {{ trace?: (message: string) => void, readText?: (file: string) => string|null,
  *   services?: LanguageServices|null, repoRoot?: string|null,
  *   grep?: ((pattern: string, timeoutMs: number) => Promise<string[]>)|null,
- *   clock?: { now: () => number } }} [options]
+ *   clock?: { now: () => number }, readConfig?: ((abs: string) => string|null)|null }} [options]
  *   `readText` (tests): a file's text, by default through src/engine/textpos.js (the text
  *   the offsets were converted from), up to MAX_FILE_BYTES. `services` and `repoRoot`:
  *   where references and definitions are asked and which files are searched; without
  *   either, no check runs (the server's answer stands). `grep`: lists the repository-relative
  *   paths of tracked and untracked Python files matching an extended regular expression,
- *   rejecting when the search failed; by default `git grep` in `repoRoot`.
+ *   rejecting when the search failed; by default `git grep` in `repoRoot`. `readConfig`
+ *   (tests): a config file's text, null when absent, throwing on a failure; by default a
+ *   bounded read (./pyright-project.js).
  * @returns {import('../types').EditorCallerExtras}
  */
-function createPythonEditorExtras({ trace = () => {}, readText = (file) => readTextOfOffsets(file, { maxBytes: MAX_FILE_BYTES }), services = null, repoRoot = null, grep = null, clock = realClock } = {}) {
+function createPythonEditorExtras({ trace = () => {}, readText = (file) => readTextOfOffsets(file, { maxBytes: MAX_FILE_BYTES }), services = null, repoRoot = null, grep = null, clock = realClock, readConfig = null } = {}) {
   const search = grep || (repoRoot ? gitGrepPython(/** @type {string} */ (repoRoot)) : null);
+  /** @type {ReturnType<typeof readPyrightProject>|undefined} Pyright's project, read on first use (undefined: not yet). */
+  let project;
+  const projectOf = () => {
+    if (project === undefined) project = repoRoot ? (readConfig ? readPyrightProject(repoRoot, readConfig) : readPyrightProject(repoRoot)) : null;
+    return project;
+  };
+  /** @type {Map<string, Promise<string[]>>} Per name, the files the search found (each name searched once per instance, as the project). */
+  const outsideFiles = new Map();
+
+  /**
+   * The verdict on files outside Pyright's project (see the header), within its budgets.
+   * @param {string} name @param {Set<string>} listed
+   * @returns {Promise<string|null>}
+   */
+  async function outsideProjectReason(name, listed) {
+    const proj = projectOf();
+    if (!search || !repoRoot || !proj || ('explicit' in proj && !proj.explicit)) return null;
+    const unknown = 'error' in proj ? proj : null;
+    const inProject = 'inProject' in proj ? proj.inProject : () => false;
+    const started = clock.now();
+    const late = () => clock.now() - started >= OUTSIDE_DEADLINE_MS;
+    const n = escapeRe(name);
+    let rels;
+    try {
+      // The files naming it as a word (a simple pattern: git's search is about twice as
+      // fast as with the call/import alternatives, measured on pydantic); the text decides.
+      let files = outsideFiles.get(name);
+      if (!files) {
+        files = search(`(^|[^[:alnum:]_])${n}([^[:alnum:]_]|$)`, GREP_TIMEOUT_MS);
+        outsideFiles.set(name, files);
+      }
+      rels = (await files).filter((rel) => pythonRules.handles(rel) && !inProject(rel));
+    } catch (e) {
+      return `calls by this name in files outside the language server's project could not be searched: ${messageOf(e)}`;
+    }
+    let found = 0;
+    let filesRead = 0;
+    let bytes = 0;
+    let filesUnchecked = 0;
+    /** @type {string[]} */
+    const examples = [];
+    for (const rel of rels) {
+      if (filesRead >= OUTSIDE_MAX_FILES || late()) { filesUnchecked++; continue; }
+      const abs = path.join(/** @type {string} */ (repoRoot), rel);
+      const text = readText(abs);
+      if (typeof text !== 'string' || text.length > OUTSIDE_MAX_FILE_BYTES || bytes + text.length > OUTSIDE_MAX_TOTAL_BYTES) { filesUnchecked++; continue; }
+      filesRead++;
+      bytes += text.length;
+      const hits = nameUseHits(text, name);
+      // A file with its own module-level `def name`/`class name` and no import of the name
+      // calls its own by the bare name (pydantic's `v1/` copy of its modules): only its
+      // attribute calls (`mod.name(`) may be the target's.
+      const own = new RegExp(`^(?:async[ \\t]+)?(?:def|class)[ \\t]+${n}(?![\\p{L}\\p{N}_])`, 'mu').test(text)
+        && !hits.some((at) => isImportAt(text, at));
+      for (const at of hits) {
+        if (listed.has(`${abs}#${at}`)) continue;
+        if (own && !/\.[ \t]*$/.test(text.slice(Math.max(0, at - 64), at))) continue;
+        found++;
+        if (examples.length < 3) examples.push(`${rel}:${text.slice(0, at).split('\n').length}`);
+      }
+    }
+    const where = unknown
+      ? `the language server did not list; its project could not be read (${unknown.configFile}: ${unknown.error})`
+      : `in files outside the language server's project (${proj.configFile})`;
+    trace(`python: outside-project search for ${name}: ${rels.length} file(s), ${filesRead} read, ${found} use(s)${examples.length ? ` (e.g. ${examples.join(', ')})` : ''}, ${filesUnchecked} file(s) not checked`);
+    /** @type {string[]} */
+    const parts = [];
+    if (found) parts.push(`${found} call${found === 1 ? '' : 's'} by this name ${where}`);
+    if (filesUnchecked) parts.push(`${filesUnchecked} of ${rels.length} files ${unknown ? 'with this name' : 'outside the language server\'s project with this name'} not checked`);
+    return parts.length ? parts.join('; ') : null;
+  }
 
   /**
    * The value-use verdict from the target's references.
@@ -593,9 +729,15 @@ function createPythonEditorExtras({ trace = () => {}, readText = (file) => readT
             const value = await valueUseReason(services, file, pos, listed);
             if (value) return { callers: [], incompleteReason: value };
           }
-          if (cls) return { callers: [], incompleteReason: await constructionReason(services, file, text, cls, listed) };
+          if (cls) {
+            const construction = await constructionReason(services, file, text, cls, listed);
+            if (construction) return { callers: [], incompleteReason: construction };
+            const className = /^[^\W\d]\w*/u.exec(text.slice(cls.namePos, cls.namePos + 256));
+            return { callers: [], incompleteReason: className ? await outsideProjectReason(className[0], listed) : null };
+          }
           if (!seen.length && decl.decorators.some(isRegistrationDecorator)) return { callers: [], incompleteReason: REGISTRATION_REASON };
-          if (!decl.isMethod || isProperty) return none;
+          if (isProperty) return none;
+          if (!decl.isMethod) return { callers: [], incompleteReason: await outsideProjectReason(decl.name, listed) };
           return { callers: [], incompleteReason: await duckTypingReason(services, file, pos, decl.name, listed) };
         },
       };
@@ -627,7 +769,8 @@ function createPythonEditorExtras({ trace = () => {}, readText = (file) => readT
     // Pyright's call hierarchy answers for the whole workspace; there are no users it is
     // known not to see beyond those `moreCallers` checks.
     unseenUsers: async () => null,
-    clear() {},
+    // Pyright's project is read, and each name searched, again after this.
+    clear() { project = undefined; outsideFiles.clear(); },
   };
 }
 
@@ -653,8 +796,9 @@ function gitGrepPython(repoRoot) {
 
 module.exports = {
   createPythonEditorExtras, nonCodeRanges, inCode, attributeCallHits, declarationAt, isRegistrationDecorator,
-  dedupeSites, isCalledAt, hasStringReceiver, isImportAt, isProtocolName, TRANSPARENT_DECORATORS,
+  dedupeSites, isCalledAt, nameUseHits, hasStringReceiver, isImportAt, isProtocolName, TRANSPARENT_DECORATORS,
   PROTOCOL_REASON, REGISTRATION_REASON, VALUE_USE_REASON, UNREAD_TARGET_REASON, NO_SERVICES_REASON, CONSTRUCTOR_REASON,
   SUBCLASS_REASON, FACTORY_REASON, enclosingClassAt, classUseAt, factoryCallsIn,
   DUCK_MAX_FILES, DUCK_MAX_FILE_BYTES, DUCK_MAX_TOTAL_BYTES, DUCK_MAX_DEFINITIONS, DUCK_DEADLINE_MS, MAX_FILE_BYTES,
+  OUTSIDE_MAX_FILES, OUTSIDE_MAX_FILE_BYTES, OUTSIDE_MAX_TOTAL_BYTES, OUTSIDE_DEADLINE_MS,
 };

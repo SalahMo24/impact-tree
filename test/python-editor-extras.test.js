@@ -497,3 +497,111 @@ test('the editor resolver lists an __init__\'s constructions from its class (A5)
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// A7: callers in files outside Pyright's project. `config`: pyproject.toml text (or an
+// Error to throw); the search returns every stubbed file.
+const PYPROJECT = "[tool.pyright]\ninclude = ['pkg', 'tests/test_in.py']\n";
+function makeOutside({ files = {}, config = /** @type {any} */ (PYPROJECT), grepFails = false, now = () => 0, defs = () => null } = {}) {
+  const texts = { [MODELS]: MODELS_TEXT, ...files };
+  const calls = { grep: 0, configReads: 0 };
+  const extras = ex.createPythonEditorExtras({
+    services: /** @type {any} */ ({ references: async () => [], definitions: async (/** @type {any} */ d, /** @type {number} */ p) => defs(d.file, p) }),
+    repoRoot: R, readText: (f) => (f in texts ? texts[f] : null), clock: { now },
+    grep: async () => { calls.grep++; if (grepFails) throw new Error('grep broke'); return Object.keys(texts).map((f) => f.slice(R.length + 1)); },
+    readConfig: (abs) => {
+      calls.configReads++;
+      if (!abs.endsWith('pyproject.toml')) return null;
+      if (config instanceof Error) throw config;
+      return config;
+    },
+  });
+  return { extras, calls };
+}
+const OUT_REASON = (/** @type {number} */ n) => `${n} call${n === 1 ? '' : 's'} by this name in files outside the language server's project (pyproject.toml [tool.pyright])`;
+
+test('outside the project: a module function called from an excluded test is incomplete; from an included file, no effect', async () => {
+  const out = makeOutside({ files: { [`${R}/tests/test_out.py`]: 'from pkg.models import helper\n\ndef test_x():\n    helper()\n' } });
+  assert.equal((await ask(out.extras, 'helper')).more.incompleteReason, OUT_REASON(2)); // the import and the call
+  const inside = makeOutside({ files: { [`${R}/tests/test_in.py`]: 'from pkg.models import helper\nhelper()\n', [`${R}/pkg/use.py`]: 'helper()\n' } });
+  assert.equal((await ask(inside.extras, 'helper')).more.incompleteReason, null);
+});
+
+test('outside the project: strings, comments, other names, `def`/`class` by that name and listed sites do not count', async () => {
+  const text = [
+    '# helper()', 's = "helper()"', 'doc = """', 'helper()', '"""', 'helpers()', 'x.helper_two()', 'def helper():', '    pass',
+    'class helper(Base):', '    pass', 'y = helper', 'mod.helper()', '',
+  ].join('\n');
+  const file = `${R}/tests/test_out.py`;
+  const { extras } = makeOutside({ files: { [file]: text } });
+  const site = text.indexOf('mod.helper') + 4;
+  // Only `mod.helper()`; at a listed site it is not counted either.
+  assert.equal((await ask(extras, 'helper')).more.incompleteReason, OUT_REASON(1));
+  const listed = makeOutside({ files: { [file]: text } }).extras;
+  assert.equal((await ask(listed, 'helper', [caller(file, 't', [site])])).more.incompleteReason, null);
+  // A file with its own module-level `helper` and no import of it: only `mod.helper()`.
+  const own = makeOutside({ files: { [file]: 'def helper():\n    pass\n\nhelper()\nmod.helper()\n' } }).extras;
+  assert.equal((await ask(own, 'helper')).more.incompleteReason, OUT_REASON(1));
+  const imported = makeOutside({ files: { [file]: 'from pkg.models import helper\ndef helper():\n    pass\nhelper()\n' } }).extras;
+  assert.equal((await ask(imported, 'helper')).more.incompleteReason, OUT_REASON(2));
+  // An f-string's fields are code.
+  const f = makeOutside({ files: { [file]: 'x = f"{helper()}"\n' } }).extras;
+  assert.equal((await ask(f, 'helper')).more.incompleteReason, OUT_REASON(1));
+});
+
+test('outside the project: no config, or neither key, means no search; a method is left to the duck search', async () => {
+  for (const config of [null, '[tool.pyright]\nstrict = ["x"]\n']) {
+    const { extras, calls } = makeOutside({ config, files: { [`${R}/tests/test_out.py`]: 'helper()\n' } });
+    assert.equal((await ask(extras, 'helper')).more.incompleteReason, null);
+    assert.equal(calls.grep, 0);
+  }
+  // A method: the duck search reads every file and asks `definition` (here: another function).
+  const { extras } = makeOutside({ files: { [`${R}/tests/test_out.py`]: 'merge(1)\no.merge(2)\n' }, defs: () => [{ file: `${R}/o.py`, start: 0, end: 1 }] });
+  assert.equal((await ask(extras, 'merge')).more.incompleteReason, null);
+});
+
+test('outside the project: an unreadable config searches every file and names the error; a failed grep is incomplete', async () => {
+  const { extras } = makeOutside({ config: new Error('EACCES'), files: { [`${R}/pkg/use.py`]: 'helper()\n' } });
+  assert.equal((await ask(extras, 'helper')).more.incompleteReason, '1 call by this name the language server did not list; its project could not be read (pyproject.toml: EACCES)');
+  const clean = makeOutside({ config: '[tool.pyright]\ninclude = [1]\n' }).extras;
+  assert.equal((await ask(clean, 'helper')).more.incompleteReason, null); // no use anywhere
+  const failing = makeOutside({ grepFails: true }).extras;
+  assert.match(String((await ask(failing, 'helper')).more.incompleteReason), /outside the language server's project could not be searched: grep broke/);
+});
+
+for (const [n, unchecked] of [[ex.OUTSIDE_MAX_FILES - 1, 0], [ex.OUTSIDE_MAX_FILES, 0], [ex.OUTSIDE_MAX_FILES + 1, 1]]) {
+  test(`outside the project budget: ${n} files outside ${unchecked ? 'exceed' : 'fit'} the ${ex.OUTSIDE_MAX_FILES}-file limit`, async () => {
+    /** @type {Record<string, string>} */
+    const files = {};
+    for (let i = 0; i < n; i++) files[`${R}/tests/t${i}.py`] = 'x = 1\n';
+    const { extras } = makeOutside({ files });
+    const reason = (await ask(extras, 'helper')).more.incompleteReason;
+    assert.equal(reason, unchecked ? `1 of ${n} files outside the language server's project with this name not checked` : null);
+  });
+}
+
+test('outside the project budgets: an oversized file, the total bytes and the deadline are reported, with what was found', async () => {
+  const big = makeOutside({ files: { [`${R}/tests/big.py`]: 'x'.repeat(ex.OUTSIDE_MAX_FILE_BYTES + 1) } }).extras;
+  assert.equal((await ask(big, 'helper')).more.incompleteReason, "1 of 1 files outside the language server's project with this name not checked");
+  /** @type {Record<string, string>} */
+  const files = {};
+  const body = `helper()\n${'x'.repeat(ex.OUTSIDE_MAX_FILE_BYTES - 100)}`;
+  const count = Math.ceil(ex.OUTSIDE_MAX_TOTAL_BYTES / body.length) + 1;
+  for (let i = 0; i < count; i++) files[`${R}/tests/t${i}.py`] = body;
+  const total = makeOutside({ files }).extras;
+  const read = Math.floor(ex.OUTSIDE_MAX_TOTAL_BYTES / body.length);
+  assert.equal((await ask(total, 'helper')).more.incompleteReason, `${OUT_REASON(read)}; ${count - read} of ${count} files outside the language server's project with this name not checked`);
+  let t = 0;
+  const slow = makeOutside({ files: { [`${R}/tests/a.py`]: 'helper()\n', [`${R}/tests/b.py`]: 'helper()\n' }, now: () => { const v = t; t += ex.OUTSIDE_DEADLINE_MS / 2; return v; } }).extras;
+  assert.equal((await ask(slow, 'helper')).more.incompleteReason, `${OUT_REASON(1)}; 1 of 2 files outside the language server's project with this name not checked`);
+});
+
+test('outside the project: __init__ is searched by its class name; clear() reads the config again', async () => {
+  const { extras, calls } = makeOutside({ files: { [`${R}/tests/test_out.py`]: 'Params()\n' } });
+  const q = extras.query(MODELS, posOf('__init__'));
+  assert.equal((await q.moreCallers()).incompleteReason, OUT_REASON(1));
+  await ask(extras, 'helper');
+  assert.equal(calls.configReads, 2); // pyrightconfig.json (absent), then pyproject.toml, once per instance
+  extras.clear();
+  await ask(extras, 'helper');
+  assert.equal(calls.configReads, 4);
+});
