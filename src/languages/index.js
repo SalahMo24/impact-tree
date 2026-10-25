@@ -7,6 +7,7 @@
 const { typescriptProvider } = require('./typescript/provider');
 const { goProvider } = require('./go/provider');
 const { pythonProvider } = require('./python/provider');
+const { slashed } = require('./text');
 
 /**
  * Registered languages, in the order they are asked. The first whose `handles` is true
@@ -45,8 +46,6 @@ const registeredLanguages = () => active;
 // every file in it a test.
 const TEST_DIR = /(^|\/)(tests?|__tests__|__mocks__)\//;
 
-/** @param {string} relPath @returns {string} The path with `/` separators. */
-const slashed = (relPath) => String(relPath).replace(/\\/g, '/');
 
 /**
  * The language that analyses a file, or null when none does.

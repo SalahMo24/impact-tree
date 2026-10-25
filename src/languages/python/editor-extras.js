@@ -66,6 +66,8 @@ const path = require('path');
 const { readTextOfOffsets } = require('../../engine/textpos');
 const { realClock } = require('../../engine/clock');
 const { pythonRules } = require('./rules');
+const { nonCodeRanges: lexerNonCodeRanges } = require('./lexer');
+const { messageOf } = require('../text');
 
 /** @typedef {import('../../engine/caller-contract').CallerRow} CallerRow */
 /** @typedef {import('../types').LanguageServices} LanguageServices */
@@ -108,7 +110,6 @@ const TRANSPARENT_DECORATORS = new Set([
 ]);
 
 /** @param {unknown} e */
-const messageOf = (e) => (e && typeof e === 'object' && 'message' in e ? String(e.message) : String(e));
 
 /** @param {string} name A dunder name Python calls itself (all but `__init__`). */
 const isProtocolName = (name) => /^__\w+__$/.test(name) && name !== '__init__';
@@ -117,60 +118,11 @@ const isConstructorDecl = (decl) => decl.isMethod && decl.name === '__init__';
 
 /**
  * Offsets of `text` that are not code: comments and string literals other than f-strings
- * (an f-string's fields are code, so it counts as code). Pure.
+ * (an f-string's fields are code, so it counts as code). Pure; ./lexer.js reads the strings.
  * @param {string} text
  * @returns {Array<[number, number]>} Sorted, disjoint [start, end) ranges.
  */
-function nonCodeRanges(text) {
-  /** @type {Array<[number, number]>} */
-  const out = [];
-  const n = text.length;
-  let i = 0;
-  while (i < n) {
-    const ch = text[i];
-    if (ch === '#') {
-      const nl = text.indexOf('\n', i);
-      const end = nl < 0 ? n : nl;
-      out.push([i, end]);
-      i = end;
-      continue;
-    }
-    // A string: an optional prefix (r, b, u, f and pairs), only when not part of a name.
-    const m = /^([rRbBuUfF]{0,2})('''|"""|'|")/.exec(text.slice(i, i + 5));
-    if (m && (m[1] === '' || i === 0 || !/[\w]/.test(text[i - 1]))) {
-      const prefix = m[1].toLowerCase();
-      const quote = m[2];
-      const raw = prefix.includes('r');
-      const isF = prefix.includes('f');
-      const start = i;
-      let j = i + m[0].length;
-      let depth = 0;
-      for (;;) {
-        if (j >= n) break;
-        const c = text[j];
-        if (c === '\\' && !(raw && isF)) { j += 2; continue; }
-        if (isF && c === '{') { if (text[j + 1] === '{' && depth === 0) { j += 2; continue; } depth++; j++; continue; }
-        if (isF && c === '}' && depth > 0) { depth--; j++; continue; }
-        if (isF && depth > 0 && (c === '"' || c === '\'')) {
-          // A string inside a field (3.12 allows the same quote): skip it.
-          const close = text.indexOf(c, j + 1);
-          j = close < 0 ? n : close + 1;
-          continue;
-        }
-        if (quote.length === 1 && c === '\n') break; // unterminated: ends at the line
-        if (text.startsWith(quote, j)) { j += quote.length; break; }
-        j++;
-      }
-      const end = Math.min(j, n);
-      if (!isF) out.push([start, end]);
-      i = end;
-      continue;
-    }
-    if (/[\w]/.test(ch)) { while (i < n && /[\w]/.test(text[i])) i++; continue; }
-    i++;
-  }
-  return out;
-}
+const nonCodeRanges = (text) => lexerNonCodeRanges(text, { fStringsAsCode: true });
 
 /**
  * @param {Array<[number, number]>} ranges From `nonCodeRanges`. @param {number} at

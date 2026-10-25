@@ -6,6 +6,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { slashed } = require('../text');
 
 // Environments and caches hold other projects' code or derived files: not the change under
 // review. A directory segment, matched against repository-relative paths, so `rebuild/x.py`
@@ -29,8 +30,6 @@ const GENERATED_HEAD_CHARS = 8192;
 // The files that mark a Python project's root.
 const PROJECT_FILES = ['pyproject.toml', 'setup.py', 'setup.cfg'];
 
-/** @param {string} relPath @returns {string} */
-const slashed = (relPath) => String(relPath).replace(/\\/g, '/');
 
 /**
  * Whether a file's header comment says it is generated. Only the lines before the first

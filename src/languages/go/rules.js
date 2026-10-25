@@ -4,6 +4,8 @@
 // tests and which are generated. They follow the go tool's own conventions, so the
 // answers match what `go build` and `go test` consider.
 
+const { slashed } = require('../text');
+
 // The go tool ignores `testdata` directories, and `vendor` holds other modules' code: not
 // the change under review. Matched against repository-relative paths.
 const IGNORED_DIR = /(^|\/)(testdata|vendor)\//;
@@ -17,8 +19,6 @@ const GENERATED_COMMENT = /^\/\/ Code generated .* DO NOT EDIT\.$/;
 // only this far, and its comment, if later, is missed (it is then analysed).
 const GENERATED_HEAD_CHARS = 8192;
 
-/** @param {string} relPath @returns {string} */
-const slashed = (relPath) => String(relPath).replace(/\\/g, '/');
 
 /**
  * Whether a file's text carries the go tool's generated-code comment before its package
