@@ -689,7 +689,7 @@ the 10 httpx PRs (every per-PR result identical), and the signature oracle (http
 
 Order: A5 and A6 side by side (A6 only measures; different files), then A4.
 
-### Verification plans (to agree before any work)
+### Verification plans (agreed by the owner, 2026-10-25)
 
 | Task | Check | When | Expected time |
 | --- | --- | --- | --- |
