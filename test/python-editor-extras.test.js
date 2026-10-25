@@ -59,7 +59,7 @@ function make({ files = {}, refs = [], defs = () => null, grepped = null, grepFa
   const texts = { [MODELS]: MODELS_TEXT, ...files };
   const calls = { definitions: 0, references: 0, grep: 0 };
   const services = /** @type {any} */ ({
-    references: async () => { calls.references++; return typeof refs === 'function' ? refs() : refs; },
+    references: async (/** @type {any} */ doc, /** @type {number} */ pos) => { calls.references++; return typeof refs === 'function' ? refs(doc, pos) : refs; },
     definitions: async (/** @type {any} */ doc, /** @type {number} */ pos) => { calls.definitions++; return defs(doc.file, pos); },
   });
   const extras = ex.createPythonEditorExtras({
@@ -285,17 +285,109 @@ test('[] and null answers: never "no callers" when a rule applies', async () => 
 // only at the class name, so `__init__` read "no incoming-call result" in the harness and,
 // where the editor turns `null` into `[]`, the constructor path's complete "no callers" (`di`)
 // while 136 constructions of `Client` existed.
-test('__init__ is always incomplete: constructions are not listed as its callers', async () => {
+// A5: the class's name is a caller target of its `__init__`, so the constructions are listed.
+const CLASS_POS = at(MODELS_TEXT, 'class Params') + 6;
+
+test('callerTargets: a class\'s __init__ gives the class name; nothing else does', () => {
   const { extras } = make();
-  assert.equal(extras.explainIncomplete('no incoming-call result', MODELS, posOf('__init__')), ex.CONSTRUCTOR_REASON);
-  assert.equal(extras.explainIncomplete('timed out', MODELS, posOf('__init__')), null, 'a failure keeps its own reason');
-  assert.equal((await ask(extras, '__init__')).more.incompleteReason, ex.CONSTRUCTOR_REASON);
-  const superCall = caller(`${R}/sub.py`, 'Sub.__init__', [3]);
-  assert.equal((await ask(extras, '__init__', [superCall])).more.incompleteReason, ex.CONSTRUCTOR_REASON, 'explicit __init__ calls do not make it complete');
-  const { services } = make();
+  assert.deepEqual(extras.callerTargets?.(MODELS, posOf('__init__')), [{ file: MODELS, pos: CLASS_POS }]);
+  assert.deepEqual(extras.callerTargets?.(MODELS, posOf('merge')), []);
+  assert.deepEqual(extras.callerTargets?.(MODELS, posOf('helper')), []);
+  assert.deepEqual(extras.callerTargets?.('/r/missing.py', 3), [], 'an unread file: none');
+  const nested = 'class Outer:\n    x = 1\n\n    class Inner:\n        # c\n        def __init__(self):\n            pass\n';
+  assert.deepEqual(ex.enclosingClassAt(nested, at(nested, '__init__'))?.namePos, at(nested, 'Inner'), 'a nested class: its own name');
+  const decorated = '@dataclass\n@other(x=1)\nclass Cfg(Base):\n    def __init__(self):\n        pass\n';
+  assert.equal(ex.enclosingClassAt(decorated, at(decorated, '__init__'))?.namePos, at(decorated, 'Cfg'));
+  const local = 'def make():\n    class Local:\n        def __init__(self):\n            pass\n    return Local\n';
+  assert.equal(ex.enclosingClassAt(local, at(local, '__init__')), null, 'a class in a function: none');
+  const inMethod = 'class A:\n    def m(self):\n        class B:\n            def __init__(self):\n                pass\n';
+  assert.equal(ex.enclosingClassAt(inMethod, at(inMethod, '__init__')), null, 'a class in a method: none');
+  const moduleFn = 'def __init__():\n    pass\n';
+  assert.equal(ex.enclosingClassAt(moduleFn, at(moduleFn, '__init__')), null);
+});
+
+test('classUseAt: calls, bases, annotations, isinstance and except are not value uses', () => {
+  const cases = [
+    ['x = Client(1)', 'call'],
+    ['class Sub(Base, Client):', 'base'],
+    ['def f(c: Client, d: Optional[Client] = None) -> Client:', 'inert', 0],
+    ['def f(c: Client, d: Optional[Client] = None) -> Client:', 'inert', 1],
+    ['def f(c: Client, d: Optional[Client] = None) -> Client:', 'inert', 2],
+    ['    self.c: Client | None = None', 'inert'],
+    ['if isinstance(x, (str, Client)):', 'inert'],
+    ['except Client:', 'inert'],
+    ['def f(c: "Client"): pass', 'inert'],
+    ['make(transport_cls=Client)', 'value'],
+    ['d = {"a": Client}', 'value'],
+    ['f = lambda c: Client', 'value'],
+    ['return Client', 'value'],
+  ];
+  for (const [line, want, nth = 0] of cases) {
+    const start = at(line, 'Client', /** @type {number} */ (nth));
+    assert.equal(ex.classUseAt(line, start, start + 6, ex.nonCodeRanges(line)), want, line);
+  }
+});
+
+test('__init__: its class\'s constructions are its callers (null at __init__ itself)', async () => {
+  const use = 'from pkg.models import Params\n\ndef build():\n    return Params()\n';
+  const file = `${R}/use.py`;
+  const site = at(use, 'Params()');
+  const refs = (/** @type {any} */ _doc, /** @type {number} */ pos) => (pos === CLASS_POS
+    ? [{ file: MODELS, start: CLASS_POS, end: CLASS_POS + 6 }, { file, start: at(use, 'Params'), end: at(use, 'Params') + 6 }, { file, start: site, end: site + 6 }]
+    : [{ file: MODELS, start: posOf('__init__'), end: posOf('__init__') + 8 }]);
+  const { extras, services } = make({ files: { [file]: use }, refs });
+  assert.equal(extras.explainIncomplete('no incoming-call result', MODELS, posOf('__init__')), null, 'the class answers instead');
+  assert.equal(extras.explainIncomplete('timed out', MODELS, posOf('__init__')), null);
+  const asked = [];
+  Object.assign(services, {
+    prepareCallHierarchy: async (/** @type {any} */ _doc, /** @type {number} */ pos) => { asked.push(pos); return [{ pos }]; },
+    incomingCalls: async (/** @type {any} */ item) => (item.pos === CLASS_POS ? [caller(file, 'build', [site], true)] : null),
+  });
+  const state = await createHierarchyResolver(services, { extras }).callerState(MODELS, posOf('__init__'), { isConstructor: true });
+  assert.deepEqual(asked.sort(), [posOf('__init__'), CLASS_POS].sort());
+  assert.equal(state.state, 'resolved');
+  assert.equal(state.complete, true, state.reason);
+  assert.deepEqual(state.callers.map((c) => [c.file, c.sites]), [[file, 1]]);
+});
+
+test('__init__ with no construction and no reference is the constructor path\'s "no callers"', async () => {
+  const { extras, services } = make({ refs: (/** @type {any} */ _d, /** @type {number} */ pos) => [{ file: MODELS, start: pos, end: pos + 1 }] });
   Object.assign(services, { prepareCallHierarchy: async () => [{}], incomingCalls: async () => [] });
   const state = await createHierarchyResolver(services, { extras }).callerState(MODELS, posOf('__init__'), { isConstructor: true });
-  assert.deepEqual(state, { state: 'unknown', callers: [], complete: false, reason: ex.CONSTRUCTOR_REASON });
+  assert.deepEqual(state, { state: 'di', callers: [], complete: true });
+});
+
+test('__init__ rules: class value uses, subclasses and cls(...) keep it incomplete', async () => {
+  const file = `${R}/use.py`;
+  const ask2 = async (/** @type {string} */ use, extraModels = MODELS_TEXT) => {
+    const refsAtClass = [...use.matchAll(/Params/g)].map((m) => ({ file, start: /** @type {number} */ (m.index), end: /** @type {number} */ (m.index) + 6 }));
+    const { extras } = make({ files: { [file]: use, [MODELS]: extraModels }, refs: (/** @type {any} */ _d, /** @type {number} */ pos) => (pos === CLASS_POS ? refsAtClass : []) });
+    const q = extras.query(MODELS, at(extraModels, 'def __init__') + 4);
+    return (await q.moreCallers()).incompleteReason;
+  };
+  assert.equal(await ask2('make(transport_cls=Params)\n'), ex.VALUE_USE_REASON);
+  assert.equal(await ask2('def f(p: Params) -> Params:\n    return isinstance(p, Params)\n'), null, 'annotations and isinstance do not construct');
+  assert.equal(await ask2('class Sub(Params):\n    pass\n'), ex.SUBCLASS_REASON);
+  const withFactory = MODELS_TEXT.replace('    def __init__(self):', '    @classmethod\n    def make(cls):\n        return cls()\n\n    def __init__(self):');
+  assert.equal(await ask2('', withFactory), ex.FACTORY_REASON);
+  const withType = MODELS_TEXT.replace('    def __init__(self):', '    def copy(self):\n        return type(self)()  # cls(\n\n    def __init__(self):');
+  assert.equal(await ask2('', withType), ex.FACTORY_REASON);
+  const commentOnly = MODELS_TEXT.replace('    def __init__(self):', '    # cls() here\n    def __init__(self):');
+  assert.equal(await ask2('', commentOnly), null, 'a comment is not a factory call');
+  // No duck-typing search for a constructor.
+  const { extras, calls } = make({ refs: [] });
+  await extras.query(MODELS, posOf('__init__')).moreCallers();
+  assert.equal(calls.grep, 0);
+});
+
+test('__init__ of a class in a function stays incomplete', async () => {
+  const file = `${R}/local.py`;
+  const text = 'def make():\n    class Local:\n        def __init__(self):\n            pass\n    return Local\n';
+  const { extras } = make({ files: { [file]: text } });
+  const pos = at(text, '__init__');
+  assert.deepEqual(extras.callerTargets?.(file, pos), []);
+  assert.equal(extras.explainIncomplete('no incoming-call result', file, pos), ex.CONSTRUCTOR_REASON);
+  assert.equal((await extras.query(file, pos).moreCallers()).incompleteReason, ex.CONSTRUCTOR_REASON);
 });
 
 test('a typed method with complete callers and no stray hits is complete', async () => {
@@ -341,4 +433,67 @@ test('hits on string literals are skipped from one scan of the file, however man
   const { more } = await ask(extras, 'merge');
   assert.equal(calls.definitions, 1, 'only the hit on an untyped receiver is asked');
   assert.match(String(more.incompleteReason), /^1 call by this name that the language server could not resolve/);
+});
+
+// A5 through the editor's resolver (src/resolver-vscode.js) with the vscode stub: an
+// `__init__` lists its class's constructions, the merged answer is cached, the target query
+// is counted, and a target answer that outlives `clear()` is not used.
+test('the editor resolver lists an __init__\'s constructions from its class (A5)', async () => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  const Module = require('module'), original = Module._load;
+  const { createFakeClock } = require('./fake-clock');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-py-resolver-'));
+  const target = path.join(dir, 'models.py');
+  const text = 'class Params:\n    def __init__(self):\n        pass\n';
+  fs.writeFileSync(target, text);
+  const useFile = path.join(dir, 'use.py');
+  fs.writeFileSync(useFile, 'from models import Params\n\ndef build():\n    return Params()\n');
+  /** @type {(() => void)|null} */
+  let hold = null;
+  let holdNext = false;
+  const stub = { ...require('./vscode-stub'), Position: class { constructor(/** @type {number} */ line, /** @type {number} */ character) { Object.assign(this, { line, character }); } },
+    commands: { executeCommand: async (/** @type {string} */ name, /** @type {any} */ a, /** @type {any} */ b) => {
+      if (name === 'vscode.prepareCallHierarchy') return [{ line: b.line }];
+      if (name === 'vscode.provideIncomingCalls') {
+        if (a.line !== 0) return []; // VS Code's `[]` for Pyright's `null` at `__init__`
+        if (holdNext) await new Promise((resolve) => { hold = () => resolve(undefined); });
+        return [{ from: { uri: { fsPath: useFile }, name: 'build', selectionRange: { start: { line: 2, character: 4 } } },
+          fromRanges: [{ start: { line: 3, character: 11 }, end: { line: 3, character: 17 } }, { start: { line: 3, character: 11 }, end: { line: 3, character: 17 } }] }];
+      }
+      if (name === 'vscode.executeReferenceProvider') return [];
+      return undefined;
+    } } };
+  try {
+    Module._load = function (/** @type {string} */ name, /** @type {any[]} */ ...args) { return name === 'vscode' ? stub : original.call(this, name, ...args); };
+    delete require.cache[require.resolve('../src/resolver-vscode')];
+    const { createVscodeResolver } = require('../src/resolver-vscode');
+    const clock = createFakeClock();
+    const resolver = createVscodeResolver({ repoRoot: dir, retries: 0, clock });
+    const initPos = text.indexOf('__init__');
+    const pending = resolver.callerState(target, initPos, { isConstructor: true });
+    await clock.advance(120000);
+    const state = await pending;
+    assert.equal(state.state, 'resolved');
+    assert.equal(state.complete, true, state.reason);
+    assert.deepEqual(state.callers.map((/** @type {any} */ c) => [c.label, c.sites]), [['build', 1]]);
+    assert.equal(resolver.stats().callerTargetQueries, 1);
+    const again = await resolver.incomingWithStatus(target, initPos);
+    assert.equal(again.complete, true);
+    assert.equal(resolver.stats().cacheHits, 1, 'the merged complete answer is cached');
+
+    // A target answer that arrives after `clear()` belongs to the earlier analysis.
+    resolver.clear();
+    holdNext = true;
+    const late = resolver.incomingWithStatus(target, initPos);
+    for (let i = 0; i < 50 && !hold; i++) await clock.advance(10);
+    assert.ok(hold, 'the class query is in flight');
+    resolver.clear();
+    /** @type {() => void} */ (hold)();
+    await clock.advance(1000);
+    assert.deepEqual(await late, { callers: [], complete: false, reason: 'caller query belongs to an earlier analysis' });
+  } finally {
+    Module._load = original;
+    delete require.cache[require.resolve('../src/resolver-vscode')];
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

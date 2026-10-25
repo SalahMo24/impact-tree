@@ -675,6 +675,20 @@ the 10 httpx PRs (every per-PR result identical), and the signature oracle (http
   value (`transport_cls=Client`), a subclass's `super().__init__()` through dispatch, and
   factory calls (`cls(...)`) keep it incomplete with their reason. Measured on P7's corpus:
   Jedi's 714 constructions should become listed callers.
+
+  **Done (2026-10-25).** `callerTargets` in `EditorCallerExtras`, asked by
+  `applyCallerExtras` through `askAt` (both resolvers), at most 4 targets
+  (`MAX_CALLER_TARGETS`, past it incomplete); rows merged per caller with call sites merged;
+  any unanswered part keeps the answer incomplete with its reason. A `null` incoming-call
+  result at a position with targets, or at a target, reads as no calls there (the editor's
+  `[]`). Python: the class name for a class's `__init__` (none for a class in a function,
+  which keeps CONSTRUCTOR_REASON); then value uses of the `__init__` and of the class
+  (annotations, `isinstance`/`issubclass` and `except` are not), subclassing
+  (SUBCLASS_REASON) and `cls(...)`/`type(self)(...)` (FACTORY_REASON); no duck typing.
+  `py-verify.js` (cached, 10 PRs): callers 1066 ours / 968 Jedi, precision 90.8% (the 98
+  `with … as x` extras of P7), recall 100% (was 26.2%; 0 constructions missed, was 714);
+  every other per-PR result as P7; Client/AsyncClient `__init__` incomplete as
+  `referenced-as-value` (`parametrize("client_class", [httpx.Client, …])`).
 - **A6. Measure the duck-typing search.** One merged PR with many changed methods in a large
   typed repository (proposal: `pydantic/pydantic`), through `py-verify.js`'s pipeline phase
   only: time per caller query with and without the search, the number of searches, files
