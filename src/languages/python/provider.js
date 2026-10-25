@@ -12,7 +12,7 @@
 // duplicated sites, value uses, protocol methods, decorator registration, duck typing).
 // The server's warm-up (P5): `warmUpTarget` below, asked by src/readiness.js.
 // Without a server (the CLI, the no-checkout preview; A4): `prepareSyntactic`, the same
-// candidates from a text outline (`pythonOutline`), callers not computed.
+// candidates from a text outline (`pythonOutline`), callers from a syntax-only index (A8).
 //
 // Engine modules and the header parser are required where they are used: the registry
 // (../index.js) loads this file, and src/engine/diff.js loads the registry.
@@ -516,19 +516,21 @@ function pythonSpec(parser) {
 const prepare = (ctx) => require('../server-symbols').prepareFromServerSymbols(ctx, pythonSpec());
 
 /**
- * `prepare` where there is no language server (the CLI, the no-checkout preview; A4): the
+ * `prepare` where there is no language server (the CLI, the no-checkout preview; A4, A8): the
  * changed, added and deleted functions and their signature kinds from the text alone
  * (`pythonOutline`, then the same `collectPythonSymbols`, header parser and matching as
- * `prepare`, so keys and review ids are the editor's), with callers not computed: every
- * unit's resolver is `createNotComputedResolver`'s. `ctx.hooks` is not read. One warning
- * says the callers were not computed, for how many files.
+ * `prepare`, so keys and review ids are the editor's), and callers from a syntax-only index
+ * (./syntactic-index.js) through the shared `createSyntacticResolver`, one for every unit.
+ * The index is built from `ctx.syntacticSources` when given (the preview: the PR's fetched
+ * Python files and changed Python tests), else from the repository on disk (the CLI,
+ * A8-D1 (b): `indexRepository`). Every answer is incomplete with the index's scope note,
+ * which one warning also gives. `ctx.hooks` is not read.
  * @param {import('../types').PrepareContext} ctx
  * @returns {Promise<import('../types').PreparedLanguage>}
  */
 async function prepareSyntactic(ctx) {
-  const { createNotComputedResolver, notComputedReason } = require('../../engine/resolver-not-computed');
+  const { createSyntacticResolver } = require('../../engine/resolver-syntactic');
   const p = defaultParser();
-  const reason = notComputedReason(pythonRules.displayName);
   const spec = {
     ...pythonSpec(p),
     serverName: 'the Python text scan',
@@ -541,11 +543,63 @@ async function prepareSyntactic(ctx) {
     available: async () => ({ ok: true }),
     documentSymbols: async (/** @type {import('../types').DocRef} */ doc) => pythonOutline(/** @type {string} */ (doc.text)),
   });
+  // A stand-in until the units are known: the index is built once, for all of them, below.
+  const pending = Object.freeze({ pending: true });
   const answer = await require('../server-symbols').prepareFromServerSymbols(
-    { ...ctx, hooks: { services, makeResolver: () => createNotComputedResolver(reason) } }, spec);
-  const files = answer.units.reduce((n, u) => n + new Set([...u.changed, ...u.deleted].map((/** @type {any} */ c) => c.relPath)).size, 0);
-  if (files) ctx.warnings.push(`${files} changed Python file(s) read from their text: changed functions and signature kinds only; callers ${reason}`);
+    { ...ctx, hooks: { services, makeResolver: () => pending } }, spec);
+  if (!answer.units.length) return answer;
+  /** @type {any[]} */
+  const changed = answer.units.flatMap((u) => [...u.changed, ...u.deleted]);
+  const idx = ctx.syntacticSources
+    ? require('./syntactic-index').createPythonSyntacticIndex(ctx.syntacticSources, {
+      root: ctx.repo, scope: `the pull request's own files (${ctx.syntacticSources.length} Python file(s) indexed)`,
+    })
+    : indexRepository(ctx, changed);
+  const { isTestFile } = require('../../engine/diff');
+  const shared = createSyntacticResolver(idx, /** @type {any} */ ({ isTestPath: (/** @type {string} */ file) => isTestFile(ctx.repo, file) }));
+  const resolver = {
+    ...shared,
+    // A Python class is not built by a DI container: an `__init__` with no caller found is
+    // `unknown` with the scope note, never `di`.
+    callerState: (/** @type {string} */ file, /** @type {number} */ pos) => shared.callerState(file, pos),
+    // The syntax-only answers are lower bounds, so a blast radius counted from them is one too.
+    callersLowerBound: true,
+  };
+  for (const unit of answer.units) unit.resolver = resolver;
+  const files = new Set(changed.map((c) => c.relPath)).size;
+  if (files) ctx.warnings.push(`${files} changed Python file(s) read from their text: changed functions and signature kinds; ${idx.scopeNote()}`);
   return answer;
+}
+
+/**
+ * The CLI's Python index (A8-D1 (b)): every Python file of the checkout the provider handles
+ * (git's tracked and untracked files, `pythonRules.handles`: `venv/` and the like excluded),
+ * read from disk, bounded by `REPO_MAX_FILES`/`REPO_MAX_BYTES` (./syntactic-index.js,
+ * `pickRepositoryFiles`). When git cannot list the files, the changed files only, and the
+ * scope says so.
+ * @param {import('../types').PrepareContext} ctx
+ * @param {any[]} changed The changed and deleted symbols.
+ */
+function indexRepository(ctx, changed) {
+  const fs = require('fs');
+  const { createPythonSyntacticIndex, pickRepositoryFiles, REPO_MAX_FILES, REPO_MAX_BYTES } = require('./syntactic-index');
+  const read = (/** @type {string} */ rel) => { try { return fs.readFileSync(path.join(ctx.repo, rel), 'utf8'); } catch { return null; } };
+  const out = ctx.git && ctx.git.tryRaw(['ls-files', '--cached', '--others', '--exclude-standard', '-z']);
+  const changedPaths = new Set(ctx.files.map((f) => f.path));
+  if (out == null) {
+    const sources = /** @type {Array<{ path: string, text: string }>} */ ([...changedPaths].map((rel) => ({ path: rel, text: read(rel) })).filter((s) => s.text != null));
+    return createPythonSyntacticIndex(sources, { root: ctx.repo, scope: `the changed files only (git could not list the repository; ${sources.length} Python file(s) indexed)` });
+  }
+  const listed = [...new Set(String(out).split('\0').filter(Boolean))].filter((rel) => pythonRules.handles(rel)).flatMap((rel) => {
+    try { return [{ path: rel, size: fs.statSync(path.join(ctx.repo, rel)).size }]; } catch { return []; }
+  });
+  const names = new Set(changed.map((c) => c.simpleName));
+  for (const c of changed) if (c.isConstructor && c.className) names.add(c.className);
+  const picked = pickRepositoryFiles(listed, read, { changedPaths, names });
+  const scope = picked.bounded
+    ? `the repository's changed files and the files that mention a changed name (${picked.sources.length} of ${listed.length} Python file(s) indexed: over the bound of ${REPO_MAX_FILES} files or ${REPO_MAX_BYTES / 1024 / 1024} MiB)`
+    : `the repository (${picked.sources.length} Python file(s) indexed)`;
+  return createPythonSyntacticIndex(picked.sources, { root: ctx.repo, scope, notIndexed: picked.notIndexed });
 }
 
 /**

@@ -2,11 +2,15 @@
 
 ## Unreleased
 
+- **Python callers in the PR preview and the CLI**, without a language server, from a syntax
+  index: the PR's own Python files and changed tests in the preview, the whole repository in
+  the CLI. Calls are matched through imports, modules, `self`/`cls`/`super()`, constructions
+  and annotated or assigned receivers; every answer stays incomplete with its scope ("syntax
+  only"), never "no callers". Checked against Jedi on 22 httpx pull requests (99.9–100%
+  precision, 98% recall across the repository) and pydantic #13070.
 - **Python in the PR preview and the CLI**, without a language server: the changed, added
   and deleted functions and methods and their signature kinds, read from the text (the
-  same keys as in the editor, so review ticks carry over). Callers are **not computed** and
-  say so on every row ("callers not computed", test reach unknown, no blast radius), never
-  "no callers". Checked against Python's `ast` on the same 10 httpx pull requests: 141 of
+  same keys as in the editor, so review ticks carry over). Checked against Python's `ast` on the same 10 httpx pull requests: 141 of
   141 changed functions, no extra, every kind right. The editor still uses Pyright. Go is
   still listed as not analysed there. `--json` output to a pipe is no longer cut at 8 KiB.
 - **The base branch defaults to the remote's own default** (`origin/HEAD`), so a repository

@@ -340,7 +340,7 @@ Acceptance: per L2, a Go file in the CLI or a no-checkout preview is listed as "
 analysed in this mode — check out the pull request in the editor", and the preview's
 limits note says so; nothing in those modes reads a Go file as having no impact.
 
-### G7. Verification against cli/cli (done, manual pass pending)
+### G7. Verification against cli/cli (done)
 
 The harness adapter (`test/lsp-harness/`) runs the real pipeline and Go provider against
 `gopls`. Two independent oracles:
@@ -385,7 +385,7 @@ function changes, 786 with callers compared; gopls v0.21.0, x/tools v0.52.0, go1
   rows in one PR). No receiver change was found in ~410 recent PRs (unit-tested only).
 - Follow-ups: drop gopls' sibling-implementation callers (a `definitions` check per site);
   say when an inactive-build file's callers are for its own build only (nested modules).
-  The owner's manual pass is still to do.
+  The owner's manual pass: done (2026-10-25).
 
 ### G8. Say what is supported (done)
 
@@ -787,15 +787,111 @@ functions, not of a class whose bodies stayed the same.
 
 ### Follow-ups
 
-- **A8. Python callers in the PR preview, from the PR's own files.** Today Python's preview
-  and CLI compute no callers (A4). TypeScript's preview indexes the PR's fetched files and
-  changed tests (`createSyntacticIndex`) and lists the callers it resolves there, the answer
-  scoped "callers outside this PR are not searched". A Python index over the same files:
-  bare calls through `from m import name` / `import m` + `m.name(` / a same-file def,
-  `self.`/`cls.` methods in the same class, calls on parameters annotated with the class,
-  `Cls(` as `__init__`'s construction; every answer incomplete with that scope, never
-  "no callers". Verification to agree with the owner before work: precision against Jedi
-  restricted to the PR's files on both httpx corpora.
+- **A8. Python callers without a language server.** Scoped below (2026-10-25).
+
+## Part A8: Python callers without a language server (scope, 2026-10-25)
+
+Owner: the manual passes of Go and Python are done; next is Python callers where there is no
+Pyright. Today the PR preview and the CLI read Python from its text (A4) and compute no
+callers at all, so a Python PR in the preview shows changed functions but never who calls
+them, while a TypeScript PR shows the callers found in the PR's own files.
+
+### What TypeScript does (reused)
+
+The preview indexes the PR's fetched source files and changed tests (`createSyntacticIndex`)
+and answers callers through `createSyntacticResolver`, which needs only three index methods:
+`symbolAt(file, pos)`, `callersOfWithStatus({ file, className, name, pos })` and
+`unresolvedCallsTo({ name })`. The resolver already turns a finished search with no caller
+into "unknown, `pr-files-only`" (never "no callers"), reports calls on receivers it could not
+resolve as incomplete, caches per preview, and serves caller-of-caller expansion and test
+reach (the PR's changed tests are read as callers). A8 adds a **Python index with those three
+methods** and plugs it into the same resolver; no new resolver, no new honesty rules.
+
+### The Python index (`src/languages/python/syntactic-index.js`, pure)
+
+Built from `{ path, text }` pairs, using P2's outline (`pythonOutline`), the lexer and the
+header parser. Per file: its module name (from the repository-relative path; a `src/`
+layout and `__init__.py` packages handled), its defs (module functions, classes, methods,
+nested classes; nested defs are their parent's body, P-D5), its imports (`import a.b as c`,
+`from .m import x as y`, relative imports, `from m import (…)` across lines), and its call
+sites in code (lexer: not strings or comments). A call resolves to a target when it is:
+1. `name(` where `name` is a def of the same module, or imported from an indexed module;
+2. `mod.name(` where `mod` is an imported module (or package attribute) that is indexed;
+3. `self.m(` / `cls.m(` inside a class: that class's `m`, else a base class's in the index
+   (`class B(A)` with `A` imported or local);
+4. `super().m(`: the first base class in the index that defines `m`;
+5. `Cls(` (any of 1–2 naming a class): the class's `__init__` (A5's construction rule);
+6. `x.m(` where `x` is a parameter annotated `x: Cls` / `x: "Cls"` / `Optional[Cls]` or a
+   local assigned `x = Cls(…)` in the same function: `Cls.m`.
+Anything else named `.m(` is an unresolved call to `m` (counted by `unresolvedCallsTo`, so the
+answer is incomplete, as P-D4's duck typing in the editor). A bare reference without `(`
+(a callback, a decorator `@name`, a dict entry) is a value use: incomplete, as in the editor.
+A dunder target (other than `__init__`) is incomplete, Python calling it itself. Budgets:
+the index is bounded by the files it is given (the preview: the PR's files under
+`impactTree.tierA.maxFiles`); per-file size as the preview's fetch limits.
+
+### Decisions (owner, 2026-10-25: A8-D1 (b), A8-D2 (a), A8-D3 (a))
+
+- **A8-D1. The CLI's scope.** The CLI has the checkout. (a) the same as the preview: the
+  changed files and changed tests only; (b) **proposal**: every Python file of the repository
+  the provider handles (`venv/` etc. excluded), bounded (at most 3000 files, 64 MiB; past it,
+  the PR's files plus the files that mention a changed name, and the answer says how many were
+  not indexed). Either way an answer stays incomplete ("syntax only"): dynamic dispatch and
+  untyped receivers are not resolved.
+- **A8-D2. How far receivers are resolved.** (a) **proposal**: rules 1–6 above; (b) rules 1,
+  2 and 5 only (bare names, modules, constructions): simpler, lower recall on methods.
+- **A8-D3. Where `@property` uses go.** (a) **proposal**: `x.prop` (no `(`) on a resolved
+  receiver is a use of the property's getter, as in the editor; (b) properties are always
+  "unknown" in the preview.
+
+### Tasks
+
+- **A8.1 Index and wiring** (Opus): the index, its unit tests (every rule, every non-rule,
+  import forms, relative imports, `src/` layout, nested classes, strings/comments, budgets),
+  `prepareSyntactic` building units with `createSyntacticResolver` over it (preview: the PR's
+  files; CLI: per A8-D1), the "callers not computed" warning replaced by a scope note.
+- **A8.2 Verification and fixes** (Opus): `py-verify.js --syntactic` gains a caller check
+  against Jedi restricted to the indexed files (Jedi already runs on the exported head).
+- **A8.3 Docs** (me): README Languages table (Python preview/CLI column), limits, changelog.
+
+### Verification plan (agreed by the owner, 2026-10-25)
+
+| Task | Check | When | Expected time |
+| --- | --- | --- | --- |
+| A8.1 | `npm run test:quick` + touched test files | iterate | ~15 s |
+| A8.1 | `npm test`, lint, typecheck, TypeScript baseline | end | ~3.5 min |
+| A8.1 | CLI and preview (offline) on httpx #1600 and #3741: callers listed, each answer incomplete with its scope, nothing reads "no callers" | end | ~30 s |
+| A8.2 | `py-verify.js --syntactic` on the 10-PR corpus and the 12-PR out-of-sample corpus (Jedi cached; Jedi callers restricted to the indexed files) | end, at most 3 runs per corpus | ≤ 1.5 min each |
+| A8.2 | the same on pydantic #13070 (`pydantic-a6`), CLI scope only (per A8-D1) | end, once | ≤ 2 min |
+
+Acceptance targets (A8.2): caller precision against Jedi within the indexed files ≥ 95%
+(false positives listed one by one); recall reported, with each miss sitting on an answer
+marked incomplete; 0 answers complete; 0 rows reading "no callers"; changed functions and
+kinds unchanged from A4 (100% on both corpora).
+
+Agent budgets (wall time, verification included): A8.1 45 min; A8.2 30 min; A8.3 me, 15 min.
+Order: A8.1 → A8.2 → A8.3.
+
+**Done (2026-10-25).** A8.1: `src/languages/python/syntactic-index.js` (rules 1–6, the three
+index methods), `createSyntacticResolver` reused unchanged; preview from the PR's Python files
+and changed tests, CLI from the repository (3000 files / 64 MiB). A8.2 (`py-verify.js
+--syntactic` / `--preview`, Jedi restricted to the indexed files), totals:
+
+| Corpus / scope | Precision | Recall | Complete | none / "no callers" |
+| --- | --- | --- | --- | --- |
+| 10 merged httpx PRs, CLI | 99.9% (949/950) | 98.0% | 0 | 0 |
+| 10 merged httpx PRs, preview | 100% (188/188) | 90.0% | 0 | 0 |
+| 12 open httpx PRs, CLI | 100% (508/508) | 97.9% | 0 | 0 |
+| 12 open httpx PRs, preview | 100% (70/70) | 69.3% | 0 | 0 |
+| pydantic #13070, CLI | 78.1% raw (630/807); 100% counting Jedi's own `goto` | 96.8% | 0 | 0 |
+
+The one httpx false positive is a real call on a `with … as client` receiver (Jedi's P7 limit).
+pydantic's 177 are real calls Jedi's reference search never reaches (Jedi 0.20.1 stops after
+30 parsed files, `jedi/inference/references.py` `_PARSED_FILE_LIMIT`); its `goto` confirms
+all 456 sites. Every Jedi caller we miss is on an answer marked incomplete. Fixed on the way:
+`from . import sub` in a package `__init__` read as a cycle (pydantic recall 66.2% → 96.8%).
+Limits left: `Cls.m(`, `Cls().m(`, `self.x.m(`, `list[Cls]`, `with … as x` receivers, f-string
+fields; bases depth-first, not the MRO; every unresolved `.m(` counted, string receivers too.
 
 ## Order
 

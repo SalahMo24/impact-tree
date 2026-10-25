@@ -108,6 +108,8 @@ function describeUnknownCallers(change) {
   if (INCOMPLETE_REASON_TEXT[reason]) return `it is ${INCOMPLETE_REASON_TEXT[reason]}`;
   // From engine/resolver-not-computed.js: no search ran (a language read from its text).
   if (typeof reason === 'string' && reason.startsWith('not computed:')) return `its callers are ${reason}`;
+  // From a syntax-only index (src/languages/python/syntactic-index.js): a scoped search.
+  if (typeof reason === 'string' && / callers from syntax only: /.test(reason)) return `no caller was found within the scope searched (${reason})`;
   // From engine/unseen-users.js: already a clause.
   if (typeof reason === 'string' && reason.startsWith('used in ')) return `it is ${reason}`;
   // A provider deadline or a server still loading: say what happened, not the command name.
@@ -341,7 +343,8 @@ const notAnalysedText = (notAnalysed) => `${notAnalysed.language}: ${NOT_ANALYSE
 
 /**
  * The Preview's limits in words for a result: `PREVIEW_LIMITS_NOTE`; the languages read from
- * their text alone, whose callers are not computed (`result.callersNotComputed`); and, when
+ * their text alone, whose callers are not computed (`result.callersNotComputed`) or come from
+ * syntax only (`result.callersSyntaxOnly`); and, when
  * the pull request has files of a language the Preview cannot analyse, which those are.
  * @param {any} result
  * @returns {string}
@@ -349,8 +352,10 @@ const notAnalysedText = (notAnalysed) => `${notAnalysed.language}: ${NOT_ANALYSE
 function previewLimitsNote(result) {
   const languages = [...new Set((result.otherFiles || []).map((/** @type {any} */ f) => f.notAnalysed && f.notAnalysed.language).filter(Boolean))];
   const textOnly = /** @type {string[]} */ (result.callersNotComputed || []);
+  const syntaxOnly = /** @type {string[]} */ (result.callersSyntaxOnly || []);
   const parts = [PREVIEW_LIMITS_NOTE];
   if (textOnly.length) parts.push(`${textOnly.join(', ')} callers are not computed (changed functions and kinds only); check out the PR to find them in the editor.`);
+  if (syntaxOnly.length) parts.push(`${syntaxOnly.join(', ')} callers are from syntax only, in the PR's own files: untyped receivers and dynamic calls are not resolved; check out the PR to find them all in the editor.`);
   if (languages.length) parts.push(`${languages.join(', ')} files are not analysed; check out the PR to analyse them in the editor.`);
   return parts.join(' ');
 }

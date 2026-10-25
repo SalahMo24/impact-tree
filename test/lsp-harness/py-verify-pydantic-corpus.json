@@ -1,0 +1,8 @@
+[
+ {
+  "number": 13070,
+  "head": "b36eaeb4e5eea176b5d638fce099c006564d02ad",
+  "base": "895d8554ffdf65231287eb3193aed4b1e3ae9f72",
+  "why": "A6's large pydantic PR (worktree pydantic-a6, branch pr-13070, base base-13070); run with --package pydantic, CLI scope only (A8-D1)"
+ }
+]

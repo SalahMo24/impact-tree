@@ -2,8 +2,9 @@
 // Python without a language server (A4, docs/MULTI_LANGUAGE_PLAN.md): the text outline
 // (`pythonOutline`, src/languages/python/provider.js) that stands in for Pyright's document
 // symbols, and the provider's `prepareSyntactic` hook, which the CLI and the no-checkout
-// preview use: changed functions and their kinds from the text, callers not computed
-// (src/engine/resolver-not-computed.js), never "no callers" or "no impact".
+// preview use: changed functions and their kinds from the text, callers from a syntax-only
+// index (A8: src/languages/python/syntactic-index.js; its own rules are in
+// test/python-syntactic-index.test.js), never "no callers" or "no impact".
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
@@ -14,7 +15,7 @@ const { analyze } = require('../src/engine/analyze');
 const { analyzeRemote } = require('../src/engine/analyze-remote');
 const { clearVirtualText } = require('../src/engine/textpos');
 const { collectPythonSymbols, pythonOutline, pythonProvider } = require('../src/languages/python/provider');
-const { isNotComputedReason } = require('../src/engine/resolver-not-computed');
+const { isSyntaxOnlyReason } = require('../src/engine/resolver-not-computed');
 const models = require('../src/tree-row-models');
 const texts = require('./python-symbols/texts');
 const recorded = require('./python-symbols/recorded.json');
@@ -156,18 +157,21 @@ function repoWith(baseFiles, headFiles) {
 
 const BASE_PY = 'class C:\n    def keep(self, a):\n        return a\n\n    def gone(self):\n        return 0\n\ndef body():\n    return 1\n';
 const HEAD_PY = 'class C:\n    def keep(self, a, b):\n        return a\n\ndef body():\n    return 2\n\nasync def added():\n    raise ValueError()\n';
+// An unchanged module that calls the changed ones (rules 1, 5 and 6).
+const USER_PY = 'from m import body, C\n\ndef run():\n    c = C()\n    c.keep(1)\n    return body()\n';
 
-const assertNotComputed = (c) => {
-  assert.equal(c.callerState, 'unknown', `${c.key}: callers unknown, never none`);
-  assert.equal(c.callersComplete, false);
-  assert.ok(isNotComputedReason(c.callersIncompleteReason), c.callersIncompleteReason);
-  assert.deepEqual(c.callers, []);
+// Every answer is a scoped, incomplete one (A8): never complete, never "none", never "no test".
+const assertSyntaxOnly = (c) => {
+  assert.notEqual(c.callerState, 'none', `${c.key}: never "no callers"`);
+  assert.equal(c.callersComplete, false, c.key);
+  assert.ok(isSyntaxOnlyReason(c.callersIncompleteReason), c.callersIncompleteReason);
+  assert.match(c.callersIncompleteReason, /untyped receivers and dynamic calls are not resolved/);
   assert.notEqual(c.testState, 'uncovered', 'never "no test"');
 };
 
-test('without a language server analyze() reads Python from its text: kinds, added and deleted, callers not computed; Go stays not analysed', async () => {
+test('without a language server analyze() reads Python from its text: kinds, added and deleted, callers from the repository\'s syntax; Go stays not analysed', async () => {
   const dir = repoWith(
-    { 'pyproject.toml': '[project]\nname = "m"\n', 'm.py': BASE_PY, 'go.mod': 'module example.com/m\n\ngo 1.22\n', 'a.go': 'package m\n\nfunc A() int { return 1 }\n' },
+    { 'pyproject.toml': '[project]\nname = "m"\n', 'm.py': BASE_PY, 'n.py': USER_PY, 'go.mod': 'module example.com/m\n\ngo 1.22\n', 'a.go': 'package m\n\nfunc A() int { return 1 }\n' },
     { 'm.py': HEAD_PY, 'a.go': 'package m\n\nfunc A() int { return 2 }\n' });
   try {
     const r = await analyze(dir, { mode: 'pr', allowLocalBase: true, base: 'main', depth: 2 });
@@ -177,21 +181,34 @@ test('without a language server analyze() reads Python from its text: kinds, add
     assert.deepEqual(by.body.kinds.map((k) => k.id), ['body']);
     assert.equal(by.added.added, true);
     assert.deepEqual(r.deleted.map((d) => d.key), ['C.gone']);
-    for (const c of r.allChanged) {
-      assertNotComputed(c);
-      assert.equal(c.testState, 'unknown');
-      assert.ok(isNotComputedReason(c.testReachIncompleteReason));
-    }
+    for (const c of r.allChanged) assertSyntaxOnly(c);
+    // The CLI indexes the repository (A8-D1 (b)): the unchanged n.py is a caller.
+    assert.deepEqual(by.body.callers.map((x) => [x.label, path.basename(x.file)]), [['run', 'n.py']]);
+    assert.deepEqual(by['C.keep'].callers.map((x) => x.label), ['run'], 'rule 6: c = C() then c.keep(…)');
+    assert.equal(by['C.keep'].callerState, 'resolved');
+    assert.equal(by.added.callerState, 'unknown');
+    assert.match(by.body.callersIncompleteReason, /^Python callers from syntax only: the repository \(2 Python file\(s\) indexed\)/);
     const roots = r.components.flatMap((c) => c.roots);
-    assert.ok(roots.length && roots.every((x) => x.blast === null && x.blastNotComputed && isNotComputedReason(x.blastNotComputedReason)), 'no blast radius of zero');
+    assert.ok(roots.length && roots.every((x) => x.blastNotComputed || x.blastCapped), 'a blast radius from a syntax-only index is a lower bound, never an exact 0');
     assert.deepEqual(r.untested, [], 'nothing reads as untested');
-    assert.ok(r.warnings.some((w) => /1 changed Python file\(s\) read from their text/.test(w)));
+    assert.ok(r.warnings.some((w) => /1 changed Python file\(s\) read from their text: changed functions and signature kinds; Python callers from syntax only: the repository/.test(w)));
     assert.equal(r.otherFiles.find((f) => f.path === 'm.py'), undefined, 'the Python file is analysed, not listed as a file');
     assert.equal(r.otherFiles.find((f) => f.path === 'a.go').notAnalysed.language, 'Go', 'Go is unchanged: not analysed');
     assert.ok(r.reviewSymbols.get('m.py'), 'the review identity has the symbols recorded');
     // In words: no surface says "no callers".
-    const sentence = models.classifyChangeVerdict(by.body).sentence;
-    assert.match(sentence, /its callers are not computed: Python callers need its language server/);
+    const sentence = models.classifyChangeVerdict(by.added).sentence;
+    assert.match(sentence, /no caller was found within the scope searched \(Python callers from syntax only/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an __init__ with no construction found is unknown with the scope note, never "built by a DI container"', async () => {
+  const dir = repoWith({ 'k.py': 'class K:\n    def __init__(self):\n        self.a = 1\n' }, { 'k.py': 'class K:\n    def __init__(self):\n        self.a = 2\n' });
+  try {
+    const r = await analyze(dir, { mode: 'pr', allowLocalBase: true, base: 'main' });
+    assert.deepEqual(r.allChanged.map((c) => [c.key, c.callerState]), [['K.__init__', 'unknown']]);
+    assertSyntaxOnly(r.allChanged[0]);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -214,25 +231,30 @@ test('the editor keeps Pyright: with language services the hook is not used', as
   }
 });
 
-test('the command line prints Python rows with kinds and callers "not computed", never "no callers"', () => {
-  const dir = repoWith({ 'm.py': BASE_PY }, { 'm.py': HEAD_PY });
+test('the command line prints Python rows with kinds and callers from syntax, never "no callers"', () => {
+  const dir = repoWith({ 'm.py': BASE_PY, 'n.py': USER_PY }, { 'm.py': HEAD_PY });
   try {
     const cli = path.join(__dirname, '..', 'src', 'cli.js');
     const text = execFileSync(process.execPath, [cli, '--repo', dir, '--allow-local-base', '--base', 'main'], { encoding: 'utf8' });
     assert.match(text, /C\.keep {3}required parameter/);
-    assert.match(text, /\? callers not computed: Python callers need its language server/);
-    assert.match(text, /blast not computed: Python callers need its language server/);
+    assert.match(text, /⚠ run {3}n\.py/, 'the unchanged caller is listed as not updated');
+    assert.match(text, /more callers may be missing \(Python callers from syntax only: the repository/);
+    assert.match(text, /blast 1\+/);
     assert.match(text, /✕ C\.gone {3}m\.py/);
-    assert.doesNotMatch(text, /no callers|⚠ no test|blast 0|NOT ANALYSED/);
-    assert.match(text, /uncovered \(no test within 2 caller level\(s\)\): 0   unknown: 3/);
+    assert.match(text, /\? added {3}m\.py:8 {2}\(callers unknown: Python callers from syntax only/);
+    assert.doesNotMatch(text, /no callers|⚠ no test|blast 0(?!\+)|NOT ANALYSED|not computed: Python/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('a preview reads Python from the fetched text: kinds, callers not computed, limits note; Go stays not analysed', async () => {
+test('a preview reads Python from the fetched text: kinds, callers from the PR\'s own Python files and tests, limits note; Go stays not analysed', async () => {
   clearVirtualText();
-  const files = { 'pkg/m.py@base': BASE_PY, 'pkg/m.py@head': HEAD_PY, 'src/a.ts@head': 'export function a() { return 2; }\n', 'src/a.ts@base': 'export function a() { return 1; }\n' };
+  const files = {
+    'pkg/m.py@base': BASE_PY, 'pkg/m.py@head': HEAD_PY,
+    'tests/test_m.py@head': 'from pkg.m import body\n\ndef test_body():\n    assert body() == 2\n',
+    'src/a.ts@head': 'export function a() { return 2; }\n', 'src/a.ts@base': 'export function a() { return 1; }\n',
+  };
   const pyPatch = '@@ -1,9 +1,9 @@\n class C:\n-    def keep(self, a):\n+    def keep(self, a, b):\n         return a\n \n-    def gone(self):\n-        return 0\n-\n def body():\n-    return 1\n+    return 2\n+\n+async def added():\n+    raise ValueError()\n';
   const gh = {
     listPullRequestFiles: async () => ({ total: 4, files: [
@@ -249,23 +271,34 @@ test('a preview reads Python from the fetched text: kinds, callers not computed,
   assert.deepEqual(Object.keys(by).sort(), ['C.keep', 'added', 'body']);
   assert.deepEqual(by['C.keep'].kinds.map((k) => k.id), ['required-param']);
   assert.equal(by.added.added, true);
-  assert.equal(by.added.kinds.some((k) => k.id === 'new-throw') || by.added.added, true);
   assert.deepEqual(r.deleted.filter((d) => d.relPath === 'pkg/m.py').map((d) => d.key), ['C.gone']);
   for (const c of py) {
-    assertNotComputed(c);
+    assertSyntaxOnly(c);
+    assert.match(c.callersIncompleteReason, /^Python callers from syntax only: the pull request's own files \(2 Python file\(s\) indexed\)/);
     assert.equal(c.component, 'pull request');
   }
+  // The changed test is read as a caller, so it covers `body`.
+  assert.deepEqual(by.body.callers.map((x) => [x.label, x.test]), [['test_body', true]]);
+  assert.equal(by.body.testState, 'covered');
+  assert.equal(by['C.keep'].callerState, 'unknown');
   const tsRow = r.allChanged.find((c) => c.relPath === 'src/a.ts');
-  assert.ok(tsRow && !isNotComputedReason(tsRow.callersIncompleteReason), 'TypeScript keeps its own caller search');
+  assert.ok(tsRow && !isSyntaxOnlyReason(tsRow.callersIncompleteReason), 'TypeScript keeps its own caller search');
   const by2 = Object.fromEntries(r.otherFiles.map((f) => [f.path, f.notAnalysed]));
   assert.equal(by2['tests/test_m.py'], undefined, 'a Python test is listed as a test, not as not analysed');
   assert.equal(by2['cmd/main.go'].language, 'Go');
   assert.equal('pkg/m.py' in by2, false);
-  assert.deepEqual(r.callersNotComputed, ['Python']);
+  assert.deepEqual(r.callersNotComputed, []);
+  assert.deepEqual(r.callersSyntaxOnly, ['Python']);
   assert.ok(r.reviewSymbols.get('pkg/m.py'));
   const note = models.previewLimitsNote(r);
-  assert.match(note, /Python callers are not computed \(changed functions and kinds only\)/);
+  assert.match(note, /Python callers are from syntax only, in the PR's own files/);
   assert.match(note, /Go files are not analysed/);
+  // Expanding a Python caller asks the Python index, not TypeScript's.
+  const expanded = await r.resolver.incomingWithStatus(by.body.callers[0].file, by.body.callers[0].pos);
+  assert.equal(expanded.complete, false);
+  assert.ok(isSyntaxOnlyReason(expanded.reason), expanded.reason);
+  const tsExpanded = await r.resolver.incomingWithStatus(tsRow.file, tsRow.namePos);
+  assert.ok(!isSyntaxOnlyReason(tsExpanded.reason));
   clearVirtualText();
 });
 
