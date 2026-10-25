@@ -32,10 +32,6 @@
 // enough that scanning one costs microseconds. Owner: this module. Enforced in
 // `readDeclaration` by cutting the text before any scan; a longer header is unreadable (null).
 const MAX_HEADER_CHARS = 65536;
-// Budget for `raisesOf`: characters of body scanned. Default 1 Mi (a function body of tens
-// of thousands of lines). A body past it is scanned only up to the cap, so a `raise` after
-// that point is not seen; the work stays linear and bounded.
-const MAX_BODY_CHARS = 1 << 20;
 // Why 8: Python itself counts a tab as advancing to the next multiple of 8 columns, which is
 // how mixed tab/space bodies still nest consistently.
 const TAB_WIDTH = 8;
@@ -423,8 +419,9 @@ const DOTTED_NAME = /[\p{L}_][\p{L}\p{N}_]*(?:\.[\p{L}_][\p{L}\p{N}_]*)*/uy;
  * Limits: nesting is found by indentation (a tab counts as 8 columns, as Python does), at
  * statement starts only (not inside brackets or after a `\` continuation); `raise (X)` reads
  * `X`; an expression that does not begin with a name (`raise errors[0]` reads `errors`,
- * `raise 1` reads nothing) contributes its leading name only. Only the first MAX_BODY_CHARS
- * of the body are scanned.
+ * `raise 1` reads nothing) contributes its leading name only. The whole body is scanned, in
+ * one linear pass: its size is bounded by the file read that produced it, and a cap here
+ * would miss a later `raise` without saying so.
  *
  * @param {string} declText the declaration as given to `parsePythonDeclaration`
  * @param {number} headerEnd its `headerEnd`
@@ -434,7 +431,7 @@ function raisesOf(declText, headerEnd) {
   /** @type {Set<string>} */
   const names = new Set();
   if (typeof declText !== 'string' || !(headerEnd >= 0)) return names;
-  const body = blankCommentsAndStrings(declText.slice(headerEnd, headerEnd + MAX_BODY_CHARS));
+  const body = blankCommentsAndStrings(declText.slice(headerEnd));
   const lines = body.split('\n');
   let depth = 0;
   let continued = false;
@@ -541,5 +538,5 @@ function renderPythonSig(sig) {
 
 module.exports = {
   parsePythonDeclaration, pythonHeaderText, raisesOf, pythonKindsOf, renderPythonSig,
-  MAX_HEADER_CHARS, MAX_BODY_CHARS,
+  MAX_HEADER_CHARS,
 };
