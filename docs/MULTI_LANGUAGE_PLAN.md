@@ -830,7 +830,7 @@ A dunder target (other than `__init__`) is incomplete, Python calling it itself.
 the index is bounded by the files it is given (the preview: the PR's files under
 `impactTree.tierA.maxFiles`); per-file size as the preview's fetch limits.
 
-### Decisions for the owner
+### Decisions (owner, 2026-10-25: A8-D1 (b), A8-D2 (a), A8-D3 (a))
 
 - **A8-D1. The CLI's scope.** The CLI has the checkout. (a) the same as the preview: the
   changed files and changed tests only; (b) **proposal**: every Python file of the repository
@@ -854,7 +854,7 @@ the index is bounded by the files it is given (the preview: the PR's files under
   against Jedi restricted to the indexed files (Jedi already runs on the exported head).
 - **A8.3 Docs** (me): README Languages table (Python preview/CLI column), limits, changelog.
 
-### Verification plan (to agree before any work)
+### Verification plan (agreed by the owner, 2026-10-25)
 
 | Task | Check | When | Expected time |
 | --- | --- | --- | --- |
