@@ -1,0 +1,82 @@
+[
+ {
+  "number": 14752,
+  "merge": "ae7b9715976c5508398b11dc8546e1279e10f6fc",
+  "base": "547bf81aa5d68f6b4274abb6926c75252f254750",
+  "head": "a1d1667985a4f0129249ff5bd215c80c1644966a",
+  "goFiles": 11,
+  "why": "the G2 PR: 3 removed and 8 added functions, build-tagged files (internal/debug/config_enabled.go `ghdebug`, config_disabled.go `!ghdebug`), _test.go changes"
+ },
+ {
+  "number": 14390,
+  "merge": "ae1ba32887ab1233824f159774cda4b36f249ac5",
+  "base": "cba9646b8c254a5711ef9e19e1dfc1455e88feaa",
+  "head": "1ba640d1c525a2dfc5e60071ffa9c3f948e644d1",
+  "goFiles": 46,
+  "why": "20+ Go files (46): a renamed interface method on its implementations ((NoOpService).Flush -> Finish, the telemetry Service interface), a method signature change ((Uploader).UploadAndAttach), 9 removed functions, cobra runF values, 19 _test.go files"
+ },
+ {
+  "number": 14104,
+  "merge": "adda317c11b892da5e5ed3fbbf26b69a5c163cc6",
+  "base": "0da5ee860830f552798b7417e6eada84e131c885",
+  "head": "6865464458e6c56da26004bd3d04ac1d5d46fb31",
+  "goFiles": 60,
+  "why": "20+ Go files (60): removed functions (getHost, handleHTTPError), a method signature change ((Client).GraphQL), 17 header changes, an added func type (type RequestOption func(...)), an http.RoundTripper implementation"
+ },
+ {
+  "number": 14475,
+  "merge": "8eba304d7da2417869797f0a61e416a769b281b3",
+  "base": "38316c1c4f275030e3df6666382922e75410d68b",
+  "head": "9b6f66363f51a8265f1bb07f8fc3746017859cf1",
+  "goFiles": 56,
+  "why": "20+ Go files (56): generics (readRecords[T] added), a build-tagged pair (cliutil/process_unix.go `unix`, process_other.go `!unix`), a nested module (.github/skills/cli-exercise/tool), 209 added functions"
+ },
+ {
+  "number": 14327,
+  "merge": "6e82bc505d81f8f294491b5ff448d69f79abc44f",
+  "base": "adda317c11b892da5e5ed3fbbf26b69a5c163cc6",
+  "head": "5b02f9abc0631562b1cabf1ecf47fff0a05ae771",
+  "goFiles": 17,
+  "why": "cobra RunE/runF: eight NewCmd*(f, runF) constructors gain a parameter (required-param) and their callers are updated"
+ },
+ {
+  "number": 14278,
+  "merge": "2ea46117e59a9fbcb31f673565eb2b5207e08aae",
+  "base": "606cda4a9b1a703ad7c2e353a77bce0d93d21b0e",
+  "head": "88684c2006da21943fe166ebf4eb63f436391536",
+  "goFiles": 251,
+  "why": "the largest (251 Go files, 107 tests): go fix cleanup, 142 header changes (interface{} -> any), removed helpers (min, stringInSlice)"
+ },
+ {
+  "number": 14663,
+  "merge": "4a289a9e19cac88013626378185f8debb690a59c",
+  "base": "316e7a80fba9ba68b45cb55e0ade5ab707a54cbd",
+  "head": "153adc66eef2af5fe51715ea7f571f3514c50bec",
+  "goFiles": 29,
+  "why": "a method signature change ((AuthConfig).withFreshConfigForRefresh) and a method moved between files ((Credential).IsRefreshable)"
+ },
+ {
+  "number": 10811,
+  "merge": "3fc362b279b0ae90deda5dc945efbe32a4a208f1",
+  "base": "0ef0c426651efbce4129c31ffad25c73bcc3d87a",
+  "head": "55d3b1eaa4e27acad346707ab91c9eb0e4a32a71",
+  "goFiles": 24,
+  "why": "a renamed exported function used across packages (findIssueOrPR -> FindIssueOrPR), a method signature change ((LockOptions).setCommonOptions), NewCmd* constructors passed as values, a generic helper (TestArgParsing[T]) and a func type added"
+ },
+ {
+  "number": 14720,
+  "merge": "40784251452bad4bd40c165de21c302db88e8a39",
+  "base": "3d7967df5a94052b0554898ffa02526f0f90b8c9",
+  "head": "4537a92f3352c8c4c1fd1b8febba1596059fc9e0",
+  "goFiles": 16,
+  "why": "a method signature change ((source).artifactType) and a removed method ((CreateOptions).documentType)"
+ },
+ {
+  "number": 14128,
+  "merge": "a526307b621c90dca18734bfedaa5533318edd1a",
+  "base": "c624f0ac79b2923a98a451aa9b7eebffca9c1222",
+  "head": "5dfc6b06b53e8c3962b28d3ebf00e9b696daf985",
+  "goFiles": 86,
+  "why": "_test.go-heavy (83 of 86 Go files): removed constructors with many test callers (NewBlankConfig, NewFromString), a header change (NewIsolatedTestConfig)"
+ }
+]
