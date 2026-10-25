@@ -49,6 +49,15 @@ const goSymbol = (name, kind, declaration) => {
 };
 const GO_SYMBOLS = [goSymbol('T', 23, 'type T struct{}'), goSymbol('Warm', 12, 'func Warm() int { return 1 }')];
 
+// The Python change `changedSource: 'python'` commits; its symbols are set per test through
+// `hooks.goSymbols` (the one symbols hook of the fake services, whatever the language).
+const PY_SOURCE = 'class T:\n    x = 1\n\n    def warm(self):\n        return 1\n';
+const PY_SYMBOLS = [
+  { name: 'T', detail: '', kind: 5, range: { start: 0, end: PY_SOURCE.length - 1 }, selectionRange: { start: 6, end: 7 }, children: [
+    { name: 'warm', detail: '', kind: 6, range: { start: 24, end: PY_SOURCE.length - 1 }, selectionRange: { start: PY_SOURCE.indexOf('warm'), end: PY_SOURCE.indexOf('warm') + 4 }, children: [] },
+  ] },
+];
+
 const shaFor = (n) => String(n).repeat(40).slice(0, 40);
 const pull = (n) => ({ number: n, headRef: `head${n}`, baseRef: `base${n}`, title: `PR ${n}`, url: `https://example.test/${n}` });
 
@@ -183,6 +192,11 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     sh('checkout', '-qb', 'feature');
     fs.writeFileSync(path.join(dir, 'go.mod'), 'module example.com/a\n\ngo 1.22\n');
     fs.writeFileSync(path.join(dir, 'a.go'), GO_SOURCE);
+    sh('add', '.'); sh('commit', '-qm', 'feature');
+  } else if (changedSource === 'python') {
+    sh('checkout', '-qb', 'feature');
+    fs.writeFileSync(path.join(dir, 'pyproject.toml'), '[project]\nname = "a"\n');
+    fs.writeFileSync(path.join(dir, 'a.py'), PY_SOURCE);
     sh('add', '.'); sh('commit', '-qm', 'feature');
   } else if (changedSource) {
     sh('checkout', '-qb', 'feature');
@@ -521,4 +535,4 @@ const overviewAnswer = (headOid) => ({ repository: {
   object: { statusCheckRollup: null },
 } });
 
-module.exports = { GO_SOURCE, overviewAnswer, fakeWebviewPanel, deferred, gates, shaFor, pull, localResult, finding, previewResult, createEnv, withEnv, refusals, createCommentsApi };
+module.exports = { GO_SOURCE, PY_SOURCE, PY_SYMBOLS, overviewAnswer, fakeWebviewPanel, deferred, gates, shaFor, pull, localResult, finding, previewResult, createEnv, withEnv, refusals, createCommentsApi };

@@ -67,8 +67,11 @@ function languageServicesOver(gopls, { repoRoot }) {
       if (!d) return null;
       return toServerLocations(await gopls.implementations(/** @type {any} */ (d), pos)) ?? [];
     },
-    // The harness asks gopls nothing for definitions; no answer, never "nothing".
-    definitions: async () => null,
+    // `textDocument/definition` (Python's duck-typing check asks it; Go's extras do not).
+    async definitions(doc, pos) {
+      const d = headOnly(doc);
+      return d ? toServerLocations(await gopls.definition(/** @type {any} */ (d), pos)) : null;
+    },
   };
 }
 
@@ -95,7 +98,7 @@ function createHierarchyResolver(services, { extras = null } = {}) {
     const query = extras ? extras.query(file, pos) : null;
     const hierarchy = await queryHierarchy(services, headDoc(file), pos);
     if (!hierarchy.ready) {
-      const explained = extras && extras.explainIncomplete ? extras.explainIncomplete(hierarchy.reason) : null;
+      const explained = extras && extras.explainIncomplete ? extras.explainIncomplete(hierarchy.reason, file, pos) : null;
       if (explained) return { callers: [], complete: false, reason: explained };
       return answerOf(hierarchy, withTests);
     }

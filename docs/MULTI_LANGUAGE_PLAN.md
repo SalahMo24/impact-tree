@@ -401,7 +401,201 @@ TS/JS and Go; preview and CLI: TS/JS, per L2); the Changes view's "no call graph
 for a known but unsupported language names it; `package.json` keywords and description
 mention Go only once it ships.
 
-## Part P and Part J: Python, then Java (after L4)
+## Part P: Python (approved 2026-10-25)
+
+**Approved by the owner as proposed:** P-D1 `pyright` (MIT) in the scratchpad, P-D2
+`encode/httpx`, P-D3 Jedi + 30 hand-checked callers, P-D4 (B) duck-typing evidence search,
+P-D5 nested defs in the parent's body, P-D6 raises as `new-throw`; the verification plan
+and budgets below as written.
+
+Python becomes a third provider (`src/languages/python/`), built like Go on the shared
+server-symbols helper, the editor services and `callersFromHierarchy`. The pipeline, the
+services adapter, review identity (G5), warm-up hooks and the "not analysed" handling (G6)
+are reused unchanged; Python only adds its rules, symbol collection, signature parser and
+caller extras. Editor only, like Go: the CLI and the no-checkout preview list Python files
+as not analysed (G6 does this for any provider that needs a server).
+
+### The language server
+
+Both editors answer Python with Pyright: Cursor ships **Cursor Pyright**
+(`anysphere.cursorpyright`, installed here, proprietary licence), VS Code ships **Pylance**
+(Microsoft, also Pyright-based; its licence forbids use outside Microsoft's editors). Both
+expose the editor commands Impact Tree uses (document symbols, call hierarchy, references).
+The plan targets Pyright's behaviour. The test harness needs an open-source server it can
+run outside the editor: the MIT-licensed `pyright` npm package (decision P-D1).
+
+### Decisions (approved)
+
+- **P-D1. Harness server.** Install the MIT `pyright` npm package (its `pyright-langserver`)
+  into `~/Projects/impact-tree-scratchpad/py-tools/`, not into the repo. One download,
+  ~15 MB. Alternative: `basedpyright` (a Pyright fork, also MIT). Proposal: `pyright`, the
+  common base of both editors' servers.
+- **P-D2. Test repository.** A typed, mid-sized Python project with many merged PRs, so the
+  server resolves most calls. Proposal: **`encode/httpx`** (fully type-annotated, ~60 source
+  files, active). Alternatives: `pallets/flask` (lightly typed, decorator-heavy: a harder
+  test of value uses), `psf/black`.
+- **P-D3. Callers oracle.** Python has no maintained static call-graph tool like Go's
+  `callgraph`. Proposal: **Jedi** (`pip install jedi` into a scratchpad virtualenv): its
+  `get_references()` is a separate engine from Pyright, so agreement means something; plus
+  a hand-checked sample of 30 callers. Alternative: hand-checked sample only (weaker).
+- **P-D4. Duck typing (the main honesty question).** Pyright only finds `obj.method()` when
+  it can infer `obj`'s type; calls on untyped objects are silently missing. Options:
+  (A) every Python method's caller answer reads "may be missing callers" (always honest,
+  noisy); (B) **proposal**: after the server answers, search the repository's Python files
+  for `.<method_name>(` call text outside the listed call sites (the same idea as
+  TypeScript's "unseen users" grep, bounded); if any is found the answer is incomplete with
+  "N calls by this name that the language server could not resolve". Quiet when typing is
+  good, amber exactly when there is evidence.
+  **Narrowed after P0 (owner, 2026-10-25):** a text hit counts only when it is in code (not
+  a string or comment) and the server's `definition` at it does not resolve to another
+  function; one `definition` query per hit, bounded like the search itself.
+- **P-D5. Nested functions.** A `def` inside a function: part of its parent's body (as Go's
+  function literals; proposal), or its own row (as TypeScript's nested helpers). Methods
+  in classes are always their own rows (`Class.method`).
+- **P-D6. Raised exceptions.** Python's contract includes what it raises. Proposal: a new
+  `raise SomeError` type in a function's body is the existing `new-throw` kind, as for
+  TypeScript (cheap: read from the function's own text, nested defs excluded). Alternative:
+  skip, as Go does with `panic`.
+
+### Tasks
+
+- **P0. Spike** (what Pyright gives): symbol shape (methods as class children, nested
+  defs, decorators inside or outside `range`, `selectionRange`), base side via temporary
+  file outside the workspace, call hierarchy for functions/methods with typed and untyped
+  receivers, decorator registrations (`@app.route`) and callbacks as value uses,
+  references, timings cold/warm. Output: a "Measured" note; confirms or changes P-D4/P-D5.
+
+  **Measured (2026-10-25).** Full numbers in `test/lsp-harness/P0-REPORT.md`, reproduced by
+  `node test/lsp-harness/p0-spike.js <httpx clone>` (pyright 1.1.414, httpx `b5addb6`, Intel
+  i7-9750H; Cursor Pyright / Pylance not run).
+  1. Symbols: hierarchical; methods (also class/static methods, properties) are `Method`
+     children of their class; nested defs are `Function` children of their parent; parameters
+     and locals are listed too (`Variable` children). `range` starts at the first decorator and
+     includes the docstring; `selectionRange` is the bare name; `detail` is always empty. A
+     property getter + setter pair, and `@overload` stubs + implementation, give **one** symbol
+     (the setter / the implementation): 11 getters in `_client.py`/`_models.py` are in no
+     function symbol's range. P2 must recover them from the text.
+  2. Base side: virtual URI, `untitled:` and a temp file outside the workspace are all answered
+     correctly (the same 74 of 81 defs as on the head side, ~0.5 s; the first document outside
+     the workspace 2.3 s). G2's temp copy works unchanged.
+  3. Callers: typed receivers, `self.`, classmethods, staticmethods, properties (attribute uses),
+     re-exports and `tests/` callers are listed; untyped receivers are silently not. Method
+     calls come back with duplicated `fromRanges`. No-callers answer is `null`.
+  4. Values: unlike gopls, the call hierarchy lists **no** value uses (callback, dict entry,
+     `functools.partial`, decorator application); `references` does (1 each).
+  5. Duck typing, 4 methods: `raise_for_status` 2 real misses of 13 calls (untyped hook
+     parameter); `multi_items`, `read`, `send` none. Raw `.<name>(` text hits outside listed
+     sites: 6, 4, 32, 29 — mostly unrelated same-name methods and docstrings. After dropping
+     strings/comments and hits that `definition` resolves to another function: 3 (2 real + 1
+     planted), 0, 4 (all unrelated), 0.
+  6. Time: spawn + initialize 0.3 s; first symbols 2.6 s; first incomingCalls 0.4 s; warm
+     incomingCalls median 45 ms (max 105 ms), references 25 ms, symbols on a new file 13 ms.
+
+  **Recommendation (accepted by the owner 2026-10-25).** P-D4: keep (B), but count only text hits in code (not
+  strings/comments) that the server's `definition` does not resolve to another function; raw
+  text hits would flag 4 of 4 methods (3 false alarms), the filtered count flags 2 of 4 (1
+  false: `read`). P-D5: stands; nested defs are available as children but skipping them matches
+  Go and keeps a nested helper's change in its parent. New for G4/P4: value uses need
+  `references`, since the call hierarchy never lists them.
+- **P1. Rules:** `.py`/`.pyi`; tests `test_*.py`, `*_test.py`, `conftest.py` (and the
+  shared `tests/` directory rule); generated `_pb2.py`, `_pb2_grpc.py`, a `# Generated by` /
+  `@generated` header; ignored `venv/`, `.venv/`, `site-packages/`, `__pycache__/`, `.tox/`,
+  and `build/`, `dist/` at the repository root only (a package named `build` deeper down is
+  source). Unit = nearest `pyproject.toml` / `setup.py` / `setup.cfg` directory.
+  Removes "Python" from the "not analysed yet" list.
+- **P2. Symbols:** functions and methods (class children) from document symbols; keys
+  `Class.method` / `func` with repeats `#2` (overloads via `@overload`, redefinitions);
+  nested defs per P-D5.
+- **P3. Signatures:** parse `def`/`async def` headers (multi-line, to the `:` at depth 0):
+  `self`/`cls` dropped for methods (renaming them is no change); defaults → `optional`;
+  `*args`/`**kwargs` → `rest`; keyword-only (after `*`) and positional-only (before `/`)
+  recorded in the parameter's type so moving a parameter across them is a change;
+  annotations as types; `-> T` as returns; `async` as async. A change to
+  `@property`/`@staticmethod`/`@classmethod` is a signature change; other decorators are
+  not. Raises per P-D6. Oracle-checked against Python's `ast` on the test repo (like G3).
+- **P4. Callers:** Python's `editorCallers`: duck-typing evidence per P-D4; value uses
+  (a callback or decorator reference listed as a caller is not a call, as Go's G4);
+  `getattr`/dynamic dispatch noted in the README limits.
+- **P5. Identity and warm-up:** reuse G5 (recorded symbols, `warmUpTarget`); the
+  "Waiting for …" text names the Python server.
+- **P6. Other modes:** nothing new expected (G6 covers it); check and test.
+- **P7. Verification** on 10 merged PRs of the P-D2 repo (plan below).
+
+  **Measured (2026-10-25).** Full report: `test/lsp-harness/P7-REPORT.md`, reproduced by
+  `node test/lsp-harness/py-verify.js <httpx clone> --worktree <httpx worktree>` (corpus
+  `test/lsp-harness/py-verify-corpus.json`; oracles cached by commit and tool, 59 s a cached
+  run, 75–78 s uncached). 10 PRs, 141 function changes, 112 with callers compared; pyright
+  1.1.414, Jedi 0.20.1 (parso 0.8.7), Python 3.12.8; no httpx code imported or run (checked
+  in the Jedi process: no module from the export, `sys.path` unchanged).
+  - Changed functions: 100% precision, 100% recall against `ast` (99.3% before F2).
+  - Kinds: 77/77 header changes right, 22/22 body-only changes `body`; no `new-throw` case in
+    the corpus (unit-tested only).
+  - Callers against Jedi: precision 72.2% (98 extra: all real calls on a `with … as x` target,
+    which Jedi does not type), recall 26.2% (714 missed: all constructions of a changed
+    `__init__`). Every one of the 18 changes with a Jedi caller we miss is incomplete; none is
+    drawn as fine while Jedi has a non-updated caller. 30 callers hand-checked, all agree.
+  - Time to first / full result, fresh Pyright: 2.0–4.8 s / 2.7–13.0 s.
+  - Fixed on the way: F1, `__init__` read "no incoming-call result" (Pyright answers `null`
+    there and lists constructions only at the class), and could read complete "no callers"
+    where the editor turns `null` into `[]`: now always incomplete with a constructor reason.
+    F2, a function defined in both branches of an `if`/`try` lost its second definition
+    (httpx `_compat.py`): now recovered.
+  - Follow-ups: list an `__init__`'s constructions by asking at the class name (needs a
+    provider hook or the extras to ask after a `null`: shared code); a `new-throw` PR if it
+    should be measured; a clearer reason than "no incoming-call result" for methods reached
+    through a base class or protocol (`stream.close()`).
+- **P8. Docs:** README Languages row and Python limits, changelog, `package.json`
+  keywords.
+
+  **Done (2026-10-25):** the README's Languages table has a Python row and a Python section
+  (what it needs, how changes and callers are read, what reads as incomplete, what is not
+  detectable, the P7 numbers); its status line, Limitations and Roadmap say the same; the
+  changelog has the Python entry; `package.json`'s description and keywords name Python.
+
+### Verification plan (agreed)
+
+Times are measured or estimated on this machine (Intel i7, 12 threads) when idle.
+"Iterate" checks run while working; "end" checks run once, when the task is done, and I
+re-run them before committing. Every agent brief carries its task's rows verbatim, plus the
+agent time budget; past it the agent stops and reports.
+
+| Check | Proves | When | Expected time |
+| --- | --- | --- | --- |
+| `npm run test:quick` + the touched test files | nothing obvious broke | iterate | ~10 s |
+| full `npm test` | no regression anywhere | end | ~1 min |
+| TypeScript `--json` baseline (`compare.sh`) | TypeScript output unchanged | end | ~45 s |
+| Go end-to-end (`go-e2e.js`, cli/cli #14752) | Go unchanged | end | ~15 s |
+| Python end-to-end (`py-e2e.js`, one test-repo PR) | the provider works on real code with Pyright | end of P2–P6 | ~20 s (estimate) |
+| Signature oracle (`py-signature-oracle.js` vs `ast`, whole test repo) | P3 parser agrees with Python | end of P3 | ~5 s |
+| P7 verification (`py-verify.js`, 10 PRs; `ast` + Jedi oracles cached by commit + tool version; 3 PRs' oracles in parallel; hard deadline) | changed functions, kinds, callers on real PRs | end of P7 | uncached ≤ 5 min, cached ≤ 2 min |
+
+Per-task budgets (agent wall time, including its verification):
+
+| Task | Agent budget | Verification phase |
+| --- | --- | --- |
+| P0 spike (+ install per P-D1) | 30 min | spike script ≤ 2 min |
+| P1 rules | 15 min | ~2 min (quick, full, baselines) |
+| P2 symbols | 30 min | ~3 min (+ Python e2e) |
+| P3 signatures | 30 min | ~3 min (+ signature oracle) |
+| P4 callers | 30 min | ~3 min |
+| P5 + P6 | 30 min | ~3 min |
+| P7 verification | corpus pick: separate step for approval (15 min); run + fixes: 45 min | run ≤ 5 min uncached, ≤ 2 min cached, at most 3 full runs |
+| P8 docs | me, 15 min | ~2 min |
+
+P1 runs alone first; then P2 and P3 can run in parallel (separate worktrees, different
+files); P4 after P2; P5/P6 after P4; P7 after all; P8 last.
+
+Acceptance targets (as Go's G7): changed-function detection 100% precision, ≥ 98% recall
+vs `ast`; every header change classified; callers: precision/recall vs Jedi reported with
+false positives and misses listed separately; every caller Jedi finds that we miss sits
+on an answer marked incomplete; no Python change shown as fine while a non-updated caller
+is known.
+
+## Part J: Java (after Python)
+
+Original sketch for both languages (Python's is superseded by Part P above):
+
+### Python and Java sketch
 
 Each is a new provider in `src/languages/<id>/` with G1–G8's tasks; the pipeline and the
 services adapter do not change. What differs:
@@ -426,4 +620,5 @@ services adapter do not change. What differs:
 5. G7 verification on cli/cli; fix what it finds; owner's manual pass.
 6. G8 docs, then release Go support (v1.1 or later; v1 stays TS/JS per the v1 scope
    decision in `UX_PLAN.md`).
-7. L4 → Python or Java, as a provider each.
+7. Part P (Python): P0 → P1 → P2 ∥ P3 → P4 → P5/P6 → P7 → P8.
+8. Part J (Java), as a provider.

@@ -28,13 +28,19 @@ const SUITE = [
   { file: 'test/language-registry.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/typescript-provider.test.js', tier: 'full' },  // 8.2s
   { file: 'test/go-rules.test.js', tier: 'quick' },  // 0.1s
+  { file: 'test/python-rules.test.js', tier: 'quick' },  // 0.1s
+  { file: 'test/python-symbols.test.js', tier: 'quick' },  // 6s
   { file: 'test/go-signature.test.js', tier: 'quick' },  // 0.2s
+  { file: 'test/python-signature.test.js', tier: 'quick' },  // 0.2s
+  { file: 'test/python-editor-extras.test.js', tier: 'quick' },  // 0.3s
   { file: 'test/not-analysed.test.js', tier: 'full' },
   { file: 'test/go-call-sites.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/go-editor-extras.test.js', tier: 'quick' },  // 0.3s
   { file: 'test/server-symbols.test.js', tier: 'quick' },  // 4.6s
   { file: 'test/go-review-identity.test.js', tier: 'quick' },  // 4.1s
   { file: 'test/go-warm-up.test.js', tier: 'quick' },  // 3.4s
+  { file: 'test/python-review-identity.test.js', tier: 'quick' },  // 6s
+  { file: 'test/python-warm-up.test.js', tier: 'quick' },  // 3.8s
   { file: 'test/caller-retry.test.js', tier: 'quick' },  // 3.7s
   { file: 'test/services-vscode.test.js', tier: 'quick' },  // 1.9s
   { file: 'test/scope.test.js', tier: 'full' },  // 5.4s
@@ -138,6 +144,8 @@ const EXCLUDED = {
   'windows-preview.js': 'child script spawned by test/remote-regressions.test.js',
   'windows-workspace-projects.js': 'child script spawned by test/local-programs.test.js',
   'go-signature-oracle.js': 'dev script: compares against the Go toolchain on a Go repo given as an argument',
+  'py-signature-oracle.js': 'dev script: compares against Python\'s ast module on a Python repo given as an argument',
+  'lsp-harness/py-verify.js': 'dev script: P7 verification against httpx, Pyright, ast and Jedi; needs the clone, a worktree and the scratchpad tools',
   'measure-cqrs-cache.js': 'dev script: measurement, not a pass/fail test',
   'measure-inheritance.js': 'dev script: measurement, not a pass/fail test',
   'record-fixture.js': 'dev script: `npm run record` captures fixtures',
@@ -168,7 +176,9 @@ function checkCoverage(testDir) {
     if (inSuite && excluded) problems.push(`test/${name} is in both SUITE and EXCLUDED`);
   }
   for (const name of Object.keys(EXCLUDED)) {
-    if (!onDisk.includes(name)) problems.push(`EXCLUDED lists test/${name}, which does not exist`);
+    // A name in a subdirectory (a dev script under lsp-harness/) is not a suite candidate; it only has to exist.
+    const exists = name.includes('/') ? fs.existsSync(path.join(testDir, name)) : onDisk.includes(name);
+    if (!exists) problems.push(`EXCLUDED lists test/${name}, which does not exist`);
   }
   return problems;
 }
