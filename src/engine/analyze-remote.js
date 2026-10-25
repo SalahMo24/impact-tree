@@ -21,9 +21,11 @@ const { hunkRangesFromPatch, hunkDeletionsFromPatch } = require('./patch');
 const { diffLinesFromPatch } = require('./diff-lines');
 const { isTestPath, isTestFile } = require('./diff');
 // The preview analyses TypeScript/JavaScript only (gate L2): a file of another language
-// (Go) is listed as a file, as before that language had a provider; G6 says so in the view.
+// (Go) is listed as a file that was not analysed, with the reason (`notAnalysed`), so it
+// never reads as a file with no impact.
 const { typescriptRules } = require('../languages/typescript/rules');
 const isSourcePath = typescriptRules.handles;
+const { languageFor } = require('../languages');
 const { seedRoots, nestedIds } = require('./forest');
 const { registerVirtualText, readLineOfOffset } = require('./textpos');
 const { classifyCallSiteUpdates, classifyCallerUpdateState } = require('./call-sites');
@@ -114,7 +116,7 @@ async function analyzeRemote({
   // listed: the blob id and the patch. `contentId` is null when it gave neither.
   const otherFiles = listed.files
     .filter((f) => !sourceFiles.includes(f))
-    .map((f) => ({ path: f.path, status: normaliseStatus(f.status), contentId: listedContentId(f) }));
+    .map((f) => ({ path: f.path, status: normaliseStatus(f.status), contentId: listedContentId(f), ...notAnalysedIn(f.path) }));
   // Every tab needs the pre-rename base path, including docs/config-only previews
   // whose files are fetched on demand rather than parsed by this analysis.
   const basePaths = Object.fromEntries(listed.files.filter((f) => f.oldPath && f.oldPath !== f.path).map((f) => [f.path, f.oldPath]));
@@ -346,6 +348,21 @@ async function analyzeRemote({
       resolver,
     };
   }
+}
+
+/**
+ * The reason a listed file of another known language was not analysed, as an `otherFiles`
+ * property; nothing for a file of no known language (docs, config), which has no analysis
+ * to miss.
+ * @param {string} filePath
+ * @returns {{ notAnalysed: { language: string, reason: string } }|{}}
+ */
+function notAnalysedIn(filePath) {
+  // The preview analyses TypeScript/JavaScript, including its tests (read as callers).
+  if (isSourcePath(filePath)) return {};
+  const language = languageFor(filePath);
+  if (!language) return {};
+  return { notAnalysed: { language: language.displayName, reason: `a preview cannot analyse ${language.displayName}; check out the pull request to analyse it in the editor` } };
 }
 
 function listedContentId(f) {

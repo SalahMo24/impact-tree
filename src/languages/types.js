@@ -70,6 +70,34 @@
  */
 
 /**
+ * One symbol of one side of a file as the review identity (src/review-identity.js) reads
+ * it: the part of a `CollectedSymbol` that locates its declaration. Offsets are into the
+ * text whose hash `RecordedSide.textHash` holds.
+ * @typedef {object} ReviewSymbol
+ * @property {string} key As the `CollectedSymbol`'s: matches a deleted row's `key`.
+ * @property {number} namePos Where a change or caller row of this symbol points (`pos`).
+ * @property {number} start Offset of the declaration's start.
+ * @property {number} end Offset just past the declaration.
+ * @property {number} startLine One-based, inclusive.
+ * @property {number} endLine One-based, inclusive.
+ */
+
+/**
+ * The symbols a provider found on one side of a file, with the text they refer to.
+ * @typedef {object} RecordedSide
+ * @property {string} textHash SHA-256 (hex) of that side's text, so a reader can tell
+ *   whether the text it holds is the one the offsets refer to.
+ * @property {ReviewSymbol[]} symbols Every symbol of that side the provider collected,
+ *   changed or not.
+ */
+
+/**
+ * Both sides of one analysed file: `head` null for a file absent on the head side
+ * (deleted), `base` null for one absent on the base side (added).
+ * @typedef {{ head: RecordedSide|null, base: RecordedSide|null }} RecordedSymbols
+ */
+
+/**
  * What a language server supplies. Every method's answer `null` means the server gave no
  * answer (not installed, not ready, timed out, refused the document); it is never read as
  * "nothing found". A failed request rejects; when the error has `retryable: true`, it
@@ -121,6 +149,10 @@
  * @property {string[]} warnings Sink for warnings, shown in order after the run's own.
  * @property {Map<string, number>} unanalysable Sink: changed files not analysed, counted by
  *   the component (project) they belong to.
+ * @property {Map<string, string>} notAnalysedFiles Sink: the reason, by path, for each changed
+ *   file this language could not analyse. The result carries it on the file's `otherFiles`
+ *   entry (`notAnalysed`), so a file that was not analysed never reads as one with no impact.
+ *   A file listed here is also counted in `unanalysable`.
  * @property {(event: { phase: string, component?: string, done?: number, total?: number }) => void} report Progress.
  * @property {AbortSignal|undefined} signal Checked between steps; an aborted run rejects
  *   with `AnalysisCancelledError`, which the pipeline never reads as a provider failure.
@@ -156,9 +188,15 @@
  *   over, on failure and cancellation too.
  * - `resultProperties`: put on the result as non-enumerable properties (live objects an
  *   environment uses, not part of the JSON result), such as TypeScript's `moduleCallers`.
+ * - `reviewSymbols`: by repository-relative (head-side) path, the symbols of both sides
+ *   of each file this provider analysed. The pipeline merges every provider's into the
+ *   result's non-enumerable `reviewSymbols` Map, and the review identity reads a file's
+ *   rows from it instead of parsing the file, so a language whose symbols come from a
+ *   server is identified by content without asking the server again. A provider that
+ *   leaves it out (TypeScript) has its files parsed by the identity itself.
  * @typedef {object} PreparedLanguage
  * @property {AnalysisUnit[]} units
- * @property {{ notes?: () => string[], dispose?: () => void, resultProperties?: Record<string, unknown> }} [extras]
+ * @property {{ notes?: () => string[], dispose?: () => void, resultProperties?: Record<string, unknown>, reviewSymbols?: Map<string, RecordedSymbols> }} [extras]
  */
 
 /**
@@ -169,9 +207,16 @@
  * @property {(file: string, pos: number) => EditorCallerQuery} query One per caller query,
  *   taken when the query starts, so a query that outlives `clear()` keeps its own state.
  * @property {string} suppressedReason Why a suppressed query's empty answer is unknown.
+ * @property {'inheritedDropped'|'valueUsesDropped'} droppedStat The resolver stat that counts
+ *   the callers `filter` drops for this language, so the resolver names no language.
  * @property {(file: string, pos: number) => Promise<string|null>} unseenUsers Asked before
  *   "none": the reason the answer is unknown after all, or null. Never rejects.
  * @property {() => void} clear A new analysis starts: drop what was learnt.
+ * @property {(reason: string) => string|null} [explainIncomplete] For a query the server did
+ *   not answer (a rejection, no item): the reason to show instead of the server's, when the
+ *   language knows what that failure means (Go: a file outside the active build), or null
+ *   to keep the server's reason. An explained failure is a lasting condition of the
+ *   workspace, so the answer is incomplete and not retryable. Absent: never explained.
  */
 
 /**
@@ -179,7 +224,9 @@
  * @property {() => boolean} isSuppressed True: do not ask the server; an empty answer stands
  *   and its verdict is unknown (`suppressedReason`).
  * @property {(callers: import('../engine/caller-contract').CallerRow[]) => { kept: import('../engine/caller-contract').CallerRow[], dropped: number }} filter
- *   Removes callers the server reports wrongly.
+ *   Removes callers the server reports wrongly. `kept` replaces the callers, so a kept
+ *   caller may be a copy with fewer `callSites` (Go keeps only a caller's calls);
+ *   `dropped` counts the callers removed.
  * @property {(() => Promise<{ callers: import('../engine/caller-contract').CallerRow[], incompleteReason: string|null }>)|null} moreCallers
  *   Callers the server cannot see; `incompleteReason` when that search failed. Never rejects.
  *   Null when there is nothing to search, so the answer needs no wait.
@@ -208,11 +255,32 @@
  *   `trace`, `filterInherited`, `onWarmupRetry`, called when a lookup waits for the
  *   server, and `clock`, which times those waits (src/engine/clock.js; omitted: the real
  *   clock).
+ * - `warmUpTarget` (optional, editor only): where to warm the editor's language server for
+ *   this language (src/readiness.js): a function or method name in one of `files` (this
+ *   language's changed files, repository-relative, in diff order), so the server loads
+ *   the project that file is in. The language decides how many files it tries. Null: none
+ *   found, or the server is not available (no notice: the analysis reports that). May
+ *   reject; readiness logs the reason and analyses without warming.
+ * - `serverLabel` (optional): the language server as named while the first run waits for
+ *   it ("Waiting for the Go language server (gopls)…"). Absent: TypeScript's wording.
  * @typedef {LanguageFileRules & {
  *   needsServer: boolean,
  *   prepare: (ctx: PrepareContext) => Promise<PreparedLanguage>,
  *   editorCallers?: (options: { ts: any, services: any, repoRoot: string|null, trace: (message: string) => void, filterInherited: boolean, onWarmupRetry: () => void, clock?: import('../engine/clock').Clock }) => EditorCallerExtras,
+ *   warmUpTarget?: (ctx: WarmUpContext) => Promise<{ file: string, pos: number }|null>,
+ *   serverLabel?: string,
  * }} LanguageProvider
+ */
+
+/**
+ * What readiness hands a provider's `warmUpTarget`.
+ * @typedef {object} WarmUpContext
+ * @property {string} repo Absolute repository root.
+ * @property {string[]} files This language's changed files that exist on the head side,
+ *   repository-relative, in diff order. Never empty.
+ * @property {LanguageServices|null} services The editor's language services; null when the
+ *   resolver has none.
+ * @property {(message: string) => void} log The output channel.
  */
 
 module.exports = {};

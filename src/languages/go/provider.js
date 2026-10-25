@@ -3,10 +3,11 @@
 // Go as a language provider (src/languages/types.js; docs/MULTI_LANGUAGE_PLAN.md, G2). Go
 // needs a language server: its symbols come from the editor's (gopls through the Go
 // extension) via the shared `prepareFromServerSymbols` (../server-symbols.js), and its
-// callers from the editor's resolver, which answers Go targets with `callersFromHierarchy`.
-// What is Go's own here: which server symbols are changed-symbol candidates and how they
-// are keyed (`collectGoSymbols`), how a header is compared (`goKindsOf`) and shown, and
-// which module a file belongs to (`goModuleOf`).
+// callers from the editor's resolver, which answers Go targets with `callersFromHierarchy`
+// and Go's caller extras (`editorCallers`, ./editor-extras.js). What is Go's own here:
+// which server symbols are changed-symbol candidates and how they are keyed
+// (`collectGoSymbols`), how a header is compared (`goKindsOf`) and shown, which module a
+// file belongs to (`goModuleOf`), and how gopls' callers are read (`editorCallers`).
 //
 // Engine modules and the signature parser are required where they are used: the registry
 // (../index.js) loads this file, and src/engine/diff.js loads the registry.
@@ -223,11 +224,45 @@ function goSpec(parser) {
  */
 const prepare = (ctx) => require('../server-symbols').prepareFromServerSymbols(ctx, goSpec());
 
+/**
+ * Go's caller extras for the editor's resolver (./editor-extras.js): value uses are not
+ * calls, and a file outside the active build says so. Required here, not at the top, for
+ * the same reason as the engine modules above.
+ * @type {NonNullable<import('../types').LanguageProvider['editorCallers']>}
+ */
+const editorCallers = ({ trace }) => require('./editor-extras').createGoEditorExtras({ trace });
+
+/**
+ * Where the editor's Go server is warmed (src/readiness.js): the name of the first
+ * function or method gopls lists in the first changed Go file. Only that file is asked:
+ * each answer from a server that is still loading can take seconds, and any file of the
+ * module makes gopls load the module. Null when the editor has no Go support (logged; the
+ * analysis itself reports it, once, as "Install the Go extension to analyse Go files"),
+ * when the server gives no symbols, or when the file declares no function.
+ * Rejects when the server's request fails; readiness logs that and analyses unwarmed.
+ * @type {NonNullable<import('../types').LanguageProvider['warmUpTarget']>}
+ */
+async function warmUpTarget({ repo, files, services, log }) {
+  if (!services) return null;
+  const availability = await services.available(goRules.id);
+  if (!availability.ok) {
+    log(`warm-up: Go skipped — ${availability.reason}`);
+    return null;
+  }
+  const file = path.join(repo, files[0]);
+  const symbols = await services.documentSymbols({ file, side: 'head' });
+  const first = (symbols || []).find((s) => s.kind === SYMBOL_KIND_FUNCTION || s.kind === SYMBOL_KIND_METHOD);
+  return first ? { file, pos: first.selectionRange.start } : null;
+}
+
 /** @type {import('../types').LanguageProvider} */
 const goProvider = Object.freeze({
   ...goRules,
   needsServer: true,
   prepare,
+  editorCallers,
+  warmUpTarget,
+  serverLabel: 'the Go language server (gopls)',
 });
 
 module.exports = { goProvider, goSpec, collectGoSymbols, goKindsOf, goModuleOf, renderGoSymbolSig };

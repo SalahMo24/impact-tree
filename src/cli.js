@@ -117,6 +117,14 @@ result.untested.forEach((c) => console.log(`  ⚠ ${c.label}   ${rel(c.file)}:${
 result.testUnknown.forEach((c) => console.log(`  ? ${c.label}   ${rel(c.file)}:${c.startLine}  (not proven untested: ${c.testReachIncompleteReason})`));
 result.unknownCallers.forEach((c) => console.log(`  ? ${c.label}   ${rel(c.file)}:${c.startLine}  (value-passed, not called)`));
 
+// A file of a known language that was not analysed is not a file with no impact: say so.
+const notAnalysedFiles = result.otherFiles.filter((f) => f.notAnalysed);
+if (notAnalysedFiles.length) {
+  H('⑤ NOT ANALYSED');
+  console.log(`  ${notAnalysedFiles.length} changed file(s) were not analysed: nothing is known about their impact. Review them by hand.`);
+  for (const f of notAnalysedFiles) console.log(`  ? ${f.path}   ${f.notAnalysed.language}: ${f.notAnalysed.reason}`);
+}
+
 H('SUMMARY');
 for (const c of result.components) {
   console.log(`  ${c.component.padEnd(24)} ${String(c.changed.length).padStart(3)} changed  ${String(c.changed.filter((x) => x.kinds.some((k) => k.id !== 'body')).length).padStart(2)} findings  ${String(c.deleted.length).padStart(2)} deleted`);

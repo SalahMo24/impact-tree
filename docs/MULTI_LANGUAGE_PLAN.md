@@ -243,8 +243,8 @@ its matcher (`changedFromSymbols`) takes collected symbols, TypeScript output un
 at startup). A Go method's key uses its receiver's base type (`(Config).Size` for
 `(*Config).Size`), so a `T` ↔ `*T` change is one `type-changed` method, not a delete and an
 add. Checked end to end against gopls on cli/cli PR #14752 (`test/lsp-harness/go-e2e.js`):
-every added and deleted function the diff shows, nothing more. Go rows get a conservative
-review identity (any edit to the file unticks them) until G5.
+every added and deleted function the diff shows, nothing more. Go rows got a conservative
+review identity (any edit to the file unticked them) until G5 replaced it.
 
 
 Acceptance: `collectSymbols` builds `CollectedSymbol`s from `documentSymbols`: functions
@@ -269,7 +269,20 @@ expanded, unnamed params named by position, variadic as `rest`, results as `retu
 generics `[T any]` parsed) and calls the shared `diffSignature`; a receiver change
 (`T` ↔ `*T`) is `type-changed`; tests cover each form from real `cli/cli` headers.
 
-### G4. Go callers and their blind spots
+### G4. Go callers and their blind spots (done)
+
+Done 2026-10-24: `src/languages/go/editor-extras.js` (`goProvider.editorCallers`), applied by
+the editor resolver and, the same way, by the harness resolver. A site is a call when the
+text after its identifier (past space, same-line comments and a generic `[...]`, within
+4096 characters; a newline ends the expression) is `(` (`src/languages/go/call-sites.js`);
+caller files are read through `textpos` up to 2 MiB, and a site that cannot be read is kept.
+Callers that only use the function as a value are dropped, mixed ones keep only their
+calls, and any value use makes the answer incomplete with `referenced-as-value` (so a
+function used only as a value is unknown, never "no callers"). A "no package metadata"
+rejection reads "not in the active build (build tags); callers were not searched", not
+retryable (`EditorCallerExtras.explainIncomplete`). On cli/cli: `noArgsConstraint` goes from
+11 callers, complete, to unknown / `referenced-as-value`; `debug.Config` in
+`config_enabled.go` shows the build-tag reason.
 
 G0 changed this task: gopls lists interface calls and value uses as callers, so the risk
 is not missing them but reading them wrongly.
@@ -285,7 +298,34 @@ Acceptance: `callers` wraps `callersFromHierarchy`:
 - a method that implements an interface needs no extra state (its interface callers are
   listed), but G7 checks against `callgraph -algo=vta` that this holds beyond PR #14752.
 
-### G5. Row identity and warm-up for Go
+### G5. Row identity and warm-up for Go (done)
+
+Done 2026-10-24. Two optional provider hooks and one extra, no Go in the shared code:
+- **Identity.** `prepareFromServerSymbols` returns `extras.reviewSymbols`: per analysed file,
+  each side's text hash and every function's `key`, `namePos`, `start`/`end` and lines (the
+  `CollectedSymbol` offsets, no re-parse). `analyze()` merges them into the result's
+  non-enumerable `reviewSymbols` (kept on the early result too), and `localRevisions`
+  hands them to `createReviewIdentity`, which builds the same ids as for TypeScript from
+  them: `rel#key:<head declaration hash>:<base declaration hash>` for a change row,
+  `deleted:rel#key:<base declaration hash>`, and the outside row from each side's text
+  without its functions' lines (runs of blank lines count as one). If the text on disk no
+  longer hashes to the analysed one, that file's rows fall back to its whole text until the
+  next analysis; a caller row in a Go file the analysis did not record (unchanged) is
+  identified by its whole file. TypeScript ids are byte-identical (no `reviewSymbols` for
+  it, so its files are still parsed). `test/go-review-identity.test.js`.
+- **Warm-up.** `LanguageProvider.warmUpTarget({ repo, files, services, log })`: readiness asks
+  each language in registry order with changed files until one gives `{ file, pos }`, then
+  `resolver.warmUp` as before. TypeScript's wraps the old parser walk; Go's asks
+  `available('go')`, then `documentSymbols` of the first changed Go file only, and takes the
+  first function or method's name. A rejection is logged ("warm-up: no Go target — …") and the
+  analysis runs unwarmed; no Go support is logged once ("warm-up: Go skipped — …") and adds
+  no notice: the analysis already says "N changed Go file(s) NOT analysed — Install the Go
+  extension to analyse Go files (…)" once, with each file marked not analysed (G1/G6).
+- **Progress.** `LanguageProvider.serverLabel` (Go: "the Go language server (gopls)"): while the
+  first run waits, the Changes view and status bar read "Waiting for the Go language server
+  (gopls)… 12 s"; a timed-out caller retry reads "retrying when the Go language server
+  (gopls) has loaded… N s". TypeScript's wording is unchanged. `test/go-warm-up.test.js`.
+- On cli/cli PR #14752 with gopls: 22 Go rows, all content-identified, all distinct.
 
 Acceptance: through T3's provider hooks, a Go row's identity is `rel#key` plus a hash of
 its declaration text, so a tick survives a refresh and a push that does not touch the

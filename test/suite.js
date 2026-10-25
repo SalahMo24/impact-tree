@@ -29,7 +29,12 @@ const SUITE = [
   { file: 'test/typescript-provider.test.js', tier: 'full' },  // 8.2s
   { file: 'test/go-rules.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/go-signature.test.js', tier: 'quick' },  // 0.2s
+  { file: 'test/not-analysed.test.js', tier: 'full' },
+  { file: 'test/go-call-sites.test.js', tier: 'quick' },  // 0.1s
+  { file: 'test/go-editor-extras.test.js', tier: 'quick' },  // 0.3s
   { file: 'test/server-symbols.test.js', tier: 'quick' },  // 4.6s
+  { file: 'test/go-review-identity.test.js', tier: 'quick' },  // 4.1s
+  { file: 'test/go-warm-up.test.js', tier: 'quick' },  // 3.4s
   { file: 'test/caller-retry.test.js', tier: 'quick' },  // 3.7s
   { file: 'test/services-vscode.test.js', tier: 'quick' },  // 1.9s
   { file: 'test/scope.test.js', tier: 'full' },  // 5.4s

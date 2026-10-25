@@ -322,6 +322,29 @@ function buildProblemRows(problem) {
 // The Preview's limit in words, shared by the tree's notice row and every change's Details page.
 const PREVIEW_LIMITS_NOTE = 'Preview: callers outside this PR and tests are not searched.';
 
+/** What a file row's description says of a file that was not analysed. */
+const NOT_ANALYSED_DESC = 'not analysed';
+
+/**
+ * The words for a file that was not analysed, as the tooltip and Details give them:
+ * `Go: not analysed — <reason>`.
+ * @param {{ language: string, reason: string }} notAnalysed An `otherFiles` entry's `notAnalysed`.
+ * @returns {string}
+ */
+const notAnalysedText = (notAnalysed) => `${notAnalysed.language}: ${NOT_ANALYSED_DESC} — ${notAnalysed.reason}`;
+
+/**
+ * The Preview's limits in words for a result: `PREVIEW_LIMITS_NOTE`, and, when the pull
+ * request has files of a language the Preview cannot analyse, which languages those are.
+ * @param {any} result
+ * @returns {string}
+ */
+function previewLimitsNote(result) {
+  const languages = [...new Set((result.otherFiles || []).map((/** @type {any} */ f) => f.notAnalysed && f.notAnalysed.language).filter(Boolean))];
+  if (!languages.length) return PREVIEW_LIMITS_NOTE;
+  return `${PREVIEW_LIMITS_NOTE} ${languages.join(', ')} files are not analysed; check out the PR to analyse them in the editor.`;
+}
+
 /**
  * The rows above the changed files: the preview notice, then one row per analysis
  * warning and per component that could not be analysed.
@@ -340,7 +363,7 @@ function buildNoticeRows(r) {
     rows.push({
       type: 'message', icon: 'eye',
       label: `Preview — PR files only (${r.changedFileCount} file(s))`,
-      desc: PREVIEW_LIMITS_NOTE,
+      desc: previewLimitsNote(r),
       tooltip: 'Built from the pull request\'s own files via the GitHub API.\n'
         + 'Your worktree was not touched.\n\n'
         + 'Any caller living in a file this PR does not change is invisible here.\n'
@@ -456,7 +479,9 @@ function buildDeletedRows(deleted, { result, uriOf }) {
 /**
  * One row per changed file that has no call graph, sorted by path. A row has a resource
  * URI, and so a decoration, only when the path can be made absolute.
- * @param {Array<{ path: string, status: string }>} files
+ * A file that was not analysed (`notAnalysed: { language, reason }`) says so on its row and
+ * decoration: it is not a file with nothing to find.
+ * @param {Array<{ path: string, status: string, notAnalysed?: { language: string, reason: string } }>} files
  * @param {{ absPath?: ((relPath: string) => string)|null, uriOf: ResourceUriOf }} opts
  * @returns {{ rows: TreeRow[], decorations: DecorationRequest[] }}
  */
@@ -466,10 +491,11 @@ function buildFileLeafRows(files, { absPath, uriOf }) {
   const rows = files.map((f) => {
     const abs = absPath ? absPath(f.path) : null;
     const uri = abs ? uriOf(abs, null) : null;
-    if (uri) decorations.push({ uri, status: f.status, tooltip: f.path });
+    if (uri) decorations.push({ uri, status: f.status, tooltip: f.notAnalysed ? `${f.path}\n${notAnalysedText(f.notAnalysed)}` : f.path });
     return {
       type: 'file', label: path.basename(f.path), relPath: f.path, status: f.status,
       absPath: abs, decorationUri: uri,
+      ...(f.notAnalysed ? { notAnalysed: f.notAnalysed } : {}),
     };
   }).sort((a, b) => a.relPath.localeCompare(b.relPath));
   return { rows, decorations };
@@ -552,7 +578,7 @@ const buildIncompleteCallersRow = (reason, hasCallers) => ({
 module.exports = {
   LEGEND, CALL_STATE, NO_SITE_EVIDENCE, STATE_NAMES, LEVEL_TONES, CHANGED_ELSEWHERE_TONE, toneOf, stateNameOf,
   classifyChangeVerdict, classifyDeletedVerdict, classifyOutsideVerdict, classifyRowVerdict, classifyWorstRowVerdict, getFileStatus,
-  buildReachScopeNote, buildPlaceholderRows, buildNoticeRows, PREVIEW_LIMITS_NOTE, MODE_LABELS, attentionCountText,
+  buildReachScopeNote, buildPlaceholderRows, buildNoticeRows, PREVIEW_LIMITS_NOTE, previewLimitsNote, NOT_ANALYSED_DESC, notAnalysedText, MODE_LABELS, attentionCountText,
   buildChangeRows, buildDeletedRows, buildFileLeafRows, buildOutsideRows, describeOutsideRanges,
   buildComputeTestReachRow, dropExcludedCallers, collectAncestry, buildCallerRows,
   buildIncompleteCallersRow,

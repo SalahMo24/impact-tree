@@ -383,6 +383,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     log(`  queries: ${st.incomingCalls}  min ${st.minMs}ms / median ${st.medianMs}ms / max ${st.maxMs}ms`);
     log(`  ${st.cacheHits} cache hits · ${st.warmupRetries} warmup retries · ${st.skipped} unresolved · ${st.resolvedEmpty} resolved-but-empty${st.unseenUsers ? ` · ${st.unseenUsers} used in files the editor does not search` : ''}`);
     log(`  cqrs: +${st.cqrsEdges} edges / ${st.cqrsSuppressed} handlers de-noised`);
+    if (st.valueUsesDropped) log(`  precision: -${st.valueUsesDropped} Go caller(s) that only use the function as a value, not call it`);
     if (st.inheritedDropped) log(`  precision: -${st.inheritedDropped} inherited-member over-report(s) (sibling subclasses the call hierarchy wrongly attributes to an override)`);
     if (st.slowest) log(`  slowest query ${st.slowest.ms}ms -> ${path.relative(repo, st.slowest.file)}@${st.slowest.pos}`);
     if (st.resolvedEmpty) {
@@ -452,7 +453,11 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     indexingListeners.add(listener);
     return { dispose: () => indexingListeners.delete(listener) };
   }
-  /** @returns {string|null} "Indexing the workspace..." with the elapsed time while a run waits for the first index. */
+  /**
+   * @returns {string|null} While a run waits for the first index, what it waits for with the
+   *   elapsed time: "Indexing the workspace…" for TypeScript, "Waiting for <server>…" for a
+   *   language that names its server (`serverLabel`, such as Go's).
+   */
   const getIndexingText = () => indexing.text;
 
   /**
@@ -479,7 +484,11 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
         async (windowProgress) => {
           const tick = () => {
             if (!owns(run)) return;
-            const text = `Indexing the workspace, first run only — usually 10–35 s… ${Math.floor((clock.now() - since) / 1000)} s`;
+            const seconds = Math.floor((clock.now() - since) / 1000);
+            const server = session.indexingServer();
+            const text = server
+              ? `Waiting for ${server}… ${seconds} s`
+              : `Indexing the workspace, first run only — usually 10–35 s… ${seconds} s`;
             windowProgress.report({ message: text });
             setIndexing(run, text);
           };
@@ -581,11 +590,15 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     const stillShown = () => !disposed() && isCurrentAnalysis(id) && session.state && session.state.result === result;
     const target = result.allChanged.find((c) => c.callersRetryable);
     const searches = `${count} caller search${count === 1 ? '' : 'es'}`;
+    // The server the retry waits for: the target's language's (Go's names gopls), else TypeScript.
+    const { languageFor } = require('./languages');
+    const targetLanguage = target.relPath ? languageFor(target.relPath) : null;
+    const waitFor = (targetLanguage && targetLanguage.serverLabel) || 'TypeScript';
     log(`${searches} did not finish (the language server did not answer in time); retrying once it answers`);
     const token = {};
     const since = clock.now();
     const tick = () => {
-      if (stillShown()) setIndexing(token, `${searches} timed out — retrying when TypeScript has loaded… ${Math.floor((clock.now() - since) / 1000)} s`);
+      if (stillShown()) setIndexing(token, `${searches} timed out — retrying when ${waitFor} has loaded… ${Math.floor((clock.now() - since) / 1000)} s`);
       else if (indexing.run === token) setIndexing(token, null);
     };
     tick();
@@ -766,10 +779,11 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     isCurrentAnalysis, getAnalysisId, beginCheckout, endCheckout, checkoutInProgress, isBusy, getPhase,
     prewarmInBackground, dispose, treeResolver, onDidChangeAnalysis,
   });
-  const { ensureReady, ensureResolver, isIndexing } = createReadiness(vscode, session, { log, getScratchDir, clock });
+  const { ensureReady, ensureResolver, isIndexing, indexingServer } = createReadiness(vscode, session, { log, getScratchDir, clock });
   session.ensureReady = ensureReady;
   session.ensureResolver = ensureResolver;
   session.isIndexing = isIndexing;
+  session.indexingServer = indexingServer;
   return session;
 }
 

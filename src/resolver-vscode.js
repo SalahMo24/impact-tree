@@ -32,7 +32,7 @@ function createVscodeResolver({
   const initialStats = () => ({
     incomingCalls: 0, incomingMs: 0, cacheHits: 0, warmupRetries: 0,
     skipped: 0, resolvedEmpty: 0, cqrsEdges: 0, cqrsSuppressed: 0, durations: [], emptyAt: [],
-    inheritedDropped: 0, unseenUsers: 0,
+    inheritedDropped: 0, unseenUsers: 0, valueUsesDropped: 0,
   });
   const stats = initialStats();
   // Validates the deadlines and budgets (see createVscodeServices for each one's range and
@@ -68,9 +68,10 @@ function createVscodeResolver({
   const extrasOptions = {
     ts, services, repoRoot, trace, filterInherited, clock, onWarmupRetry: () => { stats.warmupRetries++; },
   };
+  const languageOf = (file) => languageFor(repoRoot ? path.relative(repoRoot, file).split(path.sep).join('/') : file);
   /** @returns {import('./languages/types').EditorCallerExtras|null} */
   function extrasFor(file) {
-    const language = languageFor(repoRoot ? path.relative(repoRoot, file).split(path.sep).join('/') : file);
+    const language = languageOf(file);
     if (!language || !language.editorCallers) return null;
     let extras = extrasByLanguage.get(language.id);
     if (!extras) {
@@ -94,7 +95,8 @@ function createVscodeResolver({
   async function incomingWithStatus(file, pos, withTests = true) {
     const startedGeneration = generation;
     // Taken now, so a query that outlives `clear()` keeps its generation's extras.
-    const extras = extrasFor(file)?.query(file, pos) ?? null;
+    const languageExtras = extrasFor(file);
+    const extras = languageExtras?.query(file, pos) ?? null;
     const key = `${withTests ? 'A' : 'P'}${file}#${pos}`;
     if (cache.has(key)) { stats.cacheHits++; return { callers: cache.get(key), complete: true }; }
     const t = clock.now();
@@ -106,8 +108,11 @@ function createVscodeResolver({
     const answer = isHandler ? { ready: true, rows: [] } : await queryHierarchy(services, headDoc(file), pos);
     if (startedGeneration !== generation) return staleAnswer();
     const { ready } = answer;
-    const reason = answer.ready ? undefined : answer.reason;
-    const retryable = !answer.ready && answer.retryable;
+    // A failure the language explains (Go: a file outside the active build) shows its
+    // explanation, and asking again does not help.
+    const explained = !answer.ready && languageExtras?.explainIncomplete ? languageExtras.explainIncomplete(answer.reason) : null;
+    const reason = answer.ready ? undefined : explained || answer.reason;
+    const retryable = !answer.ready && !explained && answer.retryable;
     queryStates.set(key, { ready, reason, isHandler, retryable });
     if (answer.ready && !answer.rows.length) { stats.resolvedEmpty++; stats.emptyAt.push({ file, pos }); }
     const dt = clock.now() - t;
@@ -120,14 +125,17 @@ function createVscodeResolver({
       if (reason) stats.lastReason = reason;
       return { callers: [], complete: false, reason: reason || 'caller query did not complete', ...(retryable ? { retryable: true } : {}) };
     }
-    const out = callerRows(answer.rows, withTests);
+    let out = callerRows(answer.rows, withTests);
     if (extras && out.length) {
+      // `kept` replaces the list even when nothing was dropped: a kept caller can be a copy
+      // with fewer call sites (Go keeps only a caller's calls, not its value uses).
       const { kept, dropped } = extras.filter(out);
-      if (dropped) {
-        stats.inheritedDropped += dropped;
-        out.length = 0;
-        out.push(...kept);
-      }
+      // What a language's filter drops: TypeScript's inherited-member over-reports, Go's
+      // callers that only use the function as a value.
+      stats[languageExtras ? languageExtras.droppedStat : 'inheritedDropped'] += dropped;
+      // A copy: `kept` may be `out` itself (a filter that keeps everything returns its
+      // input), and `out` is added to below.
+      out = kept.slice();
     }
     let extraFailure = null;
     if (extras && extras.moreCallers) {

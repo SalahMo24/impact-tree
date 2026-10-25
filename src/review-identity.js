@@ -13,11 +13,18 @@ const symbolHash = (text, symbol) => hash((symbol.reviewPrefix || '') + text.sli
  * each identity is built from the content that was reviewed, so a change to that
  * content, or to its base, makes the row unreviewed again.
  *
- * Parsing, symbols and declarations come from the TypeScript provider's helpers
- * (src/languages/typescript/review-symbols.js). A file of another language (Go) is never
- * parsed as TypeScript: until its provider supplies review symbols (G5), each of its
- * symbol, deleted and outside rows is identified by the whole file's head and base text,
- * so any edit to the file makes them unreviewed again (conservative, never stale).
+ * Where a file's symbols come from:
+ * - Recorded by its provider during the analysis (`revisions.recordedSymbols`; a language
+ *   whose symbols come from a language server, such as Go): the identity hashes the
+ *   recorded declarations' text and parses nothing. The recorded offsets are used only
+ *   while the text the identity reads hashes to the one they were recorded for; when it
+ *   does not (the file was edited after the analysis read it), every row of the file is
+ *   identified by the whole file's head and base text until the next analysis
+ *   (conservative, never stale).
+ * - Otherwise, for a TypeScript or JavaScript file, parsed with the TypeScript provider's
+ *   helpers (src/languages/typescript/review-symbols.js).
+ * - Otherwise (a caller in a file of another language that the analysis did not record,
+ *   such as an unchanged Go file): the whole file's head and base text, as above.
  *
  * @param {object|null} ts The TypeScript module. Null: loaded from `repo` the first time
  *   a symbol, deleted or outside row is identified, so a review whose rows are all files
@@ -29,9 +36,11 @@ const symbolHash = (text, symbol) => hash((symbol.reviewPrefix || '') + text.sli
  *   there. For a file outside the diff, its head text.
  * @param {(rel: string) => string|null} revisions.fileRevision Content token for a whole-file row; null
  *   when the content cannot be identified, which leaves that row without a persisted identity.
+ * @param {(rel: string) => import('./languages/types').RecordedSymbols|null} [revisions.recordedSymbols] The
+ *   symbols the analysis recorded for a file (`result.reviewSymbols`); null or omitted: none.
  * @returns {(node: object) => string|null}
  */
-function createReviewIdentity(ts, repo, { headText, baseText, fileRevision }) {
+function createReviewIdentity(ts, repo, { headText, baseText, fileRevision, recordedSymbols = () => null }) {
   /** @type {ReturnType<typeof typescriptReviewSymbols>|null} */
   let steps = null;
   const typescript = () => {
@@ -53,8 +62,11 @@ function createReviewIdentity(ts, repo, { headText, baseText, fileRevision }) {
     const rel = path.relative(repo, file).split(path.sep).join('/');
     const head = headText(rel);
     const base = baseText(rel);
-    if (!typescriptRules.handles(rel)) {
-      const entry = { file, rel, head, baseHash: hash(base), wholeFile: `${hash(head)}:${hash(base)}` };
+    const recorded = recordedSymbols(rel);
+    if (recorded || !typescriptRules.handles(rel)) {
+      const entry = recorded && matches(recorded.head, head) && matches(recorded.base, base)
+        ? fromRecorded(file, rel, head, base, recorded)
+        : { file, rel, head, baseHash: hash(base), wholeFile: `${hash(head)}:${hash(base)}` };
       cache.set(file, entry);
       return entry;
     }
@@ -78,6 +90,22 @@ function createReviewIdentity(ts, repo, { headText, baseText, fileRevision }) {
     cache.set(file, entry);
     return entry;
   };
+  // A file whose symbols were recorded: the same ids as a parsed file's, from the recorded
+  // offsets. A caller at no recorded name (`declHashes` empty) is identified by the head.
+  const fromRecorded = (file, rel, head, base, recorded) => {
+    const headSymbols = recorded.head ? recorded.head.symbols : [];
+    const baseSymbols = recorded.base ? recorded.base.symbols : [];
+    const baseSliceHash = new Map(baseSymbols.map((b) => [b.key, symbolHash(base, b)]));
+    const byNamePos = new Map();
+    for (const s of headSymbols) {
+      if (!byNamePos.has(s.namePos)) byNamePos.set(s.namePos, `${rel}#${s.key}:${symbolHash(head, s)}:${baseSliceHash.get(s.key) || hash(null)}`);
+    }
+    return {
+      file, rel, head, baseHash: hash(base), baseSliceHash, byNamePos, byClassPos: new Map(), declHashes: new Map(),
+      outsideHash: `${hash(withoutLines(head, headSymbols))}:${hash(withoutLines(base, baseSymbols))}`,
+    };
+  };
+
   // A caller the symbol collector does not record -- a named function expression,
   // module-level code -- is identified by its own declaration, or by the whole file
   // when it is the module itself.
@@ -115,6 +143,41 @@ function createReviewIdentity(ts, repo, { headText, baseText, fileRevision }) {
     }
     return entry.byNamePos.get(n.pos) || entry.byClassPos.get(n.pos) || unrecordedId(entry, n);
   };
+}
+
+/**
+ * Whether a recorded side describes `text`: both absent, or the text hashes to the one the
+ * offsets were recorded for.
+ * @param {import('./languages/types').RecordedSide|null} side
+ * @param {string|null} text
+ */
+const matches = (side, text) => (side == null ? text == null : text != null && hash(text) === side.textHash);
+
+/**
+ * A side's text without its symbols' lines, for an outside row's identity: whole lines are
+ * cut, from the line a symbol starts on to the line it ends on, so adding or removing a
+ * function leaves nothing behind but blank separator lines. Each run of blank lines then
+ * counts as one, and blank lines at either end are dropped: moving or removing a function
+ * keeps the identity, while a line added or removed anywhere else changes it. Residual:
+ * growing an existing run of blank lines (inside a raw string, say) does not. Null stays
+ * null (an absent side). Language-neutral: it reads only line numbers.
+ * @param {string|null} text
+ * @param {Array<{ startLine: number, endLine: number }>} symbols One-based, inclusive.
+ * @returns {string|null}
+ */
+function withoutLines(text, symbols) {
+  if (text == null) return null;
+  const cut = new Set();
+  for (const s of symbols) for (let line = s.startLine; line <= s.endLine; line++) cut.add(line);
+  const kept = [];
+  text.split('\n').forEach((line, index) => {
+    if (cut.has(index + 1)) return;
+    const blank = line.trim() === '';
+    if (blank && (!kept.length || kept[kept.length - 1] === '')) return;
+    kept.push(blank ? '' : line);
+  });
+  while (kept.length && kept[kept.length - 1] === '') kept.pop();
+  return kept.join('\n');
 }
 
 /**
@@ -162,7 +225,10 @@ function localRevisions(repo, result, git) {
     const baseBlob = inDiff[rel] === 'added' ? null : blobs.get(basePathOf(rel));
     return `${hash(readHead(rel))}:${baseBlob || 'absent'}`;
   };
-  return { headText, baseText, fileRevision };
+  // Recorded by the providers whose symbols come from a language server (Go); a result
+  // from before they recorded any has none.
+  const recordedSymbols = (rel) => (result.reviewSymbols && result.reviewSymbols.get(rel)) || null;
+  return { headText, baseText, fileRevision, recordedSymbols };
 }
 
 /**

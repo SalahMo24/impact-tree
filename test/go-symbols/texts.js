@@ -105,6 +105,12 @@ func run() {
 func Added() {}
 `;
 
+// Pushes on top of authHead, for the review identity (test/go-review-identity.test.js):
+// one changes only helper's body (every function after it moves), one changes only a
+// line outside every function.
+const authPush = authHead.replace('return a + b + limit\n', 'return a + b + limit*2\n');
+const authOutside = authHead.replace('const limit = 4\n', 'const limit = 5\n');
+
 // A module of its own (tools/go.mod), so the files form a second unit.
 const toolBase = `package tool
 
@@ -141,6 +147,8 @@ func Generated() int { return 2 }
 module.exports = {
   'auth.go@base': authBase,
   'auth.go@head': authHead,
+  'auth.go@push': authPush,
+  'auth.go@outside': authOutside,
   'tool.go@base': toolBase,
   'tool.go@head': toolHead,
   'plain.go@base': plain,

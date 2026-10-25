@@ -34,4 +34,23 @@ function warmUpTarget(repo, relPath) {
   return pos != null ? { file: abs, pos } : null;
 }
 
-module.exports = { warmUpTarget };
+/**
+ * The TypeScript provider's `warmUpTarget` (src/languages/types.js): the first changed
+ * file, in diff order, that declares a named function or method. A file that cannot be
+ * read or parsed is passed over (logged), so one bad file does not stop the warm-up.
+ * @param {import('../types').WarmUpContext} ctx
+ * @returns {Promise<{ file: string, pos: number }|null>}
+ */
+async function typescriptWarmUpTarget({ repo, files, log }) {
+  for (const relPath of files) {
+    try {
+      const target = warmUpTarget(repo, relPath);
+      if (target) return target;
+    } catch (e) {
+      log(`warm-up: ${relPath} passed over — ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  return null;
+}
+
+module.exports = { warmUpTarget, typescriptWarmUpTarget };

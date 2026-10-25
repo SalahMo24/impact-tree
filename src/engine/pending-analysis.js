@@ -28,6 +28,8 @@ function snapshot(result) {
       changed: c.changed.map(r => changed.get(r)), roots: c.roots.map(r => changed.get(r)),
     })),
   };
+  // Not enumerable, so the spread above dropped it; never changed, so it is shared.
+  if (result.reviewSymbols) Object.defineProperty(copy, 'reviewSymbols', { value: result.reviewSymbols, enumerable: false });
   return copy;
 }
 

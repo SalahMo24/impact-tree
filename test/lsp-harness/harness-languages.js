@@ -70,21 +70,47 @@ function languageServicesOver(gopls, { repoRoot }) {
 /**
  * A caller resolver (src/engine/caller-contract.js) over `services`, with the shared
  * default `callersFromHierarchy`: what the editor resolver does for a Go target, without
- * its cache, cold phase or stats.
+ * its cache, cold phase or stats. `extras` (a language's `EditorCallerExtras`, such as
+ * `goProvider.editorCallers(...)`) are applied in the editor resolver's order
+ * (src/resolver-vscode.js `incomingWithStatus`): an unanswered query's reason through
+ * `explainIncomplete` (explained: not retryable), then `filter`, then `moreCallers`, whose
+ * `incompleteReason` makes the answer incomplete. Suppressed queries and unseen users are
+ * not applied (Go has neither).
  * @param {import('../../src/languages/types').LanguageServices} services
+ * @param {{ extras?: import('../../src/languages/types').EditorCallerExtras|null }} [options]
  */
-function createHierarchyResolver(services) {
+function createHierarchyResolver(services, { extras = null } = {}) {
   /** @param {string} file */
   const headDoc = (file) => /** @type {import('../../src/languages/types').DocRef} */ ({ file, side: 'head' });
-  /** @param {string} file @param {number} pos @param {boolean} [withTests] */
-  const incomingWithStatus = async (file, pos, withTests = true) => answerOf(await queryHierarchy(services, headDoc(file), pos), withTests);
+  /**
+   * @param {string} file @param {number} pos @param {boolean} [withTests]
+   * @returns {Promise<import('../../src/engine/caller-contract').CallerAnswer>}
+   */
+  const incomingWithStatus = async (file, pos, withTests = true) => {
+    const query = extras ? extras.query(file, pos) : null;
+    const hierarchy = await queryHierarchy(services, headDoc(file), pos);
+    if (!hierarchy.ready) {
+      const explained = extras && extras.explainIncomplete ? extras.explainIncomplete(hierarchy.reason) : null;
+      if (explained) return { callers: [], complete: false, reason: explained };
+      return answerOf(hierarchy, withTests);
+    }
+    let { callers } = answerOf(hierarchy, withTests);
+    if (query && callers.length) callers = query.filter(callers).kept;
+    const more = query && query.moreCallers ? await query.moreCallers() : null;
+    if (more) callers = callers.concat(more.callers.filter((c) => withTests || !c.test));
+    return more && more.incompleteReason
+      ? { callers, complete: false, reason: more.incompleteReason }
+      : { callers, complete: true };
+  };
   return {
     kind: 'harness-callhierarchy',
     incomingWithStatus,
     /** @param {string} file @param {number} pos @param {boolean} [withTests] */
     incoming: async (file, pos, withTests = true) => (await incomingWithStatus(file, pos, withTests)).callers,
     /** @param {string} file @param {number} pos @param {{ isConstructor?: boolean }} [options] */
-    callerState: (file, pos, { isConstructor = false } = {}) => callersFromHierarchy(services, { doc: headDoc(file), pos, isConstructor }),
+    callerState: (file, pos, { isConstructor = false } = {}) => callersFromHierarchy(services, {
+      doc: headDoc(file), pos, isConstructor, incoming: () => incomingWithStatus(file, pos),
+    }),
     dispose() {},
   };
 }
