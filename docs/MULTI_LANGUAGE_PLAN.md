@@ -709,6 +709,19 @@ the 10 httpx PRs (every per-PR result identical), and the signature oracle (http
   (as TypeScript's), a bounded search for the function's name in Python files outside
   Pyright's project (its `include`/`exclude` in `pyrightconfig.json` or `[tool.pyright]`),
   making the answer incomplete when found; after A5 (same file).
+
+  **A7 done (2026-10-25).** Done in `moreCallers` (last rule) rather than `unseenUsers`:
+  `src/languages/python/pyright-project.js` reads the project (JSONC, minimal TOML, Pyright's
+  globs and default excludes); a module function, and a class's `__init__` by its class's
+  name, is searched (`git grep` for the name as a word, then calls and imports in code, not at
+  a listed site, in files outside the project; a file with its own module-level definition
+  counts only `mod.name(`). Methods stay with the duck search. Budgets: 200 files, 1 MiB per
+  file, 16 MiB, 10 s. An unreadable config searches every file and names the error. pydantic
+  #13070: full result 34.0 s; `replace_types`, `get_function_type_hints`,
+  `apply_discriminator`, `ValidatedFunction.__init__` now incomplete with the new reason; in
+  the editor (`[]` for Pyright's `null`) `recursively_defined_type_refs` (5 uses in
+  `tests/test_generics.py`) and `models_json_schema` (16) read incomplete, before "no callers".
+  httpx (no `[tool.pyright]`): unchanged. Script: `~/Projects/impact-tree-scratchpad/a7/`.
 - **A4. Python outside the editor.** An optional `prepareSyntactic` on a provider, used where
   there is no language server (the CLI, the no-checkout preview): Python's changed functions
   and their kinds from the text (the module-level and class-body def scan of P2's recovery,

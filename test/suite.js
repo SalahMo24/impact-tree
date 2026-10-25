@@ -34,6 +34,7 @@ const SUITE = [
   { file: 'test/python-signature.test.js', tier: 'quick' },
   { file: 'test/python-lexer.test.js', tier: 'quick' },  // 0.1s  // 0.2s
   { file: 'test/python-editor-extras.test.js', tier: 'quick' },  // 0.3s
+  { file: 'test/python-pyright-project.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/not-analysed.test.js', tier: 'full' },
   { file: 'test/go-call-sites.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/apply-caller-extras.test.js', tier: 'quick' },  // 0.1s
