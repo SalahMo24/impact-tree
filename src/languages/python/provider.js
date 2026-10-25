@@ -10,12 +10,12 @@
 //
 // Callers (P4): the shared call-hierarchy default plus Python's extras (./editor-extras.js:
 // duplicated sites, value uses, protocol methods, decorator registration, duck typing).
-// The server's warm-up (P5) is not here yet: readiness skips Python's warm-up (no
-// `warmUpTarget`).
+// The server's warm-up (P5): `warmUpTarget` below, asked by src/readiness.js.
 //
 // Engine modules and the header parser are required where they are used: the registry
 // (../index.js) loads this file, and src/engine/diff.js loads the registry.
 
+const path = require('path');
 const { pythonRules, pythonProjectOf } = require('./rules');
 
 /** @typedef {import('../types').ServerSymbol} ServerSymbol */
@@ -399,6 +399,48 @@ function pythonSpec(parser) {
 const prepare = (ctx) => require('../server-symbols').prepareFromServerSymbols(ctx, pythonSpec());
 
 /** @type {import('../types').LanguageProvider} */
+/**
+ * The first function or method in `symbols`, in source order. Pyright lists a method as a
+ * child of its class (P0), so classes are searched; a function's own children (nested defs,
+ * parameters) are not.
+ * @param {ServerSymbol[]} symbols
+ * @returns {ServerSymbol|null}
+ */
+function firstCallable(symbols) {
+  for (const symbol of symbols) {
+    if (isCallableKind(symbol.kind)) return symbol;
+    if (symbol.kind === SYMBOL_KIND_CLASS) {
+      const inner = firstCallable(symbol.children || []);
+      if (inner) return inner;
+    }
+  }
+  return null;
+}
+
+/**
+ * Where the editor's Python server is warmed (src/readiness.js): the name of the first
+ * function or method Pyright lists in the first changed Python file. Only that file is
+ * asked: each answer from a server that is still loading can take seconds, and any file of
+ * the project makes Pyright load it. Null when the editor has no Python support (logged;
+ * the analysis itself reports it once), when the server gives no symbols, or when the file
+ * declares no function. Rejects when the server's request fails; readiness logs that and
+ * analyses unwarmed.
+ * @type {NonNullable<import('../types').LanguageProvider['warmUpTarget']>}
+ */
+async function warmUpTarget({ repo, files, services, log }) {
+  if (!services) return null;
+  const availability = await services.available(pythonRules.id);
+  if (!availability.ok) {
+    log(`warm-up: Python skipped — ${availability.reason}`);
+    return null;
+  }
+  const file = path.join(repo, files[0]);
+  const symbols = await services.documentSymbols({ file, side: 'head' });
+  const first = firstCallable(symbols || []);
+  return first ? { file, pos: first.selectionRange.start } : null;
+}
+
+/** @type {import('../types').LanguageProvider} */
 const pythonProvider = Object.freeze({
   ...pythonRules,
   needsServer: true,
@@ -406,6 +448,7 @@ const pythonProvider = Object.freeze({
   editorCallers: ({ services, repoRoot, trace, clock }) => require('./editor-extras').createPythonEditorExtras({
     services, repoRoot, trace, ...(clock ? { clock } : {}),
   }),
+  warmUpTarget,
   serverLabel: 'the Python language server (Pyright)',
 });
 

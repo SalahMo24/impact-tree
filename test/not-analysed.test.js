@@ -152,3 +152,45 @@ test('the command line lists not-analysed Go files in their own section, and --j
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// Python (P6): the same shared paths, nothing Python-specific in them.
+test('a preview lists every Python file as not analysed, with the preview reason', async () => {
+  const gh = {
+    listPullRequestFiles: async () => ({ total: 3, files: ['pkg/mod.py', 'pkg/mod.pyi', 'docs/x.md'].map((p) => ({ path: p, oldPath: p, status: 'modified', patch: '@@ -1 +1 @@\n-a\n+b' })) }),
+    fileAtRef: async () => null,
+  };
+  const r = await analyzeRemote({ ts, gh, slug: {}, pr: { number: 3, headSha: 'head', mergeBaseSha: 'base', baseRef: 'main' }, repoRoot: root });
+  const reason = 'a preview cannot analyse Python; check out the pull request to analyse it in the editor';
+  const by = Object.fromEntries(r.otherFiles.map((f) => [f.path, f.notAnalysed]));
+  assert.deepEqual(by, { 'pkg/mod.py': { language: 'Python', reason }, 'pkg/mod.pyi': { language: 'Python', reason }, 'docs/x.md': undefined });
+  assert.equal(r.allChanged.some((c) => /\.pyi?$/.test(c.relPath)), false, 'nothing is read as a change');
+  assert.deepEqual(r.deleted, []);
+  const note = models.previewLimitsNote(r);
+  assert.match(note, /Python files are not analysed; check out the PR to analyse them in the editor\./);
+});
+
+test('the command line lists a not-analysed Python file in its own section, and --json carries the field', () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-not-analysed-py-')));
+  try {
+    const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
+    git('init', '-q', '--initial-branch=main'); git('config', 'user.name', 'T'); git('config', 'user.email', 't@example.com');
+    fs.writeFileSync(path.join(dir, 'pyproject.toml'), '[project]\nname = "m"\n');
+    fs.writeFileSync(path.join(dir, 'a.py'), 'def a():\n    return 1\n');
+    git('add', '-A'); git('commit', '-qm', 'base'); git('checkout', '-q', '-b', 'feature');
+    fs.writeFileSync(path.join(dir, 'a.py'), 'def a():\n    return 2\n');
+    git('commit', '-qam', 'head');
+    const cli = path.join(__dirname, '..', 'src', 'cli.js');
+    const args = ['--repo', dir, '--allow-local-base'];
+    const text = execFileSync(process.execPath, [cli, ...args], { encoding: 'utf8' });
+    assert.match(text, /⑤ NOT ANALYSED/);
+    assert.match(text, /\? a\.py {3}Python: Python needs the editor's language server; open the repository in the editor to analyse it/);
+    assert.match(text, /1 changed Python file\(s\) NOT analysed/);
+    assert.match(text, /nothing is known about their impact/, 'never read as having no impact');
+    const json = JSON.parse(execFileSync(process.execPath, [cli, ...args, '--json'], { encoding: 'utf8' }));
+    assert.deepEqual(json.otherFiles.find((f) => f.path === 'a.py').notAnalysed,
+      { language: 'Python', reason: "Python needs the editor's language server; open the repository in the editor to analyse it" });
+    assert.deepEqual(json.allChanged, [], 'no function is reported');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
