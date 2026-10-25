@@ -1,0 +1,98 @@
+[
+ {
+  "number": 3777,
+  "head": "357b42fdefa4ac1f0fec37776828618176e9e7c9",
+  "base": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+  "pyFiles": 2,
+  "packageFiles": 1,
+  "why": "open PR, out of sample (5 def lines)"
+ },
+ {
+  "number": 3696,
+  "head": "ed923cea1b8902cacf97b098a2adff8c51601488",
+  "base": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+  "pyFiles": 2,
+  "packageFiles": 1,
+  "why": "open PR, out of sample (4 def lines)"
+ },
+ {
+  "number": 3059,
+  "head": "6a240f4690a2895be45069f024789fef4183d784",
+  "base": "ae1b9f66238f75ced3ced5e4485408435de10768",
+  "pyFiles": 4,
+  "packageFiles": 3,
+  "why": "open PR, out of sample (12 def lines)"
+ },
+ {
+  "number": 3778,
+  "head": "09fc81a33c51f090002e340173f231d403c11ac5",
+  "base": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+  "pyFiles": 1,
+  "packageFiles": 1,
+  "why": "open PR, out of sample (3 def lines)"
+ },
+ {
+  "number": 3771,
+  "head": "55ead904eff7376ccbc7f23e93be19117c642441",
+  "base": "ae1b9f66238f75ced3ced5e4485408435de10768",
+  "pyFiles": 1,
+  "packageFiles": 1,
+  "why": "open PR, out of sample (0 def lines)"
+ },
+ {
+  "number": 3769,
+  "head": "ff7190eda0ab308f1d884b228e17b32e6fdac756",
+  "base": "ae1b9f66238f75ced3ced5e4485408435de10768",
+  "pyFiles": 1,
+  "packageFiles": 1,
+  "why": "open PR, out of sample (0 def lines)"
+ },
+ {
+  "number": 3766,
+  "head": "18927fa8e80fcf650d2c47cfe370a7d92c18bd83",
+  "base": "ae1b9f66238f75ced3ced5e4485408435de10768",
+  "pyFiles": 2,
+  "packageFiles": 1,
+  "why": "open PR, out of sample (0 def lines)"
+ },
+ {
+  "number": 3741,
+  "head": "83d203a86d955b7695613df6378b56f9003112ce",
+  "base": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+  "pyFiles": 3,
+  "packageFiles": 2,
+  "why": "open PR, out of sample (13 def lines)"
+ },
+ {
+  "number": 3733,
+  "head": "d4d1959a6953ced4eca59bc7a35691e7561ec73c",
+  "base": "ae1b9f66238f75ced3ced5e4485408435de10768",
+  "pyFiles": 1,
+  "packageFiles": 1,
+  "why": "open PR, out of sample (0 def lines)"
+ },
+ {
+  "number": 3724,
+  "head": "58935518e9072d1d552cbdcecc3994fae01fa180",
+  "base": "ae1b9f66238f75ced3ced5e4485408435de10768",
+  "pyFiles": 2,
+  "packageFiles": 1,
+  "why": "open PR, out of sample (5 def lines)"
+ },
+ {
+  "number": 3700,
+  "head": "82165670c7eba5e6f024dc480d9ba9d048debf72",
+  "base": "def4778d622e8bf49a9fea4dda78cca4cf666d8a",
+  "pyFiles": 2,
+  "packageFiles": 2,
+  "why": "open PR, out of sample (7 def lines)"
+ },
+ {
+  "number": 3587,
+  "head": "f88fa846d9eb82fa55acc1965459a4a488c5938a",
+  "base": "336204f0121a9aefdebac5cacd81f912bafe8057",
+  "pyFiles": 1,
+  "packageFiles": 1,
+  "why": "open PR, out of sample (0 def lines)"
+ }
+]

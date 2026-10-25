@@ -387,13 +387,13 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     if (st.inheritedDropped) log(`  precision: -${st.inheritedDropped} inherited-member over-report(s) (sibling subclasses the call hierarchy wrongly attributes to an override)`);
     if (st.slowest) log(`  slowest query ${st.slowest.ms}ms -> ${path.relative(repo, st.slowest.file)}@${st.slowest.pos}`);
     if (st.resolvedEmpty) {
-      log(`  NOTE: ${st.resolvedEmpty} symbol(s) returned no callers:`);
+      log(`  NOTE: ${st.resolvedEmpty} symbol(s) the language server listed no callers for (before each language's own checks, which may still read them as incomplete):`);
       for (const e of st.emptyAt || []) {
         const { offsetToPosition } = require('./engine/textpos');
         const p3 = offsetToPosition(e.file, e.pos);
         log(`    - ${path.relative(repo, e.file)}:${p3 ? p3.line + 1 : '?'}`);
       }
-      log('    If one is in a component whose TS project the editor has not loaded, that is under-reporting, not an answer.');
+      log('    For TypeScript, a component whose project the editor has not loaded under-reports here; the row\'s own state is the answer.');
     }
   }
 

@@ -198,7 +198,7 @@ async function prepareFromServerSymbols(ctx, spec) {
       baseCallables = base.symbols;
     }
     const result = changedFromSymbols({
-      absPath: abs, relPath: f.path, oldPath: f.oldPath, status: f.status, baseText,
+      absPath: abs, relPath: f.path, oldPath: f.oldPath, status: f.status, baseText, headText,
       hunkRanges: changedRanges[f.path] || [], hunkDeletions: deletions[f.path] || [],
       component, projectRoot,
     }, {

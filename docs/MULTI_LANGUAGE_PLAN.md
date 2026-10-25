@@ -771,6 +771,32 @@ then A4.
 Agent budgets (wall time, verification included): A5 30 min (Opus); A6 20 min (Sonnet);
 A7 30 min (Opus); A4 45 min (Opus). Past it the agent stops and reports.
 
+### Out-of-sample check (owner request, 2026-10-25)
+
+12 open httpx PRs none of this was tuned on (`test/lsp-harness/py-verify-oos-corpus.json`;
+`py-verify.js --corpus`): #3777, #3696, #3059, #3778, #3771, #3769, #3766, #3741, #3733, #3724,
+#3700, #3587. Before the fix below: changed functions 100% precision, 95.1% recall (77/81),
+kinds all right, callers vs Jedi 99.8% precision and 99.6% recall, no complete answer
+missing a Jedi caller; the syntactic path (`--syntactic`) the same. The 4 misses were one
+shared bug, not Python's: `changedFromSymbols` read deletions by key but additions by hunk
+only, so renaming a class (#3741, `URLPattern` → `WildcardURLPattern`) listed its six old
+methods as deleted and only the two with edited lines as added. Fixed: a head symbol whose
+key the base lacks is added without a hunk, unless it is a renumbered repeat (a base symbol
+of the same label with the same text). The corpus missed it because its renames were of
+functions, not of a class whose bodies stayed the same.
+
+### Follow-ups
+
+- **A8. Python callers in the PR preview, from the PR's own files.** Today Python's preview
+  and CLI compute no callers (A4). TypeScript's preview indexes the PR's fetched files and
+  changed tests (`createSyntacticIndex`) and lists the callers it resolves there, the answer
+  scoped "callers outside this PR are not searched". A Python index over the same files:
+  bare calls through `from m import name` / `import m` + `m.name(` / a same-file def,
+  `self.`/`cls.` methods in the same class, calls on parameters annotated with the class,
+  `Cls(` as `__init__`'s construction; every answer incomplete with that scope, never
+  "no callers". Verification to agree with the owner before work: precision against Jedi
+  restricted to the PR's files on both httpx corpora.
+
 ## Order
 
 1. T1 → T2 → T3: the structure in place, TypeScript unchanged. Can start before G0.
