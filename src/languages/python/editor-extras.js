@@ -66,9 +66,10 @@ const { pythonRules } = require('./rules');
 /** @typedef {import('../types').LanguageServices} LanguageServices */
 
 // The largest file read, in bytes on disk (target, caller and searched files). Python
-// source files are rarely above a few hundred KiB; a larger one is not read. For the target
-// or a caller, the checks that need it are skipped (the server's answer stands); for a
-// searched file, its hits are not examined and the answer says so.
+// source files are rarely above a few hundred KiB; a larger one is not read. For the target,
+// the checks cannot run and the answer is incomplete (UNREAD_TARGET_REASON); for a caller,
+// its reference is counted as a value use (it cannot be placed); for a searched file, its
+// hits are not examined and the answer says so.
 const MAX_FILE_BYTES = 1024 * 1024;
 // Duck-typing search budgets (see the header). Defaults chosen on httpx (61 files, P0):
 // the most-hit method, `Response.read`, had 48 text hits in 20 files; 50 `definition`
@@ -83,6 +84,9 @@ const GREP_TIMEOUT_MS = 5000;        // the git grep alone (within the deadline)
 const PROTOCOL_REASON = 'called by Python itself (protocol method); its callers cannot be traced';
 const REGISTRATION_REASON = 'registered by a decorator; its callers cannot be traced';
 const VALUE_USE_REASON = 'referenced-as-value';
+// When the checks above cannot run, the server's list alone is not known to be complete.
+const UNREAD_TARGET_REASON = 'its file could not be read, so value uses and untyped calls were not checked';
+const NO_SERVICES_REASON = 'no language services or repository, so value uses and untyped calls were not checked';
 // The shared default's reason for a `null` incoming-calls answer (../callers-from-hierarchy.js).
 const NO_INCOMING_RESULT = 'no incoming-call result';
 
@@ -246,15 +250,18 @@ function declarationAt(text, pos) {
 
 /**
  * Whether the attribute call whose name is at `at` is on a string literal (`"x".join(`,
- * `b"".split(`): the character before the `.`, past spaces, closes a string. Pure.
- * @param {string} text @param {number} at
+ * `b"".split(`): the character before the `.`, past spaces, closes a string. Pure; `ranges`
+ * is `nonCodeRanges(text)`, computed once per file, so each hit costs no rescan.
+ * @param {string} text @param {number} at @param {Array<[number, number]>} ranges
  */
-function hasStringReceiver(text, at) {
+function hasStringReceiver(text, at, ranges) {
   const dot = text.lastIndexOf('.', at - 1);
   let i = dot - 1;
   while (i >= 0 && (text[i] === ' ' || text[i] === '\t')) i--;
   if (i < 0 || (text[i] !== '"' && text[i] !== '\'')) return false;
-  return !inCode(nonCodeRanges(text.slice(0, i + 1)), i);
+  // The quote closes a string when it is not code. (Not a comment: the call text after it
+  // is code, and a comment runs to the line's end.)
+  return !inCode(ranges, i);
 }
 
 // How many lines a multi-line decorator's arguments may take (see `declarationAt`).
@@ -384,10 +391,12 @@ function createPythonEditorExtras({ trace = () => {}, readText = (file) => readT
       if (typeof text !== 'string' || text.length > DUCK_MAX_FILE_BYTES || bytes + text.length > DUCK_MAX_TOTAL_BYTES) { filesUnchecked++; continue; }
       filesRead++;
       bytes += text.length;
-      for (const at of attributeCallHits(text, name)) {
+      const hits = attributeCallHits(text, name);
+      const ranges = hits.length ? nonCodeRanges(text) : [];
+      for (const at of hits) {
         if (listed.has(`${abs}#${at}`)) continue;
         // `", ".join(…)`: a method of a string literal, never the target.
-        if (hasStringReceiver(text, at)) continue;
+        if (hasStringReceiver(text, at, ranges)) continue;
         if (examined >= DUCK_MAX_DEFINITIONS || late()) { unchecked++; continue; }
         examined++;
         /** @type {import('../types').ServerLocation[]|null} */
@@ -433,10 +442,12 @@ function createPythonEditorExtras({ trace = () => {}, readText = (file) => readT
         async moreCallers() {
           const none = { callers: [], incompleteReason: null };
           const text = readText(file);
-          const decl = typeof text === 'string' ? declarationAt(text, pos) : null;
+          if (typeof text !== 'string') return { callers: [], incompleteReason: UNREAD_TARGET_REASON };
+          // Not at a `def` (a module-level caller of a deeper level): nothing to check.
+          const decl = declarationAt(text, pos);
           if (!decl) return none;
           if (isProtocolName(decl.name)) return { callers: [], incompleteReason: PROTOCOL_REASON };
-          if (!services || !repoRoot) return none;
+          if (!services || !repoRoot) return { callers: [], incompleteReason: NO_SERVICES_REASON };
           const isProperty = decl.decorators.some((d) => /^(?:[\w.]*\.)?(?:property|cached_property)\b|^\w+\.(?:setter|getter|deleter)\b/.test(d));
           /** @type {Set<string>} */
           const listed = new Set();
@@ -494,6 +505,6 @@ function gitGrepPython(repoRoot) {
 module.exports = {
   createPythonEditorExtras, nonCodeRanges, inCode, attributeCallHits, declarationAt, isRegistrationDecorator,
   dedupeSites, isCalledAt, hasStringReceiver, isImportAt, isProtocolName, TRANSPARENT_DECORATORS,
-  PROTOCOL_REASON, REGISTRATION_REASON, VALUE_USE_REASON,
+  PROTOCOL_REASON, REGISTRATION_REASON, VALUE_USE_REASON, UNREAD_TARGET_REASON, NO_SERVICES_REASON,
   DUCK_MAX_FILES, DUCK_MAX_FILE_BYTES, DUCK_MAX_TOTAL_BYTES, DUCK_MAX_DEFINITIONS, DUCK_DEADLINE_MS, MAX_FILE_BYTES,
 };

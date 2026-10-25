@@ -300,3 +300,29 @@ test('the provider supplies the extras', () => {
   assert.equal(e.droppedStat, 'valueUsesDropped');
   void callersFromHierarchy;
 });
+
+test('a target whose file cannot be read is incomplete, never complete by default', async () => {
+  const extras = ex.createPythonEditorExtras({ services: /** @type {any} */ ({}), repoRoot: R, readText: () => null, grep: async () => [] });
+  const more = await extras.query(MODELS, posOf('merge')).moreCallers();
+  assert.equal(more.incompleteReason, ex.UNREAD_TARGET_REASON);
+});
+
+test('without language services or a repository the checks cannot run: incomplete', async () => {
+  for (const options of [{ services: null, repoRoot: R }, { services: /** @type {any} */ ({}), repoRoot: null }]) {
+    const extras = ex.createPythonEditorExtras({ ...options, readText: (f) => (f === MODELS ? MODELS_TEXT : null), grep: async () => [] });
+    const more = await extras.query(MODELS, posOf('merge')).moreCallers();
+    assert.equal(more.incompleteReason, ex.NO_SERVICES_REASON);
+  }
+  // A protocol method says why it is incomplete even then.
+  const extras = ex.createPythonEditorExtras({ readText: (f) => (f === MODELS ? MODELS_TEXT : null) });
+  assert.equal((await extras.query(MODELS, posOf('__hash__')).moreCallers()).incompleteReason, ex.PROTOCOL_REASON);
+});
+
+test('hits on string literals are skipped from one scan of the file, however many there are', async () => {
+  const file = `${R}/many.py`;
+  const many = `${'x = ", ".merge(a)\n'.repeat(5000)}obj.merge(b)\n`;
+  const { extras, calls } = make({ files: { [file]: many }, refs: [], defs: () => null });
+  const { more } = await ask(extras, 'merge');
+  assert.equal(calls.definitions, 1, 'only the hit on an untyped receiver is asked');
+  assert.match(String(more.incompleteReason), /^1 call by this name that the language server could not resolve/);
+});
