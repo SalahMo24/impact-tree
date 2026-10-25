@@ -702,7 +702,8 @@ the 10 httpx PRs (every per-PR result identical), and the signature oracle (http
   The editor keeps Pyright. Go follows as its own task (a declaration scanner on top of G3's
   parser) once Python's is measured.
 
-Order: A5 and A6 side by side (A6 only measures; different files), then A4.
+Order: A5 and A6 side by side (A6 only measures; different files), then A7 (owner, 2026-10-25),
+then A4.
 
 ### Verification plans (agreed by the owner, 2026-10-25)
 
@@ -720,8 +721,14 @@ Order: A5 and A6 side by side (A6 only measures; different files), then A4.
 | A4 | syntactic oracle on the 10 httpx PRs (`ast` cached from P7): changed functions 100% precision, ≥ 98% recall; kinds right | end, at most 3 runs | ≤ 1 min each |
 | A4 | CLI and preview on httpx #1600: Python rows listed with kinds, callers "not computed", nothing reads "no impact" | end | ~20 s |
 
+| A7 | `npm run test:quick` + touched test files | iterate | ~15 s |
+| A7 | `npm test`, lint, typecheck | end | ~2.5 min |
+| A7 | `py-e2e.js` on httpx #1600 (`httpx-seams`) | end | ~12 s |
+| A7 | `py-verify.js` cached, 10 PRs: every target still met, no new incomplete answer without a found unseen caller | end, at most 2 runs | ~1 min each |
+| A7 | pydantic #13070 (`pydantic-a6` worktree, `a6/measure.js`-style run): a module function called only from a test outside Pyright's project reads incomplete with the new reason; the run stays within A6's time | end, once | ~40 s |
+
 Agent budgets (wall time, verification included): A5 30 min (Opus); A6 20 min (Sonnet);
-A4 45 min (Opus). Past it the agent stops and reports.
+A7 30 min (Opus); A4 45 min (Opus). Past it the agent stops and reports.
 
 ## Order
 
