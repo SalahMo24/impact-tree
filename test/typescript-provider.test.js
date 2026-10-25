@@ -56,7 +56,7 @@ const fakeLanguage = (prepare) => Object.freeze({
 test('the registry hands out the TypeScript provider, with the same file rules', () => {
   // Go is registered after TypeScript (G2); TypeScript is still asked first.
   assert.equal(LANGUAGES[0], typescriptProvider);
-  assert.deepEqual(LANGUAGES.map((l) => l.id), ['typescript', 'go']);
+  assert.deepEqual(LANGUAGES.map((l) => l.id), ['typescript', 'go', 'python']);
   assert.equal(languageFor('src/a.ts'), typescriptProvider);
   assert.equal(languageFor('src/a.jsx'), typescriptProvider);
   assert.equal(typescriptProvider.needsServer, false);
