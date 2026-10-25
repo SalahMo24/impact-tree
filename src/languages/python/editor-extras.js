@@ -22,8 +22,13 @@
 //   `__iter__`, `__len__`, `__enter__`/`__exit__`, `__getattr__`, `__call__`, operators,
 //   descriptors, pickling, …) is called by Python itself (`hash(x)`, `a == b`, `for`,
 //   `with`, `x()`), which no call hierarchy lists: its answer is always incomplete,
-//   PROTOCOL_REASON, whatever explicit calls were found. `__init__` is left to the
-//   constructor path (Pyright lists `Cls(...)` constructions as its callers).
+//   PROTOCOL_REASON, whatever explicit calls were found.
+// - Constructors. Pyright answers `null` at `__init__` and lists `Cls(...)` constructions
+//   only as the class's incoming calls (P7, measured on httpx: `Client.__init__` null, the
+//   `Proxy` class 5 callers). Its answer is therefore always incomplete, CONSTRUCTOR_REASON,
+//   whatever explicit `__init__` calls (`super().__init__()`) were found, and never the
+//   constructor path's complete "no callers". Listing the constructions needs the query
+//   asked at the class name; not done (a follow-up of P7).
 // - Decorator registration. A function with a decorator that is not one of
 //   TRANSPARENT_DECORATORS (binding and wrapping decorators that leave the function called
 //   by name) may be called by whatever the decorator registered it with (`@app.route`,
@@ -84,6 +89,7 @@ const GREP_TIMEOUT_MS = 5000;        // the git grep alone (within the deadline)
 const PROTOCOL_REASON = 'called by Python itself (protocol method); its callers cannot be traced';
 const REGISTRATION_REASON = 'registered by a decorator; its callers cannot be traced';
 const VALUE_USE_REASON = 'referenced-as-value';
+const CONSTRUCTOR_REASON = 'a constructor: its constructions (`Class(...)`) are not listed, so its callers cannot be traced';
 // When the checks above cannot run, the server's list alone is not known to be complete.
 const UNREAD_TARGET_REASON = 'its file could not be read, so value uses and untyped calls were not checked';
 const NO_SERVICES_REASON = 'no language services or repository, so value uses and untyped calls were not checked';
@@ -106,6 +112,8 @@ const messageOf = (e) => (e && typeof e === 'object' && 'message' in e ? String(
 
 /** @param {string} name A dunder name Python calls itself (all but `__init__`). */
 const isProtocolName = (name) => /^__\w+__$/.test(name) && name !== '__init__';
+/** A class's `__init__` (a module function named so is not a constructor). @param {{ name: string, isMethod: boolean }} decl */
+const isConstructorDecl = (decl) => decl.isMethod && decl.name === '__init__';
 
 /**
  * Offsets of `text` that are not code: comments and string literals other than f-strings
@@ -447,6 +455,7 @@ function createPythonEditorExtras({ trace = () => {}, readText = (file) => readT
           const decl = declarationAt(text, pos);
           if (!decl) return none;
           if (isProtocolName(decl.name)) return { callers: [], incompleteReason: PROTOCOL_REASON };
+          if (isConstructorDecl(decl)) return { callers: [], incompleteReason: CONSTRUCTOR_REASON };
           if (!services || !repoRoot) return { callers: [], incompleteReason: NO_SERVICES_REASON };
           const isProperty = decl.decorators.some((d) => /^(?:[\w.]*\.)?(?:property|cached_property)\b|^\w+\.(?:setter|getter|deleter)\b/.test(d));
           /** @type {Set<string>} */
@@ -472,6 +481,7 @@ function createPythonEditorExtras({ trace = () => {}, readText = (file) => readT
       const decl = typeof text === 'string' ? declarationAt(text, pos) : null;
       if (!decl) return null;
       if (isProtocolName(decl.name)) return PROTOCOL_REASON;
+      if (isConstructorDecl(decl)) return CONSTRUCTOR_REASON;
       if (decl.decorators.some(isRegistrationDecorator)) return REGISTRATION_REASON;
       return null;
     },
@@ -505,6 +515,6 @@ function gitGrepPython(repoRoot) {
 module.exports = {
   createPythonEditorExtras, nonCodeRanges, inCode, attributeCallHits, declarationAt, isRegistrationDecorator,
   dedupeSites, isCalledAt, hasStringReceiver, isImportAt, isProtocolName, TRANSPARENT_DECORATORS,
-  PROTOCOL_REASON, REGISTRATION_REASON, VALUE_USE_REASON, UNREAD_TARGET_REASON, NO_SERVICES_REASON,
+  PROTOCOL_REASON, REGISTRATION_REASON, VALUE_USE_REASON, UNREAD_TARGET_REASON, NO_SERVICES_REASON, CONSTRUCTOR_REASON,
   DUCK_MAX_FILES, DUCK_MAX_FILE_BYTES, DUCK_MAX_TOTAL_BYTES, DUCK_MAX_DEFINITIONS, DUCK_DEADLINE_MS, MAX_FILE_BYTES,
 };

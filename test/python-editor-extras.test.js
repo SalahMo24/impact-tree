@@ -232,7 +232,6 @@ test('a protocol (dunder) method is always incomplete; __init__ is not a protoco
   assert.equal(ex.isProtocolName('__init__'), false);
   assert.equal(ex.isProtocolName('__eq__'), true);
   assert.equal(extras.explainIncomplete('no incoming-call result', MODELS, posOf('__hash__')), ex.PROTOCOL_REASON);
-  assert.equal(extras.explainIncomplete('no incoming-call result', MODELS, posOf('__init__')), null);
   assert.equal(extras.explainIncomplete('timed out', MODELS, posOf('__hash__')), null, 'a failure keeps its own reason');
 });
 
@@ -280,6 +279,23 @@ test('[] and null answers: never "no callers" when a rule applies', async () => 
   const plain = await resolverAnswering(null, [], 'helper');
   assert.equal(plain.state, 'unknown');
   assert.equal(plain.reason, 'no incoming-call result');
+});
+
+// P7 (httpx #3245): Pyright answers `null` at `__init__` and lists the `Cls(...)` constructions
+// only at the class name, so `__init__` read "no incoming-call result" in the harness and,
+// where the editor turns `null` into `[]`, the constructor path's complete "no callers" (`di`)
+// while 136 constructions of `Client` existed.
+test('__init__ is always incomplete: constructions are not listed as its callers', async () => {
+  const { extras } = make();
+  assert.equal(extras.explainIncomplete('no incoming-call result', MODELS, posOf('__init__')), ex.CONSTRUCTOR_REASON);
+  assert.equal(extras.explainIncomplete('timed out', MODELS, posOf('__init__')), null, 'a failure keeps its own reason');
+  assert.equal((await ask(extras, '__init__')).more.incompleteReason, ex.CONSTRUCTOR_REASON);
+  const superCall = caller(`${R}/sub.py`, 'Sub.__init__', [3]);
+  assert.equal((await ask(extras, '__init__', [superCall])).more.incompleteReason, ex.CONSTRUCTOR_REASON, 'explicit __init__ calls do not make it complete');
+  const { services } = make();
+  Object.assign(services, { prepareCallHierarchy: async () => [{}], incomingCalls: async () => [] });
+  const state = await createHierarchyResolver(services, { extras }).callerState(MODELS, posOf('__init__'), { isConstructor: true });
+  assert.deepEqual(state, { state: 'unknown', callers: [], complete: false, reason: ex.CONSTRUCTOR_REASON });
 });
 
 test('a typed method with complete callers and no stray hits is complete', async () => {
