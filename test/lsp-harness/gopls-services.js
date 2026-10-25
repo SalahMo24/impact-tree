@@ -84,11 +84,15 @@ function positionToOffset(text, pos) {
 
 /**
  * @param {{ repo: string, goplsPath: string, deadlineMs?: number, env?: NodeJS.ProcessEnv,
- *   scratchDir?: string, onNotification?: (method: string, params: any) => void }} options
+ *   scratchDir?: string, onNotification?: (method: string, params: any) => void,
+ *   args?: string[], languageId?: string }} options
  *   `scratchDir`: absolute folder for temporary base-side copies, outside the module (G0:
  *   gopls answers a file there correctly); default `<os tmp>/impact-tree-harness-base`.
+ *   `args` and `languageId` let another stdio server use these services (Python: Pyright,
+ *   ./pyright-services.js, with `goplsPath` its command); default gopls' `['serve']`, `'go'`.
  */
 function createGoplsServices(options) {
+  const languageId = options.languageId || 'go';
   const deadlineMs = options.deadlineMs || DEFAULT_DEADLINE_MS;
   const scratchDir = options.scratchDir || path.join(os.tmpdir(), 'impact-tree-harness-base');
   const repoUri = pathToFileURL(options.repo).toString();
@@ -98,7 +102,7 @@ function createGoplsServices(options) {
   const diskTexts = new Map();
   const client = new LspClient({
     command: options.goplsPath,
-    args: ['serve'],
+    args: options.args || ['serve'],
     cwd: options.repo,
     env: options.env,
     onNotification: options.onNotification,
@@ -117,7 +121,7 @@ function createGoplsServices(options) {
     const known = open.get(uri);
     if (known === doc.text) return uri;
     if (known !== undefined) client.didClose(uri);
-    client.didOpen({ uri, languageId: 'go', text: doc.text });
+    client.didOpen({ uri, languageId, text: doc.text });
     open.set(uri, doc.text);
     return uri;
   }
@@ -143,7 +147,7 @@ function createGoplsServices(options) {
   /** @param {string} uri @param {any} raw @returns {ServerSymbol} */
   function convertSymbol(uri, raw) {
     if (!raw.range || !raw.selectionRange) {
-      throw new Error(`gopls returned a flat SymbolInformation for ${uri}, not a hierarchical DocumentSymbol`);
+      throw new Error(`the server returned a flat SymbolInformation for ${uri}, not a hierarchical DocumentSymbol`);
     }
     return {
       name: raw.name,
@@ -201,9 +205,9 @@ function createGoplsServices(options) {
       });
     },
 
-    /** @param {string} languageId @returns {Promise<{ ok: true }|{ ok: false, reason: string }>} */
-    async available(languageId) {
-      return languageId === 'go' ? { ok: true } : { ok: false, reason: `gopls does not serve ${languageId}` };
+    /** @param {string} id @returns {Promise<{ ok: true }|{ ok: false, reason: string }>} */
+    async available(id) {
+      return id === languageId ? { ok: true } : { ok: false, reason: `this server does not serve ${id}` };
     },
 
     /**

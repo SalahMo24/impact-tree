@@ -25,9 +25,11 @@ const PATHS = [
 ];
 
 // Go's paths: source since the Go provider was registered (G2), tests by Go's `_test.go`.
-const GO_PATHS = { 'a/b.go': { source: true, test: false }, 'a/b_test.go': { source: true, test: true }, 'tests/g.go': { source: true, test: true } };
+const GO_PATHS = { 'a/b.go': { source: true, test: false }, 'a/b_test.go': { source: true, test: true }, 'tests/g.go': { source: true, test: true },
+  // Python's: source since the Python provider was registered (P2), tests by pytest's names.
+  'a/test_b.py': { source: true, test: true } };
 
-test('every source and test answer equals the rules diff.js had before the registry, except Go\'s', () => {
+test('every source and test answer equals the rules diff.js had before the registry, except Go\'s and Python\'s', () => {
   for (const p of PATHS) {
     if (GO_PATHS[p]) {
       assert.equal(isSourcePath(p), GO_PATHS[p].source, `isSourcePath(${p})`);
@@ -43,16 +45,19 @@ test('every source and test answer equals the rules diff.js had before the regis
   }
 });
 
-test('TypeScript is registered first and owns its source paths; Go comes after it', () => {
-  assert.deepEqual(LANGUAGES.map((l) => l.id), ['typescript', 'go']);
+test('TypeScript is registered first and owns its source paths; Go and Python come after it', () => {
+  assert.deepEqual(LANGUAGES.map((l) => l.id), ['typescript', 'go', 'python']);
   assert.equal(languageFor('a/b.go').id, 'go');
+  assert.equal(languageFor('a/b.py').id, 'python');
+  assert.equal(languageFor('stubs/b.pyi').id, 'python');
+  assert.equal(languageFor('a/b.py').needsServer, true, 'Python needs the editor\'s language server');
   assert.ok(Object.isFrozen(LANGUAGES), 'the registry cannot be changed by a consumer');
   assert.equal(languageFor('a/b.tsx').id, 'typescript');
   assert.equal(languageFor('a/b.tsx').displayName, 'TypeScript/JavaScript');
 });
 
 test('a file no language handles has no language, and is not source', () => {
-  for (const p of ['a/b.py', 'a/B.java', 'README.md', 'a/b.d.ts', 'a/testdata/b.go', '']) {
+  for (const p of ['a/B.java', 'README.md', 'a/b.d.ts', 'a/testdata/b.go', '.venv/lib/x.py', '']) {
     assert.equal(languageFor(p), null, p);
     assert.equal(isSourcePath(p), false, p);
   }
@@ -62,7 +67,8 @@ test('a test directory makes any file a test; a test name only counts for the la
   assert.equal(isTestPath('tests/fixture.json'), true, 'by directory, whatever the language');
   assert.equal(isTestPath('a/b.spec.md'), false, 'a test-like name of a file no language handles');
   assert.equal(isTestPath('a/b_test.go'), true, 'a Go test, by Go\'s rules');
-  assert.equal(isTestPath('a/b_test.py'), false, 'a test-like name of a language with no provider');
+  assert.equal(isTestPath('a/b_test.py'), true, 'a Python test, by Python\'s rules');
+  assert.equal(isTestPath('a/BTest.java'), false, 'a test-like name of a language with no provider');
 });
 
 test('TypeScript marks nothing as generated yet', () => {
@@ -75,9 +81,10 @@ test('diff.js still exports SOURCE_EXT for its existing users', () => {
 });
 
 test('a common language no provider analyses is named; a handled or unknown file is not', () => {
-  for (const [p, name] of [['svc/app.py', 'Python'], ['stubs/x.pyi', 'Python'], ['A.java', 'Java'], ['b.kt', 'Kotlin'],
+  for (const [p, name] of [['A.java', 'Java'], ['b.kt', 'Kotlin'],
     ['c.cs', 'C#'], ['d.rb', 'Ruby'], ['e.rs', 'Rust'], ['f.php', 'PHP'], ['g.swift', 'Swift'], ['h.c', 'C'], ['i.hpp', 'C++'], ['j.scala', 'Scala']]) {
     assert.equal(unsupportedLanguageOf(p), name, p);
   }
-  for (const p of ['a.go', 'a.ts', 'a.d.ts', 'README.md', 'Makefile', 'go.mod']) assert.equal(unsupportedLanguageOf(p), null, p);
+  // Python is analysed since P2: never "not analysed yet".
+  for (const p of ['a.go', 'a.ts', 'a.d.ts', 'svc/app.py', 'stubs/x.pyi', 'README.md', 'Makefile', 'go.mod']) assert.equal(unsupportedLanguageOf(p), null, p);
 });
