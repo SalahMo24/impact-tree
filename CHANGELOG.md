@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Go support** in the editor, through the Go extension's language server (gopls): changed
+  functions and methods, signature changes (receiver, type parameters, parameters,
+  results), callers with "updated at the call" or not, test callers from `_test.go`, and
+  review ticks that survive edits to other functions. Callers that only use a function as
+  a value are not counted as calls; methods implementing an interface declared outside the
+  repository, and files outside the active build tags, read as incomplete with the reason.
+  Checked on 10 merged cli/cli pull requests (816 changed functions; see
+  `test/lsp-harness/G7-REPORT.md`). The PR preview and the CLI list Go files as not analysed.
+- **A file that was not analysed says so on its row**: amber, counted toward "needs
+  attention", with the reason in its tooltip and Details, in the editor, the preview and the
+  CLI. A changed file of a language not analysed yet (Python, Java, …) names its language
+  instead of reading like a docs or config file.
+- **Partial clones** (`git clone --filter=blob:none`): their GitHub remote is found again;
+  the Review view had said no remote points at github.com.
 - **A quieter Changes title bar**: only Refresh, the tree/list toggle and Submit review (or
   Send feedback, while you have drafts) stay as icons. The filters, Previous/Next unreviewed
   and the legend moved to the `…` menu; `⌥N` / `⇧⌥N` still move between unreviewed changes.

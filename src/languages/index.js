@@ -74,4 +74,26 @@ function isTestPath(relPath) {
   return language !== null && language.isTest(relPath);
 }
 
-module.exports = { LANGUAGES, languageFor, registeredLanguages, isSourcePath, isTestPath, useLanguagesForTest };
+// Common languages no provider analyses yet, by file extension, so a changed file of one
+// says which language it is rather than reading like a docs or config file. Only for
+// display: a file handled by a registered language never gets here.
+/** @type {ReadonlyArray<[RegExp, string]>} */
+const UNSUPPORTED = Object.freeze([
+  [/\.pyi?$/, 'Python'], [/\.java$/, 'Java'], [/\.kts?$/, 'Kotlin'], [/\.cs$/, 'C#'],
+  [/\.rb$/, 'Ruby'], [/\.rs$/, 'Rust'], [/\.php$/, 'PHP'], [/\.swift$/, 'Swift'],
+  [/\.(c|h)$/, 'C'], [/\.(cc|cpp|cxx|hh|hpp|hxx)$/, 'C++'], [/\.scala$/, 'Scala'],
+]);
+
+/**
+ * The name of a common language that no registered provider analyses, for a file of it;
+ * null for a file a provider handles or of no language listed.
+ * @param {string} relPath Repository-relative.
+ * @returns {string|null}
+ */
+function unsupportedLanguageOf(relPath) {
+  if (languageFor(relPath)) return null;
+  for (const [pattern, name] of UNSUPPORTED) if (pattern.test(relPath)) return name;
+  return null;
+}
+
+module.exports = { LANGUAGES, languageFor, registeredLanguages, isSourcePath, isTestPath, unsupportedLanguageOf, useLanguagesForTest };

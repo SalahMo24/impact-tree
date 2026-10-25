@@ -387,7 +387,14 @@ function changes, 786 with callers compared; gopls v0.21.0, x/tools v0.52.0, go1
   say when an inactive-build file's callers are for its own build only (nested modules).
   The owner's manual pass is still to do.
 
-### G8. Say what is supported
+### G8. Say what is supported (done)
+
+Done 2026-10-25: the README has a Languages section (each language in each mode, what Go
+needs, its known limits from G7), its status line, Limitations and Roadmap say the same,
+the changelog has the Go entry, and `package.json`'s description and keywords name Go. A
+changed file of a common language no provider analyses (Python, Java, …) reads
+"*Language* · not analysed yet" instead of "no call graph" (`unsupportedLanguageOf` in
+`src/languages/index.js`), quiet rather than amber since it is expected.
 
 Acceptance: the README lists the languages analysed and, per mode, what works (editor:
 TS/JS and Go; preview and CLI: TS/JS, per L2); the Changes view's "no call graph" row

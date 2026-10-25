@@ -1,5 +1,6 @@
 // @ts-check
 'use strict';
+const { unsupportedLanguageOf } = require('./languages');
 // Turns one row model into a VS Code TreeItem. The renderer is handed the `vscode`
 // module and the view settings, and reads nothing else: no session state, no review
 // store, no decorations. The provider supplies review progress through `view`.
@@ -257,11 +258,16 @@ function renderFileItem(vscode, n, view) {
     const tone = /** @type {import('./tree-row-models').IconTone} */ (LEVEL_TONES[1]);
     item.iconPath = new vscode.ThemeIcon(tone.fileIcon, new vscode.ThemeColor(tone.color));
   }
-  item.description = [...threadParts(n, view), notAnalysed ? NOT_ANALYSED_DESC : 'no call graph', viewed && viewed.text, folderNote(n, view)].filter(Boolean).join('  ·  ');
+  // A file of a language no provider analyses yet (Python, Java…) names it, so it does not
+  // read like a docs or config file. It stays quiet: that is expected, not a failure.
+  const unsupported = notAnalysed ? null : unsupportedLanguageOf(n.relPath);
+  const kind = notAnalysed ? NOT_ANALYSED_DESC : unsupported ? `${unsupported}  ·  not analysed yet` : 'no call graph';
+  item.description = [...threadParts(n, view), kind, viewed && viewed.text, folderNote(n, view)].filter(Boolean).join('  ·  ');
   item.tooltip = new vscode.MarkdownString([
     ...pathTreeMarkdown(n.relPath), '', `_${n.status}_`, '',
     notAnalysed ? `_${notAnalysedText(notAnalysed)}. Read the diff by hand and mark the file reviewed._`
-      : '_No call graph (tests, config, docs): read the diff and mark the file reviewed._',
+      : unsupported ? `_${unsupported} files are not analysed yet: read the diff and mark the file reviewed._`
+        : '_No call graph (tests, config, docs): read the diff and mark the file reviewed._',
     ...(viewed ? ['', `_${viewed.tooltip}_`] : []),
   ].join('\n'));
   if (viewed && viewed.note === 'failed') item.contextValue = 'fileViewedFailed';
