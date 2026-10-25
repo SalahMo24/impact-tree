@@ -98,7 +98,8 @@ function idsOf(dir, result) {
 }
 
 // Each declaration's text as the provider cuts it (from `def` or its decorator to the last
-// code character; Pyright's own range for these covers the header only).
+// code character). The first `helper` is one Pyright does not list (a later `helper`
+// redefines it): the provider recovers it from the text (P2).
 const DECL = {
   helperHead: 'def helper(a, b):\n    def inner(x):\n        return x * 3\n    return inner(a) + b',
   helperBase: 'def helper(a, b):\n    def inner(x):\n        return x * 2\n    return inner(a) + b',

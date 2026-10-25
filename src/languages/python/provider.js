@@ -398,7 +398,6 @@ function pythonSpec(parser) {
  */
 const prepare = (ctx) => require('../server-symbols').prepareFromServerSymbols(ctx, pythonSpec());
 
-/** @type {import('../types').LanguageProvider} */
 /**
  * The first function or method in `symbols`, in source order. Pyright lists a method as a
  * child of its class (P0), so classes are searched; a function's own children (nested defs,
