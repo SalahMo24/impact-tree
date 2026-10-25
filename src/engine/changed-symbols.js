@@ -116,7 +116,17 @@ function changedSymbolsIn(ts, S, file) {
  * from each side of a file (by a parser or a language server), which changed (by hunk),
  * which were added or deleted (by `key`), how (signature kinds), and which changed lines
  * lie outside every changed symbol. Pure.
- * @param {object} file As `changedSymbolsIn`'s; `headText` is not read.
+ *
+ * Added and deleted are both read by key. A head symbol whose key the base does not have is
+ * added even when no hunk touches its lines: renaming a class leaves its methods' bodies as
+ * unchanged diff lines, and reading additions from hunks only listed every `Old.method` as
+ * deleted but few `New.method` as added (httpx #3741). One exception keeps a repeat quiet:
+ * inserting a second `foo` above the first renumbers the old one `foo#2` with its text
+ * unchanged, so a hunk-less new key whose declaration text equals a base symbol's of the
+ * same label is not added. Without `headText` that comparison cannot be made, and the
+ * symbol is reported (more rows, never fewer).
+ * @param {object} file As `changedSymbolsIn`'s; `headText` (optional) is read only for that
+ *   comparison.
  * @param {object} sides
  * @param {object[]|null} sides.headCallables The head side's symbols; null when there is no
  *   head to map hunks to (a deleted file, or one that could not be read or parsed): nothing
@@ -155,6 +165,17 @@ function changedFromSymbols(file, { headCallables, baseCallables, renderSig, kin
         picked.add(hit.key);
         hits.push(hit);
       }
+    }
+    // New keys no hunk reached (see above): added unless a renumbered repeat.
+    const { headText } = file;
+    const textOf = (text, c) => (typeof text === 'string' ? text.slice(c.start, c.end) : null);
+    for (const h of heads) {
+      if (picked.has(h.key) || baseByKey.has(h.key)) continue;
+      const own = textOf(headText, h);
+      const renumbered = own != null && baseCallables.some((b) => b.label === h.label && textOf(baseText, b) === own);
+      if (renumbered) continue;
+      picked.add(h.key);
+      hits.push(h);
     }
     for (const hit of hits) {
       const b = baseByKey.get(hit.key);

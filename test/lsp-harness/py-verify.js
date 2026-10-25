@@ -9,7 +9,10 @@
  *
  *   node test/lsp-harness/py-verify.js <absolute path to httpx clone> --worktree <absolute path to a worktree of it>
  *     [--prs 3319,3394] [--pyright path] [--jedi-python path] [--out dir] [--summary file]
- *     [--cache dir] [--no-cache] [--deadline-ms n] [--syntactic]
+ *     [--cache dir] [--no-cache] [--deadline-ms n] [--syntactic] [--corpus file.json]
+ *
+ * `--corpus`: another list of PRs in py-verify-corpus.json's shape (number, head, base, …), such
+ * as open PRs fetched for an out-of-sample check; default ./py-verify-corpus.json.
  *
  * `--syntactic` (A4): the pipeline runs without a language server, as the CLI does, so
  * Python is read from its text (`prepareSyntactic`); only changed functions and kinds are
@@ -806,7 +809,7 @@ async function main() {
   const repo = args[0];
   const worktree = option(args, '--worktree', '');
   if (!repo || !path.isAbsolute(repo) || !worktree || !path.isAbsolute(worktree)) {
-    throw new Error('usage: node py-verify.js <absolute path to httpx clone> --worktree <absolute path> [--prs n,n] [--pyright path] [--jedi-python path] [--out dir] [--summary file] [--cache dir] [--no-cache] [--deadline-ms n]');
+    throw new Error('usage: node py-verify.js <absolute path to httpx clone> --worktree <absolute path> [--prs n,n] [--corpus file.json] [--pyright path] [--jedi-python path] [--out dir] [--summary file] [--cache dir] [--no-cache] [--deadline-ms n]');
   }
   const pyrightPath = option(args, '--pyright', DEFAULT_PYRIGHT);
   const jediPython = option(args, '--jedi-python', JEDI_PYTHON);
@@ -816,7 +819,12 @@ async function main() {
   const syntactic = args.includes('--syntactic');
   const deadlineMs = Number(option(args, '--deadline-ms', String(RUN_DEADLINE_MS)));
   if (!Number.isSafeInteger(deadlineMs) || deadlineMs < 1) throw new RangeError('--deadline-ms must be a positive integer');
-  const corpus = only ? CORPUS.filter((p) => only.split(',').includes(String(p.number))) : CORPUS;
+  const corpusFile = option(args, '--corpus', '');
+  const all = corpusFile ? JSON.parse(fs.readFileSync(corpusFile, 'utf8')) : CORPUS;
+  if (!Array.isArray(all) || !all.every((p) => Number.isInteger(p.number) && /^[0-9a-f]{40}$/.test(p.head) && /^[0-9a-f]{40}$/.test(p.base))) {
+    throw new Error(`--corpus ${corpusFile}: expected an array of { number, head, base } with full commit ids`);
+  }
+  const corpus = only ? all.filter((p) => only.split(',').includes(String(p.number))) : all;
   if (only && corpus.length !== only.split(',').length) throw new Error(`--prs ${only}: not all in the corpus`);
   fs.mkdirSync(out, { recursive: true });
   const log = (m) => console.log(`[${((Date.now() - startedAt) / 1000).toFixed(0).padStart(4)} s] ${m}`);
