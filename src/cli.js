@@ -3,6 +3,7 @@
 const path = require('path');
 const { analyze, MODES, modeLabel } = require('./engine/analyze');
 const { blastText } = require('./cli-format');
+const { isNotComputedReason } = require('./engine/resolver-not-computed');
 
 const argv = process.argv.slice(2);
 const arg = (n, d) => { const i = argv.indexOf(`--${n}`); return i === -1 ? d : argv[i + 1]; };
@@ -49,7 +50,9 @@ try {
 
 if (flag('json')) {
   console.log(JSON.stringify(result, (k, v) => (v instanceof Set ? [...v] : v), 2));
-  process.exit(0);
+  // Not process.exit(): to a pipe, stdout is written asynchronously, and exiting cut the
+  // JSON at the pipe's buffer (8 KiB).
+  return;
 }
 
 const rel = (f) => path.relative(repo, f);
@@ -77,6 +80,8 @@ for (const f of result.findings) {
     f.stale.slice(0, 8).forEach((s) => console.log(`         ⚠ ${s.label}   ${rel(s.file)}`));
     if (f.stale.length > 8) console.log(`         +${f.stale.length - 8} more`);
     if (f.callersComplete === false) console.log(`      ? ${missingNote(f)}`);
+  } else if (isNotComputedReason(f.callersIncompleteReason)) {
+    console.log(`      ? callers ${f.callersIncompleteReason}`);
   } else if (f.callerState === 'unknown') {
     console.log(`      ? callers unknown (referenced as a value, never called directly)`);
   } else if (f.callerState === 'none') {
@@ -115,7 +120,7 @@ H('④ TEST REACHABILITY');
 console.log(`  uncovered (no test within ${result.reachDepth} caller level(s)): ${result.untested.length}   unknown: ${result.testUnknown.length}   callers-unknown: ${result.unknownCallers.length}`);
 result.untested.forEach((c) => console.log(`  ⚠ ${c.label}   ${rel(c.file)}:${c.startLine}`));
 result.testUnknown.forEach((c) => console.log(`  ? ${c.label}   ${rel(c.file)}:${c.startLine}  (not proven untested: ${c.testReachIncompleteReason})`));
-result.unknownCallers.forEach((c) => console.log(`  ? ${c.label}   ${rel(c.file)}:${c.startLine}  (value-passed, not called)`));
+result.unknownCallers.forEach((c) => console.log(`  ? ${c.label}   ${rel(c.file)}:${c.startLine}  (${isNotComputedReason(c.callersIncompleteReason) ? `callers ${c.callersIncompleteReason}` : 'value-passed, not called'})`));
 
 // A file of a known language that was not analysed is not a file with no impact: say so.
 const notAnalysedFiles = result.otherFiles.filter((f) => f.notAnalysed);

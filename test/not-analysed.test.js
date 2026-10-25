@@ -153,23 +153,28 @@ test('the command line lists not-analysed Go files in their own section, and --j
   }
 });
 
-// Python (P6): the same shared paths, nothing Python-specific in them.
-test('a preview lists every Python file as not analysed, with the preview reason', async () => {
+// Python (A4): read from its text where there is no language server, so it is analysed in
+// both modes, with callers not computed (test/python-syntactic.test.js has the rows).
+test('a preview analyses Python from its text: no Python file is listed as not analysed', async () => {
   const gh = {
-    listPullRequestFiles: async () => ({ total: 3, files: ['pkg/mod.py', 'pkg/mod.pyi', 'docs/x.md'].map((p) => ({ path: p, oldPath: p, status: 'modified', patch: '@@ -1 +1 @@\n-a\n+b' })) }),
-    fileAtRef: async () => null,
+    listPullRequestFiles: async () => ({ total: 3, files: ['pkg/mod.py', 'pkg/mod.pyi', 'docs/x.md'].map((p) => ({ path: p, oldPath: p, status: 'modified', patch: '@@ -1,2 +1,2 @@\n def f():\n-    return 1\n+    return 2' })) }),
+    fileAtRef: async (_, p, ref) => (p === 'pkg/mod.py' ? `def f():\n    return ${ref === 'head' ? 2 : 1}\n` : null),
   };
   const r = await analyzeRemote({ ts, gh, slug: {}, pr: { number: 3, headSha: 'head', mergeBaseSha: 'base', baseRef: 'main' }, repoRoot: root });
-  const reason = 'a preview cannot analyse Python; check out the pull request to analyse it in the editor';
   const by = Object.fromEntries(r.otherFiles.map((f) => [f.path, f.notAnalysed]));
-  assert.deepEqual(by, { 'pkg/mod.py': { language: 'Python', reason }, 'pkg/mod.pyi': { language: 'Python', reason }, 'docs/x.md': undefined });
-  assert.equal(r.allChanged.some((c) => /\.pyi?$/.test(c.relPath)), false, 'nothing is read as a change');
-  assert.deepEqual(r.deleted, []);
+  assert.equal(by['docs/x.md'], undefined);
+  assert.equal('pkg/mod.py' in by, false, 'its function is a row');
+  assert.deepEqual(r.allChanged.map((c) => `${c.relPath}#${c.key}`), ['pkg/mod.py#f']);
+  assert.equal(r.allChanged[0].callerState, 'unknown');
+  assert.equal(r.allChanged[0].callersComplete, false);
+  // The stub cannot give pkg/mod.pyi at the head: skipped with the fetch warning, as a TypeScript file is.
+  assert.ok(r.warnings.some((w) => /could not be fetched at the PR head/.test(w)));
   const note = models.previewLimitsNote(r);
-  assert.match(note, /Python files are not analysed; check out the PR to analyse them in the editor\./);
+  assert.doesNotMatch(note, /Python files are not analysed/);
+  assert.match(note, /Python callers are not computed/);
 });
 
-test('the command line lists a not-analysed Python file in its own section, and --json carries the field', () => {
+test('the command line analyses a Python file from its text: no not-analysed section, and --json says callers are not computed', () => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-not-analysed-py-')));
   try {
     const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
@@ -182,14 +187,12 @@ test('the command line lists a not-analysed Python file in its own section, and 
     const cli = path.join(__dirname, '..', 'src', 'cli.js');
     const args = ['--repo', dir, '--allow-local-base'];
     const text = execFileSync(process.execPath, [cli, ...args], { encoding: 'utf8' });
-    assert.match(text, /⑤ NOT ANALYSED/);
-    assert.match(text, /\? a\.py {3}Python: Python needs the editor's language server; open the repository in the editor to analyse it/);
-    assert.match(text, /1 changed Python file\(s\) NOT analysed/);
-    assert.match(text, /nothing is known about their impact/, 'never read as having no impact');
+    assert.doesNotMatch(text, /⑤ NOT ANALYSED/);
+    assert.match(text, /● a {3}\[CHANGED\] {2}a\.py:1/);
+    assert.match(text, /\? a {3}a\.py:1 {2}\(callers not computed: Python callers need its language server/);
     const json = JSON.parse(execFileSync(process.execPath, [cli, ...args, '--json'], { encoding: 'utf8' }));
-    assert.deepEqual(json.otherFiles.find((f) => f.path === 'a.py').notAnalysed,
-      { language: 'Python', reason: "Python needs the editor's language server; open the repository in the editor to analyse it" });
-    assert.deepEqual(json.allChanged, [], 'no function is reported');
+    assert.equal(json.otherFiles.find((f) => f.path === 'a.py'), undefined);
+    assert.deepEqual(json.allChanged.map((c) => [c.key, c.callerState, c.callersComplete]), [['a', 'unknown', false]]);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

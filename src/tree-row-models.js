@@ -106,6 +106,8 @@ function describeUnknownCallers(change) {
   if (change.callerState === 'di') return 'it is built by a DI container, so its callers are not visible';
   const reason = change.callersIncompleteReason;
   if (INCOMPLETE_REASON_TEXT[reason]) return `it is ${INCOMPLETE_REASON_TEXT[reason]}`;
+  // From engine/resolver-not-computed.js: no search ran (a language read from its text).
+  if (typeof reason === 'string' && reason.startsWith('not computed:')) return `its callers are ${reason}`;
   // From engine/unseen-users.js: already a clause.
   if (typeof reason === 'string' && reason.startsWith('used in ')) return `it is ${reason}`;
   // A provider deadline or a server still loading: say what happened, not the command name.
@@ -338,15 +340,19 @@ const NOT_ANALYSED_DESC = 'not analysed';
 const notAnalysedText = (notAnalysed) => `${notAnalysed.language}: ${NOT_ANALYSED_DESC} — ${notAnalysed.reason}`;
 
 /**
- * The Preview's limits in words for a result: `PREVIEW_LIMITS_NOTE`, and, when the pull
- * request has files of a language the Preview cannot analyse, which languages those are.
+ * The Preview's limits in words for a result: `PREVIEW_LIMITS_NOTE`; the languages read from
+ * their text alone, whose callers are not computed (`result.callersNotComputed`); and, when
+ * the pull request has files of a language the Preview cannot analyse, which those are.
  * @param {any} result
  * @returns {string}
  */
 function previewLimitsNote(result) {
   const languages = [...new Set((result.otherFiles || []).map((/** @type {any} */ f) => f.notAnalysed && f.notAnalysed.language).filter(Boolean))];
-  if (!languages.length) return PREVIEW_LIMITS_NOTE;
-  return `${PREVIEW_LIMITS_NOTE} ${languages.join(', ')} files are not analysed; check out the PR to analyse them in the editor.`;
+  const textOnly = /** @type {string[]} */ (result.callersNotComputed || []);
+  const parts = [PREVIEW_LIMITS_NOTE];
+  if (textOnly.length) parts.push(`${textOnly.join(', ')} callers are not computed (changed functions and kinds only); check out the PR to find them in the editor.`);
+  if (languages.length) parts.push(`${languages.join(', ')} files are not analysed; check out the PR to analyse them in the editor.`);
+  return parts.join(' ');
 }
 
 /**

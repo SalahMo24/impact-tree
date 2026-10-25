@@ -641,7 +641,7 @@ the 10 httpx PRs (every per-PR result identical), and the signature oracle (http
   `pyright-services.js`; the extension tests' fake hooks are `serverSymbols` /
   `serverAvailable`.
 
-### Decisions for the owner
+### Decisions (owner, 2026-10-25: A4 (b) Python first, A5 (a), A6 (a))
 
 - **A4. Go and Python outside the editor.** Today the PR preview and the CLI list Go and
   Python files as not analysed. Options: (a) keep it; (b) a syntax-only tier per language
@@ -664,6 +664,112 @@ the 10 httpx PRs (every per-PR result identical), and the signature oracle (http
   `.<name>(` call sites per analysis, built on first use and dropped at `clear()`; (b) keep
   per target. Proposal: measure first on a large typed repository, then (a) if the time is
   noticeable.
+
+### Tasks from the decisions
+
+- **A5. `callerTargets`.** An optional `EditorCallerExtras.callerTargets(file, pos)` returns
+  other positions whose incoming calls are also this target's callers; `applyCallerExtras`
+  asks them and merges the answers (each caller once, the answer incomplete if any part is).
+  Python answers the class name for a class's `__init__`, so `Client(...)` constructions are
+  listed. The constructor answer is then read like any other method's: a class used as a
+  value (`transport_cls=Client`), a subclass's `super().__init__()` through dispatch, and
+  factory calls (`cls(...)`) keep it incomplete with their reason. Measured on P7's corpus:
+  Jedi's 714 constructions should become listed callers.
+
+  **Done (2026-10-25).** `callerTargets` in `EditorCallerExtras`, asked by
+  `applyCallerExtras` through `askAt` (both resolvers), at most 4 targets
+  (`MAX_CALLER_TARGETS`, past it incomplete); rows merged per caller with call sites merged;
+  any unanswered part keeps the answer incomplete with its reason. A `null` incoming-call
+  result at a position with targets, or at a target, reads as no calls there (the editor's
+  `[]`). Python: the class name for a class's `__init__` (none for a class in a function,
+  which keeps CONSTRUCTOR_REASON); then value uses of the `__init__` and of the class
+  (annotations, `isinstance`/`issubclass` and `except` are not), subclassing
+  (SUBCLASS_REASON) and `cls(...)`/`type(self)(...)` (FACTORY_REASON); no duck typing.
+  `py-verify.js` (cached, 10 PRs): callers 1066 ours / 968 Jedi, precision 90.8% (the 98
+  `with … as x` extras of P7), recall 100% (was 26.2%; 0 constructions missed, was 714);
+  every other per-PR result as P7; Client/AsyncClient `__init__` incomplete as
+  `referenced-as-value` (`parametrize("client_class", [httpx.Client, …])`).
+- **A6. Measure the duck-typing search.** One merged PR with many changed methods in a large
+  typed repository (proposal: `pydantic/pydantic`), through `py-verify.js`'s pipeline phase
+  only: time per caller query with and without the search, the number of searches, files
+  read and `definition` queries. "Slow" means the search adds more than 25% or more than
+  10 s to the time to full result; then build the per-analysis index (A6b), else close A6.
+
+  **Measured (2026-10-25): not slow, A6 closed.** pydantic #13070 (b36eaeb, 47 changed
+  functions, 30 duck searches), fresh Pyright per run, search on vs off (`grep` stubbed):
+  full result 30.8 s vs 29.1 s (+1.7 s, +5.9%); a second pair was within noise (ON 32.5 s,
+  OFF 37.4 s; the machine was loaded). 30 `git grep`s about 3 s and 36 `definition` queries
+  3–8 s in all, concurrent; no budget reached (at most 14 hits per name). Script and raw
+  runs: `~/Projects/impact-tree-scratchpad/a6/`.
+  Found on the way: pydantic's `[tool.pyright] include = ['pydantic', 'tests/test_pipeline.py']`
+  leaves most tests out of Pyright's project, so their callers are not listed. For methods
+  the duck search catches them ("N calls the language server resolves to it but did not
+  list": 9 in `tests/test_color.py` for `Color.as_rgb_tuple`), but a **module function**
+  called only from such a file reads complete. Follow-up **A7**: Python's `unseenUsers`
+  (as TypeScript's), a bounded search for the function's name in Python files outside
+  Pyright's project (its `include`/`exclude` in `pyrightconfig.json` or `[tool.pyright]`),
+  making the answer incomplete when found; after A5 (same file).
+
+  **A7 done (2026-10-25).** Done in `moreCallers` (last rule) rather than `unseenUsers`:
+  `src/languages/python/pyright-project.js` reads the project (JSONC, minimal TOML, Pyright's
+  globs and default excludes); a module function, and a class's `__init__` by its class's
+  name, is searched (`git grep` for the name as a word, then calls and imports in code, not at
+  a listed site, in files outside the project; a file with its own module-level definition
+  counts only `mod.name(`). Methods stay with the duck search. Budgets: 200 files, 1 MiB per
+  file, 16 MiB, 10 s. An unreadable config searches every file and names the error. pydantic
+  #13070: full result 34.0 s; `replace_types`, `get_function_type_hints`,
+  `apply_discriminator`, `ValidatedFunction.__init__` now incomplete with the new reason; in
+  the editor (`[]` for Pyright's `null`) `recursively_defined_type_refs` (5 uses in
+  `tests/test_generics.py`) and `models_json_schema` (16) read incomplete, before "no callers".
+  httpx (no `[tool.pyright]`): unchanged. Script: `~/Projects/impact-tree-scratchpad/a7/`.
+- **A4. Python outside the editor.** An optional `prepareSyntactic` on a provider, used where
+  there is no language server (the CLI, the no-checkout preview): Python's changed functions
+  and their kinds from the text (the module-level and class-body def scan of P2's recovery,
+  P3's header parser and `raisesOf`), callers "not computed" (as TypeScript's preview).
+  The editor keeps Pyright. Go follows as its own task (a declaration scanner on top of G3's
+  parser) once Python's is measured.
+
+  **A4 done (2026-10-25).** `LanguageProvider.prepareSyntactic` (optional): used by
+  `analyze()` for a `needsServer` provider when there are no `services` (the CLI), and by
+  `analyzeRemote` for a file of such a language. Python's: `pythonOutline` (a text outline in
+  Pyright's symbol shape: classes by `class` lines and indentation, their methods and nested
+  classes, module functions; statement starts read outside strings, brackets and
+  continuations, so a docstring `def` line is not taken; every def listed, so the recovery
+  is off) fed through the shared `prepareFromServerSymbols` (new optional `ctx.headTexts`,
+  `ctx.unit` for the preview) and `collectPythonSymbols`, so keys and review ids are the
+  editor's. Callers: `src/engine/resolver-not-computed.js`, `callerState` `'unknown'`,
+  incomplete, reason "not computed: Python callers need its language server; …", the state
+  TypeScript's preview gives what it cannot see; test reach `'unknown'` with that reason;
+  blast radius not computed (`blastNotComputedReason`). `py-verify.js --syntactic` (ast
+  cached): 141/141 changed functions on the 10 PRs, 0 extra, kinds 99/99. Go unchanged.
+
+Order: A5 and A6 side by side (A6 only measures; different files), then A7 (owner, 2026-10-25),
+then A4.
+
+### Verification plans (agreed by the owner, 2026-10-25)
+
+| Task | Check | When | Expected time |
+| --- | --- | --- | --- |
+| A5 | `npm run test:quick` + touched test files | iterate | ~15 s |
+| A5 | `npm test`, lint, typecheck | end | ~2.5 min |
+| A5 | TypeScript baseline (`compare.sh`) and Go e2e (shared code changes) | end | ~70 s / ~10 s |
+| A5 | `py-e2e.js` on httpx #1600 (`httpx-seams` worktree) | end | ~12 s |
+| A5 | `py-verify.js` cached, 10 PRs: constructions now listed, every target still met | end, at most 2 runs | ~1 min each |
+| A6 | clone the repo (shallow to the PR's base), pick the PR | once | ≤ 3 min |
+| A6 | one timed pipeline run with the search on and one with it off | once each | ≤ 5 min each |
+| A4 | `npm run test:quick` + touched test files | iterate | ~15 s |
+| A4 | `npm test`, lint, typecheck, TypeScript baseline | end | ~3.5 min |
+| A4 | syntactic oracle on the 10 httpx PRs (`ast` cached from P7): changed functions 100% precision, ≥ 98% recall; kinds right | end, at most 3 runs | ≤ 1 min each |
+| A4 | CLI and preview on httpx #1600: Python rows listed with kinds, callers "not computed", nothing reads "no impact" | end | ~20 s |
+
+| A7 | `npm run test:quick` + touched test files | iterate | ~15 s |
+| A7 | `npm test`, lint, typecheck | end | ~2.5 min |
+| A7 | `py-e2e.js` on httpx #1600 (`httpx-seams`) | end | ~12 s |
+| A7 | `py-verify.js` cached, 10 PRs: every target still met, no new incomplete answer without a found unseen caller | end, at most 2 runs | ~1 min each |
+| A7 | pydantic #13070 (`pydantic-a6` worktree, `a6/measure.js`-style run): a module function called only from a test outside Pyright's project reads incomplete with the new reason; the run stays within A6's time | end, once | ~40 s |
+
+Agent budgets (wall time, verification included): A5 30 min (Opus); A6 20 min (Sonnet);
+A7 30 min (Opus); A4 45 min (Opus). Past it the agent stops and reports.
 
 ## Order
 

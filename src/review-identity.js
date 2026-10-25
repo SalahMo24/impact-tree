@@ -245,6 +245,8 @@ function previewRevisions(result) {
       if (texts.has(rel)) return `text:${hash(texts.get(rel).head)}:${hash(texts.get(rel).base)}`;
       return listed.get(rel)?.contentId ?? null;
     },
+    // Recorded for the files a language read from its text (Python); TypeScript is parsed.
+    recordedSymbols: (rel) => (result.reviewSymbols && result.reviewSymbols.get(rel)) || null,
   };
 }
 

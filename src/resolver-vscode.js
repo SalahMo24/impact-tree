@@ -32,7 +32,7 @@ function createVscodeResolver({
   const initialStats = () => ({
     incomingCalls: 0, incomingMs: 0, cacheHits: 0, warmupRetries: 0,
     skipped: 0, resolvedEmpty: 0, cqrsEdges: 0, cqrsSuppressed: 0, durations: [], emptyAt: [],
-    inheritedDropped: 0, unseenUsers: 0, valueUsesDropped: 0,
+    inheritedDropped: 0, unseenUsers: 0, valueUsesDropped: 0, callerTargetQueries: 0,
   });
   const stats = initialStats();
   // Validates the deadlines and budgets (see createVscodeServices for each one's range and
@@ -114,22 +114,27 @@ function createVscodeResolver({
     if (!stats.slowest || dt > stats.slowest.ms) stats.slowest = { ms: dt, file, pos };
     if (dt > 3000) trace(`slow query ${dt}ms  ${file}@${pos}`);
     if (answer.ready && !answer.rows.length) { stats.resolvedEmpty++; stats.emptyAt.push({ file, pos }); }
-    if (ready) queryStates.set(key, { ready, reason: undefined, isHandler, retryable: false });
     // The language's extras, in the order the harness applies them too (applyCallerExtras):
-    // an explained failure (Go: a file outside the active build) is not retryable; `filter`
-    // drops what the server over-reports; `moreCallers` adds what it cannot see.
+    // the language's other caller positions (Python: an `__init__`'s class) are asked and
+    // merged; an explained failure (Go: a file outside the active build) is not retryable;
+    // `filter` drops what the server over-reports; `moreCallers` adds what it cannot see.
     const applied = await applyCallerExtras(answer, {
       extras: languageExtras, query: extras, file, pos, withTests,
+      askAt: (f, p) => queryHierarchy(services, headDoc(f), p),
       isStale: () => startedGeneration !== generation,
     });
     if (applied.stale) return staleAnswer();
+    stats.callerTargetQueries += applied.targetsAsked;
     const result = applied.answer;
-    if (!ready) {
-      queryStates.set(key, { ready, reason: applied.explainedReason || answer.reason, isHandler, retryable: !!result.retryable });
+    // `applied.ready`: every query answered (the main one, and each caller target's).
+    if (!applied.ready) {
+      const reason = applied.explainedReason || (ready ? result.reason : answer.reason) || result.reason;
+      queryStates.set(key, { ready: false, reason, isHandler, retryable: !!result.retryable });
       stats.skipped++;
-      if (applied.explainedReason || answer.reason) stats.lastReason = applied.explainedReason || answer.reason;
+      if (reason) stats.lastReason = reason;
       return result;
     }
+    queryStates.set(key, { ready: true, reason: undefined, isHandler, retryable: false });
     // What a language's filter drops: TypeScript's inherited-member over-reports, Go's and
     // Python's callers that only use the function as a value.
     if (extras) stats[languageExtras ? languageExtras.droppedStat : 'inheritedDropped'] += applied.dropped;
