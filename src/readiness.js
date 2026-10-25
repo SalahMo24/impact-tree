@@ -39,7 +39,7 @@ function createReadiness(vscode, session, { log, getScratchDir = () => null, clo
     if (baseRemote.name === null) return null;
     let baseSha;
     try {
-      const b = resolveBase(git, cfg.get('baseBranch', 'main'), { fetch: false, allowLocal: true, remote: baseRemote.name });
+      const b = resolveBase(git, cfg.get('baseBranch', ''), { fetch: false, allowLocal: true, remote: baseRemote.name });
       baseSha = git.mergeBase(b.sha, 'HEAD') || b.sha;
     } catch { return null; }
     // A file no config claims still warms the server: it opens an inferred project.

@@ -168,12 +168,35 @@ async function fetchBranch(git, name, { timeoutMs = DEFAULT_FETCH_TIMEOUT_MS, re
   }
 }
 
+/**
+ * The branch `remote` calls its default: `<remote>/HEAD` as clone (or `git remote set-head`)
+ * recorded it, or, when it is not recorded, `main` or `master` if the remote has that branch.
+ * Null when none is known. A repository whose default branch is `master` (encode/httpx) is
+ * then reviewed against `origin/master` without a setting.
+ * @param {ReturnType<typeof makeGit>} git
+ * @param {string} remote A checked remote name.
+ * @returns {string|null}
+ */
+function remoteDefaultBranch(git, remote) {
+  checkedRemote(remote);
+  const prefix = `refs/remotes/${remote}/`;
+  const head = (git.tryRaw(['symbolic-ref', '--quiet', `${prefix}HEAD`]) || '').trim();
+  if (head.startsWith(prefix) && head.length > prefix.length) return head.slice(prefix.length);
+  for (const branch of ['main', 'master']) if (git.revParse(`${remote}/${branch}`)) return branch;
+  return null;
+}
+
+// The base branch to use when none is given: the remote's default, else `main` (whose
+// absence then gives resolveBase's own error).
+const baseOrDefault = (git, spec, remote) => spec || remoteDefaultBranch(git, remote) || 'main';
+
 // resolveBase with the fetch done asynchronously, so the editor stays responsive.
 async function resolveBaseAsync(git, spec, { fetch = false, allowLocal = false, timeoutMs, remote = 'origin' } = {}) {
   checkedRemote(remote);
   const notes = [];
-  if (fetch && !(spec && isRevExpression(spec))) notes.push((await fetchBranch(git, spec || 'main', { timeoutMs, remote })).note);
-  const r = resolveBase(git, spec, { fetch: false, allowLocal, remote });
+  const base = spec && isRevExpression(spec) ? spec : baseOrDefault(git, spec, remote);
+  if (fetch && !isRevExpression(base)) notes.push((await fetchBranch(git, base, { timeoutMs, remote })).note);
+  const r = resolveBase(git, base, { fetch: false, allowLocal, remote });
   return { ...r, notes: [...notes, ...r.notes] };
 }
 
@@ -185,8 +208,10 @@ function resolveBase(git, spec, { fetch = false, allowLocal = false, remote: rem
     if (sha) return { ref: spec, sha, notes };
     throw new Error(`cannot resolve base revision '${spec}'`);
   }
-  const on = baseOn(git, spec || 'main', remoteName);
-  const name = on.remote === remoteName ? spec || 'main' : on.branch;
+  // No base given: the remote's default branch (`origin/HEAD`), not always `main`.
+  const base = baseOrDefault(git, spec, remoteName);
+  const on = baseOn(git, base, remoteName);
+  const name = on.remote === remoteName ? base : on.branch;
   const remote = `${on.remote}/${on.branch}`;
   if (fetch) {
     const r = git.tryRaw(['fetch', '--quiet', on.remote, refspecFor(on.branch, on.remote)]);
@@ -202,11 +227,13 @@ function resolveBase(git, spec, { fetch = false, allowLocal = false, remote: rem
     return { ref: remote, sha: remoteSha, notes };
   }
   if (!allowLocal) {
-    throw new Error(`cannot resolve ${remote}. Fetch it, or pass allowLocal to fall back to local '${name}'.`);
+    const known = remoteDefaultBranch(git, on.remote);
+    const hint = known && known !== on.branch ? ` ${on.remote}'s default branch is ${known}: set impactTree.baseBranch to ${known}, or leave it empty to use the default.` : '';
+    throw new Error(`cannot resolve ${remote}. Fetch it, or pass allowLocal to fall back to local '${name}'.${hint}`);
   }
   const sha = git.revParse(name);
   if (!sha) throw new Error(`cannot resolve base ref '${name}'`);
   notes.push(`WARNING: ${remote} not found — falling back to local ${name}; diff may include others' commits`);
   return { ref: name, sha, notes };
 }
-module.exports = { makeGit, resolveBase, resolveBaseAsync, fetchBranch, refspecFor, isSafeRemoteName, FETCH_ENV, DEFAULT_FETCH_TIMEOUT_MS };
+module.exports = { makeGit, resolveBase, resolveBaseAsync, fetchBranch, remoteDefaultBranch, refspecFor, isSafeRemoteName, FETCH_ENV, DEFAULT_FETCH_TIMEOUT_MS };

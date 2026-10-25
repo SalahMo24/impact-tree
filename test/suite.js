@@ -66,6 +66,7 @@ const SUITE = [
   { file: 'test/load-typescript.test.js', tier: 'quick' },  // 0.6s
   { file: 'test/github-remote.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/base-ref.test.js', tier: 'full' },  // 5.1s
+  { file: 'test/default-base.test.js', tier: 'quick' },  // 1s
   { file: 'test/extension-remotes.test.js', tier: 'full' },  // 11.5s
   { file: 'test/sources.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/pr-groups.test.js', tier: 'quick' },  // 0.1s

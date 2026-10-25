@@ -512,9 +512,14 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     throwIfCancelled(run.signal);
     const repo = repoRoot();
     const cfg = vscode.workspace.getConfiguration('impactTree');
-    const base = source.kind === 'checkout' ? source.pr.baseRef : cfg.get('baseBranch', 'main');
     const baseRemote = session.baseRemote();
     if (baseRemote.name === null) throw new Error(`Cannot resolve the base branch: ${baseRemote.problem}`);
+    // An empty setting is the remote's default branch, named here: the name is part of the
+    // review key, so a repository whose default is `main` keeps the key (and ticks) it had
+    // when the setting defaulted to `main`.
+    const { makeGit, remoteDefaultBranch } = require('./engine/git');
+    const base = source.kind === 'checkout' ? source.pr.baseRef
+      : (cfg.get('baseBranch', '') || remoteDefaultBranch(makeGit(repo), baseRemote.name) || 'main');
     if (!retry) {
       session.resolver.clear();
       session.localResolver = null;

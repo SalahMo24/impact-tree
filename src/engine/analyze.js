@@ -69,7 +69,7 @@ function missingMergeBase(git, ref) {
 }
 
 async function branchMergeBase(git, opts, warnings) {
-  const resolved = await resolveBaseAsync(git, opts.base || 'main', {
+  const resolved = await resolveBaseAsync(git, opts.base || '', {
     fetch: !!opts.fetch, allowLocal: !!opts.allowLocalBase, timeoutMs: opts.fetchTimeoutMs,
     remote: opts.remote || 'origin',
   });
@@ -293,7 +293,8 @@ async function prepareLanguages(byLanguage, shared, { warnings, unanalysable, no
  * @param {string} repo Absolute filesystem path of the repository root.
  * @param {object} [opts]
  * @param {'working'|'checkpoint'|'branch'|'pr'} [opts.mode='pr']
- * @param {string} [opts.base='main'] Base branch or revision for `pr` and `branch`.
+ * @param {string} [opts.base] Base branch or revision for `pr` and `branch`; omitted or
+ *   empty: the remote's default branch (`origin/HEAD`).
  * @param {string} [opts.checkpoint] Required for `checkpoint`. Must resolve to a commit: an ordinary
  *   commit, or a snapshot commit whose objects live in one of `opts.objectDirs`.
  * @param {string[]} [opts.objectDirs] Absolute extra object directories git may read (snapshot
