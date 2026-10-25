@@ -154,7 +154,7 @@ test('the command line lists not-analysed Go files in their own section, and --j
 });
 
 // Python (A4): read from its text where there is no language server, so it is analysed in
-// both modes, with callers not computed (test/python-syntactic.test.js has the rows).
+// both modes, with callers from a syntax-only index (A8; test/python-syntactic.test.js has the rows).
 test('a preview analyses Python from its text: no Python file is listed as not analysed', async () => {
   const gh = {
     listPullRequestFiles: async () => ({ total: 3, files: ['pkg/mod.py', 'pkg/mod.pyi', 'docs/x.md'].map((p) => ({ path: p, oldPath: p, status: 'modified', patch: '@@ -1,2 +1,2 @@\n def f():\n-    return 1\n+    return 2' })) }),
@@ -171,10 +171,10 @@ test('a preview analyses Python from its text: no Python file is listed as not a
   assert.ok(r.warnings.some((w) => /could not be fetched at the PR head/.test(w)));
   const note = models.previewLimitsNote(r);
   assert.doesNotMatch(note, /Python files are not analysed/);
-  assert.match(note, /Python callers are not computed/);
+  assert.match(note, /Python callers are from syntax only/);
 });
 
-test('the command line analyses a Python file from its text: no not-analysed section, and --json says callers are not computed', () => {
+test('the command line analyses a Python file from its text: no not-analysed section, and --json says callers are from syntax only', () => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-not-analysed-py-')));
   try {
     const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
@@ -189,10 +189,11 @@ test('the command line analyses a Python file from its text: no not-analysed sec
     const text = execFileSync(process.execPath, [cli, ...args], { encoding: 'utf8' });
     assert.doesNotMatch(text, /⑤ NOT ANALYSED/);
     assert.match(text, /● a {3}\[CHANGED\] {2}a\.py:1/);
-    assert.match(text, /\? a {3}a\.py:1 {2}\(callers not computed: Python callers need its language server/);
+    assert.match(text, /\? a {3}a\.py:1 {2}\(callers unknown: Python callers from syntax only: the repository \(1 Python file\(s\) indexed\)/);
     const json = JSON.parse(execFileSync(process.execPath, [cli, ...args, '--json'], { encoding: 'utf8' }));
     assert.equal(json.otherFiles.find((f) => f.path === 'a.py'), undefined);
     assert.deepEqual(json.allChanged.map((c) => [c.key, c.callerState, c.callersComplete]), [['a', 'unknown', false]]);
+    assert.match(json.allChanged[0].callersIncompleteReason, /^Python callers from syntax only: /);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

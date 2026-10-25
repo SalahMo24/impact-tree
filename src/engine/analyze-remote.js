@@ -21,8 +21,8 @@ const { hunkRangesFromPatch, hunkDeletionsFromPatch } = require('./patch');
 const { diffLinesFromPatch } = require('./diff-lines');
 const { isTestPath, isTestFile } = require('./diff');
 // The preview analyses TypeScript/JavaScript (gate L2), and the languages that can be read
-// from their text alone (`prepareSyntactic`: Python; changed functions and kinds, callers
-// not computed, A4). A file of another language (Go) is listed as a file that was not
+// from their text alone (`prepareSyntactic`: Python; changed functions and kinds, A4, and
+// callers from a syntax-only index of the PR's own files of that language, A8). A file of another language (Go) is listed as a file that was not
 // analysed, with the reason (`notAnalysed`), so it never reads as a file with no impact.
 const { typescriptRules } = require('../languages/typescript/rules');
 const isSourcePath = typescriptRules.handles;
@@ -120,7 +120,7 @@ async function analyzeRemote({
   // never diffed, so no symbol of theirs becomes a change (as locally), and they stay in
   // `otherFiles`. They are already within the listed-file budget; tests the PR does not
   // touch are never fetched.
-  const testFiles = listed.files.filter((f) => isSourcePath(f.path) && isTestPath(f.path) && normaliseStatus(f.status) !== 'deleted');
+  const testFiles = listed.files.filter((f) => (isSourcePath(f.path) || textLanguageOf(f.path)) && isTestPath(f.path) && normaliseStatus(f.status) !== 'deleted');
   trace(`${sourceFiles.length} analysable source file(s); ${testFiles.length} test file(s) read as callers; ${listed.files.length - sourceFiles.length} other`);
   // Nothing of these files is fetched, so their review identity comes from what GitHub
   // listed: the blob id and the patch. `contentId` is null when it gave neither.
@@ -213,11 +213,15 @@ async function analyzeRemote({
   const changed = [];
   const deleted = [];
   const outside = [];
-  // Rows of a language read from its text, and the resolver that answers for them
-  // (callers not computed); every other row is answered by the PR's syntactic index.
+  // Rows of a language read from its text, and the resolver that answers for them (its own
+  // syntax-only index of the PR's files of that language); every other row is answered by
+  // the PR's TypeScript syntactic index.
   const rowResolvers = new Map();
   const reviewSymbols = new Map();
   const callersNotComputed = [];
+  const callersSyntaxOnly = [];
+  // Each text language's resolver, so expanding a caller of that language asks it.
+  const languageResolvers = new Map();
   const byTextLanguage = new Map();
   for (const f of usable) {
     const ranges = hunkRangesFromPatch(f.patch);
@@ -259,8 +263,14 @@ async function analyzeRemote({
       deletions: Object.fromEntries(own.map((f) => [f.path, hunkDeletionsFromPatch(f.patch)])),
       warnings, unanalysable, notAnalysedFiles, report: () => {}, signal, hooks: {},
       unit: { component: 'pull request', projectRoot: '' },
+      // Its callers come from the PR's own files of the language: changed and changed tests.
+      syntacticSources: [...own, ...readTests]
+        .filter((f) => f.headText != null && textLanguageOf(f.path) === language)
+        .map((f) => ({ path: f.path, text: f.headText })),
     });
     for (const unit of answer.units) {
+      if (unit.resolver.callersNotComputed) { if (!callersNotComputed.includes(language.displayName)) callersNotComputed.push(language.displayName); }
+      else { languageResolvers.set(language, unit.resolver); if (!callersSyntaxOnly.includes(language.displayName)) callersSyntaxOnly.push(language.displayName); }
       for (const c of unit.changed) rowResolvers.set(c, unit.resolver);
       changed.push(...unit.changed);
       deleted.push(...unit.deleted);
@@ -272,8 +282,7 @@ async function analyzeRemote({
       const f = own.find((x) => x.path === p);
       otherFiles.push({ path: p, status: f ? f.status : 'modified', notAnalysed: { language: language.displayName, reason } });
     }
-    if (answer.units.length) callersNotComputed.push(language.displayName);
-    trace(`${own.length} ${language.displayName} file(s) read from their text; callers not computed`);
+    trace(`${own.length} ${language.displayName} file(s) read from their text; callers from their syntax`);
   }
 
   // A module file, a barrel, a const map of error codes: real changes with no changed
@@ -300,7 +309,7 @@ async function analyzeRemote({
 
   // ---- callers, from the PR's own files only --------------------------------------
   trace(`total ${changed.length} changed symbol(s), ${deleted.length} deleted`);
-  const indexed = [...usable.filter((f) => f.headText != null && isSourcePath(f.path)), ...readTests];
+  const indexed = [...usable.filter((f) => f.headText != null && isSourcePath(f.path)), ...readTests.filter((f) => isSourcePath(f.path))];
   onProgress({ phase: 'index', message: `indexing ${indexed.length} file(s)` });
   const config = require('./remote-config');
   const [moduleOptions, packages] = await Promise.all([
@@ -358,7 +367,7 @@ async function analyzeRemote({
 
   throwIfCancelled(signal);
 
-  return makeResult(false, resolver);
+  return makeResult(false, languageResolvers.size ? routedResolver(resolver, languageResolvers) : resolver);
 
   function makeResult(callersPending, resolver) {
     // ---- roots and nesting, same rules as the local path ----------------------------
@@ -370,6 +379,7 @@ async function analyzeRemote({
       callersPending,
       tierA: true,
       callersNotComputed,
+      ...(callersSyntaxOnly.length ? { callersSyntaxOnly } : {}),
       texts,
       coverage: 'pr-files-only',
       prNumber: pr.number,
@@ -407,6 +417,28 @@ async function analyzeRemote({
     Object.defineProperty(result, 'reviewSymbols', { value: reviewSymbols, enumerable: false });
     return result;
   }
+}
+
+/**
+ * The preview's resolver when a language read from its text has its own: each query goes to
+ * the resolver of its file's language, the TypeScript one otherwise, so expanding a Python
+ * caller asks the Python index. `stats` are the TypeScript resolver's, with each other
+ * language's under its id.
+ * @param {any} base The TypeScript syntactic resolver.
+ * @param {Map<any, any>} byLanguage Language provider → its resolver.
+ */
+function routedResolver(base, byLanguage) {
+  const pick = (file) => byLanguage.get(textLanguageOf(file)) || base;
+  return {
+    kind: base.kind,
+    incoming: (file, ...rest) => pick(file).incoming(file, ...rest),
+    incomingWithStatus: (file, ...rest) => pick(file).incomingWithStatus(file, ...rest),
+    callerState: (file, ...rest) => pick(file).callerState(file, ...rest),
+    stats: () => Object.assign(base.stats(), ...[...byLanguage].map(([language, r]) => ({ [language.id]: r.stats() }))),
+    invalidate() { base.invalidate(); for (const r of byLanguage.values()) if (r.invalidate) r.invalidate(); },
+    clear() { base.clear(); for (const r of byLanguage.values()) if (r.clear) r.clear(); },
+    dispose() { base.dispose(); for (const r of byLanguage.values()) if (r.dispose) r.dispose(); },
+  };
 }
 
 /**

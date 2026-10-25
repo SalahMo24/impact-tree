@@ -569,7 +569,8 @@ async function analyze(repo, opts = {}) {
         }
         throwIfCancelled(signal);
         const b = await blastRadius(resolver, r.file, r.namePos, opts.blastDepth ?? 1);
-        roots.push({ ...r, blast: b.count, blastCapped: b.capped, blastNotComputed: false });
+        // A resolver whose answers are lower bounds (a syntax-only index) counts one too.
+        roots.push({ ...r, blast: b.count, blastCapped: b.capped || resolver.callersLowerBound === true, blastNotComputed: false });
       }
       roots.sort((a, b) => b.score - a.score || (b.blast || 0) - (a.blast || 0));
       const forest = [];
