@@ -520,6 +520,30 @@ run outside the editor: the MIT-licensed `pyright` npm package (decision P-D1).
   "Waiting for …" text names the Python server.
 - **P6. Other modes:** nothing new expected (G6 covers it); check and test.
 - **P7. Verification** on 10 merged PRs of the P-D2 repo (plan below).
+
+  **Measured (2026-10-25).** Full report: `test/lsp-harness/P7-REPORT.md`, reproduced by
+  `node test/lsp-harness/py-verify.js <httpx clone> --worktree <httpx worktree>` (corpus
+  `test/lsp-harness/py-verify-corpus.json`; oracles cached by commit and tool, 59 s a cached
+  run, 75–78 s uncached). 10 PRs, 141 function changes, 112 with callers compared; pyright
+  1.1.414, Jedi 0.20.1 (parso 0.8.7), Python 3.12.8; no httpx code imported or run (checked
+  in the Jedi process: no module from the export, `sys.path` unchanged).
+  - Changed functions: 100% precision, 100% recall against `ast` (99.3% before F2).
+  - Kinds: 77/77 header changes right, 22/22 body-only changes `body`; no `new-throw` case in
+    the corpus (unit-tested only).
+  - Callers against Jedi: precision 72.2% (98 extra: all real calls on a `with … as x` target,
+    which Jedi does not type), recall 26.2% (714 missed: all constructions of a changed
+    `__init__`). Every one of the 18 changes with a Jedi caller we miss is incomplete; none is
+    drawn as fine while Jedi has a non-updated caller. 30 callers hand-checked, all agree.
+  - Time to first / full result, fresh Pyright: 2.0–4.8 s / 2.7–13.0 s.
+  - Fixed on the way: F1, `__init__` read "no incoming-call result" (Pyright answers `null`
+    there and lists constructions only at the class), and could read complete "no callers"
+    where the editor turns `null` into `[]`: now always incomplete with a constructor reason.
+    F2, a function defined in both branches of an `if`/`try` lost its second definition
+    (httpx `_compat.py`): now recovered.
+  - Follow-ups: list an `__init__`'s constructions by asking at the class name (needs a
+    provider hook or the extras to ask after a `null`: shared code); a `new-throw` PR if it
+    should be measured; a clearer reason than "no incoming-call result" for methods reached
+    through a base class or protocol (`stream.close()`).
 - **P8. Docs:** README Languages row and Python limits, changelog, `package.json`
   keywords.
 

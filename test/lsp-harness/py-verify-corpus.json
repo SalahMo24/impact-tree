@@ -1,0 +1,82 @@
+[
+ {
+  "number": 3319,
+  "head": "8e36f2bc685dfbe43cd7503bc1c422a6ed6e05a5",
+  "base": "3f76571d3429497c4ee4ecf5d8bc034b6f765957",
+  "pyFiles": 21,
+  "packageFiles": 14,
+  "why": "properties, async, decorators, dunders and removals: the new SSLContext API with deprecations escalated"
+ },
+ {
+  "number": 3394,
+  "head": "1805ee0d22f96e2b29f0500dd3076e10020004bf",
+  "base": "41597adffa9d34171a63f7511fc0f702558dd08c",
+  "pyFiles": 8,
+  "packageFiles": 7,
+  "why": "renames, a property and dunders: the graceful 0.28 upgrade path"
+ },
+ {
+  "number": 3389,
+  "head": "7b19cd5f4b749064c6452892a5e58a3758da1d1b",
+  "base": "b47d94c90445921dc74f42c8390a474892c3f097",
+  "pyFiles": 4,
+  "packageFiles": 2,
+  "why": "functions moved across files (_utils.py to _client.py), with a raise"
+ },
+ {
+  "number": 3382,
+  "head": "83a85189c79708b732d04e7b906e388fb0fbde94",
+  "base": "66225539796d819b5114ead2fd5e4d61865ab708",
+  "pyFiles": 2,
+  "packageFiles": 2,
+  "why": "functions moved across files (_utils.py to _models.py), with a raise"
+ },
+ {
+  "number": 3245,
+  "head": "359f77d4f6ea722d02c3731e9581456c6386e188",
+  "base": "b351a44fb6e97dbe3119b738ddff7125cc5dc7af",
+  "pyFiles": 5,
+  "packageFiles": 5,
+  "why": "signature changes: the URL constructor cleaned up"
+ },
+ {
+  "number": 3371,
+  "head": "d293374b6603816420a2bb8e7f4fe5a5f09cbfcc",
+  "base": "489fef48ba8619c7604376165c7e8007398e1b5d",
+  "pyFiles": 2,
+  "packageFiles": 1,
+  "why": "signature changes: URL percent-escaping sets reviewed"
+ },
+ {
+  "number": 3250,
+  "head": "7c0cda153d301bde9a011e1dd7157d7e2b20889d",
+  "base": "beb501fc28cb24ef7cd584159bc6ac55d2244dea",
+  "pyFiles": 2,
+  "packageFiles": 1,
+  "why": "new raises: InvalidURL error messages"
+ },
+ {
+  "number": 3377,
+  "head": "e9cabc8e1deb6548c5c5e2f453e343d39a2a5321",
+  "base": "eeb5e3c2a3ff2403ec47b5926715ecd61143d92d",
+  "pyFiles": 6,
+  "packageFiles": 4,
+  "why": "imports moved into functions (certifi and httpcore loaded when required)"
+ },
+ {
+  "number": 1577,
+  "head": "8fd5b71016c10dd266a058966f3ff3843e3ce9c6",
+  "base": "ed19995747ff4b421e009a276f5983b5264a04dc",
+  "pyFiles": 4,
+  "packageFiles": 3,
+  "why": "async and contextmanager decorators: StreamContextManager dropped for contextlib"
+ },
+ {
+  "number": 1336,
+  "head": "4b8774041d8d509a70c5636f3c9835d333943234",
+  "base": "65b69fabdb35f2cf05ad899f75137ce7087b5db3",
+  "pyFiles": 1,
+  "packageFiles": 1,
+  "why": "dunders, async and classmethod: covariant __enter__/__aenter__"
+ }
+]

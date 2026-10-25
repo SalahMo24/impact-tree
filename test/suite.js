@@ -145,6 +145,7 @@ const EXCLUDED = {
   'windows-workspace-projects.js': 'child script spawned by test/local-programs.test.js',
   'go-signature-oracle.js': 'dev script: compares against the Go toolchain on a Go repo given as an argument',
   'py-signature-oracle.js': 'dev script: compares against Python\'s ast module on a Python repo given as an argument',
+  'lsp-harness/py-verify.js': 'dev script: P7 verification against httpx, Pyright, ast and Jedi; needs the clone, a worktree and the scratchpad tools',
   'measure-cqrs-cache.js': 'dev script: measurement, not a pass/fail test',
   'measure-inheritance.js': 'dev script: measurement, not a pass/fail test',
   'record-fixture.js': 'dev script: `npm run record` captures fixtures',
@@ -175,7 +176,9 @@ function checkCoverage(testDir) {
     if (inSuite && excluded) problems.push(`test/${name} is in both SUITE and EXCLUDED`);
   }
   for (const name of Object.keys(EXCLUDED)) {
-    if (!onDisk.includes(name)) problems.push(`EXCLUDED lists test/${name}, which does not exist`);
+    // A name in a subdirectory (a dev script under lsp-harness/) is not a suite candidate; it only has to exist.
+    const exists = name.includes('/') ? fs.existsSync(path.join(testDir, name)) : onDisk.includes(name);
+    if (!exists) problems.push(`EXCLUDED lists test/${name}, which does not exist`);
   }
   return problems;
 }
