@@ -680,6 +680,21 @@ the 10 httpx PRs (every per-PR result identical), and the signature oracle (http
   only: time per caller query with and without the search, the number of searches, files
   read and `definition` queries. "Slow" means the search adds more than 25% or more than
   10 s to the time to full result; then build the per-analysis index (A6b), else close A6.
+
+  **Measured (2026-10-25): not slow, A6 closed.** pydantic #13070 (b36eaeb, 47 changed
+  functions, 30 duck searches), fresh Pyright per run, search on vs off (`grep` stubbed):
+  full result 30.8 s vs 29.1 s (+1.7 s, +5.9%); a second pair was within noise (ON 32.5 s,
+  OFF 37.4 s; the machine was loaded). 30 `git grep`s about 3 s and 36 `definition` queries
+  3–8 s in all, concurrent; no budget reached (at most 14 hits per name). Script and raw
+  runs: `~/Projects/impact-tree-scratchpad/a6/`.
+  Found on the way: pydantic's `[tool.pyright] include = ['pydantic', 'tests/test_pipeline.py']`
+  leaves most tests out of Pyright's project, so their callers are not listed. For methods
+  the duck search catches them ("N calls the language server resolves to it but did not
+  list": 9 in `tests/test_color.py` for `Color.as_rgb_tuple`), but a **module function**
+  called only from such a file reads complete. Follow-up **A7**: Python's `unseenUsers`
+  (as TypeScript's), a bounded search for the function's name in Python files outside
+  Pyright's project (its `include`/`exclude` in `pyrightconfig.json` or `[tool.pyright]`),
+  making the answer incomplete when found; after A5 (same file).
 - **A4. Python outside the editor.** An optional `prepareSyntactic` on a provider, used where
   there is no language server (the CLI, the no-checkout preview): Python's changed functions
   and their kinds from the text (the module-level and class-body def scan of P2's recovery,
