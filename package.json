@@ -3,7 +3,7 @@
   "publisher": "SalahMo24",
   "displayName": "Impact Tree",
   "icon": "images/icon.png",
-  "description": "Review a diff as an inverted call graph — see what each change affects and which callers weren't updated.",
+  "description": "Review a diff as an inverted call graph — see what each change affects and which callers weren't updated. TypeScript, JavaScript and Go.",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -1114,6 +1114,9 @@
     "dependency graph",
     "refactoring",
     "typescript",
+    "javascript",
+    "go",
+    "golang",
     "github"
   ],
   "dependencies": {

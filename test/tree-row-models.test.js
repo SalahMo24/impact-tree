@@ -87,6 +87,9 @@ test('the sentence keeps the facts the row cannot: stale count, missing callers,
   const unknown = (extra) => verdictOf({ kinds, callerState: 'unknown', callers: [], callersComplete: false, ...extra }).sentence;
   assert.match(unknown({ callersIncompleteReason: 'referenced-as-value' }), /passed around as a value/);
   assert.match(unknown({ callersIncompleteReason: 'query-failed' }), /the search reported "query-failed"/);
+  // G7: a Go method sharing an interface with code outside the repository.
+  assert.match(verdictOf({ kinds, callersComplete: false, callersIncompleteReason: 'implements-outside-interface', callers: callersOf(1, 'updated-at-call') }).sentence,
+    /more may be missing: it is a method that shares an interface with code outside this repository, so calls through that interface are not listed/);
   assert.match(unknown({ callersIncompleteReason: "used in a file the editor's search did not reach (tests/a.spec.ts)" }),
     /could not be found: it is used in a file the editor's search did not reach \(tests\/a\.spec\.ts\)\. Check its users by hand\./);
   assert.match(unknown({ callersIncompleteReason: undefined }), /did not say why/);

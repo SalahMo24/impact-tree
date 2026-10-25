@@ -311,6 +311,31 @@ test('a header the parser cannot read is compared as text, never assumed unchang
   assert.deepEqual(goKindsOf(parsedBase.find((s) => s.key === 'helper'), pair('helper')[1]), []);
 });
 
+test('a type whose underlying type is a function is not a function (G7: gopls gives it the Function kind)', () => {
+  // cli/cli PR #14104 added `type RequestOption func(*requestConfig)` in api/client.go; gopls
+  // lists it with kind 12 and its range at the type's name, and it was shown as an added
+  // function. Its constructor below is one.
+  const text = 'package api\n\ntype RequestOption func(*requestConfig)\n\nfunc WithHeader(name string) RequestOption {\n\treturn nil\n}\n';
+  const at = (/** @type {string} */ needle) => text.indexOf(needle);
+  const symbols = [
+    { name: 'RequestOption', detail: 'func(*requestConfig)', kind: 12, range: { start: at('RequestOption func'), end: at('\n\nfunc') }, selectionRange: { start: at('RequestOption func'), end: at(' func(*') }, children: [] },
+    { name: 'WithHeader', detail: 'func(name string) RequestOption', kind: 12, range: { start: at('func WithHeader'), end: text.length - 1 }, selectionRange: { start: at('WithHeader'), end: at('(name') }, children: [] },
+  ];
+  assert.deepEqual(collectGoSymbols(symbols, text).map((s) => s.key), ['WithHeader']);
+});
+
+test('interface{} and any are the same type to a caller (G7: go fix in cli/cli PR #14278)', () => {
+  const sym = (/** @type {string} */ text) => {
+    const name = text.indexOf('F');
+    return collectGoSymbols([{ name: 'F', detail: '', kind: 12, range: { start: 0, end: text.length }, selectionRange: { start: name, end: name + 1 }, children: [] }], text)[0];
+  };
+  const old = sym('func F(v interface{}, opts ...interface {}) (interface{}, error) {}');
+  assert.deepEqual(goKindsOf(old, sym('func F(v any, opts ...any) (any, error) {}')), [], 'the go fix rewrite: no kind');
+  assert.deepEqual(goKindsOf(old, sym('func F(v any, opts ...string) (any, error) {}')).map((k) => k.id), ['type-changed'], 'a real change still shows');
+  assert.deepEqual(goKindsOf(old, sym('func F(v any, opts ...any) (string, error) {}')).map((k) => k.id), ['return-changed']);
+  assert.equal(old.sig && old.sig.params[1].type, '...interface {}', 'only compared as any: the signature shown is as written');
+});
+
 test('a symbol range outside its text is an error, not a guess', () => {
   const symbols = [{ name: 'f', detail: '', kind: 12, range: { start: 0, end: 99 }, selectionRange: { start: 5, end: 6 }, children: [] }];
   assert.throws(() => collectGoSymbols(symbols, 'func f() {}\n'), /outside its text/);

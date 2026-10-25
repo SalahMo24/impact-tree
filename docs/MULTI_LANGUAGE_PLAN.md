@@ -297,6 +297,8 @@ Acceptance: `callers` wraps `callersFromHierarchy`:
   "not in the active build; callers were not searched", never "no callers";
 - a method that implements an interface needs no extra state (its interface callers are
   listed), but G7 checks against `callgraph -algo=vta` that this holds beyond PR #14752.
+  (G7: it holds for interfaces in the workspace only; a method sharing an interface with code
+  outside the repository is now incomplete, `implements-outside-interface`.)
 
 ### G5. Row identity and warm-up for Go (done)
 
@@ -338,7 +340,7 @@ Acceptance: per L2, a Go file in the CLI or a no-checkout preview is listed as "
 analysed in this mode — check out the pull request in the editor", and the preview's
 limits note says so; nothing in those modes reads a Go file as having no impact.
 
-### G7. Verification against cli/cli
+### G7. Verification against cli/cli (done, manual pass pending)
 
 The harness adapter (`test/lsp-harness/`) runs the real pipeline and Go provider against
 `gopls`. Two independent oracles:
@@ -364,7 +366,35 @@ Acceptance, recorded here per PR and in total:
 Then a manual pass in VS Code on three of those PRs (one review, one checked-out PR, one
 agent run), as U8's walk, by the owner.
 
-### G8. Say what is supported
+**Measured (2026-10-25).** Full report: `test/lsp-harness/G7-REPORT.md`, reproduced by
+`node test/lsp-harness/go-verify.js <cli clone>` (corpus `test/lsp-harness/go-verify-corpus.json`;
+oracles cached by commit and tool, about 1.5 min a re-run, 2.5 min uncached). 10 PRs, 816
+function changes, 786 with callers compared; gopls v0.21.0, x/tools v0.52.0, go1.27.3.
+- Changed functions: 100% precision, 100% recall against go/parser.
+- Kinds: 189/189 header changes right, 315/315 body-only changes `body`.
+- Callers against static: recall 100% (0 of 2751 missed), precision 86.0% (448 extra: 308
+  vta edges through interfaces or values, 107 interface calls vta shows never reach the type,
+  23 sibling implementations, 10 from an inactive build file of a nested module).
+- Every one of the 26 changes with a vta caller we do not list is incomplete ("may be
+  missing"); none is drawn as fine while vta finds a non-updated caller.
+- Time to first / full result, fresh gopls, warm disk cache: 2.7–6.3 s / 3.4–10.6 s, 14 s /
+  29 s for 251 files; warm gopls 0.5 s / 0.6 s (11 files) and 8 s / 21 s (251 files).
+- Fixed on the way: a func type (`type X func(...)`) was listed as a function; calls through
+  an interface declared outside the workspace were missing from an answer that read complete
+  (now `implements-outside-interface`); `interface{}` → `any` read as a type change (132 red
+  rows in one PR). No receiver change was found in ~410 recent PRs (unit-tested only).
+- Follow-ups: drop gopls' sibling-implementation callers (a `definitions` check per site);
+  say when an inactive-build file's callers are for its own build only (nested modules).
+  The owner's manual pass is still to do.
+
+### G8. Say what is supported (done)
+
+Done 2026-10-25: the README has a Languages section (each language in each mode, what Go
+needs, its known limits from G7), its status line, Limitations and Roadmap say the same,
+the changelog has the Go entry, and `package.json`'s description and keywords name Go. A
+changed file of a common language no provider analyses (Python, Java, …) reads
+"*Language* · not analysed yet" instead of "no call graph" (`unsupportedLanguageOf` in
+`src/languages/index.js`), quiet rather than amber since it is expected.
 
 Acceptance: the README lists the languages analysed and, per mode, what works (editor:
 TS/JS and Go; preview and CLI: TS/JS, per L2); the Changes view's "no call graph" row

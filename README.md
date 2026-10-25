@@ -11,7 +11,8 @@ and nothing about *how the changes relate* — or which callers you forgot to up
 
 > **Status: early.** Local change review, GitHub PR browsing, no-checkout previews,
 > review progress, and GitHub review comments are implemented. Detailed change analysis
-> supports TypeScript and JavaScript; see [Limitations](#limitations) for analysis coverage.
+> supports TypeScript and JavaScript everywhere, and Go in the editor; see
+> [Languages](#languages) and [Limitations](#limitations).
 
 ## What it shows
 
@@ -49,6 +50,48 @@ silently-omitted optional parameter outranks a signature break that `tsc` alread
   static edge to `@CommandHandler(FooCommand)`; those are reconnected, and the
   interface-derived false callers they otherwise attract are suppressed.
 
+## Languages
+
+| Language | Editor (local review, checked-out PR) | No-checkout PR preview | CLI |
+| --- | --- | --- | --- |
+| TypeScript, JavaScript | Analysed: the bundled TypeScript compiler finds changes, the editor's language server finds callers | Analysed from the PR's own files only (syntax) | Analysed with its own TypeScript language service |
+| Go | Analysed through the [Go extension](https://marketplace.visualstudio.com/items?itemName=golang.go)'s language server, gopls | Listed as **not analysed**, with how to analyse it | Listed as **not analysed** |
+| Python, Java, Kotlin, C#, Ruby, Rust, PHP, Swift, C, C++, Scala | Listed as "*Language* · not analysed yet" | Same | Same |
+
+A file that was not analysed never reads as having no impact. A Go file Impact Tree could
+not analyse (gopls gave no answer, for example) is amber, counts toward **needs attention**
+until you mark it reviewed, and its tooltip and Details say why.
+
+### Go
+
+- **Needs the Go extension.** Changed functions come from gopls's outline of each file,
+  callers from its call hierarchy. Without the extension, Go files are listed as not
+  analysed with a note to install it.
+- **The first review waits for gopls** to load the module ("Waiting for the Go language
+  server (gopls)… N s"); Impact Tree starts it in the background when Go files change.
+- **Old versions of a file** are read through a temporary copy in the extension's storage
+  (gopls reads only files on disk), removed as soon as gopls has answered.
+- **Signatures** compare receiver, type parameters, parameters and results. Renaming a
+  receiver or a named result is not a change; `T` to `*T` is. `interface{}` and `any` are
+  the same type.
+- **Callers that only use a function as a value** (`Args: noArgsConstraint`, a function
+  passed as an argument) are not counted as calls; the change reads "passed around as a
+  value, so the call sites cannot be followed".
+- **A method that implements an interface declared outside the repository** (such as
+  `http.RoundTripper`) may have callers gopls cannot list; it reads as incomplete rather
+  than "all callers updated".
+- **A file excluded by the current build tags** reads "not in the active build (build
+  tags); callers were not searched".
+- **Calls through interfaces are matched by type**, as gopls does: a caller can be listed
+  that never reaches this particular implementation, and calls on another implementation
+  of the same interface method can be listed too. These err towards showing more callers.
+- **No `panic` tracking**: a new `error` result shows as a result change; a new `panic(` in
+  a body is not tracked.
+- **Measured** on 10 merged cli/cli pull requests (816 changed functions): every changed
+  function found with no extras, every signature change classified, no caller that Go's
+  static call graph finds missed, and no change shown as fine while a caller was not
+  updated. See [the verification report](test/lsp-harness/G7-REPORT.md).
+
 ## Review workflow
 
 - Open **Impact Tree** in the Activity Bar. The **Review** view lists local change
@@ -58,7 +101,8 @@ silently-omitted optional parameter outranks a signature break that `tsc` alread
   edits made by a coding agent.
 - Preview a GitHub pull request without a checkout, or check out its branch for
   analysis using the editor's language server. A no-checkout preview searches the
-  files supplied by the PR and cannot establish callers outside those files.
+  files supplied by the PR and cannot establish callers outside those files; it analyses
+  TypeScript and JavaScript only.
 - Use the **Changes** view to inspect findings, open diffs, and navigate to callers.
   **Details** below it shows your review progress and, for a change that needs a look,
   why. Changed files are listed worst first; **View as tree** (title bar, or
@@ -174,8 +218,9 @@ repo they were captured against, so they are gitignored. Regenerate locally with
 
 ## Limitations
 
-1. **TypeScript / JavaScript only** for signature and throw analysis. The caller graph is
-   multi-language through the editor's call-hierarchy API; the diff-side parsing is not.
+1. **TypeScript, JavaScript and Go only.** Go is analysed in the editor, with the Go
+   extension; previews and the CLI analyse TypeScript and JavaScript only. Throw analysis
+   is TypeScript and JavaScript only. See [Languages](#languages).
 2. **Cross-service edges do not exist statically.** HTTP, queue and workflow boundaries
    cannot be resolved, and shared type names are not call edges.
 3. **Full project analysis may require the project's dependencies and language server.**
@@ -192,7 +237,7 @@ repo they were captured against, so they are gitignored. Regenerate locally with
 
 ## Roadmap
 
-- Extend detailed change analysis beyond TypeScript and JavaScript.
+- Python and Java, each as a language provider (see `docs/MULTI_LANGUAGE_PLAN.md`).
 - Add filters for untested blast radius and changes crossing project boundaries.
 - Export the impact tree as a PR comment.
 

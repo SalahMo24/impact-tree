@@ -5,7 +5,7 @@
 // registered after TypeScript and owns `.go` files.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { LANGUAGES, languageFor, isSourcePath, isTestPath } = require('../src/languages');
+const { LANGUAGES, languageFor, isSourcePath, isTestPath, unsupportedLanguageOf } = require('../src/languages');
 const diff = require('../src/engine/diff');
 
 // The rules as they were in src/engine/diff.js, kept here as the oracle.
@@ -72,4 +72,12 @@ test('TypeScript marks nothing as generated yet', () => {
 test('diff.js still exports SOURCE_EXT for its existing users', () => {
   assert.ok(diff.SOURCE_EXT instanceof RegExp);
   assert.equal(diff.SOURCE_EXT.test('a/b.ts'), true);
+});
+
+test('a common language no provider analyses is named; a handled or unknown file is not', () => {
+  for (const [p, name] of [['svc/app.py', 'Python'], ['stubs/x.pyi', 'Python'], ['A.java', 'Java'], ['b.kt', 'Kotlin'],
+    ['c.cs', 'C#'], ['d.rb', 'Ruby'], ['e.rs', 'Rust'], ['f.php', 'PHP'], ['g.swift', 'Swift'], ['h.c', 'C'], ['i.hpp', 'C++'], ['j.scala', 'Scala']]) {
+    assert.equal(unsupportedLanguageOf(p), name, p);
+  }
+  for (const p of ['a.go', 'a.ts', 'a.d.ts', 'README.md', 'Makefile', 'go.mod']) assert.equal(unsupportedLanguageOf(p), null, p);
 });

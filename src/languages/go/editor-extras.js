@@ -18,10 +18,17 @@
 //   with "no package metadata for file …" (G0, item 3); `explainIncomplete` says so in the
 //   reviewer's words. Callers were not searched: the answer is incomplete, and retrying
 //   does not help until the build flags change.
-// - Interfaces need nothing here: gopls lists a method's callers through an interface
-//   along with its direct callers (G0, item 3), so an implementing method's answer is not
-//   missing them.
+// - Interfaces. gopls lists a method's callers through an interface declared in the
+//   workspace along with its direct callers (G0, item 3). It does not list calls through an
+//   interface declared outside it (G7: `(telemetryDisablerTransport).RoundTrip`, an
+//   `http.RoundTripper`, had six such callers, one in the repository, and its answer read
+//   complete), and calls from outside the repository can never be listed. So for a method,
+//   `moreCallers` asks the server for its implementations (the interface methods it
+//   implements and the other methods implementing them): one outside the repository makes
+//   the answer incomplete with `implements-outside-interface`. An implementations query
+//   that fails or gives no answer makes it incomplete too, with that reason.
 
+const path = require('path');
 const { isGoCallSite } = require('./call-sites');
 const { readTextOfOffsets } = require('../../engine/textpos');
 
@@ -81,21 +88,75 @@ function filterValueUses(callers, readText) {
  */
 const explainGoIncomplete = (reason) => (NOT_IN_BUILD.test(reason) ? NOT_IN_BUILD_REASON : null);
 
+// Why a method's answer is incomplete when it shares an interface with code outside the
+// repository (see the header).
+const OUTSIDE_INTERFACE_REASON = 'implements-outside-interface';
+
+/**
+ * Whether the declaration whose name is at `pos` is a method: its line, up to the name,
+ * reads `func (`. Pure.
+ * @param {string} text @param {number} pos
+ */
+function isMethodAt(text, pos) {
+  const lineStart = text.lastIndexOf('\n', pos - 1) + 1;
+  return /^\s*func\s*\(/.test(text.slice(lineStart, pos));
+}
+
+/**
+ * Whether `file` (absolute) is outside `repoRoot` (absolute).
+ * @param {string} repoRoot @param {string} file
+ */
+const outsideRepo = (repoRoot, file) => {
+  const rel = path.relative(repoRoot, file);
+  return rel === '' ? false : rel.startsWith('..') || path.isAbsolute(rel);
+};
+
+/**
+ * Why a method's callers may be missing calls through an interface, or null. Never rejects.
+ * Asks only for a method in a readable file, and only when `services` and `repoRoot` are
+ * known (the editor's resolver always gives both; a test may give neither).
+ * @param {{ services: import('../types').LanguageServices|null, repoRoot: string|null,
+ *   readText: (file: string) => string|null, trace: (message: string) => void }} env
+ * @param {string} file @param {number} pos
+ * @returns {Promise<string|null>}
+ */
+async function interfaceReason({ services, repoRoot, readText, trace }, file, pos) {
+  if (!services || !repoRoot) return null;
+  const text = readText(file);
+  if (typeof text !== 'string' || !isMethodAt(text, pos)) return null;
+  /** @type {import('../types').ServerLocation[]|null} */
+  let locations;
+  try {
+    locations = await services.implementations({ file, side: 'head' }, pos);
+  } catch (e) {
+    const message = e && typeof e === 'object' && 'message' in e ? String(e.message) : String(e);
+    return `the interfaces it implements could not be listed: ${message}`;
+  }
+  if (locations == null) return 'the interfaces it implements could not be listed (no answer)';
+  const outside = locations.filter((l) => outsideRepo(repoRoot, l.file));
+  if (!outside.length) return null;
+  trace(`go: ${file}@${pos} shares an interface with ${outside.length} method(s) outside the repository, e.g. ${outside[0].file}`);
+  return OUTSIDE_INTERFACE_REASON;
+}
+
 /**
  * Go's caller extras. Holds no state between queries: each query keeps whether it saw a
  * value use, so `clear()` has nothing to drop.
- * @param {{ trace?: (message: string) => void, readText?: (file: string) => string|null }} [options]
- *   `readText` (tests): the caller file's text; by default through src/engine/textpos.js,
- *   the text the sites' offsets were converted from, up to MAX_CALLER_FILE_BYTES.
+ * @param {{ trace?: (message: string) => void, readText?: (file: string) => string|null,
+ *   services?: import('../types').LanguageServices|null, repoRoot?: string|null }} [options]
+ *   `readText` (tests): a file's text; by default through src/engine/textpos.js, the text
+ *   the sites' offsets were converted from, up to MAX_CALLER_FILE_BYTES. `services` and
+ *   `repoRoot`: where a method's implementations are asked and which of them are outside
+ *   the repository; without either, no method is checked.
  * @returns {import('../types').EditorCallerExtras}
  */
-function createGoEditorExtras({ trace = () => {}, readText = (file) => readTextOfOffsets(file, { maxBytes: MAX_CALLER_FILE_BYTES }) } = {}) {
+function createGoEditorExtras({ trace = () => {}, readText = (file) => readTextOfOffsets(file, { maxBytes: MAX_CALLER_FILE_BYTES }), services = null, repoRoot = null } = {}) {
   return {
     // Go never suppresses a query (`isSuppressed` is always false).
     suppressedReason: 'caller query not asked',
     // Callers dropped for using the function only as a value.
     droppedStat: 'valueUsesDropped',
-    query() {
+    query(file, pos) {
       let sawValueUse = false;
       return {
         isSuppressed: () => false,
@@ -107,8 +168,13 @@ function createGoEditorExtras({ trace = () => {}, readText = (file) => readTextO
           }
           return { kept, dropped };
         },
-        // Asked after `filter`; nothing to search, only whether the answer is complete.
-        moreCallers: async () => ({ callers: [], incompleteReason: sawValueUse ? 'referenced-as-value' : null }),
+        // Asked after `filter`; nothing to search, only whether the answer is complete. A
+        // value use is the stronger reason (its calls cannot be followed at all), so a
+        // method used as a value is not asked about its interfaces.
+        moreCallers: async () => ({
+          callers: [],
+          incompleteReason: sawValueUse ? 'referenced-as-value' : await interfaceReason({ services, repoRoot, readText, trace }, file, pos),
+        }),
       };
     },
     explainIncomplete: explainGoIncomplete,
@@ -119,4 +185,4 @@ function createGoEditorExtras({ trace = () => {}, readText = (file) => readTextO
   };
 }
 
-module.exports = { createGoEditorExtras, filterValueUses, explainGoIncomplete, MAX_CALLER_FILE_BYTES, NOT_IN_BUILD_REASON };
+module.exports = { createGoEditorExtras, filterValueUses, explainGoIncomplete, isMethodAt, MAX_CALLER_FILE_BYTES, NOT_IN_BUILD_REASON, OUTSIDE_INTERFACE_REASON };

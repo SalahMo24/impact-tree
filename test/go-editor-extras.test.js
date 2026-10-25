@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { createGoEditorExtras, filterValueUses, explainGoIncomplete, NOT_IN_BUILD_REASON, MAX_CALLER_FILE_BYTES } = require('../src/languages/go/editor-extras');
+const { createGoEditorExtras, filterValueUses, explainGoIncomplete, isMethodAt, NOT_IN_BUILD_REASON, OUTSIDE_INTERFACE_REASON, MAX_CALLER_FILE_BYTES } = require('../src/languages/go/editor-extras');
 const { goProvider } = require('../src/languages/go/provider');
 const textpos = require('../src/engine/textpos');
 
@@ -78,6 +78,47 @@ test('a value use makes the answer incomplete as referenced-as-value; without on
   const next = extras.query('/r/t.go', 5);
   assert.equal((await /** @type {Function} */ (next.moreCallers)()).incompleteReason, null);
   assert.equal(await extras.unseenUsers('/r/t.go', 5), null);
+});
+
+test('a method sharing an interface with code outside the repository may be missing callers (G7)', async () => {
+  // cli/cli PR #14104: `(telemetryDisablerTransport).RoundTrip` implements net/http's
+  // RoundTripper; gopls listed its direct callers only, and the answer read complete.
+  const methodText = 'package api\n\nfunc (t *transport) RoundTrip(r *Request) (*Response, error) { return nil, nil }\n';
+  const funcText = 'package api\n\nfunc helper() {}\n';
+  const files = /** @type {Record<string, string>} */ ({ '/repo/api/t.go': methodText, '/repo/api/f.go': funcText });
+  const methodPos = methodText.indexOf('RoundTrip');
+  /** @type {Array<[string, number]>} */
+  const asked = [];
+  /** @param {(() => Promise<any>)} answer */
+  const servicesAnswering = (answer) => /** @type {any} */ ({ implementations: async (/** @type {any} */ doc, /** @type {number} */ pos) => { asked.push([doc.file, pos]); return answer(); } });
+  const more = async (/** @type {any} */ services, file = '/repo/api/t.go', pos = methodPos) => {
+    const extras = createGoEditorExtras({ readText: (f) => files[f] ?? null, services, repoRoot: '/repo' });
+    const query = extras.query(file, pos);
+    query.filter([]);
+    return (await /** @type {Function} */ (query.moreCallers)()).incompleteReason;
+  };
+
+  const outside = servicesAnswering(async () => [{ file: '/repo/api/other.go', start: 1, end: 2 }, { file: '/goroot/src/net/http/client.go', start: 1, end: 2 }]);
+  assert.equal(await more(outside), OUTSIDE_INTERFACE_REASON);
+  assert.deepEqual(asked, [['/repo/api/t.go', methodPos]]);
+  assert.equal(await more(servicesAnswering(async () => [{ file: '/repo/api/other.go', start: 1, end: 2 }])), null, 'only repository interfaces: gopls lists those calls');
+  assert.equal(await more(servicesAnswering(async () => [])), null);
+  assert.equal(await more(servicesAnswering(async () => null)), 'the interfaces it implements could not be listed (no answer)');
+  assert.equal(await more(servicesAnswering(async () => { throw new Error('timed out'); })), 'the interfaces it implements could not be listed: timed out');
+  asked.length = 0;
+  assert.equal(await more(outside, '/repo/api/f.go', funcText.indexOf('helper')), null, 'a function is not asked');
+  assert.equal(await more(outside, '/repo/api/missing.go', 5), null, 'an unreadable target is not asked');
+  assert.deepEqual(asked, []);
+  assert.equal(await more(null), null, 'no services: nothing is checked');
+
+  // A value use is the stronger reason; the interfaces are not asked.
+  const extras = createGoEditorExtras({ readText: (f) => files[f] ?? texts[/** @type {keyof typeof texts} */ (f)] ?? null, services: outside, repoRoot: '/repo' });
+  const query = extras.query('/repo/api/t.go', methodPos);
+  query.filter([rows()[1]]);
+  assert.equal((await /** @type {Function} */ (query.moreCallers)()).incompleteReason, 'referenced-as-value');
+  assert.deepEqual(asked, []);
+  assert.equal(isMethodAt('func (c *Config) Reload() error', 17), true);
+  assert.equal(isMethodAt('func Reload() error', 5), false);
 });
 
 test('"no package metadata" is explained as a file outside the active build; other failures are not', () => {
