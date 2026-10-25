@@ -12,7 +12,7 @@
 const fs = require('node:fs');
 const { fileURLToPath } = require('node:url');
 const { isTestFile } = require('../../src/engine/diff');
-const { callersFromHierarchy, queryHierarchy, answerOf } = require('../../src/languages/callers-from-hierarchy');
+const { callersFromHierarchy, queryHierarchy, applyCallerExtras } = require('../../src/languages/callers-from-hierarchy');
 
 /**
  * @param {ReturnType<typeof import('./gopls-services').createGoplsServices>} gopls Started.
@@ -77,13 +77,11 @@ function languageServicesOver(gopls, { repoRoot }) {
 
 /**
  * A caller resolver (src/engine/caller-contract.js) over `services`, with the shared
- * default `callersFromHierarchy`: what the editor resolver does for a Go target, without
- * its cache, cold phase or stats. `extras` (a language's `EditorCallerExtras`, such as
- * `goProvider.editorCallers(...)`) are applied in the editor resolver's order
- * (src/resolver-vscode.js `incomingWithStatus`): an unanswered query's reason through
- * `explainIncomplete` (explained: not retryable), then `filter`, then `moreCallers`, whose
- * `incompleteReason` makes the answer incomplete. Suppressed queries and unseen users are
- * not applied (Go has neither).
+ * default `callersFromHierarchy`: what the editor resolver does for a Go or Python target,
+ * without its cache, cold phase or stats. `extras` (a language's `EditorCallerExtras`, such
+ * as `goProvider.editorCallers(...)`) are applied by the same function the editor resolver
+ * uses (`applyCallerExtras`, src/languages/callers-from-hierarchy.js). Suppressed queries
+ * and unseen users are not applied (Go and Python have neither).
  * @param {import('../../src/languages/types').LanguageServices} services
  * @param {{ extras?: import('../../src/languages/types').EditorCallerExtras|null }} [options]
  */
@@ -97,18 +95,9 @@ function createHierarchyResolver(services, { extras = null } = {}) {
   const incomingWithStatus = async (file, pos, withTests = true) => {
     const query = extras ? extras.query(file, pos) : null;
     const hierarchy = await queryHierarchy(services, headDoc(file), pos);
-    if (!hierarchy.ready) {
-      const explained = extras && extras.explainIncomplete ? extras.explainIncomplete(hierarchy.reason, file, pos) : null;
-      if (explained) return { callers: [], complete: false, reason: explained };
-      return answerOf(hierarchy, withTests);
-    }
-    let { callers } = answerOf(hierarchy, withTests);
-    if (query && callers.length) callers = query.filter(callers).kept;
-    const more = query && query.moreCallers ? await query.moreCallers() : null;
-    if (more) callers = callers.concat(more.callers.filter((c) => withTests || !c.test));
-    return more && more.incompleteReason
-      ? { callers, complete: false, reason: more.incompleteReason }
-      : { callers, complete: true };
+    const applied = await applyCallerExtras(hierarchy, { extras, query, file, pos, withTests });
+    if (applied.stale) throw new Error('harness: a query cannot be stale here (no clear())');
+    return applied.answer;
   };
   return {
     kind: 'harness-callhierarchy',

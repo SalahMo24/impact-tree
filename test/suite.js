@@ -35,6 +35,7 @@ const SUITE = [
   { file: 'test/python-editor-extras.test.js', tier: 'quick' },  // 0.3s
   { file: 'test/not-analysed.test.js', tier: 'full' },
   { file: 'test/go-call-sites.test.js', tier: 'quick' },  // 0.1s
+  { file: 'test/apply-caller-extras.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/go-editor-extras.test.js', tier: 'quick' },  // 0.3s
   { file: 'test/server-symbols.test.js', tier: 'quick' },  // 4.6s
   { file: 'test/go-review-identity.test.js', tier: 'quick' },  // 4.1s
