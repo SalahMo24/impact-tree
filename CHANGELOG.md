@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **The base branch defaults to the remote's own default** (`origin/HEAD`), so a repository
+  whose default branch is `master` reviews without a setting; it had stopped with "cannot
+  resolve origin/main". A base branch set in `impactTree.baseBranch` is used as given, and a
+  missing one now names the remote's default branch.
 - **Python support** in the editor, through its Python language server (Pyright, from
   Pylance or Cursor's Python extension): changed functions and methods, including the
   definitions Pyright leaves out of its outline (a property getter with a setter, `@overload`

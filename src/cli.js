@@ -14,7 +14,7 @@ if (flag('help')) {
   --repo <path>        repo root (default: cwd)
   --mode <m>           ${Object.keys(MODES).join(' | ')}   (default: pr = Branch vs base)
 ${Object.entries(MODES).map(([k, v]) => `                         ${k.padEnd(11)} ${v.label}: ${v.desc}`).join('\n')}
-  --base <ref>         base branch for pr/branch modes (default: main; resolved to <remote>/<ref>)
+  --base <ref>         base branch for pr/branch modes (default: the remote's default branch, origin/HEAD; resolved to <remote>/<ref>)
   --remote <name>      git remote the base branch lives on (default: origin)
   --checkpoint <sha>   base for checkpoint mode
   --fetch              git fetch the base before resolving
@@ -35,7 +35,7 @@ const t0 = Date.now();
 let result;
 try {
   result = await analyze(repo, {
-    mode: arg('mode', 'pr'), base: arg('base', 'main'), remote: arg('remote', 'origin'), checkpoint: arg('checkpoint'),
+    mode: arg('mode', 'pr'), base: arg('base', ''), remote: arg('remote', 'origin'), checkpoint: arg('checkpoint'),
     fetch: flag('fetch'), allowLocalBase: flag('allow-local-base'),
     depth: Number(arg('depth', DEFAULTS.depth)), treeDepth: Number(arg('tree-depth', DEFAULTS.treeDepth)),
     blastDepth: Number(arg('blast-depth', 1)), rankedRoots,

@@ -200,7 +200,7 @@ checkpoint, from a recorded SHA).
 | setting | default | |
 |---|---|---|
 | `impactTree.mode` | `pr` | which diff to review: `pr` = Branch vs base, `branch` = Branch + uncommitted, `working` = Uncommitted (agent), `checkpoint` = Since checkpoint |
-| `impactTree.baseBranch` | `main` | always resolved to `origin/<branch>` |
+| `impactTree.baseBranch` | empty: the remote's default branch (`origin/HEAD`, such as `main` or `master`) | always resolved to `origin/<branch>` |
 | `impactTree.iconMode` | `symbol` | `file` glyphs or `symbol` kinds on code rows |
 | `impactTree.rowDetail` | `hover` | a change row's verdict words and kinds in the tooltip, or `inline` |
 | `impactTree.prewarm` | `true` | index at startup so the first run is fast |
