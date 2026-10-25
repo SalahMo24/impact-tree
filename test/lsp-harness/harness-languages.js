@@ -1,11 +1,12 @@
 'use strict';
 
 /**
- * The harness's gopls services (./gopls-services.js) as the pipeline's `LanguageServices`
+ * The harness's stdio server services (./stdio-server-services.js: gopls, Pyright) as the
+ * pipeline's `LanguageServices`
  * (src/languages/types.js), and a small caller resolver over them, so `analyze()` runs
- * against a real gopls without the editor (`languageServices` and `makeResolver`).
+ * against a real gopls or Pyright without the editor (`languageServices` and `makeResolver`).
  * Test code only. Head documents are read from disk; base documents are asked through a
- * temporary copy (gopls-services' `documentSymbols`). Nothing here turns a failure into
+ * temporary copy (stdio-server-services' `documentSymbols`). Nothing here turns a failure into
  * an empty answer: a rejection propagates, `null` stays `null`.
  */
 
@@ -15,11 +16,11 @@ const { isTestFile } = require('../../src/engine/diff');
 const { callersFromHierarchy, queryHierarchy, applyCallerExtras } = require('../../src/languages/callers-from-hierarchy');
 
 /**
- * @param {ReturnType<typeof import('./gopls-services').createGoplsServices>} gopls Started.
+ * @param {ReturnType<typeof import('./stdio-server-services').createStdioServerServices>} server Started.
  * @param {{ repoRoot: string }} options Decides which callers are tests.
  * @returns {import('../../src/languages/types').LanguageServices}
  */
-function languageServicesOver(gopls, { repoRoot }) {
+function languageServicesOver(server, { repoRoot }) {
   /** @param {{ file: string, side: 'head'|'base', text?: string }} doc */
   const withText = (doc) => {
     if (doc.side === 'base') {
@@ -37,14 +38,14 @@ function languageServicesOver(gopls, { repoRoot }) {
   const toServerLocations = (locations) => (locations === null ? null
     : locations.map((l) => ({ file: fileURLToPath(l.uri), start: l.start, end: l.end })));
   return {
-    available: (languageId) => gopls.available(languageId),
-    documentSymbols: async (doc) => /** @type {any} */ (await gopls.documentSymbols(/** @type {any} */ (withText(/** @type {any} */ (doc))))),
+    available: (languageId) => server.available(languageId),
+    documentSymbols: async (doc) => /** @type {any} */ (await server.documentSymbols(/** @type {any} */ (withText(/** @type {any} */ (doc))))),
     async prepareCallHierarchy(doc, pos) {
       const d = headOnly(doc);
-      return d ? gopls.prepareCallHierarchy(/** @type {any} */ (d), pos) : null;
+      return d ? server.prepareCallHierarchy(/** @type {any} */ (d), pos) : null;
     },
     async incomingCalls(item) {
-      const calls = await gopls.incomingCalls(/** @type {any} */ (item));
+      const calls = await server.incomingCalls(/** @type {any} */ (item));
       if (calls === null) return null;
       return calls.map((c) => {
         const file = fileURLToPath(c.from.uri);
@@ -56,7 +57,7 @@ function languageServicesOver(gopls, { repoRoot }) {
     },
     async references(doc, pos) {
       const d = headOnly(doc);
-      return d ? toServerLocations(await gopls.references(/** @type {any} */ (d), pos)) : null;
+      return d ? toServerLocations(await server.references(/** @type {any} */ (d), pos)) : null;
     },
     // LSP allows `null` for "no implementations", and gopls sends it for a method that
     // implements no interface. VS Code's executeImplementationProvider turns that into [],
@@ -65,12 +66,12 @@ function languageServicesOver(gopls, { repoRoot }) {
     async implementations(doc, pos) {
       const d = headOnly(doc);
       if (!d) return null;
-      return toServerLocations(await gopls.implementations(/** @type {any} */ (d), pos)) ?? [];
+      return toServerLocations(await server.implementations(/** @type {any} */ (d), pos)) ?? [];
     },
     // `textDocument/definition` (Python's duck-typing check asks it; Go's extras do not).
     async definitions(doc, pos) {
       const d = headOnly(doc);
-      return d ? toServerLocations(await gopls.definition(/** @type {any} */ (d), pos)) : null;
+      return d ? toServerLocations(await server.definition(/** @type {any} */ (d), pos)) : null;
     },
   };
 }

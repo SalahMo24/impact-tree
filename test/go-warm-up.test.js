@@ -49,7 +49,7 @@ test('a failed symbol request is logged and the analysis goes on without warming
     env.hooks.warm = false;
     env.hooks.localPrepared = goChange(env);
     env.hooks.localResult = goChange(env);
-    env.hooks.goSymbols = () => { throw new Error('gopls crashed'); };
+    env.hooks.serverSymbols = () => { throw new Error('gopls crashed'); };
     await env.refresh();
     await until(() => env.seen.analyze.length === 1, 'the analysis ran');
     assert.deepEqual(env.seen.warmUps, []);
@@ -65,7 +65,7 @@ test('an editor without Go support is not warmed and gets no second notice', asy
   await withEnv(async (env) => {
     env.hooks.warm = false;
     env.hooks.localPrepared = goChange(env);
-    env.hooks.goAvailable = () => ({ ok: false, reason: 'the editor has no support for go installed' });
+    env.hooks.serverAvailable = () => ({ ok: false, reason: 'the editor has no support for go installed' });
     await env.refresh();
     await until(() => env.seen.analyze.length === 1, 'the analysis ran');
     assert.deepEqual(env.seen.servicesAsked, [['available', 'go']], 'no symbols are asked for');

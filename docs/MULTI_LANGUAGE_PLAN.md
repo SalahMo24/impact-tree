@@ -616,19 +616,30 @@ services adapter do not change. What differs:
 TypeScript, Go and Python fit the provider model: Python was added almost entirely as
 new files under `src/languages/python/`, with the pipeline (`src/engine/analyze.js`)
 unchanged, and the TypeScript baseline and Go end to end stayed identical. The model stays.
-Three small cleanups are in progress (A1–A3); A4–A6 are decisions for the owner.
+Three small cleanups are done (A1–A3); A4–A6 are decisions for the owner.
 
-### Cleanups (in progress)
+### Cleanups (done 2026-10-25)
+
+Checked unchanged before and after: `npm test`, the TypeScript baseline, Go's end to end on
+cli/cli #14752, Python's end to end on httpx #1600 (output identical), `py-verify.js` on
+the 10 httpx PRs (every per-PR result identical), and the signature oracle (httpx
+1134/1134, standard library 61098/61098).
 
 - **A1. One caller-extras step.** The order in which a language's `EditorCallerExtras`
   apply to a call-hierarchy answer (`explainIncomplete`, `filter`, `moreCallers`) is written
-  once, shared by `src/resolver-vscode.js` and the harness (`test/lsp-harness/harness-languages.js`),
-  so G7 and P7 verify the code the editor runs.
+  once (`applyCallerExtras` in `src/languages/callers-from-hierarchy.js`), shared by
+  `src/resolver-vscode.js` and the harness (`test/lsp-harness/harness-languages.js`), so G7
+  and P7 verify the code the editor runs. The harness now de-duplicates `moreCallers`'
+  callers as the editor does.
 - **A2. Shared text helpers, one Python lexer.** Line starts and offset → line, path
-  slashes and error messages in one module; one Python string/comment scanner for the
-  header parser, the definition recovery and the caller checks (they disagreed on f-strings).
-- **A3. Go-first leftovers.** The value-use log line names the language; the harness's
-  server module and the extension tests' fake symbols hook no longer carry Go's name.
+  slashes and error messages in `src/languages/text.js`; one Python string/comment scanner,
+  `src/languages/python/lexer.js`, for the header parser, the definition recovery and the
+  caller checks. Fixed on the way: the caller checks ended a raw f-string at an escaped
+  quote, and the header parser now reads a 3.12 f-string with its own quote in a field.
+- **A3. Go-first leftovers.** The value-use log line names Go and Python; the harness's
+  stdio services are `stdio-server-services.js` with thin `gopls-services.js` and
+  `pyright-services.js`; the extension tests' fake hooks are `serverSymbols` /
+  `serverAvailable`.
 
 ### Decisions for the owner
 

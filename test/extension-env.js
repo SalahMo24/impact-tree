@@ -50,7 +50,7 @@ const goSymbol = (name, kind, declaration) => {
 const GO_SYMBOLS = [goSymbol('T', 23, 'type T struct{}'), goSymbol('Warm', 12, 'func Warm() int { return 1 }')];
 
 // The Python change `changedSource: 'python'` commits; its symbols are set per test through
-// `hooks.goSymbols` (the one symbols hook of the fake services, whatever the language).
+// `hooks.serverSymbols` (the one symbols hook of the fake services, for every language).
 const PY_SOURCE = 'class T:\n    x = 1\n\n    def warm(self):\n        return 1\n';
 const PY_SYMBOLS = [
   { name: 'T', detail: '', kind: 5, range: { start: 0, end: PY_SOURCE.length - 1 }, selectionRange: { start: 6, end: 7 }, children: [
@@ -176,7 +176,7 @@ function fakeWebviewPanel(viewType, title, showOptions, options = {}) {
 // never moves. `changedSource` puts a committed TypeScript change on a feature branch,
 // which is what readiness needs before it will warm the language server; `'go'` puts a
 // Go change there instead (with `go.mod`), warmed through the resolver's `services`, whose
-// answers a test sets in `hooks.goAvailable` and `hooks.goSymbols`. `clock` (a fake
+// answers a test sets in `hooks.serverAvailable` and `hooks.serverSymbols`. `clock` (a fake
 // clock, test/fake-clock.js) is handed to activate() through its test seam, so the
 // activation's timers and deadlines move only when the test advances it.
 function createEnv({ prewarm = false, changedSource = false, memento = new Map(), signIn = null, graphql = null, settings = {},
@@ -220,7 +220,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   const git = { fetches: [], fetchRemotes: [], checkouts: [], calls: [] };
   const holds = { fetch: gates(), modal: gates(), remote: gates(), analyze: gates(), callers: gates(), warmUp: gates() };
   const failures = new Map();
-  const hooks = { goAvailable: () => ({ ok: true }), goSymbols: () => GO_SYMBOLS, beforeCheckout: null, headOf: shaFor, remoteResult: (pr) => previewResult(pr), localResult: (o) => localResult(o),
+  const hooks = { serverAvailable: () => ({ ok: true }), serverSymbols: () => GO_SYMBOLS, beforeCheckout: null, headOf: shaFor, remoteResult: (pr) => previewResult(pr), localResult: (o) => localResult(o),
     warm: !changedSource, clearResolver: () => {}, onCommand: null };
   const captured = { tree: null, view: null, decorations: null, checkbox: null, sources: null, webviews: new Map(),
     selection: [], cursor: [], treeVisibility: [], lenses: null };
@@ -377,8 +377,8 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
         expectReload: () => { seen.reloads = (seen.reloads || 0) + 1; },
         warmUp: (file, pos) => { seen.warmUps.push(file); seen.warmUpAt.push({ file, pos }); return holds.warmUp.enter(() => true); },
         services: {
-          available: async (languageId) => { seen.servicesAsked.push(['available', languageId]); return hooks.goAvailable(); },
-          documentSymbols: async (doc) => { seen.servicesAsked.push(['documentSymbols', doc.file, doc.side]); return hooks.goSymbols(doc); },
+          available: async (languageId) => { seen.servicesAsked.push(['available', languageId]); return hooks.serverAvailable(); },
+          documentSymbols: async (doc) => { seen.servicesAsked.push(['documentSymbols', doc.file, doc.side]); return hooks.serverSymbols(doc); },
         },
         clear: () => hooks.clearResolver(),
         stats: () => ({}),
