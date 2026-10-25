@@ -68,6 +68,17 @@ test('import forms: `import a.b as c`, `import a.b`, relative `from .m import x 
     ['pkg/sub/deep/u4.py:e', 'pkg/sub/u3.py:d', 'pkg/u1.py:a', 'pkg/u2.py:b', 'pkg/u5.py:f', 'pkg/u6.py:g', 'pkg/u7.py:h']);
 });
 
+test('A8.2: `from . import sub` in a package\'s __init__ (under an if) is the submodule: pkg.sub.f( and a re-export through it resolve', () => {
+  const { callers } = indexOf({
+    'pkg/__init__.py': 'import typing\n\nif typing.TYPE_CHECKING:\n    from . import dataclasses\n',
+    'pkg/fields.py': 'def Field():\n    return 1\n',
+    'pkg/dataclasses.py': 'import dataclasses\nfrom .fields import Field\n\ndef dataclass():\n    return 2\n',
+    'tests/test_pkg.py': 'import pkg\n\n@pkg.dataclasses.dataclass()\nclass A:\n    a: int = pkg.dataclasses.Field()\n\ndef test_b():\n    return pkg.dataclasses.dataclass()\n',
+  });
+  assert.deepEqual(callers('pkg/dataclasses.py', 'dataclass').labels, ['tests/test_pkg.py:test_b', 'tests/test_pkg.py:test_pkg.py']);
+  assert.deepEqual(callers('pkg/fields.py', 'Field').labels, ['tests/test_pkg.py:test_pkg.py'], 'a decorator and a class body are the module\'s code');
+});
+
 test('a src/ layout: imports by the package name and relative imports resolve', () => {
   const { callers } = indexOf({
     'src/lib/__init__.py': 'from ._core import make\n',
