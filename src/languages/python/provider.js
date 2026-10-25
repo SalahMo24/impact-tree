@@ -8,9 +8,10 @@
 // out (a property getter that has a setter, `@overload` stubs: P0) recovered from the text,
 // and which project a file belongs to (`pythonProjectOf`, ./rules.js).
 //
-// Callers (P4) and the server's warm-up (P5) are not here yet: the editor's resolver asks
-// the call hierarchy with the shared defaults for a Python target (no `editorCallers`), and
-// readiness skips Python's warm-up (no `warmUpTarget`).
+// Callers (P4): the shared call-hierarchy default plus Python's extras (./editor-extras.js:
+// duplicated sites, value uses, protocol methods, decorator registration, duck typing).
+// The server's warm-up (P5) is not here yet: readiness skips Python's warm-up (no
+// `warmUpTarget`).
 //
 // Engine modules and the header parser are required where they are used: the registry
 // (../index.js) loads this file, and src/engine/diff.js loads the registry.
@@ -402,6 +403,9 @@ const pythonProvider = Object.freeze({
   ...pythonRules,
   needsServer: true,
   prepare,
+  editorCallers: ({ services, repoRoot, trace, clock }) => require('./editor-extras').createPythonEditorExtras({
+    services, repoRoot, trace, ...(clock ? { clock } : {}),
+  }),
   serverLabel: 'the Python language server (Pyright)',
 });
 

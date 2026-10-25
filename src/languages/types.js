@@ -212,10 +212,12 @@
  * @property {(file: string, pos: number) => Promise<string|null>} unseenUsers Asked before
  *   "none": the reason the answer is unknown after all, or null. Never rejects.
  * @property {() => void} clear A new analysis starts: drop what was learnt.
- * @property {(reason: string) => string|null} [explainIncomplete] For a query the server did
- *   not answer (a rejection, no item): the reason to show instead of the server's, when the
- *   language knows what that failure means (Go: a file outside the active build), or null
- *   to keep the server's reason. An explained failure is a lasting condition of the
+ * @property {(reason: string, file: string, pos: number) => string|null} [explainIncomplete]
+ *   For a query the server did not answer (a rejection, no item, no incoming-call result)
+ *   at `pos` in `file`: the reason to show instead of the server's, when the language knows
+ *   what that failure means (Go: a file outside the active build; Python: a protocol method
+ *   or a decorator-registered function, whose callers no answer could list), or null to
+ *   keep the server's reason. Synchronous. An explained failure is a lasting condition of the
  *   workspace, so the answer is incomplete and not retryable. Absent: never explained.
  */
 

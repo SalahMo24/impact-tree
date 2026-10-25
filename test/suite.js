@@ -32,6 +32,7 @@ const SUITE = [
   { file: 'test/python-symbols.test.js', tier: 'quick' },  // 6s
   { file: 'test/go-signature.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/python-signature.test.js', tier: 'quick' },  // 0.2s
+  { file: 'test/python-editor-extras.test.js', tier: 'quick' },  // 0.3s
   { file: 'test/not-analysed.test.js', tier: 'full' },
   { file: 'test/go-call-sites.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/go-editor-extras.test.js', tier: 'quick' },  // 0.3s

@@ -110,7 +110,7 @@ function createVscodeResolver({
     const { ready } = answer;
     // A failure the language explains (Go: a file outside the active build) shows its
     // explanation, and asking again does not help.
-    const explained = !answer.ready && languageExtras?.explainIncomplete ? languageExtras.explainIncomplete(answer.reason) : null;
+    const explained = !answer.ready && languageExtras?.explainIncomplete ? languageExtras.explainIncomplete(answer.reason, file, pos) : null;
     const reason = answer.ready ? undefined : explained || answer.reason;
     const retryable = !answer.ready && !explained && answer.retryable;
     queryStates.set(key, { ready, reason, isHandler, retryable });

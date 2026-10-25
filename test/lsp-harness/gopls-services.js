@@ -276,6 +276,15 @@ function createGoplsServices(options) {
       return convertLocations(result);
     },
 
+    /** @param {DocRef} doc @param {number} pos @returns {Promise<Location[]|null>} */
+    async definition(doc, pos) {
+      const uri = ensureOpen(doc);
+      const result = await client.request('textDocument/definition', {
+        textDocument: { uri }, position: offsetToPosition(doc.text, pos),
+      }, deadlineMs);
+      return convertLocations(result);
+    },
+
     /** Text of an opened or on-disk document, for printing evidence. @param {string} uri */
     textOfUri,
 

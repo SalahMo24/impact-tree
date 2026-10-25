@@ -2,7 +2,7 @@
 /**
  * P2 end to end: the real pipeline (`analyze()`) and Python provider against Pyright, on an
  * encode/httpx worktree, through the harness (base-side symbols via temporary files, callers
- * from the call hierarchy with the shared defaults: Python has no caller extras until P4).
+ * from the call hierarchy with the shared defaults plus Python's caller extras, P4).
  * A development script, not part of `npm test`: it needs Pyright (P-D1) and the worktree.
  *
  *   node test/lsp-harness/py-e2e.js <absolute path to httpx worktree> [--base base-1600] [--pyright path]
@@ -20,6 +20,8 @@ const path = require('node:path');
 const { analyze } = require('../../src/engine/analyze');
 const { createPyrightServices, DEFAULT_PYRIGHT } = require('./pyright-services');
 const { languageServicesOver, createHierarchyResolver } = require('./harness-languages');
+const { pythonProvider } = require('../../src/languages/python/provider');
+const { PROTOCOL_REASON } = require('../../src/languages/python/editor-extras');
 
 /** Whole run, cold Pyright included (P0: first answers within seconds). */
 const OVERALL_DEADLINE_MS = 5 * 60 * 1000;
@@ -70,7 +72,10 @@ async function main() {
       languageServices: services,
       makeResolver: (/** @type {{ language: string, component: string }} */ { language, component }) => {
         resolvers.push(`${language}:${component}`);
-        return createHierarchyResolver(services);
+        const extras = /** @type {NonNullable<typeof pythonProvider.editorCallers>} */ (pythonProvider.editorCallers)({
+          ts: null, services, repoRoot: repo, trace: process.env.PY_E2E_TRACE ? (/** @type {string} */ m) => console.error(`  trace ${m}`) : () => {}, filterInherited: false, onWarmupRetry: () => {},
+        });
+        return createHierarchyResolver(services, { extras });
       },
     });
     const rel = (/** @type {string} */ f) => path.relative(repo, f);
@@ -95,7 +100,21 @@ async function main() {
     const changed = result.allChanged.filter((c) => inPackage(c) && !c.added).map((c) => c.key);
     const added = result.allChanged.filter((c) => inPackage(c) && c.added).map((c) => c.key);
     const deleted = result.deleted.filter(inPackage).map((d) => d.key);
+    // Caller answers hand-checked against the code (grep in the worktree; see P4's report):
+    // - QueryParams.__hash__: called by `hash()`/dict keys only, never by name: protocol.
+    // - QueryParams.merge: `BaseClient._merge_queryparams` calls `QueryParams(...).merge(params)`.
+    // - BaseClient._merge_queryparams: called as `self._merge_queryparams(params)` in
+    //   `build_request` (typed `self`), no other `._merge_queryparams(` text: complete.
+    const byKey = new Map(result.allChanged.map((c) => [c.key, c]));
+    /** @param {string} key @param {(c: any) => boolean} ok @param {string} want */
+    const callerCheck = (key, ok, want) => {
+      const c = byKey.get(key);
+      return `check callers ${key} ${want}: ${c && ok(c) ? 'yes' : `NO (${c ? `${c.callerState}, ${c.callersComplete ? 'complete' : c.callersIncompleteReason}` : 'missing'})`}`;
+    };
     const lines = [
+      callerCheck('QueryParams.__hash__', (c) => !c.callersComplete && c.callersIncompleteReason === PROTOCOL_REASON, 'incomplete (protocol)'),
+      callerCheck('QueryParams.merge', (c) => c.callers.some((/** @type {any} */ x) => /_merge_queryparams/.test(x.label)), 'include BaseClient._merge_queryparams'),
+      callerCheck('BaseClient._merge_queryparams', (c) => c.callersComplete && c.callerState === 'resolved', 'complete'),
       `check changed: ${compare(EXPECTED_CHANGED, changed)}`,
       `check added: ${compare(EXPECTED_ADDED, added)}`,
       `check deleted: ${compare(EXPECTED_DELETED, deleted)}`,
