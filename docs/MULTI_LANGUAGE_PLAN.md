@@ -893,6 +893,117 @@ all 456 sites. Every Jedi caller we miss is on an answer marked incomplete. Fixe
 Limits left: `Cls.m(`, `Cls().m(`, `self.x.m(`, `list[Cls]`, `with … as x` receivers, f-string
 fields; bases depth-first, not the MRO; every unresolved `.m(` counted, string receivers too.
 
+## Part S: the preview as a language-blind pipeline, then Go in it (plan, 2026-10-26)
+
+Owner: plan now, implement in a new thread. The editor pipeline (`src/engine/analyze.js`) went
+through Part T: a language is a provider and the pipeline names none. The no-checkout PR
+preview (`src/engine/analyze-remote.js`) did not. It is TypeScript's pipeline with other
+languages added through a side door:
+- `isSourcePath = typescriptRules.handles` (line 28) and TypeScript's syntax index built
+  inline (`createSyntacticIndex`, line ~320);
+- every other language through `textLanguageOf` (a provider with `prepareSyntactic`),
+  grouped in `byTextLanguage`, its caller questions sent back by `routedResolver`;
+- per-language result fields (`callersNotComputed`, `callersSyntaxOnly`).
+Every new language therefore edits `analyze-remote.js` (Python did, A4/A8; Go would again).
+Part S finishes the provider pattern for the preview; Part G-A then adds Go as a provider
+change only.
+
+Not in scope (decide after S2): one pipeline for both modes (`analyze()` taking a file source,
+disk or GitHub, and the capabilities at hand, server or syntax). Cleanest end state, but it
+merges two pipelines with different budgets, fetching, cancellation and identity rules at
+once; S2 gets most of the benefit at a fraction of the risk.
+
+### Tasks
+
+- **S0. Record the preview's output before any change** (Sonnet). A dev script
+  `test/lsp-harness/preview-golden.js` runs `analyzeRemote` offline (a fake `gh` reading git
+  objects only, as `py-verify.js --preview` and t3-pr-snapshots.js do) on a fixed list of PRs
+  and writes each result normalised (no timings, sorted) to
+  `~/Projects/impact-tree-scratchpad/preview-golden/<repo>-<pr>.json`; `--compare` diffs
+  against them and exits 1 on any difference. PRs: the 14 TypeScript baseline cases' PRs
+  where they have a GitHub PR shape (t3code, hono, fixture), httpx #1600, #3741, #3319
+  (Python), cli/cli #14752 and one more Go PR (Go "not analysed"), one docs-only PR.
+- **S1. One contract for a syntax index.** `SyntacticIndex` typedef in
+  `src/languages/types.js`: `symbolAt(file, pos)`, `callersOfWithStatus({ file, className,
+  name, pos })` → `{ callers, incompleteReason }`, `unresolvedCallsTo({ name })`, plus `size`;
+  TypeScript's (`src/engine/syntactic-index.js`) and Python's
+  (`src/languages/python/syntactic-index.js`) both declared to implement it. No behaviour
+  change.
+- **S2. The preview loops over the registry.** TypeScript's preview analysis moves behind
+  `typescriptProvider.prepareSyntactic` (its index, `remote-config` module options and
+  packages, `createSyntacticResolver`, hints, the "pr-files-only" scope), as Python's is.
+  `analyzeRemote` keeps only what is the preview's own: listing and fetching the PR's files
+  under its budgets, the merge base, identity, diff lines, the limits note. It groups files
+  by `languageFor`, hands each provider its files, texts and the changed tests of its
+  language, and routes caller questions by the row's language (one map from language to
+  resolver, built from the providers' units; no `routedResolver` special case). Result:
+  `callersScope: [{ language, scope: 'pr-files' | 'not-computed' | …, note }]` replaces
+  `callersNotComputed` / `callersSyntaxOnly`, with the tree's limits note and the CLI reading
+  it (keep the old fields as computed aliases only if a consumer outside src/ needs them —
+  check and say). A provider without `prepareSyntactic` keeps today's "not analysed in this
+  mode" (G6).
+- **S3. Go in the preview and the CLI: changed functions** (Go's A4). `goProvider.prepareSyntactic`:
+  a text outline of top-level `func Name(` / `func (r *T) Name(` declarations (gofmt'd code;
+  a small Go lexer for strings, raw strings, runes and comments; a body ends at its matching
+  brace), keyed exactly as G2 keys gopls' symbols (`(T).Name` by the receiver's base type,
+  `#2` repeats), G3's header parser for kinds (it agrees with go/parser on 6621/6621 cli/cli
+  and 61356/61356 standard-library declarations). Callers "not computed" until S4.
+- **S4. Go callers from a syntax index** (Go's A8). `src/languages/go/syntactic-index.js`
+  implementing S1's contract: a package is a directory; import paths map to directories
+  through `go.mod`'s module path; matched calls: `pkg.Func(` through an import, bare `Func(`
+  in the same package, `r.M(` inside methods of `r`'s type, `x.M(` where `x`'s type is
+  written (a typed parameter, `var x T`, `x := T{…}` / `&T{…}`, a struct field's type for
+  `s.f.M(`, `x := pkg.NewT()` through `NewT`'s result type from G3), per the decisions below.
+  Kept incomplete with the reason, as in the editor: calls through an interface, function
+  values (G4's value uses: `RunE: runF`), other build-tag variants, and (preview) the
+  package's files not in the PR.
+- **S5. Docs** (me): README Languages table (Go's preview/CLI column), Go limits, changelog.
+
+### Decisions for the owner (before S3/S4)
+
+- **S-D1. Go CLI scope.** (a) **proposal**: every Go file of the module(s) the changed files
+  are in (`go.mod` directories; `vendor/`, `testdata/` excluded), bounded like Python's
+  (3000 files / 64 MiB, then the changed packages plus files mentioning a changed name);
+  (b) the PR's files only.
+- **S-D2. Receivers.** (a) **proposal**: all of S4's forms, constructor result types included;
+  (b) written declarations only (params, `var`, composite literals), no result types.
+- **S-D3. Calls through an interface.** (a) **proposal**: always incomplete, as in the editor
+  (any implementation may be reached); (b) list the method of every indexed type that
+  satisfies the interface by name (more callers, more false positives).
+
+### Verification plan (to agree with the owner before any work)
+
+| Task | Check | When | Expected time |
+| --- | --- | --- | --- |
+| S0 | `preview-golden.js` record on the PR list | once, before S1 | ≤ 3 min (estimate; fetches nothing, reads git objects) |
+| S1–S2 | `npm run test:quick` + touched test files | iterate | ~15 s |
+| S1–S2 | `npm test`, lint, typecheck, TypeScript baseline (`compare.sh`) | end | ~3.5 min |
+| S2 | `preview-golden.js --compare`: every PR's normalised preview identical (only the result-field rename allowed, listed) | end, at most 2 runs | ≤ 3 min |
+| S2 | `IMPACT_TREE_TARGET_REPO=~/Projects/impact-tree-test-repos/t3code npm run test:snapshots` (preview vs local on pinned t3code PRs) | end, once | measure on first run (estimate ≤ 3 min) |
+| S2 | `py-verify.js --syntactic` and `--preview` on both httpx corpora: every per-PR result identical to A8.2's | end, once each | ≤ 1.5 min each |
+| S3 | `go-verify.js` in a no-server mode (to add, as py-verify's `--syntactic`) on the 10 cli/cli PRs, go/parser oracle cached: changed functions 100% precision, ≥ 98% recall; kinds right | end, at most 3 runs | ≤ 1.5 min each |
+| S3 | CLI and offline preview on cli/cli #14752: Go rows with kinds, callers "not computed", nothing reads "no impact" | end | ~30 s |
+| S4 | `go-verify.js` no-server mode with callers vs `callgraph -algo=static` restricted to the indexed files, CLI and preview scopes | end, at most 3 runs per scope | ≤ 2 min each |
+| S4 | `npm test`, lint, typecheck, TypeScript baseline, Go e2e (gopls path unchanged) | end | ~4 min |
+
+Acceptance (S4, as A8): caller precision against callgraph static within the indexed files
+≥ 95% (false positives listed one by one, each a bug fixed or an oracle artefact with the
+code line); recall reported, every miss on an answer marked incomplete; 0 complete answers;
+0 rows reading "no callers"; S3's functions and kinds unchanged.
+
+Agent budgets (wall time, verification included): S0 20 min (Sonnet); S1+S2 45 min (Opus);
+S3 45 min (Opus); S4 45 min (Opus) + verification and fixes 30 min (Opus); S5 me, 15 min.
+Order: S0 → S1+S2 → (owner: S-D1–D3) → S3 → S4 → S5. Each step merged before the next starts.
+
+### Starting it in a new thread
+
+1. Branch from `main`. 2. Agree this verification plan (and S-D1–D3 before S3). 3. S0 first,
+on unchanged code, so S2's "identical" has something to compare against. Test repositories:
+`~/Projects/impact-tree-test-repos/` (`cli` on `pr-14752`, `t3code`, `hono`, `fixture`,
+`httpx`, `httpx-seams` on `seams-1600`; leave `httpx-pr` alone, it is the owner's). Oracles
+and caches: `go-verify.js` (go/parser, callgraph; about 1.5 min cached), `py-verify.js`
+(ast, Jedi). Scratch: `~/Projects/impact-tree-scratchpad/`.
+
 ## Order
 
 1. T1 → T2 → T3: the structure in place, TypeScript unchanged. Can start before G0.
@@ -903,4 +1014,5 @@ fields; bases depth-first, not the MRO; every unresolved `.m(` counted, string r
 6. G8 docs, then release Go support (v1.1 or later; v1 stays TS/JS per the v1 scope
    decision in `UX_PLAN.md`).
 7. Part P (Python): P0 → P1 → P2 ∥ P3 → P4 → P5/P6 → P7 → P8.
-8. Part J (Java), as a provider.
+8. Part S (the preview through the providers), then Go in it (S3–S5).
+9. Part J (Java), as a provider.
