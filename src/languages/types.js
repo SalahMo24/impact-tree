@@ -156,6 +156,11 @@
  * @property {(event: { phase: string, component?: string, done?: number, total?: number }) => void} report Progress.
  * @property {AbortSignal|undefined} signal Checked between steps; an aborted run rejects
  *   with `AnalysisCancelledError`, which the pipeline never reads as a provider failure.
+ * @property {Map<string, string|null>} [headTexts] Head-side text by path, where the head is
+ *   not on disk (the no-checkout preview); read by `prepareSyntactic` through
+ *   `prepareFromServerSymbols`. Absent: the head is read from disk.
+ * @property {{ component: string, projectRoot: string }} [unit] The one unit every file
+ *   is in, where the project layout is not on disk (the preview); absent: the provider's own.
  * @property {{ makeResolver?: Function, makeModuleCallers?: Function, services?: LanguageServices }} hooks The
  *   environment's `analyze()` options that choose how callers are found (the editor passes
  *   its language-server resolver) and, as `services`, the environment's language servers
@@ -272,11 +277,19 @@
  *   the project that file is in. The language decides how many files it tries. Null: none
  *   found, or the server is not available (no notice: the analysis reports that). May
  *   reject; readiness logs the reason and analyses without warming.
+ * - `prepareSyntactic` (optional): `prepare` where there is no language server, used instead
+ *   of `prepare` by a provider that `needsServer` when the environment has no
+ *   `services` (the CLI) and by the no-checkout preview. Its units' changed and deleted
+ *   symbols come from the text alone, with the same keys as `prepare`'s, and their resolver
+ *   computes no callers (src/engine/resolver-not-computed.js: every answer `'unknown'`,
+ *   incomplete, with a reason starting "not computed"). It reads `ctx.headTexts` and
+ *   `ctx.unit` when given, and no `ctx.hooks`.
  * - `serverLabel` (optional): the language server as named while the first run waits for
  *   it ("Waiting for the Go language server (gopls)…"). Absent: TypeScript's wording.
  * @typedef {LanguageFileRules & {
  *   needsServer: boolean,
  *   prepare: (ctx: PrepareContext) => Promise<PreparedLanguage>,
+ *   prepareSyntactic?: (ctx: PrepareContext) => Promise<PreparedLanguage>,
  *   editorCallers?: (options: { ts: any, services: any, repoRoot: string|null, trace: (message: string) => void, filterInherited: boolean, onWarmupRetry: () => void, clock?: import('../engine/clock').Clock }) => EditorCallerExtras,
  *   warmUpTarget?: (ctx: WarmUpContext) => Promise<{ file: string, pos: number }|null>,
  *   serverLabel?: string,

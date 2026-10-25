@@ -212,7 +212,12 @@ async function prepareLanguages(byLanguage, shared, { warnings, unanalysable, no
     const own = { warnings: [], unanalysable: new Map(), notAnalysedFiles: new Map() };
     let answer;
     try {
-      answer = await language.prepare({ ...shared, files, ...own });
+      // Without a language server (the CLI), a language that needs one is read from its
+      // text when it can be (`prepareSyntactic`: callers not computed); otherwise its
+      // `prepare` rejects and its files are reported as not analysed.
+      const run = language.needsServer && !shared.hooks.services && language.prepareSyntactic
+        ? language.prepareSyntactic : language.prepare;
+      answer = await run({ ...shared, files, ...own });
     } catch (e) {
       if (isAnalysisCancelled(e)) throw e;
       const reason = (e && e.message) || String(e);
@@ -557,6 +562,11 @@ async function analyze(repo, opts = {}) {
       for (let i = 0; i < ranked.length; i++) {
         const r = ranked[i];
         if (i >= (opts.rankedRoots ?? 6)) { roots.push({ ...r, blast: null, blastCapped: false, blastNotComputed: true }); continue; }
+        // A unit whose callers are not computed has no blast radius to count, not one of zero.
+        if (resolver.callersNotComputed) {
+          roots.push({ ...r, blast: null, blastCapped: false, blastNotComputed: true, blastNotComputedReason: resolver.callersNotComputed });
+          continue;
+        }
         throwIfCancelled(signal);
         const b = await blastRadius(resolver, r.file, r.namePos, opts.blastDepth ?? 1);
         roots.push({ ...r, blast: b.count, blastCapped: b.capped, blastNotComputed: false });

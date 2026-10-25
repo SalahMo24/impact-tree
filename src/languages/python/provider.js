@@ -11,6 +11,8 @@
 // Callers (P4): the shared call-hierarchy default plus Python's extras (./editor-extras.js:
 // duplicated sites, value uses, protocol methods, decorator registration, duck typing).
 // The server's warm-up (P5): `warmUpTarget` below, asked by src/readiness.js.
+// Without a server (the CLI, the no-checkout preview; A4): `prepareSyntactic`, the same
+// candidates from a text outline (`pythonOutline`), callers not computed.
 //
 // Engine modules and the header parser are required where they are used: the registry
 // (../index.js) loads this file, and src/engine/diff.js loads the registry.
@@ -210,6 +212,107 @@ function decoratorsOf(decoratorText) {
 }
 
 /**
+ * Where each statement starts: the first character of every line that begins one, outside
+ * strings (a docstring's lines), brackets and backslash continuations, with its
+ * indentation. Blank and comment-only lines are left out. Bound: one pass over `text`.
+ * @param {string} text
+ * @returns {Array<{ at: number, indent: string }>}
+ */
+function statementStarts(text) {
+  /** @type {Array<{ at: number, indent: string }>} */
+  const out = [];
+  const n = text.length;
+  let depth = 0;
+  let atLineStart = true;
+  let i = 0;
+  while (i < n) {
+    if (atLineStart) {
+      atLineStart = false;
+      let j = i;
+      while (j < n && isBlank(text[j])) j++;
+      if (j < n && text[j] !== '\n' && text[j] !== '#') out.push({ at: j, indent: text.slice(i, j) });
+      i = j;
+      continue;
+    }
+    const c = text[i];
+    if (c === '#') {
+      while (i < n && text[i] !== '\n') i++;
+    } else if (c === '\n') {
+      if (depth === 0) atLineStart = true;
+      i++;
+    } else if (c === '\\' && (text[i + 1] === '\n' || (text[i + 1] === '\r' && text[i + 2] === '\n'))) {
+      i += text[i + 1] === '\n' ? 2 : 3;
+    } else if (c === '"' || c === "'") {
+      i = Math.max(i + 1, scanString(text, i).end);
+    } else {
+      if (c === '(' || c === '[' || c === '{') depth++;
+      else if (c === ')' || c === ']' || c === '}') depth = Math.max(0, depth - 1);
+      i++;
+    }
+  }
+  return out;
+}
+
+const DEF_AT = /(?:async[ \t]+)?def[ \t]+([^\W\d]\w*)/uy;
+const CLASS_AT = /class[ \t]+([^\W\d]\w*)/uy;
+
+/**
+ * The document symbols of a Python text read from the text alone, in the shape Pyright
+ * gives them (P0), for where there is no language server (`prepareSyntactic`): a class
+ * (`Class`) with its methods (`Method`) and nested classes as children, and module-level
+ * functions (`Function`). Unlike Pyright's answer it lists every definition: a property
+ * getter and its setter, each `@overload` stub, a def in each branch of an `if`/`try`/
+ * `with`/`for`/`while` of the module or of a class body (its parent is the module or the
+ * class). A def or class inside a function is that function's body (P-D5) and not listed.
+ * A `def` line inside a string (a docstring) or inside brackets is not a definition.
+ * `range` runs from the first decorator to the body's end (`decoratedStart`, `scanDef`),
+ * `selectionRange` is the name.
+ * Limits: a decorator spanning several lines starts the range at its last line
+ * (`decoratedStart`); text that is not valid Python (unbalanced brackets) may hide the
+ * definitions after it.
+ * Pure. Bound: one pass for the statement starts, then one `scanDef` and one upward
+ * decorator walk per definition outside a function.
+ * @param {string} text
+ * @returns {ServerSymbol[]}
+ */
+function pythonOutline(text) {
+  const starts = lineStartsOf(text);
+  /** @type {ServerSymbol[]} */
+  const top = [];
+  /** @type {Array<{ isClass: boolean, start: number, end: number, children: ServerSymbol[] }>} */
+  const open = [];
+  for (const { at, indent } of statementStarts(text)) {
+    while (open.length && at >= open[open.length - 1].end) open.pop();
+    const parent = open.length ? open[open.length - 1] : null;
+    // A function's body is its own (P-D5): nothing in it is listed.
+    if (parent && !parent.isClass) continue;
+    DEF_AT.lastIndex = at;
+    CLASS_AT.lastIndex = at;
+    const def = DEF_AT.exec(text);
+    const cls = def ? null : CLASS_AT.exec(text);
+    const m = def || cls;
+    if (!m) continue;
+    const scanned = scanDef(text, at, indent.length, parent ? parent.end : text.length);
+    if (!scanned) continue;
+    const floor = parent ? parent.start : 0;
+    const start = Math.max(floor, decoratedStart(text, starts, lineOf(starts, at), indent, floor));
+    const namePos = at + m[0].length - m[1].length;
+    /** @type {ServerSymbol[]} */
+    const children = [];
+    (parent ? parent.children : top).push({
+      name: m[1],
+      detail: '',
+      kind: cls ? SYMBOL_KIND_CLASS : parent ? SYMBOL_KIND_METHOD : SYMBOL_KIND_FUNCTION,
+      range: { start, end: scanned.end },
+      selectionRange: { start: namePos, end: namePos + m[1].length },
+      children,
+    });
+    open.push({ isClass: Boolean(cls), start, end: scanned.end, children });
+  }
+  return top;
+}
+
+/**
  * One candidate before keying: where it is and what it is named.
  * @typedef {{ qualified: string, simpleName: string, className: string|null, start: number,
  *   end: number, namePos: number, recovered: boolean }} Found
@@ -254,9 +357,11 @@ function decoratorsOf(decoratorText) {
  * @param {string} text
  * @param {PythonSignatureParser} [parser] The header parser; ./signature.js by default (tests
  *   may pass a stub).
+ * @param {{ recover?: boolean }} [options] `recover: false` skips the recovery of unlisted
+ *   defs, for symbols that already list every def (`pythonOutline`'s).
  * @returns {PythonSymbol[]}
  */
-function collectPythonSymbols(symbols, text, parser = defaultParser()) {
+function collectPythonSymbols(symbols, text, parser = defaultParser(), { recover = true } = {}) {
   const starts = lineStartsOf(text);
   /** @type {Found[]} */
   const found = [];
@@ -306,7 +411,7 @@ function collectPythonSymbols(symbols, text, parser = defaultParser()) {
         });
       }
     }
-    if (scope.indent === null) return;
+    if (!recover || scope.indent === null) return;
     const indent = scope.indent;
     DEF_LINE.lastIndex = scope.start;
     for (let m = DEF_LINE.exec(text); m && m.index < scope.end; m = DEF_LINE.exec(text)) {
@@ -411,6 +516,39 @@ function pythonSpec(parser) {
 const prepare = (ctx) => require('../server-symbols').prepareFromServerSymbols(ctx, pythonSpec());
 
 /**
+ * `prepare` where there is no language server (the CLI, the no-checkout preview; A4): the
+ * changed, added and deleted functions and their signature kinds from the text alone
+ * (`pythonOutline`, then the same `collectPythonSymbols`, header parser and matching as
+ * `prepare`, so keys and review ids are the editor's), with callers not computed: every
+ * unit's resolver is `createNotComputedResolver`'s. `ctx.hooks` is not read. One warning
+ * says the callers were not computed, for how many files.
+ * @param {import('../types').PrepareContext} ctx
+ * @returns {Promise<import('../types').PreparedLanguage>}
+ */
+async function prepareSyntactic(ctx) {
+  const { createNotComputedResolver, notComputedReason } = require('../../engine/resolver-not-computed');
+  const p = defaultParser();
+  const reason = notComputedReason(pythonRules.displayName);
+  const spec = {
+    ...pythonSpec(p),
+    serverName: 'the Python text scan',
+    collect: (/** @type {ServerSymbol[]} */ symbols, /** @type {string} */ text) => collectPythonSymbols(symbols, text, p, { recover: false }),
+    // The outline is the whole answer: an empty one is a file with no definitions.
+    declaresSymbols: undefined,
+  };
+  /** @type {import('../types').LanguageServices} */
+  const services = /** @type {any} */ ({
+    available: async () => ({ ok: true }),
+    documentSymbols: async (/** @type {import('../types').DocRef} */ doc) => pythonOutline(/** @type {string} */ (doc.text)),
+  });
+  const answer = await require('../server-symbols').prepareFromServerSymbols(
+    { ...ctx, hooks: { services, makeResolver: () => createNotComputedResolver(reason) } }, spec);
+  const files = answer.units.reduce((n, u) => n + new Set([...u.changed, ...u.deleted].map((/** @type {any} */ c) => c.relPath)).size, 0);
+  if (files) ctx.warnings.push(`${files} changed Python file(s) read from their text: changed functions and signature kinds only; callers ${reason}`);
+  return answer;
+}
+
+/**
  * The first function or method in `symbols`, in source order. Pyright lists a method as a
  * child of its class (P0), so classes are searched; a function's own children (nested defs,
  * parameters) are not.
@@ -456,6 +594,7 @@ const pythonProvider = Object.freeze({
   ...pythonRules,
   needsServer: true,
   prepare,
+  prepareSyntactic,
   editorCallers: ({ services, repoRoot, trace, clock }) => require('./editor-extras').createPythonEditorExtras({
     services, repoRoot, trace, ...(clock ? { clock } : {}),
   }),
@@ -463,4 +602,4 @@ const pythonProvider = Object.freeze({
   serverLabel: 'the Python language server (Pyright)',
 });
 
-module.exports = { pythonProvider, pythonSpec, collectPythonSymbols, renderPythonSymbolSig, scanDef };
+module.exports = { pythonProvider, pythonSpec, collectPythonSymbols, renderPythonSymbolSig, scanDef, pythonOutline, prepareSyntactic };

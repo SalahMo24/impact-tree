@@ -20,12 +20,22 @@ const { createSyntacticResolver } = require('./resolver-syntactic');
 const { hunkRangesFromPatch, hunkDeletionsFromPatch } = require('./patch');
 const { diffLinesFromPatch } = require('./diff-lines');
 const { isTestPath, isTestFile } = require('./diff');
-// The preview analyses TypeScript/JavaScript only (gate L2): a file of another language
-// (Go) is listed as a file that was not analysed, with the reason (`notAnalysed`), so it
-// never reads as a file with no impact.
+// The preview analyses TypeScript/JavaScript (gate L2), and the languages that can be read
+// from their text alone (`prepareSyntactic`: Python; changed functions and kinds, callers
+// not computed, A4). A file of another language (Go) is listed as a file that was not
+// analysed, with the reason (`notAnalysed`), so it never reads as a file with no impact.
 const { typescriptRules } = require('../languages/typescript/rules');
 const isSourcePath = typescriptRules.handles;
 const { languageFor } = require('../languages');
+/**
+ * The language that reads a non-TypeScript file from its text, or null.
+ * @param {string} filePath
+ */
+const textLanguageOf = (filePath) => {
+  if (isSourcePath(filePath)) return null;
+  const language = languageFor(filePath);
+  return language && language.prepareSyntactic ? language : null;
+};
 const { seedRoots, nestedIds } = require('./forest');
 const { registerVirtualText, readLineOfOffset } = require('./textpos');
 const { classifyCallSiteUpdates, classifyCallerUpdateState } = require('./call-sites');
@@ -105,7 +115,7 @@ async function analyzeRemote({
   }
 
   trace(`${listed.files.length} file(s) listed${listed.truncated ? ' (truncated)' : ''}`);
-  const sourceFiles = listed.files.filter((f) => isSourcePath(f.path) && !isTestPath(f.path));
+  const sourceFiles = listed.files.filter((f) => (isSourcePath(f.path) || textLanguageOf(f.path)) && !isTestPath(f.path));
   // Test files the PR changed are read at the head only, to be indexed as callers. They are
   // never diffed, so no symbol of theirs becomes a change (as locally), and they stay in
   // `otherFiles`. They are already within the listed-file budget; tests the PR does not
@@ -203,11 +213,23 @@ async function analyzeRemote({
   const changed = [];
   const deleted = [];
   const outside = [];
+  // Rows of a language read from its text, and the resolver that answers for them
+  // (callers not computed); every other row is answered by the PR's syntactic index.
+  const rowResolvers = new Map();
+  const reviewSymbols = new Map();
+  const callersNotComputed = [];
+  const byTextLanguage = new Map();
   for (const f of usable) {
     const ranges = hunkRangesFromPatch(f.patch);
     changedRanges[f.path] = ranges;
     if (!ranges.length && f.status !== 'deleted' && !f.patch && f.headText !== f.baseText) {
       warnings.push(`${f.path}: GitHub returned no patch (binary or too large) — symbols not mapped`);
+    }
+    const textLanguage = textLanguageOf(f.path);
+    if (textLanguage) {
+      if (!byTextLanguage.has(textLanguage)) byTextLanguage.set(textLanguage, []);
+      byTextLanguage.get(textLanguage).push(f);
+      continue;
     }
     const r = symbolsOf({
       absPath: abs(f.path), relPath: f.path, status: f.status,
@@ -223,13 +245,44 @@ async function analyzeRemote({
       + `-> ${r.changed.length} changed, ${r.deleted.length} deleted symbol(s)`);
   }
 
+  const notAnalysedPaths = new Set();
+  for (const [language, own] of byTextLanguage) {
+    throwIfCancelled(signal);
+    const unanalysable = new Map();
+    const notAnalysedFiles = new Map();
+    const answer = await language.prepareSyntactic({
+      repo: repoRoot, git: null,
+      files: own.map((f) => ({ path: f.path, status: f.status, ...(f.oldPath && f.oldPath !== f.path ? { oldPath: f.oldPath } : {}) })),
+      baseTexts: new Map(own.filter((f) => f.baseText != null).map((f) => [f.oldPath || f.path, f.baseText])),
+      headTexts: new Map(own.filter((f) => f.headText != null).map((f) => [f.path, f.headText])),
+      changedRanges: Object.fromEntries(own.map((f) => [f.path, changedRanges[f.path]])),
+      deletions: Object.fromEntries(own.map((f) => [f.path, hunkDeletionsFromPatch(f.patch)])),
+      warnings, unanalysable, notAnalysedFiles, report: () => {}, signal, hooks: {},
+      unit: { component: 'pull request', projectRoot: '' },
+    });
+    for (const unit of answer.units) {
+      for (const c of unit.changed) rowResolvers.set(c, unit.resolver);
+      changed.push(...unit.changed);
+      deleted.push(...unit.deleted);
+      outside.push(...unit.outside);
+    }
+    for (const [relPath, sides] of (answer.extras && answer.extras.reviewSymbols) || []) reviewSymbols.set(relPath, sides);
+    for (const [p, reason] of notAnalysedFiles) {
+      notAnalysedPaths.add(p);
+      const f = own.find((x) => x.path === p);
+      otherFiles.push({ path: p, status: f ? f.status : 'modified', notAnalysed: { language: language.displayName, reason } });
+    }
+    if (answer.units.length) callersNotComputed.push(language.displayName);
+    trace(`${own.length} ${language.displayName} file(s) read from their text; callers not computed`);
+  }
+
   // A module file, a barrel, a const map of error codes: real changes with no changed
   // callable. Analysing them yields nothing, and until now they then appeared nowhere
   // at all -- a PR review tool that silently omits changed files is worse than one
   // that shows them plainly, so they join the file list.
   const withSymbols = new Set([...changed, ...deleted].map((c) => c.relPath));
   const noCallable = usable
-    .filter((f) => !withSymbols.has(f.path))
+    .filter((f) => !withSymbols.has(f.path) && !notAnalysedPaths.has(f.path))
     .map((f) => ({ path: f.path, status: f.status, noCallable: true }));
   if (noCallable.length) trace(`${noCallable.length} changed source file(s) have no changed callable`);
   otherFiles.push(...noCallable);
@@ -247,7 +300,7 @@ async function analyzeRemote({
 
   // ---- callers, from the PR's own files only --------------------------------------
   trace(`total ${changed.length} changed symbol(s), ${deleted.length} deleted`);
-  const indexed = [...usable.filter((f) => f.headText != null), ...readTests];
+  const indexed = [...usable.filter((f) => f.headText != null && isSourcePath(f.path)), ...readTests];
   onProgress({ phase: 'index', message: `indexing ${indexed.length} file(s)` });
   const config = require('./remote-config');
   const [moduleOptions, packages] = await Promise.all([
@@ -274,7 +327,8 @@ async function analyzeRemote({
   let done = 0;
   for (const c of changed) {
     throwIfCancelled(signal);
-    const cs = await resolver.callerState(c.file, c.namePos, { isConstructor: c.isConstructor });
+    const own = rowResolvers.get(c) || resolver;
+    const cs = await own.callerState(c.file, c.namePos, { isConstructor: c.isConstructor });
     c.callerState = cs.state;
     c.callersComplete = cs.complete === true;
     c.callersIncompleteReason = c.callersComplete ? null : cs.reason ?? null;
@@ -294,7 +348,7 @@ async function analyzeRemote({
     c.score = score(c);
     // The walk sees only the PR's own files, so a finished walk that finds no test has not
     // searched the repository's tests: that is 'unknown' with the reason, never 'uncovered'.
-    const reach = await walkTestReach(resolver, { file: c.file, pos: c.namePos }, { depth: reachDepth, budget: DEFAULT_REACH_BUDGET, signal });
+    const reach = await walkTestReach(own, { file: c.file, pos: c.namePos }, { depth: reachDepth, budget: DEFAULT_REACH_BUDGET, signal });
     c.tests = reach.tests;
     c.testState = reach.state === 'uncovered' ? 'unknown' : reach.state;
     c.testReachIncompleteReason = reach.state === 'covered' ? null
@@ -312,9 +366,10 @@ async function analyzeRemote({
     const nested = nestedIds(changed);
     for (const c of changed) c.isRoot = !nested.has(`${c.file}#${c.namePos}`);
 
-    return {
+    const result = {
       callersPending,
       tierA: true,
+      callersNotComputed,
       texts,
       coverage: 'pr-files-only',
       prNumber: pr.number,
@@ -347,6 +402,10 @@ async function analyzeRemote({
       unknownCallers: changed.filter((c) => c.callerState === 'unknown'),
       resolver,
     };
+    // The symbols of the files read from their text, for the review identity (as analyze()'s).
+    // Not enumerable: not part of the JSON result.
+    Object.defineProperty(result, 'reviewSymbols', { value: reviewSymbols, enumerable: false });
+    return result;
   }
 }
 
@@ -358,8 +417,9 @@ async function analyzeRemote({
  * @returns {{ notAnalysed: { language: string, reason: string } }|{}}
  */
 function notAnalysedIn(filePath) {
-  // The preview analyses TypeScript/JavaScript, including its tests (read as callers).
-  if (isSourcePath(filePath)) return {};
+  // The preview analyses TypeScript/JavaScript, including its tests (read as callers), and
+  // reads Python from its text (a Python test is listed, as a test is locally).
+  if (isSourcePath(filePath) || textLanguageOf(filePath)) return {};
   const language = languageFor(filePath);
   if (!language) return {};
   return { notAnalysed: { language: language.displayName, reason: `a preview cannot analyse ${language.displayName}; check out the pull request to analyse it in the editor` } };

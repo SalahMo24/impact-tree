@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Python in the PR preview and the CLI**, without a language server: the changed, added
+  and deleted functions and methods and their signature kinds, read from the text (the
+  same keys as in the editor, so review ticks carry over). Callers are **not computed** and
+  say so on every row ("callers not computed", test reach unknown, no blast radius), never
+  "no callers". Checked against Python's `ast` on the same 10 httpx pull requests: 141 of
+  141 changed functions, no extra, every kind right. The editor still uses Pyright. Go is
+  still listed as not analysed there. `--json` output to a pipe is no longer cut at 8 KiB.
 - **The base branch defaults to the remote's own default** (`origin/HEAD`), so a repository
   whose default branch is `master` reviews without a setting; it had stopped with "cannot
   resolve origin/main". A base branch set in `impactTree.baseBranch` is used as given, and a
@@ -16,8 +23,7 @@
   Calls on untyped objects that the server could not resolve, values, decorator
   registrations, protocol methods and constructors read as incomplete with the reason,
   never as "no callers". Checked on 10 merged encode/httpx pull requests (141 changed
-  functions; see `test/lsp-harness/P7-REPORT.md`). The PR preview and the CLI list Python
-  files as not analysed.
+  functions; see `test/lsp-harness/P7-REPORT.md`).
 - **Go support** in the editor, through the Go extension's language server (gopls): changed
   functions and methods, signature changes (receiver, type parameters, parameters,
   results), callers with "updated at the call" or not, test callers from `_test.go`, and
