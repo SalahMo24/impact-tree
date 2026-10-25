@@ -14,10 +14,21 @@
  * `--corpus`: another list of PRs in py-verify-corpus.json's shape (number, head, base, …), such
  * as open PRs fetched for an out-of-sample check; default ./py-verify-corpus.json.
  *
- * `--syntactic` (A4): the pipeline runs without a language server, as the CLI does, so
- * Python is read from its text (`prepareSyntactic`); only changed functions and kinds are
- * compared (oracle (a)), Jedi is not run, and every changed row must have its callers not
- * computed (`notComputedViolations` lists any that does not). No Pyright is started.
+ * `--syntactic` (A4, A8.2): the pipeline runs without a language server, as the CLI does, so
+ * Python is read from its text (`prepareSyntactic`) and callers come from the syntax index
+ * (A8). Changed functions and kinds are compared with oracle (a), callers with Jedi (b)
+ * restricted to the files the index indexed (CLI scope: every Python file of the head the
+ * provider handles, `pythonRules.handles`; the run fails if the index says it was bounded).
+ * Every changed Python row must be incomplete with the syntax-only scope note, never `none`,
+ * and no verdict may read "no callers" (`scopeViolations` lists any that is not). No Pyright.
+ *
+ * `--preview` (with `--syntactic`, A8.2): the preview's scope instead. `analyzeRemote` runs
+ * offline with a fake `gh` that reads only the clone's git objects (`git diff`, `git show`,
+ * as the scratchpad's a8/preview-offline.js), so the index holds the PR's changed Python
+ * files and changed tests the preview fetched; Jedi's callers are restricted to those files
+ * (the head-side Python paths the fake `gh` served).
+ *
+ * `--package <dir>` (default `httpx`): the package directory oracle (a) reads (pydantic: `pydantic`).
  *
  * Two phases, run side by side:
  * - Oracles, per PR (at most ORACLE_CONCURRENCY PRs at once). The head commit is exported with
@@ -78,6 +89,7 @@ const { createPyrightServices, DEFAULT_PYRIGHT } = require('./pyright-services')
 const { languageServicesOver, createHierarchyResolver } = require('./harness-languages');
 const { pythonProvider } = require('../../src/languages/python/provider');
 const { classifyChangeVerdict, toneOf } = require('../../src/tree-row-models');
+const { pythonRules } = require('../../src/languages/python/rules');
 
 /** The corpus: squash-merged httpx PRs; `head` is the squash commit, `base` its parent. */
 const CORPUS = require('./py-verify-corpus.json');
@@ -397,7 +409,8 @@ async function runPython(python, program, input) {
 
 // The file rules, written again from the plan's P1 rather than taken from rules.js, so a
 // disagreement shows: in the package, not a test file.
-const isPackageSource = (rel) => /^httpx\/.*\.py$/.test(rel) && !/(^|\/)(test_[^/]*|[^/]*_test|conftest)\.py$/.test(rel) && !/(^|\/)tests?\//.test(rel);
+let packageDir = 'httpx';
+const isPackageSource = (rel) => rel.startsWith(`${packageDir}/`) && rel.endsWith('.py') && !/(^|\/)(test_[^/]*|[^/]*_test|conftest)\.py$/.test(rel) && !/(^|\/)tests?\//.test(rel);
 
 /** The changed package files between `base` and `head` (renames followed), as pairs; sides written under `work`. */
 function changedPairs(repo, base, head, work) {
@@ -469,7 +482,7 @@ function jediTargets(oracle) {
 }
 
 /** Both oracles for one PR, from the cache when it has them. The head is exported only when needed. */
-async function oraclesFor({ repo, pr, hashes, cacheRoot, jediPython, log, syntactic = false }) {
+async function oraclesFor({ repo, pr, hashes, cacheRoot, jediPython, log }) {
   const started = Date.now();
   const cacheDir = cacheRoot ? path.join(cacheRoot, `${pr.head}-${pr.base}`) : null;
   let exportRoot = null;
@@ -495,10 +508,6 @@ async function oraclesFor({ repo, pr, hashes, cacheRoot, jediPython, log, syntac
     });
     const oracle = astResult.value;
     if (oracle.errors.length) throw new Error(`#${pr.number}: ast could not read ${oracle.errors.join('; ')}`);
-    if (syntactic) {
-      log(`#${pr.number} oracles: ${oracle.changes.length} function changes (ast ${astResult.hit ? 'cached' : 'computed'}, ${((Date.now() - started) / 1000).toFixed(1)} s)`);
-      return { oracle, jedi: { results: [] }, oracleMs: Date.now() - started, cachedOracles: astResult.hit ? 2 : 0 };
-    }
     const targets = jediTargets(oracle);
     const jediResult = await cached(cacheDir, `jedi-${hashes.jedi}.json`, async () => {
       const root = await ensureExport();
@@ -544,18 +553,51 @@ function lineFinder() {
 }
 
 /** The pipeline on one PR, fresh Pyright, the worktree checked out at the PR's head. */
-async function pipelineFor(worktree, pr, pyrightPath, syntactic = false) {
+async function pipelineFor(worktree, pr, pyrightPath, syntactic = false, preview = false) {
   if (git(worktree, 'status', '--porcelain', '--untracked-files=no').trim()) throw new Error('the worktree has uncommitted changes');
   git(worktree, 'checkout', '-q', '--detach', pr.head);
   if (git(worktree, 'rev-parse', 'HEAD').trim() !== pr.head) throw new Error(`the worktree is not at ${pr.head}`);
   const t0 = Date.now();
+  if (syntactic && preview) {
+    // The preview, offline: a fake `gh` over the git objects (no checkout is read). The
+    // worktree is at the head only so that call-site offsets turn into lines from disk.
+    const served = new Set();
+    const statusOf = { A: 'added', D: 'removed', M: 'modified' };
+    const gh = {
+      listPullRequestFiles: async () => {
+        const files = git(worktree, 'diff', '--name-status', '--no-renames', pr.base, pr.head).trim().split('\n').filter(Boolean).map((l) => {
+          const [s, p] = l.split('\t');
+          const diff = git(worktree, 'diff', '--no-renames', pr.base, pr.head, '--', p);
+          const at = diff.indexOf('\n@@');
+          return { path: p, oldPath: p, status: statusOf[s[0]] || 'modified', patch: at >= 0 ? diff.slice(at + 1) : null };
+        });
+        return { total: files.length, files };
+      },
+      fileAtRef: async (/** @type {any} */ _slug, /** @type {string} */ p, /** @type {string} */ ref) => {
+        try { const t = git(worktree, 'show', `${ref}:${p}`); if (ref === pr.head) served.add(p); return t; } catch { return null; }
+      },
+    };
+    let firstMs = null;
+    const { analyzeRemote } = require('../../src/engine/analyze-remote');
+    const result = await analyzeRemote({
+      ts: require('typescript'), gh, slug: {}, repoRoot: worktree,
+      pr: { number: pr.number, headSha: pr.head, mergeBaseSha: pr.base, baseRef: 'base' },
+      onPrepared: () => { firstMs = Date.now() - t0; },
+    });
+    return { result, startMs: 0, firstMs, fullMs: Date.now() - t0, indexed: new Set([...served].filter((p) => pythonRules.handles(p))) };
+  }
   if (syntactic) {
     let firstMs = null;
     const result = await analyze(worktree, {
       mode: 'pr', base: pr.base, allowLocalBase: true, skipForest: true, deferTestReach: true, depth: 2,
       onPrepared: () => { firstMs = Date.now() - t0; },
     });
-    return { result, startMs: 0, firstMs, fullMs: Date.now() - t0 };
+    // A8-D1 (b): the CLI indexes every Python file it handles (tracked or not; Jedi's export
+    // has the tracked ones), unless bounded, which this check refuses.
+    const listed = git(worktree, 'ls-files', '--cached', '--others', '--exclude-standard').split('\n').filter((p) => p && pythonRules.handles(p));
+    const note = (result.warnings || []).find((w) => /Python callers from syntax only/.test(w)) || '';
+    if (!note.includes(`the repository (${listed.length} Python file(s) indexed)`)) throw new Error(`#${pr.number}: the CLI's index is not the whole repository (${listed.length} files): ${note}`);
+    return { result, startMs: 0, firstMs, fullMs: Date.now() - t0, indexed: new Set(listed) };
   }
   const pyright = createPyrightServices({ repo: worktree, pyrightPath });
   track(pyright.client.proc);
@@ -633,7 +675,7 @@ const headerText = (f) => `${f.async ? 'async ' : ''}def ${f.name}(${f.params.ma
  * function that encloses the call site in the head commit (`<rel>#<key>`, `<rel>#(module)`
  * outside every function), from the `ast` index, so a nested def counts as its parent (P-D5).
  */
-function comparePr({ worktree, pr, result, oracle, jedi, syntactic = false }) {
+function comparePr({ worktree, pr, result, oracle, jedi, syntactic = false, indexed = null, preview = false }) {
   const changedLines = oracle.changedLines;
   const index = oracle.index;
   const lineOf = lineFinder();
@@ -693,8 +735,11 @@ function comparePr({ worktree, pr, result, oracle, jedi, syntactic = false }) {
     // `__init__`, also its class's name followed by `(` (a construction).
     const property = o.head.binding === 'property';
     const isCall = (r) => r.after === '(' || (property && r.before === '.');
-    const refs = (jediById.get(id) || []).filter(isCall)
+    // Syntax only (A8.2): Jedi's callers in the files the index read; the others are out of scope.
+    const inIndex = (r) => !indexed || indexed.has(r.rel);
+    const allRefs = (jediById.get(id) || []).filter(isCall)
       .concat((jediById.get(`${id}|class`) || []).filter((r) => r.after === '('));
+    const refs = allRefs.filter(inIndex);
     const nonCalls = (jediById.get(id) || []).filter((r) => !isCall(r));
     const jd = new Map();
     for (const r of refs) {
@@ -704,7 +749,11 @@ function comparePr({ worktree, pr, result, oracle, jedi, syntactic = false }) {
     }
     const ourIds = [...ours.keys()];
     const jediIds = [...jd.keys()];
-    const falsePositives = ourIds.filter((k) => !jd.has(k)).map((k) => ({ caller: k, lines: ours.get(k).lines, file: k.slice(0, k.indexOf('#')) }));
+    const codeAt = (file, line) => { try { return fs.readFileSync(path.join(worktree, file), 'utf8').split('\n')[line - 1].trim().slice(0, 160); } catch { return ''; } };
+    const falsePositives = ourIds.filter((k) => !jd.has(k)).map((k) => {
+      const file = k.slice(0, k.indexOf('#'));
+      return { caller: k, lines: ours.get(k).lines, file, code: ours.get(k).lines.map((l) => codeAt(file, l)) };
+    });
     const missed = jediIds.filter((k) => !ours.has(k)).map((k) => ({ caller: k, sites: jd.get(k) }));
     // A Jedi caller outside the tests whose call line the PR did not touch.
     const notUpdated = jediIds.filter((k) => !isTestRel(k.slice(0, k.indexOf('#')))).filter((k) => {
@@ -719,7 +768,8 @@ function comparePr({ worktree, pr, result, oracle, jedi, syntactic = false }) {
       complete: c.callersComplete, incompleteReason: c.callersIncompleteReason,
       verdict: verdict.text, level: verdict.level, fine,
       ours: ourIds.length, jedi: jediIds.length, truePositives: ourIds.filter((k) => jd.has(k)).length,
-      falsePositives, missed, jediNonCalls: nonCalls.length,
+      falsePositives, missed, jediNonCalls: nonCalls.length, jediOutsideIndex: allRefs.length - refs.length,
+      noCallersSentence: NO_CALLERS.test(`${verdict.sentence || ''} ${verdict.text || ''}`),
       missedWhileComplete: missed.length > 0 && c.callersComplete !== false,
       notUpdated, fineWithNotUpdated: risky && fine && notUpdated.length > 0,
     });
@@ -727,14 +777,22 @@ function comparePr({ worktree, pr, result, oracle, jedi, syntactic = false }) {
   return {
     functions: { tp, fp, fn, pipeline: pipelineRows.length, oracle: oracleRows.length, outOfScope },
     kinds: kindRows,
-    callers: syntactic ? [] : callerRows,
-    // Without a server every row's callers are not computed: never complete, never 'none'.
-    ...(syntactic ? { notComputedViolations: result.allChanged.filter((c) => c.callersComplete !== false || c.callerState !== 'unknown' || !/^not computed:/.test(c.callersIncompleteReason || '')).map((c) => `${c.relPath}#${c.key}`) } : {}),
+    callers: callerRows,
+    // Syntax only (A8): every Python row incomplete with its scope's note, never 'none', never
+    // a verdict reading "no callers".
+    ...(syntactic ? { scope: preview ? 'preview' : 'cli', indexedFiles: indexed.size, scopeViolations: result.allChanged.filter((c) => /\.pyi?$/.test(c.relPath)).filter((c) => {
+      const scope = preview ? "Python callers from syntax only: the pull request's own files (" : 'Python callers from syntax only: the repository (';
+      const v = classifyChangeVerdict(c);
+      return c.callersComplete !== false || c.callerState === 'none' || !String(c.callersIncompleteReason || '').startsWith(scope) || NO_CALLERS.test(`${v.sentence || ''} ${v.text || ''}`);
+    }).map((c) => `${c.relPath}#${c.key} (${c.callerState}, complete ${c.callersComplete}: ${String(c.callersIncompleteReason).slice(0, 80)})`) } : {}),
     warnings: result.warnings,
     unanalysable: result.unanalysable,
     notAnalysed: (result.otherFiles || []).filter((f) => f.notAnalysed).map((f) => `${f.path}: ${JSON.stringify(f.notAnalysed)}`),
   };
 }
+
+/** A verdict that reads as "nobody calls it" (tree-row-models' complete-and-empty wording). */
+const NO_CALLERS = /no callers|nothing calls it/i;
 
 const pct = (a, b) => (b === 0 ? 'n/a' : `${((100 * a) / b).toFixed(1)}%`);
 
@@ -782,6 +840,15 @@ function summarise(out, corpus) {
   }
   lines.push(`Changed or added functions with callers compared: ${changes}; incomplete answers by reason: ${[...reasons].map(([k, v]) => `${k} ${v}`).join('; ') || 'none'}.`);
   lines.push('');
+  if (records[0] && records[0].scope) {
+    const count = (fnc) => records.reduce((s, r) => s + fnc(r), 0);
+    const complete = count((r) => r.callers.filter((c) => c.complete !== false).length);
+    const noneRows = count((r) => r.callers.filter((c) => c.callerState === 'none' || c.noCallersSentence).length);
+    const violations = count((r) => r.scopeViolations.length);
+    const outside = count((r) => r.callers.reduce((n, c) => n + c.jediOutsideIndex, 0));
+    lines.push(`TOTAL (${records[0].scope} scope): caller precision ${pct(T.ctp, T.ours)} (${T.ctp}/${T.ours}), recall ${pct(T.ctp, T.jedi)} (${T.ctp}/${T.jedi}); Jedi misses on incomplete answers ${T.missChanges - T.missWhileComplete}/${T.missChanges} changes; complete answers ${complete}; none / "no callers" rows ${noneRows}; scope violations ${violations}; Jedi call references outside the indexed files (not compared) ${outside}; functions ${T.tp}/${T.tp + T.fn} (${T.fp} extra); kinds ${T.headerOk + T.raiseOk + T.bodyOk}/${T.header + T.raise + T.body}.`);
+    lines.push('');
+  }
   lines.push(`Caller false positives against Jedi: ${T.cfp}. Jedi callers we miss: ${T.cfn}, on ${T.missChanges} changes, ${T.missWhileComplete} of them complete.`);
   lines.push('');
   for (const r of records) {
@@ -792,12 +859,12 @@ function summarise(out, corpus) {
     if (r.functions.outOfScope.length) lines.push(`- pipeline rows outside the oracle's scope (tests, docs, scripts): ${r.functions.outOfScope.length}`);
     for (const k of r.kinds.filter((x) => !x.ok)) lines.push(`- kind disagreement \`${k.id}\`: got [${k.kinds}], missing [${k.missing}], extra [${k.extra}]; base \`${k.baseHeader}\` head \`${k.headHeader}\`${k.newRaises.length ? ` new raises ${k.newRaises}` : ''}`);
     for (const c of r.callers) {
-      for (const x of c.falsePositives) lines.push(`- caller of \`${c.id}\` Jedi does not have: \`${x.caller}\` at ${x.file}:${x.lines.join(',')}`);
+      for (const x of c.falsePositives) lines.push(`- caller of \`${c.id}\` Jedi does not have: \`${x.caller}\` at ${x.file}:${x.lines.join(',')} \`${(x.code || []).join(' | ')}\``);
       for (const x of c.missed) lines.push(`- Jedi caller of \`${c.id}\` missed: \`${x.caller}\` at ${x.sites.map((s) => `${s.rel}:${s.line}`).join(', ')} (ours: ${c.callerState}, ${c.complete ? '**complete**' : `incomplete: ${c.incompleteReason}`})`);
       if (c.fineWithNotUpdated) lines.push(`- **fine while Jedi has a non-updated caller**: \`${c.id}\` [${c.kinds}] verdict "${c.verdict}"; ${c.notUpdated.slice(0, 3).join(', ')}`);
     }
     if (r.notAnalysed.length) lines.push(`- not analysed: ${r.notAnalysed.join('; ')}`);
-    if (r.notComputedViolations && r.notComputedViolations.length) lines.push(`- **rows whose callers read as computed without a server**: ${r.notComputedViolations.join(', ')}`);
+    if (r.scopeViolations && r.scopeViolations.length) lines.push(`- **rows not incomplete with the syntax-only ${r.scope} scope, or reading none / "no callers"**: ${r.scopeViolations.join(', ')}`);
     lines.push('');
   }
   return lines.join('\n');
@@ -817,6 +884,9 @@ async function main() {
   const only = option(args, '--prs', '');
   const cacheRoot = args.includes('--no-cache') ? null : option(args, '--cache', DEFAULT_CACHE);
   const syntactic = args.includes('--syntactic');
+  const preview = args.includes('--preview');
+  if (preview && !syntactic) throw new Error('--preview needs --syntactic');
+  packageDir = option(args, '--package', 'httpx');
   const deadlineMs = Number(option(args, '--deadline-ms', String(RUN_DEADLINE_MS)));
   if (!Number.isSafeInteger(deadlineMs) || deadlineMs < 1) throw new RangeError('--deadline-ms must be a positive integer');
   const corpusFile = option(args, '--corpus', '');
@@ -840,28 +910,28 @@ async function main() {
   }, deadlineMs);
   try {
     const pyVersion = execFileSync('python3', ['-I', '-c', 'import sys; print(sys.version)'], { encoding: 'utf8', timeout: 30000 });
-    const jediVersions = syntactic ? 'not run' : execFileSync(jediPython, ['-I', '-c', 'import sys, jedi, parso; print(sys.version.split()[0], jedi.__version__, parso.__version__)'], { encoding: 'utf8', timeout: 30000, cwd: os.tmpdir() });
+    const jediVersions = execFileSync(jediPython, ['-I', '-c', 'import sys, jedi, parso; print(sys.version.split()[0], jedi.__version__, parso.__version__)'], { encoding: 'utf8', timeout: 30000, cwd: os.tmpdir() });
     const hashes = {
       ast: sha256(AST_PROGRAM, pyVersion).slice(0, 16),
       jedi: sha256(JEDI_PROGRAM, jediVersions, AST_PROGRAM, String(JEDI_QUERY_DEADLINE_S)).slice(0, 16),
     };
     log(`${corpus.length} PRs; python ${pyVersion.split(' ')[0]}; Jedi python/jedi/parso ${jediVersions.trim()}; cache ${cacheRoot || 'off'}; ast ${hashes.ast}, jedi ${hashes.jedi}; budget ${(deadlineMs / 1000).toFixed(0)} s`);
     const usePr = semaphore(ORACLE_CONCURRENCY);
-    const oraclePromises = new Map(corpus.map((pr) => [pr.number, usePr(() => oraclesFor({ repo, pr, hashes, cacheRoot, jediPython, log, syntactic }))]));
+    const oraclePromises = new Map(corpus.map((pr) => [pr.number, usePr(() => oraclesFor({ repo, pr, hashes, cacheRoot, jediPython, log }))]));
     for (const p of oraclePromises.values()) p.catch(() => {});
     const records = [];
     for (const pr of corpus) {
-      const pipeline = await pipelineFor(worktree, pr, pyrightPath, syntactic);
+      const pipeline = await pipelineFor(worktree, pr, pyrightPath, syntactic, preview);
       log(`#${pr.number} pipeline: Pyright ${pipeline.startMs} ms, first result ${pipeline.firstMs} ms, full ${pipeline.fullMs} ms`);
       const oracles = await oraclePromises.get(pr.number);
-      const cmp = comparePr({ worktree, pr, result: pipeline.result, oracle: oracles.oracle, jedi: oracles.jedi, syntactic });
+      const cmp = comparePr({ worktree, pr, result: pipeline.result, oracle: oracles.oracle, jedi: oracles.jedi, syntactic, indexed: pipeline.indexed || null, preview });
       const record = {
         ...pr, ...cmp, jediVersion: oracles.jedi.jedi, parsoVersion: oracles.jedi.parso, jediCheck: oracles.jedi.check,
         timing: { oracleMs: oracles.oracleMs, cachedOracles: oracles.cachedOracles, pyrightStartMs: pipeline.startMs, firstMs: pipeline.firstMs, fullMs: pipeline.fullMs },
       };
       records.push(record);
       const f = record.functions;
-      log(`#${pr.number} compared: functions ${f.tp}/${f.oracle} (${f.fp.length} extra, ${f.fn.length} missed), kinds ${record.kinds.filter((k) => k.ok).length}/${record.kinds.length}, ${record.callers.filter((c) => c.missedWhileComplete).length} complete answers missing a Jedi caller${syntactic ? `, ${record.notComputedViolations.length} rows with callers computed` : ''}`);
+      log(`#${pr.number} compared: functions ${f.tp}/${f.oracle} (${f.fp.length} extra, ${f.fn.length} missed), kinds ${record.kinds.filter((k) => k.ok).length}/${record.kinds.length}, ${record.callers.filter((c) => c.missedWhileComplete).length} complete answers missing a Jedi caller${syntactic ? `, ${record.scopeViolations.length} scope violations; callers ${record.callers.reduce((s, c) => s + c.truePositives, 0)} right of ${record.callers.reduce((s, c) => s + c.ours, 0)} ours / ${record.callers.reduce((s, c) => s + c.jedi, 0)} Jedi in ${record.indexedFiles} indexed files` : ''}`);
     }
     // Written only when every PR compared: a failed run leaves no partial result behind.
     for (const r of records) fs.writeFileSync(path.join(out, `${r.number}.json`), JSON.stringify(r, null, 1));
@@ -872,6 +942,8 @@ async function main() {
   const summary = summarise(out, corpus);
   const summaryFile = option(args, '--summary', path.join(out, 'summary.md'));
   fs.writeFileSync(summaryFile, summary);
+  const total = summary.split('\n').find((l) => l.startsWith('TOTAL'));
+  if (total) log(total);
   log(`done; summary in ${summaryFile}`);
 }
 
