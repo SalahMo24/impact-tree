@@ -872,6 +872,27 @@ kinds unchanged from A4 (100% on both corpora).
 Agent budgets (wall time, verification included): A8.1 45 min; A8.2 30 min; A8.3 me, 15 min.
 Order: A8.1 → A8.2 → A8.3.
 
+**Done (2026-10-25).** A8.1: `src/languages/python/syntactic-index.js` (rules 1–6, the three
+index methods), `createSyntacticResolver` reused unchanged; preview from the PR's Python files
+and changed tests, CLI from the repository (3000 files / 64 MiB). A8.2 (`py-verify.js
+--syntactic` / `--preview`, Jedi restricted to the indexed files), totals:
+
+| Corpus / scope | Precision | Recall | Complete | none / "no callers" |
+| --- | --- | --- | --- | --- |
+| 10 merged httpx PRs, CLI | 99.9% (949/950) | 98.0% | 0 | 0 |
+| 10 merged httpx PRs, preview | 100% (188/188) | 90.0% | 0 | 0 |
+| 12 open httpx PRs, CLI | 100% (508/508) | 97.9% | 0 | 0 |
+| 12 open httpx PRs, preview | 100% (70/70) | 69.3% | 0 | 0 |
+| pydantic #13070, CLI | 78.1% raw (630/807); 100% counting Jedi's own `goto` | 96.8% | 0 | 0 |
+
+The one httpx false positive is a real call on a `with … as client` receiver (Jedi's P7 limit).
+pydantic's 177 are real calls Jedi's reference search never reaches (Jedi 0.20.1 stops after
+30 parsed files, `jedi/inference/references.py` `_PARSED_FILE_LIMIT`); its `goto` confirms
+all 456 sites. Every Jedi caller we miss is on an answer marked incomplete. Fixed on the way:
+`from . import sub` in a package `__init__` read as a cycle (pydantic recall 66.2% → 96.8%).
+Limits left: `Cls.m(`, `Cls().m(`, `self.x.m(`, `list[Cls]`, `with … as x` receivers, f-string
+fields; bases depth-first, not the MRO; every unresolved `.m(` counted, string receivers too.
+
 ## Order
 
 1. T1 → T2 → T3: the structure in place, TypeScript unchanged. Can start before G0.

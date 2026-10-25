@@ -56,7 +56,7 @@ silently-omitted optional parameter outranks a signature break that `tsc` alread
 | --- | --- | --- | --- |
 | TypeScript, JavaScript | Analysed: the bundled TypeScript compiler finds changes, the editor's language server finds callers | Analysed from the PR's own files only (syntax) | Analysed with its own TypeScript language service |
 | Go | Analysed through the [Go extension](https://marketplace.visualstudio.com/items?itemName=golang.go)'s language server, gopls | Listed as **not analysed**, with how to analyse it | Listed as **not analysed** |
-| Python | Analysed through the editor's Python language server, Pyright ([Pylance](https://marketplace.visualstudio.com/items?itemName=ms-python.vscode-pylance) in VS Code, Cursor's Python extension in Cursor) | Changed functions and signature kinds from the PR's text; callers **not computed** (check out the PR to find them) | Changed functions and signature kinds from the text; callers **not computed** |
+| Python | Analysed through the editor's Python language server, Pyright ([Pylance](https://marketplace.visualstudio.com/items?itemName=ms-python.vscode-pylance) in VS Code, Cursor's Python extension in Cursor) | Changed functions and signature kinds from the PR's text; callers from **syntax only**, in the PR's own files and changed tests (check out the PR to find them all) | Changed functions and signature kinds from the text; callers from **syntax only**, across the repository's Python files |
 | Java, Kotlin, C#, Ruby, Rust, PHP, Swift, C, C++, Scala | Listed as "*Language* · not analysed yet" | Same | Same |
 
 A file that was not analysed never reads as having no impact. A Go or Python file Impact
@@ -127,12 +127,19 @@ until you mark it reviewed, and its tooltip and Details say why.
   caller the Jedi analyser finds that Impact Tree does not list sits on an answer marked
   incomplete. See [the verification report](test/lsp-harness/P7-REPORT.md).
 - **Without the language server** (the no-checkout PR preview, the CLI): changed, added and
-  deleted functions and their signature kinds are read from the text, the same way;
-  callers are **not computed**, and every row says so (no "no callers", no "no test", no
-  blast radius). A `def` inside a string is not a definition. On the same 10 httpx pull
-  requests this finds the same 141 changed functions as Python's `ast`, every kind right
-  (`node test/lsp-harness/py-verify.js … --syntactic`). Open the repository in the editor
-  to see callers.
+  deleted functions and their signature kinds are read from the text, the same way (on the
+  10 httpx pull requests, the same 141 changed functions as Python's `ast`, every kind right).
+  Callers come from a **syntax index**: the PR's own Python files and changed tests in the
+  preview, every Python file of the repository in the CLI (at most 3000 files / 64 MiB).
+  A call is matched by name through imports and modules, `self.`/`cls.`/`super()` in a
+  class and its indexed bases, `Cls(...)` constructions, and receivers annotated or assigned
+  as a class; a property read on such a receiver counts. Every answer stays incomplete and
+  says why ("syntax only", calls on receivers it could not resolve), never "no callers".
+  Not resolved: `Cls.m(`, `Cls().m(`, `self.x.m(`, `with … as x` receivers, f-string fields.
+  Checked against Jedi: on 22 httpx pull requests, 99.9–100% precision and 98% recall
+  across the repository (69–90% in the preview, which sees only the PR's files); on
+  pydantic #13070, recall 96.8%, and every caller listed that Jedi's reference search
+  missed is a real call (Jedi's own `goto` confirms all 456 sites).
 
 ## Review workflow
 
