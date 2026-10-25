@@ -44,6 +44,8 @@ const defaultParser = () => /** @type {GoSignatureParser} */ (/** @type {unknown
 // literals are not listed at all: a literal is part of its parent's body).
 const SYMBOL_KIND_METHOD = 6;
 const SYMBOL_KIND_FUNCTION = 12;
+// The start of a function or method declaration's range: `func` then a space or `(`.
+const FUNC_DECLARATION = /^func[\s(]/;
 
 /**
  * The receiver's base type of a method name as gopls gives it: `(*AuthConfig).reload` and
@@ -115,6 +117,10 @@ function collectGoSymbols(symbols, text, parser = defaultParser()) {
     if (!(Number.isInteger(start) && Number.isInteger(end) && start >= 0 && start <= end && end <= text.length)) {
       throw new RangeError(`Go symbol ${s.name}: range ${start}..${end} is outside its text (length ${text.length})`);
     }
+    // gopls gives a type whose underlying type is a function (`type RequestOption
+    // func(*requestConfig)`) the Function kind too, with its range at the type's name (G7).
+    // Only a `func` declaration is a function or method.
+    if (!FUNC_DECLARATION.test(text.slice(start, start + 5))) continue;
     const simpleName = bareNameOf(s.name);
     const receiver = receiverTypeOf(s.name);
     const baseKey = receiver ? `(${receiver}).${simpleName}` : s.name;
@@ -162,8 +168,34 @@ function collectGoSymbols(symbols, text, parser = defaultParser()) {
 function goKindsOf(base, head) {
   const { diffSignature, KIND } = require('../../engine/signature');
   if (!base) return [];
-  if (base.sig && head.sig) return diffSignature(base, head);
-  return base.header === head.header ? [] : [KIND.TYPE_CHANGED];
+  if (base.sig && head.sig) return diffSignature(withAnyForEmptyInterface(base), withAnyForEmptyInterface(head));
+  return anyForEmptyInterface(base.header) === anyForEmptyInterface(head.header) ? [] : [KIND.TYPE_CHANGED];
+}
+
+/**
+ * Type text with every empty interface written `any`. Go declares `any` as an alias of
+ * `interface{}` (identical types), so `go fix`'s rewrite of one into the other changes no
+ * caller (G7: 142 headers in cli/cli PR #14278, each read as a type change before). A
+ * package that declares its own `any` is not told apart: its change would read as none.
+ * @param {string} text
+ */
+const anyForEmptyInterface = (text) => text.replace(/\binterface\s*\{\s*\}/g, 'any');
+
+/**
+ * A copy of `symbol` whose signature's types read `any` for `interface{}`, for comparing only.
+ * @param {GoSymbol} symbol
+ * @returns {GoSymbol}
+ */
+function withAnyForEmptyInterface(symbol) {
+  const sig = /** @type {NonNullable<CollectedSymbol['sig']>} */ (symbol.sig);
+  return {
+    ...symbol,
+    sig: {
+      ...sig,
+      params: sig.params.map((p) => ({ ...p, type: typeof p.type === 'string' ? anyForEmptyInterface(p.type) : p.type })),
+      returns: typeof sig.returns === 'string' ? anyForEmptyInterface(sig.returns) : sig.returns,
+    },
+  };
 }
 
 /**
@@ -226,11 +258,12 @@ const prepare = (ctx) => require('../server-symbols').prepareFromServerSymbols(c
 
 /**
  * Go's caller extras for the editor's resolver (./editor-extras.js): value uses are not
- * calls, and a file outside the active build says so. Required here, not at the top, for
- * the same reason as the engine modules above.
+ * calls, a file outside the active build says so, and a method that shares an interface
+ * with code outside the repository may be missing callers. Required here, not at the top,
+ * for the same reason as the engine modules above.
  * @type {NonNullable<import('../types').LanguageProvider['editorCallers']>}
  */
-const editorCallers = ({ trace }) => require('./editor-extras').createGoEditorExtras({ trace });
+const editorCallers = ({ trace, services, repoRoot }) => require('./editor-extras').createGoEditorExtras({ trace, services, repoRoot });
 
 /**
  * Where the editor's Go server is warmed (src/readiness.js): the name of the first

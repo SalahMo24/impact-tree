@@ -58,9 +58,14 @@ function languageServicesOver(gopls, { repoRoot }) {
       const d = headOnly(doc);
       return d ? toServerLocations(await gopls.references(/** @type {any} */ (d), pos)) : null;
     },
+    // LSP allows `null` for "no implementations", and gopls sends it for a method that
+    // implements no interface. VS Code's executeImplementationProvider turns that into [],
+    // which is what the editor's services see; the harness does the same, so `null` keeps
+    // meaning "no answer" (G7: 139 methods read as unanswered before this).
     async implementations(doc, pos) {
       const d = headOnly(doc);
-      return d ? toServerLocations(await gopls.implementations(/** @type {any} */ (d), pos)) : null;
+      if (!d) return null;
+      return toServerLocations(await gopls.implementations(/** @type {any} */ (d), pos)) ?? [];
     },
     // The harness asks gopls nothing for definitions; no answer, never "nothing".
     definitions: async () => null,

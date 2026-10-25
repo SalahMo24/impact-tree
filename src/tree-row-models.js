@@ -91,7 +91,11 @@ const NO_SITE_EVIDENCE = { updated: [], untouched: [], unknown: [] };
 
 // What the analysis could not say about a caller search, in words a reviewer can act on.
 /** @type {Record<string, string>} */
-const INCOMPLETE_REASON_TEXT = { 'referenced-as-value': 'passed around as a value, so the call sites cannot be followed' };
+const INCOMPLETE_REASON_TEXT = {
+  'referenced-as-value': 'passed around as a value, so the call sites cannot be followed',
+  // Go (src/languages/go/editor-extras.js): calls through such an interface are not listed.
+  'implements-outside-interface': 'a method that shares an interface with code outside this repository, so calls through that interface are not listed',
+};
 
 /**
  * Why a caller search could not list the callers, as a clause for a sentence.
