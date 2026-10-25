@@ -547,6 +547,11 @@ run outside the editor: the MIT-licensed `pyright` npm package (decision P-D1).
 - **P8. Docs:** README Languages row and Python limits, changelog, `package.json`
   keywords.
 
+  **Done (2026-10-25):** the README's Languages table has a Python row and a Python section
+  (what it needs, how changes and callers are read, what reads as incomplete, what is not
+  detectable, the P7 numbers); its status line, Limitations and Roadmap say the same; the
+  changelog has the Python entry; `package.json`'s description and keywords name Python.
+
 ### Verification plan (agreed)
 
 Times are measured or estimated on this machine (Intel i7, 12 threads) when idle.

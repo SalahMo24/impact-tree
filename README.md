@@ -11,7 +11,7 @@ and nothing about *how the changes relate* — or which callers you forgot to up
 
 > **Status: early.** Local change review, GitHub PR browsing, no-checkout previews,
 > review progress, and GitHub review comments are implemented. Detailed change analysis
-> supports TypeScript and JavaScript everywhere, and Go in the editor; see
+> supports TypeScript and JavaScript everywhere, and Go and Python in the editor; see
 > [Languages](#languages) and [Limitations](#limitations).
 
 ## What it shows
@@ -56,10 +56,11 @@ silently-omitted optional parameter outranks a signature break that `tsc` alread
 | --- | --- | --- | --- |
 | TypeScript, JavaScript | Analysed: the bundled TypeScript compiler finds changes, the editor's language server finds callers | Analysed from the PR's own files only (syntax) | Analysed with its own TypeScript language service |
 | Go | Analysed through the [Go extension](https://marketplace.visualstudio.com/items?itemName=golang.go)'s language server, gopls | Listed as **not analysed**, with how to analyse it | Listed as **not analysed** |
-| Python, Java, Kotlin, C#, Ruby, Rust, PHP, Swift, C, C++, Scala | Listed as "*Language* · not analysed yet" | Same | Same |
+| Python | Analysed through the editor's Python language server, Pyright ([Pylance](https://marketplace.visualstudio.com/items?itemName=ms-python.vscode-pylance) in VS Code, Cursor's Python extension in Cursor) | Listed as **not analysed**, with how to analyse it | Listed as **not analysed** |
+| Java, Kotlin, C#, Ruby, Rust, PHP, Swift, C, C++, Scala | Listed as "*Language* · not analysed yet" | Same | Same |
 
-A file that was not analysed never reads as having no impact. A Go file Impact Tree could
-not analyse (gopls gave no answer, for example) is amber, counts toward **needs attention**
+A file that was not analysed never reads as having no impact. A Go or Python file Impact
+Tree could not analyse (its language server gave no answer, for example) is amber, counts toward **needs attention**
 until you mark it reviewed, and its tooltip and Details say why.
 
 ### Go
@@ -91,6 +92,40 @@ until you mark it reviewed, and its tooltip and Details say why.
   function found with no extras, every signature change classified, no caller that Go's
   static call graph finds missed, and no change shown as fine while a caller was not
   updated. See [the verification report](test/lsp-harness/G7-REPORT.md).
+
+### Python
+
+- **Needs the editor's Python language server** (Pylance in VS Code, Cursor's Python
+  extension in Cursor; both are Pyright). Without it, Python files are listed as not
+  analysed with a note to install it. The first review waits for it ("Waiting for the
+  Python language server (Pyright)… N s").
+- **Changed functions** are module functions and methods (`Class.method`, nested classes
+  too). A `def` inside a function is part of its parent's body. Definitions Pyright leaves
+  out of its outline (a property getter that has a setter, `@overload` stubs, one of two
+  definitions in an `if`/`else`) are read from the text, so a change in them is not lost.
+- **Signatures** compare parameters (`self`/`cls` left out, so renaming them is no change),
+  defaults, `*args`/`**kwargs`, positional-only and keyword-only markers, annotations and
+  the return annotation. Changing `@property`, `@staticmethod` or `@classmethod` is a
+  signature change; other decorators are not. A new `raise SomeError` in a function's own
+  body is a new throw path. Reformatting an annotation is no change; changing its quote
+  style is.
+- **Callers on untyped objects.** Pyright finds `obj.method()` only when it knows `obj`'s
+  type. Impact Tree searches the repository for calls by the method's name that Pyright
+  could not resolve; if there are any, the answer reads as incomplete ("N calls by this
+  name that the language server could not resolve"), never as complete. Common names
+  (`get`, `items`) can make this amber more often than needed, and the search checks at
+  most 50 calls per method ("more than 50 calls by this name; N not checked").
+- **Read as incomplete, never "no callers":** a function used as a value (a callback, a
+  dict entry, `functools.partial`); a function registered by a decorator (`@app.route`,
+  `@pytest.fixture`) with no caller found; a method Python calls itself (`__hash__`, `__eq__`, `__enter__`, …);
+  and a class's `__init__`, whose constructions (`Client(...)`) Pyright does not list as
+  its callers.
+- **Not detectable:** `getattr(obj, "name")()`, `operator.methodcaller`, calls built from
+  strings, and calls through a base class's method that reach an override at run time.
+- **Measured** on 10 merged encode/httpx pull requests (141 changed functions): every
+  changed function found with no extras, every signature change classified, and every
+  caller the Jedi analyser finds that Impact Tree does not list sits on an answer marked
+  incomplete. See [the verification report](test/lsp-harness/P7-REPORT.md).
 
 ## Review workflow
 
@@ -218,9 +253,10 @@ repo they were captured against, so they are gitignored. Regenerate locally with
 
 ## Limitations
 
-1. **TypeScript, JavaScript and Go only.** Go is analysed in the editor, with the Go
-   extension; previews and the CLI analyse TypeScript and JavaScript only. Throw analysis
-   is TypeScript and JavaScript only. See [Languages](#languages).
+1. **TypeScript, JavaScript, Go and Python only.** Go and Python are analysed in the
+   editor, with its language server for each; previews and the CLI analyse TypeScript and
+   JavaScript only. Throw analysis is TypeScript, JavaScript and Python (`raise`). See
+   [Languages](#languages).
 2. **Cross-service edges do not exist statically.** HTTP, queue and workflow boundaries
    cannot be resolved, and shared type names are not call edges.
 3. **Full project analysis may require the project's dependencies and language server.**
@@ -237,7 +273,7 @@ repo they were captured against, so they are gitignored. Regenerate locally with
 
 ## Roadmap
 
-- Python and Java, each as a language provider (see `docs/MULTI_LANGUAGE_PLAN.md`).
+- Java as a language provider (see `docs/MULTI_LANGUAGE_PLAN.md`).
 - Add filters for untested blast radius and changes crossing project boundaries.
 - Export the impact tree as a PR comment.
 

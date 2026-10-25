@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Python support** in the editor, through its Python language server (Pyright, from
+  Pylance or Cursor's Python extension): changed functions and methods, including the
+  definitions Pyright leaves out of its outline (a property getter with a setter, `@overload`
+  stubs); signature changes (parameters, defaults, `*args`/`**kwargs`, positional-only and
+  keyword-only, annotations, return, `@property`/`@staticmethod`/`@classmethod`) and new
+  `raise` paths; callers with "updated at the call" or not; test callers from `test_*.py`,
+  `*_test.py`, `conftest.py` and `tests/`; review ticks that survive edits to other functions.
+  Calls on untyped objects that the server could not resolve, values, decorator
+  registrations, protocol methods and constructors read as incomplete with the reason,
+  never as "no callers". Checked on 10 merged encode/httpx pull requests (141 changed
+  functions; see `test/lsp-harness/P7-REPORT.md`). The PR preview and the CLI list Python
+  files as not analysed.
 - **Go support** in the editor, through the Go extension's language server (gopls): changed
   functions and methods, signature changes (receiver, type parameters, parameters,
   results), callers with "updated at the call" or not, test callers from `_test.go`, and
