@@ -165,11 +165,61 @@
  *   absent: the provider reads the repository itself (the CLI).
  * @property {{ component: string, projectRoot: string }} [unit] The one unit every file
  *   is in, where the project layout is not on disk (the preview); absent: the provider's own.
+ * @property {RemoteSource} [remote] What only the no-checkout preview has: the pull request on
+ *   GitHub its files came from, for a provider whose `prepareSyntactic` reads more of it than
+ *   the files it is handed (TypeScript: its configuration and parser). Absent outside the
+ *   preview. A provider that does not need it ignores it (Python). In the preview every
+ *   provider with `prepareSyntactic` is asked, even with no `files`, so its changed tests
+ *   are still indexed; `files` is never empty otherwise.
  * @property {{ makeResolver?: Function, makeModuleCallers?: Function, services?: LanguageServices }} hooks The
  *   environment's `analyze()` options that choose how callers are found (the editor passes
  *   its language-server resolver) and, as `services`, the environment's language servers
  *   (`analyze()`'s `languageServices`; absent in the CLI). Each provider documents the ones
  *   it reads.
+ */
+
+/**
+ * The pull request the no-checkout preview reads (src/engine/analyze-remote.js), as a
+ * provider's `prepareSyntactic` is handed it (`PrepareContext.remote`).
+ * @typedef {object} RemoteSource
+ * @property {any} ts The TypeScript module the preview parses with.
+ * @property {any} gh The GitHub client (`fileAtRef`), under the preview's request limits.
+ * @property {{ owner: string, repo: string }} slug
+ * @property {string} headSha The pinned head commit; everything read is read at it.
+ * @property {(event: { phase: string, message: string, done?: number, total?: number }) => void} onProgress
+ *   The preview's progress (its `index` phase).
+ * @property {(message: string) => void} trace
+ */
+
+/**
+ * A syntax-only caller index (no language server, no type checker): what the shared
+ * `createSyntacticResolver` (src/engine/resolver-syntactic.js) asks. Implemented by
+ * TypeScript's (src/engine/syntactic-index.js) and Python's
+ * (src/languages/python/syntactic-index.js). Files are absolute paths, positions UTF-16
+ * offsets of a declaration's name. Built once from a fixed set of texts and never changed,
+ * so its answers can be cached by the resolver for its lifetime.
+ *
+ * Python's index also has `scopeNote()`, the words for what it indexed; TypeScript's has no
+ * such note (the preview's own notice states its scope), so it is not part of the contract.
+ * @typedef {object} SyntacticIndex
+ * @property {(file: string, pos: number) => { className: string|null, name: string }|null} symbolAt
+ *   The declaration whose name is at `pos` in `file`; null when the index has none there.
+ * @property {(target: { file: string, className?: string|null, name: string, pos?: number }) => { callers: SyntacticCaller[], incompleteReason: string|null }} callersOfWithStatus
+ *   The indexed callers of a declaration. `incompleteReason` is null only when the search of
+ *   the indexed files was complete (TypeScript); Python's is never null.
+ * @property {(target: { name: string }) => number} unresolvedCallsTo The calls named `name`
+ *   on a receiver the index could not resolve, which may reach any declaration so named.
+ * @property {number} size Files indexed.
+ */
+
+/**
+ * One caller in a `SyntacticIndex` answer: the enclosing declaration and its call sites.
+ * @typedef {object} SyntacticCaller
+ * @property {string} file Absolute.
+ * @property {string} label
+ * @property {number} pos Offset of the caller's name.
+ * @property {Array<{ start: number, end: number }>} callSites Offsets, exclusive end.
+ * @property {string} [via] How it was reached when not by a direct call (`cqrs`).
  */
 
 /**
@@ -203,9 +253,17 @@
  *   rows from it instead of parsing the file, so a language whose symbols come from a
  *   server is identified by content without asking the server again. A provider that
  *   leaves it out (TypeScript) has its files parsed by the identity itself.
+ * - `indexCallers()` (`prepareSyntactic` in the preview only): the second phase. The
+ *   preview publishes the changed rows first and then calls it, before any caller query;
+ *   it fetches what callers need and builds the index, and sets each unit's `resolver`,
+ *   which until then is a stand-in that rejects every query. A provider that builds its
+ *   index in `prepareSyntactic` itself (Python) has none.
+ * - `scopeNote`: what a syntax-only caller search indexed, when it differs from what the
+ *   preview's notice states (Python's index's `scopeNote()`); the preview lists the language
+ *   in its `callersScope`. TypeScript's preview search is the one the notice describes.
  * @typedef {object} PreparedLanguage
  * @property {AnalysisUnit[]} units
- * @property {{ notes?: () => string[], dispose?: () => void, resultProperties?: Record<string, unknown>, reviewSymbols?: Map<string, RecordedSymbols> }} [extras]
+ * @property {{ notes?: () => string[], dispose?: () => void, resultProperties?: Record<string, unknown>, reviewSymbols?: Map<string, RecordedSymbols>, indexCallers?: () => Promise<void>, scopeNote?: string }} [extras]
  */
 
 /**

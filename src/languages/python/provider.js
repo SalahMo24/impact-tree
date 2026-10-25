@@ -568,7 +568,8 @@ async function prepareSyntactic(ctx) {
   for (const unit of answer.units) unit.resolver = resolver;
   const files = new Set(changed.map((c) => c.relPath)).size;
   if (files) ctx.warnings.push(`${files} changed Python file(s) read from their text: changed functions and signature kinds; ${idx.scopeNote()}`);
-  return answer;
+  // The preview lists Python in its `callersScope` with this note (types.js, PreparedLanguage).
+  return { ...answer, extras: { ...answer.extras, scopeNote: idx.scopeNote() } };
 }
 
 /**

@@ -86,9 +86,31 @@ const sortKey = (/** @type {any} */ row) => {
   return `${where}\u0000${what}\u0000${JSON.stringify(row)}`;
 };
 
+/**
+ * S2 (docs/MULTI_LANGUAGE_PLAN.md, Part S) replaced the result's `callersNotComputed` and
+ * `callersSyntaxOnly` with `callersScope: [{ language, scope, note }]`; the goldens were recorded
+ * before. This puts the two old fields back exactly as the old code wrote them, in
+ * `callersScope`'s place among the keys, and drops it: `callersNotComputed` the names of scope
+ * `not-computed`, always there (possibly empty) except in the result of a PR with nothing to
+ * analyse (no `callersPending`), which had neither; `callersSyntaxOnly` the names of scope
+ * `pr-files`, only when there are some.
+ * @param {any} result
+ */
+function withOldCallerScopeFields(result) {
+  /** @type {any} */ const out = {};
+  for (const [k, v] of Object.entries(result)) {
+    if (k !== 'callersScope') { out[k] = v; continue; }
+    if (!('callersPending' in result)) continue;
+    const names = (/** @type {string} */ scope) => v.filter((/** @type {any} */ s) => s.scope === scope).map((/** @type {any} */ s) => s.language);
+    out.callersNotComputed = names('not-computed');
+    if (names('pr-files').length) out.callersSyntaxOnly = names('pr-files');
+  }
+  return out;
+}
+
 /** Volatile fields dropped, machine paths replaced, top-level row lists sorted by (path, label). */
 function normalise(/** @type {any} */ result, /** @type {string} */ repo) {
-  let text = JSON.stringify(result);
+  let text = JSON.stringify(withOldCallerScopeFields(result));
   text = text.split(repo).join('<REPO>').split(REPOS).join('<REPOS>').split(os.homedir()).join('<HOME>');
   for (const t of new Set(text.match(/\/(private\/)?var\/folders\/[^"\s]*|\/tmp\/[^"\s]*/g) || [])) text = text.split(t).join('<TMP>');
   const strip = (/** @type {any} */ o) => {
