@@ -29,6 +29,7 @@ const SUITE = [
   { file: 'test/typescript-provider.test.js', tier: 'full' },  // 8.2s
   { file: 'test/go-rules.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/go-signature.test.js', tier: 'quick' },  // 0.2s
+  { file: 'test/python-signature.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/not-analysed.test.js', tier: 'full' },
   { file: 'test/go-call-sites.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/go-editor-extras.test.js', tier: 'quick' },  // 0.3s
@@ -138,6 +139,7 @@ const EXCLUDED = {
   'windows-preview.js': 'child script spawned by test/remote-regressions.test.js',
   'windows-workspace-projects.js': 'child script spawned by test/local-programs.test.js',
   'go-signature-oracle.js': 'dev script: compares against the Go toolchain on a Go repo given as an argument',
+  'py-signature-oracle.js': 'dev script: compares against Python\'s ast module on a Python repo given as an argument',
   'measure-cqrs-cache.js': 'dev script: measurement, not a pass/fail test',
   'measure-inheritance.js': 'dev script: measurement, not a pass/fail test',
   'record-fixture.js': 'dev script: `npm run record` captures fixtures',
