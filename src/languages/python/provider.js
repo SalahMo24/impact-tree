@@ -188,6 +188,32 @@ function decoratedStart(text, starts, defLine, indent, floor) {
   return starts[line - 1] + indent.length;
 }
 
+const BLOCK_OPENER = /^(?:if|elif|else|try|except|finally|with|for|while|async[ \t]+(?:with|for))\b.*:[ \t]*(?:#.*)?$/;
+
+/**
+ * Whether the def on `defLine`, indented `width` characters, is in an `if`/`try`/`with`/`for`/
+ * `while` block of the scope (P7: httpx `_compat.py` defines one function in both branches of
+ * an `if`, and Pyright lists one of them): the nearest line above it, within the scope, that
+ * starts code at a smaller indentation is such a block's opener. Blank, comment and deeper
+ * lines (the block's other statements, decorators) are skipped. A def in a function is not
+ * asked here (the function's range covers it), and a `def` line in a docstring has the
+ * docstring's text above it, not an opener. Limit: a match statement's `case` blocks are not
+ * read. Bound: one pass upwards over the scope's lines.
+ * @param {string} text @param {number[]} starts @param {number} defLine One-based.
+ * @param {number} width @param {number} floor The scope's start offset.
+ * @returns {boolean}
+ */
+function inBlockOfScope(text, starts, defLine, width, floor) {
+  for (let line = defLine - 1; line >= 1 && starts[line - 1] >= floor; line--) {
+    const lineText = text.slice(starts[line - 1], line < starts.length ? starts[line] - 1 : text.length).replace(/\r$/, '');
+    const code = lineText.trimStart();
+    if (code === '' || code.startsWith('#')) continue;
+    if (lineText.length - code.length >= width) continue;
+    return BLOCK_OPENER.test(code.trimEnd());
+  }
+  return false;
+}
+
 /**
  * Decorators and binding read from the text, for a declaration the parser could not read:
  * each `@` line above the `def` (its first line, trimmed).
@@ -224,11 +250,15 @@ function decoratorsOf(decoratorText) {
  *   definitions are inside no symbol's range and a change there would read as outside every
  *   function. In each class body, and at module level, every `def`/`async def` line at that
  *   body's indentation that no listed symbol covers becomes a candidate, from its first
- *   decorator to its body's end (`scanDef`). A class body's indentation is read from its
- *   listed methods (a class with none listed is not scanned: Pyright merges definitions,
- *   so a class with methods always has one listed). Bound: one pass per scope over its
- *   lines, plus one `scanDef` per recovered def. Limit: a docstring line at exactly the
- *   body's indentation that starts with `def name` would be taken for a definition.
+ *   decorator to its body's end (`scanDef`); so does a deeper one in an `if`/`try`/`with`/
+ *   `for`/`while` block of that body (`inBlockOfScope`; P7: one function defined in both
+ *   branches of an `if` is listed once). A recovered def covers its own body. A class
+ *   body's indentation is read from its listed methods (a class with none listed is not
+ *   scanned: Pyright merges definitions, so a class with methods always has one listed).
+ *   Bound: one pass per scope over its lines, plus one `scanDef` per recovered def and,
+ *   for a deeper def line no symbol covers, one upward pass to its block's opener. Limit: a
+ *   docstring line at exactly the body's indentation that starts with `def name` would be
+ *   taken for a definition.
  * - `label` is the qualified name (`func`, `Class.method`); `key` the same, with repeats in
  *   one file keyed `#2`, `#3` in source order (a getter `Class.timeout`, its setter
  *   `Class.timeout#2`), so base and head match by position among the repeats.
@@ -303,12 +333,17 @@ function collectPythonSymbols(symbols, text, parser = defaultParser()) {
     const indent = scope.indent;
     DEF_LINE.lastIndex = scope.start;
     for (let m = DEF_LINE.exec(text); m && m.index < scope.end; m = DEF_LINE.exec(text)) {
-      if (m[1] !== indent) continue;
-      const defStart = m.index + indent.length;
+      const defIndent = m[1];
+      if (!defIndent.startsWith(indent)) continue;
+      const defStart = m.index + defIndent.length;
+      // Covered first: a listed function or class holds most deeper def lines, and is cheap to test.
       if (covered.some((r) => r.start <= defStart && defStart < r.end)) continue;
-      const scanned = scanDef(text, defStart, indent.length, scope.end);
+      if (defIndent !== indent && !inBlockOfScope(text, starts, lineOf(starts, m.index), defIndent.length, scope.start)) continue;
+      const scanned = scanDef(text, defStart, defIndent.length, scope.end);
       if (!scanned) continue;
-      const start = Math.max(scope.start, decoratedStart(text, starts, lineOf(starts, m.index), indent, scope.start));
+      const start = Math.max(scope.start, decoratedStart(text, starts, lineOf(starts, m.index), defIndent, scope.start));
+      // A recovered def covers its body, so a def nested in it stays its body (P-D5).
+      covered.push({ start, end: scanned.end });
       found.push({
         qualified: prefix + m[2], simpleName: m[2], className,
         start, end: scanned.end, namePos: m.index + m[0].length - m[2].length, recovered: true,

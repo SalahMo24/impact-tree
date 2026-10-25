@@ -102,6 +102,23 @@ test('@overload stubs are recovered, in classes and at module level, keyed in so
   assert.equal(by['Tool.run'].header, 'async def run(self) -> None');
 });
 
+// P7 (httpx #3319): `_compat.py` defines `set_minimum_tls_version_1_2` in both branches of an
+// `if`; Pyright lists one, and only defs at the scope's own indentation were recovered, so
+// the base side's second definition was missing and its removal was not reported.
+test('a name defined in both branches of an if or try is recovered, at module level and in a class; nested defs and docstrings are not', () => {
+  const text = texts['branches.py'];
+  const syms = collect('branches.py');
+  assert.deepEqual(syms.map((s) => s.key), ['set_minimum', 'set_minimum#2', 'decode', 'decode#2', 'Box.path', 'Box.path#2', 'Box.size', 'example']);
+  const by = Object.fromEntries(syms.map((s) => [s.key, s]));
+  assert.equal(by['set_minimum#2'].recovered, true);
+  assert.equal(text.slice(by['set_minimum#2'].start, by['set_minimum#2'].end), 'def set_minimum(context):\n        context.options |= 1');
+  assert.equal(by.decode.recovered, true);
+  assert.equal(text.slice(by.decode.start, by.decode.end), 'def decode(data):\n        return brotli.decompress(data)');
+  assert.equal(by['Box.path'].recovered, true);
+  assert.equal(by['Box.path'].className, 'Box');
+  assert.equal(by['Box.size'].recovered, false);
+});
+
 test('exported, constructor and the injected parser\'s answers', () => {
   const by = Object.fromEntries(collect('tool.py@base').map((s) => [s.key, s]));
   assert.equal(by['Tool.__init__'].exported, true, 'a dunder is public');

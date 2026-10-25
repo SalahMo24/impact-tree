@@ -101,7 +101,56 @@ const toolHead = toolBase
   .replace('        class Deeper:\n            def deepest(self):\n                return 2', '        class Deeper:\n            def deepest(self):\n                return 3')
   .replace('def _hidden():\n    return 1\n', 'def _hidden():\n    return 1\n\n\ndef added(z):\n    return z\n');
 
+// P7 (httpx #3319, `_compat.py`): one name defined in both branches of an `if` and of a
+// `try`, at module level and in a class; Pyright lists one definition of each name.
+const branches = `import ssl
+import sys
+
+if sys.version_info >= (3, 10):
+
+    def set_minimum(context):
+        context.minimum = 2
+
+else:
+
+    def set_minimum(context):
+        context.options |= 1
+
+try:
+    import brotli
+
+    def decode(data):
+        return brotli.decompress(data)
+except ImportError:  # pragma: no cover
+    def decode(data):
+        raise RuntimeError("no brotli")
+
+
+class Box:
+    if sys.platform == "win32":
+        def path(self):
+            return "C:"
+    else:
+        def path(self):
+            return "/"
+
+    def size(self):
+        def inner():
+            return 1
+        return inner()
+
+
+def example():
+    """Example:
+
+        def not_a_function():
+            pass
+    """
+    return 1
+`;
+
 module.exports = {
+  'branches.py': branches,
   'httpx_exceptions.py': httpxFile('httpx_exceptions.py.txt'),
   'httpx_auth.py': httpxFile('httpx_auth.py.txt'),
   'tool.py@base': toolBase,
