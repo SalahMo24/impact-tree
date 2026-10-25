@@ -219,6 +219,9 @@ function annotationClass(toks) {
  * @param {{ root?: string, scope?: string, notIndexed?: number }} [options] `root`: joined to
  *   each path to give the files' keys (the engine's absolute paths); `scope`: what was indexed,
  *   in words, for the scope note; `notIndexed`: files the caller left out, said in it.
+ * @returns {import('../types').SyntacticIndex & { skipped: number, scopeNote: () => string, byFile: Map<string, FileRec> }}
+ *   The shared contract, with what this index has besides: the files over the size limit it
+ *   skipped, its scope note, and the parsed files.
  */
 function createPythonSyntacticIndex(sources, { root = '', scope = 'the indexed files', notIndexed = 0 } = {}) {
   /** @type {Map<string, FileRec>} */

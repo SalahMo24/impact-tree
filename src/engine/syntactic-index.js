@@ -21,6 +21,17 @@ function scriptKindOf(ts, file) {
 
 const slash = (p) => p.replace(/\\/g, '/');
 
+// Implements `SyntacticIndex` (src/languages/types.js), with TypeScript's own extras (`byFile`,
+// `callersOf`, `resolveModule`, the class graph). This file is not enrolled in type checking
+// (`// @ts-check` gives over a hundred errors in its untyped AST walk), so its return type is
+// left inferred, not declared: declaring it here would go unchecked, and would hide the
+// inferred type from the check that does hold, in src/languages/typescript/provider.js,
+// where the index the preview builds is typed as a `SyntacticIndex`.
+/**
+ * @param {any} ts The TypeScript module.
+ * @param {Array<{ path: string, text: string }>} sources Absolute paths and texts.
+ * @param {{ baseDirs?: string[], tsPaths?: any, pathsBase?: string|null, moduleOptions?: Map<string, any>, packages?: any[] }} [options]
+ */
 function createSyntacticIndex(ts, sources, { baseDirs = [], tsPaths = null, pathsBase = null, moduleOptions = new Map(), packages = [] } = {}) {
   const byFile = new Map();
   const texts = new Map();

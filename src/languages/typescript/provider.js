@@ -102,7 +102,7 @@ function notingOutsideProgram(resolver, repo, onOutside) {
 /**
  * The changed, deleted and outside parts of one TypeScript/JavaScript file, parsed with
  * `ts`: `changedSymbolsIn` (src/engine/changed-symbols.js) with this language's symbol
- * walk. Shared by `prepare` and the no-checkout preview (src/engine/analyze-remote.js).
+ * walk. Shared by `prepare` and `prepareSyntactic` (the no-checkout preview).
  * Pure: it reads no file.
  * @param {any} ts The TypeScript module.
  * @returns {(file: Parameters<typeof import('../../engine/changed-symbols').changedSymbolsIn>[2]) => { changed: any[], deleted: any[], outside: any[] }}
@@ -246,6 +246,104 @@ async function prepare(ctx) {
 }
 
 /**
+ * `prepare` for the no-checkout preview (src/engine/analyze-remote.js), which hands it the
+ * PR's TypeScript/JavaScript files with their fetched texts and `ctx.remote`: the changed,
+ * deleted and outside parts of each file (`changedSymbolsWith(remote.ts)`), in one unit for
+ * the whole pull request. Callers come from a syntax-only index of the PR's own files of this
+ * language and its changed tests (`ctx.syntacticSources`), with the module options and
+ * packages of the PR head's configuration (src/engine/remote-config.js), through the shared
+ * `createSyntacticResolver`. Nothing is read from disk, and `ctx.hooks` is not read.
+ *
+ * Two phases. The configuration is fetched from GitHub, and the preview publishes the changed
+ * rows before any of it: so this returns the rows with a stand-in resolver, and
+ * `extras.indexCallers()`, which the preview calls once the rows are out, fetches the
+ * configuration, builds the index and puts the real resolver on the unit. Not a resolver that
+ * builds its index on first use: then the fetch and its warnings would happen only when a
+ * TypeScript row is asked about (never, in a PR with none), inside the caller stage after its
+ * 'resolve' progress began, and a failed fetch would surface as a failed caller query.
+ * @param {PrepareContext} ctx
+ * @returns {Promise<import('../types').PreparedLanguage>}
+ */
+async function prepareSyntactic(ctx) {
+  const { remote } = ctx;
+  if (!remote) throw new Error('TypeScript is read from its text only in the no-checkout preview; it needs the pull request (ctx.remote)');
+  if (!remote.ts) throw new Error('Preview needs TypeScript to parse the PR files');
+  const component = ctx.unit ? ctx.unit.component : 'pull request';
+  const symbolsOf = changedSymbolsWith(remote.ts);
+  /** @type {any[]} */
+  const changed = [];
+  /** @type {object[]} */
+  const deleted = [];
+  /** @type {AnalysisUnit['outside']} */
+  const outside = [];
+  const headTexts = ctx.headTexts || new Map();
+  for (const f of ctx.files) {
+    const absPath = path.join(ctx.repo, f.path);
+    const headText = headTexts.get(f.path) ?? null;
+    const baseText = f.status === 'added' ? null : ctx.baseTexts.get(f.oldPath || f.path) ?? null;
+    const hunkRanges = ctx.changedRanges[f.path] || [];
+    // As before S2, the preview's rows have no project (`projectRoot: null`) and no
+    // `oldPath`: the review identity of a previewed TypeScript row is unchanged.
+    const r = symbolsOf({
+      absPath, relPath: f.path, status: f.status, headText, baseText,
+      hunkRanges, hunkDeletions: ctx.deletions[f.path] || [],
+      component, projectRoot: null,
+    });
+    changed.push(...r.changed);
+    deleted.push(...r.deleted);
+    if (r.outside.length) outside.push({ file: absPath, relPath: f.path, ranges: r.outside });
+    remote.trace(`${f.path}: ${hunkRanges.length} hunk(s), `
+      + `head=${headText ? headText.length : 0}b base=${baseText ? baseText.length : 0}b `
+      + `-> ${r.changed.length} changed, ${r.deleted.length} deleted symbol(s)`);
+  }
+  /** @type {AnalysisUnit} */
+  const unit = { component, projectRoot: '', changed, deleted, outside, resolver: notIndexedYet() };
+  const sources = ctx.syntacticSources || [];
+  return {
+    units: [unit],
+    extras: {
+      indexCallers: async () => {
+        const { throwIfCancelled } = require('../../engine/cancellation');
+        const { createSyntacticResolver } = /** @type {any} */ (require('../../engine/resolver-syntactic'));
+        const { isTestFile } = require('../../engine/diff');
+        const config = /** @type {any} */ (require('../../engine/remote-config'));
+        const paths = sources.map((source) => source.path);
+        remote.onProgress({ phase: 'index', message: `indexing ${sources.length} file(s)` });
+        const [moduleOptions, packages] = await Promise.all([
+          config.remoteOptions(remote.ts, remote.gh, remote.slug, remote.headSha, ctx.repo, paths, ctx.warnings, ctx.signal),
+          config.remotePackages(remote.gh, remote.slug, remote.headSha, ctx.repo, paths, ctx.warnings, ctx.signal),
+        ]);
+        throwIfCancelled(ctx.signal);
+        /** @type {import('../types').SyntacticIndex} */
+        const idx = require('../../engine/syntactic-index').createSyntacticIndex(remote.ts,
+          sources.map((source) => ({ path: path.join(ctx.repo, source.path), text: source.text })),
+          { baseDirs: [ctx.repo], moduleOptions, packages });
+        // The collector's anchor for a constructor (and some arrow forms) is not the index's,
+        // so each changed row says what it is.
+        const hints = new Map();
+        for (const c of changed) {
+          hints.set(`${c.file}#${c.namePos}`, {
+            className: c.nested ? null : c.className || null,
+            name: c.isConstructor ? 'constructor' : c.simpleName,
+          });
+        }
+        unit.resolver = createSyntacticResolver(idx, { isTestPath: (/** @type {string} */ file) => isTestFile(ctx.repo, file), hints });
+      },
+    },
+  };
+}
+
+/**
+ * The preview unit's resolver until `indexCallers` has run: every query rejects, so a caller
+ * stage started before the index is built fails loudly instead of reading "no callers".
+ * @returns {AnalysisUnit['resolver']}
+ */
+function notIndexedYet() {
+  const reject = async () => { throw new Error('internal: TypeScript caller query before extras.indexCallers() built the preview index'); };
+  return Object.freeze({ callerState: reject, incoming: reject, incomingWithStatus: reject });
+}
+
+/**
  * The editor resolver's TypeScript extras; see ./editor-extras.js.
  * @type {NonNullable<import('../types').LanguageProvider['editorCallers']>}
  */
@@ -262,6 +360,7 @@ const typescriptProvider = Object.freeze({
   ...typescriptRules,
   needsServer: false,
   prepare,
+  prepareSyntactic,
   editorCallers,
   warmUpTarget,
 });

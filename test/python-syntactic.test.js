@@ -287,8 +287,8 @@ test('a preview reads Python from the fetched text: kinds, callers from the PR\'
   assert.equal(by2['tests/test_m.py'], undefined, 'a Python test is listed as a test, not as not analysed');
   assert.equal(by2['cmd/main.go'].language, 'Go');
   assert.equal('pkg/m.py' in by2, false);
-  assert.deepEqual(r.callersNotComputed, []);
-  assert.deepEqual(r.callersSyntaxOnly, ['Python']);
+  assert.deepEqual(r.callersScope.map((s) => [s.language, s.scope]), [['Python', 'pr-files']]);
+  assert.match(r.callersScope[0].note, /^Python callers from syntax only: the pull request's own files/);
   assert.ok(r.reviewSymbols.get('pkg/m.py'));
   const note = models.previewLimitsNote(r);
   assert.match(note, /Python callers are from syntax only, in the PR's own files/);

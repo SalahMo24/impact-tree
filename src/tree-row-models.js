@@ -342,17 +342,19 @@ const NOT_ANALYSED_DESC = 'not analysed';
 const notAnalysedText = (notAnalysed) => `${notAnalysed.language}: ${NOT_ANALYSED_DESC} — ${notAnalysed.reason}`;
 
 /**
- * The Preview's limits in words for a result: `PREVIEW_LIMITS_NOTE`; the languages read from
- * their text alone, whose callers are not computed (`result.callersNotComputed`) or come from
- * syntax only (`result.callersSyntaxOnly`); and, when
+ * The Preview's limits in words for a result: `PREVIEW_LIMITS_NOTE`; the languages whose
+ * callers are not computed or come from syntax only, in the PR's own files
+ * (`result.callersScope`, scope `not-computed` and `pr-files`); and, when
  * the pull request has files of a language the Preview cannot analyse, which those are.
  * @param {any} result
  * @returns {string}
  */
 function previewLimitsNote(result) {
   const languages = [...new Set((result.otherFiles || []).map((/** @type {any} */ f) => f.notAnalysed && f.notAnalysed.language).filter(Boolean))];
-  const textOnly = /** @type {string[]} */ (result.callersNotComputed || []);
-  const syntaxOnly = /** @type {string[]} */ (result.callersSyntaxOnly || []);
+  /** @type {Array<{ language: string, scope: string }>} */
+  const scopes = result.callersScope || [];
+  const textOnly = scopes.filter((s) => s.scope === 'not-computed').map((s) => s.language);
+  const syntaxOnly = scopes.filter((s) => s.scope === 'pr-files').map((s) => s.language);
   const parts = [PREVIEW_LIMITS_NOTE];
   if (textOnly.length) parts.push(`${textOnly.join(', ')} callers are not computed (changed functions and kinds only); check out the PR to find them in the editor.`);
   if (syntaxOnly.length) parts.push(`${syntaxOnly.join(', ')} callers are from syntax only, in the PR's own files: untyped receivers and dynamic calls are not resolved; check out the PR to find them all in the editor.`);
