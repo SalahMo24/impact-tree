@@ -9,7 +9,12 @@
  *
  *   node test/lsp-harness/py-verify.js <absolute path to httpx clone> --worktree <absolute path to a worktree of it>
  *     [--prs 3319,3394] [--pyright path] [--jedi-python path] [--out dir] [--summary file]
- *     [--cache dir] [--no-cache] [--deadline-ms n]
+ *     [--cache dir] [--no-cache] [--deadline-ms n] [--syntactic]
+ *
+ * `--syntactic` (A4): the pipeline runs without a language server, as the CLI does, so
+ * Python is read from its text (`prepareSyntactic`); only changed functions and kinds are
+ * compared (oracle (a)), Jedi is not run, and every changed row must have its callers not
+ * computed (`notComputedViolations` lists any that does not). No Pyright is started.
  *
  * Two phases, run side by side:
  * - Oracles, per PR (at most ORACLE_CONCURRENCY PRs at once). The head commit is exported with
@@ -461,7 +466,7 @@ function jediTargets(oracle) {
 }
 
 /** Both oracles for one PR, from the cache when it has them. The head is exported only when needed. */
-async function oraclesFor({ repo, pr, hashes, cacheRoot, jediPython, log }) {
+async function oraclesFor({ repo, pr, hashes, cacheRoot, jediPython, log, syntactic = false }) {
   const started = Date.now();
   const cacheDir = cacheRoot ? path.join(cacheRoot, `${pr.head}-${pr.base}`) : null;
   let exportRoot = null;
@@ -487,6 +492,10 @@ async function oraclesFor({ repo, pr, hashes, cacheRoot, jediPython, log }) {
     });
     const oracle = astResult.value;
     if (oracle.errors.length) throw new Error(`#${pr.number}: ast could not read ${oracle.errors.join('; ')}`);
+    if (syntactic) {
+      log(`#${pr.number} oracles: ${oracle.changes.length} function changes (ast ${astResult.hit ? 'cached' : 'computed'}, ${((Date.now() - started) / 1000).toFixed(1)} s)`);
+      return { oracle, jedi: { results: [] }, oracleMs: Date.now() - started, cachedOracles: astResult.hit ? 2 : 0 };
+    }
     const targets = jediTargets(oracle);
     const jediResult = await cached(cacheDir, `jedi-${hashes.jedi}.json`, async () => {
       const root = await ensureExport();
@@ -532,11 +541,19 @@ function lineFinder() {
 }
 
 /** The pipeline on one PR, fresh Pyright, the worktree checked out at the PR's head. */
-async function pipelineFor(worktree, pr, pyrightPath) {
+async function pipelineFor(worktree, pr, pyrightPath, syntactic = false) {
   if (git(worktree, 'status', '--porcelain', '--untracked-files=no').trim()) throw new Error('the worktree has uncommitted changes');
   git(worktree, 'checkout', '-q', '--detach', pr.head);
   if (git(worktree, 'rev-parse', 'HEAD').trim() !== pr.head) throw new Error(`the worktree is not at ${pr.head}`);
   const t0 = Date.now();
+  if (syntactic) {
+    let firstMs = null;
+    const result = await analyze(worktree, {
+      mode: 'pr', base: pr.base, allowLocalBase: true, skipForest: true, deferTestReach: true, depth: 2,
+      onPrepared: () => { firstMs = Date.now() - t0; },
+    });
+    return { result, startMs: 0, firstMs, fullMs: Date.now() - t0 };
+  }
   const pyright = createPyrightServices({ repo: worktree, pyrightPath });
   track(pyright.client.proc);
   try {
@@ -613,7 +630,7 @@ const headerText = (f) => `${f.async ? 'async ' : ''}def ${f.name}(${f.params.ma
  * function that encloses the call site in the head commit (`<rel>#<key>`, `<rel>#(module)`
  * outside every function), from the `ast` index, so a nested def counts as its parent (P-D5).
  */
-function comparePr({ worktree, pr, result, oracle, jedi }) {
+function comparePr({ worktree, pr, result, oracle, jedi, syntactic = false }) {
   const changedLines = oracle.changedLines;
   const index = oracle.index;
   const lineOf = lineFinder();
@@ -707,7 +724,9 @@ function comparePr({ worktree, pr, result, oracle, jedi }) {
   return {
     functions: { tp, fp, fn, pipeline: pipelineRows.length, oracle: oracleRows.length, outOfScope },
     kinds: kindRows,
-    callers: callerRows,
+    callers: syntactic ? [] : callerRows,
+    // Without a server every row's callers are not computed: never complete, never 'none'.
+    ...(syntactic ? { notComputedViolations: result.allChanged.filter((c) => c.callersComplete !== false || c.callerState !== 'unknown' || !/^not computed:/.test(c.callersIncompleteReason || '')).map((c) => `${c.relPath}#${c.key}`) } : {}),
     warnings: result.warnings,
     unanalysable: result.unanalysable,
     notAnalysed: (result.otherFiles || []).filter((f) => f.notAnalysed).map((f) => `${f.path}: ${JSON.stringify(f.notAnalysed)}`),
@@ -775,6 +794,7 @@ function summarise(out, corpus) {
       if (c.fineWithNotUpdated) lines.push(`- **fine while Jedi has a non-updated caller**: \`${c.id}\` [${c.kinds}] verdict "${c.verdict}"; ${c.notUpdated.slice(0, 3).join(', ')}`);
     }
     if (r.notAnalysed.length) lines.push(`- not analysed: ${r.notAnalysed.join('; ')}`);
+    if (r.notComputedViolations && r.notComputedViolations.length) lines.push(`- **rows whose callers read as computed without a server**: ${r.notComputedViolations.join(', ')}`);
     lines.push('');
   }
   return lines.join('\n');
@@ -793,6 +813,7 @@ async function main() {
   const out = option(args, '--out', path.join(os.tmpdir(), 'impact-tree-p7'));
   const only = option(args, '--prs', '');
   const cacheRoot = args.includes('--no-cache') ? null : option(args, '--cache', DEFAULT_CACHE);
+  const syntactic = args.includes('--syntactic');
   const deadlineMs = Number(option(args, '--deadline-ms', String(RUN_DEADLINE_MS)));
   if (!Number.isSafeInteger(deadlineMs) || deadlineMs < 1) throw new RangeError('--deadline-ms must be a positive integer');
   const corpus = only ? CORPUS.filter((p) => only.split(',').includes(String(p.number))) : CORPUS;
@@ -811,28 +832,28 @@ async function main() {
   }, deadlineMs);
   try {
     const pyVersion = execFileSync('python3', ['-I', '-c', 'import sys; print(sys.version)'], { encoding: 'utf8', timeout: 30000 });
-    const jediVersions = execFileSync(jediPython, ['-I', '-c', 'import sys, jedi, parso; print(sys.version.split()[0], jedi.__version__, parso.__version__)'], { encoding: 'utf8', timeout: 30000, cwd: os.tmpdir() });
+    const jediVersions = syntactic ? 'not run' : execFileSync(jediPython, ['-I', '-c', 'import sys, jedi, parso; print(sys.version.split()[0], jedi.__version__, parso.__version__)'], { encoding: 'utf8', timeout: 30000, cwd: os.tmpdir() });
     const hashes = {
       ast: sha256(AST_PROGRAM, pyVersion).slice(0, 16),
       jedi: sha256(JEDI_PROGRAM, jediVersions, AST_PROGRAM, String(JEDI_QUERY_DEADLINE_S)).slice(0, 16),
     };
     log(`${corpus.length} PRs; python ${pyVersion.split(' ')[0]}; Jedi python/jedi/parso ${jediVersions.trim()}; cache ${cacheRoot || 'off'}; ast ${hashes.ast}, jedi ${hashes.jedi}; budget ${(deadlineMs / 1000).toFixed(0)} s`);
     const usePr = semaphore(ORACLE_CONCURRENCY);
-    const oraclePromises = new Map(corpus.map((pr) => [pr.number, usePr(() => oraclesFor({ repo, pr, hashes, cacheRoot, jediPython, log }))]));
+    const oraclePromises = new Map(corpus.map((pr) => [pr.number, usePr(() => oraclesFor({ repo, pr, hashes, cacheRoot, jediPython, log, syntactic }))]));
     for (const p of oraclePromises.values()) p.catch(() => {});
     const records = [];
     for (const pr of corpus) {
-      const pipeline = await pipelineFor(worktree, pr, pyrightPath);
+      const pipeline = await pipelineFor(worktree, pr, pyrightPath, syntactic);
       log(`#${pr.number} pipeline: Pyright ${pipeline.startMs} ms, first result ${pipeline.firstMs} ms, full ${pipeline.fullMs} ms`);
       const oracles = await oraclePromises.get(pr.number);
-      const cmp = comparePr({ worktree, pr, result: pipeline.result, oracle: oracles.oracle, jedi: oracles.jedi });
+      const cmp = comparePr({ worktree, pr, result: pipeline.result, oracle: oracles.oracle, jedi: oracles.jedi, syntactic });
       const record = {
         ...pr, ...cmp, jediVersion: oracles.jedi.jedi, parsoVersion: oracles.jedi.parso, jediCheck: oracles.jedi.check,
         timing: { oracleMs: oracles.oracleMs, cachedOracles: oracles.cachedOracles, pyrightStartMs: pipeline.startMs, firstMs: pipeline.firstMs, fullMs: pipeline.fullMs },
       };
       records.push(record);
       const f = record.functions;
-      log(`#${pr.number} compared: functions ${f.tp}/${f.oracle} (${f.fp.length} extra, ${f.fn.length} missed), kinds ${record.kinds.filter((k) => k.ok).length}/${record.kinds.length}, ${record.callers.filter((c) => c.missedWhileComplete).length} complete answers missing a Jedi caller`);
+      log(`#${pr.number} compared: functions ${f.tp}/${f.oracle} (${f.fp.length} extra, ${f.fn.length} missed), kinds ${record.kinds.filter((k) => k.ok).length}/${record.kinds.length}, ${record.callers.filter((c) => c.missedWhileComplete).length} complete answers missing a Jedi caller${syntactic ? `, ${record.notComputedViolations.length} rows with callers computed` : ''}`);
     }
     // Written only when every PR compared: a failed run leaves no partial result behind.
     for (const r of records) fs.writeFileSync(path.join(out, `${r.number}.json`), JSON.stringify(r, null, 1));

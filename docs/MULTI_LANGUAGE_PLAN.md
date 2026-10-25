@@ -729,6 +729,20 @@ the 10 httpx PRs (every per-PR result identical), and the signature oracle (http
   The editor keeps Pyright. Go follows as its own task (a declaration scanner on top of G3's
   parser) once Python's is measured.
 
+  **A4 done (2026-10-25).** `LanguageProvider.prepareSyntactic` (optional): used by
+  `analyze()` for a `needsServer` provider when there are no `services` (the CLI), and by
+  `analyzeRemote` for a file of such a language. Python's: `pythonOutline` (a text outline in
+  Pyright's symbol shape: classes by `class` lines and indentation, their methods and nested
+  classes, module functions; statement starts read outside strings, brackets and
+  continuations, so a docstring `def` line is not taken; every def listed, so the recovery
+  is off) fed through the shared `prepareFromServerSymbols` (new optional `ctx.headTexts`,
+  `ctx.unit` for the preview) and `collectPythonSymbols`, so keys and review ids are the
+  editor's. Callers: `src/engine/resolver-not-computed.js`, `callerState` `'unknown'`,
+  incomplete, reason "not computed: Python callers need its language server; …", the state
+  TypeScript's preview gives what it cannot see; test reach `'unknown'` with that reason;
+  blast radius not computed (`blastNotComputedReason`). `py-verify.js --syntactic` (ast
+  cached): 141/141 changed functions on the 10 PRs, 0 extra, kinds 99/99. Go unchanged.
+
 Order: A5 and A6 side by side (A6 only measures; different files), then A7 (owner, 2026-10-25),
 then A4.
 

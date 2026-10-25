@@ -92,7 +92,9 @@ const recordedSide = (text, symbols) => ({
  *   reports that unit's files as not analysed.
  *
  * Per file: the head text is read from disk (`ctx.files` are the worktree's or the head
- * commit's paths), the base text comes from `ctx.baseTexts`. A generated file is listed and
+ * commit's paths), or from `ctx.headTexts` when given (the preview's fetched text), the base
+ * text comes from `ctx.baseTexts`. `ctx.unit`, when given, is the one unit every file is in
+ * (the preview's "pull request"), instead of `spec.componentOf`'s. A generated file is listed and
  * not analysed (one warning counts them). A side whose text cannot be read, or whose
  * symbols the server does not give (`null`, a rejection, or an empty list for a text that
  * declares symbols), makes the file not analysed: counted in `ctx.unanalysable` under its
@@ -110,7 +112,7 @@ const recordedSide = (text, symbols) => ({
  * @returns {Promise<import('./types').PreparedLanguage>}
  */
 async function prepareFromServerSymbols(ctx, spec) {
-  const { repo, files, baseTexts, changedRanges, deletions, warnings, unanalysable, notAnalysedFiles, report, signal, hooks } = ctx;
+  const { repo, files, baseTexts, changedRanges, deletions, warnings, unanalysable, notAnalysedFiles, report, signal, hooks, headTexts, unit } = ctx;
   const { throwIfCancelled } = require('../engine/cancellation');
   const { mapLimit } = require('../engine/concurrency');
   const { changedFromSymbols } = /** @type {any} */ (require('../engine/changed-symbols'));
@@ -125,7 +127,7 @@ async function prepareFromServerSymbols(ctx, spec) {
   /** @type {Map<string, { projectRoot: string, files: ChangedPath[] }>} */
   const groups = new Map();
   for (const f of files) {
-    const { component, projectRoot } = spec.componentOf(f.path, repo);
+    const { component, projectRoot } = unit || spec.componentOf(f.path, repo);
     let group = groups.get(component);
     if (!group) { group = { projectRoot, files: [] }; groups.set(component, group); }
     group.files.push(f);
@@ -165,8 +167,13 @@ async function prepareFromServerSymbols(ctx, spec) {
     /** @type {string|null} */
     let headText = null;
     if (f.status !== 'deleted') {
-      try { headText = fs.readFileSync(abs, 'utf8'); }
-      catch (e) { return { kind: 'failed', reason: `it could not be read from disk: ${messageOf(e)}` }; }
+      if (headTexts) {
+        headText = headTexts.get(f.path) ?? null;
+        if (headText == null) return { kind: 'failed', reason: 'its head version could not be read' };
+      } else {
+        try { headText = fs.readFileSync(abs, 'utf8'); }
+        catch (e) { return { kind: 'failed', reason: `it could not be read from disk: ${messageOf(e)}` }; }
+      }
     }
     /** @type {string|null} */
     let baseText = null;

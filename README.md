@@ -56,7 +56,7 @@ silently-omitted optional parameter outranks a signature break that `tsc` alread
 | --- | --- | --- | --- |
 | TypeScript, JavaScript | Analysed: the bundled TypeScript compiler finds changes, the editor's language server finds callers | Analysed from the PR's own files only (syntax) | Analysed with its own TypeScript language service |
 | Go | Analysed through the [Go extension](https://marketplace.visualstudio.com/items?itemName=golang.go)'s language server, gopls | Listed as **not analysed**, with how to analyse it | Listed as **not analysed** |
-| Python | Analysed through the editor's Python language server, Pyright ([Pylance](https://marketplace.visualstudio.com/items?itemName=ms-python.vscode-pylance) in VS Code, Cursor's Python extension in Cursor) | Listed as **not analysed**, with how to analyse it | Listed as **not analysed** |
+| Python | Analysed through the editor's Python language server, Pyright ([Pylance](https://marketplace.visualstudio.com/items?itemName=ms-python.vscode-pylance) in VS Code, Cursor's Python extension in Cursor) | Changed functions and signature kinds from the PR's text; callers **not computed** (check out the PR to find them) | Changed functions and signature kinds from the text; callers **not computed** |
 | Java, Kotlin, C#, Ruby, Rust, PHP, Swift, C, C++, Scala | Listed as "*Language* · not analysed yet" | Same | Same |
 
 A file that was not analysed never reads as having no impact. A Go or Python file Impact
@@ -126,6 +126,13 @@ until you mark it reviewed, and its tooltip and Details say why.
   changed function found with no extras, every signature change classified, and every
   caller the Jedi analyser finds that Impact Tree does not list sits on an answer marked
   incomplete. See [the verification report](test/lsp-harness/P7-REPORT.md).
+- **Without the language server** (the no-checkout PR preview, the CLI): changed, added and
+  deleted functions and their signature kinds are read from the text, the same way;
+  callers are **not computed**, and every row says so (no "no callers", no "no test", no
+  blast radius). A `def` inside a string is not a definition. On the same 10 httpx pull
+  requests this finds the same 141 changed functions as Python's `ast`, every kind right
+  (`node test/lsp-harness/py-verify.js … --syntactic`). Open the repository in the editor
+  to see callers.
 
 ## Review workflow
 
