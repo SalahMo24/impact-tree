@@ -641,7 +641,7 @@ the 10 httpx PRs (every per-PR result identical), and the signature oracle (http
   `pyright-services.js`; the extension tests' fake hooks are `serverSymbols` /
   `serverAvailable`.
 
-### Decisions for the owner
+### Decisions (owner, 2026-10-25: A4 (b) Python first, A5 (a), A6 (a))
 
 - **A4. Go and Python outside the editor.** Today the PR preview and the CLI list Go and
   Python files as not analysed. Options: (a) keep it; (b) a syntax-only tier per language
@@ -664,6 +664,49 @@ the 10 httpx PRs (every per-PR result identical), and the signature oracle (http
   `.<name>(` call sites per analysis, built on first use and dropped at `clear()`; (b) keep
   per target. Proposal: measure first on a large typed repository, then (a) if the time is
   noticeable.
+
+### Tasks from the decisions
+
+- **A5. `callerTargets`.** An optional `EditorCallerExtras.callerTargets(file, pos)` returns
+  other positions whose incoming calls are also this target's callers; `applyCallerExtras`
+  asks them and merges the answers (each caller once, the answer incomplete if any part is).
+  Python answers the class name for a class's `__init__`, so `Client(...)` constructions are
+  listed. The constructor answer is then read like any other method's: a class used as a
+  value (`transport_cls=Client`), a subclass's `super().__init__()` through dispatch, and
+  factory calls (`cls(...)`) keep it incomplete with their reason. Measured on P7's corpus:
+  Jedi's 714 constructions should become listed callers.
+- **A6. Measure the duck-typing search.** One merged PR with many changed methods in a large
+  typed repository (proposal: `pydantic/pydantic`), through `py-verify.js`'s pipeline phase
+  only: time per caller query with and without the search, the number of searches, files
+  read and `definition` queries. "Slow" means the search adds more than 25% or more than
+  10 s to the time to full result; then build the per-analysis index (A6b), else close A6.
+- **A4. Python outside the editor.** An optional `prepareSyntactic` on a provider, used where
+  there is no language server (the CLI, the no-checkout preview): Python's changed functions
+  and their kinds from the text (the module-level and class-body def scan of P2's recovery,
+  P3's header parser and `raisesOf`), callers "not computed" (as TypeScript's preview).
+  The editor keeps Pyright. Go follows as its own task (a declaration scanner on top of G3's
+  parser) once Python's is measured.
+
+Order: A5 and A6 side by side (A6 only measures; different files), then A4.
+
+### Verification plans (to agree before any work)
+
+| Task | Check | When | Expected time |
+| --- | --- | --- | --- |
+| A5 | `npm run test:quick` + touched test files | iterate | ~15 s |
+| A5 | `npm test`, lint, typecheck | end | ~2.5 min |
+| A5 | TypeScript baseline (`compare.sh`) and Go e2e (shared code changes) | end | ~70 s / ~10 s |
+| A5 | `py-e2e.js` on httpx #1600 (`httpx-seams` worktree) | end | ~12 s |
+| A5 | `py-verify.js` cached, 10 PRs: constructions now listed, every target still met | end, at most 2 runs | ~1 min each |
+| A6 | clone the repo (shallow to the PR's base), pick the PR | once | ≤ 3 min |
+| A6 | one timed pipeline run with the search on and one with it off | once each | ≤ 5 min each |
+| A4 | `npm run test:quick` + touched test files | iterate | ~15 s |
+| A4 | `npm test`, lint, typecheck, TypeScript baseline | end | ~3.5 min |
+| A4 | syntactic oracle on the 10 httpx PRs (`ast` cached from P7): changed functions 100% precision, ≥ 98% recall; kinds right | end, at most 3 runs | ≤ 1 min each |
+| A4 | CLI and preview on httpx #1600: Python rows listed with kinds, callers "not computed", nothing reads "no impact" | end | ~20 s |
+
+Agent budgets (wall time, verification included): A5 30 min (Opus); A6 20 min (Sonnet);
+A4 45 min (Opus). Past it the agent stops and reports.
 
 ## Order
 
