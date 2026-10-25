@@ -611,6 +611,49 @@ services adapter do not change. What differs:
   abstract dispatch as G4; Lombok-generated members have no source. Oracle: a JavaParser
   diff and `javacg` (static call graph) on a sample repo.
 
+## Part A: the architecture after three languages (review, 2026-10-25)
+
+TypeScript, Go and Python fit the provider model: Python was added almost entirely as
+new files under `src/languages/python/`, with the pipeline (`src/engine/analyze.js`)
+unchanged, and the TypeScript baseline and Go end to end stayed identical. The model stays.
+Three small cleanups are in progress (A1–A3); A4–A6 are decisions for the owner.
+
+### Cleanups (in progress)
+
+- **A1. One caller-extras step.** The order in which a language's `EditorCallerExtras`
+  apply to a call-hierarchy answer (`explainIncomplete`, `filter`, `moreCallers`) is written
+  once, shared by `src/resolver-vscode.js` and the harness (`test/lsp-harness/harness-languages.js`),
+  so G7 and P7 verify the code the editor runs.
+- **A2. Shared text helpers, one Python lexer.** Line starts and offset → line, path
+  slashes and error messages in one module; one Python string/comment scanner for the
+  header parser, the definition recovery and the caller checks (they disagreed on f-strings).
+- **A3. Go-first leftovers.** The value-use log line names the language; the harness's
+  server module and the extension tests' fake symbols hook no longer carry Go's name.
+
+### Decisions for the owner
+
+- **A4. Go and Python outside the editor.** Today the PR preview and the CLI list Go and
+  Python files as not analysed. Options: (a) keep it; (b) a syntax-only tier per language
+  (an optional `prepareSyntactic`): changed functions and their kinds from the text, callers
+  "not computed", the level TypeScript's preview has. Python has most of it already (its
+  definition scanner, the recovery of unlisted defs, the header parser at 100% against
+  `ast`); Go needs a declaration scanner on top of its header parser; (c) tree-sitter as one
+  syntax layer for every language: uniform, but a new dependency (WASM grammars) and a
+  larger package; (d) running language servers in the CLI ourselves: needs gopls/Pyright
+  shipped or found; not proposed. Proposal: (b), Python first.
+- **A5. Ask callers at another position.** Python's `__init__` callers are the class's
+  incoming calls (P7), and no hook lets a language say "ask here instead". Options:
+  (a) an optional `callerTargets(file, pos) → positions` on `EditorCallerExtras`, the
+  answers merged; (b) leave `__init__` incomplete (today). Proposal: (a); no other change
+  to the extras interface, though it grew one hook at a time (`query`, `filter`,
+  `moreCallers`, `explainIncomplete`, `unseenUsers`, suppression).
+- **A6. Duck-typing search per analysis.** Each changed Python method runs its own
+  repository search and up to 50 `definition` queries; httpx stays under 13 s per PR, but
+  a PR with 100 changed methods repeats it 100 times. Options: (a) one index of
+  `.<name>(` call sites per analysis, built on first use and dropped at `clear()`; (b) keep
+  per target. Proposal: measure first on a large typed repository, then (a) if the time is
+  noticeable.
+
 ## Order
 
 1. T1 → T2 → T3: the structure in place, TypeScript unchanged. Can start before G0.
