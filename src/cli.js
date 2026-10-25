@@ -138,6 +138,8 @@ for (const c of result.components) {
 }
 for (const c of result.components) {
   const s = c.stats || {};
+  // A unit whose callers are not computed (Go without gopls) searched nothing, so it has no counts.
+  if (s.incomingCalls == null) { console.log(`  ${c.component.padEnd(24)} LS: no caller search`); continue; }
   console.log(`  ${c.component.padEnd(24)} LS: ${s.incomingCalls} incoming (${((s.incomingMs||0)/1000).toFixed(1)}s) · ${s.refCalls} findRefs (${((s.refMs||0)/1000).toFixed(1)}s) · ${s.cacheHits} cache hits`);
 }
 // wall-clock: log-only — the CLI's elapsed time

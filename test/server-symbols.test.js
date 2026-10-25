@@ -7,7 +7,8 @@
 // gopls are needed. Covers changed, added, deleted and renamed functions, methods (and a
 // receiver change), two `init`s, a function literal's edit, outside-function changes, a
 // second module as a second unit, a generated file, a server with no answer, a failed
-// request, an empty answer for a file with functions, and no services at all.
+// request, an empty answer for a file with functions, and no services at all (the CLI: Go
+// read from its text, ../src/languages/go/outline.js, giving the same rows).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
@@ -236,21 +237,25 @@ test('a generated file is listed, not analysed, and counted in one warning', asy
   }
 });
 
-test('without language services (the CLI) every Go file is reported as not analysed, with the reason', async () => {
+test('without language services (the CLI) Go is read from its text: the same rows, keys and kinds as gopls\' symbols give, callers not computed', async () => {
   const repo = goRepo();
   try {
+    const withServer = await run(repo.dir, { languageServices: replayServices(), makeResolver: noCallers([]) });
     const result = await run(repo.dir);
-    assert.ok(result.warnings.includes("4 changed Go file(s) NOT analysed — Go needs the editor's language server; open the repository in the editor to analyse it"),
+    const reason = 'not computed: Go callers need its language server; open the repository in the editor to find them';
+    assert.ok(result.warnings.includes(`4 changed Go file(s) read from their text: changed functions and signature kinds only; callers ${reason}`),
       result.warnings.join('\n'));
-    assert.deepEqual(result.unanalysable, [{ component: 'Go', count: 4 }]);
-    assert.deepEqual(result.allChanged, []);
-    assert.deepEqual(result.deleted, []);
-    assert.deepEqual(result.otherFiles.filter((f) => f.path.endsWith('.go')).map((f) => f.path).sort(),
-      ['auth.go', 'auth_test.go', 'fresh.go', 'gone.go', 'tools/tool.go']);
-    const reason = "Go needs the editor's language server; open the repository in the editor to analyse it";
-    assert.deepEqual(result.otherFiles.filter((f) => f.notAnalysed).map((f) => [f.path, f.notAnalysed]).sort(),
-      ['auth.go', 'fresh.go', 'gone.go', 'tools/tool.go'].map((p) => [p, { language: 'Go', reason }]),
-      'every file the provider was given carries the reason; the test file was never its to analyse');
+    assert.deepEqual(result.unanalysable, []);
+    assert.deepEqual(result.otherFiles.filter((f) => f.notAnalysed), []);
+    assert.deepEqual(result.components.map((c) => c.component), ['(root)', 'tools'], 'units by go.mod, as `prepare` makes them');
+    assert.ok(result.allChanged.length > 0);
+    assert.deepEqual(result.allChanged.map(row), withServer.allChanged.map(row));
+    assert.deepEqual(result.allChanged.map((c) => [c.start, c.end, c.namePos]), withServer.allChanged.map((c) => [c.start, c.end, c.namePos]));
+    assert.deepEqual(result.deleted.map((d) => [d.relPath, d.key]), withServer.deleted.map((d) => [d.relPath, d.key]));
+    for (const c of result.allChanged) {
+      assert.equal(c.callersComplete, false, c.key);
+      assert.equal(c.callersIncompleteReason, reason, c.key);
+    }
   } finally {
     repo.remove();
   }
