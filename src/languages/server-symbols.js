@@ -18,6 +18,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createHash } = require('crypto');
+const { messageOf } = require('./text');
 
 /** @typedef {import('./types').PrepareContext} PrepareContext */
 /** @typedef {import('./types').ServerSymbol} ServerSymbol */
@@ -72,8 +73,6 @@ const recordedSide = (text, symbols) => ({
   symbols: symbols.map(({ key, namePos, start, end, startLine, endLine }) => ({ key, namePos, start, end, startLine, endLine })),
 });
 
-/** @param {unknown} e */
-const messageOf = (e) => (e && typeof e === 'object' && 'message' in e ? String(e.message) : String(e));
 
 /**
  * How one file ended: analysed, skipped as generated, or not analysed with the reason.

@@ -144,4 +144,65 @@ async function callersFromHierarchy(services, { doc, pos, withTests = true, isCo
   return referenceVerdict(services, doc, pos, unseenUsers);
 }
 
-module.exports = { callersFromHierarchy, queryHierarchy, callerRows, answerOf, referenceVerdict };
+/**
+ * A call-hierarchy query's answer with one language's caller extras applied, in the one
+ * order the editor's resolver (src/resolver-vscode.js) and the test harness
+ * (test/lsp-harness/harness-languages.js) both use, so the harness's verifications check
+ * the editor's own composition:
+ * 1. A query the server did not answer: the language may explain the failure
+ *    (`explainIncomplete`); an explained failure is a lasting condition, not retryable.
+ * 2. The callers (`callerRows`), then `filter` when there is at least one: `kept` replaces
+ *    the list (a kept caller may be a copy with fewer call sites).
+ * 3. `moreCallers`, when the language has one: its callers are added once each (tests left
+ *    out without `withTests`), and its `incompleteReason` makes the answer incomplete.
+ * Nothing here turns a failure into an empty complete answer.
+ * @param {HierarchyQuery} hierarchy
+ * @param {object} options
+ * @param {import('./types').EditorCallerExtras|null} options.extras The language's extras.
+ * @param {import('./types').EditorCallerQuery|null} options.query `extras.query(file, pos)`,
+ *   taken when the caller query started.
+ * @param {string} options.file Absolute path of the target.
+ * @param {number} options.pos UTF-16 offset of the target's name.
+ * @param {boolean} options.withTests
+ * @param {() => boolean} [options.isStale] Asked after `moreCallers` settles: true when the
+ *   query belongs to an earlier analysis, so its answer is not built.
+ * @returns {Promise<{ stale: true } | { stale: false, answer: CallerAnswer, explainedReason: string|null, dropped: number, added: number }>}
+ *   `explainedReason`: the language's explanation of an unanswered query, or null;
+ *   `dropped`: callers `filter` removed; `added`: callers `moreCallers` gave (before
+ *   de-duplication).
+ */
+async function applyCallerExtras(hierarchy, { extras, query, file, pos, withTests, isStale = () => false }) {
+  if (!hierarchy.ready) {
+    const explainedReason = extras && extras.explainIncomplete ? extras.explainIncomplete(hierarchy.reason, file, pos) : null;
+    const retryable = !explainedReason && hierarchy.retryable;
+    const reason = explainedReason || hierarchy.reason || 'caller query did not complete';
+    return { stale: false, answer: { callers: [], complete: false, reason, ...(retryable ? { retryable: true } : {}) }, explainedReason, dropped: 0, added: 0 };
+  }
+  let out = callerRows(hierarchy.rows, withTests);
+  let dropped = 0;
+  if (query && out.length) {
+    const filtered = query.filter(out);
+    // A copy: `kept` may be `out` itself, and `out` is added to below.
+    out = filtered.kept.slice();
+    dropped = filtered.dropped;
+  }
+  let added = 0;
+  /** @type {string|null} */
+  let incompleteReason = null;
+  if (query && query.moreCallers) {
+    const more = await query.moreCallers();
+    if (isStale()) return { stale: true };
+    incompleteReason = more.incompleteReason;
+    added = more.callers.length;
+    const have = new Set(out.map((c) => `${c.file}#${c.pos}`));
+    for (const e of more.callers) {
+      if (have.has(`${e.file}#${e.pos}`)) continue;
+      if (!withTests && e.test) continue;
+      out.push(e);
+    }
+  }
+  const answer = incompleteReason ? { callers: out, complete: false, reason: incompleteReason } : { callers: out, complete: true };
+  return { stale: false, answer, explainedReason: null, dropped, added };
+}
+
+module.exports = { callersFromHierarchy, queryHierarchy, callerRows, answerOf, referenceVerdict, applyCallerExtras };

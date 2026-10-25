@@ -15,6 +15,7 @@
 const fs = require('fs');
 const path = require('path');
 const { goRules } = require('./rules');
+const { lineStartsOf, lineOf } = require('../text');
 
 /** @typedef {import('../types').ServerSymbol} ServerSymbol */
 /** @typedef {import('../types').CollectedSymbol} CollectedSymbol */
@@ -62,23 +63,6 @@ function receiverTypeOf(name) {
 /** @param {string} name @returns {string} The name after the receiver: `reload` for `(*T).reload`. */
 const bareNameOf = (name) => (name.startsWith('(') ? name.slice(name.lastIndexOf(').') + 2) : name);
 
-/** @param {string} text @returns {number[]} Offset of each line's first character. */
-function lineStartsOf(text) {
-  const starts = [0];
-  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) starts.push(i + 1);
-  return starts;
-}
-
-/** @param {number[]} starts @param {number} offset @returns {number} One-based line of `offset`. */
-function lineOf(starts, offset) {
-  let lo = 0;
-  let hi = starts.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (starts[mid] <= offset) lo = mid; else hi = mid - 1;
-  }
-  return lo + 1;
-}
 
 /** @param {string} header @returns {string} The header with runs of white space as one space. */
 const normalizedHeader = (header) => header.replace(/\s+/g, ' ').trim();

@@ -31,6 +31,8 @@
 // 64 Ki, far above any hand-written header (the longest in httpx is under 1 Ki) and small
 // enough that scanning one costs microseconds. Owner: this module. Enforced in
 // `readDeclaration` by cutting the text before any scan; a longer header is unreadable (null).
+const { scanString } = require('./lexer');
+
 const MAX_HEADER_CHARS = 65536;
 // Why 8: Python itself counts a tab as advancing to the next multiple of 8 columns, which is
 // how mixed tab/space bodies still nest consistently.
@@ -56,24 +58,13 @@ const MARKER_PREFIX = /^(positional-only|keyword-only|\*\*|\*)(?: |$)/;
 
 /**
  * End offset of the string literal opening at `i` (just past its closing quote), or -1 when
- * it is unterminated. A single-quoted string ends at its closing quote; a newline that is
- * not escaped makes it unterminated. Backslash skips the next character (raw strings
- * included: `r"\""` still does not end at the escaped quote).
+ * it is unterminated (./lexer.js `scanString`: one reading of Python strings for every
+ * Python scanner).
  * @param {string} text @param {number} i index of the opening quote @returns {number}
  */
 function stringEnd(text, i) {
-  const q = text[i];
-  const triple = text.startsWith(q.repeat(3), i);
-  const close = triple ? q.repeat(3) : q;
-  let j = i + (triple ? 3 : 1);
-  while (j < text.length) {
-    const c = text[j];
-    if (c === '\\') { j += 2; continue; }
-    if (text.startsWith(close, j)) return j + close.length;
-    if (!triple && (c === '\n' || c === '\r')) return -1;
-    j++;
-  }
-  return -1;
+  const s = scanString(text, i);
+  return s.terminated ? s.end : -1;
 }
 
 /**
@@ -393,11 +384,8 @@ function blankCommentsAndStrings(text) {
     if (c === '#') {
       while (i < text.length && text[i] !== '\n') { out[i] = ' '; i++; }
     } else if (c === '"' || c === "'") {
-      let end = stringEnd(text, i);
-      if (end < 0) { // unterminated: a triple string runs to the end, a single one to the line's end
-        end = text.startsWith(c.repeat(3), i) ? text.length : text.indexOf('\n', i);
-        if (end < 0) end = text.length;
-      }
+      // Unterminated: a triple string runs to the end, a single one to its line's end.
+      const { end } = scanString(text, i);
       for (let j = i; j < end && j < text.length; j++) if (text[j] !== '\n' && text[j] !== '\r') out[j] = ' ';
       i = Math.max(end, i + 1);
     } else i++;

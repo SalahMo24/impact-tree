@@ -17,6 +17,8 @@
 
 const path = require('path');
 const { pythonRules, pythonProjectOf } = require('./rules');
+const { scanString } = require('./lexer');
+const { lineStartsOf, lineOf } = require('../text');
 
 /** @typedef {import('../types').ServerSymbol} ServerSymbol */
 /** @typedef {import('../types').CollectedSymbol} CollectedSymbol */
@@ -62,23 +64,6 @@ const isCallableKind = (/** @type {number} */ kind) => kind === SYMBOL_KIND_FUNC
 // scope's start (`g` with `lastIndex`).
 const DEF_LINE = /^([ \t]*)(?:async[ \t]+)?def[ \t]+([^\W\d]\w*)/gmu;
 
-/** @param {string} text @returns {number[]} Offset of each line's first character. */
-function lineStartsOf(text) {
-  const starts = [0];
-  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) starts.push(i + 1);
-  return starts;
-}
-
-/** @param {number[]} starts @param {number} offset @returns {number} One-based line of `offset`. */
-function lineOf(starts, offset) {
-  let lo = 0;
-  let hi = starts.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (starts[mid] <= offset) lo = mid; else hi = mid - 1;
-  }
-  return lo + 1;
-}
 
 /** @param {string} header @returns {string} The header with runs of white space as one space. */
 const normalizedHeader = (header) => header.replace(/\s+/g, ' ').trim();
@@ -141,16 +126,8 @@ function scanDef(text, defStart, indent, limit) {
       continue;
     }
     if (c === '"' || c === "'") {
-      const triple = text.startsWith(c.repeat(3), i);
-      const close = triple ? c.repeat(3) : c;
-      let j = i + close.length;
-      while (j < limit) {
-        if (text[j] === '\\') { j += 2; continue; }
-        if (!triple && text[j] === '\n') break;
-        if (text.startsWith(close, j)) { j += close.length; break; }
-        j++;
-      }
-      i = Math.min(j, limit);
+      // ./lexer.js: an unterminated single-quoted string ends at its line's end.
+      i = scanString(text, i, limit).end;
       lastCode = i;
       continue;
     }

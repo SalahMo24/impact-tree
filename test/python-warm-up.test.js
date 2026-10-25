@@ -5,7 +5,7 @@
 // file (`pythonProvider.warmUpTarget`, asked by src/readiness.js), searching into classes
 // because Pyright lists methods as their class's children. The first-run message names that
 // server. The session runs through test/extension-env.js (its one symbols hook is called
-// `goSymbols`, whatever the language) with a fake clock and hand-released gates.
+// `serverSymbols`, for every language) with a fake clock and hand-released gates.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
@@ -24,7 +24,7 @@ const windowProgress = (env) => env.seen.progress.filter((p) => p.options.locati
 const withPython = (body, extra = {}) => withEnv((env) => {
   env.hooks.warm = false;
   env.hooks.localPrepared = pyChange(env);
-  env.hooks.goSymbols = () => PY_SYMBOLS;
+  env.hooks.serverSymbols = () => PY_SYMBOLS;
   return body(env);
 }, { changedSource: 'python', ...extra });
 
@@ -51,7 +51,7 @@ test('a Python-only review warms Pyright at the first method, inside its class, 
 test('a failed symbol request is logged and the analysis goes on without warming', async () => {
   await withPython(async (env) => {
     env.hooks.localResult = pyChange(env);
-    env.hooks.goSymbols = () => { throw new Error('Pyright crashed'); };
+    env.hooks.serverSymbols = () => { throw new Error('Pyright crashed'); };
     await env.refresh();
     await until(() => env.seen.analyze.length === 1, 'the analysis ran');
     assert.deepEqual(env.seen.warmUps, []);
@@ -64,7 +64,7 @@ test('a failed symbol request is logged and the analysis goes on without warming
 
 test('an editor without Python support is not warmed and gets no second notice', async () => {
   await withPython(async (env) => {
-    env.hooks.goAvailable = () => ({ ok: false, reason: 'the editor has no support for python installed' });
+    env.hooks.serverAvailable = () => ({ ok: false, reason: 'the editor has no support for python installed' });
     await env.refresh();
     await until(() => env.seen.analyze.length === 1, 'the analysis ran');
     assert.deepEqual(env.seen.servicesAsked, [['available', 'python']], 'no symbols are asked for');

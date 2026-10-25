@@ -4,7 +4,7 @@ const path = require('path');
 const { languageFor } = require('./languages');
 const { createVscodeServices } = require('./services-vscode');
 const { realClock } = require('./engine/clock');
-const { callersFromHierarchy, queryHierarchy, callerRows } = require('./languages/callers-from-hierarchy');
+const { callersFromHierarchy, queryHierarchy, applyCallerExtras } = require('./languages/callers-from-hierarchy');
 
 // Callers from the editor's already-running language server, for any language. Talking to
 // the server (the request cap, deadlines, the cold phase, retries, warm-up, offset
@@ -108,51 +108,34 @@ function createVscodeResolver({
     const answer = isHandler ? { ready: true, rows: [] } : await queryHierarchy(services, headDoc(file), pos);
     if (startedGeneration !== generation) return staleAnswer();
     const { ready } = answer;
-    // A failure the language explains (Go: a file outside the active build) shows its
-    // explanation, and asking again does not help.
-    const explained = !answer.ready && languageExtras?.explainIncomplete ? languageExtras.explainIncomplete(answer.reason, file, pos) : null;
-    const reason = answer.ready ? undefined : explained || answer.reason;
-    const retryable = !answer.ready && !explained && answer.retryable;
-    queryStates.set(key, { ready, reason, isHandler, retryable });
-    if (answer.ready && !answer.rows.length) { stats.resolvedEmpty++; stats.emptyAt.push({ file, pos }); }
     const dt = clock.now() - t;
     stats.incomingMs += dt;
     stats.durations.push(dt);
     if (!stats.slowest || dt > stats.slowest.ms) stats.slowest = { ms: dt, file, pos };
     if (dt > 3000) trace(`slow query ${dt}ms  ${file}@${pos}`);
+    if (answer.ready && !answer.rows.length) { stats.resolvedEmpty++; stats.emptyAt.push({ file, pos }); }
+    if (ready) queryStates.set(key, { ready, reason: undefined, isHandler, retryable: false });
+    // The language's extras, in the order the harness applies them too (applyCallerExtras):
+    // an explained failure (Go: a file outside the active build) is not retryable; `filter`
+    // drops what the server over-reports; `moreCallers` adds what it cannot see.
+    const applied = await applyCallerExtras(answer, {
+      extras: languageExtras, query: extras, file, pos, withTests,
+      isStale: () => startedGeneration !== generation,
+    });
+    if (applied.stale) return staleAnswer();
+    const result = applied.answer;
     if (!ready) {
+      queryStates.set(key, { ready, reason: applied.explainedReason || answer.reason, isHandler, retryable: !!result.retryable });
       stats.skipped++;
-      if (reason) stats.lastReason = reason;
-      return { callers: [], complete: false, reason: reason || 'caller query did not complete', ...(retryable ? { retryable: true } : {}) };
+      if (applied.explainedReason || answer.reason) stats.lastReason = applied.explainedReason || answer.reason;
+      return result;
     }
-    let out = callerRows(answer.rows, withTests);
-    if (extras && out.length) {
-      // `kept` replaces the list even when nothing was dropped: a kept caller can be a copy
-      // with fewer call sites (Go keeps only a caller's calls, not its value uses).
-      const { kept, dropped } = extras.filter(out);
-      // What a language's filter drops: TypeScript's inherited-member over-reports, Go's
-      // callers that only use the function as a value.
-      stats[languageExtras ? languageExtras.droppedStat : 'inheritedDropped'] += dropped;
-      // A copy: `kept` may be `out` itself (a filter that keeps everything returns its
-      // input), and `out` is added to below.
-      out = kept.slice();
-    }
-    let extraFailure = null;
-    if (extras && extras.moreCallers) {
-      const more = await extras.moreCallers();
-      extraFailure = more.incompleteReason;
-      if (startedGeneration !== generation) return staleAnswer();
-      stats.cqrsEdges += more.callers.length;
-      const have = new Set(out.map((c) => `${c.file}#${c.pos}`));
-      for (const e of more.callers) {
-        if (have.has(`${e.file}#${e.pos}`)) continue;
-        if (!withTests && e.test) continue;
-        out.push(e);
-      }
-    }
-    if (extraFailure) return { callers: out, complete: false, reason: extraFailure };
-    cache.set(key, out);
-    return { callers: out, complete: true };
+    // What a language's filter drops: TypeScript's inherited-member over-reports, Go's and
+    // Python's callers that only use the function as a value.
+    if (extras) stats[languageExtras ? languageExtras.droppedStat : 'inheritedDropped'] += applied.dropped;
+    stats.cqrsEdges += applied.added;
+    if (result.complete) cache.set(key, result.callers);
+    return result;
   }
 
   /** @returns {Promise<string|null>} The reason the answer is unknown, or null. */
