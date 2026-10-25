@@ -159,6 +159,10 @@
  * @property {Map<string, string|null>} [headTexts] Head-side text by path, where the head is
  *   not on disk (the no-checkout preview); read by `prepareSyntactic` through
  *   `prepareFromServerSymbols`. Absent: the head is read from disk.
+ * @property {Array<{ path: string, text: string }>} [syntacticSources] The files, by
+ *   repository-relative path, a provider without a language server indexes for callers where
+ *   the repository is not on disk (the preview: the PR's fetched files and changed tests);
+ *   absent: the provider reads the repository itself (the CLI).
  * @property {{ component: string, projectRoot: string }} [unit] The one unit every file
  *   is in, where the project layout is not on disk (the preview); absent: the provider's own.
  * @property {{ makeResolver?: Function, makeModuleCallers?: Function, services?: LanguageServices }} hooks The

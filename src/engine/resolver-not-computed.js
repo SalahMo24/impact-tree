@@ -35,4 +35,12 @@ function createNotComputedResolver(reason) {
   });
 }
 
-module.exports = { createNotComputedResolver, notComputedReason, isNotComputedReason };
+/**
+ * Whether a caller reason is a syntax-only index's scope note (src/languages/python/
+ * syntactic-index.js, A8): `<Language> callers from syntax only: <scope>; …`. Such an answer
+ * was searched, within that scope, and is never complete.
+ * @param {unknown} reason @returns {boolean}
+ */
+const isSyntaxOnlyReason = (reason) => typeof reason === 'string' && /^\w+ callers from syntax only: /.test(reason);
+
+module.exports = { createNotComputedResolver, notComputedReason, isNotComputedReason, isSyntaxOnlyReason };
