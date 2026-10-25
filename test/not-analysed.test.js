@@ -2,8 +2,10 @@
 // A changed file of a known language that was not analysed says so (G6,
 // docs/MULTI_LANGUAGE_PLAN.md): `otherFiles[i].notAnalysed = { language, reason }`. The row
 // model makes it amber and counts it toward "needs attention", the renderer and the Details
-// page give the reason, a Preview lists every Go file as not analysed and says so in its
-// limits note, and the command line prints a section for them. Engine-side reasons (a
+// page give the reason, a Preview lists every file of a language without `prepareSyntactic`
+// as not analysed and says so in its limits note, and the command line prints a section for
+// them. Go has the hook since S3, so those tests use a Go provider without it
+// (`withoutSyntacticGo`); Go read from its text is tested at the end and in go-syntactic.test.js. Engine-side reasons (a
 // rejected prepare, a file the server gave no symbols for) are in typescript-provider.test.js
 // and server-symbols.test.js.
 const test = require('node:test');
@@ -20,6 +22,12 @@ const { renderTreeItem } = require('../src/tree-item-renderer');
 const { buildDetailHtml } = require('../src/detail-panel-html');
 const models = require('../src/tree-row-models');
 const tree = require('../src/review-tree-model');
+const { LANGUAGES, useLanguagesForTest } = require('../src/languages');
+
+/** Registers Go without `prepareSyntactic` (a language with no text analysis) until the returned function is called. */
+const withoutSyntacticGo = () => useLanguagesForTest(LANGUAGES.map((l) => (l.id === 'go' ? { ...l, prepareSyntactic: undefined } : l)));
+// The same, for a command line run in a child process (`node --require`).
+const WITHOUT_SYNTACTIC_GO = `require(${JSON.stringify(path.join(__dirname, '..', 'src', 'languages'))}).useLanguagesForTest(require(${JSON.stringify(path.join(__dirname, '..', 'src', 'languages'))}).LANGUAGES.map((l) => (l.id === 'go' ? { ...l, prepareSyntactic: undefined } : l)));\n`;
 
 const uriOf = (file, pos) => (file ? `uri:${file}${pos == null ? '' : `#${pos}`}` : null);
 const GO = { language: 'Go', reason: 'the Go language server gave no symbols' };
@@ -102,8 +110,9 @@ test('the preview note names the languages the preview cannot analyse, only when
   assert.match(details, /Go files are not analysed/);
 });
 
-test('a preview lists every Go file as not analysed, with the preview reason, and leaves TypeScript alone', async () => {
+test('a preview lists every file of a language without text analysis (Go without its hook) as not analysed, with the preview reason, and leaves TypeScript alone', async (t) => {
   clearVirtualText();
+  t.after(withoutSyntacticGo());
   const texts = { 'src/a.ts@head': 'export function a() { return 2; }\n', 'src/a.ts@base': 'export function a() { return 1; }\n' };
   const patch = '@@ -1 +1 @@\n-old\n+new';
   const gh = {
@@ -120,7 +129,8 @@ test('a preview lists every Go file as not analysed, with the preview reason, an
   clearVirtualText();
 });
 
-test('a preview of only Go files still lists them as not analysed', async () => {
+test('a preview of only files of a language without text analysis still lists them as not analysed', async (t) => {
+  t.after(withoutSyntacticGo());
   const gh = {
     listPullRequestFiles: async () => ({ total: 1, files: [{ path: 'main.go', oldPath: 'main.go', status: 'modified', patch: '@@ -1 +1 @@\n-a\n+b' }] }),
     fileAtRef: async () => null,
@@ -130,8 +140,10 @@ test('a preview of only Go files still lists them as not analysed', async () => 
   assert.match(r.otherFiles[0].notAnalysed.reason, /^a preview cannot analyse Go/);
 });
 
-test('the command line lists not-analysed Go files in their own section, and --json carries the field', () => {
+test('the command line lists not-analysed files (Go without its hook) in their own section, and --json carries the field', () => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-not-analysed-')));
+  const preload = path.join(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-not-analysed-preload-'))), 'no-syntactic-go.js');
+  fs.writeFileSync(preload, WITHOUT_SYNTACTIC_GO);
   try {
     const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
     git('init', '-q', '--initial-branch=main'); git('config', 'user.name', 'T'); git('config', 'user.email', 't@example.com');
@@ -141,15 +153,21 @@ test('the command line lists not-analysed Go files in their own section, and --j
     fs.writeFileSync(path.join(dir, 'a.go'), 'package m\n\nfunc A() int { return 2 }\n');
     git('commit', '-qam', 'head');
     const cli = path.join(__dirname, '..', 'src', 'cli.js');
-    const args = ['--repo', dir, '--allow-local-base'];
-    const text = execFileSync(process.execPath, [cli, ...args], { encoding: 'utf8' });
+    const args = ['--require', preload, cli, '--repo', dir, '--allow-local-base'];
+    const text = execFileSync(process.execPath, args, { encoding: 'utf8' });
     assert.match(text, /⑤ NOT ANALYSED/);
     assert.match(text, /\? a\.go {3}Go: Go needs the editor's language server; open the repository in the editor to analyse it/);
-    const json = JSON.parse(execFileSync(process.execPath, [cli, ...args, '--json'], { encoding: 'utf8' }));
+    const json = JSON.parse(execFileSync(process.execPath, [...args, '--json'], { encoding: 'utf8' }));
     assert.deepEqual(json.otherFiles.find((f) => f.path === 'a.go').notAnalysed,
       { language: 'Go', reason: "Go needs the editor's language server; open the repository in the editor to analyse it" });
+    // Without the seam, Go is read from its text (S3): rows, no section.
+    const real = execFileSync(process.execPath, [cli, '--repo', dir, '--allow-local-base'], { encoding: 'utf8' });
+    assert.doesNotMatch(real, /⑤ NOT ANALYSED|no callers/);
+    assert.match(real, /● A {3}\[CHANGED\] {2}a\.go:3/);
+    assert.match(real, /\? A {3}a\.go:3 {2}\(callers not computed: Go callers need its language server/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(path.dirname(preload), { recursive: true, force: true });
   }
 });
 

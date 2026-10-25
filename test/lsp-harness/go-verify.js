@@ -10,6 +10,14 @@
  *   node test/lsp-harness/go-verify.js <absolute path to cli/cli clone>
  *     [--prs 14752,14390] [--gopls path] [--toolchain go1.27.3] [--out dir] [--summary file]
  *     [--cache dir] [--no-cache] [--timings [14752,14390]] [--deadline-ms n] [--summary-only]
+ *     [--syntactic]
+ *
+ * `--syntactic` (S3): the pipeline runs without a language server, as the CLI does, so Go is
+ * read from its text (`goProvider.prepareSyntactic`): no gopls is started. Changed functions
+ * and kinds are compared with oracle (a) as in the default mode; callers are not compared
+ * (they are not computed): every changed Go row must be incomplete with a not-computed reason,
+ * never complete, never `none`, and no verdict may read "no callers" (`notComputedViolations`
+ * lists any that is). `--timings` does not apply.
  *
  * Two phases, run side by side:
  * - Oracles, per PR (at most ORACLE_CONCURRENCY PRs at once, at most GRAPHS_CONCURRENCY
@@ -69,6 +77,7 @@ const { createGoplsServices } = require('./gopls-services');
 const { languageServicesOver, createHierarchyResolver } = require('./harness-languages');
 const { goProvider } = require('../../src/languages/go/provider');
 const { classifyChangeVerdict, toneOf } = require('../../src/tree-row-models');
+const { isNotComputedReason } = require('../../src/engine/resolver-not-computed');
 
 /**
  * The corpus: merged cli/cli pull requests. `merge` is the merge commit on trunk, `head` its
@@ -686,14 +695,25 @@ async function runPipeline(repo, base, services, t0) {
   return { result, firstMs, fullMs: Date.now() - t0 };
 }
 
-/** The pipeline on one PR with a fresh gopls; with `warm`, once more on the same gopls. */
-async function pipelineFor(repo, pr, goplsPath, warm) {
+/**
+ * The pipeline on one PR with a fresh gopls; with `warm`, once more on the same gopls. With
+ * `syntactic`, without any language server (the CLI's path), once.
+ */
+async function pipelineFor(repo, pr, goplsPath, warm, syntactic = false) {
   const n = pr.number;
   if (git(repo, 'rev-parse', `base-${n}`).trim() !== pr.base) throw new Error(`base-${n} is not ${pr.base}`);
   if (git(repo, 'rev-parse', `pr-${n}`).trim() !== pr.head) throw new Error(`pr-${n} is not ${pr.head}`);
   if (git(repo, 'status', '--porcelain', '--untracked-files=no').trim()) throw new Error('the clone has uncommitted changes');
   git(repo, 'checkout', '-q', `pr-${n}`);
   const t0 = Date.now();
+  if (syntactic) {
+    let firstMs = null;
+    const result = await analyze(repo, {
+      mode: 'pr', base: `base-${n}`, allowLocalBase: true, skipForest: true, deferTestReach: true, depth: 2,
+      onPrepared: () => { firstMs = Date.now() - t0; },
+    });
+    return { startMs: 0, cold: { result, firstMs, fullMs: Date.now() - t0 }, warm: null };
+  }
   const gopls = createGoplsServices({ repo, goplsPath });
   track(gopls.client.proc);
   try {
@@ -760,7 +780,7 @@ function kindsAgree(kinds, expected) {
  * outside every function, `external:<name>` outside the repository), so gopls' items for
  * function literals (`F.func()`) and callgraph's closures (`F$1`) both count as `F`.
  */
-function comparePr({ repo, pr, result, oracle, staticCg, vtaCg }) {
+function comparePr({ repo, pr, result, oracle, staticCg, vtaCg, syntactic = false }) {
   const changedLines = oracle.changedLines;
   const index = oracle.Index;
   const lineOf = lineFinder();
@@ -801,6 +821,22 @@ function comparePr({ repo, pr, result, oracle, staticCg, vtaCg }) {
     const expected = headerChanged ? expectedKinds(o.Base, o.Head) : { required: [], allowed: ['body'] };
     const agree = kindsAgree(kinds, expected);
     kindRows.push({ id: `${o.Rel}#${o.Key}`, headerChanged, kinds, ...agree, expected, baseHeader: o.Base.Header, headHeader: o.Head.Header });
+  }
+
+  if (syntactic) {
+    // Callers are not computed: each Go row must say so, and nothing may read "no callers".
+    const notComputedViolations = result.allChanged.filter(isGo).filter((c) => c.callersComplete !== false
+      || !isNotComputedReason(c.callersIncompleteReason) || c.callerState === 'none'
+      || /no callers/i.test(classifyChangeVerdict(c).sentence || '')).map((c) => `${c.relPath}#${c.key}`);
+    return {
+      pr: pr.number, syntactic: true,
+      functions: { tp, fp, fn, pipeline: pipelineRows.length, oracle: oracleRows.length },
+      kinds: kindRows, callers: [], notComputedViolations,
+      completeAnswers: result.allChanged.filter(isGo).filter((c) => c.callersComplete !== false).length,
+      generatedByOracle: oracle.Generated, oracleErrors: oracle.Errors, warnings: result.warnings,
+      unanalysable: [...Object.entries(result.unanalysable || {})],
+      notAnalysed: (result.otherFiles || []).filter((f) => f.notAnalysed).map((f) => `${f.path}: ${JSON.stringify(f.notAnalysed)}`),
+    };
   }
 
   // (b) callers, per changed or added function both see.
@@ -946,6 +982,7 @@ function summarise(out, corpus) {
       if (c.fineWithNotUpdated) lines.push(`- **fine while vta has a non-updated caller**: \`${c.id}\` [${c.kinds}] verdict "${c.verdict}"; ${c.notUpdatedVta.slice(0, 3).join(', ')}`);
       if (c.quietWithVtaCallers) lines.push(`- body-only "no callers" while vta has ${c.vta}: \`${c.id}\``);
     }
+    if (r.syntactic) lines.push(`- without a server: ${r.completeAnswers} complete caller answers, ${r.notComputedViolations.length} rows not marked "not computed"${r.notComputedViolations.length ? `: ${r.notComputedViolations.join(', ')}` : ''}`);
     if (r.notAnalysed.length) lines.push(`- not analysed: ${r.notAnalysed.join('; ')}`);
     if (r.warmSameAsCold === false) lines.push('- **warm run differs from cold run**');
     lines.push('');
@@ -955,8 +992,8 @@ function summarise(out, corpus) {
 
 
 /** The comparison of one PR, written to `<out>/<n>.json`. */
-function recordPr({ repo, pr, out, oracles, pipeline, timed }) {
-  const cmp = comparePr({ repo, pr, result: pipeline.cold.result, ...oracles });
+function recordPr({ repo, pr, out, oracles, pipeline, timed, syntactic }) {
+  const cmp = comparePr({ repo, pr, result: pipeline.cold.result, ...oracles, syntactic });
   const record = {
     ...pr, ...cmp, modules: oracles.oracle.modules,
     timing: {
@@ -976,7 +1013,7 @@ async function main() {
   const startedAt = Date.now();
   const args = process.argv.slice(2);
   const repo = args[0];
-  if (!repo || !path.isAbsolute(repo)) throw new Error('usage: node go-verify.js <absolute path to cli/cli clone> [--prs n,n] [--gopls path] [--toolchain goX.Y.Z] [--out dir] [--summary file] [--cache dir] [--no-cache] [--timings [n,n]] [--deadline-ms n] [--summary-only]');
+  if (!repo || !path.isAbsolute(repo)) throw new Error('usage: node go-verify.js <absolute path to cli/cli clone> [--prs n,n] [--gopls path] [--toolchain goX.Y.Z] [--out dir] [--summary file] [--cache dir] [--no-cache] [--timings [n,n]] [--deadline-ms n] [--summary-only] [--syntactic]');
   const goplsPath = option(args, '--gopls', path.join(os.homedir(), 'go', 'bin', 'gopls'));
   const toolchain = option(args, '--toolchain', 'go1.27.3');
   const out = option(args, '--out', path.join(os.tmpdir(), 'impact-tree-g7'));
@@ -985,6 +1022,8 @@ async function main() {
   const deadlineMs = Number(option(args, '--deadline-ms', String(RUN_DEADLINE_MS)));
   if (!Number.isSafeInteger(deadlineMs) || deadlineMs < 1) throw new RangeError('--deadline-ms must be a positive integer');
   const timingsArg = args.includes('--timings') ? option(args, '--timings', 'all') : null;
+  const syntactic = args.includes('--syntactic');
+  if (syntactic && timingsArg !== null) throw new Error('--timings does not apply with --syntactic');
   fs.mkdirSync(out, { recursive: true });
   const corpus = only ? CORPUS.filter((p) => only.split(',').includes(String(p.number))) : CORPUS;
   const timedPrs = new Set(timingsArg === null ? [] : timingsArg === 'all' ? corpus.map((p) => p.number) : timingsArg.split(',').map(Number));
@@ -1017,11 +1056,14 @@ async function main() {
       if (timedPrs.size) await Promise.allSettled(oraclePromises.values());
       for (const pr of corpus) {
         const timed = timedPrs.has(pr.number);
-        const pipeline = await pipelineFor(repo, pr, goplsPath, timed);
+        const pipeline = await pipelineFor(repo, pr, goplsPath, timed, syntactic);
         log(`#${pr.number} pipeline: first result ${pipeline.cold.firstMs} ms, full ${pipeline.cold.fullMs} ms${pipeline.warm ? `; warm ${pipeline.warm.firstMs} / ${pipeline.warm.fullMs} ms` : ''}`);
-        const record = recordPr({ repo, pr, out, oracles: await oraclePromises.get(pr.number), pipeline, timed });
+        const record = recordPr({ repo, pr, out, oracles: await oraclePromises.get(pr.number), pipeline, timed, syntactic });
         const f = record.functions;
-        log(`#${pr.number} compared: functions ${f.tp}/${f.oracle} (${f.fp.length} extra, ${f.fn.length} missed), ${record.callers.filter((c) => c.vtaMissedWhileComplete).length} complete answers missing a vta caller`);
+        const kindsOk = `kinds ${record.kinds.filter((k) => k.ok).length}/${record.kinds.length}`;
+        log(`#${pr.number} compared: functions ${f.tp}/${f.oracle} (${f.fp.length} extra, ${f.fn.length} missed), ${kindsOk}, ${syntactic
+          ? `${record.completeAnswers} complete caller answers, ${record.notComputedViolations.length} rows not "not computed"`
+          : `${record.callers.filter((c) => c.vtaMissedWhileComplete).length} complete answers missing a vta caller`}`);
       }
     } finally {
       clearTimeout(deadline);

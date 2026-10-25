@@ -169,19 +169,19 @@ const assertSyntaxOnly = (c) => {
   assert.notEqual(c.testState, 'uncovered', 'never "no test"');
 };
 
-test('without a language server analyze() reads Python from its text: kinds, added and deleted, callers from the repository\'s syntax; Go stays not analysed', async () => {
+test('without a language server analyze() reads Python from its text: kinds, added and deleted, callers from the repository\'s syntax; Go from its text too, callers not computed', async () => {
   const dir = repoWith(
     { 'pyproject.toml': '[project]\nname = "m"\n', 'm.py': BASE_PY, 'n.py': USER_PY, 'go.mod': 'module example.com/m\n\ngo 1.22\n', 'a.go': 'package m\n\nfunc A() int { return 1 }\n' },
     { 'm.py': HEAD_PY, 'a.go': 'package m\n\nfunc A() int { return 2 }\n' });
   try {
     const r = await analyze(dir, { mode: 'pr', allowLocalBase: true, base: 'main', depth: 2 });
-    const by = Object.fromEntries(r.allChanged.map((c) => [c.key, c]));
+    const by = Object.fromEntries(r.allChanged.filter((c) => c.relPath.endsWith('.py')).map((c) => [c.key, c]));
     assert.deepEqual(Object.keys(by).sort(), ['C.keep', 'added', 'body']);
     assert.deepEqual(by['C.keep'].kinds.map((k) => k.id), ['required-param']);
     assert.deepEqual(by.body.kinds.map((k) => k.id), ['body']);
     assert.equal(by.added.added, true);
     assert.deepEqual(r.deleted.map((d) => d.key), ['C.gone']);
-    for (const c of r.allChanged) assertSyntaxOnly(c);
+    for (const c of Object.values(by)) assertSyntaxOnly(c);
     // The CLI indexes the repository (A8-D1 (b)): the unchanged n.py is a caller.
     assert.deepEqual(by.body.callers.map((x) => [x.label, path.basename(x.file)]), [['run', 'n.py']]);
     assert.deepEqual(by['C.keep'].callers.map((x) => x.label), ['run'], 'rule 6: c = C() then c.keep(…)');
@@ -193,7 +193,10 @@ test('without a language server analyze() reads Python from its text: kinds, add
     assert.deepEqual(r.untested, [], 'nothing reads as untested');
     assert.ok(r.warnings.some((w) => /1 changed Python file\(s\) read from their text: changed functions and signature kinds; Python callers from syntax only: the repository/.test(w)));
     assert.equal(r.otherFiles.find((f) => f.path === 'm.py'), undefined, 'the Python file is analysed, not listed as a file');
-    assert.equal(r.otherFiles.find((f) => f.path === 'a.go').notAnalysed.language, 'Go', 'Go is unchanged: not analysed');
+    const go = r.allChanged.find((c) => c.relPath === 'a.go');
+    assert.deepEqual([go.key, go.kinds.map((k) => k.id), go.callersComplete], ['A', ['body'], false], 'Go is read from its text (S3)');
+    assert.match(go.callersIncompleteReason, /^not computed: Go callers/);
+    assert.equal(r.otherFiles.find((f) => f.path === 'a.go'), undefined);
     assert.ok(r.reviewSymbols.get('m.py'), 'the review identity has the symbols recorded');
     // In words: no surface says "no callers".
     const sentence = models.classifyChangeVerdict(by.added).sentence;
@@ -248,7 +251,7 @@ test('the command line prints Python rows with kinds and callers from syntax, ne
   }
 });
 
-test('a preview reads Python from the fetched text: kinds, callers from the PR\'s own Python files and tests, limits note; Go stays not analysed', async () => {
+test('a preview reads Python from the fetched text: kinds, callers from the PR\'s own Python files and tests, limits note', async () => {
   clearVirtualText();
   const files = {
     'pkg/m.py@base': BASE_PY, 'pkg/m.py@head': HEAD_PY,
@@ -257,11 +260,10 @@ test('a preview reads Python from the fetched text: kinds, callers from the PR\'
   };
   const pyPatch = '@@ -1,9 +1,9 @@\n class C:\n-    def keep(self, a):\n+    def keep(self, a, b):\n         return a\n \n-    def gone(self):\n-        return 0\n-\n def body():\n-    return 1\n+    return 2\n+\n+async def added():\n+    raise ValueError()\n';
   const gh = {
-    listPullRequestFiles: async () => ({ total: 4, files: [
+    listPullRequestFiles: async () => ({ total: 3, files: [
       { path: 'pkg/m.py', oldPath: 'pkg/m.py', status: 'modified', patch: pyPatch },
       { path: 'tests/test_m.py', oldPath: 'tests/test_m.py', status: 'modified', patch: '@@ -1 +1 @@\n-a\n+b' },
       { path: 'src/a.ts', oldPath: 'src/a.ts', status: 'modified', patch: '@@ -1 +1 @@\n-old\n+new' },
-      { path: 'cmd/main.go', oldPath: 'cmd/main.go', status: 'modified', patch: '@@ -1 +1 @@\n-a\n+b' },
     ] }),
     fileAtRef: async (_, p, ref) => files[`${p}@${ref}`] ?? null,
   };
@@ -285,14 +287,13 @@ test('a preview reads Python from the fetched text: kinds, callers from the PR\'
   assert.ok(tsRow && !isSyntaxOnlyReason(tsRow.callersIncompleteReason), 'TypeScript keeps its own caller search');
   const by2 = Object.fromEntries(r.otherFiles.map((f) => [f.path, f.notAnalysed]));
   assert.equal(by2['tests/test_m.py'], undefined, 'a Python test is listed as a test, not as not analysed');
-  assert.equal(by2['cmd/main.go'].language, 'Go');
   assert.equal('pkg/m.py' in by2, false);
   assert.deepEqual(r.callersScope.map((s) => [s.language, s.scope]), [['Python', 'pr-files']]);
   assert.match(r.callersScope[0].note, /^Python callers from syntax only: the pull request's own files/);
   assert.ok(r.reviewSymbols.get('pkg/m.py'));
   const note = models.previewLimitsNote(r);
   assert.match(note, /Python callers are from syntax only, in the PR's own files/);
-  assert.match(note, /Go files are not analysed/);
+  assert.doesNotMatch(note, /not analysed|not computed/);
   // Expanding a Python caller asks the Python index, not TypeScript's.
   const expanded = await r.resolver.incomingWithStatus(by.body.callers[0].file, by.body.callers[0].pos);
   assert.equal(expanded.complete, false);
@@ -302,8 +303,7 @@ test('a preview reads Python from the fetched text: kinds, callers from the PR\'
   clearVirtualText();
 });
 
-test('the provider declares the hook; Go has none', () => {
+test('the provider declares the hook', () => {
   assert.equal(typeof pythonProvider.prepareSyntactic, 'function');
   assert.equal(pythonProvider.needsServer, true);
-  assert.equal(require('../src/languages/go/provider').goProvider.prepareSyntactic, undefined);
 });

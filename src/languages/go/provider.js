@@ -8,6 +8,8 @@
 // which server symbols are changed-symbol candidates and how they are keyed
 // (`collectGoSymbols`), how a header is compared (`goKindsOf`) and shown, which module a
 // file belongs to (`goModuleOf`), and how gopls' callers are read (`editorCallers`).
+// Without a server (the CLI, the no-checkout preview; S3): `prepareSyntactic`, the same
+// candidates from a text outline (`goOutline`, ./outline.js), callers not computed.
 //
 // Engine modules and the signature parser are required where they are used: the registry
 // (../index.js) loads this file, and src/engine/diff.js loads the registry.
@@ -241,6 +243,42 @@ function goSpec(parser) {
 const prepare = (ctx) => require('../server-symbols').prepareFromServerSymbols(ctx, goSpec());
 
 /**
+ * `prepare` where there is no language server (the CLI, the no-checkout preview; S3): the
+ * changed, added and deleted functions and methods and their signature kinds from the text
+ * alone (`goOutline`, shaped as gopls' answer, then the same `collectGoSymbols`, header
+ * parser and matching as `prepare`, so keys and review ids are the editor's), with callers
+ * not computed: every unit's resolver is `createNotComputedResolver`'s. Units are
+ * `ctx.unit` when given (the preview's "pull request": nothing is read from disk, the texts
+ * are `ctx.headTexts`/`ctx.baseTexts`), else Go modules by `go.mod` (`goModuleOf`, the CLI).
+ * A file excluded by build constraints is read as any other: its functions are its own
+ * (keyed by file, as gopls keys them). `ctx.hooks` is not read. One warning says the callers
+ * were not computed, for how many files.
+ * @param {import('../types').PrepareContext} ctx
+ * @returns {Promise<import('../types').PreparedLanguage>}
+ */
+async function prepareSyntactic(ctx) {
+  const { createNotComputedResolver, notComputedReason } = require('../../engine/resolver-not-computed');
+  const { goOutline } = require('./outline');
+  const reason = notComputedReason(goRules.displayName);
+  const spec = {
+    ...goSpec(),
+    serverName: 'the Go text scan',
+    // The outline is the whole answer: an empty one is a file with no functions.
+    declaresSymbols: undefined,
+  };
+  /** @type {import('../types').LanguageServices} */
+  const services = /** @type {any} */ ({
+    available: async () => ({ ok: true }),
+    documentSymbols: async (/** @type {import('../types').DocRef} */ doc) => goOutline(/** @type {string} */ (doc.text)),
+  });
+  const answer = await require('../server-symbols').prepareFromServerSymbols(
+    { ...ctx, hooks: { services, makeResolver: () => createNotComputedResolver(reason) } }, spec);
+  const files = answer.units.reduce((n, u) => n + new Set([...u.changed, ...u.deleted].map((/** @type {any} */ c) => c.relPath)).size, 0);
+  if (files) ctx.warnings.push(`${files} changed Go file(s) read from their text: changed functions and signature kinds only; callers ${reason}`);
+  return answer;
+}
+
+/**
  * Go's caller extras for the editor's resolver (./editor-extras.js): value uses are not
  * calls, a file outside the active build says so, and a method that shares an interface
  * with code outside the repository may be missing callers. Required here, not at the top,
@@ -277,9 +315,10 @@ const goProvider = Object.freeze({
   ...goRules,
   needsServer: true,
   prepare,
+  prepareSyntactic,
   editorCallers,
   warmUpTarget,
   serverLabel: 'the Go language server (gopls)',
 });
 
-module.exports = { goProvider, goSpec, collectGoSymbols, goKindsOf, goModuleOf, renderGoSymbolSig };
+module.exports = { goProvider, goSpec, collectGoSymbols, goKindsOf, goModuleOf, renderGoSymbolSig, prepareSyntactic };

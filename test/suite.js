@@ -34,6 +34,7 @@ const SUITE = [
   { file: 'test/python-signature.test.js', tier: 'quick' },
   { file: 'test/python-lexer.test.js', tier: 'quick' },  // 0.1s  // 0.2s
   { file: 'test/python-syntactic.test.js', tier: 'quick' },
+  { file: 'test/go-syntactic.test.js', tier: 'quick' },
   { file: 'test/python-syntactic-index.test.js', tier: 'quick' },
   { file: 'test/python-editor-extras.test.js', tier: 'quick' },  // 0.3s
   { file: 'test/python-pyright-project.test.js', tier: 'quick' },  // 0.1s
