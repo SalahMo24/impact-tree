@@ -25,10 +25,24 @@
 //   PROTOCOL_REASON, whatever explicit calls were found.
 // - Constructors. Pyright answers `null` at `__init__` and lists `Cls(...)` constructions
 //   only as the class's incoming calls (P7, measured on httpx: `Client.__init__` null, the
-//   `Proxy` class 5 callers). Its answer is therefore always incomplete, CONSTRUCTOR_REASON,
-//   whatever explicit `__init__` calls (`super().__init__()`) were found, and never the
-//   constructor path's complete "no callers". Listing the constructions needs the query
-//   asked at the class name; not done (a follow-up of P7).
+//   `Proxy` class 5 callers). `callerTargets` therefore gives the class's name for a class's
+//   `__init__` (A5): the shared step asks there too and merges the constructions with the
+//   explicit `__init__` calls (`super().__init__()`, when Pyright lists them), and a `null`
+//   at the `__init__` itself then means no call by that name. A class defined inside a
+//   function gets no target (a new class each call, mostly returned or passed as a value):
+//   its `__init__` stays incomplete, CONSTRUCTOR_REASON. The constructor's answer is then
+//   read by the rules here, with these in place of duck typing (which does not apply:
+//   nothing calls `.__init__(` on an untyped object by that name):
+//   - value uses of the `__init__` (as above), and of the class, from the class name's
+//     references: one that is not the definition, an import, a listed site, a call
+//     (`Cls(`), an annotation (`x: Cls`, `-> Cls`, `Optional[Cls]`, a string annotation),
+//     an `isinstance`/`issubclass` class argument or an `except` clause is a value use
+//     (`transport_cls=Client`, `{"a": Client}`): VALUE_USE_REASON. Annotations, `isinstance`
+//     and `except` neither construct nor hand the class to code that may: not value uses.
+//   - a base-class reference (`class Sub(Cls):`): a subclass's constructions run this
+//     `__init__` unless it overrides it, and are listed at the subclass: SUBCLASS_REASON.
+//   - `cls(...)`, `type(self)(...)` or `self.__class__(...)` in the class's body, not at a
+//     listed site: a construction Pyright may not list: FACTORY_REASON.
 // - Decorator registration. A function with a decorator that is not one of
 //   TRANSPARENT_DECORATORS (binding and wrapping decorators that leave the function called
 //   by name) may be called by whatever the decorator registered it with (`@app.route`,
@@ -91,7 +105,9 @@ const GREP_TIMEOUT_MS = 5000;        // the git grep alone (within the deadline)
 const PROTOCOL_REASON = 'called by Python itself (protocol method); its callers cannot be traced';
 const REGISTRATION_REASON = 'registered by a decorator; its callers cannot be traced';
 const VALUE_USE_REASON = 'referenced-as-value';
-const CONSTRUCTOR_REASON = 'a constructor: its constructions (`Class(...)`) are not listed, so its callers cannot be traced';
+const CONSTRUCTOR_REASON = 'a constructor of a class defined in a function: its constructions (`Class(...)`) are not listed, so its callers cannot be traced';
+const SUBCLASS_REASON = 'subclassed: a subclass that does not override `__init__` runs it, and its constructions are not listed here';
+const FACTORY_REASON = 'constructed through `cls(...)` or `type(self)(...)` in the class, which the language server may not list';
 // When the checks above cannot run, the server's list alone is not known to be complete.
 const UNREAD_TARGET_REASON = 'its file could not be read, so value uses and untyped calls were not checked';
 const NO_SERVICES_REASON = 'no language services or repository, so value uses and untyped calls were not checked';
@@ -208,6 +224,123 @@ function declarationAt(text, pos) {
   return { name: nameMatch[0], isMethod, decorators };
 }
 
+/** @param {string} line */
+const indentOf = (line) => line.length - line.trimStart().length;
+/** @param {string} line A blank or comment-only line. */
+const isTrivia = (line) => /^\s*(#.*)?$/.test(line);
+
+/**
+ * The class whose body holds the `def` whose name is at `pos`, when that class is not
+ * inside a function: the offset of the class's name and its body's [start, end) offsets.
+ * Found by indentation from the text, as `declarationAt` finds the enclosing block (a
+ * nested class's own name for a nested class; decorators above the class do not matter).
+ * Null when the `def` is not directly in a class body, or the class is defined in a
+ * function (at any depth). Pure.
+ * @param {string} text @param {number} pos
+ * @returns {{ namePos: number, bodyStart: number, bodyEnd: number }|null}
+ */
+function enclosingClassAt(text, pos) {
+  const defStart = text.lastIndexOf('\n', pos - 1) + 1;
+  if (!/^[ \t]*(?:async[ \t]+)?def[ \t]+$/.test(text.slice(defStart, pos))) return null;
+  let indent = indentOf(text.slice(defStart, pos));
+  /** @type {{ namePos: number, bodyStart: number, bodyEnd: number }|null} */
+  let found = null;
+  let end = defStart; // start of the line below the one being read
+  while (end > 0 && indent > 0) {
+    const start = text.lastIndexOf('\n', end - 2) + 1;
+    const line = text.slice(start, end - 1);
+    end = start;
+    if (isTrivia(line) || indentOf(line) >= indent) continue;
+    indent = indentOf(line);
+    if (!found) {
+      const m = /^([ \t]*class[ \t]+)([^\W\d]\w*)/u.exec(line);
+      if (!m) return null; // the `def` is not in a class body
+      const classIndent = indent;
+      const bodyStart = text.indexOf('\n', start) + 1 || text.length;
+      let bodyEnd = text.length;
+      for (let at = bodyStart; at < text.length;) {
+        const nl = text.indexOf('\n', at);
+        const next = nl < 0 ? text.length : nl + 1;
+        const l = text.slice(at, nl < 0 ? text.length : nl);
+        if (!isTrivia(l) && indentOf(l) <= classIndent) { bodyEnd = at; break; }
+        at = next;
+      }
+      found = { namePos: start + m[1].length, bodyStart, bodyEnd };
+    } else if (/^[ \t]*(?:async[ \t]+)?def\b/.test(line)) {
+      return null; // a class defined in a function
+    }
+  }
+  return found;
+}
+
+/**
+ * How a reference to a class at [start, end) uses it, for its `__init__`'s verdict:
+ * `'call'` (`Cls(`), `'base'` (in a `class X(…)` base list), `'inert'` (an annotation,
+ * a string annotation, an `isinstance`/`issubclass` class argument, an `except` clause:
+ * nothing is constructed or handed on), or `'value'` (anything else, such as
+ * `transport_cls=Client`). Pure; a heuristic on the text before and after the name, which
+ * reads `'value'` whenever it is unsure. `ranges` is `nonCodeRanges(text)`.
+ * @param {string} text @param {number} start @param {number} end @param {Array<[number, number]>} ranges
+ * @returns {'call'|'base'|'inert'|'value'}
+ */
+function classUseAt(text, start, end, ranges) {
+  if (!inCode(ranges, start)) return 'inert'; // a string annotation ("Client")
+  if (isCalledAt(text, start, end) === true) return 'call';
+  const lineStart = text.lastIndexOf('\n', start - 1) + 1;
+  const before = text.slice(lineStart, start);
+  if (/^[ \t]*class[ \t]+\w+[ \t]*\([^)]*$/.test(before)) return 'base';
+  if (/^[ \t]*except\b[^:]*$/.test(before)) return 'inert';
+  if (/\b(?:isinstance|issubclass)[ \t]*\([^()]*,[ \t(]*(?:[\w.]+[ \t]*,[ \t]*)*[\w.]*$/.test(before)) return 'inert';
+  // An annotation: walk back over a type expression (`Optional[`, `A | `, `typing.`) to
+  // the `:` or `->` it follows.
+  const m = /[\w.\s[,|]*$/.exec(before);
+  const lead = before.slice(0, before.length - (m ? m[0].length : 0));
+  if (/->$/.test(lead)) return 'inert';
+  if (/^[ \t]*[\w.]+[ \t]*:$/.test(lead)) return 'inert'; // `x: Cls` / `self.x: Cls = …`
+  if (/[(,][ \t]*\*{0,2}\w+[ \t]*:$/.test(lead) && inDefHeader(text, start)) return 'inert';
+  return 'value';
+}
+
+/**
+ * Whether `at` is inside a `def`'s parameter list (its `(` opened and not closed before
+ * `at`), looking back at most 4096 characters. Pure; brackets in strings are not skipped.
+ * @param {string} text @param {number} at
+ */
+function inDefHeader(text, at) {
+  const from = Math.max(0, at - 4096);
+  const before = text.slice(from, at);
+  const heads = [...before.matchAll(/(?:^|\n)[ \t]*(?:async[ \t]+)?def[ \t]+\w+[ \t]*\(/g)];
+  const last = heads[heads.length - 1];
+  if (!last) return false;
+  let depth = 1;
+  for (const ch of before.slice(/** @type {number} */ (last.index) + last[0].length)) {
+    if (ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === ')' || ch === ']' || ch === '}') depth--;
+    if (depth === 0) return false;
+  }
+  return true;
+}
+
+/**
+ * How many `cls(`, `type(self)(` or `self.__class__(` calls in code in the class's body are
+ * not at a listed site (`listed`: `file#start`). Pure.
+ * @param {string} text @param {{ bodyStart: number, bodyEnd: number }} cls
+ * @param {Set<string>} listed @param {string} file
+ */
+function factoryCallsIn(text, cls, listed, file) {
+  const body = text.slice(cls.bodyStart, cls.bodyEnd);
+  const re = /\bcls[ \t]*\(|\btype[ \t]*\([ \t]*self[ \t]*\)[ \t]*\(|\bself[ \t]*\.[ \t]*__class__[ \t]*\(/g;
+  let ranges = null;
+  let count = 0;
+  for (const m of body.matchAll(re)) {
+    const at = cls.bodyStart + /** @type {number} */ (m.index);
+    ranges = ranges || nonCodeRanges(text);
+    if (!inCode(ranges, at) || listed.has(`${file}#${at}`)) continue;
+    count++;
+  }
+  return count;
+}
+
 /**
  * Whether the attribute call whose name is at `at` is on a string literal (`"x".join(`,
  * `b"".split(`): the character before the `.`, past spaces, closes a string. Pure; `ranges`
@@ -321,6 +454,47 @@ function createPythonEditorExtras({ trace = () => {}, readText = (file) => readT
   }
 
   /**
+   * The constructor verdict beyond the `__init__`'s own value uses (see the header): the
+   * class's references, then factory calls in its body.
+   * @param {LanguageServices} svc @param {string} file @param {string} text The target file's text.
+   * @param {{ namePos: number, bodyStart: number, bodyEnd: number }} cls From `enclosingClassAt`.
+   * @param {Set<string>} listed `file#start` of every listed call site.
+   * @returns {Promise<string|null>}
+   */
+  async function constructionReason(svc, file, text, cls, listed) {
+    let refs;
+    try {
+      refs = await svc.references({ file, side: 'head' }, cls.namePos);
+    } catch (e) {
+      return `its class's references could not be listed: ${messageOf(e)}`;
+    }
+    if (!Array.isArray(refs)) return 'its class\'s references could not be listed (no answer)';
+    let values = 0;
+    let bases = 0;
+    /** @type {Map<string, Array<[number, number]>>} */
+    const rangesOf = new Map();
+    for (const r of refs) {
+      if (r.file === file && r.start != null && r.end != null && r.start <= cls.namePos && cls.namePos < r.end) continue; // the definition
+      if (r.start != null && listed.has(`${r.file}#${r.start}`)) continue;
+      const t = r.file === file ? text : readText(r.file);
+      // A reference that cannot be placed counts, as in `referenceVerdict`.
+      if (typeof t !== 'string' || r.start == null || r.end == null || !(0 <= r.start && r.start < r.end && r.end <= t.length)) { values++; continue; }
+      if (isImportAt(t, r.start)) continue;
+      let ranges = rangesOf.get(r.file);
+      if (!ranges) { ranges = nonCodeRanges(t); rangesOf.set(r.file, ranges); }
+      const use = classUseAt(t, r.start, r.end, ranges);
+      if (use === 'value') values++;
+      else if (use === 'base') bases++;
+    }
+    const factory = factoryCallsIn(text, cls, listed, file);
+    trace(`python: constructor of ${path.basename(file)}@${cls.namePos}: ${refs.length} class reference(s), ${values} value use(s), ${bases} subclass(es), ${factory} factory call(s) unlisted`);
+    if (values) return VALUE_USE_REASON;
+    if (bases) return SUBCLASS_REASON;
+    if (factory) return FACTORY_REASON;
+    return null;
+  }
+
+  /**
    * The duck-typing verdict (see the header), within the budgets.
    * @param {LanguageServices} svc @param {string} file @param {number} pos @param {string} name @param {Set<string>} listed
    * @returns {Promise<string|null>}
@@ -407,7 +581,8 @@ function createPythonEditorExtras({ trace = () => {}, readText = (file) => readT
           const decl = declarationAt(text, pos);
           if (!decl) return none;
           if (isProtocolName(decl.name)) return { callers: [], incompleteReason: PROTOCOL_REASON };
-          if (isConstructorDecl(decl)) return { callers: [], incompleteReason: CONSTRUCTOR_REASON };
+          const cls = isConstructorDecl(decl) ? enclosingClassAt(text, pos) : null;
+          if (isConstructorDecl(decl) && !cls) return { callers: [], incompleteReason: CONSTRUCTOR_REASON };
           if (!services || !repoRoot) return { callers: [], incompleteReason: NO_SERVICES_REASON };
           const isProperty = decl.decorators.some((d) => /^(?:[\w.]*\.)?(?:property|cached_property)\b|^\w+\.(?:setter|getter|deleter)\b/.test(d));
           /** @type {Set<string>} */
@@ -418,6 +593,7 @@ function createPythonEditorExtras({ trace = () => {}, readText = (file) => readT
             const value = await valueUseReason(services, file, pos, listed);
             if (value) return { callers: [], incompleteReason: value };
           }
+          if (cls) return { callers: [], incompleteReason: await constructionReason(services, file, text, cls, listed) };
           if (!seen.length && decl.decorators.some(isRegistrationDecorator)) return { callers: [], incompleteReason: REGISTRATION_REASON };
           if (!decl.isMethod || isProperty) return none;
           return { callers: [], incompleteReason: await duckTypingReason(services, file, pos, decl.name, listed) };
@@ -433,9 +609,20 @@ function createPythonEditorExtras({ trace = () => {}, readText = (file) => readT
       const decl = typeof text === 'string' ? declarationAt(text, pos) : null;
       if (!decl) return null;
       if (isProtocolName(decl.name)) return PROTOCOL_REASON;
-      if (isConstructorDecl(decl)) return CONSTRUCTOR_REASON;
+      // With its class as a caller target, an `__init__`'s `null` is no call by that name
+      // (the shared step reads it so); a class in a function has no target.
+      if (isConstructorDecl(decl)) return enclosingClassAt(/** @type {string} */ (text), pos) ? null : CONSTRUCTOR_REASON;
       if (decl.decorators.some(isRegistrationDecorator)) return REGISTRATION_REASON;
       return null;
+    },
+    // A class's `__init__`: its class's name, where Pyright lists the constructions.
+    callerTargets(file, pos) {
+      const text = readText(file);
+      if (typeof text !== 'string') return [];
+      const decl = declarationAt(text, pos);
+      if (!decl || !isConstructorDecl(decl)) return [];
+      const cls = enclosingClassAt(text, pos);
+      return cls ? [{ file, pos: cls.namePos }] : [];
     },
     // Pyright's call hierarchy answers for the whole workspace; there are no users it is
     // known not to see beyond those `moreCallers` checks.
@@ -468,5 +655,6 @@ module.exports = {
   createPythonEditorExtras, nonCodeRanges, inCode, attributeCallHits, declarationAt, isRegistrationDecorator,
   dedupeSites, isCalledAt, hasStringReceiver, isImportAt, isProtocolName, TRANSPARENT_DECORATORS,
   PROTOCOL_REASON, REGISTRATION_REASON, VALUE_USE_REASON, UNREAD_TARGET_REASON, NO_SERVICES_REASON, CONSTRUCTOR_REASON,
+  SUBCLASS_REASON, FACTORY_REASON, enclosingClassAt, classUseAt, factoryCallsIn,
   DUCK_MAX_FILES, DUCK_MAX_FILE_BYTES, DUCK_MAX_TOTAL_BYTES, DUCK_MAX_DEFINITIONS, DUCK_DEADLINE_MS, MAX_FILE_BYTES,
 };
