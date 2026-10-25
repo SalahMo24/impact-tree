@@ -446,6 +446,9 @@ run outside the editor: the MIT-licensed `pyright` npm package (decision P-D1).
   TypeScript's "unseen users" grep, bounded); if any is found the answer is incomplete with
   "N calls by this name that the language server could not resolve". Quiet when typing is
   good, amber exactly when there is evidence.
+  **Narrowed after P0 (owner, 2026-10-25):** a text hit counts only when it is in code (not
+  a string or comment) and the server's `definition` at it does not resolve to another
+  function; one `definition` query per hit, bounded like the search itself.
 - **P-D5. Nested functions.** A `def` inside a function: part of its parent's body (as Go's
   function literals; proposal), or its own row (as TypeScript's nested helpers). Methods
   in classes are always their own rows (`Class.method`).
@@ -488,7 +491,7 @@ run outside the editor: the MIT-licensed `pyright` npm package (decision P-D1).
   6. Time: spawn + initialize 0.3 s; first symbols 2.6 s; first incomingCalls 0.4 s; warm
      incomingCalls median 45 ms (max 105 ms), references 25 ms, symbols on a new file 13 ms.
 
-  **Recommendation (owner decides).** P-D4: keep (B), but count only text hits in code (not
+  **Recommendation (accepted by the owner 2026-10-25).** P-D4: keep (B), but count only text hits in code (not
   strings/comments) that the server's `definition` does not resolve to another function; raw
   text hits would flag 4 of 4 methods (3 false alarms), the filtered count flags 2 of 4 (1
   false: `read`). P-D5: stands; nested defs are available as children but skipping them matches
