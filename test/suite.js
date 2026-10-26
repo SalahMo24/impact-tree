@@ -31,6 +31,7 @@ const SUITE = [
   { file: 'test/python-rules.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/java-rules.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/python-symbols.test.js', tier: 'quick' },  // 6s
+  { file: 'test/java-symbols.test.js', tier: 'quick' },  // 2s
   { file: 'test/go-signature.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/python-signature.test.js', tier: 'quick' },
   { file: 'test/java-signature.test.js', tier: 'quick' },

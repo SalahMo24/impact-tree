@@ -42,6 +42,10 @@ const { messageOf } = require('./text');
  * @property {(base: CollectedSymbol|undefined, head: CollectedSymbol) => object[]} [kindsOf]
  *   The signature kinds of a change; `diffSignature` by default.
  * @property {RegExp} [trivia] A comment-or-blank line; `//` and block comments by default.
+ * @property {(base: CollectedSymbol[], head: CollectedSymbol[]) => CollectedSymbol[]} [pairSymbols]
+ *   Optional, Java only (J-D3): the head side's symbols with some given the key of a base
+ *   symbol they continue (an overload whose parameter list changed keeps its old key), so
+ *   the matching reads them as one changed symbol. Pure. Absent: keys are matched as given.
  * @property {(relPath: string, repo: string) => { component: string, projectRoot: string }} componentOf
  *   The unit a file belongs to: its name as shown and its repository-relative directory
  *   (`''` for the repository root). Files of one unit share one resolver.
@@ -197,6 +201,9 @@ async function prepareFromServerSymbols(ctx, spec) {
       if (!base.ok) return { kind: 'failed', reason: base.reason };
       baseCallables = base.symbols;
     }
+    // The pairing runs before the matching and the recorded sides, so a row's key and the
+    // review identity's agree.
+    if (spec.pairSymbols && headCallables) headCallables = spec.pairSymbols(baseCallables, headCallables);
     const result = changedFromSymbols({
       absPath: abs, relPath: f.path, oldPath: f.oldPath, status: f.status, baseText, headText,
       hunkRanges: changedRanges[f.path] || [], hunkDeletions: deletions[f.path] || [],

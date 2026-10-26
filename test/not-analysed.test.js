@@ -78,17 +78,17 @@ test('the renderer shows "not analysed" in amber with the reason in the tooltip'
 
 test('a file of a language no provider analyses names it, quietly, and is not mistaken for docs', () => {
   const result = resultOf({
-    changedFileCount: 3, fileStatus: { 'a.go': 'modified', 'README.md': 'modified', 'svc/App.java': 'added' },
-    otherFiles: [...resultOf().otherFiles, { path: 'svc/App.java', status: 'added', noCallable: true }],
+    changedFileCount: 3, fileStatus: { 'a.go': 'modified', 'README.md': 'modified', 'svc/App.kt': 'added' },
+    otherFiles: [...resultOf().otherFiles, { path: 'svc/App.kt', status: 'added', noCallable: true }],
   });
-  const row = rowFor(result, 'svc/App.java');
+  const row = rowFor(result, 'svc/App.kt');
   assert.equal(row.level, 5, 'expected, not a failure: it stays quiet');
   assert.deepEqual(tree.countReview(rowsOf(result).rows, () => false).attention, 1, 'only the Go file needs attention');
   const py = renderTreeItem(vscode, row, view);
-  assert.match(py.description, /^Java  ·  not analysed yet/);
+  assert.match(py.description, /^Kotlin  ·  not analysed yet/);
   assert.doesNotMatch(py.description, /no call graph/);
   assert.notEqual(py.iconPath && py.iconPath.color && py.iconPath.color.id, AMBER.color);
-  assert.match(py.tooltip.value, /Java files are not analysed yet: read the diff/);
+  assert.match(py.tooltip.value, /Kotlin files are not analysed yet: read the diff/);
 });
 
 test('Details gives the reason for a not-analysed file and nothing for a plain one', () => {

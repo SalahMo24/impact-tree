@@ -41,7 +41,7 @@ test('every fixture text is the one its symbols were recorded for', () => {
 });
 
 test('Python is registered after Go, needs a server, and .py is no longer "not analysed yet"', () => {
-  assert.deepEqual(LANGUAGES.map((l) => l.id), ['typescript', 'go', 'python']);
+  assert.deepEqual(LANGUAGES.map((l) => l.id), ['typescript', 'go', 'python', 'java']);
   assert.equal(languageFor('pkg/mod.py'), pythonProvider);
   assert.equal(languageFor('pkg/mod.pyi'), pythonProvider);
   assert.equal(pythonProvider.needsServer, true);
