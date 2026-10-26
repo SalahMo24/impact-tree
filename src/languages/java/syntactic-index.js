@@ -88,7 +88,7 @@ const ANONYMOUS = /^(new\s.*\{\.\.\.\}|\{\.\.\.\})$/;
  * @typedef {import('./lexer').Token} Token
  * @typedef {{ rel: string, file: string, pkg: string, text: string, toks: Token[], match: Int32Array,
  *   single: Map<string, string>, demand: string[], staticSingle: Map<string, string[]>, staticDemand: string[],
- *   types: TypeRec[], defs: DefRec[], byPos: Map<number, DefRec>, anon: Array<{ start: number, end: number, superText: string }>|null,
+ *   types: TypeRec[], defs: DefRec[], byPos: Map<number, DefRec>, enumConsts: Set<number>, anon: Array<{ start: number, end: number, superText: string }>|null,
  *   uses: Use[]|null }} FileRec
  * @typedef {{ fqn: string, simple: string, path: string[], kind: string, file: FileRec, start: number, end: number,
  *   namePos: number, superText: string|null, ifaceTexts: string[], typeParams: Set<string>, methods: Map<string, DefRec[]>,
@@ -98,7 +98,8 @@ const ANONYMOUS = /^(new\s.*\{\.\.\.\}|\{\.\.\.\})$/;
  *   type: TypeRec|null, file: FileRec, arity: number, varargs: boolean, isCtor: boolean, mods: Set<string>,
  *   annotations: string[], returns: string|null, params: Array<{ name: string, type: string }>, paramKey: string,
  *   typeParams: Set<string>, inInterface: boolean, locals: Map<string, string|null>|null }} DefRec
- * @typedef {{ name: string, pos: number, end: number, at: number, kind: 'call'|'new'|'ref', argc: number }} Use
+ * @typedef {{ name: string, pos: number, end: number, at: number, kind: 'call'|'new'|'ref', argc: number, enumConst?: boolean }} Use
+ *   `enumConst`: an enum constant (`A(1)`, `B`), a call of its enum's constructor.
  * @typedef {DefRec[]|'unresolved'|null} Hit
  * @typedef {{ t: 'type', type: TypeRec, static: boolean } | { t: 'ext' } | { t: 'unk' } | { t: 'pkg', name: string }} Recv
  */
@@ -155,6 +156,87 @@ function readType(toks, i) {
   while (isP(toks[j], '[') && isP(toks[j + 1], ']')) { array = true; j += 2; }
   if (isP(toks[j], '...')) { array = true; j++; }
   return { base, end: j, array, text: base + (array ? '[]' : '') };
+}
+
+/**
+ * The type `new` creates when `toks[open]` is the `(` of `new T<…>(`: T as written, else null.
+ * Looks back at most 40 tokens (a type's own length).
+ * @param {Token[]} toks @param {number} open @returns {string|null}
+ */
+function newTypeBefore(toks, open) {
+  for (let j = open - 1; j >= 0 && j >= open - 40; j--) {
+    const x = toks[j];
+    if (x.kind === 'ident' && x.text === 'new') {
+      const ty = readType(toks, j + 1);
+      return ty && ty.end === open ? ty.base : null;
+    }
+    if (!(x.kind === 'ident' || isP(x, '.') || isP(x, '<') || isP(x, '>') || isP(x, ',') || isP(x, '?'))) return null;
+  }
+  return null;
+}
+
+/**
+ * The index of the `.` before the method name at `toks[at]`: `x.m(`, or `x.<T>m(` with
+ * explicit type arguments; -1 for a bare call.
+ * @param {Token[]} toks @param {number} at @returns {number}
+ */
+function dotBefore(toks, at) {
+  if (isP(toks[at - 1], '.')) return at - 1;
+  if (!isP(toks[at - 1], '>')) return -1;
+  let depth = 0;
+  for (let j = at - 1; j >= 0 && j >= at - 64; j--) {
+    if (isP(toks[j], '>')) depth++;
+    else if (isP(toks[j], '<') && --depth === 0) return isP(toks[j - 1], '.') ? j - 1 : -1;
+    else if (!(toks[j].kind === 'ident' || isP(toks[j], ',') || isP(toks[j], '.') || isP(toks[j], '?') || isP(toks[j], '[') || isP(toks[j], ']'))) return -1;
+  }
+  return -1;
+}
+
+/**
+ * Whether `toks[i]` (an identifier before `(`) names a method declared there rather than a
+ * call: a type is written before it (`void m(`, `List<String> m(`, `int[] m(`), or, after
+ * `>`, a body or `throws` follows its parameters. Used for the methods of anonymous and
+ * local classes, which the outline does not list.
+ * @param {Token[]} toks @param {Int32Array} match @param {number} i @returns {boolean}
+ */
+function isDeclarationAt(toks, match, i) {
+  const prev = toks[i - 1];
+  if (!prev || !isP(toks[i + 1], '(')) return false;
+  if (prev.kind === 'ident') return !KEYWORDS.has(prev.text) || PRIMITIVES.has(prev.text);
+  if (isP(prev, ']')) return true;
+  if (isP(prev, '>')) {
+    const close = match[i + 1];
+    const after = close >= 0 ? toks[close + 1] : undefined;
+    return !!after && (isP(after, '{') || after.text === 'throws');
+  }
+  return false;
+}
+
+/**
+ * The typed parameters of a declaration whose `(` is `toks[open]`: `[name, type]` pairs.
+ * @param {Token[]} toks @param {Int32Array} match @param {number} open @returns {Array<[string, string]>}
+ */
+function paramsAt(toks, match, open) {
+  const close = match[open];
+  /** @type {Array<[string, string]>} */
+  const out = [];
+  if (close < 0) return out;
+  let k = open + 1;
+  while (k < close) {
+    while (isP(toks[k], '@') || (toks[k] && toks[k].text === 'final')) {
+      if (toks[k].text === 'final') { k++; continue; }
+      k += 2;
+      while (isP(toks[k], '.')) k += 2;
+      if (isP(toks[k], '(') && match[k] > k) k = match[k] + 1;
+    }
+    const ty = readType(toks, k);
+    if (!ty || !isIdent(toks[ty.end])) break;
+    out.push([toks[ty.end].text, ty.text]);
+    k = ty.end + 1;
+    if (!isP(toks[k], ',')) break;
+    k++;
+  }
+  return out;
 }
 
 /** @param {string} text @returns {string[]} The annotation names (last segment) among `text`'s tokens. */
@@ -221,7 +303,7 @@ function createJavaSyntacticIndex(sources, { root = '', scope = 'the indexed fil
     /** @type {FileRec} */
     const rec = {
       rel, file: root ? path.join(root, rel) : rel, pkg: pkgSym ? pkgSym.name : '', text, toks, match: matchBrackets(toks),
-      single: new Map(), demand: [], staticSingle: new Map(), staticDemand: [], types: [], defs: [], byPos: new Map(), anon: null, uses: null,
+      single: new Map(), demand: [], staticSingle: new Map(), staticDemand: [], types: [], defs: [], byPos: new Map(), enumConsts: new Set(), anon: null, uses: null,
     };
     readImports(rec);
     /** @type {(syms: any[], outer: TypeRec|null, pathSoFar: string[]) => void} */
@@ -377,7 +459,8 @@ function createJavaSyntacticIndex(sources, { root = '', scope = 'the indexed fil
       else if (s.kind === 10 && f.kind === 22) t.fields.set(f.name, simple);
     }
     // Enum constants are fields of the enum's own type.
-    if (s.kind === 10) for (const f of s.children || []) if (f.kind === 22) t.fields.set(f.name, simple);
+    // and each one is a call of one of its constructors.
+    if (s.kind === 10) for (const f of s.children || []) if (f.kind === 22) { t.fields.set(f.name, simple); rec.enumConsts.add(f.selectionRange.start); }
     return t;
   }
 
@@ -418,6 +501,11 @@ function createJavaSyntacticIndex(sources, { root = '', scope = 'the indexed fil
         }
         continue;
       }
+      if (rec.enumConsts.has(t.start)) {
+        const e = innermostType(rec, t.start);
+        uses.push({ name: e ? e.simple : t.text, pos: t.start, end: t.end, at: i, kind: 'new', argc: isP(toks[i + 1], '(') ? argCount(rec, i + 1) : 0, enumConst: true });
+        continue;
+      }
       if (t.text === 'new') {
         const ty = readType(toks, i + 1);
         if (!ty || ty.array || !isP(toks[ty.end], '(')) continue;
@@ -434,7 +522,7 @@ function createJavaSyntacticIndex(sources, { root = '', scope = 'the indexed fil
         uses.push({ name: t.text === 'this' ? '<this>' : '<super>', pos: t.start, end: t.end, at: i, kind: 'new', argc: argCount(rec, i + 1) });
         continue;
       }
-      if (KEYWORDS.has(t.text) || rec.byPos.has(t.start) || newNames.has(t.start)) continue;
+      if (KEYWORDS.has(t.text) || rec.byPos.has(t.start) || newNames.has(t.start) || isDeclarationAt(toks, match, i)) continue;
       if (isP(toks[i - 1], '@') || isP(toks[i - 1], '::')) continue;
       uses.push({ name: t.text, pos: t.start, end: t.end, at: i, kind: 'call', argc: argCount(rec, i + 1) });
     }
@@ -457,6 +545,12 @@ function createJavaSyntacticIndex(sources, { root = '', scope = 'the indexed fil
       if (isP(x, '<') && toks[j - 1] && (toks[j - 1].kind === 'ident' || isP(toks[j - 1], '.'))) {
         const ty = readType(toks, j - 1);
         if (ty && ty.end > j) { j = ty.end - 1; continue; }
+      }
+      // `Collections.<K, V>emptyMap()`: explicit type arguments.
+      if (isP(x, '<') && isP(toks[j - 1], '.')) {
+        let depth = 0;
+        for (; j < close; j++) { if (isP(toks[j], '<')) depth++; else if (isP(toks[j], '>') && --depth === 0) break; }
+        continue;
       }
       if (isP(x, ',')) n++;
     }
@@ -507,7 +601,10 @@ function createJavaSyntacticIndex(sources, { root = '', scope = 'the indexed fil
   /**
    * The type and its supertypes within the index, nearest first. `open`: a supertype is
    * written but not indexed (or the walk hit `MAX_HIERARCHY`), so a member not found may
-   * still exist.
+   * still exist. Bound: a breadth-first walk of at most `MAX_HIERARCHY` types, each once.
+   * Resolving a supertype's name can ask for an enclosing type's hierarchy
+   * (`resolveSimple`); a hierarchy being built answers with itself alone (`t.hier` is set
+   * first), so the recursion ends.
    * @param {TypeRec} t @returns {{ types: TypeRec[], open: boolean }}
    */
   function hierarchy(t) {
@@ -537,7 +634,8 @@ function createJavaSyntacticIndex(sources, { root = '', scope = 'the indexed fil
   /**
    * The methods named `name` a call with `argc` arguments may reach on `t`: across its
    * hierarchy, the nearest declaration of each parameter list. `byName`: whether any method of
-   * that name exists at all (Java picks the class by name before the overload).
+   * that name exists at all (Java picks the class by name before the overload). Bound: the
+   * hierarchy's (`MAX_HIERARCHY` types).
    * @param {TypeRec} t @param {string} name @param {number} argc @param {boolean} [skipSelf]
    */
   function lookup(t, name, argc, skipSelf = false) {
@@ -584,6 +682,10 @@ function createJavaSyntacticIndex(sources, { root = '', scope = 'the indexed fil
             }
           }
         }
+        continue;
+      }
+      if (isDeclarationAt(toks, match, i)) {
+        for (const [n, ty] of paramsAt(toks, match, i + 1)) set(n, ty);
         continue;
       }
       if (t.text === 'instanceof') {
@@ -638,108 +740,123 @@ function createJavaSyntacticIndex(sources, { root = '', scope = 'the indexed fil
   }
 
   /**
-   * The type of the receiver expression that ends at token `end`.
+   * The type of the receiver expression that ends at token `end`: an identifier form
+   * (`recvOfName`), a parenthesised form (`recvOfParen`), or a string literal.
+   * Bound: `depth` counts the nested receiver lookups of one call (each `.` of a chain, each
+   * call whose return type types the next receiver, each parenthesis); past
+   * `MAX_CHAIN_DEPTH` the receiver is not typed. Recursion: `recvAt` → `recvOfName` /
+   * `recvOfParen` → `recvAt` or `resolveUse` → `recvAt`, every step with `depth + 1`.
    * @param {FileRec} rec @param {number} end @param {number} depth @returns {Recv}
    */
   function recvAt(rec, end, depth) {
     if (depth > MAX_CHAIN_DEPTH) return { t: 'unk' };
-    const { toks, match } = rec;
-    const t = toks[end];
+    const t = rec.toks[end];
     if (!t) return { t: 'unk' };
+    if (t.kind === 'lit') return /^["']/.test(t.text) ? { t: 'ext' } : { t: 'unk' };
+    if (t.kind === 'ident') return recvOfName(rec, end, depth);
+    if (isP(t, ')')) return recvOfParen(rec, end, depth);
+    return { t: 'unk' }; // `]`, an operator: not typed
+  }
+
+  /**
+   * A receiver ending at an identifier: `this`, `X.this`, `a.b` (a field, a nested type or a
+   * package segment of `a`), a local or parameter, a field of the enclosing types, a type
+   * name (a static call), else a package's first segment (lowercase) or an outside type.
+   * @param {FileRec} rec @param {number} end @param {number} depth @returns {Recv}
+   */
+  function recvOfName(rec, end, depth) {
+    const { toks } = rec;
+    const t = toks[end];
     const enc = innermostType(rec, t.start);
     const def = innermostDef(rec, t.start);
-    if (t.kind === 'lit') return /^["']/.test(t.text) ? { t: 'ext' } : { t: 'unk' };
-    if (t.kind === 'ident') {
-      const dotted = isP(toks[end - 1], '.');
-      if (t.text === 'this') {
-        if (dotted) { const r = resolveTypeName(toks[end - 2].text, rec, enc); return r && r !== 'tp' ? { t: 'type', type: r, static: false } : { t: 'unk' }; }
-        if (anonAt(rec, t.start)) return { t: 'unk' };
-        return enc ? { t: 'type', type: enc, static: false } : { t: 'unk' };
-      }
-      if (KEYWORDS.has(t.text)) return { t: 'unk' };
-      if (dotted) {
-        const base = recvAt(rec, end - 2, depth + 1);
-        if (base.t === 'type') {
-          const f = fieldOf(base.type, t.text);
-          if (f) return recvOfText(f.text, f.in);
-          const n = base.type.nested.get(t.text);
-          if (n) return { t: 'type', type: n, static: true };
-          return hierarchy(base.type).open ? { t: 'unk' } : { t: 'ext' };
-        }
-        if (base.t === 'pkg') {
-          const full = `${base.name}.${t.text}`;
-          const ty = typesByFqn.get(full);
-          return ty ? { t: 'type', type: ty, static: true } : { t: 'pkg', name: full };
-        }
-        return base;
-      }
-      if (def) {
-        const locals = localsOf(def);
-        if (locals.has(t.text)) {
-          const ty = locals.get(t.text);
-          return ty ? recvOfText(ty, def.type || /** @type {TypeRec} */ (enc), def.typeParams) : { t: 'unk' };
-        }
-      }
-      for (let o = enc; o; o = o.outer) {
-        const f = fieldOf(o, t.text);
-        if (f) return recvOfText(f.text, f.in);
-      }
-      const ty = resolveTypeName(t.text, rec, enc, def ? def.typeParams : undefined);
-      if (ty === 'tp') return { t: 'unk' };
-      if (ty) return { t: 'type', type: ty, static: true };
-      if (/^[a-z]/.test(t.text)) {
-        // A lowercase name that is no local, field or type: a package's first segment, or a
-        // field inherited from an outside supertype.
-        for (let o = enc; o; o = o.outer) if (hierarchy(o).open) return { t: 'unk' };
-        return { t: 'pkg', name: t.text };
-      }
-      return { t: 'ext' };
+    const dotted = isP(toks[end - 1], '.');
+    if (t.text === 'this') {
+      if (dotted) { const r = resolveTypeName(toks[end - 2].text, rec, enc); return r && r !== 'tp' ? { t: 'type', type: r, static: false } : { t: 'unk' }; }
+      if (anonAt(rec, t.start)) return { t: 'unk' };
+      return enc ? { t: 'type', type: enc, static: false } : { t: 'unk' };
     }
-    if (isP(t, ')')) {
-      const open = match[end];
-      if (open < 0) return { t: 'unk' };
-      const before = toks[open - 1];
-      // `new T<…>(…)`
-      for (let j = open - 1; j >= 0 && j >= open - 40; j--) {
-        const x = toks[j];
-        if (x.kind === 'ident' && x.text === 'new') {
-          const ty = readType(toks, j + 1);
-          if (ty && ty.end === open) {
-            const r = resolveTypeName(ty.base, rec, enc, def ? def.typeParams : undefined);
-            return r && r !== 'tp' ? { t: 'type', type: r, static: false } : { t: 'ext' };
-          }
-          break;
-        }
-        if (!(x.kind === 'ident' || isP(x, '.') || isP(x, '<') || isP(x, '>') || isP(x, ',') || isP(x, '?'))) break;
+    if (KEYWORDS.has(t.text)) return { t: 'unk' };
+    if (dotted) return memberOf(recvAt(rec, end - 2, depth + 1), t.text);
+    if (def) {
+      const locals = localsOf(def);
+      if (locals.has(t.text)) {
+        const ty = locals.get(t.text);
+        return ty ? recvOfText(ty, def.type || /** @type {TypeRec} */ (enc), def.typeParams) : { t: 'unk' };
       }
-      if (before && before.kind === 'ident' && !KEYWORDS.has(before.text)) {
-        // A call: the declared return type of what it resolves to.
-        const use = (rec.uses || []).find((u) => u.at === open - 1 && u.kind === 'call');
-        if (!use) return { t: 'unk' };
-        const hit = resolveUse(rec, use, depth + 1);
-        if (hit === 'unresolved') return { t: 'unk' };
-        if (!hit || !hit.length) return { t: 'ext' };
-        const rets = new Set(hit.map((d) => d.returns));
-        if (rets.size !== 1) return { t: 'unk' };
-        const d = hit[0];
-        if (!d.returns || !d.type) return { t: 'unk' };
-        return recvOfText(d.returns, d.type, d.typeParams);
-      }
-      if (before && before.kind === 'ident') return { t: 'unk' }; // `if (…)`, `this(…)`
-      // `((T) e)` or `(e)`.
-      if (isP(toks[open + 1], '(') && match[open + 1] > open + 1) {
-        const inner = match[open + 1];
-        const ty = readType(toks, open + 2);
-        if (ty && ty.end === inner && inner + 1 < end) {
-          if (ty.array) return { t: 'ext' };
-          const r = resolveTypeName(ty.base, rec, enc, def ? def.typeParams : undefined);
-          return r === 'tp' ? { t: 'unk' } : r ? { t: 'type', type: r, static: false } : { t: 'ext' };
-        }
-      }
-      if (end - 1 > open) return recvAt(rec, end - 1, depth + 1);
-      return { t: 'unk' };
     }
-    return { t: 'unk' };
+    for (let o = enc; o; o = o.outer) {
+      const f = fieldOf(o, t.text);
+      if (f) return recvOfText(f.text, f.in);
+    }
+    const ty = resolveTypeName(t.text, rec, enc, def ? def.typeParams : undefined);
+    if (ty === 'tp') return { t: 'unk' };
+    if (ty) return { t: 'type', type: ty, static: true };
+    if (/^[a-z]/.test(t.text)) {
+      // A lowercase name that is no local, field or type: a package's first segment, or a
+      // field or local this cannot see (an outside supertype's, an anonymous class's).
+      if (anonAt(rec, t.start)) return { t: 'unk' };
+      for (let o = enc; o; o = o.outer) if (hierarchy(o).open) return { t: 'unk' };
+      return { t: 'pkg', name: t.text };
+    }
+    return { t: 'ext' };
+  }
+
+  /** @param {Recv} base @param {string} name @returns {Recv} `base.name`: a field, a nested type, a package segment. */
+  function memberOf(base, name) {
+    if (base.t === 'type') {
+      const f = fieldOf(base.type, name);
+      if (f) return recvOfText(f.text, f.in);
+      const n = base.type.nested.get(name);
+      if (n) return { t: 'type', type: n, static: true };
+      return hierarchy(base.type).open ? { t: 'unk' } : { t: 'ext' };
+    }
+    if (base.t === 'pkg') {
+      const full = `${base.name}.${name}`;
+      const ty = typesByFqn.get(full);
+      return ty ? { t: 'type', type: ty, static: true } : { t: 'pkg', name: full };
+    }
+    return base;
+  }
+
+  /**
+   * A receiver ending at `)`: `new T<…>(…)`, a call (its declared return type, when every
+   * declaration it reaches declares the same one), a cast `((T) e)`, or `(e)`.
+   * @param {FileRec} rec @param {number} end @param {number} depth @returns {Recv}
+   */
+  function recvOfParen(rec, end, depth) {
+    const { toks, match } = rec;
+    const open = match[end];
+    if (open < 0) return { t: 'unk' };
+    const enc = innermostType(rec, toks[end].start);
+    const def = innermostDef(rec, toks[end].start);
+    const tps = def ? def.typeParams : undefined;
+    const created = newTypeBefore(toks, open);
+    if (created) {
+      const r = resolveTypeName(created, rec, enc, tps);
+      return r && r !== 'tp' ? { t: 'type', type: r, static: false } : { t: 'ext' };
+    }
+    const before = toks[open - 1];
+    if (before && before.kind === 'ident' && !KEYWORDS.has(before.text)) {
+      const use = (rec.uses || []).find((u) => u.at === open - 1 && u.kind === 'call');
+      if (!use) return { t: 'unk' };
+      const hit = resolveUse(rec, use, depth + 1);
+      if (hit === 'unresolved') return { t: 'unk' };
+      if (!hit || !hit.length) return { t: 'ext' };
+      if (new Set(hit.map((d) => String(d.returns).replace(/<.*$/s, ''))).size !== 1) return { t: 'unk' };
+      const d = hit[0];
+      return d.returns && d.type ? recvOfText(d.returns, d.type, d.typeParams) : { t: 'unk' };
+    }
+    if (before && before.kind === 'ident') return { t: 'unk' }; // `if (…)`, `this(…)`
+    if (isP(toks[open + 1], '(') && match[open + 1] > open + 1) {
+      const inner = match[open + 1];
+      const ty = readType(toks, open + 2);
+      if (ty && ty.end === inner && inner + 1 < end) {
+        if (ty.array) return { t: 'ext' };
+        const r = resolveTypeName(ty.base, rec, enc, tps);
+        return r === 'tp' ? { t: 'unk' } : r ? { t: 'type', type: r, static: false } : { t: 'ext' };
+      }
+    }
+    return end - 1 > open ? recvAt(rec, end - 1, depth + 1) : { t: 'unk' };
   }
 
   // Cache: each use's resolution, keyed by the use object (owner and lifetime: the index's).
@@ -749,92 +866,126 @@ function createJavaSyntacticIndex(sources, { root = '', scope = 'the indexed fil
   /**
    * The declarations a use reaches: a list (several when overloads of one argument count
    * match), `'unresolved'` when the receiver's type is not known, null for a call to
-   * something outside the index.
+   * something outside the index. Bounds: receivers by `MAX_CHAIN_DEPTH` (`recvAt`), method
+   * lookups by `MAX_HIERARCHY` (`hierarchy`); a use met again while it is being resolved (a
+   * cycle through return types) reads as unresolved.
    * @param {FileRec} rec @param {Use} use @param {number} [depth] @returns {Hit}
    */
   function resolveUse(rec, use, depth = 0) {
     if (resolved.has(use)) return /** @type {Hit} */ (resolved.get(use));
-    resolved.set(use, 'unresolved'); // a cycle reads as unresolved
-    const hit = resolveUncached(rec, use, depth);
+    resolved.set(use, 'unresolved');
+    const hit = use.kind === 'new' ? resolveNew(rec, use)
+      : use.kind === 'ref' ? resolveRef(rec, use, depth)
+        : dotBefore(rec.toks, use.at) >= 0 ? resolveQualified(rec, use, depth)
+          : resolveBare(rec, use);
     resolved.set(use, hit);
     return hit;
   }
 
-  /** @param {FileRec} rec @param {Use} use @param {number} depth @returns {Hit} */
-  function resolveUncached(rec, use, depth) {
+  /**
+   * `new T(`, `this(`, `super(`, an enum constant: the constructors of the type by argument
+   * count. A type with no declared constructor has no target (its default one is not a
+   * declaration); a generated one (Lombok) makes the call unresolved.
+   * @param {FileRec} rec @param {Use} use @returns {Hit}
+   */
+  function resolveNew(rec, use) {
+    const enc = innermostType(rec, use.pos);
+    const def = innermostDef(rec, use.pos);
+    /** @type {TypeRec|null} */
+    let t;
+    if (use.name === '<this>' || use.enumConst) t = enc;
+    else if (use.name === '<super>') {
+      if (!enc || !enc.superText) return null;
+      const s = resolveTypeName(enc.superText, rec, enc.outer || enc, enc.typeParams);
+      t = s === 'tp' ? null : s;
+    } else {
+      const ty = readType(rec.toks, use.at + 1);
+      const r = ty ? resolveTypeName(ty.base, rec, enc, def ? def.typeParams : undefined) : null;
+      t = r === 'tp' ? null : r;
+    }
+    if (!t) return null;
+    const defs = t.ctors.filter((d) => arityMatches(d, use.argc));
+    if (!defs.length && generated(t)) return 'unresolved';
+    return defs.length ? defs : null;
+  }
+
+  /** `X::m` and `T::new`: every method of the name (any arity) on X's type. @param {FileRec} rec @param {Use} use @param {number} depth @returns {Hit} */
+  function resolveRef(rec, use, depth) {
     const { toks } = rec;
     const enc = innermostType(rec, use.pos);
     const def = innermostDef(rec, use.pos);
-    const tps = def ? def.typeParams : undefined;
-    if (use.kind === 'new') {
-      /** @type {TypeRec|null} */
-      let t;
-      if (use.name === '<this>') t = enc;
-      else if (use.name === '<super>') { const s = enc && enc.superText ? resolveTypeName(enc.superText, rec, enc.outer || enc, enc.typeParams) : null; t = s === 'tp' ? null : s; if (enc && enc.superText && !t) return null; }
-      else {
-        const ty = readType(toks, use.at + 1);
-        const r = ty ? resolveTypeName(ty.base, rec, enc, tps) : null;
-        t = r === 'tp' ? null : r;
-      }
+    if (use.name === '<new>') {
+      const r = resolveTypeName(toks[use.at - 2] ? toks[use.at - 2].text : '', rec, enc, def ? def.typeParams : undefined);
+      return r && r !== 'tp' ? r.ctors.slice() : null;
+    }
+    const x = toks[use.at - 2];
+    /** @type {Recv} */
+    const recv = x && (isP(x, ')') || x.kind === 'ident') ? recvAt(rec, use.at - 2, depth) : { t: 'unk' };
+    return onReceiver(recv, use.name, -1);
+  }
+
+  /** @param {Recv} recv @param {string} name @param {number} argc @returns {Hit} The methods `name` on a receiver. */
+  function onReceiver(recv, name, argc) {
+    if (recv.t === 'type') {
+      const l = lookup(recv.type, name, argc);
+      return l.defs.length ? l.defs : l.open ? 'unresolved' : null;
+    }
+    return recv.t === 'unk' ? 'unresolved' : null;
+  }
+
+  /**
+   * Bare `m(`: Java picks the innermost enclosing type whose hierarchy has a method of the
+   * name (an anonymous class's supertype first), then the static imports, single then
+   * on-demand. Not found anywhere: unresolved when a hierarchy is open or an on-demand static
+   * import names an outside class, else outside.
+   * @param {FileRec} rec @param {Use} use @returns {Hit}
+   */
+  function resolveBare(rec, use) {
+    const enc = innermostType(rec, use.pos);
+    const def = innermostDef(rec, use.pos);
+    let open = false;
+    const anon = anonAt(rec, use.pos);
+    if (anon) {
+      const s = resolveTypeName(anon.superText, rec, enc, def ? def.typeParams : undefined);
+      if (s && s !== 'tp') {
+        const l = lookup(s, use.name, use.argc);
+        if (l.byName) return l.defs.length ? l.defs : 'unresolved';
+        open = l.open;
+      } else open = true;
+    }
+    for (let o = enc; o; o = o.outer) {
+      const l = lookup(o, use.name, use.argc);
+      if (l.byName) return l.defs.length ? l.defs : null;
+      open = open || l.open;
+    }
+    for (const owner of rec.staticSingle.get(use.name) || []) {
+      const t = typesByFqn.get(owner);
       if (!t) return null;
-      const defs = t.ctors.filter((d) => arityMatches(d, use.argc));
-      if (!defs.length && generated(t)) return 'unresolved';
-      return defs.length ? defs : null;
+      const l = lookup(t, use.name, use.argc);
+      if (l.defs.length) return l.defs;
     }
-    if (use.kind === 'ref') {
-      if (use.name === '<new>') {
-        const r = resolveTypeName(toks[use.at - 2] ? toks[use.at - 2].text : '', rec, enc, tps);
-        return r && r !== 'tp' ? r.ctors.slice() : null;
-      }
-      /** @type {Recv} */
-      const recv = use.at >= 2 ? (isP(toks[use.at - 2], ')') || toks[use.at - 2].kind === 'ident' ? recvAt(rec, use.at - 2, depth) : { t: 'unk' }) : { t: 'unk' };
-      if (recv.t === 'type') { const l = lookup(recv.type, use.name, -1); return l.defs.length ? l.defs : l.open ? 'unresolved' : null; }
-      return recv.t === 'unk' ? 'unresolved' : null;
+    let outsideDemand = false;
+    for (const owner of rec.staticDemand) {
+      const t = typesByFqn.get(owner);
+      if (!t) { outsideDemand = true; continue; }
+      const l = lookup(t, use.name, use.argc);
+      if (l.defs.length) return l.defs;
     }
-    const dotted = isP(toks[use.at - 1], '.');
-    if (!dotted) {
-      // Bare `m(`: the innermost enclosing type whose hierarchy has a method of the name.
-      let open = false;
-      const anon = anonAt(rec, use.pos);
-      if (anon) {
-        const s = resolveTypeName(anon.superText, rec, enc, tps);
-        if (s && s !== 'tp') {
-          const l = lookup(s, use.name, use.argc);
-          if (l.byName) return l.defs.length ? l.defs : 'unresolved';
-          open = open || l.open;
-        } else open = true;
-      }
-      for (let o = enc; o; o = o.outer) {
-        const l = lookup(o, use.name, use.argc);
-        if (l.byName) return l.defs.length ? l.defs : null;
-        open = open || l.open;
-      }
-      for (const owner of rec.staticSingle.get(use.name) || []) {
-        const t = typesByFqn.get(owner);
-        if (t) { const l = lookup(t, use.name, use.argc); if (l.defs.length) return l.defs; } else return null;
-      }
-      let outsideDemand = false;
-      for (const owner of rec.staticDemand) {
-        const t = typesByFqn.get(owner);
-        if (!t) { outsideDemand = true; continue; }
-        const l = lookup(t, use.name, use.argc);
-        if (l.defs.length) return l.defs;
-      }
-      return open || outsideDemand ? 'unresolved' : null;
-    }
-    const r = toks[use.at - 2];
-    if (r && r.kind === 'ident' && r.text === 'super' && !isP(toks[use.at - 3], '.')) {
-      if (!enc) return 'unresolved';
+    return open || outsideDemand ? 'unresolved' : null;
+  }
+
+  /** `super.m(` (from the superclass up) and `x.m(` (on x's type). @param {FileRec} rec @param {Use} use @param {number} depth @returns {Hit} */
+  function resolveQualified(rec, use, depth) {
+    const { toks } = rec;
+    const dot = dotBefore(toks, use.at);
+    const r = toks[dot - 1];
+    if (r && r.kind === 'ident' && r.text === 'super' && !isP(toks[dot - 2], '.')) {
+      const enc = innermostType(rec, use.pos);
+      if (!enc || anonAt(rec, use.pos)) return 'unresolved';
       const l = lookup(enc, use.name, use.argc, true);
       return l.defs.length ? l.defs : l.open ? 'unresolved' : null;
     }
-    const recv = recvAt(rec, use.at - 2, depth);
-    if (recv.t === 'type') {
-      const l = lookup(recv.type, use.name, use.argc);
-      if (l.defs.length) return l.defs;
-      return l.open ? 'unresolved' : null;
-    }
-    return recv.t === 'unk' ? 'unresolved' : null;
+    return onReceiver(recvAt(rec, dot - 1, depth), use.name, use.argc);
   }
 
   // ---- the contract ----------------------------------------------------------------------

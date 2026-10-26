@@ -286,6 +286,23 @@ const ORACLE_JARS = [
   'com/google/errorprone/error_prone_annotations/2.41.0/error_prone_annotations-2.41.0.jar',
   'com/google/guava/guava-testlib/33.6.0-jre/guava-testlib-33.6.0-jre.jar',
   'org/checkerframework/checker-qual/3.43.0/checker-qual-3.43.0.jar',
+  // The versions gson's poms ask for (pom.xml, proto/pom.xml's protobufVersion).
+  'com/google/guava/guava/33.7.0-jre/guava-33.7.0-jre.jar',
+  'com/google/guava/failureaccess/1.0.3/failureaccess-1.0.3.jar',
+  'com/google/truth/truth/1.4.5/truth-1.4.5.jar',
+  'com/google/protobuf/protobuf-java/4.35.1/protobuf-java-4.35.1.jar',
+  'com/google/protobuf/protobuf-java-util/4.35.1/protobuf-java-util-4.35.1.jar',
+  'com/google/testparameterinjector/test-parameter-injector/1.22/test-parameter-injector-1.22.jar',
+  'com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.jar',
+  'com/google/j2objc/j2objc-annotations/3.1/j2objc-annotations-3.1.jar',
+  // metrics/pom.xml.
+  'com/google/caliper/caliper/1.0-beta-3/caliper-1.0-beta-3.jar',
+  'com/google/caliper/caliper-api/1.0-beta-3/caliper-api-1.0-beta-3.jar',
+  'com/google/caliper/caliper-core/1.0-beta-3/caliper-core-1.0-beta-3.jar',
+  'com/google/caliper/caliper-runner/1.0-beta-3/caliper-runner-1.0-beta-3.jar',
+  'com/fasterxml/jackson/core/jackson-core/2.22.3/jackson-core-2.22.3.jar',
+  'com/fasterxml/jackson/core/jackson-databind/2.22.3/jackson-databind-2.22.3.jar',
+  'com/fasterxml/jackson/core/jackson-annotations/2.22/jackson-annotations-2.22.jar',
 ].map((j) => path.join(M2, j)).filter((j) => fs.existsSync(j));
 const CALLERS_DEADLINE_MS = 300000;
 
@@ -341,6 +358,7 @@ function callersOracle(repo, pr) {
     unattributed: records.filter((r) => r.unattributed).map((r) => r.unattributed),
     excluded: records.filter((r) => r.excluded).map((r) => r.excluded),
     summary: records.find((r) => r.errors !== undefined) || {},
+    errors: records.filter((r) => r.error).map((r) => r.error),
   };
 }
 
@@ -380,7 +398,7 @@ async function callerCheck(repo, pr, preview) {
   const textOf = new Map(sources.map((s) => [s.path, s.text]));
   const skip = new Set([...oracle.unattributed, ...oracle.excluded].map((u) => `${u.file}#${u.pos}`));
   const ourCalls = new Map(idx.allCalls().map((c) => [`${c.rel}#${c.pos}`, c]));
-  const out = { targets: 0, tp: 0, fp: [], fn: [], sameArity: 0, skippedOurs: 0, rowsComplete: [], rowsNone: [] };
+  const out = { targets: 0, tp: 0, fp: [], fn: [], sameArity: 0, skippedOurs: 0, rowsComplete: [], rowsNone: [], notIncomplete: [] };
   const rows = result.allChanged.filter((c) => isJava(c.relPath) && !require('../../src/languages').isTestPath(c.relPath));
   for (const c of rows) {
     if (preview) {
@@ -403,7 +421,13 @@ async function callerCheck(repo, pr, preview) {
       if (skip.has(s)) { out.skippedOurs++; continue; }
       if (theirs.has(s)) { out.tp++; continue; }
       const hit = ourCalls.get(s);
-      if (hit && Array.isArray(hit.targets) && hit.targets.length > 1) { out.sameArity++; continue; }
+      // Listed for every same-arity overload while javac chose another one: expected, and the
+      // answer must say so.
+      if (hit && Array.isArray(hit.targets) && hit.targets.length > 1) {
+        out.sameArity++;
+        if (!/several overloads with the same number of arguments/.test(answer.incompleteReason || '')) out.fp.push(`#${pr.number} ${c.key} <- ${lineOf(s)} (same-arity, but the answer does not say so)`);
+        continue;
+      }
       out.fp.push(`#${pr.number} ${c.key} <- ${lineOf(s)}`);
     }
     for (const s of theirs) {
@@ -414,10 +438,19 @@ async function callerCheck(repo, pr, preview) {
       const labels = [
         o.dispatch ? 'dispatch' : null,
         hit && hit.targets === 'unresolved' ? 'unresolved' : null,
-        o.kind === 'new' && !/^(super|this|[\p{L}_$])/u.test(text.slice(o.call.pos)) ? 'implicit' : null,
+        o.name === 'super' && !text.startsWith('super', o.call.pos) ? 'implicit' : null,
         !hit ? 'no-use' : null,
       ].filter(Boolean);
-      out.fn.push(`#${pr.number} ${c.key} <- ${lineOf(s)} [${labels.join(', ') || 'resolved elsewhere'}]`);
+      // Every miss must sit on an incomplete answer; `covered` names the reason that explains it
+      // beyond the scope note (which every answer carries).
+      const reason = answer.incompleteReason || '';
+      const covered = [
+        labels.includes('implicit') && /implicit super\(\) call is not listed/.test(reason) ? 'implicit-super reason' : null,
+        labels.includes('dispatch') && /an (interface|overridable) method/.test(reason) ? 'dispatch reason' : null,
+        labels.includes('unresolved') && idx.unresolvedCallsTo({ name: def.name }) > 0 ? 'unresolved count' : null,
+      ].filter(Boolean);
+      if (!reason) out.notIncomplete.push(`#${pr.number} ${c.key} <- ${lineOf(s)}`);
+      out.fn.push(`#${pr.number} ${c.key} <- ${lineOf(s)} [${labels.join(', ') || 'resolved elsewhere'}] on an incomplete answer: ${reason ? `yes (${covered.join(', ') || 'scope note only'})` : 'NO'}`);
     }
   }
   return { out, oracle, oMs, pMs, files: sources.length };
@@ -425,22 +458,29 @@ async function callerCheck(repo, pr, preview) {
 
 async function callersMain(repo, corpus, preview) {
   const t0 = Date.now();
-  const totals = { targets: 0, tp: 0, fp: [], fn: [], sameArity: 0, unattributed: 0, rowsComplete: [], rowsNone: [] };
+  const totals = { targets: 0, tp: 0, fp: [], fn: [], sameArity: 0, unattributed: 0, rowsComplete: [], rowsNone: [], notIncomplete: [] };
+  // javac's errors and unattributed calls, by module directory and message, over the PRs' trees.
+  const why = new Map();
+  const tally = (k) => why.set(k, (why.get(k) || 0) + 1);
   console.log(`caller check (${preview ? 'preview: the PR\'s files' : 'CLI: the head tree'}), oracle (b) javac attribution; classpath ${ORACLE_JARS.length} jar(s)`);
   console.log('PR      files targets  tp  fp  fn  same-arity  unattributed  errors  precision  recall   oracle   ours');
   for (const pr of corpus) {
     const { out, oracle, oMs, pMs, files } = await callerCheck(repo, pr, preview);
     totals.targets += out.targets; totals.tp += out.tp; totals.sameArity += out.sameArity; totals.unattributed += oracle.unattributed.length;
-    totals.fp.push(...out.fp); totals.fn.push(...out.fn); totals.rowsComplete.push(...out.rowsComplete); totals.rowsNone.push(...out.rowsNone);
+    for (const e of oracle.errors) tally(`error ${e.file.split('/')[0]}: ${e.msg.replace(/\b(variable|class|method) \w+/, '$1 …').slice(0, 90)}`);
+    for (const u of oracle.unattributed) tally(`unattributed ${u.file.split('/')[0]}/${u.file.includes('/test/') ? 'test' : 'main'}`);
+    totals.fp.push(...out.fp); totals.fn.push(...out.fn); totals.rowsComplete.push(...out.rowsComplete); totals.rowsNone.push(...out.rowsNone); totals.notIncomplete.push(...out.notIncomplete);
     console.log(`#${String(pr.number).padEnd(6)} ${String(files).padStart(5)} ${String(out.targets).padStart(7)} ${String(out.tp).padStart(3)} ${String(out.fp.length).padStart(3)} ${String(out.fn.length).padStart(3)} ${String(out.sameArity).padStart(11)} ${String(oracle.unattributed.length).padStart(13)} ${String(oracle.summary.errors).padStart(7)}  ${pct(out.tp, out.tp + out.fp.length).padStart(9)} ${pct(out.tp, out.tp + out.fn.length).padStart(7)}  ${`${(oMs / 1000).toFixed(1)}s${oracle.cached ? ' c' : ''}`.padStart(7)}  ${(pMs / 1000).toFixed(1)}s`);
   }
   console.log(`total targets ${totals.targets}; precision ${pct(totals.tp, totals.tp + totals.fp.length)}; recall ${pct(totals.tp, totals.tp + totals.fn.length)}; same-arity listed ${totals.sameArity}; unattributed by javac ${totals.unattributed}`);
   const list = (title, xs) => { console.log(`${title}: ${xs.length}`); for (const x of xs) console.log(`  ${x}`); };
+  list('javac errors and unattributed calls (summed over the PRs, by module)', [...why].sort((a, b) => b[1] - a[1]).slice(0, 25).map(([k, n]) => `${n}  ${k}`));
   list('false positives', totals.fp);
   list('misses', totals.fn);
+  list('misses on a complete answer (must be 0)', totals.notIncomplete);
   if (preview) { list('complete answers (must be 0)', totals.rowsComplete); list('rows reading "no callers" (must be 0)', totals.rowsNone); }
   console.log(`cache ${CALLERS_CACHE}; wall time ${((Date.now() - t0) / 1000).toFixed(1)} s`);
-  const pass = totals.tp >= 0.95 * (totals.tp + totals.fp.length) && totals.rowsComplete.length === 0 && totals.rowsNone.length === 0;
+  const pass = totals.tp >= 0.95 * (totals.tp + totals.fp.length) && totals.rowsComplete.length === 0 && totals.rowsNone.length === 0 && totals.notIncomplete.length === 0;
   process.exitCode = pass ? 0 : 1;
 }
 

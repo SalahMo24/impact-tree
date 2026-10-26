@@ -15,7 +15,9 @@
 //     innermost named class. `dispatch`: the target is abstract, an interface member, or
 //     overridden by a method in the files (a call may run another implementation).
 //   {"unattributed":{file,pos,name}}: javac could not resolve it (missing classpath, errors).
-//   {"excluded":{file,pos,why}}: `new T(…) { … }` (an anonymous class's constructor).
+//   `new T(…) { … }` is reported as the call of T's constructor its anonymous class's implicit
+//   `super(…)` makes, at T's name. Another implicit `super()` (a constructor without an explicit
+//   one, a default constructor) is reported at the constructor's or class's position.
 //   {"errors":n,"files":n}
 import com.sun.source.tree.*;
 import com.sun.source.util.*;
@@ -92,7 +94,15 @@ public class Callers {
     }
 
     int[] errors = { 0 };
-    for (Diagnostic<? extends JavaFileObject> d : diags.getDiagnostics()) if (d.getKind() == Diagnostic.Kind.ERROR) errors[0]++;
+    for (Diagnostic<? extends JavaFileObject> d : diags.getDiagnostics()) {
+      if (d.getKind() != Diagnostic.Kind.ERROR) continue;
+      errors[0]++;
+      String f = d.getSource() == null ? "" : root.relativize(Paths.get(d.getSource().toUri())).toString().replace('\\', '/');
+      String msg = d.getMessage(Locale.ROOT).split("\n")[0];
+      String sym = "";
+      for (String line : d.getMessage(Locale.ROOT).split("\n")) if (line.trim().startsWith("symbol:")) sym = line.trim();
+      out.println("{\"error\":{\"file\":" + q(f) + ",\"line\":" + d.getLineNumber() + ",\"msg\":" + q(msg + (sym.isEmpty() ? "" : " (" + sym + ")")) + "}}");
+    }
 
     for (CompilationUnitTree cu : units) {
       String file = root.relativize(Paths.get(cu.getSourceFile().toUri())).toString().replace('\\', '/');
@@ -166,15 +176,28 @@ public class Callers {
           String name = sel instanceof MemberSelectTree ? ((MemberSelectTree) sel).getIdentifier().toString() : sel.toString();
           long pos = sel instanceof MemberSelectTree ? sp.getEndPosition(cu, sel) - name.length() : sp.getStartPosition(cu, sel);
           boolean ctor = name.equals("this") || name.equals("super");
+          // The implicit `super(…)` of an anonymous class's constructor is the `new T(…) { … }`'s
+          // call of T's constructor: reported at T's name, as the source writes it.
+          if (name.equals("super") && !anon.isEmpty() && !texts.get(cu).startsWith("super", (int) pos) && innermostClassIsAnonymous()) pos = anon.peek();
           emit(t, pos, ctor ? "new" : "call", name);
           return super.visitMethodInvocation(t, v);
         }
 
+        final Deque<Long> anon = new ArrayDeque<>();
+
+        boolean innermostClassIsAnonymous() {
+          for (TreePath p = getCurrentPath(); p != null; p = p.getParentPath()) {
+            if (p.getLeaf() instanceof ClassTree) return ((ClassTree) p.getLeaf()).getSimpleName().toString().isEmpty();
+          }
+          return false;
+        }
+
         @Override public Void visitNewClass(NewClassTree t, Void v) {
           long pos = namePos(cu, t.getIdentifier());
-          if (t.getClassBody() != null) out.println("{\"excluded\":{\"file\":" + q(file) + ",\"pos\":" + pos + ",\"why\":\"anonymous class\"}}");
-          else emit(t, pos, "new", t.getIdentifier().toString());
-          return super.visitNewClass(t, v);
+          if (t.getClassBody() == null) { emit(t, pos, "new", t.getIdentifier().toString()); return super.visitNewClass(t, v); }
+          // An anonymous class: its constructor's implicit super(…) is the call (see above).
+          anon.push(pos);
+          try { return super.visitNewClass(t, v); } finally { anon.pop(); }
         }
       }.scan(cu, null);
     }

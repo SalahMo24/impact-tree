@@ -73,7 +73,30 @@ class Sub extends Client {
 }
 `;
 
+// Run 2's corrections (gson): a method declared in an anonymous class is no call, and its
+// parameters are typed; enum constants call the constructor; explicit type arguments.
+const MORE = `package com.ex.app;
+import com.ex.lib.*;
+import java.util.Collections;
+enum Mode {
+  FAST(1), SLOW(2, Collections.<String, Integer>emptyMap()), NONE;
+  Mode(int n) {}
+  Mode(int n, java.util.Map<String, Integer> m) {}
+  Mode() {}
+}
+class Anon {
+  Doer make(Client c) {
+    return new Doer() {
+      public void doIt() { helperOf(c); }
+      void helperOf(Client k) { k.getInner(); }
+    };
+  }
+  void typed(Client c) { c.<String>getInner(); }
+}
+`;
+
 const SOURCES = [
+  { path: 'app/More.java', text: MORE },
   { path: 'lib/Client.java', text: LIB }, { path: 'lib/Base.java', text: BASE }, { path: 'lib/Inner.java', text: INNER },
   { path: 'lib/Doer.java', text: DOER }, { path: 'lib/Impl.java', text: IMPL }, { path: 'lib/Pojo.java', text: POJO },
   { path: 'other/Client.java', text: OTHER }, { path: 'app/App.java', text: APP },
