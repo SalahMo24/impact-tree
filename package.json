@@ -1051,6 +1051,11 @@
           "default": false,
           "description": "Show a Cards view that groups the changes of a review into related cards, with the entry points each card reaches and which cards may belong together. Turning it on adds the entry-point search to each analysis (a few seconds on the largest pull requests) and, for a local review, reads the repository's history for merge hints. Takes effect from the next analysis (Refresh)."
         },
+        "impactTree.agents.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Let your own coding agent (connected through Impact Tree's MCP server) learn which review this window shows and hand back results (card titles and summaries, callers it found), which are kept in this workspace. While on, the window listens on a local socket in a private temporary folder, guarded by a token; nothing leaves your machine. Only reviews of a checked-out branch take part; a pull request preview does not."
+        },
         "impactTree.fileListLayout": {
           "type": "string",
           "enum": [

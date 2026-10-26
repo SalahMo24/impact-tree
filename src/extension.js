@@ -18,6 +18,7 @@ const { parseRemoteList, chooseGitHubRemote, describeRemoteProblem, baseRemoteOf
 const { createSourcesProvider } = require('./sources-provider');
 const { createPrDocuments } = require('./pr-documents');
 const { createSession } = require('./session');
+const { createAgentBridge } = require('./agent-bridge');
 const { createSnapshotStoreGetter } = require('./snapshot-storage');
 const { createPrActions } = require('./pr-actions');
 const { createPullRequestReviewStore, reviewTargetOf } = require('./pr-review-store');
@@ -356,6 +357,18 @@ function activate(context, { clock = realClock } = {}) {
     reviewStore.sync();
     loadPrs().catch((err) => log(`github: reloading pull requests failed: ${err && err.message}`));
   }));
+
+  // The bridge to the user's own agent (impactTree.agents.enabled, off by default): nothing
+  // listens and no lock file exists unless the setting is on. Follows the setting; stopped with the window.
+  const agentBridge = createAgentBridge(vscode, { session: owned, workspaceState: context.workspaceState, log });
+  const syncAgentBridge = () => {
+    const on = vscode.workspace.getConfiguration('impactTree').get('agents.enabled', false) === true;
+    (on ? agentBridge.start() : agentBridge.stop()).catch((e) => log(`agent bridge: ${e && e.message}`));
+  };
+  context.subscriptions.push(agentBridge, vscode.workspace.onDidChangeConfiguration((e) => {
+    if (e.affectsConfiguration('impactTree.agents.enabled')) syncAgentBridge();
+  }));
+  syncAgentBridge();
 
   publishContext();
 
