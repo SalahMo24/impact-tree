@@ -31,7 +31,7 @@
 //
 // Pure: reads only the `{ path, text }` pairs it is given. Budgets (CODING_STYLE §2):
 // - files: bounded by its input; the caller chooses them (the preview: the PR's files under
-//   `impactTree.tierA.maxFiles`; the CLI: `pickRepositoryFiles` below).
+//   `impactTree.tierA.maxFiles`; the CLI: `pickRepositoryFiles`, ../repository-files.js).
 // - bytes per file: `MAX_FILE_BYTES` (1 MiB, the editor's per-file read limit). Owner: this
 //   module. Enforcement: a longer text is not read. Exhaustion: the file is not indexed,
 //   counted in `skipped`, and every answer's reason says how many files were not indexed.
@@ -47,9 +47,8 @@ const { isRegistrationDecorator, PROTOCOL_REASON, REGISTRATION_REASON, FACTORY_R
 const MAX_FILE_BYTES = 1024 * 1024;
 const MAX_REEXPORT_DEPTH = 8;
 const MAX_BASE_DEPTH = 16;
-// The CLI's bound (A8-D1 (b)): every Python file of the repository up to these, both.
-const REPO_MAX_FILES = 3000;
-const REPO_MAX_BYTES = 64 * 1024 * 1024;
+// The CLI's file set and its bound (A8-D1 (b)), shared with Go: ../repository-files.js.
+const { pickRepositoryFiles, REPO_MAX_FILES, REPO_MAX_BYTES } = require('../repository-files');
 
 const KEYWORDS = new Set(['False', 'None', 'True', 'and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue',
   'def', 'del', 'elif', 'else', 'except', 'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda',
@@ -748,37 +747,6 @@ function createPythonSyntacticIndex(sources, { root = '', scope = 'the indexed f
   }
 
   return { symbolAt, callersOfWithStatus, unresolvedCallsTo, size: byFile.size, skipped, scopeNote, byFile };
-}
-
-/**
- * The CLI's file set (A8-D1 (b)): every listed Python file while both bounds hold
- * (`REPO_MAX_FILES` files, `REPO_MAX_BYTES` bytes); past either, the changed files plus the
- * files whose text mentions a changed name, and the count left out.
- * @param {Array<{ path: string, size: number }>} listed The repository's Python files.
- * @param {(relPath: string) => string|null} read Reads one file's text.
- * @param {{ changedPaths: Set<string>, names: Set<string>, maxFiles?: number, maxBytes?: number }} options
- * @returns {{ sources: Array<{ path: string, text: string }>, notIndexed: number, bounded: boolean }}
- */
-function pickRepositoryFiles(listed, read, { changedPaths, names, maxFiles = REPO_MAX_FILES, maxBytes = REPO_MAX_BYTES }) {
-  const total = listed.reduce((n, f) => n + f.size, 0);
-  if (listed.length <= maxFiles && total <= maxBytes) {
-    const sources = [];
-    for (const f of listed) { const text = read(f.path); if (text != null) sources.push({ path: f.path, text }); }
-    return { sources, notIndexed: listed.length - sources.length, bounded: false };
-  }
-  const words = [...names].filter(Boolean);
-  const mention = words.length ? new RegExp(`\\b(?:${words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`) : null;
-  const sources = [];
-  let bytes = 0;
-  for (const f of listed) {
-    if (f.size > MAX_FILE_BYTES) continue;
-    const changed = changedPaths.has(f.path);
-    if (!changed && (sources.length >= maxFiles || bytes + f.size > maxBytes)) continue;
-    const text = read(f.path);
-    if (text == null) continue;
-    if (changed || (mention && mention.test(text))) { sources.push({ path: f.path, text }); bytes += f.size; }
-  }
-  return { sources, notIndexed: listed.length - sources.length, bounded: true };
 }
 
 module.exports = {

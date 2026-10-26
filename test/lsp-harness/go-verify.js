@@ -10,14 +10,19 @@
  *   node test/lsp-harness/go-verify.js <absolute path to cli/cli clone>
  *     [--prs 14752,14390] [--gopls path] [--toolchain go1.27.3] [--out dir] [--summary file]
  *     [--cache dir] [--no-cache] [--timings [14752,14390]] [--deadline-ms n] [--summary-only]
- *     [--syntactic]
+ *     [--syntactic [--preview]]
  *
- * `--syntactic` (S3): the pipeline runs without a language server, as the CLI does, so Go is
- * read from its text (`goProvider.prepareSyntactic`): no gopls is started. Changed functions
- * and kinds are compared with oracle (a) as in the default mode; callers are not compared
- * (they are not computed): every changed Go row must be incomplete with a not-computed reason,
- * never complete, never `none`, and no verdict may read "no callers" (`notComputedViolations`
- * lists any that is). `--timings` does not apply.
+ * `--syntactic` (S3, S4): the pipeline runs without a language server, as the CLI does, so Go
+ * is read from its text (`goProvider.prepareSyntactic`): no gopls is started. Changed
+ * functions and kinds are compared with oracle (a) as in the default mode; callers with
+ * oracle (b) restricted to the indexed files (an edge counts when its call site is in a file
+ * the index read): the CLI's scope, every Go file of the changed module(s) (S-D1 (a)).
+ * Every changed Go row must be incomplete (`completeAnswers` counts those that are not), never
+ * `none`, and no verdict may read "no callers" (`noCallersRows`). `--timings` does not apply.
+ * `--preview` (with `--syntactic`): the preview's scope instead. `analyzeRemote` runs offline
+ * with a fake `gh` that reads only the clone's git objects (as py-verify.js `--preview`), so
+ * the index holds the PR's Go files and changed Go tests the preview fetched; oracle (b) is
+ * restricted to those files (the head-side Go paths the fake `gh` served).
  *
  * Two phases, run side by side:
  * - Oracles, per PR (at most ORACLE_CONCURRENCY PRs at once, at most GRAPHS_CONCURRENCY
@@ -77,7 +82,6 @@ const { createGoplsServices } = require('./gopls-services');
 const { languageServicesOver, createHierarchyResolver } = require('./harness-languages');
 const { goProvider } = require('../../src/languages/go/provider');
 const { classifyChangeVerdict, toneOf } = require('../../src/tree-row-models');
-const { isNotComputedReason } = require('../../src/engine/resolver-not-computed');
 
 /**
  * The corpus: merged cli/cli pull requests. `merge` is the merge commit on trunk, `head` its
@@ -699,20 +703,68 @@ async function runPipeline(repo, base, services, t0) {
  * The pipeline on one PR with a fresh gopls; with `warm`, once more on the same gopls. With
  * `syntactic`, without any language server (the CLI's path), once.
  */
-async function pipelineFor(repo, pr, goplsPath, warm, syntactic = false) {
+async function pipelineFor(repo, pr, goplsPath, warm, syntactic = false, preview = false) {
   const n = pr.number;
   if (git(repo, 'rev-parse', `base-${n}`).trim() !== pr.base) throw new Error(`base-${n} is not ${pr.base}`);
   if (git(repo, 'rev-parse', `pr-${n}`).trim() !== pr.head) throw new Error(`pr-${n} is not ${pr.head}`);
   if (git(repo, 'status', '--porcelain', '--untracked-files=no').trim()) throw new Error('the clone has uncommitted changes');
   git(repo, 'checkout', '-q', `pr-${n}`);
   const t0 = Date.now();
+  if (syntactic && preview) {
+    // The preview, offline: a fake `gh` over the git objects (no checkout is read). The
+    // worktree is at the head only so that call-site offsets turn into lines from disk.
+    const served = new Set();
+    const statusOf = { A: 'added', D: 'removed', M: 'modified' };
+    const gh = {
+      listPullRequestFiles: async () => {
+        // Renames as GitHub lists them (src/github.js: status `renamed`, `previous_filename` as
+        // `oldPath`), with git's default similarity, as the oracle's pairs follow them (`-M`).
+        const files = git(repo, 'diff', '--name-status', '-M', pr.base, pr.head).trim().split('\n').filter(Boolean).map((l) => {
+          const [st, a, b] = l.split('\t');
+          const renamed = st[0] === 'R';
+          const p = renamed ? b : a;
+          const diff = git(repo, 'diff', '-M', pr.base, pr.head, '--', ...(renamed ? [a, b] : [p]));
+          const at = diff.indexOf('\n@@');
+          return { path: p, oldPath: renamed ? a : p, status: renamed ? 'renamed' : statusOf[st[0]] || 'modified', patch: at >= 0 ? diff.slice(at + 1) : null };
+        });
+        return { total: files.length, files };
+      },
+      fileAtRef: async (_slug, p, ref) => {
+        try { const text = git(repo, 'show', `${ref}:${p}`); if (ref === pr.head) served.add(p); return text; } catch { return null; }
+      },
+    };
+    let firstMs = null;
+    const { analyzeRemote } = require('../../src/engine/analyze-remote');
+    const result = await analyzeRemote({
+      ts: require('typescript'), gh, slug: {}, repoRoot: repo,
+      pr: { number: n, headSha: pr.head, mergeBaseSha: pr.base, baseRef: 'base' },
+      onPrepared: () => { firstMs = Date.now() - t0; },
+    });
+    return { startMs: 0, cold: { result, firstMs, fullMs: Date.now() - t0 }, warm: null, indexed: new Set([...served].filter((p) => /\.go$/.test(p))) };
+  }
   if (syntactic) {
     let firstMs = null;
     const result = await analyze(repo, {
       mode: 'pr', base: `base-${n}`, allowLocalBase: true, skipForest: true, deferTestReach: true, depth: 2,
       onPrepared: () => { firstMs = Date.now() - t0; },
     });
-    return { startMs: 0, cold: { result, firstMs, fullMs: Date.now() - t0 }, warm: null };
+    // S-D1 (a): every Go file of the changed Go files' module(s) (each file's deepest go.mod;
+    // cli/cli has a nested module, cli-exercise). The note must say the index is that whole set
+    // (not bounded), or the restriction below would compare against files the index did not read.
+    const all = git(repo, 'ls-files', '--cached', '--others', '--exclude-standard').split('\n').filter(Boolean);
+    const moduleDirs = all.filter((p) => path.posix.basename(p) === 'go.mod').map((p) => path.posix.dirname(p)).map((d) => (d === '.' ? '' : d));
+    const moduleOf = (p) => moduleDirs.filter((d) => d === '' || p.startsWith(`${d}/`)).sort((x, y) => y.length - x.length)[0] ?? null;
+    const changedModules = new Set(git(repo, 'diff', '--name-only', '--no-renames', pr.base, pr.head).split('\n').filter((p) => /\.go$/.test(p)).map(moduleOf));
+    const listed = all.filter((p) => {
+      if (!/\.go$/.test(p)) return false;
+      const m = moduleOf(p);
+      if (m === null || !changedModules.has(m)) return false;
+      const inner = m ? p.slice(m.length + 1) : p;
+      return !inner.split('/').slice(0, -1).some((d) => d === 'vendor' || d === 'testdata' || d.startsWith('_') || d.startsWith('.'));
+    });
+    const note = (result.warnings || []).find((w) => /Go callers from syntax only/.test(w)) || '';
+    if (!note.includes(`(${listed.length} Go file(s) indexed)`)) throw new Error(`#${n}: the CLI's index is not the whole module (${listed.length} files): ${note}`);
+    return { startMs: 0, cold: { result, firstMs, fullMs: Date.now() - t0 }, warm: null, indexed: new Set(listed) };
   }
   const gopls = createGoplsServices({ repo, goplsPath });
   track(gopls.client.proc);
@@ -774,13 +826,69 @@ function kindsAgree(kinds, expected) {
   return { ok: !missing.length && !extra.length, missing, extra };
 }
 
+const GOOS = 'aix|android|darwin|dragonfly|freebsd|hurd|illumos|ios|js|linux|nacl|netbsd|openbsd|plan9|solaris|wasip1|windows|zos';
+const GOARCH = '386|amd64|arm|arm64|loong64|mips|mipsle|mips64|mips64le|ppc64|ppc64le|riscv64|s390x|wasm';
+const OS_ARCH_SUFFIX = new RegExp(`_(?:${GOOS}|${GOARCH})(?:_(?:${GOARCH}))?(?:_test)?\\.go$`);
+const buildConstrainedCache = new Map();
+/**
+ * Whether a head file builds only under some tags: a `//go:build` line before its `package`
+ * clause, or a `_<os>`/`_<arch>` name. callgraph builds the default tags only, so a caller or
+ * callee in such a file is outside what the oracle sees (or one variant of it).
+ */
+function buildConstrained(repo, rel) {
+  if (!rel || rel.startsWith('external:')) return false;
+  const key = path.join(repo, rel);
+  if (!buildConstrainedCache.has(key)) {
+    let tagged = OS_ARCH_SUFFIX.test(path.basename(rel));
+    if (!tagged) {
+      try { const text = fs.readFileSync(key, 'utf8'); tagged = /^\/\/go:build /m.test(text.slice(0, Math.max(0, text.search(/^package /m)))); } catch { tagged = false; }
+    }
+    buildConstrainedCache.set(key, tagged);
+  }
+  return buildConstrainedCache.get(key);
+}
+
+/**
+ * Why the index missed a static call (without a server), from the call's line in the head
+ * text: `method result` (`x.F().M(`), `index expression` (`xs[i].M(`), `range variable`
+ * (the receiver is declared by `for … range` in the enclosing function), `untyped :=` (by
+ * `:=` there), `package files outside the PR` (preview: the caller's or callee's package has
+ * a Go file the index did not read, and the line gives no other cause), else `other`.
+ */
+function missCause({ repo, index, site, name, calleeRel, indexed, preview }) {
+  let text;
+  try { text = fs.readFileSync(path.join(repo, site.file), 'utf8'); } catch { return 'other'; }
+  const lines = text.split('\n');
+  const line = lines[site.line - 1] || '';
+  const at = line.search(new RegExp(`\\.${name}\\s*[\\[(]`));
+  let cause = 'other';
+  if (at > 0) {
+    const before = line.slice(0, at).trimEnd();
+    if (/\)$/.test(before)) cause = 'method result';
+    else if (/\]$/.test(before)) cause = 'index expression';
+    else {
+      const recv = (/([\p{L}_][\p{L}\p{N}_]*)$/u.exec(before) || [])[1];
+      const span = (index[site.file] || []).find((x) => x.StartLine <= site.line && site.line <= x.EndLine);
+      const body = span ? lines.slice(span.StartLine - 1, site.line).join('\n') : '';
+      if (recv && new RegExp(`for\\s+(?:[\\w\\s,]*\\b${recv}\\b[\\w\\s,]*):=\\s*range\\b`).test(body)) cause = 'range variable';
+      else if (recv && new RegExp(`\\b${recv}\\b(?:\\s*,\\s*\\w+)*\\s*:=`).test(body)) cause = 'untyped :=';
+    }
+  }
+  if (preview && indexed && (cause === 'other' || cause === 'untyped :=')) {
+    const dirs = [path.posix.dirname(site.file), path.posix.dirname(calleeRel)];
+    const unread = dirs.some((d) => fs.readdirSync(path.join(repo, d)).some((f) => f.endsWith('.go') && !indexed.has(path.posix.join(d, f))));
+    if (unread) cause = 'package files outside the PR';
+  }
+  return cause;
+}
+
 /**
  * Compares one PR's pipeline result with the oracles. Caller identity on every side is the
  * function that encloses the call site in the head commit (`<rel>#<key>`, `<rel>#(file)`
  * outside every function, `external:<name>` outside the repository), so gopls' items for
  * function literals (`F.func()`) and callgraph's closures (`F$1`) both count as `F`.
  */
-function comparePr({ repo, pr, result, oracle, staticCg, vtaCg, syntactic = false }) {
+function comparePr({ repo, pr, result, oracle, staticCg, vtaCg, syntactic = false, indexed = null, preview = false }) {
   const changedLines = oracle.changedLines;
   const index = oracle.Index;
   const lineOf = lineFinder();
@@ -823,22 +931,6 @@ function comparePr({ repo, pr, result, oracle, staticCg, vtaCg, syntactic = fals
     kindRows.push({ id: `${o.Rel}#${o.Key}`, headerChanged, kinds, ...agree, expected, baseHeader: o.Base.Header, headHeader: o.Head.Header });
   }
 
-  if (syntactic) {
-    // Callers are not computed: each Go row must say so, and nothing may read "no callers".
-    const notComputedViolations = result.allChanged.filter(isGo).filter((c) => c.callersComplete !== false
-      || !isNotComputedReason(c.callersIncompleteReason) || c.callerState === 'none'
-      || /no callers/i.test(classifyChangeVerdict(c).sentence || '')).map((c) => `${c.relPath}#${c.key}`);
-    return {
-      pr: pr.number, syntactic: true,
-      functions: { tp, fp, fn, pipeline: pipelineRows.length, oracle: oracleRows.length },
-      kinds: kindRows, callers: [], notComputedViolations,
-      completeAnswers: result.allChanged.filter(isGo).filter((c) => c.callersComplete !== false).length,
-      generatedByOracle: oracle.Generated, oracleErrors: oracle.Errors, warnings: result.warnings,
-      unanalysable: [...Object.entries(result.unanalysable || {})],
-      notAnalysed: (result.otherFiles || []).filter((f) => f.notAnalysed).map((f) => `${f.path}: ${JSON.stringify(f.notAnalysed)}`),
-    };
-  }
-
   // (b) callers, per changed or added function both see.
   const calleeOf = new Map(); // `<rel>:<name line>` -> `<rel>#<key>`
   for (const o of oracle.Changes) if (o.Status !== 'removed') calleeOf.set(`${o.Rel}:${o.Head.NameLine}`, `${o.Rel}#${o.Key}`);
@@ -879,13 +971,20 @@ function comparePr({ repo, pr, result, oracle, staticCg, vtaCg, syntactic = fals
     }
     const st = staticBy.get(id) || new Map();
     const vt = vtaBy.get(id) || new Map();
-    const inRepo = (k) => !k.startsWith('external:');
+    // Without a server, only callers in the files the index read can be found (`indexed`).
+    const inRepo = (k) => !k.startsWith('external:') && (!indexed || indexed.has(k.slice(0, k.indexOf('#'))));
     const isTest = (k) => /_test\.go#/.test(k);
     const staticIds = [...st.keys()].filter(inRepo);
-    const vtaIds = [...vt.keys()];
+    const vtaIds = [...vt.keys()].filter((k) => !indexed || inRepo(k));
     const ourIds = [...ours.keys()];
-    const falsePositives = ourIds.filter((k) => !st.has(k)).map((k) => ({ caller: k, inVta: vt.has(k), lines: ours.get(k).lines }));
-    const missedStatic = staticIds.filter((k) => !ours.has(k)).map((k) => ({ caller: k, sites: st.get(k) }));
+    const falsePositives = ourIds.filter((k) => !st.has(k)).map((k) => ({
+      caller: k, inVta: vt.has(k), lines: ours.get(k).lines,
+      buildTag: buildConstrained(repo, k.slice(0, k.indexOf('#'))) || buildConstrained(repo, o.Rel),
+    }));
+    const missedStatic = staticIds.filter((k) => !ours.has(k)).map((k) => ({
+      caller: k, sites: st.get(k),
+      cause: syntactic ? missCause({ repo, index, site: st.get(k)[0], name: o.Key.replace(/^\([^)]*\)\./, '').replace(/#\d+$/, ''), calleeRel: o.Rel, indexed, preview }) : null,
+    }));
     const missedVta = vtaIds.filter((k) => !ours.has(k)).map((k) => ({ caller: k, sites: vt.get(k), static: st.has(k) }));
     // A vta caller in the repository, not a test, whose call line the PR did not touch.
     const notUpdated = vtaIds.filter((k) => inRepo(k) && !isTest(k)).filter((k) => {
@@ -907,10 +1006,17 @@ function comparePr({ repo, pr, result, oracle, staticCg, vtaCg, syntactic = fals
       notUpdatedVta: notUpdated,
       fineWithNotUpdated: risky && fine && notUpdated.length > 0,
       quietWithVtaCallers: !risky && fine && c.callerState === 'none' && vtaIds.length > 0,
+      noCallersRow: c.callerState === 'none' || /no callers/i.test(`${verdict.sentence || ''} ${verdict.text || ''}`),
     });
   }
   return {
     pr: pr.number,
+    ...(syntactic ? {
+      syntactic: true, scope: preview ? 'preview' : 'cli', indexedFiles: indexed ? indexed.size : null,
+      completeAnswers: result.allChanged.filter(isGo).filter((c) => c.callersComplete !== false).length,
+      noCallersRows: result.allChanged.filter(isGo).filter((c) => c.callerState === 'none' || /no callers/i.test(classifyChangeVerdict(c).sentence || '')).map((c) => `${c.relPath}#${c.key}`),
+      goRows: result.allChanged.filter(isGo).length,
+    } : {}),
     functions: { tp, fp, fn, pipeline: pipelineRows.length, oracle: oracleRows.length },
     kinds: kindRows,
     callers: callerRows,
@@ -928,7 +1034,7 @@ const pct = (a, b) => (b === 0 ? 'n/a' : `${((100 * a) / b).toFixed(1)}%`);
 function summarise(out, corpus) {
   const records = corpus.map((p) => path.join(out, `${p.number}.json`)).filter((f) => fs.existsSync(f)).map((f) => JSON.parse(fs.readFileSync(f, 'utf8')));
   const lines = [];
-  const T = { tp: 0, fp: 0, fn: 0, kinds: 0, kindsOk: 0, header: 0, headerOk: 0, ours: 0, st: 0, ctp: 0, cfp: 0, cfpVta: 0, cfn: 0, vtaMiss: 0, vtaMissWhileComplete: 0, fineNotUpdated: 0, quiet: 0, risky: 0 };
+  const T = { tp: 0, fp: 0, fn: 0, kinds: 0, kindsOk: 0, header: 0, headerOk: 0, ours: 0, st: 0, ctp: 0, cfp: 0, cfpVta: 0, cfpTag: 0, cfn: 0, vtaMiss: 0, vtaMissWhileComplete: 0, fineNotUpdated: 0, quiet: 0, risky: 0 };
   lines.push('| PR | Go files | functions (oracle) | precision | recall | header changes right | body-only right | callers ours / static | caller precision | caller recall | vta-missed on incomplete | fine with non-updated vta caller | first / full, fresh gopls | warm first / full |');
   lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
   for (const r of records) {
@@ -940,6 +1046,7 @@ function summarise(out, corpus) {
     const ctp = r.callers.reduce((s, c) => s + c.truePositives, 0);
     const cfp = r.callers.reduce((s, c) => s + c.falsePositives.length, 0);
     const cfpVta = r.callers.reduce((s, c) => s + c.falsePositives.filter((x) => x.inVta).length, 0);
+    const cfpTag = r.callers.reduce((s, c) => s + c.falsePositives.filter((x) => x.buildTag).length, 0);
     const cfn = r.callers.reduce((s, c) => s + c.missedStatic.length, 0);
     const vtaMiss = r.callers.filter((c) => c.missedVta.length).length;
     const vtaMissWhileComplete = r.callers.filter((c) => c.vtaMissedWhileComplete).length;
@@ -949,7 +1056,7 @@ function summarise(out, corpus) {
       tp: T.tp + f.tp, fp: T.fp + f.fp.length, fn: T.fn + f.fn.length,
       header: T.header + hdr.length, headerOk: T.headerOk + hdr.filter((k) => k.ok).length,
       kinds: T.kinds + body.length, kindsOk: T.kindsOk + body.filter((k) => k.ok).length,
-      ours: T.ours + ours, st: T.st + st, ctp: T.ctp + ctp, cfp: T.cfp + cfp, cfpVta: T.cfpVta + cfpVta, cfn: T.cfn + cfn,
+      ours: T.ours + ours, st: T.st + st, ctp: T.ctp + ctp, cfp: T.cfp + cfp, cfpVta: T.cfpVta + cfpVta, cfpTag: T.cfpTag + cfpTag, cfn: T.cfn + cfn,
       vtaMiss: T.vtaMiss + vtaMiss, vtaMissWhileComplete: T.vtaMissWhileComplete + vtaMissWhileComplete,
       fineNotUpdated: T.fineNotUpdated + fineNotUpdated, quiet: T.quiet + quiet,
     });
@@ -969,6 +1076,11 @@ function summarise(out, corpus) {
   lines.push('');
   lines.push(`Caller false positives against static: ${T.cfp}, of which ${T.cfpVta} are vta edges (calls through an interface or a function value); the other ${T.cfp - T.cfpVta} neither oracle has. Missed static callers: ${T.cfn}. Body-only changes shown as "no callers" while vta finds callers: ${T.quiet}.`);
   lines.push('');
+  lines.push(`Build-tag variants (oracle builds default tags): ${T.cfpTag} of the false positives have a caller or callee file with a \`//go:build\` constraint or an \`_<os>\`/\`_<arch>\` name. Caller precision ${pct(T.ctp, T.ours)} with them, ${pct(T.ctp, T.ours - T.cfpTag)} without them.`);
+  const causes = new Map();
+  for (const r of records) for (const c of r.callers) for (const x of c.missedStatic) if (x.cause) causes.set(x.cause, (causes.get(x.cause) || 0) + 1);
+  if (causes.size) lines.push(`Missed static callers by cause: ${[...causes].sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ')}.`);
+  lines.push('');
   for (const r of records) {
     lines.push(`### #${r.number}`);
     lines.push('');
@@ -976,13 +1088,16 @@ function summarise(out, corpus) {
     if (r.functions.fn.length) lines.push(`- oracle changes the pipeline missed: ${r.functions.fn.map((x) => `\`${x}\``).join(', ')}`);
     for (const k of r.kinds.filter((x) => !x.ok)) lines.push(`- kind disagreement \`${k.id}\`: got [${k.kinds}], missing [${k.missing}], extra [${k.extra}]; base \`${k.baseHeader}\` head \`${k.headHeader}\``);
     for (const c of r.callers) {
-      for (const x of c.falsePositives) lines.push(`- caller of \`${c.id}\` not in static: \`${x.caller}\`${x.inVta ? ' (vta has it)' : ' (**neither oracle has it**)'} lines ${x.lines.join(',')}`);
-      for (const x of c.missedStatic) lines.push(`- static caller of \`${c.id}\` missed: \`${x.caller}\` at ${x.sites.map((s) => `${path.basename(s.file)}:${s.line}`).join(', ')} (ours: ${c.callerState}, ${c.complete ? 'complete' : `incomplete: ${c.incompleteReason}`})`);
+      for (const x of c.falsePositives) lines.push(`- caller of \`${c.id}\` not in static: \`${x.caller}\`${x.buildTag ? ' (build-tag variant (oracle builds default tags))' : x.inVta ? ' (vta has it)' : ' (**neither oracle has it**)'} lines ${x.lines.join(',')}`);
+      for (const x of c.missedStatic) lines.push(`- static caller of \`${c.id}\` missed: \`${x.caller}\` at ${x.sites.map((s) => `${path.basename(s.file)}:${s.line}`).join(', ')} ${x.cause ? ` [${x.cause}]` : ''} (ours: ${c.callerState}, ${c.complete ? '**complete**' : 'incomplete'})`);
       if (c.missedVta.length) lines.push(`- vta callers of \`${c.id}\` we do not list: ${c.missedVta.length} (${c.missedVta.filter((x) => !x.static).length} dynamic-only), change ${c.complete ? '**complete**' : `incomplete (${c.incompleteReason})`}, verdict "${c.verdict}"; e.g. ${c.missedVta.slice(0, 3).map((x) => `\`${x.caller}\``).join(', ')}`);
       if (c.fineWithNotUpdated) lines.push(`- **fine while vta has a non-updated caller**: \`${c.id}\` [${c.kinds}] verdict "${c.verdict}"; ${c.notUpdatedVta.slice(0, 3).join(', ')}`);
       if (c.quietWithVtaCallers) lines.push(`- body-only "no callers" while vta has ${c.vta}: \`${c.id}\``);
     }
-    if (r.syntactic) lines.push(`- without a server: ${r.completeAnswers} complete caller answers, ${r.notComputedViolations.length} rows not marked "not computed"${r.notComputedViolations.length ? `: ${r.notComputedViolations.join(', ')}` : ''}`);
+    if (r.syntactic) {
+      const missedComplete = r.callers.filter((c) => c.missedStatic.length && c.complete !== false).length;
+      lines.push(`- without a server (${r.scope}, ${r.indexedFiles} Go file(s) indexed): ${r.goRows} Go rows, ${r.completeAnswers} complete caller answers, ${r.noCallersRows.length} rows reading "no callers"${r.noCallersRows.length ? `: ${r.noCallersRows.join(', ')}` : ''}; answers missing a static caller: ${r.callers.filter((c) => c.missedStatic.length).length} (${missedComplete} of them complete)`);
+    }
     if (r.notAnalysed.length) lines.push(`- not analysed: ${r.notAnalysed.join('; ')}`);
     if (r.warmSameAsCold === false) lines.push('- **warm run differs from cold run**');
     lines.push('');
@@ -992,8 +1107,8 @@ function summarise(out, corpus) {
 
 
 /** The comparison of one PR, written to `<out>/<n>.json`. */
-function recordPr({ repo, pr, out, oracles, pipeline, timed, syntactic }) {
-  const cmp = comparePr({ repo, pr, result: pipeline.cold.result, ...oracles, syntactic });
+function recordPr({ repo, pr, out, oracles, pipeline, timed, syntactic, preview }) {
+  const cmp = comparePr({ repo, pr, result: pipeline.cold.result, ...oracles, syntactic, indexed: pipeline.indexed || null, preview });
   const record = {
     ...pr, ...cmp, modules: oracles.oracle.modules,
     timing: {
@@ -1013,7 +1128,7 @@ async function main() {
   const startedAt = Date.now();
   const args = process.argv.slice(2);
   const repo = args[0];
-  if (!repo || !path.isAbsolute(repo)) throw new Error('usage: node go-verify.js <absolute path to cli/cli clone> [--prs n,n] [--gopls path] [--toolchain goX.Y.Z] [--out dir] [--summary file] [--cache dir] [--no-cache] [--timings [n,n]] [--deadline-ms n] [--summary-only] [--syntactic]');
+  if (!repo || !path.isAbsolute(repo)) throw new Error('usage: node go-verify.js <absolute path to cli/cli clone> [--prs n,n] [--gopls path] [--toolchain goX.Y.Z] [--out dir] [--summary file] [--cache dir] [--no-cache] [--timings [n,n]] [--deadline-ms n] [--summary-only] [--syntactic [--preview]]');
   const goplsPath = option(args, '--gopls', path.join(os.homedir(), 'go', 'bin', 'gopls'));
   const toolchain = option(args, '--toolchain', 'go1.27.3');
   const out = option(args, '--out', path.join(os.tmpdir(), 'impact-tree-g7'));
@@ -1024,6 +1139,8 @@ async function main() {
   const timingsArg = args.includes('--timings') ? option(args, '--timings', 'all') : null;
   const syntactic = args.includes('--syntactic');
   if (syntactic && timingsArg !== null) throw new Error('--timings does not apply with --syntactic');
+  const preview = args.includes('--preview');
+  if (preview && !syntactic) throw new Error('--preview needs --syntactic');
   fs.mkdirSync(out, { recursive: true });
   const corpus = only ? CORPUS.filter((p) => only.split(',').includes(String(p.number))) : CORPUS;
   const timedPrs = new Set(timingsArg === null ? [] : timingsArg === 'all' ? corpus.map((p) => p.number) : timingsArg.split(',').map(Number));
@@ -1056,13 +1173,13 @@ async function main() {
       if (timedPrs.size) await Promise.allSettled(oraclePromises.values());
       for (const pr of corpus) {
         const timed = timedPrs.has(pr.number);
-        const pipeline = await pipelineFor(repo, pr, goplsPath, timed, syntactic);
+        const pipeline = await pipelineFor(repo, pr, goplsPath, timed, syntactic, preview);
         log(`#${pr.number} pipeline: first result ${pipeline.cold.firstMs} ms, full ${pipeline.cold.fullMs} ms${pipeline.warm ? `; warm ${pipeline.warm.firstMs} / ${pipeline.warm.fullMs} ms` : ''}`);
-        const record = recordPr({ repo, pr, out, oracles: await oraclePromises.get(pr.number), pipeline, timed, syntactic });
+        const record = recordPr({ repo, pr, out, oracles: await oraclePromises.get(pr.number), pipeline, timed, syntactic, preview });
         const f = record.functions;
         const kindsOk = `kinds ${record.kinds.filter((k) => k.ok).length}/${record.kinds.length}`;
         log(`#${pr.number} compared: functions ${f.tp}/${f.oracle} (${f.fp.length} extra, ${f.fn.length} missed), ${kindsOk}, ${syntactic
-          ? `${record.completeAnswers} complete caller answers, ${record.notComputedViolations.length} rows not "not computed"`
+          ? `callers ${record.callers.reduce((n, c) => n + c.truePositives, 0)}/${record.callers.reduce((n, c) => n + c.ours, 0)} in static (static ${record.callers.reduce((n, c) => n + c.static, 0)}), ${record.completeAnswers} complete caller answers, ${record.noCallersRows.length} rows reading "no callers"`
           : `${record.callers.filter((c) => c.vtaMissedWhileComplete).length} complete answers missing a vta caller`}`);
       }
     } finally {

@@ -397,8 +397,8 @@ async function analyzeRemote({
  * notice says of all of them (callers outside the PR are not searched): `not-computed` for a
  * language whose resolver searches nothing (`callersNotComputed`, its reason as the note),
  * `pr-files` for one whose syntax-only search of the PR's files has its own scope note
- * (`extras.scopeNote`: Python's, whose untyped receivers are not resolved). TypeScript has no
- * entry: its search is the one the notice describes. One entry per language, in the order
+ * (`extras.scopeNote`: Python's and Go's, each saying what its syntax index does not
+ * resolve). TypeScript has no entry: its search is the one the notice describes. One entry per language, in the order
  * the languages were prepared.
  * @param {Array<{ language: import('../languages/types').LanguageProvider, answer: import('../languages/types').PreparedLanguage }>} prepared
  * @returns {Array<{ language: string, scope: 'pr-files'|'not-computed', note: string }>}

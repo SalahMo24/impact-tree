@@ -169,7 +169,7 @@ const assertSyntaxOnly = (c) => {
   assert.notEqual(c.testState, 'uncovered', 'never "no test"');
 };
 
-test('without a language server analyze() reads Python from its text: kinds, added and deleted, callers from the repository\'s syntax; Go from its text too, callers not computed', async () => {
+test('without a language server analyze() reads Python from its text: kinds, added and deleted, callers from the repository\'s syntax; Go from its text too, callers from its module\'s syntax', async () => {
   const dir = repoWith(
     { 'pyproject.toml': '[project]\nname = "m"\n', 'm.py': BASE_PY, 'n.py': USER_PY, 'go.mod': 'module example.com/m\n\ngo 1.22\n', 'a.go': 'package m\n\nfunc A() int { return 1 }\n' },
     { 'm.py': HEAD_PY, 'a.go': 'package m\n\nfunc A() int { return 2 }\n' });
@@ -195,7 +195,7 @@ test('without a language server analyze() reads Python from its text: kinds, add
     assert.equal(r.otherFiles.find((f) => f.path === 'm.py'), undefined, 'the Python file is analysed, not listed as a file');
     const go = r.allChanged.find((c) => c.relPath === 'a.go');
     assert.deepEqual([go.key, go.kinds.map((k) => k.id), go.callersComplete], ['A', ['body'], false], 'Go is read from its text (S3)');
-    assert.match(go.callersIncompleteReason, /^not computed: Go callers/);
+    assert.equal(go.callersIncompleteReason, 'Go callers from syntax only: the module example.com/m (1 Go file(s) indexed); calls through an interface or a function value, and receivers whose type is not written, are not resolved');
     assert.equal(r.otherFiles.find((f) => f.path === 'a.go'), undefined);
     assert.ok(r.reviewSymbols.get('m.py'), 'the review identity has the symbols recorded');
     // In words: no surface says "no callers".

@@ -237,14 +237,13 @@ test('a generated file is listed, not analysed, and counted in one warning', asy
   }
 });
 
-test('without language services (the CLI) Go is read from its text: the same rows, keys and kinds as gopls\' symbols give, callers not computed', async () => {
+test('without language services (the CLI) Go is read from its text: the same rows, keys and kinds as gopls\' symbols give, callers from the modules\' syntax (S4)', async () => {
   const repo = goRepo();
   try {
     const withServer = await run(repo.dir, { languageServices: replayServices(), makeResolver: noCallers([]) });
     const result = await run(repo.dir);
-    const reason = 'not computed: Go callers need its language server; open the repository in the editor to find them';
-    assert.ok(result.warnings.includes(`4 changed Go file(s) read from their text: changed functions and signature kinds only; callers ${reason}`),
-      result.warnings.join('\n'));
+    const warning = result.warnings.find((w) => /^4 changed Go file\(s\) read from their text: changed functions and signature kinds; Go callers from syntax only: the modules /.test(w));
+    assert.ok(warning, result.warnings.join('\n'));
     assert.deepEqual(result.unanalysable, []);
     assert.deepEqual(result.otherFiles.filter((f) => f.notAnalysed), []);
     assert.deepEqual(result.components.map((c) => c.component), ['(root)', 'tools'], 'units by go.mod, as `prepare` makes them');
@@ -254,7 +253,8 @@ test('without language services (the CLI) Go is read from its text: the same row
     assert.deepEqual(result.deleted.map((d) => [d.relPath, d.key]), withServer.deleted.map((d) => [d.relPath, d.key]));
     for (const c of result.allChanged) {
       assert.equal(c.callersComplete, false, c.key);
-      assert.equal(c.callersIncompleteReason, reason, c.key);
+      assert.match(c.callersIncompleteReason, /^Go callers from syntax only: the modules /, c.key);
+      assert.notEqual(c.callerState, 'none', c.key);
     }
   } finally {
     repo.remove();
