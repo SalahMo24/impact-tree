@@ -1,0 +1,98 @@
+[
+ {
+  "number": 1700,
+  "head": "6b9db2e44948d410b2dbede6a4a8667782d6c04b",
+  "base": "a733150cfa26cabfecc1169d34f2f98d8191194c",
+  "javaFiles": 6,
+  "mainFiles": 4,
+  "why": "overloads added (Gson.fromJson with TypeToken, 4 of them) and reordered, callers in the metrics module (cross-module), with tests"
+ },
+ {
+  "number": 1904,
+  "head": "615c8835d309e1be512dd98809b48332ce70250d",
+  "base": "97938283a77707cdf231a7ebdcbee937f289ad31",
+  "javaFiles": 7,
+  "mainFiles": 5,
+  "why": "constructor gains a parameter (ConstructorConstructor), new builder method, extras module caller (cross-module), anonymous classes"
+ },
+ {
+  "number": 2072,
+  "head": "b1c399fd6296f2e61de37109847c957bab42d736",
+  "base": "feaf8ddc051cc9a8fccb4f8cc8e78a5705bf38cb",
+  "javaFiles": 4,
+  "mainFiles": 3,
+  "why": "visibility reduced (package-private to private, access-changed), private constructor added, a method renamed, '$Gson$Types' file name"
+ },
+ {
+  "number": 2498,
+  "head": "46ab704221608fb6318d110f1b0c2abca73a9ea2",
+  "base": "2032818ecb1a5d0932d4702ff36a8cc5b3bc20aa",
+  "javaFiles": 8,
+  "mainFiles": 3,
+  "why": "private static helpers moved to another class and made public, a method split in two, anonymous classes added, with tests"
+ },
+ {
+  "number": 2588,
+  "head": "1039427ff0100293dd3cf967a53a55282c0fef6b",
+  "base": "18cf79aad1474c82bf2b775af2f7ed1023a6a76b",
+  "javaFiles": 7,
+  "mainFiles": 2,
+  "why": "throws added to a private method (push), new public final getter/setter, a parallel JsonTreeReader change, with tests"
+ },
+ {
+  "number": 2759,
+  "head": "6c2e3db7d25ceceabe056aeb8b65477fdd509214",
+  "base": "7e98ebd3e53d7767e338b446dedc3996b2082257",
+  "javaFiles": 2,
+  "mainFiles": 2,
+  "why": "parameter type narrowed (Type to Class<?>) on a nested-class constructor and a factory method, both with varargs, '$Gson$Types' callers"
+ },
+ {
+  "number": 2776,
+  "head": "4e65e6ab368d92638b4ca04521958dbf1d3753e7",
+  "base": "6010131366fa3f72c3f07151bff6d1c4e1a7f6e0",
+  "javaFiles": 3,
+  "mainFiles": 2,
+  "why": "default method added to an interface (FieldNamingStrategy), callers through the interface and its overrides, with tests"
+ },
+ {
+  "number": 2838,
+  "head": "45e5e141b1a39926e6b43c6eacd3dc0280321f71",
+  "base": "c6d44259b53a9b2756b5767b843d15e8acacaa31",
+  "javaFiles": 17,
+  "mainFiles": 10,
+  "why": "two files renamed ($Gson$Preconditions to GsonPreconditions, $Gson$Types to GsonTypes) with edits, every caller updated, nested/inner classes"
+ },
+ {
+  "number": 2879,
+  "head": "676b005ace2a44fbf821157b6211197ddbcb614c",
+  "base": "164ac9dfe1e9b056faf5e37ec1a2baaf4681dc4f",
+  "javaFiles": 6,
+  "mainFiles": 4,
+  "why": "a whole class and its static methods removed, replacement code inlined in GsonBuilder, GsonTypes, TreeTypeAdapter"
+ },
+ {
+  "number": 2951,
+  "head": "286843d4a90a4690e5e1f438c944569b3fbfb1d2",
+  "base": "ae9604c201b3ba44babc48e982e012b1d23b69c8",
+  "javaFiles": 5,
+  "mainFiles": 4,
+  "why": "methods moved across files (Gson to TypeAdapters) with a parameter dropped and made public/static, enum constants with bodies, abstract enum method, anonymous classes"
+ },
+ {
+  "number": 2950,
+  "head": "e28fdb9303846b8c46fd5b8776f694149d0389d0",
+  "base": "a271f487b5969601308ed438b2da9c8fc1a8e927",
+  "javaFiles": 1,
+  "mainFiles": 1,
+  "why": "return type narrowed in ConstructorConstructor, with anonymous construct() classes (owner-approved runner-up)"
+ },
+ {
+  "number": 2944,
+  "head": "2a213c5cdd47234efe4799232958d17b42a37889",
+  "base": "1471917391b2cebaab70bbe68cd1dd50eb3d0b5d",
+  "javaFiles": 10,
+  "mainFiles": 10,
+  "why": "redundant public removed from interface methods across files: not a visibility change, a false-alarm probe for access-changed (owner-approved runner-up)"
+ }
+]

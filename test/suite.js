@@ -35,6 +35,7 @@ const SUITE = [
   { file: 'test/go-signature.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/python-signature.test.js', tier: 'quick' },
   { file: 'test/java-signature.test.js', tier: 'quick' },
+  { file: 'test/java-outline.test.js', tier: 'quick' },
   { file: 'test/python-lexer.test.js', tier: 'quick' },  // 0.1s  // 0.2s
   { file: 'test/python-syntactic.test.js', tier: 'quick' },
   { file: 'test/go-syntactic.test.js', tier: 'quick' },

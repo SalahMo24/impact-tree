@@ -9,6 +9,8 @@
 // which project a file belongs to (`javaProjectOf`, ./rules.js). The header parser and the
 // signature kinds are ./signature.js's (J3); how jdtls' callers are read is
 // ./editor-extras.js's (J4).
+// Without a server (the CLI, the no-checkout preview; J7): `prepareSyntactic`, the same
+// candidates from a text outline (`javaOutline`, ./outline.js), callers not computed.
 //
 // Engine modules and the signature parser are required where they are used: the registry
 // (../index.js) loads this file, and src/engine/diff.js loads the registry.
@@ -318,12 +320,50 @@ const prepare = (ctx) => require('../server-symbols').prepareFromServerSymbols(c
  */
 const editorCallers = ({ trace, services, repoRoot, clock }) => require('./editor-extras').createJavaEditorExtras({ trace, services, repoRoot, ...(clock ? { clock } : {}) });
 
+/**
+ * `prepare` where there is no language server (the CLI, the no-checkout preview; J7): the
+ * changed, added and deleted methods and constructors and their signature kinds from the
+ * text alone (`javaOutline`, shaped as jdtls' answer, then the same `collectJavaSymbols`,
+ * header parser, overload pairing and matching as `prepare`, so keys and review ids are the
+ * editor's), with callers not computed: every unit's resolver is
+ * `createNotComputedResolver`'s (J8 replaces it with a syntax-only index). Units are
+ * `ctx.unit` when given (the preview's "pull request": nothing is read from disk, the texts
+ * are `ctx.headTexts`/`ctx.baseTexts`), else projects by `javaProjectOf` (the CLI). A file
+ * the outline cannot read (null) is reported by the shared pipeline as unread, never as a
+ * file without methods. `ctx.hooks` is not read. One warning says the callers were not
+ * computed, for how many files.
+ * @param {import('../types').PrepareContext} ctx
+ * @returns {Promise<import('../types').PreparedLanguage>}
+ */
+async function prepareSyntactic(ctx) {
+  const { createNotComputedResolver, notComputedReason } = require('../../engine/resolver-not-computed');
+  const { javaOutline } = require('./outline');
+  const reason = notComputedReason(javaRules.displayName);
+  const spec = {
+    ...javaSpec(),
+    serverName: 'the Java text scan',
+    // The outline is the whole answer: an empty one is a file with no types.
+    declaresSymbols: undefined,
+  };
+  /** @type {import('../types').LanguageServices} */
+  const services = /** @type {any} */ ({
+    available: async () => ({ ok: true }),
+    documentSymbols: async (/** @type {import('../types').DocRef} */ doc) => javaOutline(/** @type {string} */ (doc.text)),
+  });
+  const answer = await require('../server-symbols').prepareFromServerSymbols(
+    { ...ctx, hooks: { services, makeResolver: () => createNotComputedResolver(reason) } }, spec);
+  const files = answer.units.reduce((n, u) => n + new Set([...u.changed, ...u.deleted].map((/** @type {any} */ c) => c.relPath)).size, 0);
+  if (files) ctx.warnings.push(`${files} changed Java file(s) read from their text: changed methods and signature kinds only; callers ${reason}`);
+  return answer;
+}
+
 /** @type {import('../types').LanguageProvider} */
 const javaProvider = Object.freeze({
   ...javaRules,
   needsServer: true,
   prepare,
   editorCallers,
+  prepareSyntactic,
 });
 
-module.exports = { javaProvider, javaSpec, collectJavaSymbols, pairOverloads, declarationStartOf, renderJavaSymbolSig };
+module.exports = { javaProvider, javaSpec, collectJavaSymbols, pairOverloads, declarationStartOf, renderJavaSymbolSig, prepareSyntactic };
