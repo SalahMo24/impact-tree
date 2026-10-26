@@ -282,6 +282,10 @@
  * @property {(file: string, pos: number) => Promise<string|null>} unseenUsers Asked before
  *   "none": the reason the answer is unknown after all, or null. Never rejects.
  * @property {() => void} clear A new analysis starts: drop what was learnt.
+ * @property {(reason: string) => boolean} [retryRejected] For a caller query the server
+ *   rejected (not already retryable): whether to ask it once more at once, because the
+ *   language knows that rejection is transient (Java: jdtls' `-32603 Internal error` under
+ *   concurrent queries, J6). One more attempt, its answer kept. Absent: never asked again.
  * @property {(reason: string, file: string, pos: number) => string|null} [explainIncomplete]
  *   For a query the server did not answer (a rejection, no item, no incoming-call result)
  *   at `pos` in `file`: the reason to show instead of the server's, when the language knows

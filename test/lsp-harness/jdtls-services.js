@@ -61,6 +61,7 @@ function createJdtlsServices(options) {
   const { command, args, env } = jdtlsCommand(tools, options.dataDir);
   let ready = false;
   const openTokens = new Set();
+  let lastProgressAt = 0;
   const services = createStdioServerServices({
     repo: options.repo, command, args, env, languageId: 'java',
     deadlineMs: options.deadlineMs || 120000,
@@ -72,6 +73,7 @@ function createJdtlsServices(options) {
     onNotification: (method, params) => {
       if (method === 'language/status' && params && params.type === 'ServiceReady') ready = true;
       if (method === '$/progress' && params && params.value) {
+        lastProgressAt = Date.now();
         if (params.value.kind === 'begin') openTokens.add(params.token);
         if (params.value.kind === 'end') openTokens.delete(params.token);
       }
@@ -79,7 +81,11 @@ function createJdtlsServices(options) {
   });
   const javaSettings = {
     java: {
-      configuration: { maven: { userSettings: settingsXml, globalSettings: settingsXml } },
+      // `automatic`: a pom changed by a checkout is re-imported without asking. jdtls' default,
+      // `interactive`, asks the client, which the harness never answers: J6's runs kept the
+      // previous commit's module versions after a switch, and extras/metrics/proto lost their
+      // link to the workspace's gson (their calls missed on complete answers).
+      configuration: { maven: { userSettings: settingsXml, globalSettings: settingsXml }, updateBuildConfiguration: 'automatic' },
       import: { gradle: { enabled: false }, maven: { enabled: true } },
       autobuild: { enabled: true },
       maven: { downloadSources: false },
@@ -102,7 +108,23 @@ function createJdtlsServices(options) {
     while (openTokens.size > 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, POLL_MS));
     return result;
   };
-  return { ...services, start };
+  /**
+   * Resolves once no progress is open and none was reported for `quietMs` (at least
+   * `minMs` after the call); rejects after `deadlineMs`. After a commit switch (J6): jdtls
+   * refreshes, rebuilds and, when a pom changed, re-imports; answers before that are stale.
+   * @param {{ quietMs?: number, minMs?: number, deadlineMs?: number }} [opts]
+   */
+  const waitQuiet = async ({ quietMs = 1500, minMs = 1000, deadlineMs = 120000 } = {}) => {
+    const t0 = Date.now();
+    const deadline = t0 + deadlineMs;
+    while (Date.now() < deadline) {
+      const now = Date.now();
+      if (now - t0 >= minMs && openTokens.size === 0 && now - lastProgressAt >= quietMs) return now - t0;
+      await new Promise((r) => setTimeout(r, POLL_MS / 5));
+    }
+    throw new Error(`jdtls: not quiet within ${deadlineMs} ms (${openTokens.size} progress open)`);
+  };
+  return { ...services, start, waitQuiet };
 }
 
 module.exports = { createJdtlsServices, DEFAULT_TOOLS };

@@ -34,13 +34,16 @@ const isRetryable = (e) => !!e && typeof e === 'object' && 'retryable' in e && e
 /**
  * Asks for the incoming calls at `pos`: one `prepareCallHierarchy` and the `incomingCalls`
  * of its first item, run as one caller query when the services schedule those. A rejection
- * is kept as the reason, never read as "no callers".
+ * is kept as the reason, never read as "no callers". `retryRejected` (a language's
+ * `EditorCallerExtras.retryRejected`): a rejection that is not already retryable and whose
+ * reason it accepts is asked once more, and that second answer is kept, whatever it is.
  * @param {LanguageServices} services
  * @param {DocRef} doc
  * @param {number} pos UTF-16 offset of the symbol's name.
+ * @param {{ retryRejected?: ((reason: string) => boolean)|null }} [options]
  * @returns {Promise<HierarchyQuery>}
  */
-async function queryHierarchy(services, doc, pos) {
+async function queryHierarchy(services, doc, pos, { retryRejected = null } = {}) {
   /** @param {LanguageServices} scope @returns {Promise<HierarchyQuery>} */
   const run = async (scope) => {
     const items = await scope.prepareCallHierarchy(doc, pos);
@@ -50,8 +53,14 @@ async function queryHierarchy(services, doc, pos) {
     if (!Array.isArray(rows)) return { ready: false, reason: NO_INCOMING_RESULT, retryable: false };
     return { ready: true, rows };
   };
+  const ask = () => (services.callerQuery ? services.callerQuery(run) : run(services));
   try {
-    return await (services.callerQuery ? services.callerQuery(run) : run(services));
+    return await ask();
+  } catch (e) {
+    if (!retryRejected || isRetryable(e) || !retryRejected(reasonOf(e))) return { ready: false, reason: reasonOf(e), retryable: isRetryable(e) };
+  }
+  try {
+    return await ask();
   } catch (e) {
     return { ready: false, reason: reasonOf(e), retryable: isRetryable(e) };
   }

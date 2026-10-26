@@ -105,7 +105,8 @@ function createVscodeResolver({
     // command-bus handler) is not asked; its empty answer settles as unknown.
     const isHandler = !!(extras && extras.isSuppressed());
     if (isHandler) stats.cqrsSuppressed++;
-    const answer = isHandler ? { ready: true, rows: [] } : await queryHierarchy(services, headDoc(file), pos);
+    const retryRejected = languageExtras?.retryRejected ?? null;
+    const answer = isHandler ? { ready: true, rows: [] } : await queryHierarchy(services, headDoc(file), pos, { retryRejected });
     if (startedGeneration !== generation) return staleAnswer();
     const { ready } = answer;
     const dt = clock.now() - t;
@@ -120,7 +121,7 @@ function createVscodeResolver({
     // `filter` drops what the server over-reports; `moreCallers` adds what it cannot see.
     const applied = await applyCallerExtras(answer, {
       extras: languageExtras, query: extras, file, pos, withTests,
-      askAt: (f, p) => queryHierarchy(services, headDoc(f), p),
+      askAt: (f, p) => queryHierarchy(services, headDoc(f), p, { retryRejected }),
       isStale: () => startedGeneration !== generation,
     });
     if (applied.stale) return staleAnswer();

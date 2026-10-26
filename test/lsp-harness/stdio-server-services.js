@@ -304,6 +304,17 @@ function createStdioServerServices(options) {
     /** Text of an opened or on-disk document, for printing evidence. @param {string} uri */
     textOfUri,
 
+    /**
+     * Closes every document opened here and forgets the texts read from disk: after the
+     * checkout moves to another commit (java-verify's editor mode, one server per run), no
+     * open document may hold the previous commit's text.
+     */
+    closeAll() {
+      for (const uri of open.keys()) client.didClose(uri);
+      open.clear();
+      diskTexts.clear();
+    },
+
     async close() {
       await client.close();
     },
