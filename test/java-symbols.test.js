@@ -421,3 +421,35 @@ test('the editor without Java support: the install hint', async () => {
     repo.remove();
   }
 });
+
+test('the editor without Java support: the install hint once for several files, and no rows of unknowns', async () => {
+  const one = 'src/main/java/demo/Codec.java';
+  const two = 'src/main/java/demo/Other.java';
+  const repo = repoWith({ [one]: texts['Codec.java@base'], [two]: texts['Codec.java@base'] }, { [one]: texts['Codec.java@head'], [two]: texts['Codec.java@head'] });
+  try {
+    const services = { ...replayServices(), available: async () => ({ ok: false, reason: 'no Java extension' }) };
+    const result = await runJava(repo.dir, services);
+    assert.equal(result.warnings.filter((w) => w.includes('Install the Extension Pack for Java')).length, 1, result.warnings.join(' | '));
+    assert.deepEqual(result.allChanged, [], 'no method row with unknown callers');
+    assert.deepEqual(result.deleted, []);
+    assert.deepEqual(result.otherFiles.filter((f) => f.notAnalysed).map((f) => f.path).sort(), [one, two], 'both files say they were not analysed');
+  } finally {
+    repo.remove();
+  }
+});
+
+test('a generated Java file is listed but not analysed, with a warning, and the server is not asked', async () => {
+  const file = 'mod/target/generated-sources/demo/Codec.java';
+  const repo = repoWith({ [file]: texts['Codec.java@base'] }, { [file]: texts['Codec.java@head'] });
+  try {
+    const services = { ...replayServices(), documentSymbols: async () => assert.fail('a generated file is not asked about') };
+    const result = await runJava(repo.dir, services);
+    assert.deepEqual(result.allChanged, []);
+    assert.ok(result.warnings.some((w) => /^1 generated Java file\(s\) listed but not analysed: mod\/target\/generated-sources\/demo\/Codec\.java$/.test(w)), result.warnings.join(' | '));
+    const listed = result.otherFiles.find((f) => f.path === file);
+    assert.ok(listed, 'listed for its diff');
+    assert.equal(listed.notAnalysed, undefined, 'deliberately skipped, not a failure (it does not count toward attention)');
+  } finally {
+    repo.remove();
+  }
+});

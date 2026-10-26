@@ -58,6 +58,16 @@ const PY_SYMBOLS = [
   ] },
 ];
 
+// The Java change `changedSource: 'java'` commits; its symbols are set per test through
+// `hooks.serverSymbols`. jdtls lists a method as its type's child, after the type's fields.
+const JAVA_SOURCE = 'class T {\n  int x = 1;\n\n  int warm() {\n    return 1;\n  }\n}\n';
+const JAVA_SYMBOLS = [
+  { name: 'T', detail: '', kind: 5, range: { start: 0, end: JAVA_SOURCE.length - 1 }, selectionRange: { start: 6, end: 7 }, children: [
+    { name: 'x', detail: ' : int', kind: 8, range: { start: 12, end: 22 }, selectionRange: { start: 16, end: 17 }, children: [] },
+    { name: 'warm()', detail: ' : int', kind: 6, range: { start: 26, end: JAVA_SOURCE.length - 2 }, selectionRange: { start: JAVA_SOURCE.indexOf('warm'), end: JAVA_SOURCE.indexOf('warm') + 4 }, children: [] },
+  ] },
+];
+
 const shaFor = (n) => String(n).repeat(40).slice(0, 40);
 const pull = (n) => ({ number: n, headRef: `head${n}`, baseRef: `base${n}`, title: `PR ${n}`, url: `https://example.test/${n}` });
 
@@ -197,6 +207,11 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     sh('checkout', '-qb', 'feature');
     fs.writeFileSync(path.join(dir, 'pyproject.toml'), '[project]\nname = "a"\n');
     fs.writeFileSync(path.join(dir, 'a.py'), PY_SOURCE);
+    sh('add', '.'); sh('commit', '-qm', 'feature');
+  } else if (changedSource === 'java') {
+    sh('checkout', '-qb', 'feature');
+    fs.writeFileSync(path.join(dir, 'pom.xml'), '<project/>\n');
+    fs.writeFileSync(path.join(dir, 'T.java'), JAVA_SOURCE);
     sh('add', '.'); sh('commit', '-qm', 'feature');
   } else if (changedSource) {
     sh('checkout', '-qb', 'feature');
@@ -535,4 +550,4 @@ const overviewAnswer = (headOid) => ({ repository: {
   object: { statusCheckRollup: null },
 } });
 
-module.exports = { GO_SOURCE, PY_SOURCE, PY_SYMBOLS, overviewAnswer, fakeWebviewPanel, deferred, gates, shaFor, pull, localResult, finding, previewResult, createEnv, withEnv, refusals, createCommentsApi };
+module.exports = { GO_SOURCE, PY_SOURCE, PY_SYMBOLS, JAVA_SOURCE, JAVA_SYMBOLS, overviewAnswer, fakeWebviewPanel, deferred, gates, shaFor, pull, localResult, finding, previewResult, createEnv, withEnv, refusals, createCommentsApi };

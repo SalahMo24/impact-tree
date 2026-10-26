@@ -230,3 +230,33 @@ test('the command line analyses a Python file from its text: no not-analysed sec
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// Java (J7): read from its text where there is no language server (the preview's version is in
+// java-outline.test.js), so no Java file is listed as not analysed on the command line either.
+// Kotlin has no provider and stays "not analysed yet" (above).
+test('the command line analyses a Java file from its text: no not-analysed section, and callers say they were not computed', () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-not-analysed-java-')));
+  try {
+    const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
+    git('init', '-q', '--initial-branch=main'); git('config', 'user.name', 'T'); git('config', 'user.email', 't@example.com');
+    const file = path.join(dir, 'src/main/java/demo/A.java');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'pom.xml'), '<project/>\n');
+    fs.writeFileSync(file, 'package demo;\n\npublic class A {\n  public int a() {\n    return 1;\n  }\n}\n');
+    git('add', '-A'); git('commit', '-qm', 'base'); git('checkout', '-q', '-b', 'feature');
+    fs.writeFileSync(file, 'package demo;\n\npublic class A {\n  public int a() {\n    return 2;\n  }\n}\n');
+    git('commit', '-qam', 'head');
+    const cli = path.join(__dirname, '..', 'src', 'cli.js');
+    const args = ['--repo', dir, '--allow-local-base'];
+    const text = execFileSync(process.execPath, [cli, ...args], { encoding: 'utf8' });
+    assert.doesNotMatch(text, /⑤ NOT ANALYSED/);
+    assert.match(text, /● A\.a\(\) {3}\[CHANGED\] {2}src\/main\/java\/demo\/A\.java:4/);
+    assert.doesNotMatch(text, /no callers/);
+    const json = JSON.parse(execFileSync(process.execPath, [cli, ...args, '--json'], { encoding: 'utf8' }));
+    assert.equal(json.otherFiles.find((f) => f.path.endsWith('A.java')), undefined);
+    assert.deepEqual(json.allChanged.map((c) => [c.key, c.callersComplete]), [['A.a()', false]]);
+    assert.match(json.allChanged[0].callersIncompleteReason, /^not computed: Java callers/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
