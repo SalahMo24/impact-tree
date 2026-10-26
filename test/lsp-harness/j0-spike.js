@@ -4,7 +4,7 @@
  * J0 spike: what Eclipse JDT LS (jdtls) gives us on google/gson, answered through the
  * harness's LSP client.
  *
- *   node test/lsp-harness/j0-spike.js --repo <gson clone> --tools <java-tools dir> [--cold] [--no-switch]
+ *   node test/lsp-harness/j0-spike.js --repo <gson clone> --tools <java-tools dir> [--cold] [--no-switch] [--switch-only]
  *
  * `--tools` holds jdk25/<jdk>/Contents/Home (or env J0_JDK = a JAVA_HOME), jdtls/, m2/ and the scratch dirs (see TOOLS
  * below); the env vars J0_REPO / J0_TOOLS work too. `--cold` empties the -data workspace
@@ -254,10 +254,12 @@ async function main() {
   const tools = opt('--tools', 'J0_TOOLS');
   const cold = argv.includes('--cold');
   const doSwitch = !argv.includes('--no-switch');
+  // J5: only the import and the branch switch (warm `-data`), for the freshness check.
+  const switchOnly = argv.includes('--switch-only');
   if (!repo || !tools || !path.isAbsolute(repo) || !path.isAbsolute(tools)) {
-    throw new Error('usage: node j0-spike.js --repo <abs gson clone> --tools <abs java-tools dir> [--cold] [--no-switch]');
+    throw new Error('usage: node j0-spike.js --repo <abs gson clone> --tools <abs java-tools dir> [--cold] [--no-switch] [--switch-only]');
   }
-  const dataDir = path.join(tools, 'jdtls-data', 'gson');
+  const dataDir = path.join(tools, 'jdtls-data', opt('--data-name', 'J0_DATA_NAME') || 'gson');
   const m2 = path.join(tools, 'm2');
   const settingsXml = path.join(tools, 'maven-settings.xml');
   fs.mkdirSync(m2, { recursive: true });
@@ -314,6 +316,10 @@ async function main() {
     say(`- m2 after import: ${fs.readdirSync(m2).length} top-level entries; ~/.m2 exists: ${fs.existsSync(path.join(os.homedir(), '.m2'))}`);
     say('');
 
+    const gb = 'gson/src/main/java/com/google/gson/';
+    let w = c;
+    let wFirst = first;
+    if (!switchOnly) {
     // ---- 1. documentSymbol -----------------------------------------------------
     say('## 1. documentSymbol');
     const gsonSyms = first.value;
@@ -420,7 +426,6 @@ async function main() {
       }
       return { item, calls };
     }
-    const gb = 'gson/src/main/java/com/google/gson/';
     await callersOf('constructor Gson(GsonBuilder) [this( and new Gson(]', `${gb}Gson.java`, '  Gson(GsonBuilder builder)', 'Gson');
     await callersOf('constructor LinkedTreeMap(Comparator, boolean) [this( and new]', `${gb}internal/LinkedTreeMap.java`, 'public LinkedTreeMap(Comparator<? super K> comparator, boolean', 'LinkedTreeMap');
     await callersOf('constructor JsonParseException(String) [super( from subclasses]', `${gb}JsonParseException.java`, 'public JsonParseException(String msg)', 'JsonParseException');
@@ -461,9 +466,9 @@ async function main() {
     await c.close();
     progress('closed; restarting on the same -data (warm)');
     current = await startJdtls({ tools, dataDir, roots, settingsXml, label: 'warm' });
-    const w = current.client;
+    w = current.client;
     w.didOpen({ uri: gsonUri, languageId: 'java', text: gsonText });
-    const wFirst = await timed(() => w.request('textDocument/documentSymbol', { textDocument: { uri: gsonUri } }, REQUEST_DEADLINE_MS));
+    wFirst = await timed(() => w.request('textDocument/documentSymbol', { textDocument: { uri: gsonUri } }, REQUEST_DEADLINE_MS));
     const wPrep = await timed(() => w.request('textDocument/prepareCallHierarchy', { textDocument: { uri: gsonUri }, position: tjPos }, REQUEST_DEADLINE_MS));
     const wInc = wPrep.value ? await timed(() => w.request('callHierarchy/incomingCalls', { item: wPrep.value[0] }, REQUEST_DEADLINE_MS)) : { ms: 0, value: null };
     say('## 4c. Warm restart (same -data)');
@@ -472,6 +477,8 @@ async function main() {
     say('- events:');
     for (const e of current.events.slice(0, 25)) say(`    ${String(e.t).padStart(7)}  ${e.what}`);
     say('');
+
+    }
 
     // ---- 4d. branch switch -----------------------------------------------------
     if (doSwitch) {
@@ -499,6 +506,25 @@ async function main() {
       // An editor keeps the document open; the harness closes it so the server reads disk.
       w.didClose(gsonUri);
       const before = flatNames(wFirst.value, '', []).join('\n');
+      // The call-hierarchy targets of the freshness check (J5): the callers of each, as they
+      // stand before the switch, so an answer that merely equals the old one is visible.
+      const TARGETS = [
+        { name: 'getAdapter(TypeToken)', needle: 'public <T> TypeAdapter<T> getAdapter(TypeToken<T> type)', skip: 'public <T> TypeAdapter<T> ' },
+        { name: 'toJson(Object, Appendable)', needle: 'public void toJson(Object src, Appendable writer)', skip: 'public void ' },
+      ];
+      const relOf = (u) => u.replace(uriOf(repo) + '/', '');
+      const locationsOf = (calls) => calls.flatMap((x) => x.fromRanges.map((rg) => `${relOf(x.from.uri)}:${rg.start.line + 1}:${rg.start.character}`)).sort();
+      const askAt = async (client, text, tgt) => {
+        const at = text.indexOf(tgt.needle);
+        if (at < 0) return null;
+        const pos = offsetToPosition(text, at + tgt.skip.length);
+        const prep = await timed(() => client.request('textDocument/prepareCallHierarchy', { textDocument: { uri: gsonUri }, position: pos }, REQUEST_DEADLINE_MS));
+        if (prep.error || !prep.value || !prep.value[0]) return null;
+        const inc = await timed(() => client.request('callHierarchy/incomingCalls', { item: prep.value[0] }, REQUEST_DEADLINE_MS));
+        return inc.error ? null : (inc.value || []);
+      };
+      const preSets = {};
+      for (const tgt of TARGETS) { const a = await askAt(w, gsonText, tgt); preSets[tgt.name] = a ? locationsOf(a) : null; say(`- before the switch: ${tgt.name} has ${preSets[tgt.name] ? preSets[tgt.name].length : 'no'} call site(s)`); }
       const tSwitch = Date.now();
       try {
         await git(repo, ['checkout', '-q', target]);
@@ -518,27 +544,46 @@ async function main() {
         }
         void before;
         say(`- didChangeWatchedFiles sent ${fmt(tNotified)} after checkout; documentSymbol (probe file, not open, from disk) matches the old text after ${symsOk === null ? 'NEVER within deadline' : fmt(symsOk)}`);
-        // Call hierarchy on a method in the old text: its callers' ranges must spell the name.
-        const oldPos = oldGson.indexOf('public void toJson(Object src, Appendable writer)');
-        if (oldPos >= 0) {
-          const pos = offsetToPosition(oldGson, oldPos + 'public void '.length);
+        // Call hierarchy in the target tree. J0's check (each range's text spells the method
+        // name) never passed: jdtls' `fromRanges` are the whole call expression (`toJson(src,
+        // writer)`), not the name. The check is now the stronger one: the warm server's answer
+        // equals that of a fresh jdtls (new `-data`) started on the same tree after the
+        // switch, location for location, and each range's text starts with the method's name.
+        const startsWithName = (calls, name) => calls.every((x) => x.fromRanges.every((rg) => sliceRange(fs.readFileSync(new URL(x.from.uri), 'utf8'), rg).startsWith(name)));
+        const freshData = path.join(tools, 'jdtls-data', 'switch-fresh');
+        fs.rmSync(freshData, { recursive: true, force: true });
+        const freshStart = Date.now();
+        let fresh = null;
+        startJdtls({ tools, dataDir: freshData, roots, settingsXml, label: 'fresh-at-target' }).then((f) => { fresh = f; }, () => {});
+        const expected = {};
+        for (const tgt of TARGETS) {
+          const bare = tgt.name.slice(0, tgt.name.indexOf('('));
           let chOk = null;
-          let lastCount = 0;
+          let lastWarm = null;
           let polls = 0;
+          let firstSeen = null;
+          let firstDiff = null;
           while (Date.now() < deadline) {
-            const p = await timed(() => w.request('textDocument/prepareCallHierarchy', { textDocument: { uri: gsonUri }, position: pos }, REQUEST_DEADLINE_MS));
-            if (!p.error && p.value && p.value[0]) {
-              const inc = await timed(() => w.request('callHierarchy/incomingCalls', { item: p.value[0] }, REQUEST_DEADLINE_MS));
-              const calls = inc.value || [];
-              lastCount = calls.length;
-              if (polls++ < 3) say(`    poll ${polls}: ${calls.length} caller(s) ${calls.slice(0, 2).map((x) => `${x.from.name}@${x.from.uri.replace(uriOf(repo) + '/', '')}:${x.fromRanges.map((rg) => rg.start.line + 1)}`).join(', ')} at ${fmt(Date.now() - tSwitch)}`);
-              const ok = calls.length > 0 && calls.every((x) => x.fromRanges.every((rg) => { const t = fs.readFileSync(new URL(x.from.uri), 'utf8'); return sliceRange(t, rg) === 'toJson'; }));
-              if (ok) { chOk = Date.now() - tSwitch; break; }
+            if (fresh && !(tgt.name in expected)) {
+              const answer = await askAt(fresh.client, oldGson, tgt);
+              expected[tgt.name] = answer ? locationsOf(answer) : null;
+              say(`- fresh jdtls (new -data) at the target tree: ${tgt.name} has ${expected[tgt.name] ? expected[tgt.name].length : 'no'} call site(s), asked ${fmt(Date.now() - tSwitch)} after checkout (fresh server started ${fmt(freshStart - tSwitch)} after it); names ok: ${answer ? startsWithName(answer, bare) : 'n/a'}; differs from before the switch: ${JSON.stringify(expected[tgt.name]) !== JSON.stringify(preSets[tgt.name])}`);
+            }
+            const calls = await askAt(w, oldGson, tgt);
+            if (calls) {
+              lastWarm = locationsOf(calls);
+              if (firstSeen === null) firstSeen = Date.now() - tSwitch;
+              const same = JSON.stringify(lastWarm) === JSON.stringify(preSets[tgt.name]);
+              if (!same && firstDiff === null) firstDiff = Date.now() - tSwitch;
+              if (polls++ < 8 || (!same && polls < 12)) say(`    poll ${polls}: ${tgt.name} ${lastWarm.length} call site(s) at ${fmt(Date.now() - tSwitch)}; equals the pre-switch set: ${same}`);
+              if (expected[tgt.name] && JSON.stringify(lastWarm) === JSON.stringify(expected[tgt.name])) { chOk = Date.now() - tSwitch; break; }
             }
             await new Promise((res) => setTimeout(res, POLL_MS));
           }
-          say(`- call hierarchy toJson(Object, Appendable) consistent with the old tree after ${chOk === null ? 'NEVER within deadline' : fmt(chOk)} (${lastCount} callers)`);
+          say(`- ${tgt.name}: the warm server's answer equals the fresh server's after ${chOk === null ? 'NEVER within deadline' : fmt(chOk)} (first answer ${firstSeen === null ? 'never' : fmt(firstSeen)}; first answer that differs from the pre-switch one ${firstDiff === null ? 'never' : fmt(firstDiff)}; last ${lastWarm ? lastWarm.length : 'no'} call site(s); fresh ${expected[tgt.name] ? expected[tgt.name].length : 'none'})`);
+          if (chOk === null && lastWarm && expected[tgt.name]) say(`    only in warm: ${lastWarm.filter((x) => !expected[tgt.name].includes(x)).slice(0, 6).join(', ')}; only in fresh: ${expected[tgt.name].filter((x) => !lastWarm.includes(x)).slice(0, 6).join(', ')}`);
         }
+        try { if (fresh) fresh.client.proc.kill('SIGKILL'); } catch { /* already gone */ }
         say(`- events since checkout: ${current.events.filter((e) => e.t >= tSwitch - current.t0).map((e) => `${e.t - (tSwitch - current.t0)}ms ${e.what}`).slice(0, 12).join(' | ') || '(none)'}`);
       } finally {
         await git(repo, ['checkout', '-q', startBranch]);

@@ -53,7 +53,9 @@ const SUITE = [
   { file: 'test/go-review-identity.test.js', tier: 'quick' },  // 4.1s
   { file: 'test/go-warm-up.test.js', tier: 'quick' },  // 3.4s
   { file: 'test/python-review-identity.test.js', tier: 'quick' },  // 6s
-  { file: 'test/python-warm-up.test.js', tier: 'quick' },  // 3.8s
+  { file: 'test/python-warm-up.test.js', tier: 'quick' },
+  { file: 'test/java-warm-up.test.js', tier: 'quick' },
+  { file: 'test/java-review-identity.test.js', tier: 'quick' },  // 3.8s
   { file: 'test/caller-retry.test.js', tier: 'quick' },  // 3.7s
   { file: 'test/services-vscode.test.js', tier: 'quick' },  // 1.9s
   { file: 'test/scope.test.js', tier: 'full' },  // 5.4s

@@ -357,6 +357,48 @@ async function prepareSyntactic(ctx) {
   return answer;
 }
 
+/**
+ * The first method or constructor in `symbols`, in source order. jdtls lists a method as a
+ * child of its type (J0), so types are searched, nested ones included; a method's own
+ * children (local and anonymous classes) are not, nor are fields.
+ * Recursive over nested types: bounded by the source's type nesting and the size of one
+ * file's answer.
+ * @param {ServerSymbol[]} symbols
+ * @returns {ServerSymbol|null}
+ */
+function firstCallable(symbols) {
+  for (const symbol of symbols) {
+    if (symbol.kind === KIND.METHOD || symbol.kind === KIND.CONSTRUCTOR) return symbol;
+    if (TYPE_KINDS.has(symbol.kind)) {
+      const inner = firstCallable(symbol.children || []);
+      if (inner) return inner;
+    }
+  }
+  return null;
+}
+
+/**
+ * Where the editor's Java server is warmed (src/readiness.js): the first method or
+ * constructor jdtls lists in the first changed Java file, as Go's and Python's. Only that
+ * file is asked: jdtls imports the whole Maven or Gradle project when it is first asked
+ * about any file of it (J0). Null when the editor has no Java support (logged; the analysis
+ * itself reports it once), when the server gives no symbols, or when the file declares no
+ * method. Rejects when the server's request fails; readiness logs that and analyses unwarmed.
+ * @type {NonNullable<import('../types').LanguageProvider['warmUpTarget']>}
+ */
+async function warmUpTarget({ repo, files, services, log }) {
+  if (!services) return null;
+  const availability = await services.available(javaRules.id);
+  if (!availability.ok) {
+    log(`warm-up: Java skipped — ${availability.reason}`);
+    return null;
+  }
+  const file = require('path').join(repo, files[0]);
+  const symbols = await services.documentSymbols({ file, side: 'head' });
+  const first = firstCallable(symbols || []);
+  return first ? { file, pos: first.selectionRange.start } : null;
+}
+
 /** @type {import('../types').LanguageProvider} */
 const javaProvider = Object.freeze({
   ...javaRules,
@@ -364,6 +406,8 @@ const javaProvider = Object.freeze({
   prepare,
   editorCallers,
   prepareSyntactic,
+  warmUpTarget,
+  serverLabel: 'the Java language server (jdtls)',
 });
 
 module.exports = { javaProvider, javaSpec, collectJavaSymbols, pairOverloads, declarationStartOf, renderJavaSymbolSig, prepareSyntactic };
