@@ -229,7 +229,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   // `statusBars` every status bar item created, in order (`statusBar` is the first, the
   // review progress); `panels` every webview panel created, in order.
   const seen = { warnings: [], errors: [], infos: [], log: [], status: [], modals: 0, analyze: [], remote: [], remoteSlugs: [], analyzeRemotes: [],
-    signals: [], progress: [], callerQueries: [], warmUps: [], warmUpAt: [], servicesAsked: [], analyzeOptions: [], contexts: {}, revealed: [], statusBar: null, statusBars: [], panels: [], executed: [],
+    signals: [], remoteImpactPaths: [], cardsCalls: [], progress: [], callerQueries: [], warmUps: [], warmUpAt: [], servicesAsked: [], analyzeOptions: [], contexts: {}, revealed: [], statusBar: null, statusBars: [], panels: [], executed: [],
     focus: 'editor', focusedRow: null, editorSpaces: 0 };
   // `fetchRemotes`: the remote each `fetch` named, in step with `fetches`.
   const git = { fetches: [], fetchRemotes: [], checkouts: [], calls: [] };
@@ -237,7 +237,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   const failures = new Map();
   const hooks = { serverAvailable: () => ({ ok: true }), serverSymbols: () => GO_SYMBOLS, beforeCheckout: null, headOf: shaFor, remoteResult: (pr) => previewResult(pr), localResult: (o) => localResult(o),
     warm: !changedSource, clearResolver: () => {}, onCommand: null };
-  const captured = { tree: null, view: null, decorations: null, checkbox: null, sources: null, webviews: new Map(),
+  const captured = { tree: null, view: null, cards: null, cardsView: null, decorations: null, checkbox: null, sources: null, webviews: new Map(),
     selection: [], cursor: [], treeVisibility: [], lenses: null };
   let fetchHead = null, quickPick = null;
   const comments = createCommentsApi();
@@ -277,6 +277,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
           } };
         if (id === 'impactTree.changes') { captured.tree = options.treeDataProvider; captured.view = view; }
         if (id === 'impactTree.sources') captured.sources = options.treeDataProvider;
+        if (id === 'impactTree.cards') { captured.cards = options.treeDataProvider; captured.cardsView = view; }
         return view;
       },
       // `progress` records each withProgress call: its options and every message reported to it.
@@ -364,8 +365,9 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     let resolved = null;
     try { resolved = Module._resolveFilename(name, parent); } catch { /* not a file module */ }
     if (resolved === path.join(SRC, 'engine/analyze-remote.js')) {
-      return { analyzeRemote: async ({ pr, slug, signal, onPrepared }) => {
+      return { analyzeRemote: async ({ pr, slug, signal, onPrepared, impactPaths }) => {
         seen.remote.push(pr.number);
+        seen.remoteImpactPaths.push(impactPaths);
         seen.remoteSlugs.push(slug);
         seen.signals.push(signal);
         if (hooks.remotePrepared) await onPrepared(hooks.remotePrepared(pr));
@@ -377,12 +379,19 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       return { ...originalLoad.call(this, name, parent, ...rest), analyze: async (_repo, o) => {
         seen.analyze.push({ mode: o.mode, base: o.base });
         seen.analyzeRemotes.push(o.remote);
-        seen.analyzeOptions.push({ fetch: o.fetch, early: typeof o.onPrepared === 'function' });
+        seen.analyzeOptions.push({ fetch: o.fetch, early: typeof o.onPrepared === 'function', impactPaths: o.impactPaths });
         seen.signals.push(o.signal);
         if (hooks.localPrepared) await o.onPrepared(hooks.localPrepared(o));
         await holds.analyze.enter(() => undefined);
         return hooks.localResult(o, seen.analyze.length);
       } };
+    }
+    // The cards engine (src/engine/cards.js, cards-remote.js), faked by `hooks.cardsEngine`: each
+    // call is recorded in `seen.cardsCalls`, and the hook may hold or fail it. The real modules
+    // are asked for only when no hook is set. Matched by the name the session requires.
+    if (hooks.cardsEngine && parent && parent.filename && parent.filename.startsWith(SRC)
+      && /^\.\/engine\/cards(-remote)?$/.test(name)) {
+      return hooks.cardsEngine;
     }
     // The language-server resolver: its warm-up and its caller queries can be held, as a
     // slow server would, and like the real one it cannot be told to stop.
@@ -467,6 +476,9 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       return rows.filter((r) => r.type === 'finding');
     },
     sources: () => captured.sources,
+    /** The Cards view's data provider and its tree view object. */
+    cards: () => captured.cards,
+    cardsView: () => captured.cardsView,
     // The user selects rows in the change view, as the view reports it.
     select(rows) {
       captured.view.selection = rows;

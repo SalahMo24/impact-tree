@@ -1,0 +1,5612 @@
+{
+ "_source": "live --cards --impact output of t3code-e8dfc42 (AI1); first 6 cards only, with the sweeps and what they read",
+ "result": {
+  "mode": "pr",
+  "base": {
+   "sha": "749a2076d8ad713eef9ef575ff40437abd3adcd8"
+  },
+  "warnings": [
+   "WARNING: origin/base-e8dfc42 not found — falling back to local base-e8dfc42; diff may include others' commits",
+   "3 changed file(s) have no tsconfig.json or jsconfig.json — analysed as one inferred JavaScript project, as the editor does; callers in other files come from static import and require() statements",
+   "apps/desktop/scripts/dev-electron.mjs is not included by the tsconfig.json or jsconfig.json in 'apps/desktop' — its callers are unknown",
+   "apps/desktop/scripts/electron-launcher.mjs is not included by the tsconfig.json or jsconfig.json in 'apps/desktop' — its callers are unknown"
+  ],
+  "allChanged": [
+   {
+    "label": "resolveOffset",
+    "relPath": "scripts/dev-runner.mjs",
+    "namePos": 1860,
+    "startLine": 57,
+    "kinds": [
+     {
+      "id": "optional-param",
+      "short": "+optional param"
+     }
+    ]
+   },
+   {
+    "label": "getRenderablePatch",
+    "relPath": "apps/web/src/components/DiffPanel.tsx",
+    "namePos": 1355,
+    "startLine": 36,
+    "kinds": [
+     {
+      "id": "optional-param",
+      "short": "+optional param"
+     }
+    ]
+   },
+   {
+    "label": "checkpointDiffQueryOptions",
+    "relPath": "apps/web/src/lib/providerReactQuery.ts",
+    "namePos": 1877,
+    "startLine": 64,
+    "kinds": [
+     {
+      "id": "param-removed",
+      "short": "-param"
+     }
+    ]
+   },
+   {
+    "label": "gitBranchesQueryOptions",
+    "relPath": "apps/web/src/lib/gitReactQuery.ts",
+    "namePos": 1718,
+    "startLine": 45,
+    "kinds": [
+     {
+      "id": "param-removed",
+      "short": "-param"
+     }
+    ]
+   },
+   {
+    "label": "gitStatusQueryOptions",
+    "relPath": "apps/web/src/lib/gitReactQuery.ts",
+    "namePos": 1222,
+    "startLine": 29,
+    "kinds": [
+     {
+      "id": "param-removed",
+      "short": "-param"
+     }
+    ]
+   },
+   {
+    "label": "serverConfigQueryOptions",
+    "relPath": "apps/web/src/lib/serverReactQuery.ts",
+    "namePos": 230,
+    "startLine": 9,
+    "kinds": [
+     {
+      "id": "param-removed",
+      "short": "-param"
+     }
+    ]
+   },
+   {
+    "label": "CodexAppServerManager.requireSession",
+    "relPath": "apps/server/src/codexAppServerManager.ts",
+    "namePos": 14359,
+    "startLine": 498,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "CodexAppServerManager.stopSession",
+    "relPath": "apps/server/src/codexAppServerManager.ts",
+    "namePos": 13270,
+    "startLine": 453,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "CodexAppServerManager.hasSession",
+    "relPath": "apps/server/src/codexAppServerManager.ts",
+    "namePos": 14133,
+    "startLine": 488,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "CodexAppServerManager.interruptTurn",
+    "relPath": "apps/server/src/codexAppServerManager.ts",
+    "namePos": 10526,
+    "startLine": 362,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "CodexAppServerManager.readThread",
+    "relPath": "apps/server/src/codexAppServerManager.ts",
+    "namePos": 10961,
+    "startLine": 376,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "CodexAppServerManager.respondToRequest",
+    "relPath": "apps/server/src/codexAppServerManager.ts",
+    "namePos": 12117,
+    "startLine": 414,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "CodexAppServerManager.rollbackThread",
+    "relPath": "apps/server/src/codexAppServerManager.ts",
+    "namePos": 11414,
+    "startLine": 390,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "DiffPanel.selectTurn",
+    "relPath": "apps/web/src/components/DiffPanel.tsx",
+    "namePos": 8558,
+    "startLine": 229,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "gitCheckoutMutationOptions",
+    "relPath": "apps/web/src/lib/gitReactQuery.ts",
+    "namePos": 2684,
+    "startLine": 75,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "gitCreateBranchAndCheckoutMutationOptions",
+    "relPath": "apps/web/src/lib/gitReactQuery.ts",
+    "namePos": 3188,
+    "startLine": 92,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "gitInitMutationOptions",
+    "relPath": "apps/web/src/lib/gitReactQuery.ts",
+    "namePos": 2223,
+    "startLine": 61,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "gitPullMutationOptions",
+    "relPath": "apps/web/src/lib/gitReactQuery.ts",
+    "namePos": 4492,
+    "startLine": 137,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "gitRunStackedActionMutationOptions",
+    "relPath": "apps/web/src/lib/gitReactQuery.ts",
+    "namePos": 3791,
+    "startLine": 110,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "TerminalManagerRuntime.stopProcess",
+    "relPath": "apps/server/src/terminal/Layers/Manager.ts",
+    "namePos": 24569,
+    "startLine": 729,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "CodexAppServerManager.emitErrorEvent",
+    "relPath": "apps/server/src/codexAppServerManager.ts",
+    "namePos": 22759,
+    "startLine": 793,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "CodexAppServerManager.emitLifecycleEvent",
+    "relPath": "apps/server/src/codexAppServerManager.ts",
+    "namePos": 22417,
+    "startLine": 781,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "CodexAppServerManager.parseThreadSnapshot",
+    "relPath": "apps/server/src/codexAppServerManager.ts",
+    "namePos": 23694,
+    "startLine": 829,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "parseDiffRouteSearch",
+    "relPath": "apps/web/src/diffRouteSearch.ts",
+    "namePos": 805,
+    "startLine": 28,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "TerminalManagerRuntime.cleanupProcessHandles",
+    "relPath": "apps/server/src/terminal/Layers/Manager.ts",
+    "namePos": 25080,
+    "startLine": 743,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "BranchToolbar.createBranch",
+    "relPath": "apps/web/src/components/BranchToolbar.tsx",
+    "namePos": 6617,
+    "startLine": 191,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "BranchToolbar.selectBranch",
+    "relPath": "apps/web/src/components/BranchToolbar.tsx",
+    "namePos": 5148,
+    "startLine": 151,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "BunPtyProcess.pid",
+    "relPath": "apps/server/src/terminal/Layers/BunPTY.ts",
+    "namePos": 812,
+    "startLine": 23,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "BunPtyProcess.write",
+    "relPath": "apps/server/src/terminal/Layers/BunPTY.ts",
+    "namePos": 864,
+    "startLine": 27,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "brandIfNonEmpty",
+    "relPath": "apps/server/src/codexAppServerManager.ts",
+    "namePos": 27924,
+    "startLine": 971,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "ChatView.handler",
+    "relPath": "apps/web/src/components/ChatView.tsx",
+    "namePos": 39293,
+    "startLine": 1143,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "CheckpointInvariantError.message",
+    "relPath": "apps/server/src/checkpointing/Errors.ts",
+    "namePos": 1003,
+    "startLine": 33,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "checkpointRefForThreadTurn",
+    "relPath": "apps/server/src/checkpointing/Utils.ts",
+    "namePos": 192,
+    "startLine": 6,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "CheckpointUnavailableError.message",
+    "relPath": "apps/server/src/checkpointing/Errors.ts",
+    "namePos": 529,
+    "startLine": 17,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "clampSidebarWidth",
+    "relPath": "apps/web/src/components/ui/sidebar.tsx",
+    "namePos": 10464,
+    "startLine": 325,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "clearAssistantMessageIdsForTurn",
+    "relPath": "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts",
+    "namePos": 7599,
+    "startLine": 240,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "clearAssistantMessageState",
+    "relPath": "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts",
+    "namePos": 9031,
+    "startLine": 275,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "clearBufferedAssistantText",
+    "relPath": "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts",
+    "namePos": 8900,
+    "startLine": 272,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "clearCheckpointTurnConflict",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionTurns.ts",
+    "namePos": 9884,
+    "startLine": 307,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "CodexAppServerManager.sendTurn",
+    "relPath": "apps/server/src/codexAppServerManager.ts",
+    "namePos": 8437,
+    "startLine": 293,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "CodexAppServerManager.startSession",
+    "relPath": "apps/server/src/codexAppServerManager.ts",
+    "namePos": 3916,
+    "startLine": 154,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Collapsible",
+    "relPath": "apps/web/src/components/ui/collapsible.tsx",
+    "namePos": 142,
+    "startLine": 7,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "createDevRunnerEnv",
+    "relPath": "scripts/dev-runner.mjs",
+    "namePos": 4860,
+    "startLine": 169,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "decodeCheckpointDiffRequest",
+    "relPath": "apps/web/src/lib/providerReactQuery.ts",
+    "namePos": 732,
+    "startLine": 30,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "deleteById",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionProjects.ts",
+    "namePos": 4934,
+    "startLine": 152,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "deleteById",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionThreads.ts",
+    "namePos": 3828,
+    "startLine": 127,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "deleteBySessionId",
+    "relPath": "apps/server/src/persistence/Layers/ProviderSessionRuntime.ts",
+    "namePos": 6148,
+    "startLine": 186,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "deleteByThreadId",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionCheckpoints.ts",
+    "namePos": 6606,
+    "startLine": 195,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "deleteByThreadId",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionThreadActivities.ts",
+    "namePos": 3818,
+    "startLine": 119,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "deleteByThreadId",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionThreadMessages.ts",
+    "namePos": 3188,
+    "startLine": 106,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "deleteByThreadId",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionThreadSessions.ts",
+    "namePos": 3321,
+    "startLine": 102,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "deleteByThreadId",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionTurns.ts",
+    "namePos": 10190,
+    "startLine": 315,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "deletePendingTurnStartByThreadId",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionTurns.ts",
+    "namePos": 8525,
+    "startLine": 271,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "DiffPanel",
+    "relPath": "apps/web/src/components/DiffPanel.tsx",
+    "namePos": 2865,
+    "startLine": 93,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "emit",
+    "relPath": "apps/server/integration/TestProviderAdapter.integration.ts",
+    "namePos": 2675,
+    "startLine": 91,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "emitChange",
+    "relPath": "apps/server/src/keybindings.ts",
+    "namePos": 14059,
+    "startLine": 513,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "ensureNativeApi",
+    "relPath": "apps/web/src/nativeApi.ts",
+    "namePos": 454,
+    "startLine": 20,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "errorMessage",
+    "relPath": "apps/server/src/persistence/Layers/ProviderSessions.ts",
+    "namePos": 1026,
+    "startLine": 36,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "findProjectById",
+    "relPath": "apps/server/src/orchestration/commandInvariants.ts",
+    "namePos": 669,
+    "startLine": 27,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "findThreadById",
+    "relPath": "apps/server/src/orchestration/commandInvariants.ts",
+    "namePos": 469,
+    "startLine": 20,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "formatDispatchError",
+    "relPath": "apps/server/src/orchestration/Layers/OrchestrationEngine.ts",
+    "namePos": 1733,
+    "startLine": 52,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "formatHostForUrl",
+    "relPath": "apps/server/src/main.ts",
+    "namePos": 6969,
+    "startLine": 207,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "getByCommandId",
+    "relPath": "apps/server/src/persistence/Layers/OrchestrationCommandReceipts.ts",
+    "namePos": 2253,
+    "startLine": 73,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "getById",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionThreads.ts",
+    "namePos": 3380,
+    "startLine": 117,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "getByProjector",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionState.ts",
+    "namePos": 2430,
+    "startLine": 87,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "getByRequestId",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionPendingApprovals.ts",
+    "namePos": 3376,
+    "startLine": 109,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "getByThreadId",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionThreadSessions.ts",
+    "namePos": 3054,
+    "startLine": 95,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "getPendingTurnStartByThreadId",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionTurns.ts",
+    "namePos": 8219,
+    "startLine": 263,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "getReadModel",
+    "relPath": "apps/server/src/orchestration/Layers/OrchestrationEngine.ts",
+    "namePos": 7923,
+    "startLine": 219,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "GitCommandError.message",
+    "relPath": "apps/server/src/git/Errors.ts",
+    "namePos": 356,
+    "startLine": 13,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "GitHubCliError.message",
+    "relPath": "apps/server/src/git/Errors.ts",
+    "namePos": 772,
+    "startLine": 26,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "GitManagerError.message",
+    "relPath": "apps/server/src/git/Errors.ts",
+    "namePos": 1568,
+    "startLine": 55,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "gitShowFileAtRef",
+    "relPath": "apps/server/integration/OrchestrationEngineHarness.integration.ts",
+    "namePos": 3772,
+    "startLine": 84,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "handler",
+    "relPath": "apps/web/src/components/ChatView.tsx",
+    "namePos": 103664,
+    "startLine": 2866,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "hasSession",
+    "relPath": "apps/server/integration/TestProviderAdapter.integration.ts",
+    "namePos": 8000,
+    "startLine": 258,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "interruptTurn",
+    "relPath": "apps/server/integration/TestProviderAdapter.integration.ts",
+    "namePos": 6969,
+    "startLine": 228,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "invalidEntryIssue",
+    "relPath": "apps/server/src/keybindings.ts",
+    "namePos": 11664,
+    "startLine": 440,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "isDiffOpenValue",
+    "relPath": "apps/web/src/diffRouteSearch.ts",
+    "namePos": 155,
+    "startLine": 9,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "isPersistenceError",
+    "relPath": "apps/server/src/persistence/Errors.ts",
+    "namePos": 1566,
+    "startLine": 60,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "KeybindingsConfigError.message",
+    "relPath": "apps/server/src/keybindings.ts",
+    "namePos": 1078,
+    "startLine": 50,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "listAll",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionState.ts",
+    "namePos": 2659,
+    "startLine": 92,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "listByProjectId",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionThreads.ts",
+    "namePos": 3591,
+    "startLine": 122,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "listByThreadId",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionPendingApprovals.ts",
+    "namePos": 3098,
+    "startLine": 102,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "makeCodexAdapter.stopSession",
+    "relPath": "apps/server/src/provider/Layers/CodexAdapter.ts",
+    "namePos": 15035,
+    "startLine": 522,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "makeEventNdjsonLogger.close",
+    "relPath": "apps/server/src/provider/Layers/EventNdjsonLogger.ts",
+    "namePos": 1575,
+    "startLine": 58,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "makeProviderAdapterRegistry.listProviders",
+    "relPath": "apps/server/src/provider/Layers/ProviderAdapterRegistry.ts",
+    "namePos": 1444,
+    "startLine": 37,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "makeProviderSessionDirectoryLive",
+    "relPath": "apps/server/src/provider/Layers/ProviderSessionDirectory.ts",
+    "namePos": 6554,
+    "startLine": 194,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "makeWithDatabase.executeRaw",
+    "relPath": "apps/server/src/persistence/NodeSqliteClient.ts",
+    "namePos": 5440,
+    "startLine": 143,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "makeWithDatabase.executeStream",
+    "relPath": "apps/server/src/persistence/NodeSqliteClient.ts",
+    "namePos": 5833,
+    "startLine": 153,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "makeWithDatabase.executeValues",
+    "relPath": "apps/server/src/persistence/NodeSqliteClient.ts",
+    "namePos": 5526,
+    "startLine": 146,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "maxIso",
+    "relPath": "apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts",
+    "namePos": 3065,
+    "startLine": 82,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "newCommandId",
+    "relPath": "apps/web/src/lib/utils.ts",
+    "namePos": 492,
+    "startLine": 17,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "newMessageId",
+    "relPath": "apps/web/src/lib/utils.ts",
+    "namePos": 756,
+    "startLine": 23,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "OrchestrationCommandDecodeError.message",
+    "relPath": "apps/server/src/orchestration/Errors.ts",
+    "namePos": 719,
+    "startLine": 24,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "OrchestrationCommandInvariantError.message",
+    "relPath": "apps/server/src/orchestration/Errors.ts",
+    "namePos": 1102,
+    "startLine": 37,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "OrchestrationCommandJsonParseError.message",
+    "relPath": "apps/server/src/orchestration/Errors.ts",
+    "namePos": 380,
+    "startLine": 12,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "OrchestrationCommandPreviouslyRejectedError.message",
+    "relPath": "apps/server/src/orchestration/Errors.ts",
+    "namePos": 1534,
+    "startLine": 50,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "OrchestrationListenerCallbackError.message",
+    "relPath": "apps/server/src/orchestration/Errors.ts",
+    "namePos": 2344,
+    "startLine": 76,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "OrchestrationProjectorDecodeError.message",
+    "relPath": "apps/server/src/orchestration/Errors.ts",
+    "namePos": 1922,
+    "startLine": 63,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "parseDevRunnerArgs",
+    "relPath": "scripts/dev-runner.mjs",
+    "namePos": 3184,
+    "startLine": 100,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "parseLongFlag",
+    "relPath": "scripts/dev-runner.mjs",
+    "namePos": 2603,
+    "startLine": 80,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "PersistenceDecodeError.message",
+    "relPath": "apps/server/src/persistence/Errors.ts",
+    "namePos": 725,
+    "startLine": 28,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "PersistenceSqlError.message",
+    "relPath": "apps/server/src/persistence/Errors.ts",
+    "namePos": 387,
+    "startLine": 15,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "processInput",
+    "relPath": "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts",
+    "namePos": 20910,
+    "startLine": 594,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "ProviderAdapterProcessError.message",
+    "relPath": "apps/server/src/provider/Errors.ts",
+    "namePos": 2446,
+    "startLine": 83,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "ProviderAdapterRequestError.message",
+    "relPath": "apps/server/src/provider/Errors.ts",
+    "namePos": 1947,
+    "startLine": 66,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "ProviderAdapterSessionClosedError.message",
+    "relPath": "apps/server/src/provider/Errors.ts",
+    "namePos": 1464,
+    "startLine": 49,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "ProviderAdapterSessionNotFoundError.message",
+    "relPath": "apps/server/src/provider/Errors.ts",
+    "namePos": 992,
+    "startLine": 33,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "ProviderAdapterValidationError.message",
+    "relPath": "apps/server/src/provider/Errors.ts",
+    "namePos": 483,
+    "startLine": 17,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "ProviderSessionDirectoryPersistenceError.message",
+    "relPath": "apps/server/src/provider/Errors.ts",
+    "namePos": 4201,
+    "startLine": 145,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "ProviderSessionNotFoundError.message",
+    "relPath": "apps/server/src/provider/Errors.ts",
+    "namePos": 3718,
+    "startLine": 129,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "ProviderSessionRepositoryPersistenceError.message",
+    "relPath": "apps/server/src/persistence/Errors.ts",
+    "namePos": 2525,
+    "startLine": 88,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "ProviderSessionRepositoryValidationError.message",
+    "relPath": "apps/server/src/persistence/Errors.ts",
+    "namePos": 2094,
+    "startLine": 75,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "ProviderUnsupportedError.message",
+    "relPath": "apps/server/src/provider/Errors.ts",
+    "namePos": 3311,
+    "startLine": 114,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "ProviderValidationError.message",
+    "relPath": "apps/server/src/provider/Errors.ts",
+    "namePos": 2901,
+    "startLine": 99,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "queueTurnResponseForNextSession",
+    "relPath": "apps/server/integration/TestProviderAdapter.integration.ts",
+    "namePos": 10189,
+    "startLine": 332,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "readResumeThreadId",
+    "relPath": "apps/server/src/codexAppServerManager.ts",
+    "namePos": 28299,
+    "startLine": 983,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "rejectUpgrade",
+    "relPath": "apps/server/src/wsServer.ts",
+    "namePos": 2996,
+    "startLine": 94,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "resolveDiffThemeName",
+    "relPath": "apps/web/src/components/DiffPanel.tsx",
+    "namePos": 1071,
+    "startLine": 21,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "resolveStateDir",
+    "relPath": "scripts/dev-runner.mjs",
+    "namePos": 4441,
+    "startLine": 154,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "runDevRunner",
+    "relPath": "scripts/dev-runner.mjs",
+    "namePos": 6265,
+    "startLine": 212,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "serverCommandId",
+    "relPath": "apps/server/src/orchestration/Layers/CheckpointReactor.ts",
+    "namePos": 1941,
+    "startLine": 64,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "serverCommandId",
+    "relPath": "apps/server/src/orchestration/Layers/ProviderCommandReactor.ts",
+    "namePos": 1757,
+    "startLine": 62,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "sessionNotFound",
+    "relPath": "apps/server/integration/TestProviderAdapter.integration.ts",
+    "namePos": 1836,
+    "startLine": 66,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Sidebar.handlePickFolder",
+    "relPath": "apps/web/src/components/Sidebar.tsx",
+    "namePos": 10634,
+    "startLine": 318,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "sleep",
+    "relPath": "apps/server/integration/OrchestrationEngineHarness.integration.ts",
+    "namePos": 7152,
+    "startLine": 186,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "stopAll",
+    "relPath": "apps/server/integration/TestProviderAdapter.integration.ts",
+    "namePos": 9317,
+    "startLine": 298,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "TerminalManagerRuntime.dispose",
+    "relPath": "apps/server/src/terminal/Layers/Manager.ts",
+    "namePos": 18663,
+    "startLine": 553,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "TextGenerationError.message",
+    "relPath": "apps/server/src/git/Errors.ts",
+    "namePos": 1180,
+    "startLine": 42,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "toBooleanEnvValue",
+    "relPath": "scripts/dev-runner.mjs",
+    "namePos": 2949,
+    "startLine": 93,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "ToggleGroup",
+    "relPath": "apps/web/src/components/ui/toggle-group.tsx",
+    "namePos": 585,
+    "startLine": 17,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "toListenerCallbackError",
+    "relPath": "apps/server/src/orchestration/Errors.ts",
+    "namePos": 3542,
+    "startLine": 116,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "toMessage",
+    "relPath": "apps/server/src/provider/Layers/CodexAdapter.ts",
+    "namePos": 1283,
+    "startLine": 42,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "toNonEmptyProviderInput",
+    "relPath": "apps/server/src/orchestration/Layers/ProviderCommandReactor.ts",
+    "namePos": 998,
+    "startLine": 36,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "TooltipTrigger",
+    "relPath": "apps/web/src/components/ui/tooltip.tsx",
+    "namePos": 267,
+    "startLine": 11,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "toOrchestrationCommandDecodeError",
+    "relPath": "apps/server/src/orchestration/Errors.ts",
+    "namePos": 2848,
+    "startLine": 93,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "toPersistenceError",
+    "relPath": "apps/server/src/persistence/Layers/ProviderSessions.ts",
+    "namePos": 1711,
+    "startLine": 60,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "toPersistenceError",
+    "relPath": "apps/server/src/provider/Layers/ProviderSessionDirectory.ts",
+    "namePos": 530,
+    "startLine": 16,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "toProviderItemId",
+    "relPath": "apps/server/src/codexAppServerManager.ts",
+    "namePos": 28882,
+    "startLine": 999,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "toProviderThreadId",
+    "relPath": "apps/server/src/codexAppServerManager.ts",
+    "namePos": 28147,
+    "startLine": 979,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "toProviderThreadId",
+    "relPath": "apps/server/src/orchestration/Layers/CheckpointReactor.ts",
+    "namePos": 1262,
+    "startLine": 40,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "toProviderThreadId",
+    "relPath": "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts",
+    "namePos": 2029,
+    "startLine": 57,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "toProviderTurnId",
+    "relPath": "apps/server/src/codexAppServerManager.ts",
+    "namePos": 28736,
+    "startLine": 995,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "toTurnId",
+    "relPath": "apps/server/src/orchestration/Layers/CheckpointReactor.ts",
+    "namePos": 1133,
+    "startLine": 36,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "toTurnId",
+    "relPath": "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts",
+    "namePos": 1890,
+    "startLine": 53,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "toTurnStatus",
+    "relPath": "apps/server/src/provider/Layers/CodexAdapter.ts",
+    "namePos": 2772,
+    "startLine": 99,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "toValidationError",
+    "relPath": "apps/server/src/persistence/Layers/ProviderSessions.ts",
+    "namePos": 1204,
+    "startLine": 43,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "upsert",
+    "relPath": "apps/server/src/persistence/Layers/OrchestrationCommandReceipts.ts",
+    "namePos": 2025,
+    "startLine": 68,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "upsert",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionCheckpoints.ts",
+    "namePos": 5150,
+    "startLine": 155,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "upsert",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionPendingApprovals.ts",
+    "namePos": 2864,
+    "startLine": 97,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "upsert",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionProjects.ts",
+    "namePos": 3621,
+    "startLine": 114,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "upsert",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionState.ts",
+    "namePos": 2226,
+    "startLine": 82,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "upsert",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionThreadActivities.ts",
+    "namePos": 2973,
+    "startLine": 96,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "upsert",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionThreadMessages.ts",
+    "namePos": 2546,
+    "startLine": 88,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "upsert",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionThreadSessions.ts",
+    "namePos": 2826,
+    "startLine": 90,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "upsert",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionThreads.ts",
+    "namePos": 3173,
+    "startLine": 112,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "upsert",
+    "relPath": "apps/server/src/persistence/Layers/ProviderSessionRuntime.ts",
+    "namePos": 4303,
+    "startLine": 130,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "upsertByTurnId",
+    "relPath": "apps/server/src/persistence/Layers/ProjectionTurns.ts",
+    "namePos": 7323,
+    "startLine": 237,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "useSidebar",
+    "relPath": "apps/web/src/components/ui/sidebar.tsx",
+    "namePos": 2354,
+    "startLine": 77,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   }
+  ],
+  "deleted": [
+   {
+    "label": "main",
+    "relPath": "scripts/dev-runner.mjs",
+    "namePos": 1644,
+    "startLine": 61,
+    "kinds": []
+   }
+  ],
+  "impactPaths": {
+   "scripts/dev-runner.mjs#1860": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "resolveOffset",
+       "runDevRunner",
+       "dev-runner.mjs"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "scripts/dev-runner.mjs#2603": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "parseLongFlag",
+       "parseDevRunnerArgs",
+       "runDevRunner",
+       "dev-runner.mjs"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "scripts/dev-runner.mjs#2949": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "toBooleanEnvValue",
+       "parseDevRunnerArgs",
+       "runDevRunner",
+       "dev-runner.mjs"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "scripts/dev-runner.mjs#3184": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "parseDevRunnerArgs",
+       "runDevRunner",
+       "dev-runner.mjs"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "scripts/dev-runner.mjs#4441": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "resolveStateDir",
+       "createDevRunnerEnv",
+       "runDevRunner",
+       "dev-runner.mjs"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "scripts/dev-runner.mjs#4860": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "createDevRunnerEnv",
+       "runDevRunner",
+       "dev-runner.mjs"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "scripts/dev-runner.mjs#6265": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "runDevRunner",
+       "dev-runner.mjs"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/integration/OrchestrationEngineHarness.integration.ts#3772": {
+    "testOnly": true,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "gitShowFileAtRef"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/integration/OrchestrationEngineHarness.integration.ts#7152": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "sleep",
+       "OrchestrationEngineHarness.integration.ts"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/integration/TestProviderAdapter.integration.ts#1836": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "sessionNotFound",
+       "queueTurnResponse"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "sessionNotFound",
+       "missingSessionEffect",
+       "sendTurn"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "sessionNotFound",
+       "missingSessionEffect",
+       "interruptTurn"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/integration/TestProviderAdapter.integration.ts#2675": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "emit",
+       "sendTurn"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/integration/TestProviderAdapter.integration.ts#6969": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "interruptTurn"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/integration/TestProviderAdapter.integration.ts#8000": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "hasSession"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/integration/TestProviderAdapter.integration.ts#9317": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "stopAll"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/integration/TestProviderAdapter.integration.ts#10189": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "queueTurnResponseForNextSession"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/checkpointing/Errors.ts#529": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "CheckpointUnavailableError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/checkpointing/Errors.ts#1003": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "CheckpointInvariantError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/checkpointing/Utils.ts#192": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "checkpointRefForThreadTurn",
+       "CheckpointReactor.ts"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "checkpointRefForThreadTurn",
+       "getTurnDiff",
+       "getFullThreadDiff"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/codexAppServerManager.ts#3916": {
+    "testOnly": true,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "CodexAppServerManager.startSession"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/codexAppServerManager.ts#8437": {
+    "testOnly": true,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "CodexAppServerManager.sendTurn"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/codexAppServerManager.ts#10526": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "CodexAppServerManager.interruptTurn"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/codexAppServerManager.ts#10961": {
+    "testOnly": true,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "CodexAppServerManager.readThread"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/codexAppServerManager.ts#11414": {
+    "testOnly": true,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "CodexAppServerManager.rollbackThread"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/codexAppServerManager.ts#12117": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "CodexAppServerManager.respondToRequest"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/codexAppServerManager.ts#13270": {
+    "testOnly": true,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "CodexAppServerManager.stopSession",
+       "CodexAppServerManager.stopAll"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "top-unidentified",
+      "via": [
+       "CodexAppServerManager.stopSession",
+       "CodexAppServerManager.startSession"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/codexAppServerManager.ts#14133": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "CodexAppServerManager.hasSession"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/codexAppServerManager.ts#14359": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "CodexAppServerManager.requireSession",
+       "CodexAppServerManager.sendTurn"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "top-unidentified",
+      "via": [
+       "CodexAppServerManager.requireSession",
+       "CodexAppServerManager.readThread"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "top-unidentified",
+      "via": [
+       "CodexAppServerManager.requireSession",
+       "CodexAppServerManager.rollbackThread"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/codexAppServerManager.ts#22417": {
+    "testOnly": true,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "CodexAppServerManager.emitLifecycleEvent",
+       "CodexAppServerManager.startSession"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "top-unidentified",
+      "via": [
+       "CodexAppServerManager.emitLifecycleEvent",
+       "CodexAppServerManager.stopSession",
+       "CodexAppServerManager.stopAll"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/codexAppServerManager.ts#22759": {
+    "testOnly": true,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "CodexAppServerManager.emitErrorEvent",
+       "CodexAppServerManager.startSession"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/codexAppServerManager.ts#23694": {
+    "testOnly": true,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "CodexAppServerManager.parseThreadSnapshot",
+       "CodexAppServerManager.readThread"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "top-unidentified",
+      "via": [
+       "CodexAppServerManager.parseThreadSnapshot",
+       "CodexAppServerManager.rollbackThread"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/codexAppServerManager.ts#27924": {
+    "testOnly": true,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "brandIfNonEmpty",
+       "toProviderThreadId",
+       "readResumeThreadId",
+       "CodexAppServerManager.startSession"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/codexAppServerManager.ts#28147": {
+    "testOnly": true,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "toProviderThreadId",
+       "readResumeThreadId",
+       "CodexAppServerManager.startSession"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/codexAppServerManager.ts#28299": {
+    "testOnly": true,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "readResumeThreadId",
+       "CodexAppServerManager.startSession"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/codexAppServerManager.ts#28736": {
+    "testOnly": true,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "toProviderTurnId",
+       "CodexAppServerManager.handleServerNotification",
+       "CodexAppServerManager.handleStdoutLine",
+       "CodexAppServerManager.attachProcessListeners",
+       "CodexAppServerManager.startSession"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/codexAppServerManager.ts#28882": {
+    "testOnly": true,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "toProviderItemId",
+       "CodexAppServerManager.readRouteFields",
+       "CodexAppServerManager.handleServerNotification",
+       "CodexAppServerManager.handleStdoutLine",
+       "CodexAppServerManager.attachProcessListeners",
+       "CodexAppServerManager.startSession"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/git/Errors.ts#356": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "GitCommandError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/git/Errors.ts#772": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "GitHubCliError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/git/Errors.ts#1180": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "TextGenerationError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/git/Errors.ts#1568": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "GitManagerError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/keybindings.ts#1078": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "KeybindingsConfigError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/keybindings.ts#11664": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "invalidEntryIssue",
+       "keybindings.ts"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/keybindings.ts#14059": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "emitChange",
+       "keybindings.ts"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/main.ts#6969": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "formatHostForUrl",
+       "makeServerProgram",
+       "main.ts"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Errors.ts#380": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "OrchestrationCommandJsonParseError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Errors.ts#719": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "OrchestrationCommandDecodeError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Errors.ts#1102": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "OrchestrationCommandInvariantError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Errors.ts#1534": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "OrchestrationCommandPreviouslyRejectedError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Errors.ts#1922": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "OrchestrationProjectorDecodeError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Errors.ts#2344": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "OrchestrationListenerCallbackError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Errors.ts#2848": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "toOrchestrationCommandDecodeError"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Errors.ts#3542": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "toListenerCallbackError"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Layers/CheckpointReactor.ts#1133": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "toTurnId",
+       "CheckpointReactor.ts"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Layers/CheckpointReactor.ts#1262": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "toProviderThreadId",
+       "CheckpointReactor.ts"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Layers/CheckpointReactor.ts#1941": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "serverCommandId",
+       "CheckpointReactor.ts"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Layers/OrchestrationEngine.ts#1733": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "formatDispatchError",
+       "processEnvelope"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Layers/OrchestrationEngine.ts#7923": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "getReadModel"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts#3065": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "maxIso",
+       "getSnapshot"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Layers/ProviderCommandReactor.ts#998": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "toNonEmptyProviderInput",
+       "ProviderCommandReactor.ts"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Layers/ProviderCommandReactor.ts#1757": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "serverCommandId",
+       "appendProviderFailureActivity",
+       "ProviderCommandReactor.ts"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts#1890": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "toTurnId",
+       "processRuntimeEvent",
+       "processInput",
+       "processInputSafely"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts#2029": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "toProviderThreadId",
+       "processRuntimeEvent",
+       "processInput",
+       "processInputSafely"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts#7599": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "clearAssistantMessageIdsForTurn",
+       "processRuntimeEvent",
+       "processInput",
+       "processInputSafely"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts#8900": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "clearBufferedAssistantText",
+       "clearAssistantMessageState",
+       "finalizeAssistantMessage",
+       "processRuntimeEvent",
+       "processInput",
+       "processInputSafely"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts#9031": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "clearAssistantMessageState",
+       "finalizeAssistantMessage",
+       "processRuntimeEvent",
+       "processInput",
+       "processInputSafely"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts#20910": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "processInput",
+       "processInputSafely"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/commandInvariants.ts#469": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "findThreadById",
+       "requireThread",
+       "decider.ts"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/orchestration/commandInvariants.ts#669": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "findProjectById",
+       "requireProject",
+       "decider.ts"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Errors.ts#387": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "PersistenceSqlError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Errors.ts#725": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "PersistenceDecodeError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Errors.ts#1566": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "isPersistenceError",
+       "getSnapshot"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Errors.ts#2094": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "ProviderSessionRepositoryValidationError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Errors.ts#2525": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "ProviderSessionRepositoryPersistenceError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/OrchestrationCommandReceipts.ts#2025": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "upsert"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/OrchestrationCommandReceipts.ts#2253": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "getByCommandId"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionCheckpoints.ts#5150": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "upsert"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionCheckpoints.ts#6606": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "deleteByThreadId"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionPendingApprovals.ts#2864": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "upsert"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionPendingApprovals.ts#3098": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "listByThreadId"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionPendingApprovals.ts#3376": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "getByRequestId"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionProjects.ts#3621": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "upsert"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionProjects.ts#4934": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "deleteById"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionState.ts#2226": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "upsert"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionState.ts#2430": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "getByProjector"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionState.ts#2659": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "listAll"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionThreadActivities.ts#2973": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "upsert"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionThreadActivities.ts#3818": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "deleteByThreadId"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionThreadMessages.ts#2546": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "upsert"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionThreadMessages.ts#3188": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "deleteByThreadId"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionThreadSessions.ts#2826": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "upsert"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionThreadSessions.ts#3054": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "getByThreadId"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionThreadSessions.ts#3321": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "deleteByThreadId"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionThreads.ts#3173": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "upsert"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionThreads.ts#3380": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "getById"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionThreads.ts#3591": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "listByProjectId"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionThreads.ts#3828": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "deleteById"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionTurns.ts#7323": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "upsertByTurnId"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionTurns.ts#8219": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "getPendingTurnStartByThreadId"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionTurns.ts#8525": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "deletePendingTurnStartByThreadId"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionTurns.ts#9884": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "clearCheckpointTurnConflict"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProjectionTurns.ts#10190": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "deleteByThreadId"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProviderSessionRuntime.ts#4303": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "upsert"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProviderSessionRuntime.ts#6148": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "deleteBySessionId"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProviderSessions.ts#1026": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "errorMessage",
+       "toValidationError",
+       "decodeInput",
+       "upsertSession"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "errorMessage",
+       "toValidationError",
+       "decodeInput",
+       "getSession"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "errorMessage",
+       "toValidationError",
+       "decodeInput",
+       "deleteSession"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProviderSessions.ts#1204": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "toValidationError",
+       "decodeInput",
+       "upsertSession"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "toValidationError",
+       "decodeInput",
+       "getSession"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "toValidationError",
+       "decodeInput",
+       "deleteSession"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/Layers/ProviderSessions.ts#1711": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "toPersistenceError",
+       "upsertSession"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "toPersistenceError",
+       "getSession"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "toPersistenceError",
+       "listSessions"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/NodeSqliteClient.ts#5440": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "makeWithDatabase.executeRaw"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/NodeSqliteClient.ts#5526": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "makeWithDatabase.executeValues"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/persistence/NodeSqliteClient.ts#5833": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "makeWithDatabase.executeStream"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/provider/Errors.ts#483": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "ProviderAdapterValidationError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/provider/Errors.ts#992": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "ProviderAdapterSessionNotFoundError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/provider/Errors.ts#1464": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "ProviderAdapterSessionClosedError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/provider/Errors.ts#1947": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "ProviderAdapterRequestError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/provider/Errors.ts#2446": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "ProviderAdapterProcessError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/provider/Errors.ts#2901": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "ProviderValidationError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/provider/Errors.ts#3311": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "ProviderUnsupportedError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/provider/Errors.ts#3718": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "ProviderSessionNotFoundError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/provider/Errors.ts#4201": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "ProviderSessionDirectoryPersistenceError.message"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/provider/Layers/CodexAdapter.ts#1283": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "toMessage",
+       "startSession"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "toMessage",
+       "toRequestError",
+       "sendTurn"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "toMessage",
+       "toRequestError",
+       "interruptTurn"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/provider/Layers/CodexAdapter.ts#2772": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "toTurnStatus",
+       "mapToRuntimeEvents",
+       "listener"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/provider/Layers/CodexAdapter.ts#15035": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "makeCodexAdapter.stopSession"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/provider/Layers/EventNdjsonLogger.ts#1575": {
+    "testOnly": true,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "makeEventNdjsonLogger.close"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/provider/Layers/ProviderAdapterRegistry.ts#1444": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "makeProviderAdapterRegistry.listProviders"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/provider/Layers/ProviderSessionDirectory.ts#530": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "toPersistenceError",
+       "ProviderSessionDirectory.ts"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "toPersistenceError",
+       "remove"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "toPersistenceError",
+       "listSessionIds"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/provider/Layers/ProviderSessionDirectory.ts#6554": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "makeProviderSessionDirectoryLive"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/terminal/Layers/BunPTY.ts#812": {
+    "testOnly": true,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "BunPtyProcess.pid",
+       "TerminalManagerRuntime.startSession",
+       "TerminalManagerRuntime.open"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "top-unidentified",
+      "via": [
+       "BunPtyProcess.pid",
+       "TerminalManagerRuntime.startSession",
+       "TerminalManagerRuntime.restart"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/terminal/Layers/BunPTY.ts#864": {
+    "testOnly": true,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "BunPtyProcess.write",
+       "TerminalManagerRuntime.write"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/terminal/Layers/Manager.ts#18663": {
+    "testOnly": true,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "TerminalManagerRuntime.dispose"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/terminal/Layers/Manager.ts#24569": {
+    "testOnly": true,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "TerminalManagerRuntime.stopProcess",
+       "TerminalManagerRuntime.open"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "top-unidentified",
+      "via": [
+       "TerminalManagerRuntime.stopProcess",
+       "TerminalManagerRuntime.restart"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "top-unidentified",
+      "via": [
+       "TerminalManagerRuntime.stopProcess",
+       "TerminalManagerRuntime.close"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/terminal/Layers/Manager.ts#25080": {
+    "testOnly": true,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "TerminalManagerRuntime.cleanupProcessHandles",
+       "TerminalManagerRuntime.stopProcess",
+       "TerminalManagerRuntime.open"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "top-unidentified",
+      "via": [
+       "TerminalManagerRuntime.cleanupProcessHandles",
+       "TerminalManagerRuntime.stopProcess",
+       "TerminalManagerRuntime.restart"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "top-unidentified",
+      "via": [
+       "TerminalManagerRuntime.cleanupProcessHandles",
+       "TerminalManagerRuntime.stopProcess",
+       "TerminalManagerRuntime.close"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/server/src/wsServer.ts#2996": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "rejectUpgrade",
+       "wsServer.ts"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/components/BranchToolbar.tsx#5148": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "ui-route",
+      "name": "/_chat/$threadId",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.$threadId.tsx"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/_chat/$threadId"
+      },
+      "via": [
+       "BranchToolbar.selectBranch",
+       "BranchToolbar",
+       "ChatView",
+       "ChatThreadRouteView"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/components/BranchToolbar.tsx#6617": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "ui-route",
+      "name": "/_chat/$threadId",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.$threadId.tsx"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/_chat/$threadId"
+      },
+      "via": [
+       "BranchToolbar.createBranch",
+       "BranchToolbar",
+       "ChatView",
+       "ChatThreadRouteView"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/components/ChatView.tsx#39293": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "ChatView.handler"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/components/ChatView.tsx#103664": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "handler"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/components/DiffPanel.tsx#1071": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "resolveDiffThemeName",
+       "DiffPanel"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/components/DiffPanel.tsx#1355": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "getRenderablePatch",
+       "DiffPanel"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/components/DiffPanel.tsx#2865": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "DiffPanel"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/components/DiffPanel.tsx#8558": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "DiffPanel.selectTurn",
+       "DiffPanel"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/components/Sidebar.tsx#10634": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "ui-route",
+      "name": "/_chat",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.tsx"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/_chat"
+      },
+      "via": [
+       "Sidebar.handlePickFolder",
+       "Sidebar",
+       "ChatRouteLayout"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/components/ui/collapsible.tsx#142": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "ui-route",
+      "name": "/_chat",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.tsx"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/_chat"
+      },
+      "via": [
+       "Collapsible",
+       "Sidebar",
+       "ChatRouteLayout"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/components/ui/sidebar.tsx#2354": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "ui-route",
+      "name": "/_chat",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.tsx"
+     },
+     {
+      "type": "ui-route",
+      "name": "/_chat/",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.index.tsx"
+     },
+     {
+      "type": "ui-route",
+      "name": "/_chat/$threadId",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.$threadId.tsx"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/_chat"
+      },
+      "via": [
+       "useSidebar",
+       "Sidebar",
+       "ChatRouteLayout"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/_chat/"
+      },
+      "via": [
+       "useSidebar",
+       "SidebarTrigger",
+       "ChatIndexRouteView"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/_chat/$threadId"
+      },
+      "via": [
+       "useSidebar",
+       "Sidebar",
+       "DiffPanelInlineSidebar",
+       "ChatThreadRouteView"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/components/ui/sidebar.tsx#10464": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "ui-route",
+      "name": "/_chat/$threadId",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.$threadId.tsx"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/_chat/$threadId"
+      },
+      "via": [
+       "clampSidebarWidth",
+       "SidebarRail",
+       "DiffPanelInlineSidebar",
+       "ChatThreadRouteView"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/components/ui/toggle-group.tsx#585": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "ToggleGroup",
+       "DiffPanel"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/components/ui/tooltip.tsx#267": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "ui-route",
+      "name": "/_chat",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.tsx"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/_chat"
+      },
+      "via": [
+       "TooltipTrigger",
+       "SidebarMenuButton",
+       "Sidebar",
+       "ChatRouteLayout"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "TooltipTrigger",
+       "ChatHeader"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/diffRouteSearch.ts#155": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "ui-route",
+      "name": "/_chat/$threadId",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.$threadId.tsx"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/_chat/$threadId"
+      },
+      "via": [
+       "isDiffOpenValue",
+       "parseDiffRouteSearch",
+       "ChatView",
+       "ChatThreadRouteView"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "top-unidentified",
+      "via": [
+       "isDiffOpenValue",
+       "parseDiffRouteSearch",
+       "DiffPanel"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "top-unidentified",
+      "via": [
+       "isDiffOpenValue",
+       "parseDiffRouteSearch",
+       "_chat.$threadId.tsx"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/diffRouteSearch.ts#805": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "ui-route",
+      "name": "/_chat/$threadId",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.$threadId.tsx"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/_chat/$threadId"
+      },
+      "via": [
+       "parseDiffRouteSearch",
+       "ChatView",
+       "ChatThreadRouteView"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "top-unidentified",
+      "via": [
+       "parseDiffRouteSearch",
+       "DiffPanel"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "top-unidentified",
+      "via": [
+       "parseDiffRouteSearch",
+       "_chat.$threadId.tsx"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/lib/gitReactQuery.ts#1222": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "gitStatusQueryOptions",
+       "GitActionsControl",
+       "ChatHeader"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/lib/gitReactQuery.ts#1718": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "ui-route",
+      "name": "/_chat/$threadId",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.$threadId.tsx"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/_chat/$threadId"
+      },
+      "via": [
+       "gitBranchesQueryOptions",
+       "ChatView",
+       "ChatThreadRouteView"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "gitBranchesQueryOptions",
+       "GitActionsControl",
+       "ChatHeader"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/lib/gitReactQuery.ts#2223": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "gitInitMutationOptions",
+       "GitActionsControl",
+       "ChatHeader"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/lib/gitReactQuery.ts#2684": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "ui-route",
+      "name": "/_chat/$threadId",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.$threadId.tsx"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/_chat/$threadId"
+      },
+      "via": [
+       "gitCheckoutMutationOptions",
+       "BranchToolbar",
+       "ChatView",
+       "ChatThreadRouteView"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/lib/gitReactQuery.ts#3188": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "ui-route",
+      "name": "/_chat/$threadId",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.$threadId.tsx"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/_chat/$threadId"
+      },
+      "via": [
+       "gitCreateBranchAndCheckoutMutationOptions",
+       "BranchToolbar",
+       "ChatView",
+       "ChatThreadRouteView"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/lib/gitReactQuery.ts#3791": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "gitRunStackedActionMutationOptions",
+       "GitActionsControl",
+       "ChatHeader"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/lib/gitReactQuery.ts#4492": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "gitPullMutationOptions",
+       "GitActionsControl",
+       "ChatHeader"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/lib/providerReactQuery.ts#732": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "decodeCheckpointDiffRequest",
+       "checkpointDiffQueryOptions",
+       "DiffPanel"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/lib/providerReactQuery.ts#1877": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "top-unidentified",
+      "via": [
+       "checkpointDiffQueryOptions",
+       "DiffPanel"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/lib/serverReactQuery.ts#230": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "ui-route",
+      "name": "/_chat/settings",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.settings.tsx"
+     },
+     {
+      "type": "ui-route",
+      "name": "/",
+      "how": "TanStack Router root route",
+      "file": "apps/web/src/routes/__root.tsx"
+     },
+     {
+      "type": "ui-route",
+      "name": "/_chat",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.tsx"
+     },
+     {
+      "type": "ui-route",
+      "name": "/_chat/$threadId",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.$threadId.tsx"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/_chat/settings"
+      },
+      "via": [
+       "serverConfigQueryOptions",
+       "SettingsRouteView"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/"
+      },
+      "via": [
+       "serverConfigQueryOptions",
+       "EventRouter",
+       "RootRouteView"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/_chat"
+      },
+      "via": [
+       "serverConfigQueryOptions",
+       "Sidebar",
+       "ChatRouteLayout"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/lib/utils.ts#492": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "ui-route",
+      "name": "/_chat",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.tsx"
+     },
+     {
+      "type": "ui-route",
+      "name": "/_chat/$threadId",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.$threadId.tsx"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/_chat"
+      },
+      "via": [
+       "newCommandId",
+       "Sidebar",
+       "ChatRouteLayout"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/_chat/$threadId"
+      },
+      "via": [
+       "newCommandId",
+       "ChatView",
+       "ChatThreadRouteView"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "newCommandId",
+       "onSend",
+       "onKeyDown"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/lib/utils.ts#756": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "newMessageId",
+       "onSend",
+       "onKeyDown"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "apps/web/src/nativeApi.ts#454": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "ui-route",
+      "name": "/_chat/settings",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.settings.tsx"
+     },
+     {
+      "type": "ui-route",
+      "name": "/",
+      "how": "TanStack Router root route",
+      "file": "apps/web/src/routes/__root.tsx"
+     },
+     {
+      "type": "ui-route",
+      "name": "/_chat",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.tsx"
+     },
+     {
+      "type": "ui-route",
+      "name": "/_chat/$threadId",
+      "how": "TanStack Router file route",
+      "file": "apps/web/src/routes/_chat.$threadId.tsx"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/_chat/settings"
+      },
+      "via": [
+       "ensureNativeApi",
+       "SettingsRouteView"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/"
+      },
+      "via": [
+       "ensureNativeApi",
+       "serverConfigQueryOptions",
+       "EventRouter",
+       "RootRouteView"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "ui-route",
+       "name": "/_chat"
+      },
+      "via": [
+       "ensureNativeApi",
+       "serverConfigQueryOptions",
+       "Sidebar",
+       "ChatRouteLayout"
+      ],
+      "lowerBound": false
+     }
+    ]
+   }
+  }
+ },
+ "cards": {
+  "version": 1,
+  "clusters": [
+   {
+    "id": "K1",
+    "members": [
+     "scripts/dev-runner.mjs#1860",
+     "scripts/dev-runner.mjs#2603",
+     "scripts/dev-runner.mjs#2949",
+     "scripts/dev-runner.mjs#3184",
+     "scripts/dev-runner.mjs#4441",
+     "scripts/dev-runner.mjs#4860",
+     "scripts/dev-runner.mjs#6265",
+     "scripts/dev-runner.mjs#1644"
+    ],
+    "label": "resolveOffset and 7 related",
+    "testHelpers": false,
+    "files": [
+     "scripts/dev-runner.mjs"
+    ],
+    "module": "(inferred)",
+    "joined": [
+     {
+      "id": "scripts/dev-runner.mjs#1644",
+      "by": "file"
+     }
+    ],
+    "mirrorMembers": [],
+    "mirrorOf": null,
+    "moved": [],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 8,
+     "callers": 1,
+     "tests": 1,
+     "notUpdated": 1,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 1,
+     "incomplete": 0,
+     "risky": 1,
+     "riskyAllUpdated": 0,
+     "mirrored": 0
+    }
+   },
+   {
+    "id": "K2",
+    "members": [
+     "apps/web/src/components/DiffPanel.tsx#1355",
+     "apps/web/src/components/DiffPanel.tsx#8558",
+     "apps/web/src/diffRouteSearch.ts#805",
+     "apps/web/src/components/DiffPanel.tsx#1071",
+     "apps/web/src/components/DiffPanel.tsx#2865",
+     "apps/web/src/components/ui/toggle-group.tsx#585"
+    ],
+    "label": "getRenderablePatch and 5 related",
+    "testHelpers": false,
+    "files": [
+     "apps/web/src/components/DiffPanel.tsx",
+     "apps/web/src/components/ui/toggle-group.tsx",
+     "apps/web/src/diffRouteSearch.ts"
+    ],
+    "module": "apps/web",
+    "joined": [
+     {
+      "id": "apps/web/src/components/DiffPanel.tsx#1355",
+      "by": "hub"
+     },
+     {
+      "id": "apps/web/src/components/DiffPanel.tsx#8558",
+      "by": "hub"
+     },
+     {
+      "id": "apps/web/src/diffRouteSearch.ts#805",
+      "by": "hub"
+     },
+     {
+      "id": "apps/web/src/components/DiffPanel.tsx#1071",
+      "by": "hub"
+     },
+     {
+      "id": "apps/web/src/components/ui/toggle-group.tsx#585",
+      "by": "hub"
+     }
+    ],
+    "mirrorMembers": [],
+    "mirrorOf": null,
+    "moved": [],
+    "hub": true,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 6,
+     "callers": 2,
+     "tests": 1,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 0,
+     "risky": 2,
+     "riskyAllUpdated": 2,
+     "mirrored": 0
+    }
+   },
+   {
+    "id": "K3",
+    "members": [
+     "apps/web/src/lib/gitReactQuery.ts#1222",
+     "apps/web/src/lib/gitReactQuery.ts#1718",
+     "apps/web/src/lib/serverReactQuery.ts#230",
+     "apps/web/src/lib/gitReactQuery.ts#2223",
+     "apps/web/src/lib/gitReactQuery.ts#2684",
+     "apps/web/src/lib/gitReactQuery.ts#3188",
+     "apps/web/src/lib/gitReactQuery.ts#3791",
+     "apps/web/src/lib/gitReactQuery.ts#4492",
+     "apps/web/src/lib/utils.ts#492",
+     "apps/web/src/lib/utils.ts#756"
+    ],
+    "label": "serverConfigQueryOptions and 9 related",
+    "testHelpers": false,
+    "files": [
+     "apps/web/src/lib/gitReactQuery.ts",
+     "apps/web/src/lib/serverReactQuery.ts",
+     "apps/web/src/lib/utils.ts"
+    ],
+    "module": "apps/web",
+    "joined": [],
+    "mirrorMembers": [],
+    "mirrorOf": null,
+    "moved": [],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 10,
+     "callers": 10,
+     "tests": 1,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 0,
+     "risky": 8,
+     "riskyAllUpdated": 8,
+     "mirrored": 0
+    }
+   },
+   {
+    "id": "K4",
+    "members": [
+     "apps/web/src/lib/providerReactQuery.ts#1877",
+     "apps/web/src/lib/providerReactQuery.ts#732"
+    ],
+    "label": "checkpointDiffQueryOptions and 1 related",
+    "testHelpers": false,
+    "files": [
+     "apps/web/src/lib/providerReactQuery.ts"
+    ],
+    "module": "apps/web",
+    "joined": [],
+    "mirrorMembers": [],
+    "mirrorOf": null,
+    "moved": [],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 2,
+     "callers": 1,
+     "tests": 1,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 0,
+     "risky": 1,
+     "riskyAllUpdated": 1,
+     "mirrored": 0
+    }
+   },
+   {
+    "id": "K5",
+    "members": [
+     "apps/server/src/codexAppServerManager.ts#14359",
+     "apps/server/src/codexAppServerManager.ts#10526",
+     "apps/server/src/codexAppServerManager.ts#10961",
+     "apps/server/src/codexAppServerManager.ts#11414",
+     "apps/server/src/codexAppServerManager.ts#12117",
+     "apps/server/src/codexAppServerManager.ts#14133",
+     "apps/server/src/codexAppServerManager.ts#23694",
+     "apps/server/src/codexAppServerManager.ts#27924",
+     "apps/server/src/codexAppServerManager.ts#8437"
+    ],
+    "label": "CodexAppServerManager.requireSession and 8 related",
+    "testHelpers": false,
+    "files": [
+     "apps/server/src/codexAppServerManager.ts"
+    ],
+    "module": "apps/server",
+    "joined": [
+     {
+      "id": "apps/server/src/codexAppServerManager.ts#14133",
+      "by": "file"
+     },
+     {
+      "id": "apps/server/src/codexAppServerManager.ts#27924",
+      "by": "file"
+     }
+    ],
+    "mirrorMembers": [],
+    "mirrorOf": null,
+    "moved": [],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 9,
+     "callers": 3,
+     "tests": 1,
+     "notUpdated": 5,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 5,
+     "incomplete": 3,
+     "risky": 6,
+     "riskyAllUpdated": 5,
+     "mirrored": 0
+    }
+   },
+   {
+    "id": "K6",
+    "members": [
+     "apps/server/src/codexAppServerManager.ts#13270",
+     "apps/server/src/codexAppServerManager.ts#22417",
+     "apps/server/src/codexAppServerManager.ts#22759",
+     "apps/server/src/codexAppServerManager.ts#28299",
+     "apps/server/src/codexAppServerManager.ts#3916"
+    ],
+    "label": "CodexAppServerManager.stopSession and 4 related",
+    "testHelpers": false,
+    "files": [
+     "apps/server/src/codexAppServerManager.ts"
+    ],
+    "module": "apps/server",
+    "joined": [],
+    "mirrorMembers": [],
+    "mirrorOf": null,
+    "moved": [],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 5,
+     "callers": 3,
+     "tests": 1,
+     "notUpdated": 2,
+     "notUpdatedOutside": 1,
+     "notUpdatedInside": 1,
+     "incomplete": 0,
+     "risky": 1,
+     "riskyAllUpdated": 0,
+     "mirrored": 0
+    }
+   }
+  ],
+  "sweeps": [
+   {
+    "id": "S1",
+    "members": [
+     "apps/server/src/checkpointing/Errors.ts#1003",
+     "apps/server/src/checkpointing/Errors.ts#529",
+     "apps/server/src/git/Errors.ts#1180",
+     "apps/server/src/git/Errors.ts#1568",
+     "apps/server/src/git/Errors.ts#356",
+     "apps/server/src/git/Errors.ts#772",
+     "apps/server/src/keybindings.ts#1078",
+     "apps/server/src/orchestration/Errors.ts#1102",
+     "apps/server/src/orchestration/Errors.ts#1534",
+     "apps/server/src/orchestration/Errors.ts#1922",
+     "apps/server/src/orchestration/Errors.ts#2344",
+     "apps/server/src/orchestration/Errors.ts#380",
+     "apps/server/src/orchestration/Errors.ts#719",
+     "apps/server/src/persistence/Errors.ts#2094",
+     "apps/server/src/persistence/Errors.ts#2525",
+     "apps/server/src/persistence/Errors.ts#387",
+     "apps/server/src/persistence/Errors.ts#725",
+     "apps/server/src/provider/Errors.ts#1464",
+     "apps/server/src/provider/Errors.ts#1947",
+     "apps/server/src/provider/Errors.ts#2446",
+     "apps/server/src/provider/Errors.ts#2901",
+     "apps/server/src/provider/Errors.ts#3311",
+     "apps/server/src/provider/Errors.ts#3718",
+     "apps/server/src/provider/Errors.ts#4201",
+     "apps/server/src/provider/Errors.ts#483",
+     "apps/server/src/provider/Errors.ts#992"
+    ],
+    "label": "Similar edit in 26 functions (12 tokens added each)",
+    "pattern": "≈ ⟪0 → 12⟫",
+    "files": [
+     "apps/server/src/checkpointing/Errors.ts",
+     "apps/server/src/git/Errors.ts",
+     "apps/server/src/keybindings.ts",
+     "apps/server/src/orchestration/Errors.ts",
+     "apps/server/src/persistence/Errors.ts",
+     "apps/server/src/provider/Errors.ts"
+    ],
+    "stats": {
+     "members": 26,
+     "callers": 0,
+     "tests": 0,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 0,
+     "risky": 0,
+     "riskyAllUpdated": 0
+    }
+   },
+   {
+    "id": "S2",
+    "members": [
+     "apps/server/integration/OrchestrationEngineHarness.integration.ts#3772",
+     "apps/server/src/main.ts#6969",
+     "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts#20910",
+     "apps/server/src/persistence/Errors.ts#1566",
+     "apps/server/src/persistence/Layers/OrchestrationCommandReceipts.ts#2025",
+     "apps/server/src/persistence/Layers/ProjectionPendingApprovals.ts#2864",
+     "apps/server/src/persistence/Layers/ProjectionProjects.ts#4934",
+     "apps/server/src/persistence/Layers/ProjectionState.ts#2226",
+     "apps/server/src/persistence/Layers/ProjectionState.ts#2430",
+     "apps/server/src/persistence/Layers/ProjectionThreadMessages.ts#2546",
+     "apps/server/src/persistence/Layers/ProjectionThreadSessions.ts#2826",
+     "apps/server/src/persistence/Layers/ProjectionThreads.ts#3173",
+     "apps/server/src/persistence/Layers/ProjectionThreads.ts#3380",
+     "apps/server/src/persistence/Layers/ProjectionThreads.ts#3591",
+     "apps/server/src/persistence/Layers/ProjectionThreads.ts#3828",
+     "apps/server/src/persistence/Layers/ProjectionTurns.ts#10190",
+     "apps/server/src/persistence/Layers/ProviderSessions.ts#1711",
+     "apps/server/src/provider/Layers/CodexAdapter.ts#15035",
+     "apps/server/src/provider/Layers/ProviderAdapterRegistry.ts#1444",
+     "apps/server/src/provider/Layers/ProviderSessionDirectory.ts#530",
+     "apps/web/src/components/ui/tooltip.tsx#267",
+     "apps/web/src/diffRouteSearch.ts#155"
+    ],
+    "label": "Similar edit in 22 functions (32 tokens added each)",
+    "pattern": "≈ ⟪0 → 32⟫",
+    "files": [
+     "apps/server/integration/OrchestrationEngineHarness.integration.ts",
+     "apps/server/src/main.ts",
+     "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts",
+     "apps/server/src/persistence/Errors.ts",
+     "apps/server/src/persistence/Layers/OrchestrationCommandReceipts.ts",
+     "apps/server/src/persistence/Layers/ProjectionPendingApprovals.ts",
+     "apps/server/src/persistence/Layers/ProjectionProjects.ts",
+     "apps/server/src/persistence/Layers/ProjectionState.ts",
+     "apps/server/src/persistence/Layers/ProjectionThreadMessages.ts",
+     "apps/server/src/persistence/Layers/ProjectionThreadSessions.ts",
+     "apps/server/src/persistence/Layers/ProjectionThreads.ts",
+     "apps/server/src/persistence/Layers/ProjectionTurns.ts",
+     "apps/server/src/persistence/Layers/ProviderSessions.ts",
+     "apps/server/src/provider/Layers/CodexAdapter.ts",
+     "apps/server/src/provider/Layers/ProviderAdapterRegistry.ts",
+     "apps/server/src/provider/Layers/ProviderSessionDirectory.ts",
+     "apps/web/src/components/ui/tooltip.tsx",
+     "apps/web/src/diffRouteSearch.ts"
+    ],
+    "stats": {
+     "members": 22,
+     "callers": 14,
+     "tests": 1,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 14,
+     "risky": 0,
+     "riskyAllUpdated": 0
+    }
+   },
+   {
+    "id": "S3",
+    "members": [
+     "apps/server/integration/TestProviderAdapter.integration.ts#9317",
+     "apps/server/src/persistence/Layers/OrchestrationCommandReceipts.ts#2253",
+     "apps/server/src/persistence/Layers/ProjectionCheckpoints.ts#6606",
+     "apps/server/src/persistence/Layers/ProjectionPendingApprovals.ts#3098",
+     "apps/server/src/persistence/Layers/ProjectionPendingApprovals.ts#3376",
+     "apps/server/src/persistence/Layers/ProjectionThreadActivities.ts#3818",
+     "apps/server/src/persistence/Layers/ProjectionThreadMessages.ts#3188",
+     "apps/server/src/persistence/Layers/ProjectionThreadSessions.ts#3054",
+     "apps/server/src/persistence/Layers/ProjectionThreadSessions.ts#3321",
+     "apps/server/src/persistence/Layers/ProjectionTurns.ts#8219",
+     "apps/server/src/persistence/Layers/ProjectionTurns.ts#8525",
+     "apps/server/src/persistence/Layers/ProjectionTurns.ts#9884",
+     "apps/server/src/persistence/Layers/ProviderSessionRuntime.ts#6148",
+     "apps/web/src/components/ui/sidebar.tsx#2354",
+     "apps/web/src/nativeApi.ts#454"
+    ],
+    "label": "Similar edit in 15 functions (33 tokens added each)",
+    "pattern": "≈ ⟪0 → 33⟫",
+    "files": [
+     "apps/server/integration/TestProviderAdapter.integration.ts",
+     "apps/server/src/persistence/Layers/OrchestrationCommandReceipts.ts",
+     "apps/server/src/persistence/Layers/ProjectionCheckpoints.ts",
+     "apps/server/src/persistence/Layers/ProjectionPendingApprovals.ts",
+     "apps/server/src/persistence/Layers/ProjectionThreadActivities.ts",
+     "apps/server/src/persistence/Layers/ProjectionThreadMessages.ts",
+     "apps/server/src/persistence/Layers/ProjectionThreadSessions.ts",
+     "apps/server/src/persistence/Layers/ProjectionTurns.ts",
+     "apps/server/src/persistence/Layers/ProviderSessionRuntime.ts",
+     "apps/web/src/components/ui/sidebar.tsx",
+     "apps/web/src/nativeApi.ts"
+    ],
+    "stats": {
+     "members": 15,
+     "callers": 17,
+     "tests": 0,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 13,
+     "risky": 0,
+     "riskyAllUpdated": 0
+    }
+   },
+   {
+    "id": "S4",
+    "members": [
+     "apps/server/src/terminal/Layers/Manager.ts#24569",
+     "apps/server/src/terminal/Layers/Manager.ts#25080",
+     "apps/server/src/terminal/Layers/BunPTY.ts#812",
+     "apps/server/src/terminal/Layers/BunPTY.ts#864",
+     "apps/web/src/components/BranchToolbar.tsx#5148",
+     "apps/web/src/components/BranchToolbar.tsx#6617",
+     "apps/server/integration/OrchestrationEngineHarness.integration.ts#7152",
+     "apps/server/integration/TestProviderAdapter.integration.ts#10189",
+     "apps/server/integration/TestProviderAdapter.integration.ts#1836",
+     "apps/server/integration/TestProviderAdapter.integration.ts#2675",
+     "apps/server/integration/TestProviderAdapter.integration.ts#6969",
+     "apps/server/integration/TestProviderAdapter.integration.ts#8000",
+     "apps/server/src/checkpointing/Utils.ts#192",
+     "apps/server/src/codexAppServerManager.ts#28147",
+     "apps/server/src/codexAppServerManager.ts#28736",
+     "apps/server/src/codexAppServerManager.ts#28882",
+     "apps/server/src/keybindings.ts#11664",
+     "apps/server/src/keybindings.ts#14059",
+     "apps/server/src/orchestration/Errors.ts#2848",
+     "apps/server/src/orchestration/Errors.ts#3542",
+     "apps/server/src/orchestration/Layers/CheckpointReactor.ts#1133",
+     "apps/server/src/orchestration/Layers/CheckpointReactor.ts#1262",
+     "apps/server/src/orchestration/Layers/CheckpointReactor.ts#1941",
+     "apps/server/src/orchestration/Layers/OrchestrationEngine.ts#1733",
+     "apps/server/src/orchestration/Layers/OrchestrationEngine.ts#7923",
+     "apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts#3065",
+     "apps/server/src/orchestration/Layers/ProviderCommandReactor.ts#1757",
+     "apps/server/src/orchestration/Layers/ProviderCommandReactor.ts#998",
+     "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts#1890",
+     "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts#2029",
+     "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts#7599",
+     "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts#8900",
+     "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts#9031",
+     "apps/server/src/orchestration/commandInvariants.ts#469",
+     "apps/server/src/orchestration/commandInvariants.ts#669",
+     "apps/server/src/persistence/Layers/ProjectionCheckpoints.ts#5150",
+     "apps/server/src/persistence/Layers/ProjectionProjects.ts#3621",
+     "apps/server/src/persistence/Layers/ProjectionState.ts#2659",
+     "apps/server/src/persistence/Layers/ProjectionThreadActivities.ts#2973",
+     "apps/server/src/persistence/Layers/ProjectionTurns.ts#7323",
+     "apps/server/src/persistence/Layers/ProviderSessionRuntime.ts#4303",
+     "apps/server/src/persistence/Layers/ProviderSessions.ts#1026",
+     "apps/server/src/persistence/Layers/ProviderSessions.ts#1204",
+     "apps/server/src/persistence/NodeSqliteClient.ts#5440",
+     "apps/server/src/persistence/NodeSqliteClient.ts#5526",
+     "apps/server/src/persistence/NodeSqliteClient.ts#5833",
+     "apps/server/src/provider/Layers/CodexAdapter.ts#1283",
+     "apps/server/src/provider/Layers/CodexAdapter.ts#2772",
+     "apps/server/src/provider/Layers/EventNdjsonLogger.ts#1575",
+     "apps/server/src/provider/Layers/ProviderSessionDirectory.ts#6554",
+     "apps/server/src/terminal/Layers/Manager.ts#18663",
+     "apps/server/src/wsServer.ts#2996",
+     "apps/web/src/components/ChatView.tsx#103664",
+     "apps/web/src/components/ChatView.tsx#39293",
+     "apps/web/src/components/Sidebar.tsx#10634",
+     "apps/web/src/components/ui/collapsible.tsx#142",
+     "apps/web/src/components/ui/sidebar.tsx#10464"
+    ],
+    "label": "Other repeated edits (11 patterns)",
+    "pattern": "",
+    "files": [
+     "apps/server/integration/OrchestrationEngineHarness.integration.ts",
+     "apps/server/integration/TestProviderAdapter.integration.ts",
+     "apps/server/src/checkpointing/Utils.ts",
+     "apps/server/src/codexAppServerManager.ts",
+     "apps/server/src/keybindings.ts",
+     "apps/server/src/orchestration/Errors.ts",
+     "apps/server/src/orchestration/Layers/CheckpointReactor.ts",
+     "apps/server/src/orchestration/Layers/OrchestrationEngine.ts",
+     "apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts",
+     "apps/server/src/orchestration/Layers/ProviderCommandReactor.ts",
+     "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts",
+     "apps/server/src/orchestration/commandInvariants.ts",
+     "apps/server/src/persistence/Layers/ProjectionCheckpoints.ts",
+     "apps/server/src/persistence/Layers/ProjectionProjects.ts",
+     "apps/server/src/persistence/Layers/ProjectionState.ts",
+     "apps/server/src/persistence/Layers/ProjectionThreadActivities.ts",
+     "apps/server/src/persistence/Layers/ProjectionTurns.ts",
+     "apps/server/src/persistence/Layers/ProviderSessionRuntime.ts",
+     "apps/server/src/persistence/Layers/ProviderSessions.ts",
+     "apps/server/src/persistence/NodeSqliteClient.ts",
+     "apps/server/src/provider/Layers/CodexAdapter.ts",
+     "apps/server/src/provider/Layers/EventNdjsonLogger.ts",
+     "apps/server/src/provider/Layers/ProviderSessionDirectory.ts",
+     "apps/server/src/terminal/Layers/BunPTY.ts",
+     "apps/server/src/terminal/Layers/Manager.ts",
+     "apps/server/src/wsServer.ts",
+     "apps/web/src/components/BranchToolbar.tsx",
+     "apps/web/src/components/ChatView.tsx",
+     "apps/web/src/components/Sidebar.tsx",
+     "apps/web/src/components/ui/collapsible.tsx",
+     "apps/web/src/components/ui/sidebar.tsx"
+    ],
+    "stats": {
+     "members": 57,
+     "callers": 40,
+     "tests": 7,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 12,
+     "risky": 0,
+     "riskyAllUpdated": 0
+    }
+   }
+  ],
+  "seams": [
+   {
+    "type": "call",
+    "clusters": [
+     "K2",
+     "K4"
+    ],
+    "via": [
+     {
+      "callee": "apps/web/src/lib/providerReactQuery.ts#1877",
+      "caller": "apps/web/src/components/DiffPanel.tsx#2865"
+     }
+    ],
+    "viaCount": 1
+   }
+  ],
+  "hints": [
+   {
+    "clusters": [
+     "K5",
+     "K6"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "bb8a8444f4",
+      "subject": "Bind provider sessions to thread IDs and preserve resume cursors",
+      "files": 15,
+      "large": false,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "commit",
+      "sha": "e5542b7a88",
+      "subject": "delegate trimming to schema",
+      "files": 25,
+      "large": false,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "commit",
+      "sha": "aa5a144d04",
+      "subject": "small nits",
+      "files": 7,
+      "large": false,
+      "weak": true,
+      "broad": false
+     },
+     {
+      "type": "commit",
+      "sha": "25d20ab792",
+      "subject": "rewrite",
+      "files": 131,
+      "large": true,
+      "weak": true,
+      "broad": false
+     },
+     {
+      "type": "commit",
+      "sha": "734ab399eb",
+      "subject": "keybindings",
+      "files": 65,
+      "large": true,
+      "weak": true,
+      "broad": false
+     },
+     {
+      "type": "pattern",
+      "pattern": "string → ProviderSessionId",
+      "sharedBy": 2
+     },
+     {
+      "type": "pattern",
+      "pattern": "≈ ⟪0 → 10⟫",
+      "sharedBy": 3
+     },
+     {
+      "type": "signature-change",
+      "delta": "string → ProviderSessionId",
+      "sharedBy": 2
+     },
+     {
+      "type": "test",
+      "callers": [
+       {
+        "label": "codexAppServerManager.test.ts",
+        "relPath": "apps/server/src/codexAppServerManager.test.ts"
+       }
+      ],
+      "count": 1
+     },
+     {
+      "type": "folder",
+      "dir": "apps/server/src"
+     }
+    ],
+    "strength": 4
+   },
+   {
+    "clusters": [
+     "K3",
+     "K4"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "c2b9680a5e",
+      "subject": "buuuunch of cleanup",
+      "files": 69,
+      "large": true,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "commit",
+      "sha": "36802d707d",
+      "subject": "frontend",
+      "files": 37,
+      "large": true,
+      "weak": true,
+      "broad": false
+     },
+     {
+      "type": "signature-change",
+      "delta": "api : NativeApi | undefined , → ",
+      "sharedBy": 2
+     },
+     {
+      "type": "folder",
+      "dir": "apps/web/src/lib"
+     }
+    ],
+    "strength": 2
+   },
+   {
+    "clusters": [
+     "K2",
+     "K4"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "c2b9680a5e",
+      "subject": "buuuunch of cleanup",
+      "files": 69,
+      "large": true,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "commit",
+      "sha": "36802d707d",
+      "subject": "frontend",
+      "files": 37,
+      "large": true,
+      "weak": true,
+      "broad": false
+     },
+     {
+      "type": "token",
+      "token": "checkpointDiffQueryOptions",
+      "files": 3
+     }
+    ],
+    "strength": 2
+   },
+   {
+    "clusters": [
+     "K2",
+     "K3"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "c2b9680a5e",
+      "subject": "buuuunch of cleanup",
+      "files": 69,
+      "large": true,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "commit",
+      "sha": "36802d707d",
+      "subject": "frontend",
+      "files": 37,
+      "large": true,
+      "weak": true,
+      "broad": false
+     }
+    ],
+    "strength": 1
+   }
+  ],
+  "hintNotes": [],
+  "generatedDirs": [
+   ".turbo",
+   "node_modules"
+  ]
+ }
+}

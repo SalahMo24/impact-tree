@@ -1,0 +1,902 @@
+{
+ "_source": "live --cards --impact output of cli-14752 (AI1)",
+ "result": {
+  "mode": "pr",
+  "base": {
+   "sha": "547bf81aa5d68f6b4274abb6926c75252f254750"
+  },
+  "warnings": [
+   "7 changed Go file(s) read from their text: changed functions and signature kinds; Go callers from syntax only: the module github.com/cli/cli/v2 (980 Go file(s) indexed); calls through an interface or a function value, and receivers whose type is not written, are not resolved"
+  ],
+  "allChanged": [
+   {
+    "label": "(*AuthConfig).refreshCredentialForUser",
+    "relPath": "internal/config/refreshable.go",
+    "namePos": 20216,
+    "startLine": 399,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "accessTokenNeedsRefresh",
+    "relPath": "internal/config/refreshable.go",
+    "namePos": 17505,
+    "startLine": 353,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Format",
+    "relPath": "pkg/cmd/version/version.go",
+    "namePos": 506,
+    "startLine": 28,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "tokenRefresherHttpClientFunc",
+    "relPath": "pkg/cmd/factory/default.go",
+    "namePos": 10342,
+    "startLine": 225,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "builtWithTags",
+    "relPath": "script/build.go",
+    "namePos": 3103,
+    "startLine": 120,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Config",
+    "relPath": "internal/debug/config_disabled.go",
+    "namePos": 366,
+    "startLine": 11,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Config",
+    "relPath": "internal/debug/config_enabled.go",
+    "namePos": 364,
+    "startLine": 11,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "configFromEnv",
+    "relPath": "internal/debug/config.go",
+    "namePos": 1252,
+    "startLine": 32,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "format",
+    "relPath": "pkg/cmd/version/version.go",
+    "namePos": 607,
+    "startLine": 32,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "lifetimeFromEnv",
+    "relPath": "internal/debug/config.go",
+    "namePos": 1781,
+    "startLine": 48,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "normalizeBuildTags",
+    "relPath": "script/build.go",
+    "namePos": 3409,
+    "startLine": 135,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "simulateRefreshTokenExpired",
+    "relPath": "internal/config/refreshable.go",
+    "namePos": 18218,
+    "startLine": 368,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   }
+  ],
+  "deleted": [
+   {
+    "label": "applyTestingExpiryOverride",
+    "relPath": "internal/config/refreshable.go",
+    "namePos": 18389,
+    "startLine": 368,
+    "kinds": []
+   },
+   {
+    "label": "refreshTokenExpired",
+    "relPath": "internal/config/refreshable.go",
+    "namePos": 19448,
+    "startLine": 385,
+    "kinds": []
+   },
+   {
+    "label": "testingExpiryOverrideFromEnv",
+    "relPath": "internal/config/refreshable.go",
+    "namePos": 20127,
+    "startLine": 399,
+    "kinds": []
+   }
+  ],
+  "impactPaths": {
+   "internal/config/refreshable.go#17505": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "accessTokenNeedsRefresh",
+       "(*AuthConfig).refreshCredentialForUser",
+       "(*AuthConfig).ActiveTokenWithRefresh"
+      ],
+      "lowerBound": true
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "accessTokenNeedsRefresh",
+       "(*AuthConfig).refreshCredentialForUser",
+       "(*AuthConfig).TokenForUserWithRefresh"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "internal/config/refreshable.go#18218": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "simulateRefreshTokenExpired",
+       "(*AuthConfig).refreshCredentialForUser",
+       "(*AuthConfig).ActiveTokenWithRefresh"
+      ],
+      "lowerBound": true
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "simulateRefreshTokenExpired",
+       "(*AuthConfig).refreshCredentialForUser",
+       "(*AuthConfig).TokenForUserWithRefresh"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "internal/config/refreshable.go#20216": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [],
+    "topPaths": [
+     {
+      "end": "unknown",
+      "via": [
+       "(*AuthConfig).refreshCredentialForUser",
+       "(*AuthConfig).ActiveTokenWithRefresh"
+      ],
+      "lowerBound": true
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "(*AuthConfig).refreshCredentialForUser",
+       "(*AuthConfig).TokenForUserWithRefresh"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "internal/debug/config.go#1252": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "main",
+      "name": "cmd/gh",
+      "how": "func main of package main",
+      "file": "cmd/gh/main.go"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "main",
+       "name": "cmd/gh"
+      },
+      "via": [
+       "configFromEnv",
+       "Config",
+       "tokenRefresherHttpClientFunc",
+       "New",
+       "Main",
+       "main"
+      ],
+      "lowerBound": true
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "configFromEnv",
+       "Config"
+      ],
+      "lowerBound": true
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "configFromEnv",
+       "Config",
+       "accessTokenNeedsRefresh",
+       "(*AuthConfig).refreshCredentialForUser",
+       "(*AuthConfig).ActiveTokenWithRefresh"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "internal/debug/config.go#1781": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "main",
+      "name": "cmd/gh",
+      "how": "func main of package main",
+      "file": "cmd/gh/main.go"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "main",
+       "name": "cmd/gh"
+      },
+      "via": [
+       "lifetimeFromEnv",
+       "configFromEnv",
+       "Config",
+       "tokenRefresherHttpClientFunc",
+       "New",
+       "Main",
+       "main"
+      ],
+      "lowerBound": true
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "lifetimeFromEnv",
+       "configFromEnv",
+       "Config"
+      ],
+      "lowerBound": true
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "lifetimeFromEnv",
+       "configFromEnv",
+       "Config",
+       "accessTokenNeedsRefresh",
+       "(*AuthConfig).refreshCredentialForUser",
+       "(*AuthConfig).ActiveTokenWithRefresh"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "internal/debug/config_disabled.go#366": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "main",
+      "name": "cmd/gh",
+      "how": "func main of package main",
+      "file": "cmd/gh/main.go"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "main",
+       "name": "cmd/gh"
+      },
+      "via": [
+       "Config",
+       "tokenRefresherHttpClientFunc",
+       "New",
+       "Main",
+       "main"
+      ],
+      "lowerBound": true
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "Config"
+      ],
+      "lowerBound": true
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "Config",
+       "accessTokenNeedsRefresh",
+       "(*AuthConfig).refreshCredentialForUser",
+       "(*AuthConfig).ActiveTokenWithRefresh"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "internal/debug/config_enabled.go#364": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "main",
+      "name": "cmd/gh",
+      "how": "func main of package main",
+      "file": "cmd/gh/main.go"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "main",
+       "name": "cmd/gh"
+      },
+      "via": [
+       "Config",
+       "tokenRefresherHttpClientFunc",
+       "New",
+       "Main",
+       "main"
+      ],
+      "lowerBound": true
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "Config"
+      ],
+      "lowerBound": true
+     },
+     {
+      "end": "unknown",
+      "via": [
+       "Config",
+       "accessTokenNeedsRefresh",
+       "(*AuthConfig).refreshCredentialForUser",
+       "(*AuthConfig).ActiveTokenWithRefresh"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "pkg/cmd/factory/default.go#10342": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "main",
+      "name": "cmd/gh",
+      "how": "func main of package main",
+      "file": "cmd/gh/main.go"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "main",
+       "name": "cmd/gh"
+      },
+      "via": [
+       "tokenRefresherHttpClientFunc",
+       "New",
+       "Main",
+       "main"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "pkg/cmd/version/version.go#506": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "main",
+      "name": "cmd/gen-docs",
+      "how": "func main of package main",
+      "file": "cmd/gen-docs/main.go"
+     },
+     {
+      "type": "main",
+      "name": "cmd/gh",
+      "how": "func main of package main",
+      "file": "cmd/gh/main.go"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "main",
+       "name": "cmd/gen-docs"
+      },
+      "via": [
+       "Format",
+       "NewCmdRoot",
+       "run",
+       "main"
+      ],
+      "lowerBound": true
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "main",
+       "name": "cmd/gh"
+      },
+      "via": [
+       "Format",
+       "NewCmdRoot",
+       "Main",
+       "main"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "pkg/cmd/version/version.go#607": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "main",
+      "name": "cmd/gen-docs",
+      "how": "func main of package main",
+      "file": "cmd/gen-docs/main.go"
+     },
+     {
+      "type": "main",
+      "name": "cmd/gh",
+      "how": "func main of package main",
+      "file": "cmd/gh/main.go"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "main",
+       "name": "cmd/gen-docs"
+      },
+      "via": [
+       "format",
+       "Format",
+       "NewCmdRoot",
+       "run",
+       "main"
+      ],
+      "lowerBound": true
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "main",
+       "name": "cmd/gh"
+      },
+      "via": [
+       "format",
+       "Format",
+       "NewCmdRoot",
+       "Main",
+       "main"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "script/build.go#3103": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "dev-tool",
+      "name": "script/build.go",
+      "how": "package-level code of a developer script",
+      "file": "script/build.go"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "dev-tool",
+       "name": "script/build.go"
+      },
+      "via": [
+       "builtWithTags",
+       "build.go"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "script/build.go#3409": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "dev-tool",
+      "name": "script/build.go",
+      "how": "package-level code of a developer script",
+      "file": "script/build.go"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "dev-tool",
+       "name": "script/build.go"
+      },
+      "via": [
+       "normalizeBuildTags",
+       "builtWithTags",
+       "build.go"
+      ],
+      "lowerBound": true
+     }
+    ]
+   }
+  }
+ },
+ "cards": {
+  "version": 1,
+  "clusters": [
+   {
+    "id": "K1",
+    "members": [
+     "internal/config/refreshable.go#20216",
+     "internal/config/refreshable.go#17505",
+     "pkg/cmd/factory/default.go#10342",
+     "internal/config/refreshable.go#18218",
+     "internal/debug/config_disabled.go#366",
+     "internal/config/refreshable.go#18389",
+     "internal/config/refreshable.go#19448",
+     "internal/config/refreshable.go#20127"
+    ],
+    "label": "(*AuthConfig).refreshCredentialForUser and 7 related",
+    "testHelpers": false,
+    "files": [
+     "internal/config/refreshable.go",
+     "internal/debug/config_disabled.go",
+     "pkg/cmd/factory/default.go"
+    ],
+    "module": "(root)",
+    "joined": [
+     {
+      "id": "internal/config/refreshable.go#18389",
+      "by": "file"
+     },
+     {
+      "id": "internal/config/refreshable.go#19448",
+      "by": "file"
+     },
+     {
+      "id": "internal/config/refreshable.go#20127",
+      "by": "file"
+     }
+    ],
+    "mirrorMembers": [],
+    "mirrorOf": null,
+    "moved": [],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 8,
+     "callers": 3,
+     "tests": 3,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 5,
+     "risky": 0,
+     "riskyAllUpdated": 0,
+     "mirrored": 0
+    }
+   },
+   {
+    "id": "K2",
+    "members": [
+     "pkg/cmd/version/version.go#506",
+     "pkg/cmd/version/version.go#607"
+    ],
+    "label": "Format and 1 related",
+    "testHelpers": false,
+    "files": [
+     "pkg/cmd/version/version.go"
+    ],
+    "module": "(root)",
+    "joined": [],
+    "mirrorMembers": [],
+    "mirrorOf": null,
+    "moved": [],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 2,
+     "callers": 1,
+     "tests": 2,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 2,
+     "risky": 0,
+     "riskyAllUpdated": 0,
+     "mirrored": 0
+    }
+   },
+   {
+    "id": "K3",
+    "members": [
+     "internal/debug/config.go#1252",
+     "internal/debug/config.go#1781",
+     "internal/debug/config_enabled.go#364"
+    ],
+    "label": "Config and 2 related",
+    "testHelpers": false,
+    "files": [
+     "internal/debug/config.go",
+     "internal/debug/config_enabled.go"
+    ],
+    "module": "(root)",
+    "joined": [],
+    "mirrorMembers": [],
+    "mirrorOf": null,
+    "moved": [],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 3,
+     "callers": 3,
+     "tests": 4,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 3,
+     "risky": 0,
+     "riskyAllUpdated": 0,
+     "mirrored": 0
+    }
+   },
+   {
+    "id": "K4",
+    "members": [
+     "script/build.go#3103",
+     "script/build.go#3409"
+    ],
+    "label": "builtWithTags and 1 related",
+    "testHelpers": false,
+    "files": [
+     "script/build.go"
+    ],
+    "module": "(root)",
+    "joined": [],
+    "mirrorMembers": [],
+    "mirrorOf": null,
+    "moved": [],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 2,
+     "callers": 1,
+     "tests": 0,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 2,
+     "risky": 0,
+     "riskyAllUpdated": 0,
+     "mirrored": 0
+    }
+   }
+  ],
+  "sweeps": [],
+  "seams": [
+   {
+    "type": "call",
+    "clusters": [
+     "K1",
+     "K3"
+    ],
+    "via": [
+     {
+      "callee": "internal/debug/config_enabled.go#364",
+      "caller": "internal/config/refreshable.go#17505"
+     },
+     {
+      "callee": "internal/debug/config_enabled.go#364",
+      "caller": "internal/config/refreshable.go#18218"
+     },
+     {
+      "callee": "internal/debug/config_enabled.go#364",
+      "caller": "pkg/cmd/factory/default.go#10342"
+     }
+    ],
+    "viaCount": 3
+   }
+  ],
+  "hints": [
+   {
+    "clusters": [
+     "K1",
+     "K3"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "30ce37dca5",
+      "subject": "feat(debug): add build-gated internal debug configuration",
+      "files": 5,
+      "large": false,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "token",
+      "token": "RefreshTokenExpiresIn",
+      "files": 9
+     },
+     {
+      "type": "token",
+      "token": "AccessTokenExpiresIn",
+      "files": 4
+     },
+     {
+      "type": "token",
+      "token": "VerboseTokenRefresh",
+      "files": 4
+     },
+     {
+      "type": "token",
+      "token": "DebugConfig",
+      "files": 6
+     },
+     {
+      "type": "token",
+      "token": "lifetime",
+      "files": 13
+     },
+     {
+      "type": "test",
+      "callers": [
+       {
+        "label": "TestConfigIgnoresEnvironment",
+        "relPath": "internal/debug/config_disabled_test.go"
+       },
+       {
+        "label": "TestConfigReadsEnvironment",
+        "relPath": "internal/debug/config_enabled_test.go"
+       }
+      ],
+      "count": 2
+     },
+     {
+      "type": "folder",
+      "dir": "internal/debug"
+     }
+    ],
+    "strength": 3
+   },
+   {
+    "clusters": [
+     "K1",
+     "K2"
+    ],
+    "evidence": [
+     {
+      "type": "token",
+      "token": "github.com/cli/cli/v2/internal/debug",
+      "files": 5
+     }
+    ],
+    "strength": 1
+   },
+   {
+    "clusters": [
+     "K3",
+     "K4"
+    ],
+    "evidence": [
+     {
+      "type": "token",
+      "token": "LookupEnv",
+      "files": 11
+     }
+    ],
+    "strength": 1
+   }
+  ],
+  "hintNotes": [],
+  "generatedDirs": []
+ }
+}
