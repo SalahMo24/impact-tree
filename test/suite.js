@@ -142,6 +142,9 @@ const SUITE = [
   { file: 'test/entry-points.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/impact-paths.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/impact-paths-preview.test.js', tier: 'quick' },  // 0.3s
+  { file: 'test/clusters.test.js', tier: 'quick' },
+  { file: 'test/cluster-hints.test.js', tier: 'quick' },
+  { file: 'test/repeated-edits.test.js', tier: 'quick' },
 ];
 
 /**
@@ -167,6 +170,7 @@ const EXCLUDED = {
   'go-signature-oracle.js': 'dev script: compares against the Go toolchain on a Go repo given as an argument',
   'py-signature-oracle.js': 'dev script: compares against Python\'s ast module on a Python repo given as an argument',
   'java-signature-oracle.js': 'dev script: compares against the JDK\'s Tree API (java-signature-oracle/Oracle.java) on a Java repo given as an argument',
+  'lsp-harness/cards-verify.js': 'dev script: invariants and reference compare of cards over a corpus of real PRs; needs the repositories and recorded analysis results',
   'lsp-harness/py-verify.js': 'dev script: P7 verification against httpx, Pyright, ast and Jedi; needs the clone, a worktree and the scratchpad tools',
   'measure-cqrs-cache.js': 'dev script: measurement, not a pass/fail test',
   'measure-inheritance.js': 'dev script: measurement, not a pass/fail test',
