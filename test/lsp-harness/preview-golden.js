@@ -44,6 +44,9 @@ const PRS = [
   // Go: expected today to report Go files as "not analysed in this mode".
   { name: 'cli-14752', repo: 'cli', number: 14752, base: '547bf81aa5d68f6b4274abb6926c75252f254750', head: 'a1d1667985a4f0129249ff5bd215c80c1644966a', why: 'Go: 3 removed and 8 added functions, build tags (go-verify-corpus)' },
   { name: 'cli-14390', repo: 'cli', number: 14390, base: 'cba9646b8c254a5711ef9e19e1dfc1455e88feaa', head: '1ba640d1c525a2dfc5e60071ffa9c3f948e644d1', why: 'Go: 46 Go files, renamed interface method (go-verify-corpus)' },
+  // Java: expected today to report Java files as "not analysed in this mode" (google/gson, squash-merged PRs).
+  { name: 'gson-3137', repo: 'gson', number: 3137, base: '216c41b6e70dc04e6856418dd76bb00c854eb6b4', head: '845664ba1c307e6c1910d07cfed2f622e0ad8df1', why: 'Java: a one-line fix in JsonReader plus its test (small)' },
+  { name: 'gson-3096', repo: 'gson', number: 3096, base: '119818bc666d3b9f897d6c0ca7546ce28e9bbcac', head: 'dae37cf0fe12235b76fb09f01118a0a8c8823f42', why: 'Java: changes in MapTypeAdapterFactory and TypeAdapters, plus five test files' },
   // Docs only: hono 099c664d changes README.md alone.
   { name: 'hono-docs-only', repo: 'hono', number: 9999, base: '099c664d^', head: '099c664d', why: 'docs only: hono "docs(readme): update the badges" changes README.md alone' },
 ];
