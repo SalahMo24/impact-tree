@@ -227,6 +227,19 @@ test('submit: a moved head or base is refused; the validator sees the current an
     assert.equal((await client.submit('cards', { a: 1 }, meta(e))).stored, true);
     assert.equal(e.world.validated[0].given.result, e.session.state.result);
     assert.equal(e.world.validated[0].given.cards, e.session.state.cards);
+    assert.equal(e.world.validated[0].given.repo, require('fs').realpathSync(e.repo));   // submitted callers are read from it
+    client.close();
+  } finally { await e.bridge.stop(); }
+});
+
+test('submit: a validator that throws refuses the result with a reason, and the bridge keeps serving', async () => {
+  const e = editor({ validator: () => { throw new TypeError('no readText'); } });
+  await e.bridge.start();
+  try {
+    const client = await connectBridge({ repo: e.repo, lockDir: e.lockDir });
+    const out = await client.submit('callers', { a: 1 }, meta(e));
+    assert.deepEqual(out, { stored: false, reason: 'the editor could not check the result' });
+    assert.ok(await client.context());
     client.close();
   } finally { await e.bridge.stop(); }
 });

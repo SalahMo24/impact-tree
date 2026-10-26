@@ -145,7 +145,14 @@ function createAgentBridge(vscode, { session, workspaceState, log, lockDir = P.d
     if (size > P.MAX_PAYLOAD_BYTES) return { stored: false, reason: `the payload is ${size} bytes; the limit is ${P.MAX_PAYLOAD_BYTES}` };
     const validate = validator || require(AGENT_RESULTS).validateSubmission;
     const state = session.state || {};
-    const verdict = validate(p.kind, p.payload, { result: state.result, cards: state.cards || null });
+    // `repo`: submitted callers are checked against the files on disk (the head checked above).
+    let verdict;
+    try {
+      verdict = validate(p.kind, p.payload, { result: state.result, cards: state.cards || null, repo: current.repo });
+    } catch (e) {
+      log(`agent bridge: validation failed: ${/** @type {any} */ (e).message}`);
+      return { stored: false, reason: 'the editor could not check the result' };
+    }
     if (!verdict || !verdict.ok) {
       const errors = verdict && Array.isArray(verdict.errors) ? verdict.errors.filter((/** @type {unknown} */ e) => typeof e === 'string').slice(0, 50) : ['the result was not accepted'];
       return { stored: false, reason: 'the result does not match the editor\'s review', errors };
