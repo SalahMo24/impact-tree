@@ -181,7 +181,7 @@ function changedFromSymbols(file, { headCallables, baseCallables, renderSig, kin
       const b = baseByKey.get(hit.key);
       const kinds = kindsOf(b, hit);
       const throwsAdded = newThrows(b, hit);
-      if (throwsAdded.length) kinds.push(KIND.NEW_THROW);
+      if (throwsAdded.length && !kinds.includes(KIND.NEW_THROW)) kinds.push(KIND.NEW_THROW);
       changed.push({
         ...hit,
         file: absPath, relPath, oldPath, component, projectRoot, fileStatus: status,

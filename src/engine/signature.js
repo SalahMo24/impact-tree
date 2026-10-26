@@ -13,6 +13,9 @@ const KIND = {
   PARAM_REMOVED:  { id: 'param-removed',  weight: 55, label: 'parameter removed', short: '-param' },
   TYPE_CHANGED:   { id: 'type-changed',   weight: 30, label: 'parameter type changed', short: 'param type' },
   REQUIRED_PARAM: { id: 'required-param', weight: 25, label: 'required parameter changed (old calls fail loudly)', short: 'required param' },
+  // Java (J-D4): visibility reduced or `static` added/removed. Callers that lose access, or
+  // call through an instance versus the class, stop compiling: as loud as a required param.
+  ACCESS_CHANGED: { id: 'access-changed', weight: 25, label: 'access changed (old calls fail loudly)', short: 'access' },
   RETURN_CHANGED: { id: 'return-changed', weight: 20, label: 'return type changed', short: 'return type' },
   ASYNC_CHANGED:  { id: 'async-changed',  weight: 45, label: 'async-ness changed', short: 'async' },
   BODY:           { id: 'body',           weight: 10, label: 'body only', short: 'body' },

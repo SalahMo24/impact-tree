@@ -33,6 +33,7 @@ const SUITE = [
   { file: 'test/python-symbols.test.js', tier: 'quick' },  // 6s
   { file: 'test/go-signature.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/python-signature.test.js', tier: 'quick' },
+  { file: 'test/java-signature.test.js', tier: 'quick' },
   { file: 'test/python-lexer.test.js', tier: 'quick' },  // 0.1s  // 0.2s
   { file: 'test/python-syntactic.test.js', tier: 'quick' },
   { file: 'test/go-syntactic.test.js', tier: 'quick' },
@@ -155,6 +156,7 @@ const EXCLUDED = {
   'windows-workspace-projects.js': 'child script spawned by test/local-programs.test.js',
   'go-signature-oracle.js': 'dev script: compares against the Go toolchain on a Go repo given as an argument',
   'py-signature-oracle.js': 'dev script: compares against Python\'s ast module on a Python repo given as an argument',
+  'java-signature-oracle.js': 'dev script: compares against the JDK\'s Tree API (java-signature-oracle/Oracle.java) on a Java repo given as an argument',
   'lsp-harness/py-verify.js': 'dev script: P7 verification against httpx, Pyright, ast and Jedi; needs the clone, a worktree and the scratchpad tools',
   'measure-cqrs-cache.js': 'dev script: measurement, not a pass/fail test',
   'measure-inheritance.js': 'dev script: measurement, not a pass/fail test',
