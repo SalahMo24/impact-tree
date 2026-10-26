@@ -2,7 +2,7 @@
 // Go without a language server (S3, docs/MULTI_LANGUAGE_PLAN.md): the text outline
 // (`goOutline`, src/languages/go/outline.js) that stands in for gopls' document symbols, and
 // the provider's `prepareSyntactic` hook, which the CLI and the no-checkout preview use:
-// changed functions and their kinds from the text, callers not computed (S4 adds them),
+// changed functions and their kinds from the text, callers from the PR files (S4),
 // never "no callers" or "no impact". The outline's answers for the texts here are the ones
 // gopls v0.21.0 gave for them (names, kinds, ranges and name ranges compared one by one when
 // this was written); test/server-symbols.test.js checks it against the recorded fixture too.
@@ -13,7 +13,6 @@ const { analyzeRemote } = require('../src/engine/analyze-remote');
 const { clearVirtualText } = require('../src/engine/textpos');
 const { goOutline, skipNonCode } = require('../src/languages/go/outline');
 const { collectGoSymbols, goProvider } = require('../src/languages/go/provider');
-const { isNotComputedReason } = require('../src/engine/resolver-not-computed');
 const models = require('../src/tree-row-models');
 const { ts, root } = require('./bug-regressions-helpers');
 
@@ -142,7 +141,7 @@ test('text that is not valid Go never throws: an unterminated literal ends the o
   assert.deepEqual(outlined(''), []);
 });
 
-test('a preview reads Go from the fetched text: kinds, callers not computed, tests listed, nothing read from disk', async (t) => {
+test('a preview reads Go from the fetched text: kinds, callers from the PR\'s files (never complete), tests listed, nothing read from disk', async (t) => {
   clearVirtualText();
   const files = {
     'cmd/run.go@base': 'package cmd\n\nfunc Run(a int) error {\n\treturn nil\n}\n\nfunc (o Opts) Name() string { return "a" }\n\nfunc gone() {}\n\nfunc body() int {\n\treturn 1\n}\n',
@@ -183,7 +182,8 @@ test('a preview reads Go from the fetched text: kinds, callers not computed, tes
   for (const c of go) {
     assert.equal(c.component, 'pull request');
     assert.equal(c.callersComplete, false, c.key);
-    assert.ok(isNotComputedReason(c.callersIncompleteReason), c.callersIncompleteReason);
+    assert.match(c.callersIncompleteReason, /^Go callers from syntax only: the pull request's own files \(2 Go file\(s\) indexed\)/, c.key);
+    assert.match(c.callersIncompleteReason, /the package's files outside the pull request were not read/, c.key);
     assert.notEqual(c.callerState, 'none', `${c.key}: never "no callers"`);
     assert.notEqual(c.testState, 'uncovered', `${c.key}: never "no test"`);
     assert.doesNotMatch(models.classifyChangeVerdict(c).sentence, /no callers|no impact/i, c.key);
@@ -193,15 +193,18 @@ test('a preview reads Go from the fetched text: kinds, callers not computed, tes
   assert.ok(other['cmd/run_test.go'], 'a changed test is listed');
   assert.equal(r.otherFiles.some((f) => f.notAnalysed), false, 'no Go file is "not analysed"');
   assert.ok(r.reviewSymbols.get('cmd/run.go'), 'the review identity has the symbols recorded');
-  assert.deepEqual(r.callersScope.map((s) => [s.language, s.scope]), [['Go', 'not-computed'], ['Python', 'pr-files']]);
-  assert.match(r.callersScope[0].note, /^not computed: Go callers need its language server/);
+  assert.deepEqual(r.callersScope.map((s) => [s.language, s.scope]), [['Go', 'pr-files'], ['Python', 'pr-files']]);
+  assert.match(r.callersScope[0].note, /^Go callers from syntax only: the pull request's own files \(2 Go file\(s\) indexed\)/);
   const note = models.previewLimitsNote(r);
-  assert.match(note, /Go callers are not computed \(changed functions and kinds only\); check out the PR to find them in the editor\./);
-  assert.doesNotMatch(note, /not analysed/);
-  assert.ok(r.warnings.some((w) => /^1 changed Go file\(s\) read from their text: changed functions and signature kinds only; callers not computed: Go/.test(w)));
+  assert.match(note, /Go, Python callers are from syntax only, in the PR's own files/);
+  assert.doesNotMatch(note, /not analysed|not computed/);
+  assert.ok(r.warnings.some((w) => /^1 changed Go file\(s\) read from their text: changed functions and signature kinds; Go callers from syntax only: the pull request's own files/.test(w)));
+  assert.deepEqual(by.Run.callers.map((c) => [c.label, c.test]), [['TestRun', true]], 'the changed test calls Run');
+  assert.equal(by.Run.callerState, 'resolved');
   const expanded = await r.resolver.incomingWithStatus(by.Run.file, by.Run.namePos);
   assert.equal(expanded.complete, false);
-  assert.ok(isNotComputedReason(expanded.reason), 'expanding a Go row asks Go\'s resolver');
+  assert.deepEqual(expanded.callers.map((c) => c.label), ['TestRun'], 'expanding a Go row asks Go\'s index');
+  assert.equal(r.allChanged.filter((c) => c.callersComplete !== false).length, 0, 'no complete answer in the preview');
   clearVirtualText();
 });
 

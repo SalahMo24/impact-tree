@@ -8,8 +8,9 @@
 // which server symbols are changed-symbol candidates and how they are keyed
 // (`collectGoSymbols`), how a header is compared (`goKindsOf`) and shown, which module a
 // file belongs to (`goModuleOf`), and how gopls' callers are read (`editorCallers`).
-// Without a server (the CLI, the no-checkout preview; S3): `prepareSyntactic`, the same
-// candidates from a text outline (`goOutline`, ./outline.js), callers not computed.
+// Without a server (the CLI, the no-checkout preview; S3, S4): `prepareSyntactic`, the same
+// candidates from a text outline (`goOutline`, ./outline.js), callers from a syntax-only
+// index (./syntactic-index.js).
 //
 // Engine modules and the signature parser are required where they are used: the registry
 // (../index.js) loads this file, and src/engine/diff.js loads the registry.
@@ -243,23 +244,26 @@ function goSpec(parser) {
 const prepare = (ctx) => require('../server-symbols').prepareFromServerSymbols(ctx, goSpec());
 
 /**
- * `prepare` where there is no language server (the CLI, the no-checkout preview; S3): the
+ * `prepare` where there is no language server (the CLI, the no-checkout preview; S3, S4): the
  * changed, added and deleted functions and methods and their signature kinds from the text
  * alone (`goOutline`, shaped as gopls' answer, then the same `collectGoSymbols`, header
- * parser and matching as `prepare`, so keys and review ids are the editor's), with callers
- * not computed: every unit's resolver is `createNotComputedResolver`'s. Units are
- * `ctx.unit` when given (the preview's "pull request": nothing is read from disk, the texts
- * are `ctx.headTexts`/`ctx.baseTexts`), else Go modules by `go.mod` (`goModuleOf`, the CLI).
- * A file excluded by build constraints is read as any other: its functions are its own
- * (keyed by file, as gopls keys them). `ctx.hooks` is not read. One warning says the callers
- * were not computed, for how many files.
+ * parser and matching as `prepare`, so keys and review ids are the editor's), and callers
+ * from a syntax-only index (./syntactic-index.js) through the shared
+ * `createSyntacticResolver`, one for every unit. Units are `ctx.unit` when given (the
+ * preview's "pull request": nothing is read from disk, the texts are
+ * `ctx.headTexts`/`ctx.baseTexts`), else Go modules by `go.mod` (`goModuleOf`, the CLI).
+ * The index is built from `ctx.syntacticSources` when given (the preview: the PR's fetched
+ * Go files and changed Go tests; the packages' other files are missing, which every answer
+ * says), else from the modules on disk (the CLI, S-D1 (a): `indexModules`). A file excluded
+ * by build constraints is read as any other: its functions are its own (keyed by file, as
+ * gopls keys them). Every answer is incomplete with the index's scope note, which one
+ * warning also gives. `ctx.hooks` is not read.
  * @param {import('../types').PrepareContext} ctx
  * @returns {Promise<import('../types').PreparedLanguage>}
  */
 async function prepareSyntactic(ctx) {
-  const { createNotComputedResolver, notComputedReason } = require('../../engine/resolver-not-computed');
+  const { createSyntacticResolver } = require('../../engine/resolver-syntactic');
   const { goOutline } = require('./outline');
-  const reason = notComputedReason(goRules.displayName);
   const spec = {
     ...goSpec(),
     serverName: 'the Go text scan',
@@ -271,11 +275,98 @@ async function prepareSyntactic(ctx) {
     available: async () => ({ ok: true }),
     documentSymbols: async (/** @type {import('../types').DocRef} */ doc) => goOutline(/** @type {string} */ (doc.text)),
   });
+  // A stand-in until the units are known: the index is built once, for all of them, below.
+  const pending = Object.freeze({ pending: true });
   const answer = await require('../server-symbols').prepareFromServerSymbols(
-    { ...ctx, hooks: { services, makeResolver: () => createNotComputedResolver(reason) } }, spec);
-  const files = answer.units.reduce((n, u) => n + new Set([...u.changed, ...u.deleted].map((/** @type {any} */ c) => c.relPath)).size, 0);
-  if (files) ctx.warnings.push(`${files} changed Go file(s) read from their text: changed functions and signature kinds only; callers ${reason}`);
-  return answer;
+    { ...ctx, hooks: { services, makeResolver: () => pending } }, spec);
+  if (!answer.units.length) return answer;
+  /** @type {any[]} */
+  const changed = answer.units.flatMap((u) => [...u.changed, ...u.deleted]);
+  const idx = ctx.syntacticSources
+    ? require('./syntactic-index').createGoSyntacticIndex(ctx.syntacticSources, {
+      root: ctx.repo, scope: `the pull request's own files (${ctx.syntacticSources.length} Go file(s) indexed)`, partialPackages: true,
+    })
+    : indexModules(ctx, changed);
+  const { isTestFile } = require('../../engine/diff');
+  const shared = createSyntacticResolver(idx, /** @type {any} */ ({ isTestPath: (/** @type {string} */ file) => isTestFile(ctx.repo, file) }));
+  const resolver = {
+    ...shared,
+    // A Go function is not built by a DI container: one with no caller found is `unknown`
+    // with the scope note, never `di`.
+    callerState: (/** @type {string} */ file, /** @type {number} */ pos) => shared.callerState(file, pos),
+    // The syntax-only answers are lower bounds, so a blast radius counted from them is one too.
+    callersLowerBound: true,
+  };
+  for (const unit of answer.units) unit.resolver = resolver;
+  const files = new Set(changed.map((c) => c.relPath)).size;
+  if (files) ctx.warnings.push(`${files} changed Go file(s) read from their text: changed functions and signature kinds; ${idx.scopeNote()}`);
+  // The preview lists Go in its `callersScope` with this note (types.js, PreparedLanguage).
+  return { ...answer, extras: { ...answer.extras, scopeNote: idx.scopeNote() } };
+}
+
+/**
+ * The module path a `go.mod` text declares (`module github.com/cli/cli/v2`), or null.
+ * @param {string} text @returns {string|null}
+ */
+function modulePathOf(text) {
+  const m = /^\s*module\s+("?)([^\s"]+)\1/m.exec(text);
+  return m ? m[2] : null;
+}
+
+/**
+ * The CLI's Go index (S-D1 (a)): every Go file of the module(s) the changed Go files are in
+ * (each one's nearest `go.mod` directory, `goModuleOf`), from git's tracked and untracked
+ * files, without `vendor/`, `testdata/`, directories Go ignores (`_x`, `.x`) and nested
+ * modules (a directory with its own `go.mod`), read from disk, bounded by
+ * `REPO_MAX_FILES`/`REPO_MAX_BYTES` (../repository-files.js): past the bound, the changed
+ * packages' files plus the files that mention a changed name. When git cannot list the files,
+ * the changed files only, and the scope says so. Reads the file system and git.
+ * @param {import('../types').PrepareContext} ctx
+ * @param {any[]} changed The changed and deleted symbols.
+ */
+function indexModules(ctx, changed) {
+  const { createGoSyntacticIndex, MAX_FILE_BYTES } = require('./syntactic-index');
+  const { pickRepositoryFiles, REPO_MAX_FILES, REPO_MAX_BYTES } = require('../repository-files');
+  const read = (/** @type {string} */ rel) => { try { return fs.readFileSync(path.join(ctx.repo, rel), 'utf8'); } catch { return null; } };
+  const changedPaths = new Set(ctx.files.map((f) => f.path).filter((p) => goRules.handles(p)));
+  /** @type {Array<{ dir: string, path: string }>} */
+  const modules = [];
+  for (const rel of changedPaths) {
+    const dir = goModuleOf(rel, ctx.repo).projectRoot;
+    if (modules.some((m) => m.dir === dir)) continue;
+    const text = read(path.posix.join(dir || '.', 'go.mod'));
+    const modulePath = text == null ? null : modulePathOf(text);
+    if (modulePath) modules.push({ dir, path: modulePath });
+  }
+  const out = ctx.git && ctx.git.tryRaw(['ls-files', '--cached', '--others', '--exclude-standard', '-z']);
+  if (out == null || !modules.length) {
+    const sources = /** @type {Array<{ path: string, text: string }>} */ ([...changedPaths].map((rel) => ({ path: rel, text: read(rel) })).filter((s) => s.text != null));
+    const why = out == null ? 'git could not list the repository' : 'no go.mod declares their module';
+    return createGoSyntacticIndex(sources, { root: ctx.repo, scope: `the changed files only (${why}; ${sources.length} Go file(s) indexed)`, modules });
+  }
+  const all = [...new Set(String(out).split('\0').filter(Boolean))];
+  const moduleDirs = all.filter((rel) => path.posix.basename(rel) === 'go.mod').map((rel) => path.posix.dirname(rel)).map((d) => (d === '.' ? '' : d));
+  // A file is its deepest go.mod's: a nested module's files are not the outer module's.
+  const moduleDirOf = (/** @type {string} */ rel) => moduleDirs.reduce((/** @type {string|null} */ best, d) => ((d === '' || rel.startsWith(`${d}/`)) && (best === null || d.length > best.length) ? d : best), null);
+  const inModule = (/** @type {string} */ rel) => {
+    const dir = moduleDirOf(rel);
+    if (dir === null || !modules.some((m) => m.dir === dir)) return false;
+    const inner = dir ? rel.slice(dir.length + 1) : rel;
+    return !path.posix.dirname(inner).split('/').some((d) => d === 'vendor' || d === 'testdata' || d.startsWith('_') || (d.startsWith('.') && d !== '.'));
+  };
+  const listed = all.filter((rel) => goRules.handles(rel) && inModule(rel)).flatMap((rel) => {
+    try { return [{ path: rel, size: fs.statSync(path.join(ctx.repo, rel)).size }]; } catch { return []; }
+  });
+  const names = new Set(changed.map((c) => c.simpleName));
+  const changedDirs = new Set([...changedPaths].map((rel) => path.posix.dirname(rel)));
+  const picked = pickRepositoryFiles(listed, read, {
+    changedPaths, names, keep: (rel) => changedDirs.has(path.posix.dirname(rel)), maxFileBytes: MAX_FILE_BYTES,
+  });
+  const where = modules.length === 1 ? `the module ${modules[0].path}` : `the modules ${modules.map((m) => m.path).join(', ')}`;
+  const scope = picked.bounded
+    ? `${where}'s changed packages and the files that mention a changed name (${picked.sources.length} of ${listed.length} Go file(s) indexed: over the bound of ${REPO_MAX_FILES} files or ${REPO_MAX_BYTES / 1024 / 1024} MiB)`
+    : `${where} (${picked.sources.length} Go file(s) indexed)`;
+  return createGoSyntacticIndex(picked.sources, { root: ctx.repo, scope, notIndexed: picked.notIndexed, modules });
 }
 
 /**
@@ -321,4 +412,4 @@ const goProvider = Object.freeze({
   serverLabel: 'the Go language server (gopls)',
 });
 
-module.exports = { goProvider, goSpec, collectGoSymbols, goKindsOf, goModuleOf, renderGoSymbolSig, prepareSyntactic };
+module.exports = { goProvider, goSpec, collectGoSymbols, goKindsOf, goModuleOf, renderGoSymbolSig, prepareSyntactic, modulePathOf };

@@ -160,11 +160,11 @@ test('the command line lists not-analysed files (Go without its hook) in their o
     const json = JSON.parse(execFileSync(process.execPath, [...args, '--json'], { encoding: 'utf8' }));
     assert.deepEqual(json.otherFiles.find((f) => f.path === 'a.go').notAnalysed,
       { language: 'Go', reason: "Go needs the editor's language server; open the repository in the editor to analyse it" });
-    // Without the seam, Go is read from its text (S3): rows, no section.
+    // Without the seam, Go is read from its text (S3) and its callers from the module's (S4): rows, no section.
     const real = execFileSync(process.execPath, [cli, '--repo', dir, '--allow-local-base'], { encoding: 'utf8' });
     assert.doesNotMatch(real, /⑤ NOT ANALYSED|no callers/);
     assert.match(real, /● A {3}\[CHANGED\] {2}a\.go:3/);
-    assert.match(real, /\? A {3}a\.go:3 {2}\(callers not computed: Go callers need its language server/);
+    assert.match(real, /\? A {3}a\.go:3 {2}\(callers unknown: Go callers from syntax only: the module example\.com\/m \(1 Go file\(s\) indexed\)/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
     fs.rmSync(path.dirname(preload), { recursive: true, force: true });
