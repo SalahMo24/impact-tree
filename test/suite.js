@@ -47,6 +47,7 @@ const SUITE = [
   { file: 'test/added-by-key.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/apply-caller-extras.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/go-editor-extras.test.js', tier: 'quick' },  // 0.3s
+  { file: 'test/java-callers.test.js', tier: 'quick' },
   { file: 'test/server-symbols.test.js', tier: 'quick' },  // 4.6s
   { file: 'test/go-review-identity.test.js', tier: 'quick' },  // 4.1s
   { file: 'test/go-warm-up.test.js', tier: 'quick' },  // 3.4s

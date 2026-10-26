@@ -64,6 +64,10 @@ function createJdtlsServices(options) {
     repo: options.repo, command, args, env, languageId: 'java',
     deadlineMs: options.deadlineMs || 120000,
     ...(options.scratchDir ? { scratchDir: options.scratchDir } : {}),
+    // jdtls keeps a base-side copy in its default project and lists it as a caller after
+    // the copy is deleted (J2's runs: ENOENT). Not a workspace caller: left out, as the
+    // editor's Java extras drop it (src/languages/java/editor-extras.js).
+    skipCallerUri: (uri) => uri.includes('/jdt.ls-java-project/'),
     onNotification: (method, params) => {
       if (method === 'language/status' && params && params.type === 'ServiceReady') ready = true;
       if (method === '$/progress' && params && params.value) {

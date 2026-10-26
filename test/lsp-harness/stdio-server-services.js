@@ -86,12 +86,16 @@ function positionToOffset(text, pos) {
 /**
  * @param {{ repo: string, command: string, args: string[], languageId: string,
  *   deadlineMs?: number, env?: NodeJS.ProcessEnv, scratchDir?: string,
- *   onNotification?: (method: string, params: any) => void }} options
+ *   onNotification?: (method: string, params: any) => void,
+ *   skipCallerUri?: (uri: string) => boolean }} options
  *   `command`/`args`: the server started over stdio; `languageId`: the one language it
  *   serves (`available` answers no for others). `scratchDir`: absolute folder for temporary
  *   base-side copies, outside the workspace (G0: gopls answers a file there correctly;
  *   P0: Pyright too); default `<os tmp>/impact-tree-harness-base`. The thin per-server
- *   modules (./gopls-services.js, ./pyright-services.js) fill these in.
+ *   modules (./gopls-services.js, ./pyright-services.js) fill these in. `skipCallerUri`:
+ *   an incoming call from a file it accepts is left out before its ranges are read (J4:
+ *   jdtls lists a deleted base-side copy in its default project; reading it would reject
+ *   the whole query); each is counted in `skippedCallers`. Absent: none is left out.
  */
 function createStdioServerServices(options) {
   const { languageId } = options;
@@ -103,6 +107,8 @@ function createStdioServerServices(options) {
   const repoUri = pathToFileURL(options.repo).toString();
   /** @type {Map<string, string>} uri -> text of every document opened here */
   const open = new Map();
+  // Incoming calls left out by `skipCallerUri`, over the services' life.
+  const skipped = { count: 0 };
   /** @type {Map<string, string>} uri -> text read from disk for answers in unopened files */
   const diskTexts = new Map();
   const client = new LspClient({
@@ -200,6 +206,8 @@ function createStdioServerServices(options) {
 
   return {
     client,
+    /** Incoming calls `skipCallerUri` left out so far. */
+    skippedCallers: () => skipped.count,
 
     /** @param {{ deadlineMs?: number }} [opts] */
     async start(opts) {
@@ -257,7 +265,10 @@ function createStdioServerServices(options) {
     async incomingCalls(item) {
       const result = await client.request('callHierarchy/incomingCalls', { item: item.raw }, deadlineMs);
       if (result === null) return null;
-      return result.map((call) => ({
+      const skip = options.skipCallerUri;
+      const kept = skip ? result.filter((/** @type {any} */ call) => !skip(call.from.uri)) : result;
+      skipped.count += result.length - kept.length;
+      return kept.map((/** @type {any} */ call) => ({
         from: convertItem(call.from),
         fromRanges: call.fromRanges.map((r) => rangeToOffsets(call.from.uri, r)),
       }));

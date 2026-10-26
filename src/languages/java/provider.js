@@ -7,7 +7,8 @@
 // candidates and how they are keyed (`collectJavaSymbols`, keys from ./keys.js), how an
 // overload whose parameter list changed is paired with its old self (`pairOverloads`), and
 // which project a file belongs to (`javaProjectOf`, ./rules.js). The header parser and the
-// signature kinds are ./signature.js's (J3).
+// signature kinds are ./signature.js's (J3); how jdtls' callers are read is
+// ./editor-extras.js's (J4).
 //
 // Engine modules and the signature parser are required where they are used: the registry
 // (../index.js) loads this file, and src/engine/diff.js loads the registry.
@@ -309,11 +310,20 @@ function javaSpec(parser) {
  */
 const prepare = (ctx) => require('../server-symbols').prepareFromServerSymbols(ctx, javaSpec());
 
+/**
+ * Java's caller extras (./editor-extras.js, J4): method references are value uses, callers
+ * in jdtls' default project are dropped, and overrides, overridable methods, constructors,
+ * DI factories and annotation-processed types read incomplete with their reason.
+ * @type {NonNullable<import('../types').LanguageProvider['editorCallers']>}
+ */
+const editorCallers = ({ trace, services, repoRoot, clock }) => require('./editor-extras').createJavaEditorExtras({ trace, services, repoRoot, ...(clock ? { clock } : {}) });
+
 /** @type {import('../types').LanguageProvider} */
 const javaProvider = Object.freeze({
   ...javaRules,
   needsServer: true,
   prepare,
+  editorCallers,
 });
 
 module.exports = { javaProvider, javaSpec, collectJavaSymbols, pairOverloads, declarationStartOf, renderJavaSymbolSig };
