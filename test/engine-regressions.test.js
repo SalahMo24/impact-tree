@@ -280,6 +280,32 @@ test('throws belong to their own callable and parameter edits retain their direc
   assert.deepEqual(kinds('a:number','renamed:number'), []);
 });
 
+test('a reworded throw message is not a new throw; a further throw of the same type is (hono PR 1774)', () => {
+  const { makeSymbols } = require('../src/engine/symbols');
+  const { newThrows, throwKey } = require('../src/engine/signature');
+  const collect = (text) => makeSymbols(ts).collect(ts.createSourceFile('a.ts', text, ts.ScriptTarget.Latest, true))[0];
+  const added = (base, head) => newThrows(collect(`function f(){ ${base} }`), collect(`function f(){ ${head} }`));
+  // (hono) RegExpRouter.add: the message moved into a constant.
+  assert.deepEqual(added('throw new Error("Can not add a route since the matcher is already built.")',
+    'throw new Error(MESSAGE_MATCHER_IS_ALREADY_BUILT)'), []);
+  assert.deepEqual(added('throw new errors.HttpError(`a ${x}`)', 'throw new errors . HttpError<T>(400, { message: m })'), []);
+  assert.deepEqual(added('throw createError(400, "a")', 'throw createError(404)'), []);
+  assert.deepEqual(added('if (a) throw new Error("a"); throw new TypeError("b")', 'if (a) throw new Error("A"); throw new TypeError("B")'), []);
+  // (t3code PR 15) a new path that throws the same type as one the head keeps is new.
+  assert.deepEqual(added('throw new Error("missing id")', 'if (!x) throw new Error("no input"); throw new Error("missing id")'),
+    ['new Error("no input")']);
+  // Two changed texts for one vanished: which is reworded is unknown, so both are reported.
+  assert.deepEqual(added('throw new Error("a")', 'if (x) throw new Error("b"); throw new Error("c")'),
+    ['new Error("b")', 'new Error("c")']);
+  assert.deepEqual(added('throw new Error("a")', 'throw new TypeError("a")'), ['new TypeError("a")']);
+  assert.deepEqual(added('throw new Error("a")', 'throw createError("a")'), ['createError("a")']);
+  assert.deepEqual(added('throw err', 'throw cause'), ['cause']);
+  assert.deepEqual(added('', 'if (x) throw new Error("a")'), ['new Error("a")']);
+  assert.equal(throwKey('ValueError'), 'ValueError'); // Python and Java names are their own key
+  assert.deepEqual(newThrows({ throws: new Set(['ValueError']) }, { throws: new Set(['TypeError']) }), ['TypeError']);
+  assert.deepEqual(newThrows(null, { throws: new Set(['x']) }), []);
+});
+
 test('hiding untracked callers applies to the status query too', async () => {
   const { withoutUntrackedCallers } = require('../src/engine/analyze');
   const callers = [{ file: '/r/scratch.ts', pos: 1 }, { file: '/r/kept.ts', pos: 1 }];
