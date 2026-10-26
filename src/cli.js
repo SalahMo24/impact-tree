@@ -2,6 +2,7 @@
 'use strict';
 const path = require('path');
 const { analyze, MODES, modeLabel } = require('./engine/analyze');
+const { buildCards } = require('./engine/cards');
 const { blastText } = require('./cli-format');
 const { isNotComputedReason, isSyntaxOnlyReason } = require('./engine/resolver-not-computed');
 
@@ -25,7 +26,8 @@ ${Object.entries(MODES).map(([k, v]) => `                         ${k.padEnd(11)
   --tree-depth <n>     rendered tree depth (default ${DEFAULTS.treeDepth})
   --json               emit JSON instead of text
   --impact             add impactPaths (entry points each changed function reaches) to --json
-  --impact-deadline-ms <n>  deadline for all impact paths together (default 30000)`);
+  --impact-deadline-ms <n>  deadline for all impact paths together (default 30000)
+  --cards              add cards (clusters, sweeps, seams, hints between clusters) to --json; reads the repo's history`);
   process.exit(0);
 }
 
@@ -52,6 +54,7 @@ try {
 }
 
 if (flag('json')) {
+  if (flag('cards')) result.cards = buildCards(result, { repo, base: result.base.sha, head: 'HEAD' });
   console.log(JSON.stringify(result, (k, v) => (v instanceof Set ? [...v] : v), 2));
   // Not process.exit(): to a pipe, stdout is written asynchronously, and exiting cut the
   // JSON at the pipe's buffer (8 KiB).
