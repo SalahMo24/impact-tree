@@ -261,9 +261,12 @@
  * - `scopeNote`: what a syntax-only caller search indexed, when it differs from what the
  *   preview's notice states (Python's index's `scopeNote()`); the preview lists the language
  *   in its `callersScope`. TypeScript's preview search is the one the notice describes.
+ * - `unresolved` (with `scopeNote`): what that search does not resolve, as a short phrase
+ *   the preview's notice ends with "… are not resolved" ("untyped receivers and dynamic
+ *   calls" for Python).
  * @typedef {object} PreparedLanguage
  * @property {AnalysisUnit[]} units
- * @property {{ notes?: () => string[], dispose?: () => void, resultProperties?: Record<string, unknown>, reviewSymbols?: Map<string, RecordedSymbols>, indexCallers?: () => Promise<void>, scopeNote?: string }} [extras]
+ * @property {{ notes?: () => string[], dispose?: () => void, resultProperties?: Record<string, unknown>, reviewSymbols?: Map<string, RecordedSymbols>, indexCallers?: () => Promise<void>, scopeNote?: string, unresolved?: string }} [extras]
  */
 
 /**

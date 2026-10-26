@@ -55,7 +55,7 @@ silently-omitted optional parameter outranks a signature break that `tsc` alread
 | Language | Editor (local review, checked-out PR) | No-checkout PR preview | CLI |
 | --- | --- | --- | --- |
 | TypeScript, JavaScript | Analysed: the bundled TypeScript compiler finds changes, the editor's language server finds callers | Analysed from the PR's own files only (syntax) | Analysed with its own TypeScript language service |
-| Go | Analysed through the [Go extension](https://marketplace.visualstudio.com/items?itemName=golang.go)'s language server, gopls | Listed as **not analysed**, with how to analyse it | Listed as **not analysed** |
+| Go | Analysed through the [Go extension](https://marketplace.visualstudio.com/items?itemName=golang.go)'s language server, gopls | Changed functions and signature kinds from the PR's text; callers from **syntax only**, in the PR's own Go files and changed tests (check out the PR to find them all) | Changed functions and signature kinds from the text; callers from **syntax only**, across the Go module(s) the changed files are in |
 | Python | Analysed through the editor's Python language server, Pyright ([Pylance](https://marketplace.visualstudio.com/items?itemName=ms-python.vscode-pylance) in VS Code, Cursor's Python extension in Cursor) | Changed functions and signature kinds from the PR's text; callers from **syntax only**, in the PR's own files and changed tests (check out the PR to find them all) | Changed functions and signature kinds from the text; callers from **syntax only**, across the repository's Python files |
 | Java, Kotlin, C#, Ruby, Rust, PHP, Swift, C, C++, Scala | Listed as "*Language* · not analysed yet" | Same | Same |
 
@@ -92,6 +92,28 @@ until you mark it reviewed, and its tooltip and Details say why.
   function found with no extras, every signature change classified, no caller that Go's
   static call graph finds missed, and no change shown as fine while a caller was not
   updated. See [the verification report](test/lsp-harness/G7-REPORT.md).
+- **Without gopls** (the no-checkout PR preview, the CLI): changed, added and deleted
+  functions and their signature kinds are read from the text, keyed as gopls keys them (on
+  the 10 cli/cli pull requests, the same 816 changed functions as `go/parser`, every kind
+  right). Callers come from a **syntax index**: the PR's own Go files and changed tests in
+  the preview, every Go file of the module(s) the changed files are in in the CLI
+  (`vendor/`, `testdata/` and nested modules left out; at most 3000 files / 64 MiB, then
+  the changed packages and the files that mention a changed name). A call is matched
+  through imports (aliases and dot-imports too), in the same package, on a method's own
+  receiver, and on a receiver whose type is written: a typed parameter, `var x T`,
+  `x := T{…}` or `&T{…}`, a struct or embedded field, or a constructor's result
+  (`x := pkg.NewT()`). Every answer stays incomplete and says why ("syntax only"), never
+  "no callers"; a method that an interface in the indexed files declares, a function used
+  as a value, another build-tag variant of a function, and calls on receivers whose type
+  is not written add their reason. Not resolved: calls through an interface or a function
+  value, receivers from a method's result, a `range` variable or an index expression; an
+  interface declared outside the indexed files (`fmt.Stringer`, `error`) is covered only by
+  the general note. In the preview, a package's files outside the PR are not read, and an
+  import of a nested module whose path does not end in its directory (no `go.mod` is
+  fetched) is not mapped. Checked against Go's static call graph within the indexed files:
+  98.9% precision and 97.5% recall in the CLI, 99.4% and 92.0% in the preview, every
+  caller listed that the call graph does not have a call into a file behind build tags
+  (which it does not build), and every miss on an answer marked incomplete.
 
 ### Python
 
@@ -151,7 +173,7 @@ until you mark it reviewed, and its tooltip and Details say why.
 - Preview a GitHub pull request without a checkout, or check out its branch for
   analysis using the editor's language server. A no-checkout preview searches the
   files supplied by the PR and cannot establish callers outside those files; it analyses
-  TypeScript and JavaScript only.
+  TypeScript, JavaScript, Python and Go (Python and Go callers from syntax only).
 - Use the **Changes** view to inspect findings, open diffs, and navigate to callers.
   **Details** below it shows your review progress and, for a change that needs a look,
   why. Changed files are listed worst first; **View as tree** (title bar, or
@@ -268,8 +290,8 @@ repo they were captured against, so they are gitignored. Regenerate locally with
 ## Limitations
 
 1. **TypeScript, JavaScript, Go and Python only.** Go and Python are analysed in the
-   editor, with its language server for each; previews and the CLI analyse TypeScript and
-   JavaScript only. Throw analysis is TypeScript, JavaScript and Python (`raise`). See
+   editor, with its language server for each; previews and the CLI read them from their
+   text, with callers from syntax only. Throw analysis is TypeScript, JavaScript and Python (`raise`). See
    [Languages](#languages).
 2. **Cross-service edges do not exist statically.** HTTP, queue and workflow boundaries
    cannot be resolved, and shared type names are not call edges.

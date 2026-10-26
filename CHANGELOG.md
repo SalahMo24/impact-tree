@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **Go in the PR preview and the CLI**, without gopls: the changed, added and deleted
+  functions and methods and their signature kinds, read from the text with the same keys
+  as in the editor (so review ticks carry over), and callers from a syntax index: the PR's
+  own Go files and changed tests in the preview, the changed files' Go module(s) in the
+  CLI. Calls are matched through imports, the package, a method's receiver and receivers
+  whose type is written (parameters, `var`, composite literals, fields, constructor
+  results); every answer stays incomplete with its reason, never "no callers". Checked on
+  the 10 cli/cli pull requests: 816 of 816 changed functions, every kind right; callers
+  98.9% precision and 97.5% recall in the CLI, 99.4% and 92.0% in the preview, against Go's
+  static call graph. Go files are no longer listed as not analysed there.
+- **The preview's notice says what each language's syntax-only search leaves unresolved**
+  (Go: calls through an interface or a function value); a changed required parameter reads
+  "old calls fail loudly" instead of naming tsc, which was wrong for Go and Python.
+- The no-checkout preview now runs every language through its provider; adding a language
+  to it no longer touches the preview itself.
+
 - **Python callers in the PR preview and the CLI**, without a language server, from a syntax
   index: the PR's own Python files and changed tests in the preview, the whole repository in
   the CLI. Calls are matched through imports, modules, `self`/`cls`/`super()`, constructions

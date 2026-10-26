@@ -301,7 +301,7 @@ async function prepareSyntactic(ctx) {
   const files = new Set(changed.map((c) => c.relPath)).size;
   if (files) ctx.warnings.push(`${files} changed Go file(s) read from their text: changed functions and signature kinds; ${idx.scopeNote()}`);
   // The preview lists Go in its `callersScope` with this note (types.js, PreparedLanguage).
-  return { ...answer, extras: { ...answer.extras, scopeNote: idx.scopeNote() } };
+  return { ...answer, extras: { ...answer.extras, scopeNote: idx.scopeNote(), unresolved: 'calls through an interface or a function value, and receivers whose type is not written' } };
 }
 
 /**

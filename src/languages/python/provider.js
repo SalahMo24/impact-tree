@@ -569,7 +569,7 @@ async function prepareSyntactic(ctx) {
   const files = new Set(changed.map((c) => c.relPath)).size;
   if (files) ctx.warnings.push(`${files} changed Python file(s) read from their text: changed functions and signature kinds; ${idx.scopeNote()}`);
   // The preview lists Python in its `callersScope` with this note (types.js, PreparedLanguage).
-  return { ...answer, extras: { ...answer.extras, scopeNote: idx.scopeNote() } };
+  return { ...answer, extras: { ...answer.extras, scopeNote: idx.scopeNote(), unresolved: 'untyped receivers and dynamic calls' } };
 }
 
 /**

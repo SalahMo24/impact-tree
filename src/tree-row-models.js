@@ -344,20 +344,27 @@ const notAnalysedText = (notAnalysed) => `${notAnalysed.language}: ${NOT_ANALYSE
 /**
  * The Preview's limits in words for a result: `PREVIEW_LIMITS_NOTE`; the languages whose
  * callers are not computed or come from syntax only, in the PR's own files
- * (`result.callersScope`, scope `not-computed` and `pr-files`); and, when
+ * (`result.callersScope`, scope `not-computed` and `pr-files`, each with what it does not
+ * resolve); and, when
  * the pull request has files of a language the Preview cannot analyse, which those are.
  * @param {any} result
  * @returns {string}
  */
 function previewLimitsNote(result) {
   const languages = [...new Set((result.otherFiles || []).map((/** @type {any} */ f) => f.notAnalysed && f.notAnalysed.language).filter(Boolean))];
-  /** @type {Array<{ language: string, scope: string }>} */
+  /** @type {Array<{ language: string, scope: string, unresolved?: string }>} */
   const scopes = result.callersScope || [];
   const textOnly = scopes.filter((s) => s.scope === 'not-computed').map((s) => s.language);
-  const syntaxOnly = scopes.filter((s) => s.scope === 'pr-files').map((s) => s.language);
+  // Languages whose syntax-only search leaves the same things unresolved share one sentence.
+  /** @type {Map<string, string[]>} */
+  const syntaxOnly = new Map();
+  for (const s of scopes.filter((x) => x.scope === 'pr-files')) {
+    const unresolved = s.unresolved || 'untyped receivers and dynamic calls';
+    syntaxOnly.set(unresolved, [...(syntaxOnly.get(unresolved) || []), s.language]);
+  }
   const parts = [PREVIEW_LIMITS_NOTE];
   if (textOnly.length) parts.push(`${textOnly.join(', ')} callers are not computed (changed functions and kinds only); check out the PR to find them in the editor.`);
-  if (syntaxOnly.length) parts.push(`${syntaxOnly.join(', ')} callers are from syntax only, in the PR's own files: untyped receivers and dynamic calls are not resolved; check out the PR to find them all in the editor.`);
+  for (const [unresolved, names] of syntaxOnly) parts.push(`${names.join(', ')} callers are from syntax only, in the PR's own files: ${unresolved} are not resolved; check out the PR to find them all in the editor.`);
   if (languages.length) parts.push(`${languages.join(', ')} files are not analysed; check out the PR to analyse them in the editor.`);
   return parts.join(' ');
 }

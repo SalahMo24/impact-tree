@@ -60,11 +60,15 @@ async function runPr(/** @type {typeof PRS[number]} */ pr) {
   const statusOf = /** @type {Record<string,string>} */ ({ A: 'added', D: 'removed', M: 'modified' });
   const gh = {
     listPullRequestFiles: async () => {
-      const files = git(repo, ['diff', '--name-status', '--no-renames', base, head]).trim().split('\n').filter(Boolean).map((l) => {
-        const [s, p] = l.split('\t');
-        const diff = git(repo, ['diff', '--no-renames', base, head, '--', p]);
+      // Renames as GitHub lists them (src/github.js: status `renamed`, `previous_filename` as
+      // `oldPath`), with git's default similarity.
+      const files = git(repo, ['diff', '--name-status', '-M', base, head]).trim().split('\n').filter(Boolean).map((l) => {
+        const [s, a, b] = l.split('\t');
+        const renamed = s[0] === 'R';
+        const p = renamed ? b : a;
+        const diff = git(repo, ['diff', '-M', base, head, '--', ...(renamed ? [a, b] : [p])]);
         const at = diff.indexOf('\n@@');
-        return { path: p, oldPath: p, status: statusOf[s[0]] || 'modified', patch: at >= 0 ? diff.slice(at + 1) : null };
+        return { path: p, oldPath: renamed ? a : p, status: renamed ? 'renamed' : statusOf[s[0]] || 'modified', patch: at >= 0 ? diff.slice(at + 1) : null };
       });
       return { total: files.length, files };
     },
