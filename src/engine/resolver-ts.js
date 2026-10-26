@@ -294,6 +294,27 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
     },
     stats: () => stats,
     program: () => services[0].getProgram(),
+    /**
+     * Every reference to the symbol at `pos` (declarations excluded), from each language
+     * service, de-duplicated. `failed` is true when a service threw: the list may be short.
+     * @returns {{ refs: Array<{ file: string, start: number, end: number }>, failed: boolean }}
+     */
+    findReferences(file, pos) {
+      const seen = new Map();
+      let failed = false;
+      for (const ls of services) {
+        let found = [];
+        try { found = ls.findReferences(file, pos) || []; } catch { failed = true; found = []; }
+        for (const r of found) {
+          for (const x of r.references) {
+            if (x.isDefinition) continue;
+            const key = `${x.fileName}#${x.textSpan.start}`;
+            if (!seen.has(key)) seen.set(key, { file: x.fileName, start: x.textSpan.start, end: x.textSpan.start + x.textSpan.length });
+          }
+        }
+      }
+      return { refs: [...seen.values()], failed };
+    },
     dispose() { if (servicePool) return; services.forEach((s) => s.dispose && s.dispose()); },
   };
 }

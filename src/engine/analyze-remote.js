@@ -72,6 +72,11 @@ const normaliseStatus = (s) => {
  *   diff texts, published before configuration fetching and caller analysis.
  * @param {(message: string) => void} [args.trace]
  * @param {AbortSignal} [args.signal]
+ * @param {true|object} [args.impactPaths] Impact paths of every changed function
+ *   (./impact-paths.js): `true` for the default limits, or the walk limits. Off by default: the
+ *   result is then unchanged. Adds `impactPaths` and `impactPathsMeta` to the result. No request
+ *   is made for it: it reads only the PR's own fetched files, so a path that leaves them ends
+ *   without an entry point (a warning says so).
  * @returns {Promise<object>} The same shape as analyze()'s result, with `tierA: true` and
  *   `callersScope` (see `callersScopeOf`; empty when nothing was analysed); `outside`
  *   (see analyze()) is computed from the PR's patch and fetched texts. `diffLines` comes
@@ -81,7 +86,7 @@ const normaliseStatus = (s) => {
  */
 async function analyzeRemote({
   ts, gh, slug, pr, repoRoot,
-  maxFiles, concurrency, onProgress = () => {}, onPrepared, trace = () => {}, signal,
+  maxFiles, concurrency, onProgress = () => {}, onPrepared, trace = () => {}, signal, impactPaths,
 }) {
   throwIfCancelled(signal);
   const warnings = [];
@@ -341,7 +346,14 @@ async function analyzeRemote({
 
   throwIfCancelled(signal);
 
-  return makeResult(false, routedResolver(resolvers));
+  const finalResult = makeResult(false, routedResolver(resolvers));
+  if (impactPaths) {
+    const headTexts = new Map([...usable, ...readTests].filter((f) => f.headText != null).map((f) => [f.path, f.headText]));
+    await addImpactPaths(finalResult, {
+      config: impactPaths, repoRoot, changed, headTexts, prepared, signal, warnings,
+    });
+  }
+  return finalResult;
 
   function makeResult(callersPending, resolver) {
     // ---- roots and nesting, same rules as the local path ----------------------------
@@ -390,6 +402,43 @@ async function analyzeRemote({
     Object.defineProperty(result, 'reviewSymbols', { value: reviewSymbols, enumerable: false });
     return result;
   }
+}
+
+/**
+ * Impact paths over the PR's own fetched files only (no further request): the entry-point
+ * facts and the text of every node come from `headTexts`, so a path that leaves the PR's
+ * files ends without an entry point, which the warning says. Every caller query is a lower
+ * bound (the preview's resolvers search the PR's files). Adds `impactPaths` and
+ * `impactPathsMeta` to `result`, and warnings to `result.warnings`.
+ * @param {any} result The preview result, with its routed `resolver`.
+ * @param {{ config: true|object, repoRoot: string, changed: any[], headTexts: Map<string, string>,
+ *   prepared: Array<{ language: any, answer: any }>, signal: AbortSignal|undefined, warnings: string[] }} input
+ *   `headTexts`: head text of each fetched file by repository-relative path.
+ */
+async function addImpactPaths(result, { config, repoRoot, changed, headTexts, prepared, signal, warnings }) {
+  const { createImpactWalker } = require('./impact-paths');
+  const { gatherEntryFacts } = require('./entry-facts');
+  const { entryLanguageOf } = require('./entry-points');
+  const toRel = (file) => path.relative(repoRoot, file).split(path.sep).join('/');
+  const languages = new Set(changed.map((c) => entryLanguageOf(c.file)).filter(Boolean));
+  const { facts, notes } = gatherEntryFacts({
+    repo: repoRoot, languages, readRel: (rel) => headTexts.get(rel) ?? null,
+    git: { tryRaw: (args) => (args[0] === 'ls-files' ? [...headTexts.keys()].join('\0') : null) },
+  });
+  warnings.push(...notes);
+  warnings.push("impact paths in a preview see only the pull request's own files, so a path that leaves them ends without an entry point");
+  // The resolver's own methods, marked as a lower bound without touching the shared object.
+  const resolver = Object.create(result.resolver, { callersLowerBound: { value: true } });
+  const walker = createImpactWalker({
+    repo: repoRoot, facts, limits: config === true ? undefined : config, signal,
+    readText: (file) => headTexts.get(toRel(file)) ?? null,
+  });
+  for (const { language, answer } of prepared) {
+    const own = changed.filter((c) => analysedLanguageOf(c.relPath) === language);
+    await walker.walk(resolver, own, { scopeNote: answer.extras && answer.extras.scopeNote });
+  }
+  result.impactPaths = walker.byId;
+  result.impactPathsMeta = { limits: walker.limits, walkMs: walker.walkMs() };
 }
 
 /**

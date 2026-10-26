@@ -318,6 +318,8 @@ async function prepareLanguages(byLanguage, shared, { warnings, unanalysable, no
  * @param {boolean} [opts.deferTestReach] Leave every `testState` as `'not-computed'`.
  * @param {number} [opts.concurrency=8] Parallel caller queries per project, 1..32; an invalid value warns and uses 8.
  * @param {boolean} [opts.skipForest] Skip blast radius and the caller tree. Roots are still chosen.
+ * @param {true|object} [opts.impactPaths] Impact paths of every changed function (./impact-paths.js).
+ *   `true` for the default limits, or the walk limits. Off by default: the result is then unchanged.
  * @param {number} [opts.rankedRoots=6] How many roots receive a blast radius and a tree.
  * @param {number} [opts.blastDepth=1] Depth of the blast-radius walk.
  * @param {number} [opts.treeDepth=2] Depth of each rendered tree.
@@ -466,6 +468,8 @@ async function analyze(repo, opts = {}) {
   const prepared = [];
   const plans = [];
   const report = opts.onProgress || (() => {});
+  /** @type {ReturnType<import('./impact-paths').createImpactWalker>|null} */
+  let impactWalker = null;
   try {
     await prepareLanguages(byLanguage, {
       repo, git, baseTexts, changedRanges, deletions, report, signal,
@@ -474,7 +478,7 @@ async function analyze(repo, opts = {}) {
         ...(opts.languageServices ? { services: opts.languageServices } : {}),
       },
     }, { warnings, unanalysable, notAnalysedFiles, prepared });
-    for (const { units } of prepared) {
+    for (const { units, extras } of prepared) {
       for (const unit of units) {
         outside.push(...unit.outside);
         require('./pending-analysis').initialisePending(unit.changed);
@@ -482,7 +486,7 @@ async function analyze(repo, opts = {}) {
         const resolver = headRev !== null && untracked.size
           ? withoutUntrackedCallers(unit.resolver, (x) => untracked.has(relOf(x.file)), (n) => { droppedUntracked += n; })
           : unit.resolver;
-        plans.push({ comp: unit.component, changed: unit.changed, deleted: unit.deleted, resolver });
+        plans.push({ comp: unit.component, changed: unit.changed, deleted: unit.deleted, resolver, scopeNote: extras && extras.scopeNote });
       }
     }
     if (opts.onPrepared) {
@@ -492,7 +496,9 @@ async function analyze(repo, opts = {}) {
       await opts.onPrepared(require('./pending-analysis').snapshot(makeResult(pendingComponents, true)));
       throwIfCancelled(signal);
     }
-    for (const { comp, changed, deleted, resolver } of plans) {
+    // Impact paths (opts.impactPaths): off unless asked, so the result is otherwise unchanged.
+    impactWalker = opts.impactPaths ? createImpactWalkerFor(repo, git, plans, opts.impactPaths, signal, warnings) : null;
+    for (const { comp, changed, deleted, resolver, scopeNote } of plans) {
       throwIfCancelled(signal);
       const changedKeys = changedSymbolKeys(changed);
       const deferReach = opts.deferTestReach === true;
@@ -550,6 +556,9 @@ async function analyze(repo, opts = {}) {
         report({ phase: 'resolve', component: comp, done: ++done, total: changed.length, label: c.label });
       }, { signal });
 
+      // Every changed function, not only the roots: walked before the resolver is disposed.
+      if (impactWalker) await impactWalker.walk(resolver, changed, { scopeNote });
+
       // Blast radius is only computed for roots we will actually show: at depth 4 with
       // 90-node closures it was the single largest cost in the run (234s -> see README).
       const ranked = seedRoots(changed).sort((a, b) => b.score - a.score);
@@ -593,7 +602,12 @@ async function analyze(repo, opts = {}) {
 
   for (const { extras } of prepared) if (extras && extras.notes) warnings.push(...extras.notes());
   if (droppedUntracked) warnings.push(`${droppedUntracked} caller(s) in untracked files ignored — they are not part of the committed change`);
-  return makeResult(components, false);
+  const finalResult = makeResult(components, false);
+  if (impactWalker) {
+    finalResult.impactPaths = impactWalker.byId;
+    finalResult.impactPathsMeta = { limits: impactWalker.limits, walkMs: impactWalker.walkMs() };
+  }
+  return finalResult;
 
   function makeResult(components, callersPending) {
     const all = components.flatMap((c) => c.changed);
@@ -670,4 +684,22 @@ async function analyze(repo, opts = {}) {
     return result;
   }
 }
+/**
+ * The impact-path walker of one analysis, with the entry-point facts of the languages the
+ * changed functions are in. `config` is `true` for the defaults or the walk limits
+ * (./impact-paths.js, DEFAULT_LIMITS).
+ * @param {string} repo @param {any} git @param {Array<{ changed: any[] }>} plans
+ * @param {true|object} config @param {AbortSignal|undefined} signal @param {string[]} warnings
+ */
+function createImpactWalkerFor(repo, git, plans, config, signal, warnings) {
+  const { createImpactWalker } = require('./impact-paths');
+  const { gatherEntryFacts } = require('./entry-facts');
+  const { entryLanguageOf } = require('./entry-points');
+  const languages = new Set();
+  for (const { changed } of plans) for (const c of changed) { const l = entryLanguageOf(c.file); if (l) languages.add(l); }
+  const { facts, notes } = gatherEntryFacts({ repo, git, languages });
+  warnings.push(...notes);
+  return createImpactWalker({ repo, facts, limits: config === true ? undefined : config, signal });
+}
+
 module.exports = { analyze, MODES, modeLabel, rangesFor, withoutUntrackedCallers };
