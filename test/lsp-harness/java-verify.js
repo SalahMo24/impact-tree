@@ -6,6 +6,11 @@
  * the engine's Java reading. A development script, not part of `npm test`:
  *
  *   node test/lsp-harness/java-verify.js --syntactic [--repo <gson clone>] [<PR number>…]
+ *   node test/lsp-harness/java-verify.js --syntactic --callers [--preview] [--repo <gson clone>] [<PR number>…]
+ *
+ * `--callers` (J8): the syntax index's callers against oracle (b), javac's attribution; see
+ * "the caller check" below. Exit 0 when caller precision is >= 95% (and, `--preview`, no
+ * answer is complete and none reads "no callers").
  *
  * `--syntactic` (J7): the pipeline runs without a language server, as the no-checkout
  * preview does: `analyzeRemote` offline, its `gh` a fake over the clone's git objects
@@ -243,6 +248,202 @@ function comparePr(ours, oracle) {
 
 const pct = (a, b) => (b ? `${((100 * a) / b).toFixed(1)}%` : 'n/a');
 
+// ---- the caller check (J8): `--syntactic --callers [--preview]`, oracle (b) -----------------
+//
+// Oracle (b), test/java-signature-oracle/Callers.java: javac's attributed trees
+// (`JavacTask.analyze()`) of every Java file of the PR's head tree (module-info.java excluded),
+// annotation processing off (`-proc:none`), nothing run, no class file written. Every method
+// invocation and `new` whose declaration is in the tree, with the exact overload javac chose;
+// what javac cannot attribute (a classpath jar missing, errors) is listed as unattributed and
+// excluded from the comparison on both sides; `new T(…) { … }` is excluded the same way.
+// The tree is materialised from git objects (`git archive <head>`, Java files only) under
+// ~/Projects/impact-tree-scratchpad/java-oracle/trees/ and removed after: nothing is checked
+// out in the clone and nothing of gson runs (no Maven, no script, no processor).
+// Classpath: the jars jdtls already downloaded (`ORACLE_JARS` under java-tools/m2), not Maven.
+// Cache: java-oracle/callers/<head>/oracle-<Callers.java hash>-<classpath hash>.jsonl.
+//
+// Ours: `createJavaSyntacticIndex` over the scope's files at the head: the CLI's (J-D6: every
+// Java file of the tree outside build-output and generated directories) or, with `--preview`,
+// the PR's changed Java files (tests included), as `prepareSyntactic` builds them. Targets: the
+// PR's changed and added main methods (the pipeline's rows). For each target, the call sites
+// our answer lists against the oracle's whose call file is indexed. A site ours lists because
+// several same-arity overloads matched is counted apart (the answer says so); a miss is
+// labelled `dispatch` (the oracle's target may be reached through an override or interface),
+// `unresolved` (ours counted the call as unresolved) or `implicit` (an implicit `super()`).
+// The preview also checks the pipeline's rows: no complete answer, no "no callers".
+
+const CALLERS_JAVA = path.join(__dirname, '..', 'java-signature-oracle', 'Callers.java');
+const CALLERS_CACHE = path.join(os.homedir(), 'Projects/impact-tree-scratchpad/java-oracle/callers');
+const TREES = path.join(os.homedir(), 'Projects/impact-tree-scratchpad/java-oracle/trees');
+const M2 = path.join(os.homedir(), 'Projects/impact-tree-scratchpad/java-tools/m2');
+const ORACLE_JARS = [
+  'junit/junit/4.13.2/junit-4.13.2.jar',
+  'org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar',
+  'org/junit/jupiter/junit-jupiter-api/6.1.3/junit-jupiter-api-6.1.3.jar',
+  'org/junit/jupiter/junit-jupiter-params/6.1.3/junit-jupiter-params-6.1.3.jar',
+  'org/opentest4j/opentest4j/1.3.0/opentest4j-1.3.0.jar',
+  'org/apiguardian/apiguardian-api/1.1.2/apiguardian-api-1.1.2.jar',
+  'com/google/errorprone/error_prone_annotations/2.41.0/error_prone_annotations-2.41.0.jar',
+  'com/google/guava/guava-testlib/33.6.0-jre/guava-testlib-33.6.0-jre.jar',
+  'org/checkerframework/checker-qual/3.43.0/checker-qual-3.43.0.jar',
+].map((j) => path.join(M2, j)).filter((j) => fs.existsSync(j));
+const CALLERS_DEADLINE_MS = 300000;
+
+/** The head tree's Java files, written under a fresh directory from git objects. */
+function materialiseHead(repo, pr) {
+  fs.mkdirSync(TREES, { recursive: true });
+  const dir = fs.mkdtempSync(path.join(TREES, `${pr.number}-`));
+  const tar = execFileSync('git', ['-C', repo, 'archive', '--format=tar', pr.head, '--', ':(glob)**/*.java'], { maxBuffer: 1 << 30 });
+  execFileSync('tar', ['-x', '-f', '-', '-C', dir], { input: tar });
+  return dir;
+}
+
+function listJava(dir) {
+  const out = [];
+  const walk = (d, rel) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const r = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) walk(path.join(d, e.name), r);
+      else if (e.name.endsWith('.java')) out.push(r);
+    }
+  };
+  walk(dir, '');
+  return out.sort();
+}
+
+function callersOracle(repo, pr) {
+  const hash = crypto.createHash('sha256').update(fs.readFileSync(CALLERS_JAVA)).digest('hex').slice(0, 12);
+  const cpHash = crypto.createHash('sha256').update(ORACLE_JARS.map((j) => path.relative(M2, j)).join(':')).digest('hex').slice(0, 12);
+  const cacheFile = path.join(CALLERS_CACHE, pr.head, `oracle-${hash}-${cpHash}.jsonl`);
+  let text;
+  let cached = true;
+  if (fs.existsSync(cacheFile)) text = fs.readFileSync(cacheFile, 'utf8');
+  else {
+    cached = false;
+    const dir = materialiseHead(repo, pr);
+    try {
+      // The launcher compiles Callers.java alone (no classpath: nothing else is loaded);
+      // the tree is attributed inside it with `-proc:none` (the source launcher itself runs no
+      // annotation processing, JEP 330).
+      text = execFileSync(JAVA, [CALLERS_JAVA, dir, ORACLE_JARS.join(path.delimiter)], {
+        cwd: os.tmpdir(), encoding: 'utf8', maxBuffer: 1 << 30, timeout: CALLERS_DEADLINE_MS,
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+    fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
+    fs.writeFileSync(cacheFile, text);
+  }
+  const records = text.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  return {
+    cached, hash, cpHash,
+    calls: records.filter((r) => r.call),
+    unattributed: records.filter((r) => r.unattributed).map((r) => r.unattributed),
+    excluded: records.filter((r) => r.excluded).map((r) => r.excluded),
+    summary: records.find((r) => r.errors !== undefined) || {},
+  };
+}
+
+/** The scope's sources at the head: `{ path, text }`. */
+function scopeSources(repo, pr, preview) {
+  const { javaRules } = require('../../src/languages/java/rules');
+  const { NOT_SOURCE_DIRS } = require('../../src/languages/java/provider');
+  if (preview) {
+    return git(repo, 'diff', '--name-status', '-M', pr.base, pr.head).trim().split('\n').filter(Boolean).flatMap((l) => {
+      const [st, a, b] = l.split('\t');
+      if (st[0] === 'D') return [];
+      const p = st[0] === 'R' ? b : a;
+      return isJava(p) ? [{ path: p, text: git(repo, 'show', `${pr.head}:${p}`) }] : [];
+    });
+  }
+  const dir = materialiseHead(repo, pr);
+  try {
+    return listJava(dir)
+      .filter((rel) => javaRules.handles(rel) && !path.posix.dirname(rel).split('/').some((d) => NOT_SOURCE_DIRS.has(d)))
+      .map((rel) => ({ path: rel, text: fs.readFileSync(path.join(dir, rel), 'utf8') }));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+async function callerCheck(repo, pr, preview) {
+  const { createJavaSyntacticIndex } = require('../../src/languages/java/syntactic-index');
+  const o0 = Date.now();
+  const oracle = callersOracle(repo, pr);
+  const oMs = Date.now() - o0;
+  const p0 = Date.now();
+  const result = await syntacticPipeline(repo, pr);
+  const sources = scopeSources(repo, pr, preview);
+  const idx = createJavaSyntacticIndex(sources, { scope: preview ? 'the PR' : 'the tree', partialPackages: preview });
+  const pMs = Date.now() - p0;
+  const indexed = new Set(sources.map((s) => s.path));
+  const textOf = new Map(sources.map((s) => [s.path, s.text]));
+  const skip = new Set([...oracle.unattributed, ...oracle.excluded].map((u) => `${u.file}#${u.pos}`));
+  const ourCalls = new Map(idx.allCalls().map((c) => [`${c.rel}#${c.pos}`, c]));
+  const out = { targets: 0, tp: 0, fp: [], fn: [], sameArity: 0, skippedOurs: 0, rowsComplete: [], rowsNone: [] };
+  const rows = result.allChanged.filter((c) => isJava(c.relPath) && !require('../../src/languages').isTestPath(c.relPath));
+  for (const c of rows) {
+    if (preview) {
+      if (c.callersComplete) out.rowsComplete.push(`#${pr.number} ${c.relPath}#${c.key}`);
+      if (c.callerState === 'none') out.rowsNone.push(`#${pr.number} ${c.relPath}#${c.key}`);
+    }
+    const rec = idx.byFile.get(c.relPath);
+    const def = rec && rec.defs.find((d) => d.key === c.key || d.label === c.label);
+    if (!def) continue;
+    out.targets++;
+    const answer = idx.callersOfWithStatus({ file: c.relPath, name: def.name, pos: def.namePos });
+    const ours = new Set(answer.callers.flatMap((r) => r.callSites.map((s) => `${r.file}#${s.start}`)));
+    const theirs = new Set(oracle.calls.filter((r) => r.target.file === c.relPath && r.target.pos === def.namePos && indexed.has(r.call.file)).map((r) => `${r.call.file}#${r.call.pos}`));
+    const lineOf = (site) => {
+      const [file, pos] = [site.slice(0, site.lastIndexOf('#')), Number(site.slice(site.lastIndexOf('#') + 1))];
+      const text = textOf.get(file) || '';
+      return `${file}:${text.slice(0, pos).split('\n').length}: ${text.slice(text.lastIndexOf('\n', pos - 1) + 1, text.indexOf('\n', pos)).trim().slice(0, 100)}`;
+    };
+    for (const s of ours) {
+      if (skip.has(s)) { out.skippedOurs++; continue; }
+      if (theirs.has(s)) { out.tp++; continue; }
+      const hit = ourCalls.get(s);
+      if (hit && Array.isArray(hit.targets) && hit.targets.length > 1) { out.sameArity++; continue; }
+      out.fp.push(`#${pr.number} ${c.key} <- ${lineOf(s)}`);
+    }
+    for (const s of theirs) {
+      if (ours.has(s)) continue;
+      const o = oracle.calls.find((r) => `${r.call.file}#${r.call.pos}` === s);
+      const hit = ourCalls.get(s);
+      const text = textOf.get(o.call.file) || '';
+      const labels = [
+        o.dispatch ? 'dispatch' : null,
+        hit && hit.targets === 'unresolved' ? 'unresolved' : null,
+        o.kind === 'new' && !/^(super|this|[\p{L}_$])/u.test(text.slice(o.call.pos)) ? 'implicit' : null,
+        !hit ? 'no-use' : null,
+      ].filter(Boolean);
+      out.fn.push(`#${pr.number} ${c.key} <- ${lineOf(s)} [${labels.join(', ') || 'resolved elsewhere'}]`);
+    }
+  }
+  return { out, oracle, oMs, pMs, files: sources.length };
+}
+
+async function callersMain(repo, corpus, preview) {
+  const t0 = Date.now();
+  const totals = { targets: 0, tp: 0, fp: [], fn: [], sameArity: 0, unattributed: 0, rowsComplete: [], rowsNone: [] };
+  console.log(`caller check (${preview ? 'preview: the PR\'s files' : 'CLI: the head tree'}), oracle (b) javac attribution; classpath ${ORACLE_JARS.length} jar(s)`);
+  console.log('PR      files targets  tp  fp  fn  same-arity  unattributed  errors  precision  recall   oracle   ours');
+  for (const pr of corpus) {
+    const { out, oracle, oMs, pMs, files } = await callerCheck(repo, pr, preview);
+    totals.targets += out.targets; totals.tp += out.tp; totals.sameArity += out.sameArity; totals.unattributed += oracle.unattributed.length;
+    totals.fp.push(...out.fp); totals.fn.push(...out.fn); totals.rowsComplete.push(...out.rowsComplete); totals.rowsNone.push(...out.rowsNone);
+    console.log(`#${String(pr.number).padEnd(6)} ${String(files).padStart(5)} ${String(out.targets).padStart(7)} ${String(out.tp).padStart(3)} ${String(out.fp.length).padStart(3)} ${String(out.fn.length).padStart(3)} ${String(out.sameArity).padStart(11)} ${String(oracle.unattributed.length).padStart(13)} ${String(oracle.summary.errors).padStart(7)}  ${pct(out.tp, out.tp + out.fp.length).padStart(9)} ${pct(out.tp, out.tp + out.fn.length).padStart(7)}  ${`${(oMs / 1000).toFixed(1)}s${oracle.cached ? ' c' : ''}`.padStart(7)}  ${(pMs / 1000).toFixed(1)}s`);
+  }
+  console.log(`total targets ${totals.targets}; precision ${pct(totals.tp, totals.tp + totals.fp.length)}; recall ${pct(totals.tp, totals.tp + totals.fn.length)}; same-arity listed ${totals.sameArity}; unattributed by javac ${totals.unattributed}`);
+  const list = (title, xs) => { console.log(`${title}: ${xs.length}`); for (const x of xs) console.log(`  ${x}`); };
+  list('false positives', totals.fp);
+  list('misses', totals.fn);
+  if (preview) { list('complete answers (must be 0)', totals.rowsComplete); list('rows reading "no callers" (must be 0)', totals.rowsNone); }
+  console.log(`cache ${CALLERS_CACHE}; wall time ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+  const pass = totals.tp >= 0.95 * (totals.tp + totals.fp.length) && totals.rowsComplete.length === 0 && totals.rowsNone.length === 0;
+  process.exitCode = pass ? 0 : 1;
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const opt = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
@@ -253,6 +454,7 @@ async function main() {
   }
   const only = args.filter((a, i) => /^\d+$/.test(a) && args[i - 1] !== '--repo').map(Number);
   const corpus = JSON.parse(fs.readFileSync(CORPUS, 'utf8')).filter((p) => !only.length || only.includes(p.number));
+  if (args.includes('--callers')) return callersMain(repo, corpus, args.includes('--preview'));
   const hash = crypto.createHash('sha256').update(fs.readFileSync(MEMBERS)).digest('hex').slice(0, 12);
   const t0 = Date.now();
   const kindTally = {};

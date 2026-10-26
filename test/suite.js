@@ -36,6 +36,7 @@ const SUITE = [
   { file: 'test/python-signature.test.js', tier: 'quick' },
   { file: 'test/java-signature.test.js', tier: 'quick' },
   { file: 'test/java-outline.test.js', tier: 'quick' },
+  { file: 'test/java-syntactic.test.js', tier: 'quick' },
   { file: 'test/python-lexer.test.js', tier: 'quick' },  // 0.1s  // 0.2s
   { file: 'test/python-syntactic.test.js', tier: 'quick' },
   { file: 'test/go-syntactic.test.js', tier: 'quick' },
@@ -148,6 +149,7 @@ const EXCLUDED = {
   'review-findings-smoke.test.js': 'run by `npm run test:smoke` (the CI smoke stage)',
   'review-preview-smoke.test.js': 'run by `npm run test:smoke` (the CI smoke stage)',
   'bug-regressions-helpers.js': 'helper module required by tests',
+  'java-syntactic-fixture.js': 'fixture module required by java-syntactic.test.js',
   'extension-env.js': 'helper module: the extension loaded against a throwaway repository',
   'find-typescript.js': 'helper module: locates the typescript module for tests',
   'fixture-repo.js': 'helper module: builds the synthetic fixture repository',

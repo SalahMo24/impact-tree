@@ -9,8 +9,9 @@
 // which project a file belongs to (`javaProjectOf`, ./rules.js). The header parser and the
 // signature kinds are ./signature.js's (J3); how jdtls' callers are read is
 // ./editor-extras.js's (J4).
-// Without a server (the CLI, the no-checkout preview; J7): `prepareSyntactic`, the same
-// candidates from a text outline (`javaOutline`, ./outline.js), callers not computed.
+// Without a server (the CLI, the no-checkout preview; J7, J8): `prepareSyntactic`, the same
+// candidates from a text outline (`javaOutline`, ./outline.js), callers from a syntax-only
+// index (./syntactic-index.js).
 //
 // Engine modules and the signature parser are required where they are used: the registry
 // (../index.js) loads this file, and src/engine/diff.js loads the registry.
@@ -321,24 +322,23 @@ const prepare = (ctx) => require('../server-symbols').prepareFromServerSymbols(c
 const editorCallers = ({ trace, services, repoRoot, clock }) => require('./editor-extras').createJavaEditorExtras({ trace, services, repoRoot, ...(clock ? { clock } : {}) });
 
 /**
- * `prepare` where there is no language server (the CLI, the no-checkout preview; J7): the
+ * `prepare` where there is no language server (the CLI, the no-checkout preview; J7, J8): the
  * changed, added and deleted methods and constructors and their signature kinds from the
  * text alone (`javaOutline`, shaped as jdtls' answer, then the same `collectJavaSymbols`,
  * header parser, overload pairing and matching as `prepare`, so keys and review ids are the
- * editor's), with callers not computed: every unit's resolver is
- * `createNotComputedResolver`'s (J8 replaces it with a syntax-only index). Units are
- * `ctx.unit` when given (the preview's "pull request": nothing is read from disk, the texts
- * are `ctx.headTexts`/`ctx.baseTexts`), else projects by `javaProjectOf` (the CLI). A file
- * the outline cannot read (null) is reported by the shared pipeline as unread, never as a
- * file without methods. `ctx.hooks` is not read. One warning says the callers were not
- * computed, for how many files.
+ * editor's), with callers from a syntax-only index (./syntactic-index.js, J8) shared by
+ * every unit. Units are `ctx.unit` when given (the preview's "pull request": nothing is read
+ * from disk, the texts are `ctx.headTexts`/`ctx.baseTexts`), else projects by `javaProjectOf`
+ * (the CLI). The index reads `ctx.syntacticSources` when given (the preview: the PR's Java
+ * files and its changed tests), else the repository per J-D6 (`indexRepository`). A file the
+ * outline cannot read (null) is reported by the shared pipeline as unread, never as a file
+ * without methods. `ctx.hooks` is not read. One warning gives the index's scope note.
  * @param {import('../types').PrepareContext} ctx
  * @returns {Promise<import('../types').PreparedLanguage>}
  */
 async function prepareSyntactic(ctx) {
-  const { createNotComputedResolver, notComputedReason } = require('../../engine/resolver-not-computed');
+  const { createSyntacticResolver } = require('../../engine/resolver-syntactic');
   const { javaOutline } = require('./outline');
-  const reason = notComputedReason(javaRules.displayName);
   const spec = {
     ...javaSpec(),
     serverName: 'the Java text scan',
@@ -350,11 +350,69 @@ async function prepareSyntactic(ctx) {
     available: async () => ({ ok: true }),
     documentSymbols: async (/** @type {import('../types').DocRef} */ doc) => javaOutline(/** @type {string} */ (doc.text)),
   });
+  // A stand-in until the units are known: the index is built once, for all of them, below.
+  const pending = Object.freeze({ pending: true });
   const answer = await require('../server-symbols').prepareFromServerSymbols(
-    { ...ctx, hooks: { services, makeResolver: () => createNotComputedResolver(reason) } }, spec);
-  const files = answer.units.reduce((n, u) => n + new Set([...u.changed, ...u.deleted].map((/** @type {any} */ c) => c.relPath)).size, 0);
-  if (files) ctx.warnings.push(`${files} changed Java file(s) read from their text: changed methods and signature kinds only; callers ${reason}`);
-  return answer;
+    { ...ctx, hooks: { services, makeResolver: () => pending } }, spec);
+  if (!answer.units.length) return answer;
+  /** @type {any[]} */
+  const changed = answer.units.flatMap((u) => [...u.changed, ...u.deleted]);
+  const { createJavaSyntacticIndex } = require('./syntactic-index');
+  const idx = ctx.syntacticSources
+    ? createJavaSyntacticIndex(ctx.syntacticSources, {
+      root: ctx.repo, scope: `the pull request's own files (${ctx.syntacticSources.length} Java file(s) indexed)`, partialPackages: true,
+    })
+    : indexRepository(ctx, changed);
+  const { isTestFile } = require('../../engine/diff');
+  const resolver = {
+    ...createSyntacticResolver(idx, /** @type {any} */ ({ isTestPath: (/** @type {string} */ file) => isTestFile(ctx.repo, file) })),
+    // The syntax-only answers are lower bounds, so a blast radius counted from them is one too.
+    callersLowerBound: true,
+  };
+  for (const unit of answer.units) unit.resolver = resolver;
+  const files = new Set(changed.map((c) => c.relPath)).size;
+  if (files) ctx.warnings.push(`${files} changed Java file(s) read from their text: changed methods and signature kinds; ${idx.scopeNote()}`);
+  // The preview lists Java in its `callersScope` with this note (types.js, PreparedLanguage).
+  return { ...answer, extras: { ...answer.extras, scopeNote: idx.scopeNote(), unresolved: 'calls through an interface or an override, method references, generated members, and receivers whose type is not written' } };
+}
+
+// Directories whose Java files are build output or generated (J-D6), at any depth.
+const NOT_SOURCE_DIRS = new Set(['target', 'build', 'out', 'bin', 'generated', 'generated-sources', 'generated-test-sources', 'node_modules']);
+
+/**
+ * The CLI's Java index (J-D6 (a)): every Java file of the repository the Java rules handle,
+ * from the tracked and untracked files, without build output and generated sources
+ * (`NOT_SOURCE_DIRS`), read from disk, bounded by `REPO_MAX_FILES`/`REPO_MAX_BYTES`
+ * (../repository-files.js): past the bound, the changed packages' files (their
+ * directories) plus the files that mention a changed name. When the files cannot be listed,
+ * the changed files only, and the scope says so. Reads the file system and the repository.
+ * @param {import('../types').PrepareContext} ctx
+ * @param {any[]} changed The changed and deleted symbols.
+ */
+function indexRepository(ctx, changed) {
+  const fs = require('fs');
+  const path = require('path');
+  const { createJavaSyntacticIndex, MAX_FILE_BYTES } = require('./syntactic-index');
+  const { pickRepositoryFiles, REPO_MAX_FILES, REPO_MAX_BYTES } = require('../repository-files');
+  const read = (/** @type {string} */ rel) => { try { return fs.readFileSync(path.join(ctx.repo, rel), 'utf8'); } catch { return null; } };
+  const changedPaths = new Set(ctx.files.map((f) => f.path).filter((p) => javaRules.handles(p)));
+  const out = ctx.git && ctx.git.tryRaw(['ls-files', '--cached', '--others', '--exclude-standard', '-z']);
+  if (out == null) {
+    const sources = /** @type {Array<{ path: string, text: string }>} */ ([...changedPaths].map((rel) => ({ path: rel, text: read(rel) })).filter((s) => s.text != null));
+    return createJavaSyntacticIndex(sources, { root: ctx.repo, scope: `the changed files only (the repository's files could not be listed; ${sources.length} Java file(s) indexed)` });
+  }
+  const listed = [...new Set(String(out).split('\0').filter(Boolean))]
+    .filter((rel) => javaRules.handles(rel) && !path.posix.dirname(rel).split('/').some((d) => NOT_SOURCE_DIRS.has(d)))
+    .flatMap((rel) => { try { return [{ path: rel, size: fs.statSync(path.join(ctx.repo, rel)).size }]; } catch { return []; } });
+  const names = new Set(changed.map((c) => c.simpleName));
+  const changedDirs = new Set([...changedPaths].map((rel) => path.posix.dirname(rel)));
+  const picked = pickRepositoryFiles(listed, read, {
+    changedPaths, names, keep: (rel) => changedDirs.has(path.posix.dirname(rel)), maxFileBytes: MAX_FILE_BYTES,
+  });
+  const scope = picked.bounded
+    ? `the repository's changed packages and the files that mention a changed name (${picked.sources.length} of ${listed.length} Java file(s) indexed: over the bound of ${REPO_MAX_FILES} files or ${REPO_MAX_BYTES / 1024 / 1024} MiB)`
+    : `the repository (${picked.sources.length} Java file(s) indexed)`;
+  return createJavaSyntacticIndex(picked.sources, { root: ctx.repo, scope, notIndexed: picked.notIndexed });
 }
 
 /**
@@ -410,4 +468,4 @@ const javaProvider = Object.freeze({
   serverLabel: 'the Java language server (jdtls)',
 });
 
-module.exports = { javaProvider, javaSpec, collectJavaSymbols, pairOverloads, declarationStartOf, renderJavaSymbolSig, prepareSyntactic };
+module.exports = { javaProvider, javaSpec, collectJavaSymbols, pairOverloads, declarationStartOf, renderJavaSymbolSig, prepareSyntactic, NOT_SOURCE_DIRS };
