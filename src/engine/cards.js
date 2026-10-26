@@ -24,7 +24,12 @@ function buildCards(result, { repo, base, head }) {
   const facts = gatherDiffFacts({ repo, base, head });
   const built = buildClusters(result, { facts });
   const counted = countRareTokens(facts, built.clusters, { repo, head });
-  return { ...built, hints: hintsFor(built.clusters, counted), hintNotes: counted.notes, generatedDirs: counted.generatedDirs };
+  const hintNotes = counted.notes.slice();
+  // Clusters include uncommitted edits; the hints read history up to `head` only.
+  if (result.mode !== 'pr' && result.dirtyCount > 0) {
+    hintNotes.unshift(`hints read committed history only: ${result.dirtyCount} file(s) with uncommitted changes are in the cards but not in the hints`);
+  }
+  return { ...built, hints: hintsFor(built.clusters, counted), hintNotes, generatedDirs: counted.generatedDirs };
 }
 
 module.exports = { buildCards };
