@@ -6,7 +6,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  parsePythonDeclaration, pythonHeaderText, raisesOf, pythonKindsOf, renderPythonSig, MAX_HEADER_CHARS,
+  parsePythonDeclaration, pythonHeaderText, raisesOf, pythonKindsOf, renderPythonSig, normalizeAnnotation, MAX_HEADER_CHARS,
 } = require('../src/languages/python/signature');
 const { diffSignature, KIND } = require('../src/engine/signature');
 
@@ -186,6 +186,43 @@ test('a type, return, optional, removal and addition each give their kind', () =
   assert.deepEqual(kinds('def f(a, b):\n pass', 'def f(a):\n pass'), ['param-removed']);
   assert.deepEqual(kinds('def f(a, b):\n pass', 'def f(a, b=1):\n pass'), ['optional-param-changed']);
   assert.deepEqual(kinds('def f(a):\n pass', 'def f(a):\n return 1'), []);
+});
+
+test('typing-equivalent annotation spellings are no change (pydantic PR 13070)', () => {
+  const same = (/** @type {string} */ a, /** @type {string} */ b) => assert.deepEqual(kinds(a, b, a.includes('(self')), [], `${a} vs ${b}`);
+  // (pydantic) Color.as_rgb_tuple and parse_color_value, base and head of PR 13070.
+  same('def as_rgb_tuple(self, *, alpha: Optional[bool] = None) -> ColorTuple:\n pass',
+    'def as_rgb_tuple(self, *, alpha: bool | None = None) -> ColorTuple:\n pass');
+  same('def parse_color_value(value: Union[int, str], max_val: int = 255) -> float:\n pass',
+    'def parse_color_value(value: int | str, max_val: int = 255) -> float:\n pass');
+  same('def f(a: Union[A, B]):\n pass', 'def f(a: B | A):\n pass');
+  same('def f(a: Optional[Union[A, B]]):\n pass', 'def f(a: None | B | A):\n pass');
+  same('def f(a: Union[A, None, A]):\n pass', 'def f(a: A | None):\n pass');
+  same('def f(a: List[Dict[str, Tuple[int, ...]]]) -> Set[Type[X]]:\n pass',
+    'def f(a: list[dict[str, tuple[int, ...]]]) -> set[type[X]]:\n pass');
+  same('def f(a: typing.Optional[typing.FrozenSet[int]]):\n pass', 'def f(a: frozenset[int] | None):\n pass');
+  same('def f(a: typing.Callable[[int, str], None]):\n pass', 'def f(a: collections.abc.Callable[[int, str], None]):\n pass');
+  same('def f(*args: Optional[int], **kw: Union[int, str]):\n pass', 'def f(*args: int | None, **kw: str | int):\n pass');
+  same('def f(a: Literal["x", "y"] | None):\n pass', 'def f(a: Optional[Literal["x", "y"]]):\n pass');
+  // (pydantic) Field and _Pipeline.validate_as: typeshed's `ellipsis` is types.EllipsisType.
+  same('def Field(default: ellipsis, *, alias: str | None = _Unset) -> Any:\n pass',
+    'def Field(default: EllipsisType, *, alias: str | None = _Unset) -> Any:\n pass');
+  same('def f(a: ellipsis):\n pass', 'def f(a: types.EllipsisType):\n pass');
+});
+
+test('annotation normalisation keeps real type changes and leaves unreadable text as written', () => {
+  const changed = (/** @type {string} */ a, /** @type {string} */ b, /** @type {string[]} */ ids) =>
+    assert.deepEqual(kinds(a, b), ids, `${a} vs ${b}`);
+  changed('def f(a: Optional[int]):\n pass', 'def f(a: int):\n pass', ['type-changed']);
+  changed('def f(a: Union[int, str]):\n pass', 'def f(a: int | bytes):\n pass', ['type-changed']);
+  changed('def f(a: List[int]):\n pass', 'def f(a: list[str]):\n pass', ['type-changed']);
+  changed('def f(a: Tuple[int, str]):\n pass', 'def f(a: tuple[str, int]):\n pass', ['type-changed']);
+  changed('def f(a: Literal["x", "y"]):\n pass', 'def f(a: Literal["y", "x"]):\n pass', ['type-changed']);
+  changed('def f() -> Optional[int]:\n pass', 'def f() -> int:\n pass', ['return-changed']);
+  changed('def f(*, a: Optional[int]):\n pass', 'def f(a: int | None):\n pass', ['type-changed']);
+  assert.equal(normalizeAnnotation('Optional[Union[B, A]]'), 'A | B | None');
+  assert.equal(normalizeAnnotation('"Foo" | None'), '"Foo" | None');
+  for (const raw of ['Tuple[()]', 'f(x)', 'A[', 'A |', 'A[B,,]', '']) assert.equal(normalizeAnnotation(raw), raw);
 });
 
 test('decorators may span lines and hold calls and strings; they are normalised', () => {

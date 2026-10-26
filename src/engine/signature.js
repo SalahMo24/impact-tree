@@ -52,9 +52,46 @@ function diffSignature(baseSym, headSym) {
   return changes;
 }
 
+// The leading dotted name of a thrown expression, after `new` or before a call's `(`.
+const THROWN_NEW = /^new\s+([\p{L}_$][\p{L}\p{N}_$]*(?:\s*\.\s*[\p{L}_$][\p{L}\p{N}_$]*)*)/u;
+const THROWN_CALL = /^([\p{L}_$][\p{L}\p{N}_$]*(?:\s*\.\s*[\p{L}_$][\p{L}\p{N}_$]*)*)\s*(?:<[^()]*>\s*)?\(/u;
+
+/**
+ * What a throw is paired by: the constructor of `new X(…)` (`new X`) or the function of a
+ * factory call `f(…)` (`f(…)`). Any other expression (`throw err`) is its own key. Python and
+ * Java record names, which are their own key too.
+ * @param {string} text @returns {string}
+ */
+function throwKey(text) {
+  const made = THROWN_NEW.exec(text);
+  if (made) return `new ${made[1].replace(/\s+/g, '')}`;
+  const called = THROWN_CALL.exec(text);
+  return called ? `${called[1].replace(/\s+/g, '')}(…)` : text;
+}
+
+/**
+ * The head's throws that are new, as the head writes them. A throw whose text the base also
+ * has is not new. A changed text is a reworded message, not a new throw, when it takes the
+ * place of a base throw with the same key that the head no longer has (hono PR 1774:
+ * `new Error('…')` to `new Error(MESSAGE)`). When a key has more changed texts in the head
+ * than vanished ones in the base, which one is reworded cannot be told, so all of that key's
+ * changed texts are reported (t3code PR 15 adds a `throw new Error` beside one it keeps).
+ * Texts are distinct (a set): two identical throws were never told apart.
+ * @param {{ throws: Set<string> } | null | undefined} baseSym @param {{ throws: Set<string> }} headSym
+ * @returns {string[]}
+ */
 function newThrows(baseSym, headSym) {
   if (!baseSym) return [];
-  return [...headSym.throws].filter((t) => !baseSym.throws.has(t));
+  /** @type {Map<string, number>} key -> base texts of that key the head no longer has */
+  const vanished = new Map();
+  for (const t of baseSym.throws) {
+    if (!headSym.throws.has(t)) vanished.set(throwKey(t), (vanished.get(throwKey(t)) || 0) + 1);
+  }
+  const changed = [...headSym.throws].filter((t) => !baseSym.throws.has(t));
+  /** @type {Map<string, number>} */
+  const changedByKey = new Map();
+  for (const t of changed) changedByKey.set(throwKey(t), (changedByKey.get(throwKey(t)) || 0) + 1);
+  return changed.filter((t) => (changedByKey.get(throwKey(t)) || 0) > (vanished.get(throwKey(t)) || 0));
 }
 
 // Stale-caller count is capped so a benign change with many callers cannot outrank a
@@ -64,4 +101,4 @@ function score(finding) {
   return base + Math.min(finding.staleCallers || 0, 10) * 2;
 }
 
-module.exports = { KIND, diffSignature, newThrows, score };
+module.exports = { KIND, diffSignature, newThrows, throwKey, score };

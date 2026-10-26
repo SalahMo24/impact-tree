@@ -476,11 +476,156 @@ function raisedName(body, at) {
   return DOTTED_NAME.test(body) ? body.slice(i, DOTTED_NAME.lastIndex) : null;
 }
 
+// Module prefixes dropped from annotation names: `typing.Optional` and `Optional` name the
+// same thing, as do `collections.abc.Sequence` and `typing.Sequence` (an alias of it).
+const TYPING_PREFIXES = ['typing.', 'typing_extensions.', 'collections.abc.'];
+// PEP 585: the `typing` generic aliases and the builtins they stand for. Also typeshed's
+// `ellipsis`, which is `types.EllipsisType` (Python 3.10) under another name.
+const BUILTIN_FOR_ALIAS = new Map([
+  ['List', 'list'], ['Dict', 'dict'], ['Set', 'set'], ['FrozenSet', 'frozenset'], ['Tuple', 'tuple'], ['Type', 'type'],
+  ['ellipsis', 'EllipsisType'], ['types.EllipsisType', 'EllipsisType'],
+]);
+
+/**
+ * @typedef {{ form: 'name', name: string, args: AnnNode[]|null } | { form: 'union', members: AnnNode[] }
+ *   | { form: 'list', items: AnnNode[] } | { form: 'text', text: string }} AnnNode
+ */
+
+/**
+ * An annotation's text with typing-equivalent spellings written one way, for comparing only:
+ * `Optional[X]` and `Union[X, None]` read `X | None`; a union's members are sorted and
+ * deduplicated (`Union[A, B]` and `B | A` are the same type); the PEP 585 aliases read as
+ * their builtins (`List[int]` is `list[int]`, `ellipsis` is `EllipsisType`); and `typing.`,
+ * `typing_extensions.` and `collections.abc.` prefixes are dropped. Dropping Python 3.9
+ * rewrites one spelling into the other and changes no caller (pydantic PR 13070: 12 of its
+ * 16 headers read as a type or return change before).
+ *
+ * Limits: names are matched as written, so a module's own class called `List` or `Optional`
+ * is not told apart (its change would read as none), and an aliased import (`import typing as
+ * t`) is not resolved. String annotations (forward references) are compared verbatim. Text
+ * this cannot read (anything but names, subscripts, `|`, lists, literals and `...`) is
+ * returned unchanged, so it is compared as written.
+ * @param {string} text annotation text as `parsePythonDeclaration` renders it
+ * @returns {string}
+ */
+function normalizeAnnotation(text) {
+  const read = tokenizeSpan(text, 0, 'newline');
+  if (!read || read.tokens.length === 0) return text;
+  const toks = read.tokens;
+  let k = 0;
+  /** @returns {AnnNode | null} */
+  const expr = () => {
+    const first = term();
+    if (!first) return null;
+    /** @type {AnnNode[]} */
+    const members = [first];
+    while (toks[k] && toks[k].text === '|') {
+      k++;
+      const next = term();
+      if (!next) return null;
+      members.push(next);
+    }
+    return members.length === 1 ? first : { form: 'union', members };
+  };
+  /** Items up to the closing `]`, which is consumed. @returns {AnnNode[] | null} */
+  const items = () => {
+    /** @type {AnnNode[]} */
+    const out = [];
+    while (toks[k] && toks[k].text !== ']') {
+      const item = expr();
+      if (!item) return null;
+      out.push(item);
+      if (toks[k] && toks[k].text === ',') k++;
+      else if (!toks[k] || toks[k].text !== ']') return null;
+    }
+    if (!toks[k]) return null;
+    k++;
+    return out;
+  };
+  /** @returns {AnnNode | null} */
+  const term = () => {
+    const t = toks[k];
+    if (!t) return null;
+    if (t.kind === 'lit') { k++; return { form: 'text', text: t.text }; }
+    if (t.text === '[') {
+      k++;
+      const list = items();
+      return list && { form: 'list', items: list };
+    }
+    if (t.text === '.' && toks[k + 1] && toks[k + 1].text === '.' && toks[k + 2] && toks[k + 2].text === '.') {
+      k += 3;
+      return { form: 'text', text: '...' };
+    }
+    if (t.kind !== 'ident') return null;
+    let name = t.text;
+    k++;
+    while (toks[k] && toks[k].text === '.' && toks[k + 1] && toks[k + 1].kind === 'ident') {
+      name += `.${toks[k + 1].text}`;
+      k += 2;
+    }
+    if (!toks[k] || toks[k].text !== '[') return { form: 'name', name, args: null };
+    k++;
+    const args = items();
+    return args && { form: 'name', name, args };
+  };
+  const tree = expr();
+  if (!tree || k !== toks.length) return text;
+  return unionMembers(tree).join(' | ');
+}
+
+/**
+ * The normalised union members of an annotation node, sorted and deduplicated; a node that is
+ * not a union is one member.
+ * @param {AnnNode} node @returns {string[]}
+ */
+function unionMembers(node) {
+  const sorted = (/** @type {string[]} */ ms) => [...new Set(ms)].sort();
+  if (node.form === 'text') return [node.text];
+  if (node.form === 'list') return [`[${node.items.map((n) => unionMembers(n).join(' | ')).join(', ')}]`];
+  if (node.form === 'union') return sorted(node.members.flatMap(unionMembers));
+  const prefix = TYPING_PREFIXES.find((p) => node.name.startsWith(p));
+  const bare = prefix ? node.name.slice(prefix.length) : node.name;
+  const name = BUILTIN_FOR_ALIAS.get(bare) || bare;
+  if (!node.args) return [name];
+  if (name === 'Optional' && node.args.length === 1) return sorted([...unionMembers(node.args[0]), 'None']);
+  if (name === 'Union' && node.args.length > 0) return sorted(node.args.flatMap(unionMembers));
+  return [`${name}[${node.args.map((n) => unionMembers(n).join(' | ')).join(', ')}]`];
+}
+
+/**
+ * A parameter's `type` (marker, then annotation) with its annotation normalised.
+ * @param {string|null} type @returns {string|null}
+ */
+function normalizeParamType(type) {
+  if (typeof type !== 'string') return type;
+  const m = MARKER_PREFIX.exec(type);
+  const ann = type.slice(m ? m[0].length : 0);
+  return ann ? `${m ? m[0] : ''}${normalizeAnnotation(ann)}` : type;
+}
+
+/**
+ * A copy of `symbol` whose signature's annotations are normalised, for comparing only.
+ * @template {{ sig: PySig }} S
+ * @param {S} symbol @returns {S}
+ */
+function withNormalizedAnnotations(symbol) {
+  const { sig } = symbol;
+  return {
+    ...symbol,
+    sig: {
+      ...sig,
+      params: sig.params.map((p) => ({ ...p, type: normalizeParamType(p.type) })),
+      returns: typeof sig.returns === 'string' ? normalizeAnnotation(sig.returns) : sig.returns,
+    },
+  };
+}
+
 /**
  * The change kinds of a Python function or method between its base and head versions.
  * Symbols carry `sig` (null when the header could not be read), `header` (the normalised
  * header text, `pythonHeaderText`) and `binding`. A binding change (property to method,
- * plain to static) is a type change; with both `sig`s the shared `diffSignature` decides;
+ * plain to static) is a type change; with both `sig`s the shared `diffSignature` decides,
+ * on annotations with typing-equivalent spellings normalised (`normalizeAnnotation`);
  * otherwise the normalised headers are compared. Decorators other than bindings are not a
  * signature change.
  * @param {{ sig: any, header: string, binding: string }|null|undefined} base
@@ -490,7 +635,9 @@ function raisedName(body, at) {
 function pythonKindsOf(base, head) {
   const { diffSignature, KIND } = require('../../engine/signature');
   if (!base) return [];
-  const kinds = base.sig && head.sig ? diffSignature(base, head) : base.header === head.header ? [] : [KIND.TYPE_CHANGED];
+  const kinds = base.sig && head.sig
+    ? diffSignature(withNormalizedAnnotations(base), withNormalizedAnnotations(head))
+    : base.header === head.header ? [] : [KIND.TYPE_CHANGED];
   if (base.binding !== head.binding && !kinds.includes(KIND.TYPE_CHANGED)) kinds.push(KIND.TYPE_CHANGED);
   return kinds;
 }
@@ -526,5 +673,5 @@ function renderPythonSig(sig) {
 
 module.exports = {
   parsePythonDeclaration, pythonHeaderText, raisesOf, pythonKindsOf, renderPythonSig,
-  MAX_HEADER_CHARS,
+  normalizeAnnotation, MAX_HEADER_CHARS,
 };
