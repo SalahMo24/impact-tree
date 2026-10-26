@@ -93,24 +93,24 @@ function checkCards(input, cards) {
 /**
  * Cards of one case, from the embedded `cards` field or built twice (the second build is the
  * rerun check, so the same git facts are read twice).
- * @param {any} args @param {any} cs @param {any} input @param {(r: any, p: any) => any} buildCards
- * @returns {{cards: any, problems: string[], ms: number}}
+ * @param {any} args @param {any} cs @param {any} input @param {(r: any, p: any) => Promise<any>} buildCards
+ * @returns {Promise<{cards: any, problems: string[], ms: number}>}
  */
-function cardsFor(args, cs, input, buildCards) {
+async function cardsFor(args, cs, input, buildCards) {
   if (args.embedded) {
     if (!input.cards) return { cards: null, problems: ['no cards field in the input'], ms: 0 };
     return { cards: input.cards, problems: checkCards(input, input.cards), ms: 0 };
   }
   const p = { repo: cs.repo, base: cs.base, head: cs.head || 'HEAD' };
   const t0 = Date.now();
-  const cards = buildCards(input, p);
+  const cards = await buildCards(input, p);
   const ms = Date.now() - t0;
   const problems = checkCards(input, cards);
-  if (JSON.stringify(cards) !== JSON.stringify(buildCards(input, p))) problems.push('cards not byte-identical on rerun');
+  if (JSON.stringify(cards) !== JSON.stringify(await buildCards(input, p))) problems.push('cards not byte-identical on rerun');
   return { cards, problems, ms };
 }
 
-function main() {
+async function main() {
   const args = parseArgs(process.argv.slice(2));
   const { buildCards } = require(path.join(args.engine, 'src', 'engine', 'cards'));
   const corpus = JSON.parse(fs.readFileSync(args.corpus, 'utf8')).cases;
@@ -121,7 +121,7 @@ function main() {
     const file = path.join(args.inputs, `${cs.name}.json`);
     if (!fs.existsSync(file)) { console.log(`skip ${cs.name}: no input`); continue; }
     const input = JSON.parse(fs.readFileSync(file, 'utf8'));
-    const { cards, problems, ms } = cardsFor(args, cs, input, buildCards);
+    const { cards, problems, ms } = await cardsFor(args, cs, input, buildCards);
     if (cards) fs.writeFileSync(path.join(args.out, `${cs.name}.json`), JSON.stringify(cards, null, 1));
     failures += problems.length;
     const summary = cards ? `clusters=${cards.clusters.length} sweeps=${cards.sweeps.length} hints=${cards.hints.length} ${ms}ms` : '';
@@ -143,4 +143,4 @@ function main() {
   process.exit(failures ? 1 : 0);
 }
 
-main();
+main().catch((e) => { console.error(e); process.exit(2); });

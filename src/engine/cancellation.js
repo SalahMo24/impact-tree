@@ -42,4 +42,16 @@ function throwIfCancelled(signal) {
   if (signal && signal.aborted) throw new AnalysisCancelledError();
 }
 
-module.exports = { AnalysisCancelledError, isAnalysisCancelled, throwIfCancelled };
+/**
+ * The outcome of a promise as data, so sibling operations all settle before an error is
+ * acted on. A cancellation is re-thrown: it is a stop, not a failed step.
+ * @template T
+ * @param {Promise<T>} p
+ * @returns {Promise<{ok: true, value: T} | {ok: false, error: unknown}>}
+ */
+async function attempt(p) {
+  try { return { ok: true, value: await p }; }
+  catch (error) { if (isAnalysisCancelled(error)) throw error; return { ok: false, error }; }
+}
+
+module.exports = { AnalysisCancelledError, isAnalysisCancelled, throwIfCancelled, attempt };

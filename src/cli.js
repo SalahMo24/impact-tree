@@ -54,7 +54,7 @@ try {
 }
 
 if (flag('json')) {
-  if (flag('cards')) result.cards = buildCards(result, { repo, base: result.base.sha, head: 'HEAD' });
+  if (flag('cards')) result.cards = await buildCards(result, { repo, base: result.base.sha, head: 'HEAD' });
   console.log(JSON.stringify(result, (k, v) => (v instanceof Set ? [...v] : v), 2));
   // Not process.exit(): to a pipe, stdout is written asynchronously, and exiting cut the
   // JSON at the pipe's buffer (8 KiB).

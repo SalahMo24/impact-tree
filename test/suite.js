@@ -144,6 +144,9 @@ const SUITE = [
   { file: 'test/impact-paths-preview.test.js', tier: 'quick' },  // 0.3s
   { file: 'test/clusters.test.js', tier: 'quick' },
   { file: 'test/cluster-hints.test.js', tier: 'quick' },
+  { file: 'test/cards-facts.test.js', tier: 'quick' },
+  { file: 'test/cards-remote.test.js', tier: 'quick' },
+  { file: 'test/github-commits.test.js', tier: 'quick' },
   { file: 'test/repeated-edits.test.js', tier: 'quick' },
 ];
 

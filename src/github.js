@@ -483,9 +483,67 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
     return body;
   }
 
+  /**
+   * The first line of a commit message and whether the commit merges (has several parents).
+   * @param {unknown} c
+   * @param {string} endpoint
+   * @returns {{ sha: string, subject: string, isMerge: boolean }}
+   */
+  function checkCommitHead(c, endpoint) {
+    if (!isObject(c) || !isString(c.sha) || !isObject(c.commit) || !isString(c.commit.message)
+      || !Array.isArray(c.parents)) {
+      throw new GitHubResponseError(endpoint, 'a commit lacks a string `sha` or `commit.message`, or a `parents` list');
+    }
+    return { sha: c.sha, subject: c.commit.message.split('\n')[0], isMerge: c.parents.length > 1 };
+  }
+
+  /**
+   * The PR's commits, oldest first. GitHub lists at most 250 per PR; `truncated` says more
+   * exist than were returned (by `max` or by that cap).
+   * @param {RepoSlug} slug
+   * @param {number} number
+   * @param {{ max?: number, signal?: AbortSignal }} [options]
+   * @returns {Promise<{ commits: { sha: string, subject: string, isMerge: boolean }[], truncated: boolean }>}
+   */
+  async function listPullRequestCommits({ owner, repo }, number, { max = 250, signal } = {}) {
+    const limit = Math.min(250, Math.max(1, max));
+    /** @type {{ sha: string, subject: string, isMerge: boolean }[]} */
+    const out = [];
+    let more = false;
+    for (let page = 1; page <= 3; page++) {
+      const endpoint = `/repos/${owner}/${repo}/pulls/${number}/commits?per_page=100&page=${page}`;
+      const batch = await api(endpoint, { signal });
+      if (!Array.isArray(batch)) throw new GitHubResponseError(endpoint, 'expected a list of commits');
+      for (const c of batch) out.push(checkCommitHead(c, endpoint));
+      more = batch.length === 100;
+      if (!more || out.length > limit) break;
+    }
+    return { commits: out.slice(0, limit), truncated: out.length > limit || more };
+  }
+
+  /**
+   * One commit with the paths it changed. The first response lists up to 300 files;
+   * `filesTruncated` is true when it may have omitted some.
+   * @param {RepoSlug} slug
+   * @param {string} sha
+   * @param {{ signal?: AbortSignal }} [options]
+   * @returns {Promise<{ sha: string, subject: string, isMerge: boolean, files: string[], filesTruncated: boolean }>}
+   */
+  async function getCommit({ owner, repo }, sha, { signal } = {}) {
+    const endpoint = `/repos/${owner}/${repo}/commits/${encodeURIComponent(sha)}`;
+    const c = await api(endpoint, { signal });
+    const head = checkCommitHead(c, endpoint);
+    const files = isObject(c) && Array.isArray(c.files) ? c.files : [];
+    for (const f of files) {
+      if (!isObject(f) || !isString(f.filename)) throw new GitHubResponseError(endpoint, 'a listed file lacks a string `filename`');
+    }
+    return { ...head, files: files.map((f) => f.filename), filesTruncated: files.length >= 300 };
+  }
+
   return {
     signIn, scopes, isSignedIn, account, signOutLocally, graphql, listOpenPullRequests, listMyTeams,
     listPullRequestFiles, fileAtRef, parseRemote, getPullRequest, mergeBase,
+    listPullRequestCommits, getCommit,
   };
 }
 
