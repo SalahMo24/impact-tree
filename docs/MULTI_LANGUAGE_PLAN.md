@@ -591,25 +591,202 @@ false positives and misses listed separately; every caller Jedi finds that we mi
 on an answer marked incomplete; no Python change shown as fine while a non-updated caller
 is known.
 
-## Part J: Java (after Python)
+## Part J: Java, in the editor and in the preview and the CLI (plan, 2026-10-26)
 
-Original sketch for both languages (Python's is superseded by Part P above):
+**Approved by the owner (2026-10-26) as proposed:** J-D1 (a) tools in the scratchpad,
+J-D2 (a) `google/gson`, J-D3 (a) parameter-type keys, J-D4 (a) `access-changed`, J-D5 (a)
+`throws` and `throw new`, J-D6 (a) the repository in the CLI; the verification plan and
+budgets below as written.
 
-### Python and Java sketch
+Owner: plan now, implement in a new thread. Java becomes a fourth provider
+(`src/languages/java/`), built like Python in two halves that reuse what exists:
+- **Editor (a checked-out PR, local review):** Red Hat's Java extension (`redhat.java`,
+  Eclipse JDT LS, "jdtls"), through the shared server-symbols helper, the editor services
+  and `callersFromHierarchy`, as Go (Part G) and Python (Part P).
+- **No-checkout preview and CLI:** `javaProvider.prepareSyntactic`, a text outline and a
+  syntax index, as Go's S3/S4. After Part S this is a provider change only: nothing in
+  `analyze-remote.js` or `analyze.js`.
 
-Each is a new provider in `src/languages/<id>/` with G1–G8's tasks; the pipeline and the
-services adapter do not change. What differs:
+The pipeline, services adapter, review identity (G5), warm-up hooks, "not analysed"
+handling (G6), the preview loop (S2), `pickRepositoryFiles` and `createSyntacticResolver`
+are reused unchanged. Kotlin, Scala and Groovy stay "not analysed yet".
 
-- **Python** (Pylance or Jedi): `.py` / `.pyi`; tests `test_*.py`, `*_test.py`,
-  `tests/`, `conftest.py`; headers `def` / `async def` with defaults (`optional`),
-  `*args` / `**kwargs` (`rest`), type hints; decorators; `#` comments as trivia; dynamic
-  calls make "may be missing" common, which must stay amber, not fine. Oracle: `ast`
-  for changed functions; callers checked against the server plus `pyan` on a sample.
-- **Java** (Red Hat's Java extension, jdtls): `.java`; tests `src/test/java/`,
-  `*Test.java`, `*Tests.java`, `*IT.java`; overloads keyed by parameter types;
-  `signatureKinds` adds `new-throw` for a new checked exception in `throws`; interface and
-  abstract dispatch as G4; Lombok-generated members have no source. Oracle: a JavaParser
-  diff and `javacg` (static call graph) on a sample repo.
+What Java changes compared with Go and Python:
+- **Overloads.** Several methods share a name in one class; jdtls names a method with its
+  parameter types (`parse(String, int)`, to confirm in J0). Keys must stay stable across
+  unrelated edits (review ticks) and still let a changed parameter list read as a signature
+  change, not a deletion plus an addition (J-D3).
+- **Types are written.** Parameters, fields, locals (`Foo x`, `var x = new Foo()`) and
+  return types are declared, so a syntax index can type far more receivers than Go's or
+  Python's. Imports are explicit (single-type, on-demand `.*`, static).
+- **Dispatch.** Interfaces, abstract methods, overrides and `super.m()` decide which method
+  a call reaches; a method reference (`Foo::bar`) or a lambda is a value use.
+- **Contract.** Checked exceptions in `throws`; visibility and `static` changes break
+  callers; varargs.
+- **Generated members.** Lombok and other annotation processors create members with no
+  source (`getX()` of a `@Data` class): calls to them can never be matched.
+- **Server cost.** jdtls imports the build (Maven/Gradle), resolves dependencies and builds
+  the project before answering: its first answer is slower than gopls' or Pyright's (J0
+  measures it), which the waiting notice and the harness budgets must allow for.
+
+### Decisions (approved)
+
+- **J-D1. Harness tools.** jdtls needs Java 21 or newer to run; this machine has
+  OpenJDK 17 (Homebrew) and no Maven, Gradle or jdtls. (a) **proposal**: everything in the
+  scratchpad, nothing installed system-wide: a Temurin JDK 21 tarball (~190 MB), the jdtls
+  milestone (`download.eclipse.org/jdtls/milestones/`, EPL-2.0, ~50 MB), Maven 3.9
+  (~10 MB, for the oracle's test classpath) with its local repository in the scratchpad
+  (dependencies downloaded once from Maven Central); (b) `brew install openjdk@21 maven`
+  (system-wide). The editor side needs `redhat.java` installed in the owner's VS Code
+  and Cursor for the manual pass (it bundles its own Java runtime).
+- **J-D2. Test repository.** A Maven project whose main code has no runtime dependencies
+  (so the oracle's classpath is small), with many merged PRs. (a) **proposal**:
+  **`google/gson`**: multi-module (tests units), generics, overloads, inner and anonymous
+  classes, reflection; (b) `jhy/jsoup`: single module, very active, simpler types;
+  (c) `apache/commons-lang`: overload-heavy (`StringUtils`), large, many small PRs.
+  The 10-PR corpus is picked in J6 and approved separately, as P7's was.
+- **J-D3. Overload keys.** (a) **proposal**: the key carries the erased simple parameter
+  types, as jdtls names them (`Gson.toJson(Object, Appendable)`), so adding or reordering
+  an overload moves no other key; in a file where exactly one overload of a name
+  disappears and one appears, the two are paired and read as a signature change of that
+  overload (its old key kept as the row's identity, as a rename is today). (b) Name and
+  source order (`Gson.toJson#2`), as Go and Python repeat names: simpler, but inserting an
+  overload above another shifts its key and its review tick.
+- **J-D4. Java-only kinds.** (a) **proposal**: one new kind, `access-changed` (visibility
+  reduced, `static` added or removed, `final` added to a method that is overridden in the
+  indexed files; weight as `required-param`: callers fail to compile), shared in
+  `src/engine/signature.js`; a varargs change is `type-changed`; generic type parameters
+  are part of the types. (b) No new kind: those changes read as `type-changed`.
+- **J-D5. Throws.** (a) **proposal**: a new checked exception in `throws` and a new
+  `throw new X` in the method's own body (lambdas and anonymous classes excluded) are
+  `new-throw`, as TypeScript and Python (P-D6); (b) `throws` only.
+- **J-D6. CLI scope.** (a) **proposal**: every Java file of the repository the Java rules
+  handle (`target/`, `build/`, generated sources excluded), bounded as Python and Go
+  (3000 files / 64 MiB; then the changed packages plus the files that mention a changed
+  name): Java callers often sit in other modules of the same repository; (b) the changed
+  files' build modules (nearest `pom.xml` / `build.gradle[.kts]`), as Go's S-D1.
+
+Settled by precedent (no decision): calls through an interface or to an overridable
+method are incomplete in the syntax index (S-D3 (a)); anonymous classes, lambdas and local
+classes are part of their enclosing method's body (P-D5, Go's function literals); a Lombok
+or annotation-processor class (`@Data`, `@Getter`, `@Builder`, `@Value`, …) makes callers
+of its members incomplete with "members generated by annotation processing are not read".
+
+### Tasks
+
+- **J0. Spike** (Opus, 45 min): install per J-D1 and clone the J-D2 repository into
+  `~/Projects/impact-tree-test-repos/`, then measure through the LSP harness
+  (`test/lsp-harness/j0-spike.js`, report `J0-REPORT.md`):
+  1. documentSymbol: hierarchy (classes, inner, anonymous, enums, records, interfaces with
+     default methods), method names (with parameter types?), `detail`, `range` (Javadoc
+     and annotations inside or not), `selectionRange`, constructors, lambdas.
+  2. Base side: a temporary copy outside the project: answered with full symbols, or as a
+     "non-project file" (syntax only)? `untitled:` / virtual documents? Decides L1 for
+     Java (G2's temporary copy, or the S3-style text outline as the base side).
+  3. Call hierarchy: constructors (`new Foo(`, `this(`, `super(`), calls through an
+     interface or abstract method, overriding methods, `super.m()`, method references,
+     calls from tests and from another module; `references` for method references.
+  4. Time: import of the Maven project cold (empty `-data`) and warm, first symbols,
+     per-query after warm-up, re-build after a branch switch.
+  Output: the answers with numbers; confirms or changes J-D3 (keys) and L1.
+- **J1. Rules** (Sonnet, 15 min): `.java`; tests `src/test/`, `*Test.java`, `*Tests.java`,
+  `*IT.java`, `*TestCase.java` and the shared test-directory rule; generated:
+  `target/`, `build/`, `generated-sources/`, `generated-test-sources/`, a
+  `@Generated` / `// Generated by` header; ignored `.gradle/`, `out/`; unit = nearest
+  `pom.xml` / `build.gradle[.kts]` directory. Removes Java from "not analysed yet". Adds two
+  Java PRs of the test repository to `preview-golden.js` and records them on unchanged code
+  (Java "not analysed"), as S0 did for Go.
+- **J2. Symbols** (Opus, 30 min): `collectJavaSymbols` from jdtls' document symbols: keys
+  `Outer.Inner.method(T1, T2)` per J-D3 with `#2` only for true duplicates; constructors as
+  `Class.<init>(…)` (shown `new Class(…)`); records' compact constructors and accessors;
+  enum constant bodies and anonymous classes in their parent's body.
+- **J3. Signatures** (Opus, 30 min, in parallel with J2): a Java header parser
+  (`src/languages/java/signature.js`): annotations (dropped, except `@Deprecated` noted),
+  modifiers, type parameters, return type, name, parameters (annotations, `final`,
+  varargs, arrays, generics, `T... `), `throws`; `javaKindsOf` per J-D4/J-D5. Oracle:
+  a JDK Tree API program (`com.sun.source.tree`, part of the JDK: no third-party parser)
+  over every method of the test repository, as G3 and P3.
+- **J4. Callers** (Opus, 30 min): Java's `editorCallers`: method references and lambdas
+  as value uses (G4); a method that overrides or implements another (an interface's,
+  an abstract class's, `Object.equals`/`hashCode`/`toString`, a JDK interface such as
+  `Runnable` or `Comparable`) reads as incomplete with the reason, as Go's interface rule;
+  constructors' callers include `this(`/`super(`; reflection and dependency injection
+  (`@Autowired`, `@Inject`, `@Bean`) in the README limits, and a DI-annotated class's
+  constructor reads `di` as TypeScript's does.
+- **J5. Identity, warm-up, other modes** (Sonnet, 20 min): G5's recorded symbols,
+  `warmUpTarget`, `serverLabel` ("the Java language server (jdtls)"), and the waiting
+  notice wording for a slow project import; check G6 in every mode.
+- **J6. Editor verification** (corpus pick: 15 min, separate approval; run and fixes:
+  Opus, 45 min): `java-verify.js` on 10 merged PRs, as `go-verify.js`: oracle (a) the
+  Tree API program for changed methods and headers; oracle (b) callers from `javac`'s
+  attributed trees (`JavacTask.analyze()` over the module's sources with the test
+  classpath from Maven: every method invocation's resolved target, exact overload
+  included), plus a class-hierarchy pass that labels calls through an interface or an
+  override (as vta labels Go's). Cached by commit and tool hash; one jdtls per run, its
+  `-data` workspace kept in the scratchpad between runs.
+- **J7. Changed methods without a server** (Opus, 45 min): `javaOutline(text)` answering
+  what jdtls' documentSymbol answers (shaped as J0 measured; a Java lexer for strings,
+  text blocks `"""…"""`, chars, comments, annotations with arguments, generics' `<>`), and
+  `javaProvider.prepareSyntactic` with callers not computed, as S3. `java-verify.js
+  --syntactic`: functions and kinds against oracle (a).
+- **J8. Callers from a syntax index** (Opus, 45 min build + 30 min verify and fix):
+  `src/languages/java/syntactic-index.js` implementing S1's contract, as S4: a package is
+  its `package` declaration (directories by convention); imports single-type, on-demand
+  and static; the same package implicitly; receivers typed from parameters, fields,
+  locals, `var x = new T(…)`, `this`, a method's declared return type (`a.getB().m(`),
+  casts; `super.m(` and inherited methods through `extends` within the index; static calls
+  `T.m(`; constructors by `new T(`. Overloads matched by argument count; several of the
+  same count are each listed and the answer says so. Incomplete reasons: interface or
+  overridable dispatch, value uses, same-arity overloads, generated members (Lombok),
+  receivers whose type is not written, and in the preview the files outside the PR.
+  `java-verify.js --syntactic [--preview]` against oracle (b) restricted to the indexed
+  files, both scopes.
+- **J9. Docs** (me, 15 min): README Languages row and Java limits, changelog,
+  `package.json` keywords.
+
+Order: J0 → (owner: J-D3 confirmed) → J1 → J2 ∥ J3 → J4 → J5 → J6; J7 after J3 (it reuses
+the header parser), J8 after J7; J9 last. J7/J8 can run while J4–J6 do (different files).
+Each step is merged before the next one that depends on it starts.
+
+### Verification plan (agreed)
+
+Times are estimates on this machine until J0 measures jdtls; J0 replaces the jdtls rows
+with measured numbers before J2 starts.
+
+| Task | Check | When | Expected time |
+| --- | --- | --- | --- |
+| all | `npm run test:quick` + the touched test files | iterate | ~15 s |
+| all (src) | `npm test`, lint, typecheck | end | ~2 min |
+| all (src) | TypeScript baseline (`compare.sh`), `preview-golden.js --compare` (non-Java PRs the same) | end | ~45 s + ~3 min |
+| J2–J5 | Go and Python e2e (`go-e2e.js`, `py-e2e.js`) unchanged | end | ~30 s |
+| J0 | spike script | once | ≤ 5 min including a cold import (estimate) |
+| J2–J5 | `java-e2e.js` on one test-repo PR (fresh jdtls, kept `-data`) | end | ≤ 1.5 min (estimate; cold import measured in J0) |
+| J3 | header parser vs the Tree API oracle, whole repository | end | ≤ 30 s |
+| J6 | `java-verify.js`, 10 PRs, oracles cached (javac attribution uncached once) | end, at most 3 runs | cached ≤ 3 min, uncached ≤ 8 min |
+| J7 | `java-verify.js --syntactic`: functions 100% precision, ≥ 98% recall, kinds right | end, at most 3 runs | ≤ 1.5 min |
+| J8 | `java-verify.js --syntactic` and `--syntactic --preview`, callers vs oracle (b) within the indexed files | end, at most 3 runs per scope | ≤ 2 min each |
+
+Acceptance, editor (as G7/P7): changed methods 100% precision, ≥ 98% recall against the
+Tree API; every header change classified; callers' precision and recall against javac
+reported with false positives and misses listed; every caller javac finds that we miss
+sits on an answer marked incomplete; no change shown as fine while a non-updated caller
+is known. Acceptance, preview and CLI (as S4): caller precision ≥ 95% within the indexed
+files in both scopes, every false positive listed (a bug fixed, or an oracle artefact
+with the code line); recall reported, every miss on an incomplete answer; 0 complete
+answers in the preview; 0 rows reading "no callers".
+
+Agent budgets (wall time, verification included; past it the agent stops and reports):
+J0 45 min (Opus); J1 15 (Sonnet); J2 30 and J3 30 (Opus, in parallel, separate
+worktrees); J4 30 (Opus); J5 20 (Sonnet); J6 corpus pick 15 (Sonnet) + run and fixes 45
+(Opus); J7 45 (Opus); J8 45 + 30 (Opus, two runs of one agent); J9 me, 15. Long runs are
+checked every 15–20 minutes.
+
+### Starting it in a new thread
+
+1. Branch from `main`. 2. The decisions and the verification plan are agreed.
+3. J0 first; bring its numbers and J-D3's confirmation to the owner before J2. Test
+repositories: `~/Projects/impact-tree-test-repos/` (the J-D2 clone joins them; leave
+`httpx-pr` alone). Tools per J-D1 under `~/Projects/impact-tree-scratchpad/java-tools/`.
 
 ## Part A: the architecture after three languages (review, 2026-10-25)
 
@@ -1015,4 +1192,4 @@ and caches: `go-verify.js` (go/parser, callgraph; about 1.5 min cached), `py-ver
    decision in `UX_PLAN.md`).
 7. Part P (Python): P0 → P1 → P2 ∥ P3 → P4 → P5/P6 → P7 → P8.
 8. Part S (the preview through the providers), then Go in it (S3–S5).
-9. Part J (Java), as a provider.
+9. Part J (Java): J0 → J1 → J2 ∥ J3 → J4 → J5 → J6, and J7 → J8 alongside; J9 last.
