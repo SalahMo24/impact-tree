@@ -398,10 +398,11 @@ async function analyzeRemote({
  * language whose resolver searches nothing (`callersNotComputed`, its reason as the note),
  * `pr-files` for one whose syntax-only search of the PR's files has its own scope note
  * (`extras.scopeNote`: Python's and Go's, each saying what its syntax index does not
- * resolve). TypeScript has no entry: its search is the one the notice describes. One entry per language, in the order
- * the languages were prepared.
+ * resolve), with `unresolved`, what it does not resolve (`extras.unresolved`). TypeScript has
+ * no entry: its search is the one the notice describes. One entry per language, in the
+ * order the languages were prepared.
  * @param {Array<{ language: import('../languages/types').LanguageProvider, answer: import('../languages/types').PreparedLanguage }>} prepared
- * @returns {Array<{ language: string, scope: 'pr-files'|'not-computed', note: string }>}
+ * @returns {Array<{ language: string, scope: 'pr-files'|'not-computed', note: string, unresolved?: string }>}
  */
 function callersScopeOf(prepared) {
   const out = [];
@@ -409,7 +410,10 @@ function callersScopeOf(prepared) {
     if (!answer.units.length) continue;
     const notComputed = answer.units.find((unit) => /** @type {any} */ (unit.resolver).callersNotComputed);
     if (notComputed) out.push({ language: language.displayName, scope: /** @type {const} */ ('not-computed'), note: /** @type {any} */ (notComputed.resolver).callersNotComputed });
-    else if (answer.extras && answer.extras.scopeNote) out.push({ language: language.displayName, scope: /** @type {const} */ ('pr-files'), note: answer.extras.scopeNote });
+    else if (answer.extras && answer.extras.scopeNote) out.push({
+      language: language.displayName, scope: /** @type {const} */ ('pr-files'), note: answer.extras.scopeNote,
+      ...(answer.extras.unresolved ? { unresolved: answer.extras.unresolved } : {}),
+    });
   }
   return out;
 }

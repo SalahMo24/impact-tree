@@ -1,7 +1,8 @@
 'use strict';
 
-// Severity is ranked by damage x invisibility to the compiler. Anything tsc already
-// rejects needs less human attention than something that compiles and misbehaves.
+// Severity is ranked by damage x invisibility to the compiler. Anything the compiler (or, in
+// Python, the call itself) already rejects loudly needs less human attention than something
+// that runs and misbehaves.
 // Grounded in measurement, not taste: adding an optional parameter that callers then
 // silently omit caused a real defect, while a structurally-compatible type narrowing
 // with many callers was noise -- so the former outranks the latter.
@@ -11,7 +12,7 @@ const KIND = {
   OPTIONAL_CHANGED: { id: 'optional-param-changed', weight: 70, label: 'parameter made optional', short: 'param optional' },
   PARAM_REMOVED:  { id: 'param-removed',  weight: 55, label: 'parameter removed', short: '-param' },
   TYPE_CHANGED:   { id: 'type-changed',   weight: 30, label: 'parameter type changed', short: 'param type' },
-  REQUIRED_PARAM: { id: 'required-param', weight: 25, label: 'required parameter changed (tsc catches this)', short: 'required param' },
+  REQUIRED_PARAM: { id: 'required-param', weight: 25, label: 'required parameter changed (old calls fail loudly)', short: 'required param' },
   RETURN_CHANGED: { id: 'return-changed', weight: 20, label: 'return type changed', short: 'return type' },
   ASYNC_CHANGED:  { id: 'async-changed',  weight: 45, label: 'async-ness changed', short: 'async' },
   BODY:           { id: 'body',           weight: 10, label: 'body only', short: 'body' },

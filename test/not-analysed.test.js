@@ -99,6 +99,20 @@ test('Details gives the reason for a not-analysed file and nothing for a plain o
   assert.doesNotMatch(text(rowFor(result, 'README.md')), /Not analysed/);
 });
 
+test('the preview note says what each language\'s syntax-only search leaves unresolved', () => {
+  const scope = (language, unresolved) => ({ language, scope: 'pr-files', note: `${language} callers from syntax only`, ...(unresolved ? { unresolved } : {}) });
+  const note = models.previewLimitsNote(resultOf({ otherFiles: [], callersScope: [
+    scope('Python', 'untyped receivers and dynamic calls'),
+    scope('Go', 'calls through an interface or a function value'),
+  ] }));
+  assert.equal(note, `${models.PREVIEW_LIMITS_NOTE}`
+    + " Python callers are from syntax only, in the PR's own files: untyped receivers and dynamic calls are not resolved; check out the PR to find them all in the editor."
+    + " Go callers are from syntax only, in the PR's own files: calls through an interface or a function value are not resolved; check out the PR to find them all in the editor.");
+  // Languages that leave the same things unresolved share one sentence.
+  assert.match(models.previewLimitsNote(resultOf({ otherFiles: [], callersScope: [scope('A', 'x'), scope('B', 'x')] })),
+    /A, B callers are from syntax only, in the PR's own files: x are not resolved/);
+});
+
 test('the preview note names the languages the preview cannot analyse, only when the PR has such files', () => {
   assert.equal(models.previewLimitsNote(resultOf({ otherFiles: [] })), models.PREVIEW_LIMITS_NOTE);
   assert.equal(models.previewLimitsNote(resultOf()),

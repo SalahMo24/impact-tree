@@ -196,7 +196,8 @@ test('a preview reads Go from the fetched text: kinds, callers from the PR\'s fi
   assert.deepEqual(r.callersScope.map((s) => [s.language, s.scope]), [['Go', 'pr-files'], ['Python', 'pr-files']]);
   assert.match(r.callersScope[0].note, /^Go callers from syntax only: the pull request's own files \(2 Go file\(s\) indexed\)/);
   const note = models.previewLimitsNote(r);
-  assert.match(note, /Go, Python callers are from syntax only, in the PR's own files/);
+  assert.match(note, /Go callers are from syntax only, in the PR's own files: calls through an interface or a function value, and receivers whose type is not written are not resolved/);
+  assert.match(note, /Python callers are from syntax only, in the PR's own files: untyped receivers and dynamic calls are not resolved/);
   assert.doesNotMatch(note, /not analysed|not computed/);
   assert.ok(r.warnings.some((w) => /^1 changed Go file\(s\) read from their text: changed functions and signature kinds; Go callers from syntax only: the pull request's own files/.test(w)));
   assert.deepEqual(by.Run.callers.map((c) => [c.label, c.test]), [['TestRun', true]], 'the changed test calls Run');
