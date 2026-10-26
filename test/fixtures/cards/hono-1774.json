@@ -1,0 +1,4962 @@
+{
+ "_source": "live --cards --impact output of hono-1774 (AI1)",
+ "result": {
+  "mode": "pr",
+  "base": {
+   "sha": "bd00d284693e2079bb3be7ee762bcde53b194c73"
+  },
+  "warnings": [
+   "WARNING: origin/base-1774 not found — falling back to local base-1774; diff may include others' commits",
+   "deno_dist/compose.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/context.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/helper/dev/index.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/helper/factory/index.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/helper/html/index.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/hono-base.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/jsx/components.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/jsx/index.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/jsx/streaming.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/middleware/basic-auth/index.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/middleware/bearer-auth/index.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/middleware/cache/index.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/middleware/compress/index.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/middleware/cors/index.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/middleware/etag/index.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/middleware/jsx-renderer/index.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/middleware/jwt/index.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/middleware/logger/index.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/middleware/powered-by/index.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/middleware/pretty-json/index.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/middleware/secure-headers/index.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/middleware/timing/index.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/request.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/router/reg-exp-router/router.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/router/smart-router/router.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown",
+   "deno_dist/utils/html.ts is not included by the tsconfig.json or jsconfig.json in '(root)' — its callers are unknown"
+  ],
+  "allChanged": [
+   {
+    "label": "raw",
+    "relPath": "src/helper/html/index.ts",
+    "namePos": 201,
+    "startLine": 9,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "createRequest",
+    "relPath": "src/adapter/aws-lambda/handler.ts",
+    "namePos": 5245,
+    "startLine": 199,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "getRequestContext",
+    "relPath": "src/adapter/aws-lambda/handler.ts",
+    "namePos": 2264,
+    "startLine": 86,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     },
+     {
+      "id": "return-changed",
+      "short": "return type"
+     }
+    ]
+   },
+   {
+    "label": "isProxyEventV2",
+    "relPath": "src/adapter/aws-lambda/handler.ts",
+    "namePos": 7063,
+    "startLine": 259,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "compose",
+    "relPath": "src/compose.ts",
+    "namePos": 300,
+    "startLine": 11,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "Context.json",
+    "relPath": "src/context.ts",
+    "namePos": 8733,
+    "startLine": 307,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     },
+     {
+      "id": "return-changed",
+      "short": "return type"
+     }
+    ]
+   },
+   {
+    "label": "createResult",
+    "relPath": "src/adapter/aws-lambda/handler.ts",
+    "namePos": 4424,
+    "startLine": 168,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "extractQueryString",
+    "relPath": "src/adapter/aws-lambda/handler.ts",
+    "namePos": 6151,
+    "startLine": 228,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "getCookies",
+    "relPath": "src/adapter/aws-lambda/handler.ts",
+    "namePos": 6428,
+    "startLine": 237,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "setCookies",
+    "relPath": "src/adapter/aws-lambda/handler.ts",
+    "namePos": 6613,
+    "startLine": 243,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "bearerAuth",
+    "relPath": "src/middleware/bearer-auth/index.ts",
+    "namePos": 243,
+    "startLine": 8,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "Context.jsonT",
+    "relPath": "src/context.ts",
+    "namePos": 9644,
+    "startLine": 334,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     },
+     {
+      "id": "return-changed",
+      "short": "return type"
+     }
+    ]
+   },
+   {
+    "label": "Context.res",
+    "relPath": "src/context.ts",
+    "namePos": 4298,
+    "startLine": 137,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Context.res",
+    "relPath": "src/context.ts",
+    "namePos": 4427,
+    "startLine": 142,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "createMiddleware",
+    "relPath": "src/helper/factory/index.ts",
+    "namePos": 7313,
+    "startLine": 272,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "HonoRequest.constructor",
+    "relPath": "src/request.ts",
+    "namePos": 1067,
+    "startLine": 38,
+    "kinds": [
+     {
+      "id": "type-changed",
+      "short": "param type"
+     }
+    ]
+   },
+   {
+    "label": "Context.header",
+    "relPath": "src/context.ts",
+    "namePos": 4993,
+    "startLine": 163,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Context.newResponse",
+    "relPath": "src/context.ts",
+    "namePos": 6462,
+    "startLine": 221,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Hono.dispatch",
+    "relPath": "src/hono-base.ts",
+    "namePos": 7845,
+    "startLine": 272,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "compose.dispatch",
+    "relPath": "src/compose.ts",
+    "namePos": 598,
+    "startLine": 20,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Context.executionCtx",
+    "relPath": "src/context.ts",
+    "namePos": 4093,
+    "startLine": 129,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Context.text",
+    "relPath": "src/context.ts",
+    "namePos": 8145,
+    "startLine": 288,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Hono.addRoute",
+    "relPath": "src/hono-base.ts",
+    "namePos": 7302,
+    "startLine": 253,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "RegExpRouter.add",
+    "relPath": "src/router/reg-exp-router/router.ts",
+    "namePos": 3956,
+    "startLine": 133,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "SmartRouter.add",
+    "relPath": "src/router/smart-router/router.ts",
+    "namePos": 434,
+    "startLine": 14,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "stringBufferToString",
+    "relPath": "src/utils/html.ts",
+    "namePos": 635,
+    "startLine": 16,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "childrenToString",
+    "relPath": "src/jsx/components.ts",
+    "namePos": 177,
+    "startLine": 7,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Context.html",
+    "relPath": "src/context.ts",
+    "namePos": 10141,
+    "startLine": 350,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Context.setRenderer",
+    "relPath": "src/context.ts",
+    "namePos": 4917,
+    "startLine": 159,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "createContext.Provider",
+    "relPath": "src/jsx/index.ts",
+    "namePos": 6702,
+    "startLine": 263,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Hono.basePath",
+    "relPath": "src/hono-base.ts",
+    "namePos": 4876,
+    "startLine": 170,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Hono.constructor",
+    "relPath": "src/hono-base.ts",
+    "namePos": 2028,
+    "startLine": 77,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "HonoRequest.addValidatedData",
+    "relPath": "src/request.ts",
+    "namePos": 5092,
+    "startLine": 182,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "HonoRequest.param",
+    "relPath": "src/request.ts",
+    "namePos": 1507,
+    "startLine": 53,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "basicAuth",
+    "relPath": "src/middleware/basic-auth/index.ts",
+    "namePos": 920,
+    "startLine": 29,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "cache",
+    "relPath": "src/middleware/cache/index.ts",
+    "namePos": 67,
+    "startLine": 3,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "compress",
+    "relPath": "src/middleware/compress/index.ts",
+    "namePos": 197,
+    "startLine": 9,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Context.constructor",
+    "relPath": "src/context.ts",
+    "namePos": 3578,
+    "startLine": 110,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Context.event",
+    "relPath": "src/context.ts",
+    "namePos": 3884,
+    "startLine": 121,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Context.redirect",
+    "relPath": "src/context.ts",
+    "namePos": 11077,
+    "startLine": 378,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Context.render",
+    "relPath": "src/context.ts",
+    "namePos": 4852,
+    "startLine": 157,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Context.renderer",
+    "relPath": "src/context.ts",
+    "namePos": 3427,
+    "startLine": 107,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Context.status",
+    "relPath": "src/context.ts",
+    "namePos": 6020,
+    "startLine": 202,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "cors",
+    "relPath": "src/middleware/cors/index.ts",
+    "namePos": 290,
+    "startLine": 12,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "createFactory",
+    "relPath": "src/helper/factory/index.ts",
+    "namePos": 7212,
+    "startLine": 270,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "ErrorBoundary",
+    "relPath": "src/jsx/components.ts",
+    "namePos": 679,
+    "startLine": 28,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "ErrorBoundary.catchCallback",
+    "relPath": "src/jsx/components.ts",
+    "namePos": 1783,
+    "startLine": 62,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "ErrorBoundary.fallbackRes",
+    "relPath": "src/jsx/components.ts",
+    "namePos": 959,
+    "startLine": 41,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "etag",
+    "relPath": "src/middleware/etag/index.ts",
+    "namePos": 723,
+    "startLine": 28,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Factory.createHandlers",
+    "relPath": "src/helper/factory/index.ts",
+    "namePos": 524,
+    "startLine": 17,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Factory.createHandlers",
+    "relPath": "src/helper/factory/index.ts",
+    "namePos": 728,
+    "startLine": 25,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Factory.createHandlers",
+    "relPath": "src/helper/factory/index.ts",
+    "namePos": 1052,
+    "startLine": 36,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Factory.createHandlers",
+    "relPath": "src/helper/factory/index.ts",
+    "namePos": 1469,
+    "startLine": 53,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Factory.createHandlers",
+    "relPath": "src/helper/factory/index.ts",
+    "namePos": 1968,
+    "startLine": 72,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Factory.createHandlers",
+    "relPath": "src/helper/factory/index.ts",
+    "namePos": 2554,
+    "startLine": 93,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Factory.createHandlers",
+    "relPath": "src/helper/factory/index.ts",
+    "namePos": 3232,
+    "startLine": 116,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Factory.createHandlers",
+    "relPath": "src/helper/factory/index.ts",
+    "namePos": 4039,
+    "startLine": 149,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Factory.createHandlers",
+    "relPath": "src/helper/factory/index.ts",
+    "namePos": 4952,
+    "startLine": 185,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Factory.createHandlers",
+    "relPath": "src/helper/factory/index.ts",
+    "namePos": 5977,
+    "startLine": 224,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Factory.createHandlers",
+    "relPath": "src/helper/factory/index.ts",
+    "namePos": 6993,
+    "startLine": 260,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Factory.createMiddleware",
+    "relPath": "src/helper/factory/index.ts",
+    "namePos": 313,
+    "startLine": 10,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "handle",
+    "relPath": "src/adapter/aws-lambda/handler.ts",
+    "namePos": 3945,
+    "startLine": 148,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "handlerName",
+    "relPath": "src/helper/dev/index.ts",
+    "namePos": 305,
+    "startLine": 16,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Hono.mount",
+    "relPath": "src/hono-base.ts",
+    "namePos": 5785,
+    "startLine": 204,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "HonoRequest.matchedRoutes",
+    "relPath": "src/request.ts",
+    "namePos": 5485,
+    "startLine": 199,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "HonoRequest.routePath",
+    "relPath": "src/request.ts",
+    "namePos": 5589,
+    "startLine": 203,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "HonoRequest.valid",
+    "relPath": "src/request.ts",
+    "namePos": 5291,
+    "startLine": 187,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "inspectRoutes",
+    "relPath": "src/helper/dev/index.ts",
+    "namePos": 440,
+    "startLine": 20,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "isMiddleware",
+    "relPath": "src/helper/dev/index.ts",
+    "namePos": 242,
+    "startLine": 15,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "jsxRenderer",
+    "relPath": "src/middleware/jsx-renderer/index.ts",
+    "namePos": 1612,
+    "startLine": 51,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "jwt",
+    "relPath": "src/middleware/jwt/index.ts",
+    "namePos": 401,
+    "startLine": 14,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "logger",
+    "relPath": "src/middleware/logger/index.ts",
+    "namePos": 1336,
+    "startLine": 56,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "poweredBy",
+    "relPath": "src/middleware/powered-by/index.ts",
+    "namePos": 67,
+    "startLine": 3,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "prettyJSON",
+    "relPath": "src/middleware/pretty-json/index.ts",
+    "namePos": 109,
+    "startLine": 7,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "renderToReadableStream.start",
+    "relPath": "src/jsx/streaming.ts",
+    "namePos": 2482,
+    "startLine": 85,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "renderToReadableStream.start.then",
+    "relPath": "src/jsx/streaming.ts",
+    "namePos": 2723,
+    "startLine": 91,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "resolveStream",
+    "relPath": "src/utils/html.ts",
+    "namePos": 1996,
+    "startLine": 73,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "secureHeaders",
+    "relPath": "src/middleware/secure-headers/index.ts",
+    "namePos": 2892,
+    "startLine": 97,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "showRoutes",
+    "relPath": "src/helper/dev/index.ts",
+    "namePos": 676,
+    "startLine": 29,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "streamHandle",
+    "relPath": "src/adapter/aws-lambda/handler.ts",
+    "namePos": 2722,
+    "startLine": 104,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "Suspense",
+    "relPath": "src/jsx/streaming.ts",
+    "namePos": 379,
+    "startLine": 14,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "timing",
+    "relPath": "src/middleware/timing/index.ts",
+    "namePos": 614,
+    "startLine": 34,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   }
+  ],
+  "deleted": [
+   {
+    "label": "isProxyEvent",
+    "relPath": "src/adapter/aws-lambda/handler.ts",
+    "namePos": 6851,
+    "startLine": 249,
+    "kinds": []
+   },
+   {
+    "label": "Context._renderer",
+    "relPath": "src/context.ts",
+    "namePos": 3554,
+    "startLine": 111,
+    "kinds": []
+   },
+   {
+    "label": "childrenToString",
+    "relPath": "src/jsx/streaming.ts",
+    "namePos": 174,
+    "startLine": 7,
+    "kinds": []
+   },
+   {
+    "label": "cors.set",
+    "relPath": "src/middleware/cors/index.ts",
+    "namePos": 930,
+    "startLine": 35,
+    "kinds": []
+   },
+   {
+    "label": "HonoRequest.setParams",
+    "relPath": "src/request.ts",
+    "namePos": 1359,
+    "startLine": 49,
+    "kinds": []
+   }
+  ],
+  "impactPaths": {
+   "src/adapter/aws-lambda/handler.ts#2264": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "handle",
+      "how": "exported from a package entry point",
+      "file": "src/adapter/aws-lambda/handler.ts"
+     },
+     {
+      "type": "public-api",
+      "name": "streamHandle",
+      "how": "exported from a package entry point",
+      "file": "src/adapter/aws-lambda/handler.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "streamHandle"
+      },
+      "via": [
+       "getRequestContext",
+       "streamHandle"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "handle"
+      },
+      "via": [
+       "getRequestContext",
+       "handle"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/adapter/aws-lambda/handler.ts#2722": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "streamHandle",
+      "how": "exported from a package entry point",
+      "file": "src/adapter/aws-lambda/handler.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "streamHandle"
+      },
+      "via": [
+       "streamHandle"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/adapter/aws-lambda/handler.ts#3945": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "handle",
+      "how": "exported from a package entry point",
+      "file": "src/adapter/aws-lambda/handler.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "handle"
+      },
+      "via": [
+       "handle"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/adapter/aws-lambda/handler.ts#4424": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "handle",
+      "how": "exported from a package entry point",
+      "file": "src/adapter/aws-lambda/handler.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "handle"
+      },
+      "via": [
+       "createResult",
+       "handle"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/adapter/aws-lambda/handler.ts#5245": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "handle",
+      "how": "exported from a package entry point",
+      "file": "src/adapter/aws-lambda/handler.ts"
+     },
+     {
+      "type": "public-api",
+      "name": "streamHandle",
+      "how": "exported from a package entry point",
+      "file": "src/adapter/aws-lambda/handler.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "streamHandle"
+      },
+      "via": [
+       "createRequest",
+       "streamHandle"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "handle"
+      },
+      "via": [
+       "createRequest",
+       "handle"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/adapter/aws-lambda/handler.ts#6151": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "handle",
+      "how": "exported from a package entry point",
+      "file": "src/adapter/aws-lambda/handler.ts"
+     },
+     {
+      "type": "public-api",
+      "name": "streamHandle",
+      "how": "exported from a package entry point",
+      "file": "src/adapter/aws-lambda/handler.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "streamHandle"
+      },
+      "via": [
+       "extractQueryString",
+       "createRequest",
+       "streamHandle"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "handle"
+      },
+      "via": [
+       "extractQueryString",
+       "createRequest",
+       "handle"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/adapter/aws-lambda/handler.ts#6428": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "handle",
+      "how": "exported from a package entry point",
+      "file": "src/adapter/aws-lambda/handler.ts"
+     },
+     {
+      "type": "public-api",
+      "name": "streamHandle",
+      "how": "exported from a package entry point",
+      "file": "src/adapter/aws-lambda/handler.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "streamHandle"
+      },
+      "via": [
+       "getCookies",
+       "createRequest",
+       "streamHandle"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "handle"
+      },
+      "via": [
+       "getCookies",
+       "createRequest",
+       "handle"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/adapter/aws-lambda/handler.ts#6613": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "handle",
+      "how": "exported from a package entry point",
+      "file": "src/adapter/aws-lambda/handler.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "handle"
+      },
+      "via": [
+       "setCookies",
+       "createResult",
+       "handle"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/adapter/aws-lambda/handler.ts#7063": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "handle",
+      "how": "exported from a package entry point",
+      "file": "src/adapter/aws-lambda/handler.ts"
+     },
+     {
+      "type": "public-api",
+      "name": "streamHandle",
+      "how": "exported from a package entry point",
+      "file": "src/adapter/aws-lambda/handler.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "streamHandle"
+      },
+      "via": [
+       "isProxyEventV2",
+       "createRequest",
+       "streamHandle"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "handle"
+      },
+      "via": [
+       "isProxyEventV2",
+       "createRequest",
+       "handle"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/compose.ts#300": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Hono.route",
+      "how": "public method of an exported class",
+      "file": "src/hono-base.ts"
+     },
+     {
+      "type": "public-api",
+      "name": "Hono.fetch",
+      "how": "public method of an exported class",
+      "file": "src/hono-base.ts"
+     },
+     {
+      "type": "public-api",
+      "name": "Hono.fire",
+      "how": "public method of an exported class",
+      "file": "src/hono-base.ts"
+     },
+     {
+      "type": "public-api",
+      "name": "Hono.handleEvent",
+      "how": "public method of an exported class",
+      "file": "src/hono-base.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Hono.route"
+      },
+      "via": [
+       "compose",
+       "Hono.route"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Hono.handleEvent"
+      },
+      "via": [
+       "compose",
+       "Hono.dispatch",
+       "Hono.handleEvent"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Hono.fetch"
+      },
+      "via": [
+       "compose",
+       "Hono.dispatch",
+       "Hono.fetch"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/compose.ts#598": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Hono.route",
+      "how": "public method of an exported class",
+      "file": "src/hono-base.ts"
+     },
+     {
+      "type": "public-api",
+      "name": "Hono.fetch",
+      "how": "public method of an exported class",
+      "file": "src/hono-base.ts"
+     },
+     {
+      "type": "public-api",
+      "name": "Hono.fire",
+      "how": "public method of an exported class",
+      "file": "src/hono-base.ts"
+     },
+     {
+      "type": "public-api",
+      "name": "Hono.handleEvent",
+      "how": "public method of an exported class",
+      "file": "src/hono-base.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Hono.route"
+      },
+      "via": [
+       "compose.dispatch",
+       "compose",
+       "Hono.route"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Hono.handleEvent"
+      },
+      "via": [
+       "compose.dispatch",
+       "compose",
+       "Hono.dispatch",
+       "Hono.handleEvent"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Hono.fetch"
+      },
+      "via": [
+       "compose.dispatch",
+       "compose",
+       "Hono.dispatch",
+       "Hono.fetch"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/context.ts#3427": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Context.render",
+      "how": "public method of an exported class",
+      "file": "src/context.ts"
+     },
+     {
+      "type": "public-api",
+      "name": "Context.setRenderer",
+      "how": "public method of an exported class",
+      "file": "src/context.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Context.render"
+      },
+      "via": [
+       "Context.renderer",
+       "Context.render"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Context.setRenderer"
+      },
+      "via": [
+       "Context.renderer",
+       "Context.setRenderer"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/context.ts#3578": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Context.constructor",
+      "how": "public method of an exported class",
+      "file": "src/context.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Context.constructor"
+      },
+      "via": [
+       "Context.constructor"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/context.ts#3884": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Context.event",
+      "how": "public method of an exported class",
+      "file": "src/context.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Context.event"
+      },
+      "via": [
+       "Context.event"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/context.ts#4093": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Context.executionCtx",
+      "how": "public method of an exported class",
+      "file": "src/context.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Context.executionCtx"
+      },
+      "via": [
+       "Context.executionCtx"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/context.ts#4298": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Context.res",
+      "how": "public method of an exported class",
+      "file": "src/context.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Context.res"
+      },
+      "via": [
+       "Context.res"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/context.ts#4427": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Context.res",
+      "how": "public method of an exported class",
+      "file": "src/context.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Context.res"
+      },
+      "via": [
+       "Context.res"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/context.ts#4852": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Context.render",
+      "how": "public method of an exported class",
+      "file": "src/context.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Context.render"
+      },
+      "via": [
+       "Context.render"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/context.ts#4917": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Context.setRenderer",
+      "how": "public method of an exported class",
+      "file": "src/context.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Context.setRenderer"
+      },
+      "via": [
+       "Context.setRenderer"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/context.ts#4993": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Context.header",
+      "how": "public method of an exported class",
+      "file": "src/context.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Context.header"
+      },
+      "via": [
+       "Context.header"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/context.ts#6020": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Context.status",
+      "how": "public method of an exported class",
+      "file": "src/context.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Context.status"
+      },
+      "via": [
+       "Context.status"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/context.ts#6462": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Context.newResponse",
+      "how": "public method of an exported class",
+      "file": "src/context.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Context.newResponse"
+      },
+      "via": [
+       "Context.newResponse"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/context.ts#8145": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Context.text",
+      "how": "public method of an exported class",
+      "file": "src/context.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Context.text"
+      },
+      "via": [
+       "Context.text"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/context.ts#8733": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Context.json",
+      "how": "public method of an exported class",
+      "file": "src/context.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Context.json"
+      },
+      "via": [
+       "Context.json"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/context.ts#9644": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Context.jsonT",
+      "how": "public method of an exported class",
+      "file": "src/context.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Context.jsonT"
+      },
+      "via": [
+       "Context.jsonT"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/context.ts#10141": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Context.html",
+      "how": "public method of an exported class",
+      "file": "src/context.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Context.html"
+      },
+      "via": [
+       "Context.html"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/context.ts#11077": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Context.redirect",
+      "how": "public method of an exported class",
+      "file": "src/context.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Context.redirect"
+      },
+      "via": [
+       "Context.redirect"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/helper/dev/index.ts#242": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "inspectRoutes",
+      "how": "exported from a package entry point",
+      "file": "src/helper/dev/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "inspectRoutes"
+      },
+      "via": [
+       "isMiddleware",
+       "inspectRoutes"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/helper/dev/index.ts#305": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "inspectRoutes",
+      "how": "exported from a package entry point",
+      "file": "src/helper/dev/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "inspectRoutes"
+      },
+      "via": [
+       "handlerName",
+       "inspectRoutes"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/helper/dev/index.ts#440": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "inspectRoutes",
+      "how": "exported from a package entry point",
+      "file": "src/helper/dev/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "inspectRoutes"
+      },
+      "via": [
+       "inspectRoutes"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/helper/dev/index.ts#676": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "showRoutes",
+      "how": "exported from a package entry point",
+      "file": "src/helper/dev/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "showRoutes"
+      },
+      "via": [
+       "showRoutes"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/helper/factory/index.ts#313": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Factory.createMiddleware",
+      "how": "public method of an exported class",
+      "file": "src/helper/factory/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Factory.createMiddleware"
+      },
+      "via": [
+       "Factory.createMiddleware"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/helper/factory/index.ts#524": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Factory.createHandlers",
+      "how": "public method of an exported class",
+      "file": "src/helper/factory/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Factory.createHandlers"
+      },
+      "via": [
+       "Factory.createHandlers"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/helper/factory/index.ts#728": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Factory.createHandlers",
+      "how": "public method of an exported class",
+      "file": "src/helper/factory/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Factory.createHandlers"
+      },
+      "via": [
+       "Factory.createHandlers"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/helper/factory/index.ts#1052": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Factory.createHandlers",
+      "how": "public method of an exported class",
+      "file": "src/helper/factory/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Factory.createHandlers"
+      },
+      "via": [
+       "Factory.createHandlers"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/helper/factory/index.ts#1469": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Factory.createHandlers",
+      "how": "public method of an exported class",
+      "file": "src/helper/factory/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Factory.createHandlers"
+      },
+      "via": [
+       "Factory.createHandlers"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/helper/factory/index.ts#1968": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Factory.createHandlers",
+      "how": "public method of an exported class",
+      "file": "src/helper/factory/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Factory.createHandlers"
+      },
+      "via": [
+       "Factory.createHandlers"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/helper/factory/index.ts#2554": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Factory.createHandlers",
+      "how": "public method of an exported class",
+      "file": "src/helper/factory/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Factory.createHandlers"
+      },
+      "via": [
+       "Factory.createHandlers"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/helper/factory/index.ts#3232": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Factory.createHandlers",
+      "how": "public method of an exported class",
+      "file": "src/helper/factory/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Factory.createHandlers"
+      },
+      "via": [
+       "Factory.createHandlers"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/helper/factory/index.ts#4039": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Factory.createHandlers",
+      "how": "public method of an exported class",
+      "file": "src/helper/factory/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Factory.createHandlers"
+      },
+      "via": [
+       "Factory.createHandlers"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/helper/factory/index.ts#4952": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Factory.createHandlers",
+      "how": "public method of an exported class",
+      "file": "src/helper/factory/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Factory.createHandlers"
+      },
+      "via": [
+       "Factory.createHandlers"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/helper/factory/index.ts#5977": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Factory.createHandlers",
+      "how": "public method of an exported class",
+      "file": "src/helper/factory/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Factory.createHandlers"
+      },
+      "via": [
+       "Factory.createHandlers"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/helper/factory/index.ts#6993": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Factory.createHandlers",
+      "how": "public method of an exported class",
+      "file": "src/helper/factory/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Factory.createHandlers"
+      },
+      "via": [
+       "Factory.createHandlers"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/helper/factory/index.ts#7212": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "createFactory",
+      "how": "exported from a package entry point",
+      "file": "src/helper/factory/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "createFactory"
+      },
+      "via": [
+       "createFactory"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/helper/factory/index.ts#7313": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "createMiddleware",
+      "how": "exported from a package entry point",
+      "file": "src/helper/factory/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "createMiddleware"
+      },
+      "via": [
+       "createMiddleware"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/helper/html/index.ts#201": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "raw",
+      "how": "exported from a package entry point",
+      "file": "src/helper/html/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "raw"
+      },
+      "via": [
+       "raw"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/hono-base.ts#2028": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Hono.constructor",
+      "how": "public method of an exported class",
+      "file": "src/hono-base.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Hono.constructor"
+      },
+      "via": [
+       "Hono.constructor"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/hono-base.ts#4876": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Hono.basePath",
+      "how": "public method of an exported class",
+      "file": "src/hono-base.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Hono.basePath"
+      },
+      "via": [
+       "Hono.basePath"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/hono-base.ts#5785": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Hono.mount",
+      "how": "public method of an exported class",
+      "file": "src/hono-base.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Hono.mount"
+      },
+      "via": [
+       "Hono.mount"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/hono-base.ts#7302": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Hono",
+      "how": "exported from a package entry point",
+      "file": "src/hono-base.ts"
+     },
+     {
+      "type": "public-api",
+      "name": "Hono.mount",
+      "how": "public method of an exported class",
+      "file": "src/hono-base.ts"
+     },
+     {
+      "type": "public-api",
+      "name": "Hono.route",
+      "how": "public method of an exported class",
+      "file": "src/hono-base.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Hono"
+      },
+      "via": [
+       "Hono.addRoute",
+       "Hono"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Hono.route"
+      },
+      "via": [
+       "Hono.addRoute",
+       "Hono.route"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Hono.mount"
+      },
+      "via": [
+       "Hono.addRoute",
+       "Hono.mount"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/hono-base.ts#7845": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Hono.fetch",
+      "how": "public method of an exported class",
+      "file": "src/hono-base.ts"
+     },
+     {
+      "type": "public-api",
+      "name": "Hono.fire",
+      "how": "public method of an exported class",
+      "file": "src/hono-base.ts"
+     },
+     {
+      "type": "public-api",
+      "name": "Hono.handleEvent",
+      "how": "public method of an exported class",
+      "file": "src/hono-base.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Hono.handleEvent"
+      },
+      "via": [
+       "Hono.dispatch",
+       "Hono.handleEvent"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Hono.fetch"
+      },
+      "via": [
+       "Hono.dispatch",
+       "Hono.fetch"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Hono.fire"
+      },
+      "via": [
+       "Hono.dispatch",
+       "Hono.fire"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/jsx/components.ts#177": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "ErrorBoundary",
+      "how": "exported from a package entry point",
+      "file": "src/jsx/components.ts"
+     },
+     {
+      "type": "public-api",
+      "name": "Suspense",
+      "how": "exported from a package entry point",
+      "file": "src/jsx/streaming.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "ErrorBoundary"
+      },
+      "via": [
+       "childrenToString",
+       "ErrorBoundary"
+      ],
+      "lowerBound": false
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Suspense"
+      },
+      "via": [
+       "childrenToString",
+       "Suspense"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/jsx/components.ts#679": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "ErrorBoundary",
+      "how": "exported from a package entry point",
+      "file": "src/jsx/components.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "ErrorBoundary"
+      },
+      "via": [
+       "ErrorBoundary"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/jsx/components.ts#959": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "ErrorBoundary.fallbackRes",
+      "how": "public method of an exported class",
+      "file": "src/jsx/components.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "ErrorBoundary.fallbackRes"
+      },
+      "via": [
+       "ErrorBoundary.fallbackRes"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/jsx/components.ts#1783": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "ErrorBoundary.catchCallback",
+      "how": "public method of an exported class",
+      "file": "src/jsx/components.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "ErrorBoundary.catchCallback"
+      },
+      "via": [
+       "ErrorBoundary.catchCallback"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/jsx/index.ts#6702": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "createContext.Provider",
+      "how": "public method of an exported class",
+      "file": "src/jsx/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "createContext.Provider"
+      },
+      "via": [
+       "createContext.Provider"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/jsx/streaming.ts#379": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "Suspense",
+      "how": "exported from a package entry point",
+      "file": "src/jsx/streaming.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Suspense"
+      },
+      "via": [
+       "Suspense"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/jsx/streaming.ts#2482": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "renderToReadableStream.start",
+      "how": "public method of an exported class",
+      "file": "src/jsx/streaming.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "renderToReadableStream.start"
+      },
+      "via": [
+       "renderToReadableStream.start"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/jsx/streaming.ts#2723": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "renderToReadableStream.then",
+      "how": "public method of an exported class",
+      "file": "src/jsx/streaming.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "renderToReadableStream.then"
+      },
+      "via": [
+       "renderToReadableStream.start.then"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/middleware/basic-auth/index.ts#920": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "basicAuth",
+      "how": "exported from a package entry point",
+      "file": "src/middleware/basic-auth/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "basicAuth"
+      },
+      "via": [
+       "basicAuth"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/middleware/bearer-auth/index.ts#243": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "bearerAuth",
+      "how": "exported from a package entry point",
+      "file": "src/middleware/bearer-auth/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "bearerAuth"
+      },
+      "via": [
+       "bearerAuth"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/middleware/cache/index.ts#67": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "cache",
+      "how": "exported from a package entry point",
+      "file": "src/middleware/cache/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "cache"
+      },
+      "via": [
+       "cache"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/middleware/compress/index.ts#197": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "compress",
+      "how": "exported from a package entry point",
+      "file": "src/middleware/compress/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "compress"
+      },
+      "via": [
+       "compress"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/middleware/cors/index.ts#290": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "cors",
+      "how": "exported from a package entry point",
+      "file": "src/middleware/cors/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "cors"
+      },
+      "via": [
+       "cors"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/middleware/etag/index.ts#723": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "etag",
+      "how": "exported from a package entry point",
+      "file": "src/middleware/etag/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "etag"
+      },
+      "via": [
+       "etag"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/middleware/jsx-renderer/index.ts#1612": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "jsxRenderer",
+      "how": "exported from a package entry point",
+      "file": "src/middleware/jsx-renderer/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "jsxRenderer"
+      },
+      "via": [
+       "jsxRenderer"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/middleware/jwt/index.ts#401": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "jwt",
+      "how": "exported from a package entry point",
+      "file": "src/middleware/jwt/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "jwt"
+      },
+      "via": [
+       "jwt"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/middleware/logger/index.ts#1336": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "logger",
+      "how": "exported from a package entry point",
+      "file": "src/middleware/logger/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "logger"
+      },
+      "via": [
+       "logger"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/middleware/powered-by/index.ts#67": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "poweredBy",
+      "how": "exported from a package entry point",
+      "file": "src/middleware/powered-by/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "poweredBy"
+      },
+      "via": [
+       "poweredBy"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/middleware/pretty-json/index.ts#109": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "prettyJSON",
+      "how": "exported from a package entry point",
+      "file": "src/middleware/pretty-json/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "prettyJSON"
+      },
+      "via": [
+       "prettyJSON"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/middleware/secure-headers/index.ts#2892": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "secureHeaders",
+      "how": "exported from a package entry point",
+      "file": "src/middleware/secure-headers/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "secureHeaders"
+      },
+      "via": [
+       "secureHeaders"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/middleware/timing/index.ts#614": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "timing",
+      "how": "exported from a package entry point",
+      "file": "src/middleware/timing/index.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "timing"
+      },
+      "via": [
+       "timing"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/request.ts#1067": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "HonoRequest.constructor",
+      "how": "public method of an exported class",
+      "file": "src/request.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "HonoRequest.constructor"
+      },
+      "via": [
+       "HonoRequest.constructor"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/request.ts#1507": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "HonoRequest.param",
+      "how": "public method of an exported class",
+      "file": "src/request.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "HonoRequest.param"
+      },
+      "via": [
+       "HonoRequest.param"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/request.ts#5092": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "HonoRequest.addValidatedData",
+      "how": "public method of an exported class",
+      "file": "src/request.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "HonoRequest.addValidatedData"
+      },
+      "via": [
+       "HonoRequest.addValidatedData"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/request.ts#5291": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "HonoRequest.valid",
+      "how": "public method of an exported class",
+      "file": "src/request.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "HonoRequest.valid"
+      },
+      "via": [
+       "HonoRequest.valid"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/request.ts#5485": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "HonoRequest.matchedRoutes",
+      "how": "public method of an exported class",
+      "file": "src/request.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "HonoRequest.matchedRoutes"
+      },
+      "via": [
+       "HonoRequest.matchedRoutes"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/request.ts#5589": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "HonoRequest.routePath",
+      "how": "public method of an exported class",
+      "file": "src/request.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "HonoRequest.routePath"
+      },
+      "via": [
+       "HonoRequest.routePath"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/router/reg-exp-router/router.ts#3956": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "RegExpRouter.add",
+      "how": "public method of an exported class",
+      "file": "src/router/reg-exp-router/router.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "RegExpRouter.add"
+      },
+      "via": [
+       "RegExpRouter.add"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/router/smart-router/router.ts#434": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "SmartRouter.add",
+      "how": "public method of an exported class",
+      "file": "src/router/smart-router/router.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "SmartRouter.add"
+      },
+      "via": [
+       "SmartRouter.add"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/utils/html.ts#635": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "stringBufferToString",
+      "how": "exported from a package entry point",
+      "file": "src/utils/html.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "stringBufferToString"
+      },
+      "via": [
+       "stringBufferToString"
+      ],
+      "lowerBound": false
+     }
+    ]
+   },
+   "src/utils/html.ts#1996": {
+    "testOnly": false,
+    "complete": true,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "resolveStream",
+      "how": "exported from a package entry point",
+      "file": "src/utils/html.ts"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "resolveStream"
+      },
+      "via": [
+       "resolveStream"
+      ],
+      "lowerBound": false
+     }
+    ]
+   }
+  }
+ },
+ "cards": {
+  "version": 1,
+  "clusters": [
+   {
+    "id": "K1",
+    "members": [
+     "src/helper/html/index.ts#201",
+     "src/utils/html.ts#635",
+     "src/jsx/streaming.ts#2482",
+     "src/jsx/streaming.ts#2723",
+     "src/jsx/streaming.ts#379"
+    ],
+    "label": "raw and 4 related",
+    "testHelpers": false,
+    "files": [
+     "src/helper/html/index.ts",
+     "src/jsx/streaming.ts",
+     "src/utils/html.ts"
+    ],
+    "module": "(root)",
+    "joined": [
+     {
+      "id": "src/jsx/streaming.ts#2482",
+      "by": "file"
+     },
+     {
+      "id": "src/jsx/streaming.ts#2723",
+      "by": "file"
+     }
+    ],
+    "mirrorMembers": [
+     "deno_dist/helper/html/index.ts#207",
+     "deno_dist/jsx/streaming.ts#2500",
+     "deno_dist/jsx/streaming.ts#2741",
+     "deno_dist/jsx/streaming.ts#397",
+     "deno_dist/utils/html.ts#644"
+    ],
+    "mirrorOf": {
+     "dir": "deno_dist",
+     "dirs": [
+      "deno_dist"
+     ]
+    },
+    "moved": [],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 5,
+     "callers": 7,
+     "tests": 6,
+     "notUpdated": 6,
+     "notUpdatedOutside": 5,
+     "notUpdatedInside": 1,
+     "incomplete": 5,
+     "risky": 1,
+     "riskyAllUpdated": 0,
+     "mirrored": 5
+    }
+   },
+   {
+    "id": "K2",
+    "members": [
+     "src/adapter/aws-lambda/handler.ts#2264",
+     "src/adapter/aws-lambda/handler.ts#5245",
+     "src/adapter/aws-lambda/handler.ts#7063",
+     "src/adapter/aws-lambda/handler.ts#4424",
+     "src/adapter/aws-lambda/handler.ts#6151",
+     "src/adapter/aws-lambda/handler.ts#6428",
+     "src/adapter/aws-lambda/handler.ts#6613",
+     "src/adapter/aws-lambda/handler.ts#2722",
+     "src/adapter/aws-lambda/handler.ts#3945",
+     "src/adapter/aws-lambda/handler.ts#6851"
+    ],
+    "label": "getRequestContext and 9 related",
+    "testHelpers": false,
+    "files": [
+     "src/adapter/aws-lambda/handler.ts"
+    ],
+    "module": "(root)",
+    "joined": [
+     {
+      "id": "src/adapter/aws-lambda/handler.ts#6851",
+      "by": "file"
+     }
+    ],
+    "mirrorMembers": [],
+    "mirrorOf": null,
+    "moved": [],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 10,
+     "callers": 0,
+     "tests": 0,
+     "notUpdated": 10,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 10,
+     "incomplete": 9,
+     "risky": 7,
+     "riskyAllUpdated": 0,
+     "mirrored": 0
+    }
+   },
+   {
+    "id": "K3",
+    "members": [
+     "src/compose.ts#300",
+     "src/request.ts#1067",
+     "src/hono-base.ts#7845",
+     "src/compose.ts#598",
+     "src/request.ts#1507",
+     "src/request.ts#5485",
+     "src/request.ts#5589",
+     "src/request.ts#1359"
+    ],
+    "label": "compose and 7 related",
+    "testHelpers": false,
+    "files": [
+     "src/compose.ts",
+     "src/hono-base.ts",
+     "src/request.ts"
+    ],
+    "module": "(root)",
+    "joined": [
+     {
+      "id": "src/request.ts#1507",
+      "by": "file"
+     },
+     {
+      "id": "src/request.ts#5485",
+      "by": "file"
+     },
+     {
+      "id": "src/request.ts#5589",
+      "by": "file"
+     },
+     {
+      "id": "src/request.ts#1359",
+      "by": "file"
+     }
+    ],
+    "mirrorMembers": [
+     "deno_dist/compose.ts#309",
+     "deno_dist/request.ts#1091",
+     "deno_dist/compose.ts#607",
+     "deno_dist/hono-base.ts#7872",
+     "deno_dist/request.ts#1531",
+     "deno_dist/request.ts#5509",
+     "deno_dist/request.ts#5613",
+     "deno_dist/request.ts#1383"
+    ],
+    "mirrorOf": {
+     "dir": "deno_dist",
+     "dirs": [
+      "deno_dist"
+     ]
+    },
+    "moved": [],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 8,
+     "callers": 5,
+     "tests": 7,
+     "notUpdated": 1,
+     "notUpdatedOutside": 1,
+     "notUpdatedInside": 0,
+     "incomplete": 7,
+     "risky": 2,
+     "riskyAllUpdated": 1,
+     "mirrored": 8
+    }
+   },
+   {
+    "id": "K4",
+    "members": [
+     "src/context.ts#8733",
+     "src/context.ts#9644",
+     "src/context.ts#6462",
+     "src/context.ts#10141",
+     "src/context.ts#4917",
+     "src/context.ts#3427",
+     "src/context.ts#4852",
+     "src/context.ts#6020",
+     "src/utils/html.ts#1996",
+     "src/context.ts#3554"
+    ],
+    "label": "Context.json and 9 related",
+    "testHelpers": false,
+    "files": [
+     "src/context.ts",
+     "src/utils/html.ts"
+    ],
+    "module": "(root)",
+    "joined": [
+     {
+      "id": "src/context.ts#6020",
+      "by": "file"
+     },
+     {
+      "id": "src/context.ts#3554",
+      "by": "file"
+     }
+    ],
+    "mirrorMembers": [
+     "deno_dist/context.ts#8766",
+     "deno_dist/context.ts#9677",
+     "deno_dist/context.ts#10174",
+     "deno_dist/context.ts#3460",
+     "deno_dist/context.ts#4885",
+     "deno_dist/context.ts#4950",
+     "deno_dist/context.ts#6053",
+     "deno_dist/context.ts#6495",
+     "deno_dist/utils/html.ts#2005",
+     "deno_dist/context.ts#3584"
+    ],
+    "mirrorOf": {
+     "dir": "deno_dist",
+     "dirs": [
+      "deno_dist"
+     ]
+    },
+    "moved": [],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 10,
+     "callers": 7,
+     "tests": 17,
+     "notUpdated": 1,
+     "notUpdatedOutside": 1,
+     "notUpdatedInside": 0,
+     "incomplete": 9,
+     "risky": 2,
+     "riskyAllUpdated": 1,
+     "mirrored": 10
+    }
+   },
+   {
+    "id": "K5",
+    "members": [
+     "src/helper/factory/index.ts#7313",
+     "src/helper/factory/index.ts#1052",
+     "src/helper/factory/index.ts#1469",
+     "src/helper/factory/index.ts#1968",
+     "src/helper/factory/index.ts#2554",
+     "src/helper/factory/index.ts#313",
+     "src/helper/factory/index.ts#3232",
+     "src/helper/factory/index.ts#4039",
+     "src/helper/factory/index.ts#4952",
+     "src/helper/factory/index.ts#524",
+     "src/helper/factory/index.ts#5977",
+     "src/helper/factory/index.ts#6993",
+     "src/helper/factory/index.ts#7212",
+     "src/helper/factory/index.ts#728"
+    ],
+    "label": "createMiddleware and 13 related",
+    "testHelpers": false,
+    "files": [
+     "src/helper/factory/index.ts"
+    ],
+    "module": "(root)",
+    "joined": [
+     {
+      "id": "src/helper/factory/index.ts#1052",
+      "by": "file"
+     },
+     {
+      "id": "src/helper/factory/index.ts#1469",
+      "by": "file"
+     },
+     {
+      "id": "src/helper/factory/index.ts#1968",
+      "by": "file"
+     },
+     {
+      "id": "src/helper/factory/index.ts#2554",
+      "by": "file"
+     },
+     {
+      "id": "src/helper/factory/index.ts#3232",
+      "by": "file"
+     },
+     {
+      "id": "src/helper/factory/index.ts#4039",
+      "by": "file"
+     },
+     {
+      "id": "src/helper/factory/index.ts#4952",
+      "by": "file"
+     },
+     {
+      "id": "src/helper/factory/index.ts#524",
+      "by": "file"
+     },
+     {
+      "id": "src/helper/factory/index.ts#5977",
+      "by": "file"
+     },
+     {
+      "id": "src/helper/factory/index.ts#6993",
+      "by": "file"
+     },
+     {
+      "id": "src/helper/factory/index.ts#728",
+      "by": "file"
+     }
+    ],
+    "mirrorMembers": [
+     "deno_dist/helper/factory/index.ts#7316",
+     "deno_dist/helper/factory/index.ts#1055",
+     "deno_dist/helper/factory/index.ts#1472",
+     "deno_dist/helper/factory/index.ts#1971",
+     "deno_dist/helper/factory/index.ts#2557",
+     "deno_dist/helper/factory/index.ts#316",
+     "deno_dist/helper/factory/index.ts#3235",
+     "deno_dist/helper/factory/index.ts#4042",
+     "deno_dist/helper/factory/index.ts#4955",
+     "deno_dist/helper/factory/index.ts#527",
+     "deno_dist/helper/factory/index.ts#5980",
+     "deno_dist/helper/factory/index.ts#6996",
+     "deno_dist/helper/factory/index.ts#7215",
+     "deno_dist/helper/factory/index.ts#731"
+    ],
+    "mirrorOf": {
+     "dir": "deno_dist",
+     "dirs": [
+      "deno_dist"
+     ]
+    },
+    "moved": [],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 14,
+     "callers": 0,
+     "tests": 3,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 14,
+     "risky": 1,
+     "riskyAllUpdated": 1,
+     "mirrored": 14
+    }
+   },
+   {
+    "id": "K6",
+    "members": [
+     "src/middleware/bearer-auth/index.ts#243"
+    ],
+    "label": "bearerAuth",
+    "testHelpers": false,
+    "files": [
+     "src/middleware/bearer-auth/index.ts"
+    ],
+    "module": "(root)",
+    "joined": [
+     {
+      "id": "src/middleware/bearer-auth/index.ts#243",
+      "by": "folder"
+     }
+    ],
+    "mirrorMembers": [
+     "deno_dist/middleware/bearer-auth/index.ts#252"
+    ],
+    "mirrorOf": {
+     "dir": "deno_dist",
+     "dirs": [
+      "deno_dist"
+     ]
+    },
+    "moved": [],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 1,
+     "callers": 0,
+     "tests": 1,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 1,
+     "risky": 1,
+     "riskyAllUpdated": 1,
+     "mirrored": 1
+    }
+   },
+   {
+    "id": "K7",
+    "members": [
+     "src/hono-base.ts#7302",
+     "src/router/reg-exp-router/router.ts#3956",
+     "src/router/smart-router/router.ts#434",
+     "src/hono-base.ts#2028",
+     "src/hono-base.ts#4876",
+     "src/hono-base.ts#5785"
+    ],
+    "label": "RegExpRouter.add and 5 related",
+    "testHelpers": false,
+    "files": [
+     "src/hono-base.ts",
+     "src/router/reg-exp-router/router.ts",
+     "src/router/smart-router/router.ts"
+    ],
+    "module": "(root)",
+    "joined": [
+     {
+      "id": "src/hono-base.ts#4876",
+      "by": "file"
+     }
+    ],
+    "mirrorMembers": [
+     "deno_dist/hono-base.ts#2055",
+     "deno_dist/hono-base.ts#4903",
+     "deno_dist/hono-base.ts#5812",
+     "deno_dist/hono-base.ts#7329",
+     "deno_dist/router/reg-exp-router/router.ts#3971",
+     "deno_dist/router/smart-router/router.ts#440"
+    ],
+    "mirrorOf": {
+     "dir": "deno_dist",
+     "dirs": [
+      "deno_dist"
+     ]
+    },
+    "moved": [],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 6,
+     "callers": 4,
+     "tests": 11,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 6,
+     "risky": 0,
+     "riskyAllUpdated": 0,
+     "mirrored": 6
+    }
+   },
+   {
+    "id": "K8",
+    "members": [
+     "src/jsx/components.ts#177",
+     "src/jsx/components.ts#1783",
+     "src/jsx/components.ts#679",
+     "src/jsx/components.ts#959"
+    ],
+    "label": "childrenToString and 3 related",
+    "testHelpers": false,
+    "files": [
+     "src/jsx/components.ts"
+    ],
+    "module": "(root)",
+    "joined": [],
+    "mirrorMembers": [
+     "deno_dist/jsx/components.ts#1798",
+     "deno_dist/jsx/components.ts#192",
+     "deno_dist/jsx/components.ts#694",
+     "deno_dist/jsx/components.ts#974"
+    ],
+    "mirrorOf": {
+     "dir": "deno_dist",
+     "dirs": [
+      "deno_dist"
+     ]
+    },
+    "moved": [
+     {
+      "from": "deno_dist/jsx/streaming.ts#189",
+      "to": "src/jsx/components.ts#177"
+     }
+    ],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 4,
+     "callers": 1,
+     "tests": 1,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 4,
+     "risky": 0,
+     "riskyAllUpdated": 0,
+     "mirrored": 4
+    }
+   },
+   {
+    "id": "K9",
+    "members": [
+     "src/helper/dev/index.ts#242",
+     "src/helper/dev/index.ts#305",
+     "src/helper/dev/index.ts#440",
+     "src/helper/dev/index.ts#676"
+    ],
+    "label": "isMiddleware and 3 related",
+    "testHelpers": false,
+    "files": [
+     "src/helper/dev/index.ts"
+    ],
+    "module": "(root)",
+    "joined": [],
+    "mirrorMembers": [
+     "deno_dist/helper/dev/index.ts#248",
+     "deno_dist/helper/dev/index.ts#311",
+     "deno_dist/helper/dev/index.ts#446",
+     "deno_dist/helper/dev/index.ts#682"
+    ],
+    "mirrorOf": {
+     "dir": "deno_dist",
+     "dirs": [
+      "deno_dist"
+     ]
+    },
+    "moved": [],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 4,
+     "callers": 0,
+     "tests": 1,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 4,
+     "risky": 0,
+     "riskyAllUpdated": 0,
+     "mirrored": 4
+    }
+   },
+   {
+    "id": "K10",
+    "members": [
+     "src/jsx/streaming.ts#174"
+    ],
+    "label": "childrenToString",
+    "testHelpers": false,
+    "files": [
+     "src/jsx/streaming.ts"
+    ],
+    "module": "(root)",
+    "joined": [
+     {
+      "id": "src/jsx/streaming.ts#174",
+      "by": "folder"
+     }
+    ],
+    "mirrorMembers": [],
+    "mirrorOf": null,
+    "moved": [],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 1,
+     "callers": 0,
+     "tests": 0,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 0,
+     "risky": 0,
+     "riskyAllUpdated": 0,
+     "mirrored": 0
+    }
+   },
+   {
+    "id": "K11",
+    "members": [
+     "src/middleware/cors/index.ts#930"
+    ],
+    "label": "cors.set",
+    "testHelpers": false,
+    "files": [
+     "src/middleware/cors/index.ts"
+    ],
+    "module": "(root)",
+    "joined": [
+     {
+      "id": "src/middleware/cors/index.ts#930",
+      "by": "folder"
+     }
+    ],
+    "mirrorMembers": [
+     "deno_dist/middleware/cors/index.ts#933"
+    ],
+    "mirrorOf": {
+     "dir": "deno_dist",
+     "dirs": [
+      "deno_dist"
+     ]
+    },
+    "moved": [],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 1,
+     "callers": 0,
+     "tests": 0,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 0,
+     "risky": 0,
+     "riskyAllUpdated": 0,
+     "mirrored": 1
+    }
+   }
+  ],
+  "sweeps": [
+   {
+    "id": "S1",
+    "members": [
+     "src/middleware/basic-auth/index.ts#920",
+     "src/middleware/cache/index.ts#67",
+     "src/middleware/compress/index.ts#197",
+     "src/middleware/cors/index.ts#290",
+     "src/middleware/etag/index.ts#723",
+     "src/middleware/jsx-renderer/index.ts#1612",
+     "src/middleware/jwt/index.ts#401",
+     "src/middleware/logger/index.ts#1336",
+     "src/middleware/powered-by/index.ts#67",
+     "src/middleware/pretty-json/index.ts#109",
+     "src/middleware/secure-headers/index.ts#2892",
+     "src/middleware/timing/index.ts#614"
+    ],
+    "label": "Similar edit in 12 functions (each: added `function $`; removed `= >`)",
+    "pattern": "≈  → function $ | = > → ",
+    "files": [
+     "src/middleware/basic-auth/index.ts",
+     "src/middleware/cache/index.ts",
+     "src/middleware/compress/index.ts",
+     "src/middleware/cors/index.ts",
+     "src/middleware/etag/index.ts",
+     "src/middleware/jsx-renderer/index.ts",
+     "src/middleware/jwt/index.ts",
+     "src/middleware/logger/index.ts",
+     "src/middleware/powered-by/index.ts",
+     "src/middleware/pretty-json/index.ts",
+     "src/middleware/secure-headers/index.ts",
+     "src/middleware/timing/index.ts"
+    ],
+    "stats": {
+     "members": 12,
+     "callers": 0,
+     "tests": 14,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 12,
+     "risky": 0,
+     "riskyAllUpdated": 0
+    }
+   },
+   {
+    "id": "S2",
+    "members": [
+     "src/context.ts#4298",
+     "src/context.ts#4427",
+     "src/context.ts#4993",
+     "src/context.ts#4093",
+     "src/context.ts#8145",
+     "src/jsx/index.ts#6702",
+     "src/request.ts#5092",
+     "src/context.ts#11077",
+     "src/context.ts#3578",
+     "src/context.ts#3884",
+     "src/request.ts#5291"
+    ],
+    "label": "Other repeated edits (7 patterns)",
+    "pattern": "",
+    "files": [
+     "src/context.ts",
+     "src/jsx/index.ts",
+     "src/request.ts"
+    ],
+    "stats": {
+     "members": 11,
+     "callers": 25,
+     "tests": 38,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 11,
+     "risky": 0,
+     "riskyAllUpdated": 0
+    }
+   }
+  ],
+  "seams": [
+   {
+    "type": "call",
+    "clusters": [
+     "K1",
+     "K8"
+    ],
+    "via": [
+     {
+      "callee": "src/helper/html/index.ts#201",
+      "caller": "src/jsx/components.ts#679"
+     },
+     {
+      "callee": "src/jsx/components.ts#177",
+      "caller": "src/jsx/streaming.ts#379"
+     }
+    ],
+    "viaCount": 2
+   },
+   {
+    "type": "type",
+    "approximate": true,
+    "clusters": [
+     "K2",
+     "K3"
+    ],
+    "directions": [
+     "K3>K2"
+    ],
+    "types": [
+     "Hono"
+    ],
+    "typeCount": 1,
+    "via": [
+     "src/adapter/aws-lambda/handler.ts#2722",
+     "src/adapter/aws-lambda/handler.ts#3945"
+    ],
+    "viaCount": 2
+   },
+   {
+    "type": "type",
+    "approximate": true,
+    "clusters": [
+     "K2",
+     "K7"
+    ],
+    "directions": [
+     "K7>K2"
+    ],
+    "types": [
+     "Hono"
+    ],
+    "typeCount": 1,
+    "via": [
+     "src/adapter/aws-lambda/handler.ts#2722",
+     "src/adapter/aws-lambda/handler.ts#3945"
+    ],
+    "viaCount": 2
+   },
+   {
+    "type": "type",
+    "approximate": true,
+    "clusters": [
+     "K3",
+     "K7"
+    ],
+    "directions": [
+     "K3>K7"
+    ],
+    "types": [
+     "Hono"
+    ],
+    "typeCount": 1,
+    "via": [
+     "deno_dist/hono-base.ts#4903",
+     "deno_dist/hono-base.ts#5812",
+     "src/hono-base.ts#4876",
+     "src/hono-base.ts#5785"
+    ],
+    "viaCount": 4
+   },
+   {
+    "type": "type",
+    "approximate": true,
+    "clusters": [
+     "K3",
+     "K9"
+    ],
+    "directions": [
+     "K3>K9"
+    ],
+    "types": [
+     "Hono"
+    ],
+    "typeCount": 1,
+    "via": [
+     "deno_dist/helper/dev/index.ts#446",
+     "deno_dist/helper/dev/index.ts#682",
+     "src/helper/dev/index.ts#440",
+     "src/helper/dev/index.ts#676"
+    ],
+    "viaCount": 4
+   },
+   {
+    "type": "type",
+    "approximate": true,
+    "clusters": [
+     "K4",
+     "K7"
+    ],
+    "directions": [
+     "K4>K7"
+    ],
+    "types": [
+     "Context"
+    ],
+    "typeCount": 1,
+    "via": [
+     "deno_dist/hono-base.ts#5812",
+     "src/hono-base.ts#5785"
+    ],
+    "viaCount": 2
+   },
+   {
+    "type": "type",
+    "approximate": true,
+    "clusters": [
+     "K7",
+     "K9"
+    ],
+    "directions": [
+     "K7>K9"
+    ],
+    "types": [
+     "Hono"
+    ],
+    "typeCount": 1,
+    "via": [
+     "deno_dist/helper/dev/index.ts#446",
+     "deno_dist/helper/dev/index.ts#682",
+     "src/helper/dev/index.ts#440",
+     "src/helper/dev/index.ts#676"
+    ],
+    "viaCount": 4
+   }
+  ],
+  "hints": [
+   {
+    "clusters": [
+     "K3",
+     "K7"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "22b5f532b4",
+      "subject": "refactor: use `#` for private properties (#1762)",
+      "files": 6,
+      "large": false,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "commit",
+      "sha": "63179949c9",
+      "subject": "fix(types): Keep `Env` types with changed routes (#1757)",
+      "files": 5,
+      "large": false,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "commit",
+      "sha": "d16aedfffd",
+      "subject": "feat: Ensure that calls to `c.json()` have a type equivalent to `c.jsonT()` (#1728)",
+      "files": 14,
+      "large": false,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "commit",
+      "sha": "d86fcd41e1",
+      "subject": "feat(request): Introduce `matchedRoutes` and `routePath` for `HonoRequest` (#1744)",
+      "files": 12,
+      "large": false,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "commit",
+      "sha": "bd36ad10fc",
+      "subject": "feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)",
+      "files": 34,
+      "large": true,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "token",
+      "token": "METHOD_NAME_ALL",
+      "files": 12
+     },
+     {
+      "type": "token",
+      "token": "notFoundHandler",
+      "files": 4
+     },
+     {
+      "type": "token",
+      "token": "errorHandler",
+      "files": 2
+     },
+     {
+      "type": "token",
+      "token": "matchResult",
+      "files": 4
+     },
+     {
+      "type": "token",
+      "token": "toUpperCase",
+      "files": 8
+     },
+     {
+      "type": "test",
+      "callers": [
+       {
+        "label": "hono.test.ts",
+        "relPath": "src/hono.test.ts"
+       },
+       {
+        "label": "types.test.ts",
+        "relPath": "src/types.test.ts"
+       }
+      ],
+      "count": 2
+     },
+     {
+      "type": "folder",
+      "dir": "src"
+     }
+    ],
+    "strength": 3
+   },
+   {
+    "clusters": [
+     "K1",
+     "K4"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "cd6c488b76",
+      "subject": "feat(jsx): Introduce `ErrorBoundary` component (#1714)",
+      "files": 16,
+      "large": false,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "token",
+      "token": "HtmlEscapedCallbackOpts",
+      "files": 2
+     },
+     {
+      "type": "token",
+      "token": "HtmlEscapedCallback",
+      "files": 4
+     },
+     {
+      "type": "token",
+      "token": "resolveStream",
+      "files": 6
+     },
+     {
+      "type": "token",
+      "token": "HtmlEscaped",
+      "files": 7
+     },
+     {
+      "type": "token",
+      "token": "isEscaped",
+      "files": 6
+     },
+     {
+      "type": "test",
+      "callers": [
+       {
+        "label": "components.test.tsx",
+        "relPath": "src/jsx/components.test.tsx"
+       },
+       {
+        "label": "streaming.test.tsx",
+        "relPath": "src/jsx/streaming.test.tsx"
+       },
+       {
+        "label": "index.test.tsx",
+        "relPath": "src/middleware/jsx-renderer/index.test.tsx"
+       }
+      ],
+      "count": 3
+     },
+     {
+      "type": "folder",
+      "dir": "src/utils"
+     }
+    ],
+    "strength": 3
+   },
+   {
+    "clusters": [
+     "K1",
+     "K10"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "cd6c488b76",
+      "subject": "feat(jsx): Introduce `ErrorBoundary` component (#1714)",
+      "files": 16,
+      "large": false,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "token",
+      "token": "./components",
+      "files": 5
+     },
+     {
+      "type": "token",
+      "token": "H:${index}",
+      "files": 2
+     },
+     {
+      "type": "token",
+      "token": "components",
+      "files": 0
+     },
+     {
+      "type": "token",
+      "token": "resolved",
+      "files": 8
+     },
+     {
+      "type": "folder",
+      "dir": "src/jsx"
+     }
+    ],
+    "strength": 2
+   },
+   {
+    "clusters": [
+     "K3",
+     "K4"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "22b5f532b4",
+      "subject": "refactor: use `#` for private properties (#1762)",
+      "files": 6,
+      "large": false,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "commit",
+      "sha": "d16aedfffd",
+      "subject": "feat: Ensure that calls to `c.json()` have a type equivalent to `c.jsonT()` (#1728)",
+      "files": 14,
+      "large": false,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "test",
+      "callers": [
+       {
+        "label": "context.test.ts",
+        "relPath": "src/context.test.ts"
+       },
+       {
+        "label": "hono.test.ts",
+        "relPath": "src/hono.test.ts"
+       },
+       {
+        "label": "types.test.ts",
+        "relPath": "src/types.test.ts"
+       }
+      ],
+      "count": 3
+     },
+     {
+      "type": "folder",
+      "dir": "src"
+     }
+    ],
+    "strength": 2
+   },
+   {
+    "clusters": [
+     "K4",
+     "K7"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "22b5f532b4",
+      "subject": "refactor: use `#` for private properties (#1762)",
+      "files": 6,
+      "large": false,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "commit",
+      "sha": "d16aedfffd",
+      "subject": "feat: Ensure that calls to `c.json()` have a type equivalent to `c.jsonT()` (#1728)",
+      "files": 14,
+      "large": false,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "test",
+      "callers": [
+       {
+        "label": "handler.test.ts",
+        "relPath": "src/adapter/cloudflare-pages/handler.test.ts"
+       },
+       {
+        "label": "handler.test.ts",
+        "relPath": "src/adapter/vercel/handler.test.ts"
+       },
+       {
+        "label": "client.test.ts",
+        "relPath": "src/client/client.test.ts"
+       },
+       {
+        "label": "hono.test.ts",
+        "relPath": "src/hono.test.ts"
+       },
+       {
+        "label": "types.test.ts",
+        "relPath": "src/types.test.ts"
+       }
+      ],
+      "count": 5
+     },
+     {
+      "type": "folder",
+      "dir": "src"
+     }
+    ],
+    "strength": 2
+   },
+   {
+    "clusters": [
+     "K1",
+     "K8"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "cd6c488b76",
+      "subject": "feat(jsx): Introduce `ErrorBoundary` component (#1714)",
+      "files": 16,
+      "large": false,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "test",
+      "callers": [
+       {
+        "label": "components.test.tsx",
+        "relPath": "src/jsx/components.test.tsx"
+       }
+      ],
+      "count": 1
+     },
+     {
+      "type": "folder",
+      "dir": "src/jsx"
+     }
+    ],
+    "strength": 2
+   },
+   {
+    "clusters": [
+     "K4",
+     "K8"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "cd6c488b76",
+      "subject": "feat(jsx): Introduce `ErrorBoundary` component (#1714)",
+      "files": 16,
+      "large": false,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "test",
+      "callers": [
+       {
+        "label": "components.test.tsx",
+        "relPath": "src/jsx/components.test.tsx"
+       }
+      ],
+      "count": 1
+     }
+    ],
+    "strength": 2
+   },
+   {
+    "clusters": [
+     "K2",
+     "K4"
+    ],
+    "evidence": [
+     {
+      "type": "token",
+      "token": "Headers",
+      "files": 16
+     },
+     {
+      "type": "token",
+      "token": "entries",
+      "files": 20
+     }
+    ],
+    "strength": 1
+   },
+   {
+    "clusters": [
+     "K3",
+     "K9"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "d86fcd41e1",
+      "subject": "feat(request): Introduce `matchedRoutes` and `routePath` for `HonoRequest` (#1744)",
+      "files": 12,
+      "large": false,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "commit",
+      "sha": "bd36ad10fc",
+      "subject": "feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)",
+      "files": 34,
+      "large": true,
+      "weak": false,
+      "broad": false
+     }
+    ],
+    "strength": 1
+   },
+   {
+    "clusters": [
+     "K7",
+     "K9"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "d86fcd41e1",
+      "subject": "feat(request): Introduce `matchedRoutes` and `routePath` for `HonoRequest` (#1744)",
+      "files": 12,
+      "large": false,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "commit",
+      "sha": "bd36ad10fc",
+      "subject": "feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)",
+      "files": 34,
+      "large": true,
+      "weak": false,
+      "broad": false
+     }
+    ],
+    "strength": 1
+   },
+   {
+    "clusters": [
+     "K8",
+     "K10"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "cd6c488b76",
+      "subject": "feat(jsx): Introduce `ErrorBoundary` component (#1714)",
+      "files": 16,
+      "large": false,
+      "weak": false,
+      "broad": false
+     },
+     {
+      "type": "folder",
+      "dir": "src/jsx"
+     }
+    ],
+    "strength": 1
+   },
+   {
+    "clusters": [
+     "K3",
+     "K5"
+    ],
+    "evidence": [
+     {
+      "type": "test",
+      "callers": [
+       {
+        "label": "types.test.ts",
+        "relPath": "src/types.test.ts"
+       }
+      ],
+      "count": 1
+     }
+    ],
+    "strength": 1
+   },
+   {
+    "clusters": [
+     "K3",
+     "K6"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "bd36ad10fc",
+      "subject": "feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)",
+      "files": 34,
+      "large": true,
+      "weak": false,
+      "broad": false
+     }
+    ],
+    "strength": 1
+   },
+   {
+    "clusters": [
+     "K3",
+     "K11"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "bd36ad10fc",
+      "subject": "feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)",
+      "files": 34,
+      "large": true,
+      "weak": false,
+      "broad": false
+     }
+    ],
+    "strength": 1
+   },
+   {
+    "clusters": [
+     "K4",
+     "K5"
+    ],
+    "evidence": [
+     {
+      "type": "test",
+      "callers": [
+       {
+        "label": "index.test.ts",
+        "relPath": "src/helper/factory/index.test.ts"
+       },
+       {
+        "label": "types.test.ts",
+        "relPath": "src/types.test.ts"
+       }
+      ],
+      "count": 2
+     }
+    ],
+    "strength": 1
+   },
+   {
+    "clusters": [
+     "K4",
+     "K10"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "cd6c488b76",
+      "subject": "feat(jsx): Introduce `ErrorBoundary` component (#1714)",
+      "files": 16,
+      "large": false,
+      "weak": false,
+      "broad": false
+     }
+    ],
+    "strength": 1
+   },
+   {
+    "clusters": [
+     "K5",
+     "K7"
+    ],
+    "evidence": [
+     {
+      "type": "test",
+      "callers": [
+       {
+        "label": "types.test.ts",
+        "relPath": "src/types.test.ts"
+       }
+      ],
+      "count": 1
+     }
+    ],
+    "strength": 1
+   },
+   {
+    "clusters": [
+     "K6",
+     "K7"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "bd36ad10fc",
+      "subject": "feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)",
+      "files": 34,
+      "large": true,
+      "weak": false,
+      "broad": false
+     }
+    ],
+    "strength": 1
+   },
+   {
+    "clusters": [
+     "K6",
+     "K9"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "bd36ad10fc",
+      "subject": "feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)",
+      "files": 34,
+      "large": true,
+      "weak": false,
+      "broad": false
+     }
+    ],
+    "strength": 1
+   },
+   {
+    "clusters": [
+     "K6",
+     "K11"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "bd36ad10fc",
+      "subject": "feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)",
+      "files": 34,
+      "large": true,
+      "weak": false,
+      "broad": false
+     }
+    ],
+    "strength": 1
+   },
+   {
+    "clusters": [
+     "K7",
+     "K11"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "bd36ad10fc",
+      "subject": "feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)",
+      "files": 34,
+      "large": true,
+      "weak": false,
+      "broad": false
+     }
+    ],
+    "strength": 1
+   },
+   {
+    "clusters": [
+     "K9",
+     "K11"
+    ],
+    "evidence": [
+     {
+      "type": "commit",
+      "sha": "bd36ad10fc",
+      "subject": "feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)",
+      "files": 34,
+      "large": true,
+      "weak": false,
+      "broad": false
+     }
+    ],
+    "strength": 1
+   }
+  ],
+  "hintNotes": [],
+  "generatedDirs": [
+   "deno_dist",
+   "dist"
+  ]
+ }
+}

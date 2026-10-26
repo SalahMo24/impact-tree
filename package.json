@@ -64,6 +64,12 @@
           "contextualTitle": "Impact Tree"
         },
         {
+          "id": "impactTree.cards",
+          "name": "Cards",
+          "contextualTitle": "Impact Tree",
+          "when": "config.impactTree.cards.enabled"
+        },
+        {
           "type": "webview",
           "id": "impactTree.details",
           "name": "Details",
@@ -1039,6 +1045,11 @@
             "A change row also shows the verdict in words and the change kinds (denser, truncates in narrow sidebars)"
           ],
           "description": "Where a change row's verdict and change kinds are shown."
+        },
+        "impactTree.cards.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show a Cards view that groups the changes of a review into related cards, with the entry points each card reaches and which cards may belong together. Turning it on adds the entry-point search to each analysis (a few seconds on the largest pull requests) and, for a local review, reads the repository's history for merge hints. Takes effect from the next analysis (Refresh)."
         },
         "impactTree.fileListLayout": {
           "type": "string",

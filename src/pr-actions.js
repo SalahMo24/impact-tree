@@ -14,6 +14,18 @@ function loadTypeScriptForPreview(repo) {
 }
 
 /**
+ * The pull request's changed files as a preview result records them: path, status, and the
+ * path before a rename. The listing's patch text is not part of the result.
+ * @param {any} result A preview result.
+ * @returns {Array<{ path: string, status: string, oldPath?: string }>}
+ */
+function previewFilesOf(result) {
+  return Object.entries(result.fileStatus || {}).map(([filePath, status]) => ({
+    path: filePath, status: String(status), ...(result.basePaths && result.basePaths[filePath] ? { oldPath: result.basePaths[filePath] } : {}),
+  }));
+}
+
+/**
  * PR preview (no checkout) and checkout-then-analyse. Both go through the session's
  * lifecycle: a preview is an analysis run like a local refresh, and a checkout claims
  * the worktree from it.
@@ -44,6 +56,8 @@ function createPrActions(vscode, session, { log, gh, repoSlug, githubRemote, sou
           const repo = session.repoRoot();
           const cfg = vscode.workspace.getConfiguration('impactTree');
           const ts = loadTypeScriptForPreview(repo);
+          // Read once per run: this run's cards follow the setting as it was when the run began.
+          const withCards = session.cardsEnabled();
 
           const { clearVirtualText } = require('./engine/textpos');
           clearVirtualText();
@@ -68,6 +82,7 @@ function createPrActions(vscode, session, { log, gh, repoSlug, githubRemote, sou
             ts, gh, slug, pr, repoRoot: repo,
             maxFiles: cfg.get('tierA.maxFiles', 300),
             concurrency: cfg.get('concurrency', 8),
+            ...(withCards ? { impactPaths: true } : {}),   // the entry points the cards show
             onPrepared: (pending) => {
               // wall-clock: log-only — the duration logged
               if (publish(pending)) log(`preview: changed files ready in ${Date.now() - t0}ms; caller analysis continues`);
@@ -82,6 +97,15 @@ function createPrActions(vscode, session, { log, gh, repoSlug, githubRemote, sou
           pr = result.pr || pr;
           // Text for the diff views, keyed the way the content provider looks it up.
           if (!publish(result)) return;
+          if (withCards) {
+            await session.publishCards(run, {
+              result, hintsOptions: { head: result.headSha },    // no `repo`: a preview has no history to read
+              report: (message) => { if (!run.signal.aborted) progress.report({ message }); },
+              gatherFacts: (signal) => require('./engine/cards-remote').gatherRemoteCardFacts({
+                gh, slug, pr: { number: pr.number, headSha: result.headSha, baseSha: result.base.sha },
+                files: previewFilesOf(result), signal }),
+            });
+          }
 
           log(`preview: PR #${pr.number} ${result.changedFileCount} file(s), `
             + `${result.allChanged.length} changed symbol(s), ${result.findings.length} finding(s) `

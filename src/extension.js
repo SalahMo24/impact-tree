@@ -5,6 +5,7 @@ const os = require('os');
 const vscode = require('vscode');
 const { MODES } = require('./engine/analyze');
 const { createTreeProvider } = require('./tree-provider');
+const { createCardsProvider, REVEAL_COMMAND } = require('./cards-provider');
 const { createReviewNavigation } = require('./review-navigation');
 const { createDetailPanel } = require('./detail-panel');
 const { createCallerComment } = require('./caller-comment');
@@ -120,6 +121,22 @@ function activate(context, { clock = realClock } = {}) {
   const view = vscode.window.createTreeView('impactTree.changes',
     { treeDataProvider: provider, showCollapseAll: true, manageCheckboxStateManually: true });
   context.subscriptions.push(view);
+  // The Cards view (impactTree.cards.enabled; package.json hides it while the setting is off).
+  // It follows the analysis and the cards the session publishes after it; selecting a seam
+  // reveals the other card. Disposed with the window.
+  const cardsProvider = createCardsProvider(vscode, {
+    getSource: () => ({ enabled: owned.cardsEnabled(), state: owned.state }),
+  });
+  const cardsView = vscode.window.createTreeView('impactTree.cards', { treeDataProvider: cardsProvider, showCollapseAll: true });
+  context.subscriptions.push(cardsProvider, cardsView,
+    owned.onDidChangeAnalysis(() => cardsProvider.refresh()), owned.onDidChangeCards(() => cardsProvider.refresh()),
+    vscode.workspace.onDidChangeConfiguration((e) => { if (e.affectsConfiguration('impactTree.cards.enabled')) cardsProvider.refresh(); }),
+    vscode.commands.registerCommand(REVEAL_COMMAND, (id) => {
+      const card = cardsProvider.find(id);
+      if (!card) return undefined;
+      return Promise.resolve(cardsView.reveal(card, { select: true, focus: true, expand: false }))
+        .then(undefined, (e) => log(`cards: could not show ${id}: ${e && e.message}`));
+    }));
   const navigation = createReviewNavigation(vscode, { provider, view });
   context.subscriptions.push(...navigation.disposables);
   // "Comment on this call" starts comments through the review comments, and feedback drafts
