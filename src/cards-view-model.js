@@ -168,21 +168,28 @@ function impactNode(id, stats) {
  * @param {string[]} memberIds
  * @param {Record<string, any>|undefined} paths `result.impactPaths`
  * @param {ReturnType<typeof indexFunctions>} index
- * @returns {{ computed: boolean, entries: any[], incomplete: boolean, testOnly: string[] }}
+ * @returns {{ computed: boolean, entries: any[], incomplete: boolean, testOnly: string[], testOnlyUnsure: number }}
+ *   `testOnly`: members whose every path ends at a function only tests call, within the
+ *   search; `testOnlyUnsure` of them have an incomplete or lower-bound walk (a caller outside
+ *   it may exist).
  */
 function entryPointsOf(memberIds, paths, index) {
-  if (!paths) return { computed: false, entries: [], incomplete: true, testOnly: [] };
+  if (!paths) return { computed: false, entries: [], incomplete: true, testOnly: [], testOnlyUnsure: 0 };
   /** @type {Map<string, any>} */
   const entries = new Map();
   /** @type {string[]} */
   const testOnly = [];
+  let testOnlyUnsure = 0;
   let incomplete = false;
   for (const id of memberIds) {
     if (id.endsWith(DELETED_SUFFIX) || !index.changed.has(id)) continue;     // a deleted function is not walked
     const p = paths[id];
     if (!p) { incomplete = true; continue; }
     if (p.complete === false) incomplete = true;
-    if (p.testOnly) testOnly.push(id);
+    if (p.testOnly) {
+      testOnly.push(id);
+      if (p.complete !== true || (p.topPaths || []).some((/** @type {any} */ t) => t.lowerBound)) testOnlyUnsure++;
+    }
     for (const e of p.entries || []) if (!entries.has(`${e.type}|${e.name}`)) entries.set(`${e.type}|${e.name}`, { ...e, path: null });
     for (const t of p.topPaths || []) {
       if (t.lowerBound) incomplete = true;
@@ -191,7 +198,7 @@ function entryPointsOf(memberIds, paths, index) {
     }
   }
   const sorted = [...entries.values()].sort((a, b) => (a.type < b.type ? -1 : a.type > b.type ? 1 : a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-  return { computed: true, entries: sorted, incomplete, testOnly };
+  return { computed: true, entries: sorted, incomplete, testOnly, testOnlyUnsure };
 }
 
 /** @param {string} id @param {ReturnType<typeof entryPointsOf>} ep @returns {CardNode} */
@@ -347,8 +354,13 @@ function cardNode(c, { result, cards, byId, index }) {
   const seams = seamsNode(c.id, cards.seams || [], byId, index);
   if (seams) children.push(seams);
   if (ep.testOnly.length) {
-    children.push(leaf(`${c.id}/test-only`, `Used only by tests: ${ep.testOnly.length} of ${c.members.length}`, 'beaker', {
-      tooltip: ep.testOnly.slice(0, 10).map((m) => nameOf(m, index)).join('\n'),
+    // Unsure when a walk was incomplete: only tests were found, but a caller outside the search may exist.
+    const label = ep.testOnlyUnsure
+      ? `Only tests found calling: ${ep.testOnly.length} of ${c.members.length} (search incomplete)`
+      : `Used only by tests: ${ep.testOnly.length} of ${c.members.length}`;
+    const names = ep.testOnly.slice(0, 10).map((m) => nameOf(m, index)).join('\n');
+    children.push(leaf(`${c.id}/test-only`, label, 'beaker', {
+      tooltip: ep.testOnlyUnsure ? `${names}\n\nThe caller search was incomplete for ${ep.testOnlyUnsure} of them: a caller outside it may exist.` : names,
     }));
   }
   children.push(...hintNodes(c.id, cards.hints || [], byId), membersNode(c.id, c.members || [], index));

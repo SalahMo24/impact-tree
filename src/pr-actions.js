@@ -14,12 +14,14 @@ function loadTypeScriptForPreview(repo) {
 }
 
 /**
- * The pull request's changed files as a preview result records them: path, status, and the
- * path before a rename. The listing's patch text is not part of the result.
+ * The pull request's changed files for the cards' diff facts: the preview's own listing,
+ * with patch text and its `truncated` flag, when the result carries it (`listedFiles`);
+ * otherwise path, status and the path before a rename only, so hunks are not read.
  * @param {any} result A preview result.
- * @returns {Array<{ path: string, status: string, oldPath?: string }>}
+ * @returns {Array<{ path: string, status: string, oldPath?: string }> | { files: any[], truncated?: boolean }}
  */
 function previewFilesOf(result) {
+  if (result.listedFiles) return result.listedFiles;
   return Object.entries(result.fileStatus || {}).map(([filePath, status]) => ({
     path: filePath, status: String(status), ...(result.basePaths && result.basePaths[filePath] ? { oldPath: result.basePaths[filePath] } : {}),
   }));
@@ -194,4 +196,4 @@ function createPrActions(vscode, session, { log, gh, repoSlug, githubRemote, sou
   return { previewPullRequest, checkoutAndAnalyse };
 }
 
-module.exports = { createPrActions };
+module.exports = { createPrActions, previewFilesOf };

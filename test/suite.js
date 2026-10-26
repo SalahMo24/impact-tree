@@ -88,7 +88,7 @@ const SUITE = [
   { file: 'test/tree-grouping.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/tree-characterization.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/cards-view-model.test.js', tier: 'quick' },  // 0.2s
-  { file: 'test/cards-wiring.test.js', tier: 'quick' },  // 7s
+  { file: 'test/cards-wiring.test.js', tier: 'full' },  // 7s
   { file: 'test/tree-grouping-rules.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/tree-row-models.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/empty-states-and-limits.test.js', tier: 'full' },  // 8.0s

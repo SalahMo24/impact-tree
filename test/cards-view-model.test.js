@@ -179,6 +179,14 @@ test('used only by tests is shown when some member is reached only from tests', 
   assert.equal(child(card(cardsViewModel(s)), 'test-only').label, 'Used only by tests: 2 of 4');
 });
 
+test('used only by tests says the search was incomplete when a member\'s walk was (a preview, say)', () => {
+  const ids = small().cards.clusters[0].members;
+  const s = small({ result: { impactPaths: Object.fromEntries(ids.map((i, k) => [i, { testOnly: k < 2, complete: k !== 1, entries: [], topPaths: [] }])) } });
+  const node = child(card(cardsViewModel(s)), 'test-only');
+  assert.equal(node.label, 'Only tests found calling: 2 of 4 (search incomplete)');
+  assert.match(node.tooltip, /incomplete for 1 of them/);
+});
+
 test('the outline of cli-14752 (for review)', () => {
   const f = load('cli-14752');
   assert.match(outline(cardsViewModel({ result: f.result, cards: f.cards })), /^K1 · /);

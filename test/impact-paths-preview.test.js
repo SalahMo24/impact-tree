@@ -72,3 +72,14 @@ test('preview impact paths take their limits from the option, and reject an inva
     await assert.rejects(run(fakeHost().gh, { impactPaths: { maxDepth: 0 } }), RangeError);
   } finally { clearVirtualText(); }
 });
+
+test('a preview result keeps the PR file listing for the cards, outside its JSON', async () => {
+  clearVirtualText();
+  try {
+    const r = await run(fakeHost().gh);
+    assert.deepEqual(r.listedFiles.files.map((f) => [f.path, f.patch]), [['lib/a.ts', hunk(1)], ['lib/use.ts', hunk(2)]]);
+    assert.ok(!Object.keys(r).includes('listedFiles'));
+    const { previewFilesOf } = require('../src/pr-actions');
+    assert.equal(previewFilesOf(r), r.listedFiles);
+  } finally { clearVirtualText(); }
+});
