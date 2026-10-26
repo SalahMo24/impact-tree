@@ -347,6 +347,9 @@ async function analyzeRemote({
   throwIfCancelled(signal);
 
   const finalResult = makeResult(false, routedResolver(resolvers));
+  // The listing with its patch text, for the cards' diff facts (cards-remote.js). Not
+  // enumerable, so it is not part of the JSON result.
+  Object.defineProperty(finalResult, 'listedFiles', { value: listed, enumerable: false });
   if (impactPaths) {
     const headTexts = new Map([...usable, ...readTests].filter((f) => f.headText != null).map((f) => [f.path, f.headText]));
     await addImpactPaths(finalResult, {

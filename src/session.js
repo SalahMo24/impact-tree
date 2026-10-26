@@ -130,6 +130,109 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     return { dispose: () => analysisListeners.delete(listener) };
   }
 
+  // ---- cards (impactTree.cards.enabled) ----
+  // Listeners told that `session.state.cards`, `hintsPending` or `cardsError` changed. Cards
+  // arrive after the result, so they have their own event: notifyAnalysisChanged would make
+  // the PR review store and the comment controllers re-sync for a change of cards alone.
+  // Owner: this session; each subscription's dispose removes it, and dispose() clears all.
+  const cardsListeners = new Set();
+  function notifyCardsChanged() {
+    for (const listener of [...cardsListeners]) {
+      try { listener(); } catch (e) { log(`a cards listener failed: ${e && e.message}`); }
+    }
+  }
+  /**
+   * @param {() => void} listener Called synchronously after the cards of the shown result changed.
+   * @returns {{ dispose: () => void }}
+   */
+  function onDidChangeCards(listener) {
+    if (disposed()) return { dispose() {} };
+    cardsListeners.add(listener);
+    return { dispose: () => cardsListeners.delete(listener) };
+  }
+
+  /** @returns {boolean} Whether the Cards view is switched on. Off means no extra option and no extra work. */
+  const cardsEnabled = () => vscode.workspace.getConfiguration('impactTree').get('cards.enabled', false) === true;
+
+  // The merge-hint search running in the background for the shown result, if any. Owner: this
+  // session. It outlives the run that started it (a run's own signal aborts when the run is
+  // released), so it has its own controller, aborted when another run begins, a checkout
+  // starts, or the session is disposed. It publishes only while it is still the one running.
+  /** @type {AbortController|null} */
+  let hintsController = null;
+  function abortHints() {
+    if (hintsController) hintsController.abort();
+    hintsController = null;
+  }
+
+  /**
+   * Publishes `patch` on the shown state, only while it still shows `result`.
+   * @param {object} result
+   * @param {{ cards?: object|null, hintsPending: boolean, cardsError: string|null }} patch
+   * @returns {boolean} Whether it was published.
+   */
+  function publishCardsState(result, patch) {
+    if (disposed() || !session.state || session.state.result !== result) return false;
+    session.state = { ...session.state, ...patch };
+    notifyCardsChanged();
+    return true;
+  }
+
+  /**
+   * Builds the cards of `result` and publishes them, then finds the merge hints in the
+   * background and publishes the cards again with them. Called from a run that has published
+   * `result`, before the run is released: the facts are gathered under the run's signal. A
+   * failure becomes a note on the view (`cardsError`), never a rejection; the shown result is
+   * untouched. A run that is no longer current publishes nothing.
+   * @param {{ id: number, signal: AbortSignal }} run
+   * @param {{ result: any,
+   *   gatherFacts: (signal: AbortSignal) => Promise<any>,
+   *   hintsOptions: { repo?: string, head: string },
+   *   report?: (message: string) => void }} job
+   *   `gatherFacts`: reads what the cards need beyond the result (git history locally, the pull
+   *   request's files in a preview). `hintsOptions`: the repository and revision the hints read;
+   *   a preview has no `repo`.
+   * @returns {Promise<void>}
+   */
+  async function publishCards(run, { result, gatherFacts, hintsOptions, report = () => {} }) {
+    abortHints();
+    const controller = new AbortController();
+    hintsController = controller;
+    const live = () => isCurrentAnalysis(run.id) && hintsController === controller && !controller.signal.aborted;
+    try {
+      report('cards: reading the change history…');
+      const facts = await gatherFacts(run.signal);
+      if (!live()) return;
+      const { buildCardsFromFacts } = require('./engine/cards');
+      const cards = buildCardsFromFacts(result, facts);
+      if (!publishCardsState(result, { cards, hintsPending: true, cardsError: null })) return;
+      // Deliberate background work: findHints handles its own rejection and checks `live`.
+      findHints({ result, facts, cards, hintsOptions, controller, live }).catch((e) => log(`cards: ${e && e.stack ? e.stack : e}`));
+    } catch (e) {
+      if (isAnalysisCancelled(e) || !live()) return;
+      log(`cards failed: ${e && e.stack ? e.stack : e}`);
+      publishCardsState(result, { cards: null, hintsPending: false, cardsError: e && e.message ? e.message : String(e) });
+    }
+  }
+
+  // The background half of publishCards: hints for cards already shown. Never rejects for an
+  // engine failure (it becomes `cardsError`, the cards without hints stay); resolves quietly
+  // when it was replaced.
+  async function findHints({ result, facts, cards, hintsOptions, controller, live }) {
+    try {
+      const { addHints } = require('./engine/cards');
+      const withHints = await addHints(cards, facts, { ...hintsOptions, signal: controller.signal });
+      if (!live()) return;
+      publishCardsState(result, { cards: withHints, hintsPending: false, cardsError: null });
+    } catch (e) {
+      if (isAnalysisCancelled(e) || !live()) return;
+      log(`cards: merge hints failed: ${e && e.stack ? e.stack : e}`);
+      publishCardsState(result, { cards, hintsPending: false, cardsError: `merge hints could not be found: ${e && e.message ? e.message : e}` });
+    } finally {
+      if (hintsController === controller) hintsController = null;
+    }
+  }
+
   function repoRoot() {
     const f = vscode.workspace.workspaceFolders;
     if (!f || !f.length) throw new Error('Impact Tree: no workspace folder open');
@@ -206,6 +309,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
       log('a newer request replaces the running analysis — cancelling it');
       lifecycle.run.controller.abort();
     }
+    abortHints();
     const controller = new AbortController();
     const handle = Object.freeze({ id: ++lifecycle.generation, signal: controller.signal });
     let settle;
@@ -216,9 +320,10 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     lifecycle.state = stage;
     if (source.kind !== 'pr') session.resolverOverride = null;     // leaving a PR preview
     if (keepResult && session.state && session.state.result) {
-      session.state = { ...session.state, source, retryingCallers: true };
+      session.state = { ...session.state, source, retryingCallers: true, hintsPending: false };
     } else {
-      session.state = { ...session.state, source, result: null, error: null, problem: null, retryingCallers: false };
+      session.state = { ...session.state, source, result: null, error: null, problem: null, retryingCallers: false,
+        cards: null, hintsPending: false, cardsError: null };
       session.decorate.clear();
     }
     session.provider.refresh();
@@ -343,6 +448,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     lifecycle.run = null;
     lifecycle.state = 'checkingOut';
     lifecycle.generation++;          // the worktree is about to move under the shown result
+    abortHints();
     session.provider.refresh();
     notifyAnalysisChanged();
     if (pending.length) {
@@ -526,6 +632,8 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     }
     const tStart = clock.now();
     const report = (m) => { if (!run.signal.aborted && progress) progress.report({ message: m }); };
+    // Read once per run: the cards of this run follow the setting as it was when the run began.
+    const withCards = cardsEnabled();
     // vscode.commands.executeCommand takes no cancellation token, so the language
     // server cannot be told to stop. The signal stops new queries; one already sent
     // finishes in the server and its answer is dropped with the cancelled run.
@@ -550,6 +658,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
       deferTestReach: !(session.state && session.state.wantTestReach), // only one section needs it
       concurrency: cfg.get('concurrency', 8),
       onDirty: 'fallback',                   // never blank the view because a file is edited
+      ...(withCards ? { impactPaths: true } : {}),   // the entry points the cards show
       makeResolver: () => session.resolver,
       // The same services the resolver asks: server-backed languages (Go) read their
       // symbols through them, under the same request cap and deadlines.
@@ -573,6 +682,12 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     const stale = result.findings.reduce((n, f) => n + f.staleCallers, 0);
     vscode.window.setStatusBarMessage(
       `Impact Tree: ${result.findings.length} finding(s), ${stale} caller(s) not updated, base ${result.base.ref}`, 8000);
+    if (withCards) {
+      await publishCards(run, {
+        result, report, hintsOptions: { repo, head: 'HEAD' },
+        gatherFacts: (signal) => require('./engine/cards').gatherLocalCardFacts({ repo, base: result.base.sha, head: 'HEAD', signal }),
+      });
+    }
     const unanswered = result.allChanged.filter((c) => c.callersRetryable).length;
     if (retry) log(`caller retry: ${unanswered} search(es) still did not finish`);
     else if (unanswered) void scheduleCallerRetry(run, source, mode, result, unanswered);
@@ -751,6 +866,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     lifecycle.run = null;
     lifecycle.checkout = null;
     if (run) run.controller.abort();
+    abortHints();
     modulePool?.dispose();
     modulePool = null;
     session.resolver = null;
@@ -759,6 +875,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     session.readyPromise = null;
     session.state = null;
     analysisListeners.clear();
+    cardsListeners.clear();
     indexingListeners.clear();
   }
 
@@ -783,6 +900,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     beginAnalysisRun, beginAnalysingStage, completeAnalysisRun, failAnalysisRun, releaseAnalysisRunResources,
     isCurrentAnalysis, getAnalysisId, beginCheckout, endCheckout, checkoutInProgress, isBusy, getPhase,
     prewarmInBackground, dispose, treeResolver, onDidChangeAnalysis,
+    onDidChangeCards, cardsEnabled, publishCards,
   });
   const { ensureReady, ensureResolver, isIndexing, indexingServer } = createReadiness(vscode, session, { log, getScratchDir, clock });
   session.ensureReady = ensureReady;

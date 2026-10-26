@@ -1,0 +1,798 @@
+{
+ "_source": "live --cards --impact output of httpx-1600 (AI1)",
+ "result": {
+  "mode": "pr",
+  "base": {
+   "sha": "8fe32c52debc0add303fed81b9220689ddc502e4"
+  },
+  "warnings": [
+   "WARNING: origin/base-1600 not found — falling back to local base-1600; diff may include others' commits",
+   "3 changed Python file(s) read from their text: changed functions and signature kinds; Python callers from syntax only: the repository (58 Python file(s) indexed); untyped receivers and dynamic calls are not resolved"
+  ],
+  "allChanged": [
+   {
+    "label": "QueryParams.__setitem__",
+    "relPath": "httpx/_models.py",
+    "namePos": 23929,
+    "startLine": 706,
+    "kinds": [
+     {
+      "id": "new-throw",
+      "short": "new throw"
+     }
+    ]
+   },
+   {
+    "label": "QueryParams.update",
+    "relPath": "httpx/_models.py",
+    "namePos": 23709,
+    "startLine": 700,
+    "kinds": [
+     {
+      "id": "new-throw",
+      "short": "new throw"
+     }
+    ]
+   },
+   {
+    "label": "URL.__init__",
+    "relPath": "httpx/_models.py",
+    "namePos": 3480,
+    "startLine": 114,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "QueryParams.__init__",
+    "relPath": "httpx/_models.py",
+    "namePos": 16865,
+    "startLine": 496,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "QueryParams.multi_items",
+    "relPath": "httpx/_models.py",
+    "namePos": 19787,
+    "startLine": 570,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "BaseClient._merge_queryparams",
+    "relPath": "httpx/_client.py",
+    "namePos": 11418,
+    "startLine": 379,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "QueryParams.keys",
+    "relPath": "httpx/_models.py",
+    "namePos": 18750,
+    "startLine": 535,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "QueryParams.__hash__",
+    "relPath": "httpx/_models.py",
+    "namePos": 23213,
+    "startLine": 684,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "QueryParams.add",
+    "relPath": "httpx/_models.py",
+    "namePos": 21488,
+    "startLine": 624,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "QueryParams.get",
+    "relPath": "httpx/_models.py",
+    "namePos": 20287,
+    "startLine": 584,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "QueryParams.get_list",
+    "relPath": "httpx/_models.py",
+    "namePos": 20728,
+    "startLine": 598,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "QueryParams.items",
+    "relPath": "httpx/_models.py",
+    "namePos": 19395,
+    "startLine": 558,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "QueryParams.merge",
+    "relPath": "httpx/_models.py",
+    "namePos": 22362,
+    "startLine": 654,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "QueryParams.remove",
+    "relPath": "httpx/_models.py",
+    "namePos": 21971,
+    "startLine": 639,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "QueryParams.set",
+    "relPath": "httpx/_models.py",
+    "namePos": 21042,
+    "startLine": 609,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "QueryParams.values",
+    "relPath": "httpx/_models.py",
+    "namePos": 19008,
+    "startLine": 546,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   },
+   {
+    "label": "URL.join",
+    "relPath": "httpx/_models.py",
+    "namePos": 15094,
+    "startLine": 443,
+    "kinds": [
+     {
+      "id": "body",
+      "short": "body"
+     }
+    ]
+   }
+  ],
+  "deleted": [
+   {
+    "label": "flatten_queryparams",
+    "relPath": "httpx/_utils.py",
+    "namePos": 11893,
+    "startLine": 372,
+    "kinds": []
+   }
+  ],
+  "impactPaths": {
+   "httpx/_client.py#11418": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "AsyncClient.request",
+      "how": "public method of a class in __all__",
+      "file": "httpx/_client.py"
+     },
+     {
+      "type": "public-api",
+      "name": "AsyncClient.stream",
+      "how": "public method of a class in __all__",
+      "file": "httpx/_client.py"
+     },
+     {
+      "type": "public-api",
+      "name": "Client.request",
+      "how": "public method of a class in __all__",
+      "file": "httpx/_client.py"
+     },
+     {
+      "type": "public-api",
+      "name": "Client.stream",
+      "how": "public method of a class in __all__",
+      "file": "httpx/_client.py"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Client.request"
+      },
+      "via": [
+       "BaseClient._merge_queryparams",
+       "BaseClient.build_request",
+       "Client.request"
+      ],
+      "lowerBound": true
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "Client.stream"
+      },
+      "via": [
+       "BaseClient._merge_queryparams",
+       "BaseClient.build_request",
+       "Client.stream"
+      ],
+      "lowerBound": true
+     },
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "AsyncClient.request"
+      },
+      "via": [
+       "BaseClient._merge_queryparams",
+       "BaseClient.build_request",
+       "AsyncClient.request"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "httpx/_models.py#3480": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "URL.__init__",
+      "how": "special method of a class in __all__ (used through its protocol)",
+      "file": "httpx/_models.py"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "URL.__init__"
+      },
+      "via": [
+       "URL.__init__"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "httpx/_models.py#15094": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "URL.join",
+      "how": "public method of a class in __all__",
+      "file": "httpx/_models.py"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "URL.join"
+      },
+      "via": [
+       "URL.join"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "httpx/_models.py#16865": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "QueryParams.__init__",
+      "how": "special method of a class in __all__ (used through its protocol)",
+      "file": "httpx/_models.py"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "QueryParams.__init__"
+      },
+      "via": [
+       "QueryParams.__init__"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "httpx/_models.py#18750": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "QueryParams.keys",
+      "how": "public method of a class in __all__",
+      "file": "httpx/_models.py"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "QueryParams.keys"
+      },
+      "via": [
+       "QueryParams.keys"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "httpx/_models.py#19008": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "QueryParams.values",
+      "how": "public method of a class in __all__",
+      "file": "httpx/_models.py"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "QueryParams.values"
+      },
+      "via": [
+       "QueryParams.values"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "httpx/_models.py#19395": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "QueryParams.items",
+      "how": "public method of a class in __all__",
+      "file": "httpx/_models.py"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "QueryParams.items"
+      },
+      "via": [
+       "QueryParams.items"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "httpx/_models.py#19787": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "QueryParams.multi_items",
+      "how": "public method of a class in __all__",
+      "file": "httpx/_models.py"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "QueryParams.multi_items"
+      },
+      "via": [
+       "QueryParams.multi_items"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "httpx/_models.py#20287": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "QueryParams.get",
+      "how": "public method of a class in __all__",
+      "file": "httpx/_models.py"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "QueryParams.get"
+      },
+      "via": [
+       "QueryParams.get"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "httpx/_models.py#20728": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "QueryParams.get_list",
+      "how": "public method of a class in __all__",
+      "file": "httpx/_models.py"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "QueryParams.get_list"
+      },
+      "via": [
+       "QueryParams.get_list"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "httpx/_models.py#21042": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "QueryParams.set",
+      "how": "public method of a class in __all__",
+      "file": "httpx/_models.py"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "QueryParams.set"
+      },
+      "via": [
+       "QueryParams.set"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "httpx/_models.py#21488": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "QueryParams.add",
+      "how": "public method of a class in __all__",
+      "file": "httpx/_models.py"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "QueryParams.add"
+      },
+      "via": [
+       "QueryParams.add"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "httpx/_models.py#21971": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "QueryParams.remove",
+      "how": "public method of a class in __all__",
+      "file": "httpx/_models.py"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "QueryParams.remove"
+      },
+      "via": [
+       "QueryParams.remove"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "httpx/_models.py#22362": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "QueryParams.merge",
+      "how": "public method of a class in __all__",
+      "file": "httpx/_models.py"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "QueryParams.merge"
+      },
+      "via": [
+       "QueryParams.merge"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "httpx/_models.py#23213": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "QueryParams.__hash__",
+      "how": "special method of a class in __all__ (used through its protocol)",
+      "file": "httpx/_models.py"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "QueryParams.__hash__"
+      },
+      "via": [
+       "QueryParams.__hash__"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "httpx/_models.py#23709": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "QueryParams.update",
+      "how": "public method of a class in __all__",
+      "file": "httpx/_models.py"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "QueryParams.update"
+      },
+      "via": [
+       "QueryParams.update"
+      ],
+      "lowerBound": true
+     }
+    ]
+   },
+   "httpx/_models.py#23929": {
+    "testOnly": false,
+    "complete": false,
+    "entries": [
+     {
+      "type": "public-api",
+      "name": "QueryParams.__setitem__",
+      "how": "special method of a class in __all__ (used through its protocol)",
+      "file": "httpx/_models.py"
+     }
+    ],
+    "topPaths": [
+     {
+      "end": "entry",
+      "entry": {
+       "type": "public-api",
+       "name": "QueryParams.__setitem__"
+      },
+      "via": [
+       "QueryParams.__setitem__"
+      ],
+      "lowerBound": true
+     }
+    ]
+   }
+  }
+ },
+ "cards": {
+  "version": 1,
+  "clusters": [
+   {
+    "id": "K1",
+    "members": [
+     "httpx/_models.py#23709",
+     "httpx/_models.py#23929",
+     "httpx/_models.py#3480",
+     "httpx/_models.py#16865",
+     "httpx/_models.py#19787",
+     "httpx/_client.py#11418",
+     "httpx/_models.py#18750",
+     "httpx/_models.py#15094",
+     "httpx/_models.py#19008",
+     "httpx/_models.py#19395",
+     "httpx/_models.py#20287",
+     "httpx/_models.py#20728",
+     "httpx/_models.py#21042",
+     "httpx/_models.py#21488",
+     "httpx/_models.py#21971",
+     "httpx/_models.py#22362",
+     "httpx/_models.py#23213",
+     "httpx/_utils.py#11893"
+    ],
+    "label": "QueryParams.update and 17 related",
+    "testHelpers": false,
+    "files": [
+     "httpx/_client.py",
+     "httpx/_models.py",
+     "httpx/_utils.py"
+    ],
+    "module": "(root)",
+    "joined": [
+     {
+      "id": "httpx/_models.py#23709",
+      "by": "file"
+     },
+     {
+      "id": "httpx/_models.py#23929",
+      "by": "file"
+     },
+     {
+      "id": "httpx/_models.py#19787",
+      "by": "file"
+     },
+     {
+      "id": "httpx/_models.py#18750",
+      "by": "file"
+     },
+     {
+      "id": "httpx/_models.py#19008",
+      "by": "file"
+     },
+     {
+      "id": "httpx/_models.py#19395",
+      "by": "file"
+     },
+     {
+      "id": "httpx/_models.py#20287",
+      "by": "file"
+     },
+     {
+      "id": "httpx/_models.py#23213",
+      "by": "file"
+     },
+     {
+      "id": "httpx/_utils.py#11893",
+      "by": "folder"
+     }
+    ],
+    "mirrorMembers": [],
+    "mirrorOf": null,
+    "moved": [],
+    "hub": false,
+    "siblings": false,
+    "generated": null,
+    "stats": {
+     "members": 18,
+     "callers": 13,
+     "tests": 42,
+     "notUpdated": 0,
+     "notUpdatedOutside": 0,
+     "notUpdatedInside": 0,
+     "incomplete": 17,
+     "risky": 2,
+     "riskyAllUpdated": 2,
+     "mirrored": 0
+    }
+   }
+  ],
+  "sweeps": [],
+  "seams": [],
+  "hints": [],
+  "hintNotes": [],
+  "generatedDirs": []
+ }
+}

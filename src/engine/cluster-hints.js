@@ -11,7 +11,8 @@
 // absence of a hint then means "not checked", not "no relationship".
 
 const path = require('path');
-const { execFileSync, spawnSync } = require('child_process');
+const { execFileSync, execFile, spawnSync } = require('child_process');
+const { AnalysisCancelledError, throwIfCancelled, attempt } = require('./cancellation');
 
 const LARGE_COMMIT_FILES = 30;
 const MAX_TOKENS_PER_PAIR = 5;
@@ -21,6 +22,7 @@ const MAX_TOKEN_FILES = 20;
 const MAX_PATTERN_BYTES = 100000;
 const GREP_MAX_BYTES = 16 * 1024 * 1024;
 const MAX_LOG_COMMITS = 2000;
+const GREP_TIMEOUT_MS = 60000;
 
 // Words too common to say anything: language keywords and everyday names.
 const STOP = new Set(`function return export import const string number boolean undefined require module default object
@@ -279,33 +281,115 @@ function generatedDirsFrom(packageJson, gitattributes) {
   return [...dirs].sort();
 }
 
+const LOG_TIMEOUT_MS = 30000;
+const DIFF_TIMEOUT_MS = 60000;
+const SHOW_TIMEOUT_MS = 5000;
+const SHOW_MAX_BYTES = 4 * 1024 * 1024;
+const BIG_MAX_BYTES = 256 * 1024 * 1024;
+const GENERATED_FILES = ['package.json', '.gitattributes'];
+
+/** @typedef {{commits: any[], hunks: any[], tokensByFile: Record<string, string[]>, changedFileCount: number,
+ *   generatedDirs: string[], tokenFiles: Record<string, number>, tokenCountsPartial: boolean, notes: string[]}} Facts */
+
+/** @returns {Facts} facts with nothing gathered */
+function emptyFacts() {
+  return { commits: [], hunks: [], tokensByFile: {}, changedFileCount: 0, generatedDirs: [], tokenFiles: {}, tokenCountsPartial: false, notes: [] };
+}
+
+/** @param {string} base @param {string} head */
+const logArgs = (base, head) => ['log', `--max-count=${MAX_LOG_COMMITS}`, '--no-merges', '--name-only',
+  '--format=%x01%H%x02%s', `${base}..${head}`];
+/** @param {string} base @param {string} head */
+const diffArgs = (base, head) => ['diff', '-U0', '--no-color', '--no-ext-diff', `${base}...${head}`];
+
+/** Pure: record `git log` output in `facts`. @param {Facts} facts @param {string} text */
+function applyLog(facts, text) {
+  facts.commits = parseLog(text);
+  if (facts.commits.length >= MAX_LOG_COMMITS) facts.notes.push(`git log capped at ${MAX_LOG_COMMITS} commits`);
+}
+
+/** Pure: record `git diff -U0` output in `facts`. @param {Facts} facts @param {string} text */
+function applyDiff(facts, text) {
+  const d = parseDiff(text);
+  facts.hunks = d.hunks; facts.tokensByFile = d.tokensByFile; facts.changedFileCount = d.fileCount;
+}
+
+/**
+ * Pure: generated folders from the package.json and .gitattributes texts read at head and
+ * at base (a PR that deletes a generated folder also deletes the script that made it).
+ * @param {{head: Array<string | null>, base: Array<string | null>}} texts `[package.json, .gitattributes]` at each side
+ * @returns {string[]}
+ */
+function generatedDirsAtBoth({ head, base }) {
+  return [...new Set([...generatedDirsFrom(head[0], head[1]), ...generatedDirsFrom(base[0], base[1])])].sort();
+}
+
 /**
  * Read-only git facts for clustering and `hintsFor`: 1 `git log`, 1 `git diff -U0`, and 2
  * `git show` pairs for package.json and .gitattributes (at head and at base). Every call has a timeout; a
  * failed step is recorded in `notes` and leaves its facts empty (so "no hint" there means
- * "not checked").
+ * "not checked"). Blocks the caller until git answers; `gatherDiffFactsAsync` is the same
+ * without blocking.
  * @param {{repo: string, base: string, head: string}} p
+ * @returns {Facts}
  */
 function gatherDiffFacts({ repo, base, head }) {
-  /** @type {{commits: any[], hunks: any[], tokensByFile: Record<string, string[]>, changedFileCount: number,
-   *   generatedDirs: string[], tokenFiles: Record<string, number>, tokenCountsPartial: boolean, notes: string[]}} */
-  const facts = { commits: [], hunks: [], tokensByFile: {}, changedFileCount: 0, generatedDirs: [], tokenFiles: {}, tokenCountsPartial: false, notes: [] };
-  try {
-    const log = git(repo, ['log', `--max-count=${MAX_LOG_COMMITS}`, '--no-merges', '--name-only',
-      '--format=%x01%H%x02%s', `${base}..${head}`], 30000);
-    facts.commits = parseLog(log);
-    if (facts.commits.length >= MAX_LOG_COMMITS) facts.notes.push(`git log capped at ${MAX_LOG_COMMITS} commits`);
-  } catch (e) { facts.notes.push(`git log failed: ${errMsg(e)}`); }
-  try {
-    const diff = git(repo, ['diff', '-U0', '--no-color', '--no-ext-diff', `${base}...${head}`], 60000);
-    const d = parseDiff(diff);
-    facts.hunks = d.hunks; facts.tokensByFile = d.tokensByFile; facts.changedFileCount = d.fileCount;
-  } catch (e) { facts.notes.push(`git diff failed: ${errMsg(e)}`); }
+  const facts = emptyFacts();
+  try { applyLog(facts, git(repo, logArgs(base, head), LOG_TIMEOUT_MS)); }
+  catch (e) { facts.notes.push(`git log failed: ${errMsg(e)}`); }
+  try { applyDiff(facts, git(repo, diffArgs(base, head), DIFF_TIMEOUT_MS)); }
+  catch (e) { facts.notes.push(`git diff failed: ${errMsg(e)}`); }
   /** @param {string} ref @param {string} f @returns {string | null} */
-  const show = (ref, f) => { try { return git(repo, ['show', `${ref}:${f}`], 5000, 4 * 1024 * 1024); } catch { return null; } };
-  // read at head and at base: a PR that deletes a generated folder also deletes the script that made it
-  facts.generatedDirs = [...new Set([...generatedDirsFrom(show(head, 'package.json'), show(head, '.gitattributes')),
-    ...generatedDirsFrom(show(base, 'package.json'), show(base, '.gitattributes'))])].sort();
+  const show = (ref, f) => { try { return git(repo, ['show', `${ref}:${f}`], SHOW_TIMEOUT_MS, SHOW_MAX_BYTES); } catch { return null; } };
+  facts.generatedDirs = generatedDirsAtBoth({ head: GENERATED_FILES.map((f) => show(head, f)), base: GENERATED_FILES.map((f) => show(base, f)) });
+  return facts;
+}
+
+/**
+ * Run git without blocking the event loop; same timeouts and buffers as `git`. A stopped
+ * run kills the child and rejects with `AnalysisCancelledError`.
+ * @param {string} repo @param {string[]} args @param {number} timeout @param {number} maxBuffer
+ * @param {AbortSignal | undefined} signal
+ * @returns {Promise<string>}
+ */
+function gitAsync(repo, args, timeout, maxBuffer, signal) {
+  throwIfCancelled(signal);
+  return new Promise((resolve, reject) => {
+    execFile('git', ['-C', repo, '-c', 'core.quotepath=off', ...args],
+      { encoding: 'utf8', timeout, maxBuffer, signal }, (err, stdout) => {
+        if (signal && signal.aborted) { reject(new AnalysisCancelledError()); return; }
+        if (err) { reject(err); return; }
+        resolve(stdout);
+      });
+  });
+}
+
+/**
+ * `gatherDiffFacts` without blocking: the same git calls, timeouts and facts, run as child
+ * processes the caller can stop with `signal` (it then rejects with `AnalysisCancelledError`
+ * and no facts). A failed git call is a note, as in the sync version. At most 6 children
+ * at once (log, diff, 4 `git show`).
+ * @param {{repo: string, base: string, head: string, signal?: AbortSignal}} p
+ * @returns {Promise<Facts>}
+ */
+async function gatherDiffFactsAsync({ repo, base, head, signal }) {
+  const facts = emptyFacts();
+  /** @param {string[]} args @param {number} timeout @param {number} [maxBuffer] */
+  const run = (args, timeout, maxBuffer = BIG_MAX_BYTES) => gitAsync(repo, args, timeout, maxBuffer, signal);
+  /** @param {string} ref @param {string} f @returns {Promise<string | null>} */
+  const show = async (ref, f) => {
+    const r = await attempt(run(['show', `${ref}:${f}`], SHOW_TIMEOUT_MS, SHOW_MAX_BYTES));
+    return r.ok ? r.value : null; // a missing file is not an error
+  };
+  const [log, diff, ...shown] = await Promise.all([
+    attempt(run(logArgs(base, head), LOG_TIMEOUT_MS)),
+    attempt(run(diffArgs(base, head), DIFF_TIMEOUT_MS)),
+    ...[head, base].flatMap((ref) => GENERATED_FILES.map((f) => show(ref, f))),
+  ]);
+  throwIfCancelled(signal);
+  if (log.ok) applyLog(facts, log.value); else facts.notes.push(`git log failed: ${errMsg(log.error)}`);
+  if (diff.ok) applyDiff(facts, diff.value); else facts.notes.push(`git diff failed: ${errMsg(diff.error)}`);
+  facts.generatedDirs = generatedDirsAtBoth({ head: shown.slice(0, 2), base: shown.slice(2, 4) });
   return facts;
 }
 
@@ -330,31 +414,44 @@ function pcreAlternation(tokens, maxBytes) {
 }
 
 /**
- * Count, with ONE `git grep -o -w -P`, in how many files at head each candidate token
- * (added in exactly two clusters) occurs. Output is capped at 16 MB (about 200k matches); a
- * capped run sets `tokenCountsPartial` and the counts are then lower bounds.
- * @param {any} facts  from gatherDiffFacts; returned with `tokenFiles` filled
+ * Pure: the facts restricted to files of `clusters`, and the tokens to count (added in
+ * exactly two clusters) as one PCRE pattern. `cands` is already cut to what fits.
+ * @param {Facts} facts
  * @param {any[]} clusters
- * @param {{repo: string, head: string}} p
+ * @returns {{out: Facts, cands: string[], pattern: string}}
  */
-function countRareTokens(facts, clusters, { repo, head }) {
+function rareTokenPlan(facts, clusters) {
   const f2c = filesToClusters(clusters);
   /** @type {Record<string, string[]>} */
   const tokensByFile = {};
   for (const f of Object.keys(facts.tokensByFile)) if (f2c.has(f)) tokensByFile[f] = facts.tokensByFile[f];
   const out = { ...facts, tokensByFile, tokenFiles: {}, tokenCountsPartial: false, notes: facts.notes.slice() };
   const cands = candidateTokens(clusters, tokensByFile).map((c) => c.token).filter((t) => !t.includes('\n'));
-  if (!cands.length) return out;
+  if (!cands.length) return { out, cands, pattern: '' };
   const { pattern, used } = pcreAlternation(cands, MAX_PATTERN_BYTES);
   if (used < cands.length) out.notes.push(`token counts cover ${used} of ${cands.length} candidates (pattern size cap)`);
   cands.length = used;
-  const res = spawnSync('git', ['-C', repo, 'grep', '-I', '-o', '-w', '-P', '--null', '-e', pattern, head, '--'],
-    { encoding: 'utf8', timeout: 60000, maxBuffer: GREP_MAX_BYTES });
-  const err = /** @type {any} */ (res.error);
-  if (err && err.code !== 'ENOBUFS') { out.notes.push(`git grep failed: ${errMsg(err)}`); return out; }
-  if (res.status !== 0 && res.status !== 1 && !err) { out.notes.push(`git grep exited ${res.status}: token counts not gathered`); return out; }
-  let text = String(res.stdout || '');
-  if (err) { // cut at the last whole line
+  return { out, cands, pattern };
+}
+
+/** @param {string} pattern @param {string} head */
+const grepArgs = (pattern, head) => ['grep', '-I', '-o', '-w', '-P', '--null', '-e', pattern, head, '--'];
+
+/**
+ * Pure: fold one `git grep` outcome into the plan's facts: the per-token file counts, or a
+ * note when the search did not run to its end.
+ * @param {{out: Facts, cands: string[]}} plan
+ * @param {{stdout: string, status: number | null, error?: any}} run `error` is a spawn,
+ *   timeout or buffer failure when there was one; a buffer overflow keeps `stdout` as far as it got
+ * @param {string} head
+ * @returns {Facts}
+ */
+function applyGrep({ out, cands }, { stdout, status, error }, head) {
+  const overflow = error && (error.code === 'ENOBUFS' || error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER');
+  if (error && !overflow) { out.notes.push(`git grep failed: ${errMsg(error)}`); return out; }
+  if (status !== 0 && status !== 1 && !error) { out.notes.push(`git grep exited ${status}: token counts not gathered`); return out; }
+  let text = String(stdout || '');
+  if (overflow) { // cut at the last whole line
     out.tokenCountsPartial = true;
     text = text.slice(0, text.lastIndexOf('\n') + 1);
     out.notes.push('token counts partial: git grep output hit its size cap');
@@ -369,6 +466,49 @@ function countRareTokens(facts, clusters, { repo, head }) {
   }
   for (const t of cands) out.tokenFiles[t] = (filesOf.get(t) || new Set()).size;
   return out;
+}
+
+/**
+ * Count, with ONE `git grep -o -w -P`, in how many files at head each candidate token
+ * (added in exactly two clusters) occurs. Output is capped at 16 MB (about 200k matches); a
+ * capped run sets `tokenCountsPartial` and the counts are then lower bounds. Blocks until
+ * git answers; `countRareTokensAsync` does not.
+ * @param {any} facts  from gatherDiffFacts; returned with `tokenFiles` filled
+ * @param {any[]} clusters
+ * @param {{repo: string, head: string}} p
+ * @returns {Facts}
+ */
+function countRareTokens(facts, clusters, { repo, head }) {
+  const plan = rareTokenPlan(facts, clusters);
+  if (!plan.cands.length) return plan.out;
+  const res = spawnSync('git', ['-C', repo, ...grepArgs(plan.pattern, head)],
+    { encoding: 'utf8', timeout: GREP_TIMEOUT_MS, maxBuffer: GREP_MAX_BYTES });
+  return applyGrep(plan, { stdout: String(res.stdout || ''), status: res.status, error: res.error }, head);
+}
+
+/**
+ * `countRareTokens` without blocking, stoppable with `signal` (it then rejects with
+ * `AnalysisCancelledError`). Same pattern, caps, timeout and notes.
+ * @param {any} facts
+ * @param {any[]} clusters
+ * @param {{repo: string, head: string, signal?: AbortSignal}} p
+ * @returns {Promise<Facts>}
+ */
+async function countRareTokensAsync(facts, clusters, { repo, head, signal }) {
+  const plan = rareTokenPlan(facts, clusters);
+  if (!plan.cands.length) return plan.out;
+  throwIfCancelled(signal);
+  /** @type {{stdout: string, status: number | null, error?: any}} */
+  const run = await new Promise((resolve, reject) => {
+    execFile('git', ['-C', repo, ...grepArgs(plan.pattern, head)],
+      { encoding: 'utf8', timeout: GREP_TIMEOUT_MS, maxBuffer: GREP_MAX_BYTES, signal }, (error, stdout) => {
+        if (signal && signal.aborted) { reject(new AnalysisCancelledError()); return; }
+        // a non-zero exit arrives as an error whose `code` is the exit status (git grep: 1 = no match)
+        const exited = error && typeof (/** @type {any} */ (error)).code === 'number';
+        resolve({ stdout, status: !error ? 0 : exited ? (/** @type {any} */ (error)).code : null, error: exited ? undefined : error });
+      });
+  });
+  return applyGrep(plan, run, head);
 }
 
 /**
@@ -490,4 +630,4 @@ function hintsFor(clusters, facts) {
   return out;
 }
 
-module.exports = { isBroadCommit, isWeakCommit, stripComments, hintsFor, gatherDiffFacts, countRareTokens, generatedDirsFrom, candidateTokens, parseDiff, parseAddedTokens, parseLog };
+module.exports = { isBroadCommit, isWeakCommit, stripComments, hintsFor, gatherDiffFacts, gatherDiffFactsAsync, countRareTokens, countRareTokensAsync, emptyFacts, generatedDirsFrom, generatedDirsAtBoth, candidateTokens, parseDiff, parseAddedTokens, parseLog };
