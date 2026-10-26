@@ -1132,9 +1132,11 @@
     "github"
   ],
   "dependencies": {
+    "@modelcontextprotocol/server": "^2.4.0",
     "markdown-it": "^15.0.3",
     "sanitize-html": "^2.18.1",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

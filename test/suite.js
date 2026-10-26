@@ -150,6 +150,10 @@ const SUITE = [
   { file: 'test/cards-remote.test.js', tier: 'quick' },
   { file: 'test/github-commits.test.js', tier: 'quick' },
   { file: 'test/repeated-edits.test.js', tier: 'quick' },
+  { file: 'test/agent-results.test.js', tier: 'quick' },
+  { file: 'test/keep-resolvers.test.js', tier: 'quick' },
+  { file: 'test/mcp-server.test.js', tier: 'quick' },
+  { file: 'test/mcp-checkout.test.js', tier: 'full' },
 ];
 
 /**
@@ -166,6 +170,7 @@ const EXCLUDED = {
   'fixture-repo.js': 'helper module: builds the synthetic fixture repository',
   'local-repo.js': 'helper module: throwaway git repositories',
   'target-repo.js': 'helper module: picks the fixture or IMPACT_TREE_TARGET_REPO',
+  'mcp-child.js': 'helper module: `node src/cli.js mcp` as a child process with a JSON-RPC client',
   'fake-clock.js': 'helper module: a clock that moves only when a test moves it',
   'vscode-stub.js': 'helper module: stub of the vscode API',
   'webview-page.js': 'helper module: DOM boundary for the Details webview script',
