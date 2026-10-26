@@ -339,7 +339,8 @@ VS Code's native equivalent of the mocked checkbox dialog.
 ### E1. Post an impact summary to the PR (gate G12; README roadmap)
 
 Deferred 2026-10-24 by the owner: not in v1. It moves to the later version that adds the
-AI integration and MCP server, and will be designed as part of that.
+AI integration and MCP server, and will be designed as part of that. Planned as AI8 in
+`docs/AI_PLAN.md` (2026-10-26).
 
 Acceptance: from the PR tab, **Post impact summary** posts the result's counts and a table of
 ⛔ and ? changes (symbol, file, callers not updated) as one comment inside a collapsed
