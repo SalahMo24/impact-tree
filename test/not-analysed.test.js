@@ -234,7 +234,7 @@ test('the command line analyses a Python file from its text: no not-analysed sec
 // Java (J7): read from its text where there is no language server (the preview's version is in
 // java-outline.test.js), so no Java file is listed as not analysed on the command line either.
 // Kotlin has no provider and stays "not analysed yet" (above).
-test('the command line analyses a Java file from its text: no not-analysed section, and callers say they were not computed', () => {
+test('the command line analyses a Java file from its text: no not-analysed section, and callers come from the syntax index, incomplete', () => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-not-analysed-java-')));
   try {
     const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
@@ -255,7 +255,7 @@ test('the command line analyses a Java file from its text: no not-analysed secti
     const json = JSON.parse(execFileSync(process.execPath, [cli, ...args, '--json'], { encoding: 'utf8' }));
     assert.equal(json.otherFiles.find((f) => f.path.endsWith('A.java')), undefined);
     assert.deepEqual(json.allChanged.map((c) => [c.key, c.callersComplete]), [['A.a()', false]]);
-    assert.match(json.allChanged[0].callersIncompleteReason, /^not computed: Java callers/);
+    assert.match(json.allChanged[0].callersIncompleteReason, /^Java callers from syntax only: the repository/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
