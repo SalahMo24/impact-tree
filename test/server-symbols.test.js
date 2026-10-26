@@ -124,7 +124,7 @@ function goRepo() {
 const row = (c) => [c.relPath, c.label, c.key, c.kinds.map((k) => k.id).join('+'), c.added];
 
 test('the Go provider is registered after TypeScript and needs a server', () => {
-  assert.deepEqual(LANGUAGES.map((l) => l.id), ['typescript', 'go', 'python']);
+  assert.deepEqual(LANGUAGES.map((l) => l.id), ['typescript', 'go', 'python', 'java']);
   assert.equal(goProvider.needsServer, true);
   assert.equal(typeof goProvider.prepare, 'function');
 });
