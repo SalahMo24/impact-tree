@@ -14,8 +14,9 @@
  * in it is run, except by jdtls importing it (as J0 did). jdtls' `-data` is kept under
  * java-tools/jdtls-data/gson-e2e between runs (warm start). Prints the changed, added and
  * deleted Java methods with their callers, the outside-method ranges, the warnings and the
- * files not analysed, then checks the keys against the ones the diff shows. Signature kinds
- * and callers are not checked: the header parser is J3's, Java's caller extras J4's. The run is bounded by OVERALL_DEADLINE_MS;
+ * files not analysed, then checks the keys against the ones the diff shows, and each changed
+ * method's callers with Java's caller extras (J4): complete or incomplete with the override
+ * reason, and a known caller listed. Signature kinds are not checked (J3's oracle does). The run is bounded by OVERALL_DEADLINE_MS;
  * jdtls is stopped on exit.
  */
 
@@ -24,6 +25,8 @@ const path = require('node:path');
 const { analyze } = require('../../src/engine/analyze');
 const { createJdtlsServices, DEFAULT_TOOLS } = require('./jdtls-services');
 const { languageServicesOver, createHierarchyResolver } = require('./harness-languages');
+const { javaProvider } = require('../../src/languages/java/provider');
+const { OVERRIDES_REASON } = require('../../src/languages/java/editor-extras');
 
 /** Whole run, a cold import included (J0: ≈ 30 s with a filled m2, 78 s with an empty one). */
 const OVERALL_DEADLINE_MS = 5 * 60 * 1000;
@@ -51,6 +54,19 @@ const EXPECTED_TEST_FILES = ['DefaultTypeAdaptersTest', 'JavaUtilConcurrentAtomi
 const EXPECTED_OUTSIDE = '[[22.5,22.5],[37,37]]';
 /** @type {string[]} */
 const EXPECTED_DELETED = [];
+// Callers (J4). The four `read(JsonReader)` override `TypeAdapter.read`: incomplete with the
+// override reason (jdtls lists `TypeAdapter.read`'s 32 callers for each, J0 §3), e.g.
+// `Gson.fromJson(JsonReader, TypeToken)`, which calls `adapter.read(reader)`. The public
+// static `atomicLongArrayAdapter` is complete: `GsonBuilder.createFactories` calls it.
+// `knownCaller`: part of a caller's label (jdtls' item name) known to call it.
+/** @type {Record<string, { overrides: boolean, knownCaller: string }>} */
+const EXPECTED_CALLERS = {
+  'MapTypeAdapterFactory.Adapter.read(JsonReader)': { overrides: true, knownCaller: 'fromJson(JsonReader, TypeToken' },
+  'TypeAdapters.atomicLongArrayAdapter(TypeAdapter)': { overrides: false, knownCaller: 'createFactories(' },
+  'TypeAdapters.CHARACTER.read(JsonReader)': { overrides: true, knownCaller: 'fromJson(JsonReader, TypeToken' },
+  'TypeAdapters.URL.read(JsonReader)': { overrides: true, knownCaller: 'fromJson(JsonReader, TypeToken' },
+  'TypeAdapters.URI.read(JsonReader)': { overrides: true, knownCaller: 'fromJson(JsonReader, TypeToken' },
+};
 
 /** @param {string[]} args @param {string} flag @param {string} fallback */
 const option = (args, flag, fallback) => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : fallback; };
@@ -80,12 +96,18 @@ async function main() {
     const services = languageServicesOver(/** @type {any} */ (jdtls), { repoRoot: repo });
     /** @type {string[]} */
     const resolvers = [];
+    /** @type {string[]} */
+    const traces = [];
     const result = await analyze(repo, {
       mode: 'pr', base, allowLocalBase: true, skipForest: true, deferTestReach: false, depth: 1,
       languageServices: services,
       makeResolver: (/** @type {{ language: string, component: string }} */ { language, component }) => {
         resolvers.push(`${language}:${component}`);
-        return createHierarchyResolver(services, { extras: null });
+        // Java's caller extras (J4), applied as the editor's resolver applies them.
+        const extras = language === 'java' && javaProvider.editorCallers
+          ? javaProvider.editorCallers({ ts: null, services, repoRoot: repo, trace: (m) => traces.push(m), filterInherited: false, onWarmupRetry: () => {} })
+          : null;
+        return createHierarchyResolver(services, { extras });
       },
     });
     const rel = (/** @type {string} */ f) => path.relative(repo, f);
@@ -97,7 +119,8 @@ async function main() {
     console.log('\nchanged / added:');
     for (const c of result.allChanged.slice().sort((a, b) => a.relPath.localeCompare(b.relPath) || a.startLine - b.startLine)) {
       console.log(`  ${c.added ? 'ADDED  ' : 'CHANGED'} ${c.relPath}:${c.startLine}-${c.endLine} ${c.label}  key=${c.key}  kinds: ${c.kinds.map((/** @type {any} */ k) => k.id).join(', ')}`);
-      console.log(`      callers: ${c.callerState}${c.callersComplete ? '' : ` (incomplete: ${c.callersIncompleteReason})`}; ${c.callers.length} listed${c.callers.length ? `, e.g. ${c.callers.slice(0, 3).map((/** @type {any} */ x) => `${x.label} (${rel(x.file)})`).join(', ')}` : ''}`);
+      console.log(`      callers: ${c.callerState}${c.callersComplete ? '' : ` (incomplete: ${c.callersIncompleteReason})`}; ${c.callers.length} listed`);
+      for (const x of c.callers) console.log(`        - ${x.label}${x.test ? ' [test]' : ''} (${rel(x.file)})`);
     }
     console.log('\ndeleted:');
     for (const d of result.deleted) console.log(`  DELETED ${d.relPath}:${d.startLine}-${d.endLine} ${d.label}`);
@@ -117,6 +140,24 @@ async function main() {
       `check outside: ${JSON.stringify(result.outside.map((o) => [o.relPath, o.ranges])) === JSON.stringify([['gson/src/main/java/com/google/gson/internal/bind/TypeAdapters.java', JSON.parse(EXPECTED_OUTSIDE)]]) ? 'yes' : 'NO'}`,
       `check every Java file analysed: ${result.unanalysable.length ? `NO ${JSON.stringify(result.unanalysable)}` : 'yes'}`,
     ];
+    // Callers (J4): per method, its state, whether complete and why not, and a known caller.
+    const byKey = new Map(result.allChanged.map((/** @type {any} */ c) => [c.key, c]));
+    for (const [key, want] of Object.entries(EXPECTED_CALLERS)) {
+      const c = byKey.get(key);
+      if (!c) { lines.push(`check callers ${key}: NO (not listed)`); continue; }
+      const reasonOk = want.overrides
+        ? !c.callersComplete && String(c.callersIncompleteReason).startsWith(OVERRIDES_REASON)
+        : c.callersComplete === true;
+      const known = c.callers.some((/** @type {any} */ x) => x.label.includes(want.knownCaller));
+      // jdtls sometimes rejects incomingCalls (`-32603 Internal error`, J2's runs): the right
+      // answer then is unknown with that error, never a list read as complete or "none".
+      if (c.callerState === 'unknown' && !c.callersComplete && /incomingCalls failed/.test(String(c.callersIncompleteReason))) {
+        lines.push(`check callers ${key}: yes (server failed, reported incomplete: ${c.callersIncompleteReason})`);
+        continue;
+      }
+      lines.push(`check callers ${key}: ${reasonOk && known ? 'yes' : 'NO '}(${c.callerState}, ${c.callers.length} listed, ${c.callersComplete ? 'complete' : `incomplete: ${c.callersIncompleteReason}`}; known caller ${want.knownCaller}: ${known ? 'present' : 'MISSING'})`);
+    }
+    lines.push(`check no caller in jdtls' default project: ${result.allChanged.every((/** @type {any} */ c) => c.callers.every((/** @type {any} */ x) => !x.file.includes('jdt.ls-java-project'))) ? 'yes' : 'NO '}(skipped by the harness: ${jdtls.skippedCallers()}; extras traces: ${traces.filter((t) => /default project/.test(t)).length})`);
     console.log(`\n${lines.join('\n')}`);
     console.log(`wall ${((Date.now() - started) / 1000).toFixed(1)} s`);
     if (lines.some((l) => /MISMATCH|: NO /.test(l))) process.exitCode = 1;
