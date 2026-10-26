@@ -2,7 +2,7 @@
 // Java without a language server (J7, docs/MULTI_LANGUAGE_PLAN.md): the text outline
 // (`javaOutline`, src/languages/java/outline.js) that stands in for jdtls' document symbols,
 // and the provider's `prepareSyntactic` hook, which the CLI and the no-checkout preview use:
-// changed methods and their kinds from the text, callers not computed, never "no callers"
+// changed methods and their kinds from the text, callers from a syntax index (J8), never "no callers"
 // or "no impact". The strongest check is the first: on every text of test/java-symbols/ the
 // outline is jdtls' recorded answer, symbol for symbol (names, kinds, details, hierarchy,
 // ranges and name ranges).
@@ -163,7 +163,7 @@ test('text this cannot read is null, never a partial outline', () => {
   assert.deepEqual(javaOutline(''), []);
 });
 
-test('a preview reads Java from the fetched text: kinds, callers not computed, nothing read from disk', async (t) => {
+test('a preview reads Java from the fetched text: kinds, callers from the PR index (incomplete), nothing read from disk', async (t) => {
   clearVirtualText();
   const base = 'package a;\n\npublic class Codec {\n  public String encode(String s) {\n    return s;\n  }\n\n  public void gone() {}\n\n  int body() {\n    return 1;\n  }\n}\n';
   const head = 'package a;\n\npublic class Codec {\n  public String encode(String s, boolean strict) {\n    return s;\n  }\n\n  int body() {\n    return 2;\n  }\n\n  void added() {}\n}\n';
@@ -196,13 +196,13 @@ test('a preview reads Java from the fetched text: kinds, callers not computed, n
   assert.deepEqual(r.deleted.map((d) => d.key), ['Codec.gone()']);
   for (const c of java) {
     assert.equal(c.callersComplete, false, c.key);
-    assert.match(c.callersIncompleteReason, /^not computed: Java callers need its language server/, c.key);
+    assert.match(c.callersIncompleteReason, /^Java callers from syntax only: the pull request's own files .*the files outside the pull request were not read/, c.key);
     assert.notEqual(c.callerState, 'none', `${c.key}: never "no callers"`);
     assert.notEqual(c.testState, 'uncovered', `${c.key}: never "no test"`);
     assert.doesNotMatch(models.classifyChangeVerdict(c).sentence, /no callers|no impact/i, c.key);
   }
   assert.equal(r.otherFiles.some((f) => f.notAnalysed), false, 'no Java file is "not analysed"');
-  assert.ok(r.warnings.some((w) => /^1 changed Java file\(s\) read from their text: changed methods and signature kinds only; callers not computed: Java/.test(w)), r.warnings.join('\n'));
+  assert.ok(r.warnings.some((w) => /^1 changed Java file\(s\) read from their text: changed methods and signature kinds; Java callers from syntax only/.test(w)), r.warnings.join('\n'));
   assert.equal(typeof javaProvider.prepareSyntactic, 'function');
   clearVirtualText();
 });
