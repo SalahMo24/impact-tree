@@ -23,7 +23,9 @@ ${Object.entries(MODES).map(([k, v]) => `                         ${k.padEnd(11)
   --depth <n>          upward closure depth for blast radius / test reach (default ${DEFAULTS.depth})
   --roots <n>          roots that get a blast radius and a tree (default 6)
   --tree-depth <n>     rendered tree depth (default ${DEFAULTS.treeDepth})
-  --json               emit JSON instead of text`);
+  --json               emit JSON instead of text
+  --impact             add impactPaths (entry points each changed function reaches) to --json
+  --impact-deadline-ms <n>  deadline for all impact paths together (default 30000)`);
   process.exit(0);
 }
 
@@ -41,6 +43,7 @@ try {
     depth: Number(arg('depth', DEFAULTS.depth)), treeDepth: Number(arg('tree-depth', DEFAULTS.treeDepth)),
     blastDepth: Number(arg('blast-depth', 1)), rankedRoots,
     maxChildren: Number(arg('max-children', 8)),
+    ...(flag('impact') ? { impactPaths: arg('impact-deadline-ms') ? { deadlineMs: Number(arg('impact-deadline-ms')) } : true } : {}),
   });
 } catch (e) {
   console.error(`\n✖ ${e.message}`);
