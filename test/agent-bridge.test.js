@@ -21,7 +21,7 @@ const vscodeFake = { EventEmitter: class {
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'itb-'));
 
 /** One editor window on a fresh repository directory, with a fake session and workspace state. */
-function editor({ lockDir = tmp(), repo = tmp(), validator = () => ({ ok: true }), head = SHA('a'), source = { kind: 'local' }, tierA = false, updateDelayMs = 0 } = {}) {
+function editor({ lockDir = tmp(), repo = tmp(), validator = () => ({ ok: true }), head = SHA('a'), source = { kind: 'local' }, tierA = false, updateDelayMs = 0, idleTimeoutMs } = {}) {
   const memento = new Map();
   // `updateDelayMs` makes every storage write take that long, and records whether two ran at once.
   const writing = { now: 0, overlapped: false };
@@ -39,6 +39,7 @@ function editor({ lockDir = tmp(), repo = tmp(), validator = () => ({ ok: true }
     } },
     validator: (kind, payload, given) => { world.validated.push({ kind, payload, given }); return validator(kind, payload, given); },
     readHead: async () => world.head,
+    ...(idleTimeoutMs ? { idleTimeoutMs } : {}),
   });
   const stored = [];
   bridge.onDidStoreResult((e) => stored.push(e));
@@ -479,5 +480,39 @@ test('the log has one line per request and never the payload', async () => {
       `agent: cards submitted — refused: the editor's review moved to ${SHA('a')}; re-run on it`,
     ]);
     assert.ok(!e.logs.some((l) => l.includes(secret)));
+  } finally { await e.bridge.stop(); }
+});
+
+test('markAsked writes when this window asked into its lock, and the client lists it', async () => {
+  const e = editor();
+  assert.equal(e.bridge.markAsked(), false, 'not running: nothing to mark');
+  await e.bridge.start();
+  try {
+    const before = JSON.parse(fs.readFileSync(e.bridge.address.lockFile, 'utf8'));
+    assert.equal(before.askedAt, undefined);
+    assert.equal(e.bridge.markAsked(), true);
+    const after = JSON.parse(fs.readFileSync(e.bridge.address.lockFile, 'utf8'));
+    assert.equal(typeof after.askedAt, 'number');
+    assert.deepEqual({ ...after, askedAt: undefined }, { ...before, askedAt: undefined }, 'the rest of the lock is unchanged');
+    assert.equal(fs.statSync(e.bridge.address.lockFile).mode & 0o777, 0o600);
+    const { liveEditorRepos } = require('../src/mcp/bridge-client');
+    assert.deepEqual(liveEditorRepos({ lockDir: e.lockDir }), [{ repo: fs.realpathSync(e.repo), askedAt: after.askedAt }]);
+    const client = await connectBridge({ repo: e.repo, lockDir: e.lockDir });
+    assert.ok(await client.context(), 'the client still connects with the new lock');
+    client.close();
+  } finally { await e.bridge.stop(); }
+});
+
+test('the client reopens its connection after the editor closed it for being idle; close() ends it for good', async () => {
+  const e = editor({ idleTimeoutMs: 100 });
+  await e.bridge.start();
+  try {
+    const client = await connectBridge({ repo: e.repo, lockDir: e.lockDir });
+    assert.ok(await client.context());
+    await new Promise((r) => setTimeout(r, 300));   // the editor drops the idle connection
+    assert.equal((await client.submit('cards', { a: 1 }, meta(e))).stored, true, 'a submit after the idle gap reconnects');
+    assert.ok(await client.context());
+    client.close();
+    await assert.rejects(client.context(), /closed/);
   } finally { await e.bridge.stop(); }
 });

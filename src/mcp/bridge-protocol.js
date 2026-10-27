@@ -40,7 +40,8 @@ function pidAlive(pid) {
 }
 
 /**
- * @typedef {{ version: 1, pid: number, repo: string, socket: string, token: string, startedAt: number }} Lock
+ * @typedef {{ version: 1, pid: number, repo: string, socket: string, token: string, startedAt: number, askedAt?: number }} Lock
+ *   `askedAt`: when the user last pressed "Analyse with my agent" in that window (ms since the epoch).
  */
 
 /**
@@ -57,7 +58,9 @@ function parseLock(value) {
   if (typeof v.socket !== 'string' || v.socket === '' || v.socket.length > 4096) return null;
   if (typeof v.token !== 'string' || !/^[0-9a-f]{64}$/.test(v.token)) return null;
   if (typeof v.startedAt !== 'number' || !Number.isFinite(v.startedAt)) return null;
-  return { version: 1, pid: v.pid, repo: v.repo, socket: v.socket, token: v.token, startedAt: v.startedAt };
+  if (v.askedAt !== undefined && (typeof v.askedAt !== 'number' || !Number.isFinite(v.askedAt))) return null;
+  return { version: 1, pid: v.pid, repo: v.repo, socket: v.socket, token: v.token, startedAt: v.startedAt,
+    ...(typeof v.askedAt === 'number' ? { askedAt: v.askedAt } : {}) };
 }
 
 /**

@@ -43,13 +43,15 @@ const MAX_LOCKS_LISTED = 50;
  * when the server was started outside any repository (Cursor starts servers in the home
  * folder) and the agent shares no workspace folder.
  * @param {{ lockDir?: string }} [options] `lockDir`: for tests.
- * @returns {string[]} real paths, sorted; empty when the folder is missing or not this user's
+ * @returns {Array<{ repo: string, askedAt: number|null }>} by real path; `askedAt`: when the user last
+ *   pressed "Analyse with my agent" there. Empty when the folder is missing or not this user's.
  */
 function liveEditorRepos({ lockDir = defaultLockDir() } = {}) {
   if (!dirIsOurs(lockDir)) return [];
   let names;
   try { names = fs.readdirSync(lockDir).filter((n) => /^[0-9a-f]{16}\.json$/.test(n)).sort().slice(0, MAX_LOCKS_LISTED); } catch { return []; }
-  const repos = new Set();
+  /** @type {Map<string, number|null>} */
+  const repos = new Map();
   for (const name of names) {
     let lock;
     try {
@@ -58,20 +60,48 @@ function liveEditorRepos({ lockDir = defaultLockDir() } = {}) {
       lock = parseLock(JSON.parse(fs.readFileSync(file, 'utf8')));
     } catch { continue; }
     if (!lock || !pidAlive(lock.pid) || lockPathFor(lockDir, lock.repo) !== path.join(lockDir, name)) continue;
-    repos.add(lock.repo);
+    repos.set(lock.repo, typeof lock.askedAt === 'number' ? lock.askedAt : null);
   }
-  return [...repos].sort();
+  return [...repos.keys()].sort().map((repo) => ({ repo, askedAt: /** @type {number|null} */ (repos.get(repo)) }));
 }
 
 /**
- * Connects to the editor bridge of `repo`.
+ * Connects to the editor bridge of `repo`. The editor closes a connection that stays idle (an
+ * agent reading facts for minutes), so the returned bridge reopens one, from the lock file
+ * again, whenever it finds its connection closed; only `close()` ends it for good.
  * @param {{ repo: string, signal?: AbortSignal, lockDir?: string, connectTimeoutMs?: number, requestTimeoutMs?: number,
  *   clock?: import('../engine/clock').Clock }} options
  *   `lockDir`, `connectTimeoutMs`, `requestTimeoutMs`, `clock`: for tests.
  * @returns {Promise<Bridge|null>} Null when no live editor bridge answers for `repo` (no lock, a malformed or
  *   stale one, a refused or slow connection, or an aborted `signal`). Never rejects.
  */
-async function connectBridge({ repo, signal, lockDir = defaultLockDir(), connectTimeoutMs = CONNECT_TIMEOUT_MS, requestTimeoutMs = REQUEST_TIMEOUT_MS, clock = realClock }) {
+async function connectBridge(options) {
+  const first = await openBridge(options);
+  if (!first) return null;
+  let inner = first;
+  let ended = false;
+  /** @returns {Promise<ReturnType<typeof makeBridge>>} */
+  const live = async () => {
+    if (ended) throw new Error('the editor bridge was closed');
+    if (!inner.closed) return inner;
+    const next = await openBridge(options);
+    if (!next) throw new Error('the editor bridge is closed and the editor window no longer answers');
+    inner = next;
+    return inner;
+  };
+  return {
+    async context() { return (await live()).context(); },
+    async submit(kind, payload, meta) { return (await live()).submit(kind, payload, meta); },
+    close() { ended = true; inner.close(); },
+  };
+}
+
+/**
+ * One connection to the editor bridge of `repo`, found through its lock file.
+ * @param {Parameters<typeof connectBridge>[0]} options
+ * @returns {Promise<ReturnType<typeof makeBridge>|null>} Null as `connectBridge` describes. Never rejects.
+ */
+async function openBridge({ repo, signal, lockDir = defaultLockDir(), connectTimeoutMs = CONNECT_TIMEOUT_MS, requestTimeoutMs = REQUEST_TIMEOUT_MS, clock = realClock }) {
   try {
     if (typeof repo !== 'string' || repo === '' || (signal && signal.aborted)) return null;
     const real = realRepo(repo);
@@ -117,7 +147,7 @@ function openSocket(socketPath, signal, timeoutMs, clock) {
 /**
  * @param {net.Socket} socket @param {string} token @param {number} requestTimeoutMs
  * @param {import('../engine/clock').Clock} clock
- * @returns {Bridge}
+ * @returns {Bridge & { readonly closed: boolean }}
  */
 function makeBridge(socket, token, requestTimeoutMs, clock) {
   let nextId = 1;
@@ -201,6 +231,8 @@ function makeBridge(socket, token, requestTimeoutMs, clock) {
       return outcome;
     },
     close() { shut('the editor bridge was closed'); },
+    /** Whether this connection is gone (closed by either side or failed). */
+    get closed() { return closed; },
   };
 }
 

@@ -26,13 +26,15 @@ const { execFileSync } = require('child_process');
 const { McpServer } = require('@modelcontextprotocol/server');
 const { serveStdio, StdioServerTransport } = require('@modelcontextprotocol/server/stdio');
 const { realClock } = require('../engine/clock');
+const { z } = require('zod');
 const { createImpactTools } = require('./tools');
 const { ToolError } = require('./paging');
 
 const SERVER_INFO = { name: 'impact-tree', title: 'Impact Tree', version: '0.1.0' };
 const INSTRUCTIONS = 'Facts about the checked-out pull request from Impact Tree: cluster cards of its changes, callers, references and impact paths to entry points. '
   + 'Answers carry complete/reasons; treat incomplete lists as lower bounds. '
-  + 'submit_cards and submit_callers save your answer in the editor when one is connected; they check it first and return what to fix.';
+  + 'submit_cards and submit_callers save your answer in the editor when one is connected; they check it first and return what to fix. '
+  + 'If a tool says it cannot tell which repository to analyse, call select_repository with the repository folder; never edit the MCP configuration.';
 const MIN_NODE_MAJOR = 20;
 
 // Default deadline for all impact paths at start. Unit: ms. Chosen so start stays under
@@ -225,25 +227,38 @@ async function rootRepos(sdk, toplevel) {
   return repos.size ? { repos: [...repos].sort() } : { repos: [], note: 'none of the agent\'s workspace folders is in a git repository' };
 }
 
+// How recent a press of "Analyse with my agent" picks its editor window among several. Unit: ms.
+const ASKED_RECENTLY_MS = 30 * 60 * 1000;
+
+/** @param {string[]} repos @returns {string} what the agent should do when the server cannot tell the repository */
+const chooseWithTool = (repos) => `call select_repository with the repository to review${repos.length ? ` (one of: ${repos.join(', ')})` : ''}; do not change the MCP configuration`;
+
 /**
  * The repository to analyse when the server started outside any (Cursor starts its servers
- * in the home folder): the agent's one workspace repository, else the one editor window with
- * Impact Tree's agents setting on. Several candidates are an error naming them, never a guess.
- * @param {{ cwd: string, sdk: any, toplevel?: (cwd: string) => string|null, editorRepos?: () => string[] }} p
+ * in the home folder), in this order: the agent's one workspace repository; the one editor
+ * window with Impact Tree's agents setting on; among several, the window where the user last
+ * pressed "Analyse with my agent" in the past 30 minutes. Otherwise an error that tells the
+ * agent to call `select_repository`, never a guess.
+ * @param {{ cwd: string, sdk: any, toplevel?: (cwd: string) => string|null,
+ *   editorRepos?: () => Array<{ repo: string, askedAt: number|null }>, now?: () => number }} p
  * @returns {Promise<{ repo: string, from: string }>}
- * @throws {ToolError} when there is no single candidate; the message says what was tried
+ * @throws {ToolError} when there is no single candidate; the message says what was tried and what to do
  */
-async function findRepoFor({ cwd, sdk, toplevel = repoToplevel, editorRepos }) {
+async function findRepoFor({ cwd, sdk, toplevel = repoToplevel, editorRepos, now = () => realClock.now() }) {
   const fromRoots = await rootRepos(sdk, toplevel);
-  const several = (/** @type {string[]} */ list, /** @type {string} */ where) => new ToolError(
-    `${where} has several git repositories (${list.join(', ')}); start your agent inside the one to review, or register the server with --repo <path>`);
   if (fromRoots.repos.length === 1) return { repo: fromRoots.repos[0], from: 'the agent\'s workspace folder' };
-  if (fromRoots.repos.length > 1) throw several(fromRoots.repos, 'the agent\'s workspace');
+  if (fromRoots.repos.length > 1) throw new ToolError(`the agent's workspace has several git repositories; ${chooseWithTool(fromRoots.repos)}`);
   const listEditors = editorRepos || (() => require('./bridge-client').liveEditorRepos());
-  const editors = listEditors().filter((r) => toplevel(r) === r);
-  if (editors.length === 1) return { repo: editors[0], from: 'the editor window with Impact Tree\'s agents setting on' };
-  if (editors.length > 1) throw several(editors, 'more than one editor window with Impact Tree\'s agents setting on');
-  throw new ToolError(`${notRepoMessage(cwd)}. Also tried: ${fromRoots.note}; no editor window has Impact Tree's agents setting (impactTree.agents.enabled) on`);
+  const editors = listEditors().filter((e) => toplevel(e.repo) === e.repo);
+  if (editors.length === 1) return { repo: editors[0].repo, from: 'the editor window with Impact Tree\'s agents setting on' };
+  if (editors.length > 1) {
+    const asked = editors.filter((e) => e.askedAt !== null && now() - e.askedAt >= 0 && now() - e.askedAt <= ASKED_RECENTLY_MS)
+      .sort((a, b) => /** @type {number} */ (b.askedAt) - /** @type {number} */ (a.askedAt));
+    if (asked.length) return { repo: asked[0].repo, from: 'the editor window where "Analyse with my agent" was pressed last' };
+    throw new ToolError(`more than one editor window has Impact Tree's agents setting on; ${chooseWithTool(editors.map((e) => e.repo))}`);
+  }
+  throw new ToolError(`${notRepoMessage(cwd)}. Also tried: ${fromRoots.note}; no editor window has Impact Tree's agents setting (impactTree.agents.enabled) on. `
+    + `If you know the repository, ${chooseWithTool([])}`);
 }
 
 // ---------------------------------------------------------------------------------------
@@ -332,11 +347,15 @@ function startServer(config) {
   const connect = config.connectBridge || connectEditorBridge;
   const attemptBridge = () => {
     const repo = options.repo;
-    bridgeAttempt = withDeadline(connect({ repo, signal: bridgeAbort.signal }), BRIDGE_CONNECT_MS, 'the editor bridge').then((b) => {
-      if (closing) { if (b) b.close(); return; }
+    // Its own signal: a failed attempt must not cancel later ones (reconnects, a chosen repository).
+    const attempt = new AbortController();
+    bridgeAbort.signal.addEventListener('abort', () => attempt.abort(), { once: true });
+    bridgeAttempt = withDeadline(connect({ repo, signal: attempt.signal }), BRIDGE_CONNECT_MS, 'the editor bridge').then((b) => {
+      // Closed meanwhile, or the agent chose another repository: this connection is not wanted.
+      if (closing || options.repo !== repo) { if (b) b.close(); return; }
       bridge = b;
       log(b ? 'connected to the editor' : 'no editor bridge: headless');
-    }).catch((e) => { bridgeAbort.abort(); log(`editor bridge unavailable, continuing headless: ${e && e.message}`); });
+    }).catch((e) => { attempt.abort(); log(`editor bridge unavailable, continuing headless: ${e && e.message}`); });
   };
 
   /** @returns {Promise<ReturnType<typeof createImpactTools>>} */
@@ -371,7 +390,8 @@ function startServer(config) {
     if (!bridge) return undefined;
     try {
       const c = await withDeadline(bridge.context(), BRIDGE_CONNECT_MS, 'the editor bridge');
-      return c && c.base && c.base.ref ? c.base.ref : undefined;
+      // The commit, not the ref: the ref may have moved since the editor's analysis.
+      return c && c.base && /^[0-9a-f]{40}$/.test(c.base.sha) ? c.base.sha : undefined;
     } catch (e) {
       log(`editor context unavailable, using the default base: ${/** @type {Error} */ (e).message}`);
       return undefined;
@@ -391,8 +411,28 @@ function startServer(config) {
     }
   }
 
+  /**
+   * `select_repository`: the agent names the repository (the server could not tell, or several
+   * windows are open). Switching to another repository drops the analysis made so far.
+   * @param {string} asked
+   * @returns {Promise<{ repo: string, changed: boolean }>}
+   */
+  async function selectRepository(asked) {
+    const top = path.isAbsolute(asked) ? repoToplevel(asked) : null;
+    if (!top) throw new ToolError(`not a folder inside a git repository: ${asked} (give an absolute path)`);
+    if (!options.notRepo && options.repo === top) return { repo: top, changed: false };
+    if (started) await started.then(() => undefined, () => undefined);
+    if (prepared) { try { prepared.dispose(); } catch (e) { log(`dispose failed: ${/** @type {Error} */ (e).message}`); } prepared = null; }
+    started = null;
+    if (bridge) { try { bridge.close(); } catch { /* already closed */ } bridge = null; }
+    options = { ...options, repo: top, notRepo: undefined };
+    log(`repository chosen by the agent: ${top}`);
+    attemptBridge();
+    return { repo: top, changed: true };
+  }
+
   const transport = new StdioServerTransport(/** @type {any} */ (input), /** @type {any} */ (output));
-  const handle = serveStdio(() => { sdk = createSdkServer(ready); return sdk; }, { transport, onerror: (e) => log(`protocol error: ${e.message}`) });
+  const handle = serveStdio(() => { sdk = createSdkServer(ready, selectRepository); return sdk; }, { transport, onerror: (e) => log(`protocol error: ${e.message}`) });
   if (!options.notRepo) attemptBridge();
 
   /** @type {() => void} */
@@ -421,8 +461,9 @@ function startServer(config) {
 /**
  * An SDK server with every tool registered. The tool bodies wait for `ready()` (the analysis).
  * @param {() => Promise<ReturnType<typeof createImpactTools>>} ready
+ * @param {(repo: string) => Promise<{ repo: string, changed: boolean }>} [selectRepository]
  */
-function createSdkServer(ready) {
+function createSdkServer(ready, selectRepository) {
   const server = new McpServer(SERVER_INFO, { instructions: INSTRUCTIONS });
   // The definitions need no analysis; a body gets its tool set once `ready` resolves.
   const defs = createImpactTools({ repo: '/', result: { allChanged: [], deleted: [] }, cards: { clusters: [], sweeps: [], seams: [] } }).tools;
@@ -430,6 +471,21 @@ function createSdkServer(ready) {
     server.registerTool(def.name, {
       title: def.title, description: def.description, inputSchema: def.inputSchema, annotations: def.annotations,
     }, async (/** @type {any} */ args) => callTool(ready, def.name, args));
+  }
+  if (selectRepository) {
+    server.registerTool('select_repository', {
+      title: 'Choose the repository',
+      description: 'Use when a tool says it cannot tell which repository to analyse: give the absolute path of the repository folder to review (the one named in your task). Switching repositories drops the analysis made so far.',
+      inputSchema: z.object({ repo: z.string().min(1).max(4096).describe('Absolute path of the repository folder, or of a folder inside it.') }).strict(),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    }, async (/** @type {any} */ args) => {
+      try {
+        const out = await selectRepository(String(args.repo));
+        return { content: [{ type: /** @type {const} */ ('text'), text: JSON.stringify(out) }], structuredContent: out };
+      } catch (e) {
+        return errorResult(e instanceof Error ? e.message : String(e));
+      }
+    });
   }
   return server;
 }

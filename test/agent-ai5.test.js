@@ -140,12 +140,13 @@ function world({ state: sessionState, context = CTX, pick = { id: 'cursor-chat',
   state.headChanged(context && context.head);
   const asked = [];
   const removed = [];
+  const marked = [];
   const cmd = createAnalyseWithAgent(vscode, {
     session: { state: sessionState }, state, log: (m) => log.push(m), redraw: () => redraws.push(1), clock: { now: () => now },
-    bridge: { context: async () => context, removeResult: async (h, k) => { removed.push([h, k]); return true; } },
+    bridge: { context: async () => context, removeResult: async (h, k) => { removed.push([h, k]); return true; }, markAsked: () => { marked.push(1); return true; } },
     chooseAgent: async (v, force, opts) => { asked.push(opts); return pick; },
   });
-  return { cmd, state, log, messages, redraws, calls, asked, removed };
+  return { cmd, state, log, messages, redraws, calls, asked, removed, marked };
 }
 const GOOD = { result: { mode: 'pr', base: { ref: 'main', sha: 'b' }, allChanged: [] }, source: { kind: 'checkout' }, cards: { clusters: [{ id: 'K1', members: ['a#1'] }] } };
 
@@ -159,6 +160,9 @@ test('the command: a finished checkout analysis with cards opens the prompt in C
   assert.deepEqual(w.messages, [['info', 'Impact Tree: Cursor opened the prompt: check it, switch the chat to Agent mode, and send it.']]);
   assert.ok(w.redraws.length >= 1);
   assert.deepEqual(w.asked, [{ title: 'Impact Tree: Analyse with…', exclude: ['save'] }]);
+  assert.equal(w.marked.length, 1, 'the window marks itself as the one that asked, for a server that sees several');
+  assert.match(decodeURIComponent(w.calls[0][1]), /`list_cards` with `detail: true`/);
+  assert.match(decodeURIComponent(w.calls[0][1]), /call `select_repository` with the repository folder above\. Do not edit any configuration file\./);
 });
 
 test('the command says what is missing and hands nothing over', async () => {

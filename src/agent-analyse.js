@@ -15,7 +15,7 @@ const { realClock } = require('./engine/clock');
 
 /**
  * @param {any} vscode
- * @param {{ session: any, bridge: { context: () => Promise<any>, removeResult: (head: string, key: string) => Promise<boolean> },
+ * @param {{ session: any, bridge: { context: () => Promise<any>, removeResult: (head: string, key: string) => Promise<boolean>, markAsked: () => boolean },
  *   state: ReturnType<typeof import('./agent-cards-state').createAgentCardsState>,
  *   chooseAgent: (vscode: any, forceAsk: boolean, opts: { title: string, exclude: string[] }) => Promise<{ id: import('./agent-handoff').AgentChoiceId, label: string }|null>,
  *   log: (m: string) => void, redraw: () => void, clock?: import('./engine/clock').Clock }} deps
@@ -60,6 +60,8 @@ function createAnalyseWithAgent(vscode, { session, bridge, state, chooseAgent, l
         return;
       }
       log(`agent: asked ${choice.id} to refine the cards`);
+      // Several windows may have agents on: the server picks the one that asked last.
+      bridge.markAsked();
       if (state.asked(ctx.head, clock.now())) redraw();
       say(sentence);
     } finally {

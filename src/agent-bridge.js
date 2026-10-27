@@ -43,7 +43,7 @@ function createAgentBridge(vscode, { session, workspaceState, log, lockDir = P.d
   clock = realClock, idleTimeoutMs = IDLE_TIMEOUT_MS }) {
   const emitter = new vscode.EventEmitter();
   const removedEmitter = new vscode.EventEmitter();
-  /** @type {{ server: net.Server, sockets: Set<net.Socket>, lockFile: string, socketPath: string, token: string, repo: string } | null} */
+  /** @type {{ server: net.Server, sockets: Set<net.Socket>, lockFile: string, socketPath: string, token: string, repo: string, startedAt: number } | null} */
   let running = null;
   // Each start/stop moves this on, so a start that was overtaken by a stop cleans up after itself.
   let generation = 0;
@@ -291,8 +291,9 @@ function createAgentBridge(vscode, { session, workspaceState, log, lockDir = P.d
       });
       if (process.platform !== 'win32') fs.chmodSync(socketPath, 0o600);
       if (mine !== generation) { listening.close(); fs.rmSync(socketPath, { force: true }); return; }
-      writeLockAtomically(lockFile, { version: 1, pid: process.pid, repo, socket: socketPath, token, startedAt: clock.now() });
-      running = { server: listening, sockets, lockFile, socketPath, token, repo };
+      const startedAt = clock.now();
+      writeLockAtomically(lockFile, { version: 1, pid: process.pid, repo, socket: socketPath, token, startedAt });
+      running = { server: listening, sockets, lockFile, socketPath, token, repo, startedAt };
       log('agent bridge: listening for the user\'s agent (local only)');
     } catch (e) {
       log(`agent bridge: could not start: ${e && /** @type {any} */ (e).message}`);
@@ -325,6 +326,22 @@ function createAgentBridge(vscode, { session, workspaceState, log, lockDir = P.d
     onDidStoreResult: emitter.event,
     onDidRemoveResult: removedEmitter.event,
     resultsFor, removeResult,
+    /**
+     * Marks this window as the one that just asked the user's agent (the lock's `askedAt`), so a
+     * server started outside any repository picks this window when several have agents on.
+     * @returns {boolean} false when the bridge is not running or the lock cannot be written
+     */
+    markAsked() {
+      if (!running) return false;
+      const r = running;
+      try {
+        writeLockAtomically(r.lockFile, { version: 1, pid: process.pid, repo: r.repo, socket: r.socketPath, token: r.token, startedAt: r.startedAt, askedAt: clock.now() });
+        return true;
+      } catch (e) {
+        log(`agent bridge: could not mark this window as asking: ${/** @type {any} */ (e).message}`);
+        return false;
+      }
+    },
     /** The review the editor shows, as the agent's server is told it; null while there is no finished checkout or local review. */
     context: currentContext,
     /** For tests: the socket and lock this bridge listens on, or null. */

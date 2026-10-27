@@ -264,7 +264,7 @@ function connect(/** @type {any} */ extra = {}) {
   };
 }
 
-test('handshake, tools/list with the 11 read-only tools and the 2 write-back tools, and shape of results', async () => {
+test('handshake, tools/list with the 11 read-only tools, the 2 write-back tools and select_repository, and shape of results', async () => {
   const c = connect();
   const init = /** @type {any} */ (await c.request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } }));
   assert.equal(init.result.protocolVersion, '2025-06-18');
@@ -274,7 +274,7 @@ test('handshake, tools/list with the 11 read-only tools and the 2 write-back too
   assert.equal(c.state().prepared, 0, 'initialize does not start the analysis');
   const list = /** @type {any} */ (await c.request('tools/list')).result.tools;
   assert.equal(c.state().prepared, 0, 'nor does tools/list');
-  assert.deepEqual(list.map((/** @type {any} */ t) => t.name), ['list_cards', 'get_card', 'get_change', 'callers_of', 'find_references', 'impact_paths', 'validate_cards', 'check_evidence', 'get_source', 'list_files', 'search_code', 'submit_cards', 'submit_callers']);
+  assert.deepEqual(list.map((/** @type {any} */ t) => t.name), ['list_cards', 'get_card', 'get_change', 'callers_of', 'find_references', 'impact_paths', 'validate_cards', 'check_evidence', 'get_source', 'list_files', 'search_code', 'submit_cards', 'submit_callers', 'select_repository']);
   for (const t of list) {
     assert.equal(t.inputSchema.type, 'object', t.name);
     assert.ok(t.description.length > 20, t.name);
@@ -299,7 +299,7 @@ test('a 2026 client claims its protocol in _meta and still lists the tools', asy
   const list = /** @type {any} */ (await c.request('tools/list', { _meta: {
     'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientInfo': { name: 't', version: '1' }, 'io.modelcontextprotocol/clientCapabilities': {},
   } }));
-  assert.equal(list.result.tools.length, 13);
+  assert.equal(list.result.tools.length, 14);
   await c.close();
 });
 
@@ -345,7 +345,7 @@ test('an analysis that fails fails every tool call with its message, and nothing
 function fakeBridge(/** @type {any} */ over = {}) {
   const seen = { submits: /** @type {any[]} */ ([]), closed: 0, contexts: 0 };
   const bridge = {
-    context: async () => { seen.contexts++; return { repo: REPO, mode: 'pr', base: { ref: 'origin/dev', sha: 'basesha' }, head: 'headsha' }; },
+    context: async () => { seen.contexts++; return { repo: REPO, mode: 'pr', base: { ref: 'origin/dev', sha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' }, head: 'headsha' }; },
     submit: async (/** @type {string} */ kind, /** @type {any} */ payload, /** @type {any} */ meta) => { seen.submits.push({ kind, payload, meta }); return { stored: true }; },
     close: () => { seen.closed++; },
     ...over,
@@ -366,7 +366,7 @@ test('submit_cards with an editor: checked, forwarded with the head and base, st
   assert.equal(b.seen.submits[0].kind, 'cards');
   assert.equal(b.seen.submits[0].payload.cards[0].title, 'Save and run', 'the normalised payload is forwarded');
   assert.equal(b.seen.submits[0].payload.summary, 'whole PR');
-  assert.deepEqual(c.state().bases, ['origin/dev'], 'the base comes from the editor when --base is absent');
+  assert.deepEqual(c.state().bases, ['bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'], 'the base is the editor\'s base commit (its ref may have moved since) when --base is absent');
   await c.close();
   assert.equal(b.seen.closed, 1, 'the bridge is closed on exit');
 });
@@ -452,7 +452,7 @@ test('node src/cli.js mcp: handshake and tools/list over stdio without any analy
   const init = await s.handshake();
   assert.equal(init.result.serverInfo.name, 'impact-tree');
   const list = (await s.request('tools/list')).result.tools;
-  assert.equal(list.length, 13);
+  assert.equal(list.length, 14);
   assert.ok(list.every((/** @type {any} */ t) => t.inputSchema && t.inputSchema.type === 'object'));
   assert.deepEqual(await s.end(), { code: 0, signal: null }, 'closing the input ends the server');
   assert.doesNotMatch(s.stderr(), /analysed/, 'a client that only lists tools never pays for an analysis');
@@ -518,13 +518,13 @@ test('not in a repository: the server starts, lists its tools, and every tool re
   const dummy = (/** @type {any} */ sch) => (sch.type === 'number' || sch.type === 'integer' ? 1 : sch.type === 'array' ? [] : sch.type === 'boolean' ? true : sch.enum ? sch.enum[0]
     : sch.type === 'object' ? Object.fromEntries((sch.required || []).map((/** @type {string} */ k) => [k, dummy(sch.properties[k] || {})])) : 'xx');
   const argsOf = (/** @type {any} */ t) => dummy(t.inputSchema);
-  for (const t of tools) {
+  for (const t of tools.filter((/** @type {any} */ x) => x.name !== 'select_repository')) {
     const n = id++;
     send({ id: n, method: 'tools/call', params: { name: t.name, arguments: argsOf(t) } });
     const r = (await until(n)).result;
     assert.equal(r.isError, true, t.name);
     assert.ok(r.content[0].text.startsWith('start your agent inside a git repository (this folder is not one): /not/a/repo. Also tried: '), t.name);
-    assert.match(r.content[0].text, /does not share its workspace folders.*no editor window has Impact Tree's agents setting/, t.name);
+    assert.match(r.content[0].text, /does not share its workspace folders.*no editor window has Impact Tree's agents setting.*call select_repository/, t.name);
   }
   assert.equal(prepared, 0);
   input.end(); await server.closed;
@@ -543,14 +543,14 @@ test('findRepoFor: the agent\'s one workspace repository, else the one editor wi
   const none = () => [];
   assert.deepEqual(await findRepoFor({ cwd: '/home', sdk: sdkWithRoots(['file:///w/hono/src', 'file:///w/notes']), toplevel, editorRepos: none }),
     { repo: '/w/hono', from: 'the agent\'s workspace folder' });
-  await assert.rejects(findRepoFor({ cwd: '/home', sdk: sdkWithRoots(['file:///w/hono', 'file:///w/cli']), toplevel, editorRepos: () => ['/e/one'] }),
-    (e) => e instanceof ToolError && /several git repositories \(\/w\/cli, \/w\/hono\)/.test(e.message));
+  await assert.rejects(findRepoFor({ cwd: '/home', sdk: sdkWithRoots(['file:///w/hono', 'file:///w/cli']), toplevel, editorRepos: () => [{ repo: '/e/one', askedAt: null }] }),
+    (e) => e instanceof ToolError && /several git repositories; call select_repository with the repository to review \(one of: \/w\/cli, \/w\/hono\); do not change the MCP configuration/.test(e.message));
   // No roots from the agent: the editor window decides; one that is no longer a repository is skipped.
-  assert.deepEqual(await findRepoFor({ cwd: '/home', sdk: sdkWithRoots(null), toplevel, editorRepos: () => ['/e/one', '/gone'] }),
+  assert.deepEqual(await findRepoFor({ cwd: '/home', sdk: sdkWithRoots(null), toplevel, editorRepos: () => [{ repo: '/e/one', askedAt: null }, { repo: '/gone', askedAt: null }] }),
     { repo: '/e/one', from: 'the editor window with Impact Tree\'s agents setting on' });
-  assert.deepEqual((await findRepoFor({ cwd: '/home', sdk: sdkWithRoots(['https://x/y']), toplevel, editorRepos: () => ['/e/two'] })).repo, '/e/two');
-  await assert.rejects(findRepoFor({ cwd: '/home', sdk: null, toplevel, editorRepos: () => ['/e/one', '/e/two'] }),
-    (e) => e instanceof ToolError && /more than one editor window/.test(e.message));
+  assert.deepEqual((await findRepoFor({ cwd: '/home', sdk: sdkWithRoots(['https://x/y']), toplevel, editorRepos: () => [{ repo: '/e/two', askedAt: null }] })).repo, '/e/two');
+  await assert.rejects(findRepoFor({ cwd: '/home', sdk: null, toplevel, editorRepos: () => [{ repo: '/e/one', askedAt: null }, { repo: '/e/two', askedAt: null }] }),
+    (e) => e instanceof ToolError && /more than one editor window .*call select_repository .*one of: \/e\/one, \/e\/two/.test(e.message));
   await assert.rejects(findRepoFor({ cwd: '/home', sdk: sdkWithRoots([]), toplevel, editorRepos: none }),
     (e) => e instanceof ToolError && /this folder is not one\): \/home\. Also tried: none of the agent's workspace folders/.test(e.message));
   const failing = { server: { getClientCapabilities: () => ({ roots: {} }), listRoots: async () => { throw new Error('boom'); } } };
@@ -585,6 +585,64 @@ test('liveEditorRepos: only live, well-formed locks filed under their own reposi
   fs.writeFileSync(P.lockPathFor(dir, '/r/dead'), JSON.stringify(lock('/r/dead', 2 ** 30)));
   fs.writeFileSync(P.lockPathFor(dir, '/r/bad'), '{not json');
   fs.writeFileSync(P.lockPathFor(dir, '/r/elsewhere'), JSON.stringify(lock('/r/other', process.pid)));   // filed under another name
-  assert.deepEqual(liveEditorRepos({ lockDir: dir }), ['/r/live']);
+  assert.deepEqual(liveEditorRepos({ lockDir: dir }), [{ repo: '/r/live', askedAt: null }]);
+  fs.writeFileSync(P.lockPathFor(dir, '/r/live'), JSON.stringify({ ...lock('/r/live', process.pid), askedAt: 1234 }));
+  assert.deepEqual(liveEditorRepos({ lockDir: dir }), [{ repo: '/r/live', askedAt: 1234 }]);
+  fs.writeFileSync(P.lockPathFor(dir, '/r/live'), JSON.stringify({ ...lock('/r/live', process.pid), askedAt: 'soon' }));
+  assert.deepEqual(liveEditorRepos({ lockDir: dir }), [], 'a lock with a malformed askedAt is not trusted');
   assert.deepEqual(liveEditorRepos({ lockDir: path.join(dir, 'missing') }), []);
+});
+
+test('findRepoFor: among several editor windows, the one where "Analyse with my agent" was pressed last in the past 30 minutes', async () => {
+  const toplevel = tops({ '/e/one': '/e/one', '/e/two': '/e/two', '/e/three': '/e/three' });
+  const now = () => 10_000_000;
+  const editors = (/** @type {Array<number|null>} */ asked) => () => ['/e/one', '/e/two', '/e/three'].map((repo, i) => ({ repo, askedAt: asked[i] }));
+  assert.deepEqual(await findRepoFor({ cwd: '/home', sdk: null, toplevel, now, editorRepos: editors([null, 9_000_000, 9_500_000]) }),
+    { repo: '/e/three', from: 'the editor window where "Analyse with my agent" was pressed last' });
+  // Pressed more than 30 minutes ago, or (clock skew) in the future: not counted.
+  await assert.rejects(findRepoFor({ cwd: '/home', sdk: null, toplevel, now, editorRepos: editors([null, 10_000_000 - 31 * 60_000, 10_000_001]) }),
+    (e) => e instanceof ToolError && /call select_repository/.test(e.message));
+});
+
+test('select_repository: names the repository when the server cannot tell; switching drops the analysis so far', async () => {
+  const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
+  const { execFileSync } = require('node:child_process');
+  const make = (/** @type {string} */ name) => { const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `it-sel-${name}-`))); execFileSync('git', ['init', '-q'], { cwd: d }); return d; };
+  const one = make('one'); const two = make('two');
+  const seenRepos = /** @type {string[]} */ ([]);
+  const s = connect({
+    options: { repo: '/home', notRepo: true },
+    findRepo: async () => { throw new ToolError('more than one editor window; call select_repository'); },
+    prepare: async (/** @type {any} */ o) => { seenRepos.push(o.repo); return { ctx: fakeContext().ctx, headSha: 'h', baseSha: 'b', dispose: () => {} }; },
+  });
+  await s.handshake();
+  assert.equal((await s.call('list_cards', {})).isError, true);
+  const bad = await s.call('select_repository', { repo: 'relative/path' });
+  assert.equal(bad.isError, true);
+  assert.match(bad.content[0].text, /not a folder inside a git repository/);
+  assert.deepEqual((await s.call('select_repository', { repo: path.join(one, '.') })).structuredContent, { repo: one, changed: true });
+  assert.ok(!(await s.call('list_cards', {})).isError);
+  assert.deepEqual((await s.call('select_repository', { repo: one })).structuredContent, { repo: one, changed: false });
+  assert.deepEqual((await s.call('select_repository', { repo: two })).structuredContent, { repo: two, changed: true });
+  assert.ok(!(await s.call('list_cards', {})).isError);
+  assert.deepEqual(seenRepos, [one, two]);
+  assert.equal(s.state().disposed, 0, 'the fake prepare above has its own dispose');
+  await s.close();
+});
+
+test('list_cards with detail: members, entry points, seams and merge hints per card; without it, the short form', async () => {
+  const s = connect();
+  await s.handshake();
+  const short = (await s.call('list_cards', {})).structuredContent;
+  assert.equal(short.cards[0].memberList, undefined);
+  const full = (await s.call('list_cards', { detail: true })).structuredContent;
+  assert.equal(full.cards.length, short.cards.length);
+  for (const c of full.cards) {
+    assert.ok(Array.isArray(c.memberList) && c.memberList.length === Math.min(c.members, 40), c.id);
+    assert.ok(c.memberList.every((/** @type {any} */ m) => typeof m.id === 'string' && typeof m.label === 'string'), c.id);
+    assert.ok(Array.isArray(c.entryPoints) && typeof c.entryPointsTotal === 'number' && Array.isArray(c.seamsWith) && Array.isArray(c.mergeHints), c.id);
+    assert.ok(!c.seamsWith.includes(c.id), 'a card has no seam with itself');
+  }
+  assert.ok(JSON.stringify(full).length <= MAX_TEXT_CHARS);
+  await s.close();
 });

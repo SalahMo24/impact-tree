@@ -31,6 +31,9 @@ const MAX_HUNK_CHARS = 6000;
 // Deadline for one `impact_paths` call. Unit: ms.
 const QUERY_DEADLINE_MS = 10000;
 // Caller rows shown by get_card's merge hints and seams. Unit: items.
+// list_cards with detail: members and entry points listed per card (more: get_card). Unit: items.
+const MAX_DETAIL_MEMBERS = 40;
+const MAX_DETAIL_ENTRIES = 8;
 const MAX_HINTS_SHOWN = 15;
 const MAX_SEAMS_SHOWN = 20;
 const MAX_FILES_SHOWN = 30;
@@ -209,17 +212,32 @@ function nameOf(env, id) {
 function addCardTools(tools, env) {
   tools.push({
     name: 'list_cards', title: 'List cluster cards', annotations: READ_ONLY,
-    description: 'The PR\'s changes grouped into cards (and repeated-edit sweeps). Per card: id, label, member count, caller stats, entry-point types its changes reach, and a seam summary. Paged.',
-    inputSchema: z.object({ ...pageShape }).strict(),
+    description: 'The PR\'s changes grouped into cards (and repeated-edit sweeps). Per card: id, label, member count, caller stats, entry-point types its changes reach, and a seam summary. '
+      + 'With detail: true, also each card\'s members (id, name, file, change kinds), its entry points, the cards it has seams with, and its merge hints: usually enough to title, summarise and merge every card without get_card. Paged.',
+    inputSchema: z.object({
+      ...pageShape,
+      detail: z.boolean().optional().describe('Add members, entry points, seams and merge hints to each card (fewer calls than get_card per card).'),
+    }).strict(),
     run: async (args) => {
       const items = env.allCards.map((c) => {
         const im = impactOf(env, c.members || []);
         /** @type {Record<string, number>} */
         const seamTypes = {};
         for (const s of seamsOf(env, c.id)) seamTypes[s.type] = (seamTypes[s.type] || 0) + 1;
-        return {
+        const item = {
           id: c.id, kind: c.kind, label: c.label, members: (c.members || []).length, mirrored: (c.mirrorMembers || []).length,
           stats: c.stats, entryTypes: im.entryTypes, testOnlyMembers: im.testOnlyMembers, seams: seamTypes, impactComplete: im.complete,
+        };
+        if (args.detail !== true) return item;
+        const members = (c.members || []).map((/** @type {string} */ m) => nameOf(env, m));
+        return {
+          ...item,
+          memberList: members.slice(0, MAX_DETAIL_MEMBERS), membersShown: Math.min(members.length, MAX_DETAIL_MEMBERS),
+          entryPoints: im.entryPoints.slice(0, MAX_DETAIL_ENTRIES).map((e) => ({ type: e.type, name: e.name })), entryPointsTotal: im.entryPoints.length,
+          seamsWith: [...new Set(seamsOf(env, c.id).flatMap((/** @type {any} */ s) => s.clusters).filter((/** @type {string} */ k) => k !== c.id))].slice(0, MAX_SEAMS_SHOWN),
+          mergeHints: env.hints.filter((/** @type {any} */ h) => h.clusters.includes(c.id) && h.strength >= 1).slice(0, 3)
+            .map((/** @type {any} */ h) => ({ cards: h.clusters, strength: h.strength })),
+          impactReasons: im.complete ? [] : im.reasons.slice(0, 2),
         };
       });
       return paged({ pr: { base: env.result.base && env.result.base.ref, changed: env.changes.size, cards: env.allCards.length }, limits: env.notes }, 'cards', items, args);
