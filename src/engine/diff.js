@@ -38,12 +38,6 @@ function changedFiles(git, baseSha, headRev, pathspec) {
   return files;
 }
 
-// Untracked files are part of "my uncommitted work" but invisible to `git diff`.
-function untrackedFiles(git) {
-  const out = git.tryRaw([...PLAIN, 'ls-files', '--others', '--exclude-standard', '-z']);
-  return out ? out.split('\0').filter(Boolean) : [];
-}
-
 // Every file in the worktree git would show: tracked plus untracked-but-not-ignored.
 // `null` when git could not list them, so a caller cannot mistake it for "no files".
 function worktreeFiles(git) {
@@ -206,7 +200,7 @@ const projectLabel = (root) => (root === '' ? '(root)' : root);
 const INFERRED_PROJECT = '(inferred)';
 
 module.exports = {
-  changedFiles, untrackedFiles, worktreeFiles, projectConfigIn, INFERRED_PROJECT, hunks, allHunks, hunkDiffArgs, rangeOfHeader, wholeFileRange,
+  changedFiles, worktreeFiles, projectConfigIn, INFERRED_PROJECT, hunks, allHunks, hunkDiffArgs, rangeOfHeader, wholeFileRange,
   isTestPath, isTestFile, isSourcePath, SOURCE_EXT,
   projectRootOf, clearProjectCache, projectLabel, rel: (repo, f) => path.relative(repo, f),
 };

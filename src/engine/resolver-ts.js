@@ -44,6 +44,29 @@ function inferredOptions(ts) {
  *   `inferredOptions`, and project references and consumers do not apply.
  * @returns {object|null} `null` when no project could be loaded.
  */
+/**
+ * One document registry per TypeScript module for the whole process, which never releases
+ * TypeScript's own library files (lib.*.d.ts). Every analysis otherwise parses those again
+ * (lib.dom.d.ts alone is ~2 MB); they never change while the process runs. Project files are
+ * released as before, so a disposed service still frees them.
+ * Owner: this module. Lifetime: the process. Size: the lib files of each compiler-settings key in use.
+ * @type {WeakMap<any, any>}
+ */
+const sharedRegistries = new WeakMap();
+function sharedRegistry(ts) {
+  if (sharedRegistries.has(ts)) return sharedRegistries.get(ts);
+  const real = ts.createDocumentRegistry(ts.sys.useCaseSensitiveFileNames);
+  const libDir = path.dirname(ts.getDefaultLibFilePath({})).toLowerCase() + path.sep.toLowerCase();
+  const isLib = (/** @type {string} */ f) => String(f).toLowerCase().replace(/\//g, path.sep).startsWith(libDir);
+  const registry = {
+    ...real,
+    releaseDocument: (/** @type {any[]} */ ...a) => (isLib(a[0]) ? undefined : real.releaseDocument(...a)),
+    releaseDocumentWithKey: (/** @type {any[]} */ ...a) => (isLib(a[0]) ? undefined : real.releaseDocumentWithKey(...a)),
+  };
+  sharedRegistries.set(ts, registry);
+  return registry;
+}
+
 function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTsconfig = 'tsconfig.test.json', filterInherited = true, repoRoot = null, workspaceGraph = null, servicePool = null, inferredFiles = null } = {}) {
   // Classified relative to the repo: an absolute path put every caller of a repo that
   // happens to live under some `.../tests/...` directory into the test bucket.
@@ -110,7 +133,6 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
       try { const m = fs.statSync(f).mtimeMs; versions.set(f, String(m)); return String(m); }
       catch { return versions.get(f) || '0'; }
     };
-    if (servicePool && !servicePool.registries.has(ts)) servicePool.registries.set(ts, ts.createDocumentRegistry());
     const svc = ts.createLanguageService({
       getScriptFileNames: () => files,
       getScriptVersion: versionOf,
@@ -120,7 +142,7 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
       getDefaultLibFileName: (o) => ts.getDefaultLibFilePath(o),
       realpath: ts.sys.realpath, fileExists: ts.sys.fileExists, readFile: ts.sys.readFile, readDirectory: ts.sys.readDirectory,
       directoryExists: ts.sys.directoryExists, getDirectories: ts.sys.getDirectories,
-    }, servicePool ? servicePool.registries.get(ts) : ts.createDocumentRegistry());
+    }, sharedRegistry(ts));
     servicePool?.services.set(poolKey, svc);
     services.push(svc);
     if (!test) prodServices.push(svc);

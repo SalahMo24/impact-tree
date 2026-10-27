@@ -19,10 +19,14 @@
 // Each child also gets --v8-pool-size=CHILD_V8_POOL_SIZE: V8 otherwise starts about one GC/compile
 // helper thread per core in every child, and six children then oversubscribe the machine.
 //
+// On macOS, when `git` on PATH is Apple's /usr/bin/git shim (it runs xcrun on every call, ~20 ms
+// each; a file starts hundreds of git processes), children get a PATH that starts with a
+// private directory holding a link to the real binary that `xcrun -f git` names.
+//
 // Exit status: 0 all files passed; 1 a file failed, hung, or was killed by a signal;
 // 2 bad usage, an unlisted test file, or nothing selected (a run that checks nothing fails).
 
-const { spawn } = require('node:child_process');
+const { spawn, execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -173,6 +177,30 @@ function failingLines(output) {
   return lines.slice(0, MAX_FAIL_LINES);
 }
 
+/**
+ * The environment for children. On macOS with the /usr/bin/git shim first on PATH: PATH led by a
+ * temporary directory with `git` linked to the real binary, removed when the runner exits.
+ * Anything else, or any failure to set it up: the runner's own environment, unchanged.
+ * @returns {NodeJS.ProcessEnv}
+ */
+function childEnv() {
+  if (process.platform !== 'darwin') return process.env;
+  try {
+    const onPath = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
+    if (onPath !== '/usr/bin/git') return process.env;
+    const real = execFileSync('/usr/bin/xcrun', ['-f', 'git'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    if (!real || !fs.existsSync(real)) return process.env;
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'impact-tree-test-git-'));
+    fs.symlinkSync(real, path.join(dir, 'git'));
+    process.on('exit', () => fs.rmSync(dir, { recursive: true, force: true }));
+    return { ...process.env, PATH: `${dir}${path.delimiter}${process.env.PATH || ''}` };
+  } catch {
+    return process.env;
+  }
+}
+/** @type {NodeJS.ProcessEnv|null} */
+let childEnvCache = null;
+
 /** Children alive now, so an interrupt of the runner can stop them. */
 const live = new Set();
 
@@ -201,7 +229,8 @@ function runFile(entry, deadlineS) {
     if (entry.heapMb) args.push(`--max-old-space-size=${entry.heapMb}`);
     args.push(entry.file);
     const started = Date.now();
-    const child = spawn(process.execPath, args, { cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
+    if (!childEnvCache) childEnvCache = childEnv();
+    const child = spawn(process.execPath, args, { cwd: REPO, env: childEnvCache, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
     live.add(child);
     let output = '';
     let truncated = false;

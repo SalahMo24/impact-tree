@@ -59,8 +59,17 @@ function createLocalHarness() {
     if (withTs) linkTs(dir);
     return dir;
   }
-  const commit = (dir) => { run(dir, ['add', '-A']); run(dir, ['commit', '-qm', 'c']); return run(dir, ['rev-parse', 'HEAD']).trim(); };
-  const headOf = (dir) => run(dir, ['rev-parse', 'HEAD']).trim();
+  // HEAD's commit read from .git without starting git (a process costs tens of ms on a busy
+  // machine); `rev-parse` when the ref is not a loose file (packed, detached elsewhere).
+  const headOf = (dir) => {
+    try {
+      const head = fs.readFileSync(path.join(dir, '.git', 'HEAD'), 'utf8').trim();
+      const sha = head.startsWith('ref: ') ? fs.readFileSync(path.join(dir, '.git', head.slice(5)), 'utf8').trim() : head;
+      if (/^[0-9a-f]{40}$/.test(sha)) return sha;
+    } catch { /* not a loose ref */ }
+    return run(dir, ['rev-parse', 'HEAD']).trim();
+  };
+  const commit = (dir) => { run(dir, ['add', '-A']); run(dir, ['commit', '-qm', 'c']); return headOf(dir); };
   const byLabel = (r, label) => r.allChanged.find((c) => c.label === label);
   const callStates = (c) => (c ? c.callers.map((x) => `${x.label}[${x.callState}]`) : null);
   const S = makeSymbols(ts);

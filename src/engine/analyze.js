@@ -4,7 +4,7 @@ const path = require('path');
 const { makeGit, resolveBaseAsync } = require('./git');
 const { createDiffIndex } = require('./diff-index');
 const {
-  changedFiles, untrackedFiles, allHunks, hunkDiffArgs, wholeFileRange, isTestPath, isSourcePath,
+  changedFiles, allHunks, hunkDiffArgs, wholeFileRange, isTestPath, isSourcePath,
 } = require('./diff');
 const { languageFor, registeredLanguages } = require('../languages');
 const { batchPaths } = require('./cmdline');
@@ -417,7 +417,9 @@ async function analyze(repo, opts = {}) {
   const base = await cfg.resolveBase(git, opts, warnings);
   throwIfCancelled(signal);
 
-  const dirty = git.isDirty(null);
+  // Tracked changes and untracked files from one `git status`.
+  const worktree = git.worktreeStatus();
+  const dirty = worktree.dirty;
 
   const { effectiveMode, effectiveCfg } = resolveEffectiveMode(mode, cfg, dirty, opts.onDirty, warnings);
 
@@ -435,7 +437,7 @@ async function analyze(repo, opts = {}) {
   let untracked, everything, files, byLanguage, ranges;
   try {
     const diffGit = diffIndex ? makeGit(repo, { objectDirs: opts.objectDirs, env: diffIndex.env }) : git;
-    untracked = new Set(viaIndex ? [] : untrackedFiles(git));
+    untracked = new Set(viaIndex ? [] : worktree.untracked);
     everything = includeUntrackedFiles(changedFiles(diffGit, base.sha, headRev, null), untracked, headRev);
     ({ files, byLanguage } = changedSourceByLanguage(everything));
     const trackedForDiff = files.filter((f) => !f.untracked);

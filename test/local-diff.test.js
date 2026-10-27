@@ -84,6 +84,17 @@ const {
       && J(bounded) === J(Object.fromEntries(Object.keys(bounded).map((k) => [k, reference[k]]))), `${Object.keys(bounded).length} vs ${Object.keys(reference).length} files`);
   }
 
+  console.log('▸ worktree status in one git call');
+  {
+    const repo = mkRepo({ 'src/a.ts': 'export const a = 1;\n', 'src/old name.ts': 'export const o = 1;\n', '.gitignore': 'node_modules\nignored/\n' }, { ts: false });
+    run(repo, ['mv', 'src/old name.ts', 'src/new name.ts']);
+    write(repo, { 'src/a.ts': 'export const a = 2;\n', 'src/deep/dir/café.ts': 'x\n', 'loose.ts': 'y\n', 'ignored/skip.ts': 'z\n' });
+    const st = makeGit(repo).worktreeStatus();
+    check('tracked changes, a rename counted once', J(st.dirty.slice().sort()) === J([' M src/a.ts', 'R  src/new name.ts']), J(st.dirty));
+    const lsOthers = run(repo, ['-c', 'core.quotePath=false', 'ls-files', '--others', '--exclude-standard', '-z']).split('\0').filter(Boolean).sort();
+    check('untracked files match ls-files --others, one by one, unquoted', J(st.untracked.slice().sort()) === J(lsOthers) && lsOthers.includes('src/deep/dir/café.ts'), J(st.untracked));
+  }
+
   console.log('▸ paths and user git config');
   {
     const repo = mkRepo({ 'tsconfig.json': TSCONFIG, 'src/café.ts': 'export function f() {\n  return 1;\n}\n', 'src/plain.ts': 'export function g() {\n  return 1;\n}\n' });
