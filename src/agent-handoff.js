@@ -175,4 +175,13 @@ async function handOff(vscode, id, { prompt, repoRoot, platform = process.platfo
   return 'Not sent to an agent.';
 }
 
-module.exports = { isCursor, MAX_CURSOR_URL_CHARS, choicesFor, planHandOff, handOff, onPath, isExecutable, MAX_URI_PROMPT_CHARS, CLAUDE_EXTENSION_ID, CHAT_COMMAND, AGENT_SETTING_VALUES };
+/**
+ * Whether `prompt` can go by route `id` as it is (not sent to the clipboard for being too long).
+ * @param {AgentChoiceId} id @param {string} prompt @param {string} [platform]
+ */
+function fitsHandOff(id, prompt, platform = process.platform) {
+  return !/-too-long$/.test(planHandOff(id, { prompt, platform }).kind);
+}
+
+module.exports = {
+  fitsHandOff, isCursor, MAX_CURSOR_URL_CHARS, choicesFor, planHandOff, handOff, onPath, isExecutable, MAX_URI_PROMPT_CHARS, CLAUDE_EXTENSION_ID, CHAT_COMMAND, AGENT_SETTING_VALUES };

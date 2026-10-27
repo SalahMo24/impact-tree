@@ -702,6 +702,65 @@ test('the review moved (the editor\'s base commit changed): analysed again again
   await s.close();
 });
 
+// ---- one pass: cards written from the prompt's facts, stamped with their review ----------
+
+test('one pass: a stamped submit_cards is the only call; the server analyses that review, checks and stores', async () => {
+  const b = fakeBridge({ context: async () => ({ repo: REPO, mode: 'pr', base: { ref: 'origin/dev', sha: BASE1 }, head: SHA1 }) });
+  const s = connect({ connectBridge: b.connectBridge, headOf: () => SHA1 });
+  await s.handshake();
+  const r = await s.call('submit_cards', { review: { head: SHA1, base: BASE1 }, answer: { cards: [{ title: 'Save and run', members: s.f.ids }] } });
+  assert.equal(r.isError, undefined, JSON.stringify(r));
+  assert.deepEqual(r.structuredContent, { stored: true });
+  assert.equal(s.state().prepared, 1);
+  assert.deepEqual(s.state().bases, [BASE1]);
+  assert.equal(b.seen.submits.length, 1);
+  await s.close();
+});
+
+test('one pass: after the review moved, a submit stamped with the new review analyses it again and stores; a short stamp works', async () => {
+  let head = SHA1;
+  const b = fakeBridge({ context: async () => ({ repo: REPO, mode: 'pr', base: { ref: 'origin/dev', sha: BASE1 }, head }) });
+  const s = connect({ connectBridge: b.connectBridge, headOf: () => head });
+  await s.handshake();
+  await s.call('list_cards', {});
+  head = SHA2;
+  const r = await s.call('submit_cards', { review: { head: SHA2.slice(0, 12), base: BASE1 }, answer: { cards: [{ title: 'Save and run', members: s.f.ids }] } });
+  assert.equal(r.isError, undefined, JSON.stringify(r));
+  assert.deepEqual(r.structuredContent, { stored: true });
+  assert.deepEqual([s.state().prepared, s.state().disposed], [2, 1]);
+  assert.deepEqual(b.seen.submits[0].meta, { head: SHA2, base: 'basesha' });
+  await s.close();
+});
+
+test('one pass: a stamp for another head or another base is refused and nothing is saved', async () => {
+  const b = fakeBridge({ context: async () => ({ repo: REPO, mode: 'pr', base: { ref: 'origin/dev', sha: BASE1 }, head: SHA2 }) });
+  const s = connect({ connectBridge: b.connectBridge, headOf: () => SHA2 });
+  await s.handshake();
+  const answer = { cards: [{ title: 'Save and run', members: s.f.ids }] };
+  const oldHead = await s.call('submit_cards', { review: { head: SHA1, base: BASE1 }, answer });
+  assert.equal(oldHead.isError, true);
+  assert.match(oldHead.content[0].text, /written for head aaaaaaaa, base bbbbbbbb, but \/repo is now at cccccccc.*select_repository.*Analyse with my agent/);
+  const oldBase = await s.call('submit_cards', { review: { head: SHA2, base: BASE2 }, answer });
+  assert.equal(oldBase.isError, true);
+  assert.match(oldBase.content[0].text, /the editor now reviews against base bbbbbbbb\. Nothing was saved/);
+  assert.equal(b.seen.submits.length, 0);
+  assert.ok((await s.call('submit_cards', { review: { head: 'zz', base: BASE1 }, answer })).isError, 'a stamp that is not a commit id is refused by the schema');
+  await s.close();
+});
+
+test('one pass without an editor: the stamp is checked against the analysis\'s own base', async () => {
+  const f = fakeContext();
+  const s = connect({ headOf: () => SHA1, prepare: async () => ({ ctx: f.ctx, headSha: SHA1, baseSha: BASE1, dispose: () => {} }) });
+  await s.handshake();
+  const answer = { cards: [{ title: 'Save and run', members: f.ids }] };
+  const ok = await s.call('submit_cards', { review: { head: SHA1, base: BASE1 }, answer });
+  assert.equal(ok.isError, undefined, JSON.stringify(ok));
+  assert.equal(ok.structuredContent.stored, false, 'checked; no editor to save in');
+  const bad = await s.call('submit_cards', { review: { head: SHA1, base: BASE2 }, answer });
+  assert.match(bad.content[0].text, /the analysis here is against base bbbbbbbb/);
+  await s.close();
+});
+
 test('list_cards says when the review does not match the editor (no editor: null)', async () => {
   const b = fakeBridge({ context: async () => ({ repo: REPO, mode: 'pr', base: { ref: 'x', sha: BASE1 }, head: SHA2 }) });
   const s = connect({ connectBridge: b.connectBridge, headOf: () => SHA1 });

@@ -289,10 +289,16 @@ async function findRepoFor({ cwd, sdk, toplevel = repoToplevel, editorRepos, now
 // Following the review and the code
 
 const OUTDATED_MESSAGE = 'Impact Tree was updated after this MCP server started, and it still runs the old code. '
-  + 'Restart the impact-tree server in your agent\'s MCP settings (turn it off and on), then call list_cards again. Do not stop its process by hand.';
+  + 'Restart the impact-tree server in your agent\'s MCP settings (turn it off and on), then make the same call again. Do not stop its process by hand.';
 
 /** @param {string|null|undefined} sha @returns {string} */
 const short = (sha) => (sha ? sha.slice(0, 8) : 'none');
+/** Two commit ids name the same commit: equal, or one a prefix (7+ characters) of the other. @param {string|null|undefined} a @param {string|null|undefined} b */
+const sameCommit = (a, b) => {
+  if (!a || !b) return false;
+  const x = a.toLowerCase(); const y = b.toLowerCase();
+  return Math.min(x.length, y.length) >= 7 && (x.startsWith(y) || y.startsWith(x));
+};
 
 /** @param {{ base?: { sha?: string } }|null} ctx @returns {string|undefined} the editor's base commit, when it is one */
 const baseCommitOf = (ctx) => (ctx && ctx.base && typeof ctx.base.sha === 'string' && /^[0-9a-f]{40}$/.test(ctx.base.sha) ? ctx.base.sha : undefined);
@@ -507,7 +513,14 @@ function startServer(config) {
     } catch (e) {
       return errorResult(e instanceof Error ? e.message : String(e));
     }
-    if (checked.notice && name !== 'list_cards') return errorResult(checked.notice);
+    if (name === 'submit_cards' && args && args.review) {
+      // Cards written from facts handed over with the prompt: when they are for the review the
+      // editor shows now, a dropped analysis is simply made again by the call below.
+      const refused = await stampRefusal(args.review, checked.ctx);
+      if (refused) return errorResult(refused);
+    } else if (checked.notice && name !== 'list_cards') {
+      return errorResult(checked.notice);
+    }
     const res = /** @type {any} */ (await callTool(ready, name, args));
     if (name !== 'list_cards' || res.isError || !prepared || !preparedFor) return res;
     const ctx = checked.ctx || await editorContext();
@@ -520,6 +533,30 @@ function startServer(config) {
     const out = { review, ...res.structuredContent };
     return { content: [{ type: /** @type {const} */ ('text'), text: JSON.stringify(out) }], structuredContent: out };
   }
+  /**
+   * Why cards stamped with `stamp` (from the prompt's facts) cannot be saved, or null when
+   * they are for the current review: the checkout's head and the editor's base commit (or,
+   * with no editor base, the base of the analysis).
+   * @param {{ head: string, base: string }} stamp @param {any} ctx The editor's context, or null.
+   * @returns {Promise<string|null>}
+   */
+  async function stampRefusal(stamp, ctx) {
+    if (options.notRepo) return null;   // no repository yet: the tool call says so
+    const was = `These cards were written for head ${short(stamp.head)}, base ${short(stamp.base)}`;
+    const again = 'Nothing was saved. Tell the user to click "Analyse with my agent" again for the current review.';
+    const head = headOf(options.repo);
+    if (head !== null && !sameCommit(head, stamp.head)) {
+      return `${was}, but ${options.repo} is now at ${short(head)}. If that is the wrong folder, call select_repository with the repository folder from the prompt and submit again; otherwise: ${again}`;
+    }
+    const editorBase = options.base ? null : baseCommitOf(ctx) || null;
+    if (editorBase !== null && !sameCommit(editorBase, stamp.base)) return `${was}, but the editor now reviews against base ${short(editorBase)}. ${again}`;
+    if (editorBase === null) {
+      try { await ready(); } catch { return null; }   // the tool call reports the failure
+      if (prepared && !sameCommit(prepared.baseSha, stamp.base)) return `${was}, but the analysis here is against base ${short(prepared.baseSha)}. ${again}`;
+    }
+    return null;
+  }
+
   /**
    * @param {'cards'|'callers'} kind @param {any} normalised @param {{ head: string, base: string }} meta
    * @returns {Promise<{ stored: boolean, reason?: string, errors?: string[] }>}

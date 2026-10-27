@@ -580,6 +580,10 @@ function addSubmitTools(tools, env) {
     name: 'submit_cards', title: 'Submit refined cards', annotations: WRITE_BACK,
     description: 'Submit your card set (names, summaries, merges and splits as members lists). It is checked like validate_cards; on errors nothing is saved and the errors say what to fix. When it passes it is handed to the editor, which shows it marked as from the agent. Returns stored and, when not stored, the reason (for example no editor connected).',
     inputSchema: z.object({
+      review: z.object({
+        head: z.string().regex(/^[0-9a-f]{7,64}$/i).describe('The head commit the facts were for, as the prompt gives it.'),
+        base: z.string().regex(/^[0-9a-f]{7,64}$/i).describe('The base commit the facts were for, as the prompt gives it.'),
+      }).strict().optional().describe('The review your cards are for, from the prompt. With it, a server whose analysis is older analyses that review first and then checks and saves your cards; a review that is no longer the one the editor shows is refused.'),
       answer: z.object({
         summary: z.string().optional().describe('One paragraph on the whole PR.'),
         cards: z.array(z.object({
@@ -615,4 +619,6 @@ function addSubmitTools(tools, env) {
 
 module.exports = {
   createImpactTools, NO_EDITOR_REASON, MAX_SOURCE_LINES, MAX_SEARCH_HITS, QUERY_DEADLINE_MS,
+  // For src/mcp/card-facts.js, which builds the same facts in one block.
+  internals: { makeEnv, impactOf, nameOf, seamsOf },
 };

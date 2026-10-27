@@ -9,8 +9,10 @@
 // Ownership: the in-memory state (waiting, head, toggle) belongs to `state`; the stored
 // results belong to the bridge. Nothing here runs unless the command is called.
 
-const { buildCardsPrompt } = require('./agent-prompt');
-const { handOff } = require('./agent-handoff');
+const { buildCardsPrompt, MAX_INLINE_FACTS_CHARS } = require('./agent-prompt');
+const { handOff, fitsHandOff } = require('./agent-handoff');
+const { buildCardFacts, factsFileText } = require('./mcp/card-facts');
+const { writeFactsFile } = require('./agent-facts-file');
 const { realClock } = require('./engine/clock');
 
 /**
@@ -18,10 +20,11 @@ const { realClock } = require('./engine/clock');
  * @param {{ session: any, bridge: { context: () => Promise<any>, removeResult: (head: string, key: string) => Promise<boolean>, markAsked: () => boolean },
  *   state: ReturnType<typeof import('./agent-cards-state').createAgentCardsState>,
  *   chooseAgent: (vscode: any, forceAsk: boolean, opts: { title: string, exclude: string[] }) => Promise<{ id: import('./agent-handoff').AgentChoiceId, label: string }|null>,
- *   log: (m: string) => void, redraw: () => void, clock?: import('./engine/clock').Clock }} deps
- *   `redraw`: refresh the Cards view.
+ *   log: (m: string) => void, redraw: () => void, clock?: import('./engine/clock').Clock,
+ *   writeFacts?: typeof writeFactsFile }} deps
+ *   `redraw`: refresh the Cards view. `writeFacts`: writes facts too long for the prompt (injectable for tests).
  */
-function createAnalyseWithAgent(vscode, { session, bridge, state, chooseAgent, log, redraw, clock = realClock }) {
+function createAnalyseWithAgent(vscode, { session, bridge, state, chooseAgent, log, redraw, clock = realClock, writeFacts = writeFactsFile }) {
   // Only one hand-off at a time: the picker and the hand-off can take a while.
   let running = false;
 
@@ -41,6 +44,25 @@ function createAnalyseWithAgent(vscode, { session, bridge, state, chooseAgent, l
     return null;
   }
 
+  /**
+   * The prompt with the facts about every card: in the prompt when they are short and the
+   * route takes it, otherwise in a file the prompt names.
+   * @param {any} ctx The bridge's context. @param {import('./agent-handoff').AgentChoiceId} id
+   */
+  async function promptFor(ctx, id) {
+    const s = session.state;
+    const facts = buildCardFacts({ repo: ctx.repo, result: s.result, cards: s.cards }, {
+      head: ctx.head, base: ctx.base.sha, baseRef: ctx.base.ref, pr: ctx.pr ? ctx.pr.number : null,
+    });
+    if (facts.text.length <= MAX_INLINE_FACTS_CHARS) {
+      const inline = buildCardsPrompt(ctx, { factsText: facts.text, cut: facts.cut });
+      if (fitsHandOff(id, inline)) { log(`agent: facts in the prompt (${facts.text.length} characters)`); return inline; }
+    }
+    const file = await writeFacts(ctx.repo, ctx.head, factsFileText(facts.facts));
+    log(`agent: facts in ${file.relPath} (${facts.text.length} characters${facts.cut ? ', shortened' : ''})`);
+    return buildCardsPrompt(ctx, { factsPath: file.relPath, cut: facts.cut });
+  }
+
   async function run() {
     if (running) { say('an agent hand-off is already in progress.'); return; }
     running = true;
@@ -53,7 +75,8 @@ function createAnalyseWithAgent(vscode, { session, bridge, state, chooseAgent, l
       if (!choice) return;
       let sentence;
       try {
-        sentence = await handOff(vscode, choice.id, { prompt: buildCardsPrompt(ctx), repoRoot: ctx.repo });
+        const prompt = await promptFor(ctx, choice.id);
+        sentence = await handOff(vscode, choice.id, { prompt, repoRoot: ctx.repo });
       } catch (e) {
         log(`agent: hand-off to ${choice.id} failed: ${e && /** @type {any} */ (e).message}`);
         void vscode.window.showErrorMessage(`Impact Tree: it could not be sent to ${choice.label} (${e && /** @type {any} */ (e).message}).`);
