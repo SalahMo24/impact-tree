@@ -9,7 +9,11 @@ const assert = require('node:assert/strict');
 const { PassThrough } = require('node:stream');
 const { createImpactTools, NO_EDITOR_REASON } = require('../src/mcp/tools');
 const { MAX_TEXT_CHARS } = require('../src/mcp/paging');
-const { startServer, parseArgs, assertNodeVersion, HELP } = require('../src/mcp/server');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { startServer, parseArgs, assertNodeVersion, HELP, findRepoFor } = require('../src/mcp/server');
+const { ToolError } = require('../src/mcp/paging');
 
 const REPO = '/repo';
 const files = /** @type {Record<string, string>} */ ({
@@ -212,7 +216,7 @@ test('parseArgs and the Node version check', () => {
  * A server on in-memory streams, with a fake analysis and (optionally) a fake editor bridge.
  * @param {{ connectBridge?: any, prepare?: any, base?: string }} [extra]
  */
-function connect(extra = {}) {
+function connect(/** @type {any} */ extra = {}) {
   const input = new PassThrough();
   const output = new PassThrough();
   const f = fakeContext();
@@ -220,8 +224,8 @@ function connect(extra = {}) {
   let disposed = 0;
   const bases = /** @type {Array<string|undefined>} */ ([]);
   const server = startServer({
-    options: { repo: REPO, ...(extra.base ? { base: extra.base } : {}), remote: 'origin', allowLocalBase: false, deadlineMs: 1000 },
-    input, output,
+    options: { repo: REPO, ...(extra.base ? { base: extra.base } : {}), remote: 'origin', allowLocalBase: false, deadlineMs: 1000, ...(extra.options || {}) },
+    input, output, ...(extra.findRepo ? { findRepo: extra.findRepo } : {}),
     connectBridge: extra.connectBridge || (async () => null),
     prepare: extra.prepare || (async (/** @type {any} */ _o, /** @type {any} */ p) => {
       prepared++;
@@ -494,6 +498,8 @@ test('not in a repository: the server starts, lists its tools, and every tool re
   const server = startServer({
     options: { repo: '/not/a/repo', notRepo: true, remote: 'origin', allowLocalBase: false, deadlineMs: 1000 }, input, output,
     prepare: async () => { prepared++; throw new Error('must not analyse'); },
+    // No agent workspace folders and no editor window: the lookup must not see this machine's real ones.
+    findRepo: (/** @type {any} */ p) => findRepoFor({ ...p, editorRepos: () => [] }),
   });
   const lines = /** @type {any[]} */ ([]);
   output.setEncoding('utf8');
@@ -517,8 +523,68 @@ test('not in a repository: the server starts, lists its tools, and every tool re
     send({ id: n, method: 'tools/call', params: { name: t.name, arguments: argsOf(t) } });
     const r = (await until(n)).result;
     assert.equal(r.isError, true, t.name);
-    assert.equal(r.content[0].text, 'start your agent inside a git repository (this folder is not one): /not/a/repo', t.name);
+    assert.ok(r.content[0].text.startsWith('start your agent inside a git repository (this folder is not one): /not/a/repo. Also tried: '), t.name);
+    assert.match(r.content[0].text, /does not share its workspace folders.*no editor window has Impact Tree's agents setting/, t.name);
   }
   assert.equal(prepared, 0);
   input.end(); await server.closed;
+});
+
+// ---- finding the repository when the start folder is in none -----------------------------
+
+const sdkWithRoots = (/** @type {string[]|null} */ uris) => ({ server: {
+  getClientCapabilities: () => (uris ? { roots: {} } : {}),
+  listRoots: async () => ({ roots: (uris || []).map((uri) => ({ uri })) }),
+} });
+const tops = (/** @type {Record<string,string>} */ map) => (/** @type {string} */ dir) => map[dir] || null;
+
+test('findRepoFor: the agent\'s one workspace repository, else the one editor window; several or none is an error', async () => {
+  const toplevel = tops({ '/w/hono': '/w/hono', '/w/hono/src': '/w/hono', '/w/cli': '/w/cli', '/e/one': '/e/one', '/e/two': '/e/two' });
+  const none = () => [];
+  assert.deepEqual(await findRepoFor({ cwd: '/home', sdk: sdkWithRoots(['file:///w/hono/src', 'file:///w/notes']), toplevel, editorRepos: none }),
+    { repo: '/w/hono', from: 'the agent\'s workspace folder' });
+  await assert.rejects(findRepoFor({ cwd: '/home', sdk: sdkWithRoots(['file:///w/hono', 'file:///w/cli']), toplevel, editorRepos: () => ['/e/one'] }),
+    (e) => e instanceof ToolError && /several git repositories \(\/w\/cli, \/w\/hono\)/.test(e.message));
+  // No roots from the agent: the editor window decides; one that is no longer a repository is skipped.
+  assert.deepEqual(await findRepoFor({ cwd: '/home', sdk: sdkWithRoots(null), toplevel, editorRepos: () => ['/e/one', '/gone'] }),
+    { repo: '/e/one', from: 'the editor window with Impact Tree\'s agents setting on' });
+  assert.deepEqual((await findRepoFor({ cwd: '/home', sdk: sdkWithRoots(['https://x/y']), toplevel, editorRepos: () => ['/e/two'] })).repo, '/e/two');
+  await assert.rejects(findRepoFor({ cwd: '/home', sdk: null, toplevel, editorRepos: () => ['/e/one', '/e/two'] }),
+    (e) => e instanceof ToolError && /more than one editor window/.test(e.message));
+  await assert.rejects(findRepoFor({ cwd: '/home', sdk: sdkWithRoots([]), toplevel, editorRepos: none }),
+    (e) => e instanceof ToolError && /this folder is not one\): \/home\. Also tried: none of the agent's workspace folders/.test(e.message));
+  const failing = { server: { getClientCapabilities: () => ({ roots: {} }), listRoots: async () => { throw new Error('boom'); } } };
+  await assert.rejects(findRepoFor({ cwd: '/home', sdk: failing, toplevel, editorRepos: none }), /workspace folders could not be read \(boom\)/);
+});
+
+test('not in a repository: a failed lookup is not kept; the next call looks again and analyses what it finds', async () => {
+  let lookups = 0;
+  const s = connect({
+    options: { repo: '/home', notRepo: true },
+    findRepo: async () => { lookups++; if (lookups === 1) throw new ToolError('not yet'); return { repo: REPO, from: 'test' }; },
+  });
+  await s.handshake();
+  const first = await s.call('list_cards', {});
+  assert.equal(first.isError, true);
+  assert.equal(first.content[0].text, 'not yet');
+  assert.equal(s.state().prepared, 0);
+  const second = await s.call('list_cards', {});
+  assert.ok(!second.isError, second.content[0].text);
+  assert.equal(lookups, 2);
+  assert.equal(s.state().prepared, 1);
+  await s.close();
+});
+
+test('liveEditorRepos: only live, well-formed locks filed under their own repository', () => {
+  const P = require('../src/mcp/bridge-protocol');
+  const { liveEditorRepos } = require('../src/mcp/bridge-client');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'itl-'));
+  fs.chmodSync(dir, 0o700);
+  const lock = (/** @type {string} */ repo, /** @type {number} */ pid) => ({ version: 1, pid, repo, socket: path.join(dir, 'x.sock'), token: 'a'.repeat(64), startedAt: 1 });
+  fs.writeFileSync(P.lockPathFor(dir, '/r/live'), JSON.stringify(lock('/r/live', process.pid)));
+  fs.writeFileSync(P.lockPathFor(dir, '/r/dead'), JSON.stringify(lock('/r/dead', 2 ** 30)));
+  fs.writeFileSync(P.lockPathFor(dir, '/r/bad'), '{not json');
+  fs.writeFileSync(P.lockPathFor(dir, '/r/elsewhere'), JSON.stringify(lock('/r/other', process.pid)));   // filed under another name
+  assert.deepEqual(liveEditorRepos({ lockDir: dir }), ['/r/live']);
+  assert.deepEqual(liveEditorRepos({ lockDir: path.join(dir, 'missing') }), []);
 });

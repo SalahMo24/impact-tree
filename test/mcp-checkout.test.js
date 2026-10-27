@@ -86,6 +86,22 @@ test('the server analyses the checkout on the first tool call and answers from i
   assert.match(s.stderr(), /shutting down \(input closed\)/);
 });
 
+test('uncommitted changes: the server analyses the branch with them, as the editor does, and says so', async () => {
+  const repo = makeRepo();
+  fs.writeFileSync(path.join(repo, 'src/cart.ts'), 'import { price } from "./price";\nexport function total(xs: number[]): number {\n  return xs.reduce((a, x) => a + price(x, 1), 0);\n}\n');
+  const s = spawnMcp(['--repo', repo, '--base', 'main', '--allow-local-base']);
+  try {
+    await s.handshake();
+    const r = await s.call('list_cards', {});
+    assert.ok(!r.isError, r.content[0].text);
+    const labels = r.structuredContent.cards.flatMap((/** @type {any} */ c) => c.members || []).map((/** @type {any} */ m) => m.label || m);
+    assert.ok(JSON.stringify(r.structuredContent).includes('total'), `the uncommitted edit of total() is analysed: ${JSON.stringify(labels)}`);
+    assert.match(JSON.stringify(r.structuredContent.limits), /1 uncommitted change\(s\): the changes analysed include them/);
+  } finally {
+    assert.deepEqual(await s.end(), { code: 0, signal: null });
+  }
+});
+
 test('a base that does not exist fails every call with the engine message, and the server still exits cleanly', async () => {
   const repo = makeRepo();
   const s = spawnMcp(['--repo', repo, '--base', 'no-such-branch']);

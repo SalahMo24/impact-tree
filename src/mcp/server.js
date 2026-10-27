@@ -21,6 +21,7 @@
 // failure is never fatal.
 
 const path = require('path');
+const { fileURLToPath } = require('url');
 const { execFileSync } = require('child_process');
 const { McpServer } = require('@modelcontextprotocol/server');
 const { serveStdio, StdioServerTransport } = require('@modelcontextprotocol/server/stdio');
@@ -155,7 +156,8 @@ async function prepare(opts, { base, signal }) {
   const t0 = Date.now();
   const result = await analyze(opts.repo, {
     mode: 'pr', base: base || '', remote: opts.remote, allowLocalBase: opts.allowLocalBase, skipForest: true,
-    impactPaths: { deadlineMs: opts.deadlineMs }, keepResolvers: true, signal,
+    // Uncommitted changes: analyse the branch with them, as the editor does, instead of refusing.
+    onDirty: 'fallback', impactPaths: { deadlineMs: opts.deadlineMs }, keepResolvers: true, signal,
   });
   const live = /** @type {{ units: any[], dispose: () => void }} */ (/** @type {any} */ (result).liveResolvers);
   if (!live) throw new Error('internal: analyze(keepResolvers) returned no liveResolvers');
@@ -171,6 +173,10 @@ async function prepare(opts, { base, signal }) {
     const { facts, notes: factNotes } = gatherEntryFacts({ repo: opts.repo, git, languages });
     const notes = [`impact paths at start were capped at ${opts.deadlineMs} ms for the whole PR (--deadline-ms); paths cut by it end "budget"`,
       'blast radius and caller trees are not computed', ...factNotes];
+    if (result.mode !== 'pr') {
+      notes.unshift(`the checkout has ${result.dirtyCount} uncommitted change(s): the changes analysed include them (branch + uncommitted), `
+        + 'but diffs and source read from git show the last commit');
+    }
     const diffOf = (/** @type {string} */ relPath, /** @type {string|undefined} */ oldPath) => {
       try { return git.raw(['diff', '--no-color', '-U3', result.base.sha, headSha, '--', ...(oldPath && oldPath !== relPath ? [oldPath, relPath] : [relPath])], { quiet: true }); } catch { return null; }
     };
@@ -184,6 +190,60 @@ async function prepare(opts, { base, signal }) {
     live.dispose();
     throw e;
   }
+}
+
+// ---------------------------------------------------------------------------------------
+// Finding the repository when the start folder is in none
+
+// Wait for the agent's list of workspace folders (MCP roots). Unit: ms.
+const ROOTS_DEADLINE_MS = 3000;
+
+/**
+ * The git repositories of the agent's workspace folders (MCP roots), when the agent shares
+ * them. `note` says why there are none.
+ * @param {any} sdk the connected McpServer, or null
+ * @param {(cwd: string) => string|null} toplevel
+ * @returns {Promise<{ repos: string[], note?: string }>}
+ */
+async function rootRepos(sdk, toplevel) {
+  const caps = sdk && sdk.server && typeof sdk.server.getClientCapabilities === 'function' ? sdk.server.getClientCapabilities() : null;
+  if (!caps || !caps.roots) return { repos: [], note: 'the agent does not share its workspace folders (MCP roots)' };
+  let listed;
+  try {
+    listed = await withDeadline(sdk.server.listRoots(), ROOTS_DEADLINE_MS, 'the agent\'s workspace folders');
+  } catch (e) {
+    return { repos: [], note: `the agent's workspace folders could not be read (${/** @type {Error} */ (e).message})` };
+  }
+  const repos = new Set();
+  for (const root of (listed && Array.isArray(listed.roots) ? listed.roots : []).slice(0, 50)) {
+    if (!root || typeof root.uri !== 'string' || !root.uri.startsWith('file:')) continue;
+    let dir;
+    try { dir = fileURLToPath(root.uri); } catch { continue; }
+    const top = toplevel(dir);
+    if (top) repos.add(top);
+  }
+  return repos.size ? { repos: [...repos].sort() } : { repos: [], note: 'none of the agent\'s workspace folders is in a git repository' };
+}
+
+/**
+ * The repository to analyse when the server started outside any (Cursor starts its servers
+ * in the home folder): the agent's one workspace repository, else the one editor window with
+ * Impact Tree's agents setting on. Several candidates are an error naming them, never a guess.
+ * @param {{ cwd: string, sdk: any, toplevel?: (cwd: string) => string|null, editorRepos?: () => string[] }} p
+ * @returns {Promise<{ repo: string, from: string }>}
+ * @throws {ToolError} when there is no single candidate; the message says what was tried
+ */
+async function findRepoFor({ cwd, sdk, toplevel = repoToplevel, editorRepos }) {
+  const fromRoots = await rootRepos(sdk, toplevel);
+  const several = (/** @type {string[]} */ list, /** @type {string} */ where) => new ToolError(
+    `${where} has several git repositories (${list.join(', ')}); start your agent inside the one to review, or register the server with --repo <path>`);
+  if (fromRoots.repos.length === 1) return { repo: fromRoots.repos[0], from: 'the agent\'s workspace folder' };
+  if (fromRoots.repos.length > 1) throw several(fromRoots.repos, 'the agent\'s workspace');
+  const listEditors = editorRepos || (() => require('./bridge-client').liveEditorRepos());
+  const editors = listEditors().filter((r) => toplevel(r) === r);
+  if (editors.length === 1) return { repo: editors[0], from: 'the editor window with Impact Tree\'s agents setting on' };
+  if (editors.length > 1) throw several(editors, 'more than one editor window with Impact Tree\'s agents setting on');
+  throw new ToolError(`${notRepoMessage(cwd)}. Also tried: ${fromRoots.note}; no editor window has Impact Tree's agents setting (impactTree.agents.enabled) on`);
 }
 
 // ---------------------------------------------------------------------------------------
@@ -234,6 +294,7 @@ function withDeadline(promise, ms, what) {
  * @typedef {object} Config
  * @property {ServerOptions} options
  * @property {typeof prepare} [prepare] Replaceable in tests.
+ * @property {typeof findRepoFor} [findRepo] Replaceable in tests.
  * @property {ConnectBridge} [connectBridge] Replaceable in tests.
  * @property {NodeJS.ReadableStream & { setEncoding?: any }} [input] Default: standard input.
  * @property {NodeJS.WritableStream} [output] Default: standard output.
@@ -247,7 +308,10 @@ function withDeadline(promise, ms, what) {
  * @returns {{ close: () => Promise<void>, closed: Promise<void> }} `closed` resolves once everything is released, after input ended or `close()` ran
  */
 function startServer(config) {
-  const { options } = config;
+  let options = config.options;
+  const findRepo = config.findRepo || findRepoFor;
+  /** @type {any} */
+  let sdk = null;
   const doPrepare = config.prepare || prepare;
   const input = config.input || process.stdin;
   const output = config.output || process.stdout;
@@ -267,7 +331,8 @@ function startServer(config) {
   // The bridge connection runs once, in the background; a failure leaves the server headless.
   const connect = config.connectBridge || connectEditorBridge;
   const attemptBridge = () => {
-    bridgeAttempt = withDeadline(connect({ repo: options.repo, signal: bridgeAbort.signal }), BRIDGE_CONNECT_MS, 'the editor bridge').then((b) => {
+    const repo = options.repo;
+    bridgeAttempt = withDeadline(connect({ repo, signal: bridgeAbort.signal }), BRIDGE_CONNECT_MS, 'the editor bridge').then((b) => {
       if (closing) { if (b) b.close(); return; }
       bridge = b;
       log(b ? 'connected to the editor' : 'no editor bridge: headless');
@@ -276,11 +341,21 @@ function startServer(config) {
 
   /** @returns {Promise<ReturnType<typeof createImpactTools>>} */
   const ready = () => {
-    if (!started) started = start();
+    if (!started) {
+      const attempt = start();
+      started = attempt;
+      // No repository found yet: the next call looks again (the agent may open a folder).
+      attempt.catch(() => { if (options.notRepo && started === attempt) started = null; });
+    }
     return started;
   };
   async function start() {
-    if (options.notRepo) throw new ToolError(notRepoMessage(options.repo));
+    if (options.notRepo) {
+      const found = await findRepo({ cwd: options.repo, sdk });
+      options = { ...options, repo: found.repo, notRepo: undefined };
+      log(`repository from ${found.from}: ${found.repo}`);
+      attemptBridge();
+    }
     if (bridgeAttempt) await bridgeAttempt;
     const base = options.base || await editorBase();
     prepared = await doPrepare(options, { base, signal: abort.signal });
@@ -317,7 +392,7 @@ function startServer(config) {
   }
 
   const transport = new StdioServerTransport(/** @type {any} */ (input), /** @type {any} */ (output));
-  const handle = serveStdio(() => createSdkServer(ready), { transport, onerror: (e) => log(`protocol error: ${e.message}`) });
+  const handle = serveStdio(() => { sdk = createSdkServer(ready); return sdk; }, { transport, onerror: (e) => log(`protocol error: ${e.message}`) });
   if (!options.notRepo) attemptBridge();
 
   /** @type {() => void} */
@@ -409,6 +484,6 @@ async function runCli(argv) {
 }
 
 module.exports = {
-  runCli, startServer, createSdkServer, prepare, parseArgs, repoToplevel, notRepoMessage, assertNodeVersion, HELP,
+  runCli, startServer, createSdkServer, prepare, parseArgs, repoToplevel, notRepoMessage, assertNodeVersion, HELP, findRepoFor, rootRepos,
   DEFAULT_DEADLINE_MS, SUBMIT_DEADLINE_MS, BRIDGE_CONNECT_MS, MIN_NODE_MAJOR,
 };

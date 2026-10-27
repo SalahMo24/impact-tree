@@ -5,8 +5,9 @@
 // review the user is looking at) and `submit` (hand a result back to the editor).
 const fs = require('fs');
 const net = require('net');
+const path = require('path');
 const { realClock } = require('../engine/clock');
-const { MAX_LINE_BYTES, defaultLockDir, realRepo, readLock, pidAlive, lockPathFor } = require('./bridge-protocol');
+const { MAX_LINE_BYTES, defaultLockDir, realRepo, readLock, pidAlive, lockPathFor, parseLock } = require('./bridge-protocol');
 
 const CONNECT_TIMEOUT_MS = 2000;
 const REQUEST_TIMEOUT_MS = 15000;
@@ -33,6 +34,35 @@ function dirIsOurs(dir) {
   }
 }
 
+// How many lock files `liveEditorRepos` reads at most. Unit: files.
+const MAX_LOCKS_LISTED = 50;
+
+/**
+ * The repositories of every editor window whose bridge is live (the agents setting on): a
+ * lock that parses, names a live process, and sits under its own repository's name. Used
+ * when the server was started outside any repository (Cursor starts servers in the home
+ * folder) and the agent shares no workspace folder.
+ * @param {{ lockDir?: string }} [options] `lockDir`: for tests.
+ * @returns {string[]} real paths, sorted; empty when the folder is missing or not this user's
+ */
+function liveEditorRepos({ lockDir = defaultLockDir() } = {}) {
+  if (!dirIsOurs(lockDir)) return [];
+  let names;
+  try { names = fs.readdirSync(lockDir).filter((n) => /^[0-9a-f]{16}\.json$/.test(n)).sort().slice(0, MAX_LOCKS_LISTED); } catch { return []; }
+  const repos = new Set();
+  for (const name of names) {
+    let lock;
+    try {
+      const file = path.join(lockDir, name);
+      if (fs.statSync(file).size > 64 * 1024) continue;
+      lock = parseLock(JSON.parse(fs.readFileSync(file, 'utf8')));
+    } catch { continue; }
+    if (!lock || !pidAlive(lock.pid) || lockPathFor(lockDir, lock.repo) !== path.join(lockDir, name)) continue;
+    repos.add(lock.repo);
+  }
+  return [...repos].sort();
+}
+
 /**
  * Connects to the editor bridge of `repo`.
  * @param {{ repo: string, signal?: AbortSignal, lockDir?: string, connectTimeoutMs?: number, requestTimeoutMs?: number,
@@ -49,7 +79,7 @@ async function connectBridge({ repo, signal, lockDir = defaultLockDir(), connect
     const lock = readLock(lockDir, real);
     if (!lock || lock.repo !== real || !pidAlive(lock.pid)) return null;
     // A lock names its own socket; only one inside the lock directory (or a Windows pipe) is followed.
-    if (process.platform !== 'win32' && require('path').dirname(lock.socket) !== lockDir) return null;
+    if (process.platform !== 'win32' && path.dirname(lock.socket) !== lockDir) return null;
     const socket = await openSocket(lock.socket, signal, connectTimeoutMs, clock);
     return socket ? makeBridge(socket, lock.token, requestTimeoutMs, clock) : null;
   } catch {
@@ -174,4 +204,4 @@ function makeBridge(socket, token, requestTimeoutMs, clock) {
   };
 }
 
-module.exports = { connectBridge, lockPathFor };
+module.exports = { connectBridge, liveEditorRepos, lockPathFor };
