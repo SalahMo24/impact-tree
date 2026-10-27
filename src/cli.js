@@ -7,6 +7,11 @@ const { blastText } = require('./cli-format');
 const { isNotComputedReason, isSyntaxOnlyReason } = require('./engine/resolver-not-computed');
 
 const argv = process.argv.slice(2);
+// `mcp` is its own mode with its own arguments and help: the server for AI agents.
+if (argv[0] === 'mcp') {
+  require('./mcp/server').runCli(argv.slice(1)).catch((e) => { console.error(`✖ ${e && e.message}`); process.exit(1); });
+  return;
+}
 const arg = (n, d) => { const i = argv.indexOf(`--${n}`); return i === -1 ? d : argv[i + 1]; };
 const flag = (n) => argv.includes(`--${n}`);
 // One source for the defaults, so the help text cannot drift from what runs.
@@ -27,7 +32,9 @@ ${Object.entries(MODES).map(([k, v]) => `                         ${k.padEnd(11)
   --json               emit JSON instead of text
   --impact             add impactPaths (entry points each changed function reaches) to --json
   --impact-deadline-ms <n>  deadline for all impact paths together (default 30000)
-  --cards              add cards (clusters, sweeps, seams, hints between clusters) to --json; reads the repo's history`);
+  --cards              add cards (clusters, sweeps, seams, hints between clusters) to --json; reads the repo's history
+
+  mcp [options]        serve the PR's facts to an AI agent over stdio (MCP); needs Node 20+; see: node src/cli.js mcp --help`);
   process.exit(0);
 }
 

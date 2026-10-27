@@ -89,6 +89,8 @@ const SUITE = [
   { file: 'test/tree-characterization.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/cards-view-model.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/cards-wiring.test.js', tier: 'full' },  // 7s
+  { file: 'test/agent-bridge.test.js', tier: 'quick' },
+  { file: 'test/agent-bridge-wiring.test.js', tier: 'quick' },
   { file: 'test/tree-grouping-rules.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/tree-row-models.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/empty-states-and-limits.test.js', tier: 'full' },  // 8.0s
@@ -132,7 +134,8 @@ const SUITE = [
   { file: 'test/run-fixtures.js', heapMb: 8192, tier: 'quick' },  // 0.4s
   { file: 'test/tree-smoke.js', heapMb: 8192, tier: 'quick' },  // 2.6s
   { file: 'test/storage-cleanup.test.js', tier: 'quick' },  // 0.2s
-  { file: 'test/agent-handoff.test.js', tier: 'quick' },  // 0.2s
+  { file: 'test/agent-handoff.test.js', tier: 'quick' },
+  { file: 'test/agent-connect.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/feedback-round-model.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/feedback-readback.test.js', tier: 'quick' },  // 2.5s
   { file: 'test/feedback-send.test.js', tier: 'quick' },  // 1.7s
@@ -150,6 +153,10 @@ const SUITE = [
   { file: 'test/cards-remote.test.js', tier: 'quick' },
   { file: 'test/github-commits.test.js', tier: 'quick' },
   { file: 'test/repeated-edits.test.js', tier: 'quick' },
+  { file: 'test/agent-results.test.js', tier: 'quick' },
+  { file: 'test/keep-resolvers.test.js', tier: 'quick' },
+  { file: 'test/mcp-server.test.js', tier: 'quick' },
+  { file: 'test/mcp-checkout.test.js', tier: 'full' },
 ];
 
 /**
@@ -166,6 +173,7 @@ const EXCLUDED = {
   'fixture-repo.js': 'helper module: builds the synthetic fixture repository',
   'local-repo.js': 'helper module: throwaway git repositories',
   'target-repo.js': 'helper module: picks the fixture or IMPACT_TREE_TARGET_REPO',
+  'mcp-child.js': 'helper module: `node src/cli.js mcp` as a child process with a JSON-RPC client',
   'fake-clock.js': 'helper module: a clock that moves only when a test moves it',
   'vscode-stub.js': 'helper module: stub of the vscode API',
   'webview-page.js': 'helper module: DOM boundary for the Details webview script',

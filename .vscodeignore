@@ -19,3 +19,13 @@ node_modules/.bin/**
 node_modules/typescript/lib/tsserver*.js
 node_modules/typescript/lib/typingsInstaller.js
 node_modules/typescript/lib/tsc.js
+# The MCP server (src/mcp/server.js) loads these dependencies as CommonJS only. Type
+# declarations and zod's TypeScript sources are never loaded at run time. Scoped to these two
+# packages on purpose: typescript's lib.*.d.ts files ARE read at run time (see above).
+node_modules/@modelcontextprotocol/**/*.d.ts
+node_modules/@modelcontextprotocol/**/*.d.mts
+node_modules/@modelcontextprotocol/**/*.d.cts
+node_modules/zod/**/*.d.ts
+node_modules/zod/**/*.d.mts
+node_modules/zod/**/*.d.cts
+node_modules/zod/src/**

@@ -402,6 +402,16 @@
         "icon": "$(comment-discussion)"
       },
       {
+        "command": "impactTree.connectAgent",
+        "title": "Connect my agent…",
+        "category": "Impact Tree"
+      },
+      {
+        "command": "impactTree.disconnectAgent",
+        "title": "Disconnect my agent…",
+        "category": "Impact Tree"
+      },
+      {
         "command": "impactTree.sendFeedback",
         "title": "Send feedback",
         "category": "Impact Tree",
@@ -435,6 +445,12 @@
         "title": "Open feedback file",
         "category": "Impact Tree",
         "icon": "$(go-to-file)"
+      }
+    ],
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "impactTree.mcp",
+        "label": "Impact Tree"
       }
     ],
     "menus": {
@@ -547,6 +563,14 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "impactTree.connectAgent",
+          "when": "config.impactTree.agents.enabled"
+        },
+        {
+          "command": "impactTree.disconnectAgent",
+          "when": "config.impactTree.agents.enabled"
+        },
         {
           "command": "impactTree.retryViewedSync",
           "when": "false"
@@ -1051,6 +1075,11 @@
           "default": false,
           "description": "Show a Cards view that groups the changes of a review into related cards, with the entry points each card reaches and which cards may belong together. Turning it on adds the entry-point search to each analysis (a few seconds on the largest pull requests) and, for a local review, reads the repository's history for merge hints. Takes effect from the next analysis (Refresh)."
         },
+        "impactTree.agents.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Let your own coding agent (connected through Impact Tree's MCP server) learn which review this window shows and hand back results (card titles and summaries, callers it found), which are kept in this workspace. While on, the window listens on a local socket in a private temporary folder, guarded by a token; nothing leaves your machine. Only reviews of a checked-out branch take part; a pull request preview does not."
+        },
         "impactTree.fileListLayout": {
           "type": "string",
           "enum": [
@@ -1086,6 +1115,7 @@
           "enum": [
             "ask",
             "claude",
+            "claude-vscode",
             "codex",
             "chat",
             "clipboard",
@@ -1095,6 +1125,7 @@
           "enumDescriptions": [
             "Ask each time; the answer is remembered here",
             "Claude Code: run claude with the prompt in a terminal",
+            "Claude Code (VS Code extension): fill its panel with the prompt through a link; you press Enter",
             "Codex: run codex with the prompt in a terminal",
             "Fill the editor's chat (VS Code Copilot Chat, Cursor) with the prompt; you press Enter",
             "Copy the prompt to the clipboard",
@@ -1132,9 +1163,11 @@
     "github"
   ],
   "dependencies": {
+    "@modelcontextprotocol/server": "^2.4.0",
     "markdown-it": "^15.0.3",
     "sanitize-html": "^2.18.1",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

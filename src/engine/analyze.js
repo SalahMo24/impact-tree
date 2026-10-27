@@ -307,6 +307,7 @@ async function prepareLanguages(byLanguage, shared, { warnings, unanalysable, no
  * @param {string} [opts.tempDir] Existing directory for the run's temporary index (checkpoint
  *   mode); default the OS temp dir. The index is removed before `analyze` continues.
  * @param {boolean} [opts.fetch] Fetch the base before resolving it.
+ * @param {string} [opts.remote='origin'] The git remote the base branch lives on.
  * @param {boolean} [opts.allowLocalBase] Allow a local base ref when the remote-tracking ref is missing.
  * @param {number} [opts.fetchTimeoutMs] Deadline for that fetch, in milliseconds.
  * @param {string|null} [opts.headRev] `'HEAD'` for the commit, `null` for the worktree. Defaults from the mode.
@@ -320,6 +321,10 @@ async function prepareLanguages(byLanguage, shared, { warnings, unanalysable, no
  * @param {boolean} [opts.skipForest] Skip blast radius and the caller tree. Roots are still chosen.
  * @param {true|object} [opts.impactPaths] Impact paths of every changed function (./impact-paths.js).
  *   `true` for the default limits, or the walk limits. Off by default: the result is then unchanged.
+ * @param {boolean} [opts.keepResolvers] Keep every unit's caller resolver (and its language's
+ *   shared state) alive after the analysis, as the non-enumerable `result.liveResolvers`
+ *   (`units`, `dispose()`). The caller owns them and must call `dispose()`; on failure or
+ *   cancellation `analyze` disposes them itself. Off by default: the result is then unchanged.
  * @param {number} [opts.rankedRoots=6] How many roots receive a blast radius and a tree.
  * @param {number} [opts.blastDepth=1] Depth of the blast-radius walk.
  * @param {number} [opts.treeDepth=2] Depth of each rendered tree.
@@ -470,6 +475,19 @@ async function analyze(repo, opts = {}) {
   const report = opts.onProgress || (() => {});
   /** @type {ReturnType<import('./impact-paths').createImpactWalker>|null} */
   let impactWalker = null;
+  // opts.keepResolvers: the caller keeps querying after the analysis (the MCP server).
+  // Owner: the caller, through `result.liveResolvers.dispose()`; on failure or cancellation
+  // `analyze` disposes them here, so nothing leaks. Off by default.
+  /** @type {{ units: Array<{ component: string, resolver: any, scopeNote?: string, files: string[] }> }|null} */
+  const keep = opts.keepResolvers === true ? { units: [] } : null;
+  let keptDisposed = false;
+  const disposeKept = () => {
+    if (!keep || keptDisposed) return;
+    keptDisposed = true;
+    for (const { resolver } of keep.units) if (resolver.dispose) resolver.dispose();
+    for (const { extras } of prepared) if (extras && extras.dispose) extras.dispose();
+    keep.units.length = 0;
+  };
   try {
     await prepareLanguages(byLanguage, {
       repo, git, baseTexts, changedRanges, deletions, report, signal,
@@ -489,6 +507,8 @@ async function analyze(repo, opts = {}) {
         plans.push({ comp: unit.component, changed: unit.changed, deleted: unit.deleted, resolver, scopeNote: extras && extras.scopeNote });
       }
     }
+    // Registered before any query runs, so a failure in the middle still disposes every one.
+    if (keep) for (const p of plans) keep.units.push({ component: p.comp, resolver: p.resolver, scopeNote: p.scopeNote, files: p.changed.map((c) => c.file) });
     if (opts.onPrepared) {
       const pendingComponents = plans.map(({ comp, changed, deleted }) => ({
         component: comp, changed, deleted, roots: seedRoots(changed), forest: [], stats: {},
@@ -565,7 +585,7 @@ async function analyze(repo, opts = {}) {
       const roots = [];
       if (opts.skipForest) {
         components.push({ component: comp, changed, deleted, roots: ranked, forest: [], stats: resolver.stats ? resolver.stats() : {} });
-        if (resolver.dispose) resolver.dispose();
+        if (!keep && resolver.dispose) resolver.dispose();
         continue;
       }
       for (let i = 0; i < ranked.length; i++) {
@@ -592,12 +612,17 @@ async function analyze(repo, opts = {}) {
       }
 
       components.push({ component: comp, changed, deleted, roots, forest, stats: resolver.stats ? resolver.stats() : {} });
-      if (resolver.dispose) resolver.dispose();
+      if (!keep && resolver.dispose) resolver.dispose();
     }
 
+  } catch (e) {
+    disposeKept();
+    throw e;
   } finally {
-    for (const { extras } of prepared) if (extras && extras.dispose) extras.dispose();
+    // Kept resolvers need their language's shared state; `disposeKept` releases both together.
+    if (!keep) for (const { extras } of prepared) if (extras && extras.dispose) extras.dispose();
   }
+  if (signal && signal.aborted) disposeKept();
   throwIfCancelled(signal);
 
   for (const { extras } of prepared) if (extras && extras.notes) warnings.push(...extras.notes());
@@ -606,6 +631,10 @@ async function analyze(repo, opts = {}) {
   if (impactWalker) {
     finalResult.impactPaths = impactWalker.byId;
     finalResult.impactPathsMeta = { limits: impactWalker.limits, walkMs: impactWalker.walkMs() };
+  }
+  if (keep) {
+    // Not enumerable: not part of the JSON result.
+    Object.defineProperty(finalResult, 'liveResolvers', { value: { units: keep.units, dispose: disposeKept }, enumerable: false });
   }
   return finalResult;
 
