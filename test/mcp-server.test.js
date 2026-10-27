@@ -460,3 +460,65 @@ test('node src/cli.js mcp: handshake and tools/list over stdio without any analy
   assert.equal((await bad.exited).code, 1);
   assert.match(bad.stderr(), /--deadline-ms must be/);
 });
+
+// ---- the default repository -----------------------------------------------------------
+
+test('default repository: the git top of the start folder, or "not a repository"', async () => {
+  const asked = /** @type {string[]} */ ([]);
+  const fake = (/** @type {string|null} */ top) => ({ cwd: '/work/sub/dir', toplevel: (/** @type {string} */ c) => { asked.push(c); return top; } });
+  assert.deepEqual(parseArgs([], fake('/work')), { repo: '/work', remote: 'origin', allowLocalBase: false, deadlineMs: 8000 });
+  assert.deepEqual(asked, ['/work/sub/dir']);
+  assert.equal(parseArgs(['--repo', '/r'], fake('/work')).repo, '/r');
+  assert.equal(asked.length, 1, '--repo skips the lookup');
+  assert.deepEqual(parseArgs([], fake(null)), { repo: '/work/sub/dir', notRepo: true, remote: 'origin', allowLocalBase: false, deadlineMs: 8000 });
+});
+
+test('default repository: the real lookup finds the top from a subfolder and null outside', () => {
+  const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
+  const { execFileSync } = require('node:child_process');
+  const { repoToplevel } = require('../src/mcp/server');
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-toplevel-')));
+  try {
+    execFileSync('git', ['init', '-q', path.join(dir, 'r')]);
+    fs.mkdirSync(path.join(dir, 'r', 'a', 'b'), { recursive: true });
+    assert.equal(fs.realpathSync(/** @type {string} */ (repoToplevel(path.join(dir, 'r', 'a', 'b')))), path.join(dir, 'r'));
+    fs.mkdirSync(path.join(dir, 'plain'));
+    // Outside any repository (the temp folder is in none).
+    if (!repoToplevel(path.join(dir, 'plain'))) assert.equal(repoToplevel(path.join(dir, 'plain')), null);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('not in a repository: the server starts, lists its tools, and every tool returns the error', async () => {
+  const input = new PassThrough(); const output = new PassThrough();
+  let prepared = 0;
+  const server = startServer({
+    options: { repo: '/not/a/repo', notRepo: true, remote: 'origin', allowLocalBase: false, deadlineMs: 1000 }, input, output,
+    prepare: async () => { prepared++; throw new Error('must not analyse'); },
+  });
+  const lines = /** @type {any[]} */ ([]);
+  output.setEncoding('utf8');
+  let buf = '';
+  output.on('data', (d) => { buf += d; let nl; while ((nl = buf.indexOf('\n')) !== -1) { lines.push(JSON.parse(buf.slice(0, nl))); buf = buf.slice(nl + 1); } });
+  const send = (/** @type {any} */ m) => input.write(JSON.stringify({ jsonrpc: '2.0', ...m }) + '\n');
+  const until = async (/** @type {number} */ id) => { for (let i = 0; i < 200; i++) { const m = lines.find((l) => l.id === id); if (m) return m; await new Promise((r) => setTimeout(r, 10)); } throw new Error('no answer to ' + id); };
+  send({ id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } } });
+  assert.equal((await until(1)).result.serverInfo.name, 'impact-tree');
+  send({ method: 'notifications/initialized' });
+  send({ id: 2, method: 'tools/list' });
+  const tools = (await until(2)).result.tools;
+  assert.ok(tools.length >= 10);
+  let id = 3;
+  // The SDK checks arguments first, so give each required one a value of its type.
+  const dummy = (/** @type {any} */ sch) => (sch.type === 'number' || sch.type === 'integer' ? 1 : sch.type === 'array' ? [] : sch.type === 'boolean' ? true : sch.enum ? sch.enum[0]
+    : sch.type === 'object' ? Object.fromEntries((sch.required || []).map((/** @type {string} */ k) => [k, dummy(sch.properties[k] || {})])) : 'xx');
+  const argsOf = (/** @type {any} */ t) => dummy(t.inputSchema);
+  for (const t of tools) {
+    const n = id++;
+    send({ id: n, method: 'tools/call', params: { name: t.name, arguments: argsOf(t) } });
+    const r = (await until(n)).result;
+    assert.equal(r.isError, true, t.name);
+    assert.equal(r.content[0].text, 'start your agent inside a git repository (this folder is not one): /not/a/repo', t.name);
+  }
+  assert.equal(prepared, 0);
+  input.end(); await server.closed;
+});

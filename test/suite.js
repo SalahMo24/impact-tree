@@ -134,7 +134,8 @@ const SUITE = [
   { file: 'test/run-fixtures.js', heapMb: 8192, tier: 'quick' },  // 0.4s
   { file: 'test/tree-smoke.js', heapMb: 8192, tier: 'quick' },  // 2.6s
   { file: 'test/storage-cleanup.test.js', tier: 'quick' },  // 0.2s
-  { file: 'test/agent-handoff.test.js', tier: 'quick' },  // 0.2s
+  { file: 'test/agent-handoff.test.js', tier: 'quick' },
+  { file: 'test/agent-connect.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/feedback-round-model.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/feedback-readback.test.js', tier: 'quick' },  // 2.5s
   { file: 'test/feedback-send.test.js', tier: 'quick' },  // 1.7s

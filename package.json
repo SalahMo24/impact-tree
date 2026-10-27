@@ -402,6 +402,16 @@
         "icon": "$(comment-discussion)"
       },
       {
+        "command": "impactTree.connectAgent",
+        "title": "Connect my agent…",
+        "category": "Impact Tree"
+      },
+      {
+        "command": "impactTree.disconnectAgent",
+        "title": "Disconnect my agent…",
+        "category": "Impact Tree"
+      },
+      {
         "command": "impactTree.sendFeedback",
         "title": "Send feedback",
         "category": "Impact Tree",
@@ -435,6 +445,12 @@
         "title": "Open feedback file",
         "category": "Impact Tree",
         "icon": "$(go-to-file)"
+      }
+    ],
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "impactTree.mcp",
+        "label": "Impact Tree"
       }
     ],
     "menus": {
@@ -547,6 +563,14 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "impactTree.connectAgent",
+          "when": "config.impactTree.agents.enabled"
+        },
+        {
+          "command": "impactTree.disconnectAgent",
+          "when": "config.impactTree.agents.enabled"
+        },
         {
           "command": "impactTree.retryViewedSync",
           "when": "false"
@@ -1091,6 +1115,7 @@
           "enum": [
             "ask",
             "claude",
+            "claude-vscode",
             "codex",
             "chat",
             "clipboard",
@@ -1100,6 +1125,7 @@
           "enumDescriptions": [
             "Ask each time; the answer is remembered here",
             "Claude Code: run claude with the prompt in a terminal",
+            "Claude Code (VS Code extension): fill its panel with the prompt through a link; you press Enter",
             "Codex: run codex with the prompt in a terminal",
             "Fill the editor's chat (VS Code Copilot Chat, Cursor) with the prompt; you press Enter",
             "Copy the prompt to the clipboard",

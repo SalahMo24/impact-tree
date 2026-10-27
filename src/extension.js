@@ -19,6 +19,7 @@ const { createSourcesProvider } = require('./sources-provider');
 const { createPrDocuments } = require('./pr-documents');
 const { createSession } = require('./session');
 const { createAgentBridge } = require('./agent-bridge');
+const { createAgentConnect } = require('./agent-connect-commands');
 const { createSnapshotStoreGetter } = require('./snapshot-storage');
 const { createPrActions } = require('./pr-actions');
 const { createPullRequestReviewStore, reviewTargetOf } = require('./pr-review-store');
@@ -361,11 +362,16 @@ function activate(context, { clock = realClock } = {}) {
   // The bridge to the user's own agent (impactTree.agents.enabled, off by default): nothing
   // listens and no lock file exists unless the setting is on. Follows the setting; stopped with the window.
   const agentBridge = createAgentBridge(vscode, { session: owned, workspaceState: context.workspaceState, log });
+  const agentConnect = createAgentConnect(vscode, { context, log });
   const syncAgentBridge = () => {
     const on = vscode.workspace.getConfiguration('impactTree').get('agents.enabled', false) === true;
     (on ? agentBridge.start() : agentBridge.stop()).catch((e) => log(`agent bridge: ${e && e.message}`));
+    // The launcher and the Copilot provider follow the same setting.
+    if (on) agentConnect.prepareLauncher();
+    agentConnect.syncProvider(on);
   };
-  context.subscriptions.push(agentBridge, vscode.workspace.onDidChangeConfiguration((e) => {
+  context.subscriptions.push(agentBridge, agentConnect, vscode.commands.registerCommand('impactTree.connectAgent', () => agentConnect.connect()),
+    vscode.commands.registerCommand('impactTree.disconnectAgent', () => agentConnect.disconnect()), vscode.workspace.onDidChangeConfiguration((e) => {
     if (e.affectsConfiguration('impactTree.agents.enabled')) syncAgentBridge();
   }));
   syncAgentBridge();

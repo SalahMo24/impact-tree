@@ -21,6 +21,7 @@
 // failure is never fatal.
 
 const path = require('path');
+const { execFileSync } = require('child_process');
 const { McpServer } = require('@modelcontextprotocol/server');
 const { serveStdio, StdioServerTransport } = require('@modelcontextprotocol/server/stdio');
 const { realClock } = require('../engine/clock');
@@ -51,7 +52,7 @@ const HELP = `impact-tree mcp — serve Impact Tree's facts about a pull request
 
 Usage: node src/cli.js mcp --repo <path> [--base <ref>] [options]
 
-  --repo <path>        repository checkout to analyse (default: cwd); the PR is its HEAD
+  --repo <path>        repository checkout to analyse (default: the git repository the cwd is in); the PR is its HEAD
   --base <ref>         base branch (default: the open editor's base, else the remote's default branch)
   --remote <name>      git remote the base lives on (default: origin)
   --allow-local-base   permit a local base ref when <remote>/<ref> is missing (unsafe)
@@ -67,7 +68,8 @@ search_code (read-only) and submit_cards, submit_callers (checked, then saved in
 
 /**
  * @typedef {object} ServerOptions
- * @property {string} repo Absolute repository root.
+ * @property {string} repo Absolute repository root; with `notRepo`, the folder the server was started in.
+ * @property {true} [notRepo] No `--repo` was given and the start folder is in no git repository: the server starts and every tool returns an error.
  * @property {string} [base] Base ref; absent: the editor's, else the engine's default.
  * @property {string} remote
  * @property {boolean} allowLocalBase
@@ -75,11 +77,27 @@ search_code (read-only) and submit_cards, submit_callers (checked, then saved in
  */
 
 /**
+ * The top of the repository `cwd` is in, or null when it is in none. Waits at most 5 s.
+ * @param {string} cwd
+ * @returns {string|null}
+ */
+function repoToplevel(cwd) {
+  try {
+    const out = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return out ? path.resolve(out) : null;
+  } catch { return null; }
+}
+
+/** What every tool answers when the server was started outside a repository. @param {string} cwd */
+const notRepoMessage = (cwd) => `start your agent inside a git repository (this folder is not one): ${cwd}`;
+
+/**
  * @param {string[]} argv the arguments after `mcp`
+ * @param {{ cwd?: string, toplevel?: (cwd: string) => string|null }} [env] replaceable in tests
  * @returns {ServerOptions}
  * @throws {Error} on a value that is not valid, with a message for the person who typed it
  */
-function parseArgs(argv) {
+function parseArgs(argv, { cwd = process.cwd(), toplevel = repoToplevel } = {}) {
   /** @param {string} name */
   const get = (name) => {
     const i = argv.indexOf(`--${name}`);
@@ -92,8 +110,10 @@ function parseArgs(argv) {
   const deadlineMs = deadline === undefined ? DEFAULT_DEADLINE_MS : Number(deadline);
   if (!Number.isSafeInteger(deadlineMs) || deadlineMs < 1 || deadlineMs > MAX_DEADLINE_MS) throw new Error(`--deadline-ms must be an integer from 1 to ${MAX_DEADLINE_MS}`);
   const base = get('base');
+  const explicit = get('repo');
+  const top = explicit ? null : toplevel(cwd);
   return {
-    repo: path.resolve(get('repo') || process.cwd()), ...(base ? { base } : {}),
+    repo: path.resolve(explicit || top || cwd), ...(!explicit && !top ? { notRepo: /** @type {const} */ (true) } : {}), ...(base ? { base } : {}),
     remote: get('remote') || 'origin', allowLocalBase: argv.includes('--allow-local-base'), deadlineMs,
   };
 }
@@ -260,6 +280,7 @@ function startServer(config) {
     return started;
   };
   async function start() {
+    if (options.notRepo) throw new ToolError(notRepoMessage(options.repo));
     if (bridgeAttempt) await bridgeAttempt;
     const base = options.base || await editorBase();
     prepared = await doPrepare(options, { base, signal: abort.signal });
@@ -297,7 +318,7 @@ function startServer(config) {
 
   const transport = new StdioServerTransport(/** @type {any} */ (input), /** @type {any} */ (output));
   const handle = serveStdio(() => createSdkServer(ready), { transport, onerror: (e) => log(`protocol error: ${e.message}`) });
-  attemptBridge();
+  if (!options.notRepo) attemptBridge();
 
   /** @type {() => void} */
   let markClosed = () => {};
@@ -345,6 +366,7 @@ function createSdkServer(ready) {
 async function callTool(ready, name, args) {
   let impl;
   try { impl = await ready(); } catch (e) {
+    if (e instanceof ToolError) return errorResult(e.message);
     return errorResult(`The analysis failed: ${(e && /** @type {Error} */ (e).message) || e}`);
   }
   try {
@@ -387,6 +409,6 @@ async function runCli(argv) {
 }
 
 module.exports = {
-  runCli, startServer, createSdkServer, prepare, parseArgs, assertNodeVersion, HELP,
+  runCli, startServer, createSdkServer, prepare, parseArgs, repoToplevel, notRepoMessage, assertNodeVersion, HELP,
   DEFAULT_DEADLINE_MS, SUBMIT_DEADLINE_MS, BRIDGE_CONNECT_MS, MIN_NODE_MAJOR,
 };

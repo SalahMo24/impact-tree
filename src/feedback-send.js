@@ -16,7 +16,7 @@ const path = require('path');
 const { renderRound, promptFor } = require('./feedback-file');
 const { writeRound, listRounds } = require('./feedback-files-io');
 const { nextRoundNumber } = require('./feedback-file');
-const { choicesFor, handOff, onPath, CHAT_COMMAND } = require('./agent-handoff');
+const { choicesFor, handOff, onPath, CHAT_COMMAND, CLAUDE_EXTENSION_ID } = require('./agent-handoff');
 const { withPointer, targetsFor } = require('./agent-pointer');
 const { readSentRounds, withSentRound, summaryOf, ROUNDS_KEY } = require('./feedback-round-model');
 const { modeLabel } = require('./engine/mode-labels');
@@ -179,7 +179,7 @@ async function saveRound({ repo, store, items, branch, reviewed, now = realClock
 async function chooseAgent(vscode, forceAsk) {
   const cfg = vscode.workspace.getConfiguration('impactTree');
   const chatAvailable = (await vscode.commands.getCommands(true)).includes(CHAT_COMMAND);
-  const choices = choicesFor({ cliFound: (exe) => onPath(exe, { pathEnv: process.env.PATH, platform: process.platform }), chatAvailable });
+  const choices = choicesFor({ cliFound: (exe) => onPath(exe, { pathEnv: process.env.PATH, platform: process.platform }), chatAvailable, claudeExtension: Boolean(vscode.extensions && vscode.extensions.getExtension(CLAUDE_EXTENSION_ID)) });
   const saved = cfg.get('agent', 'ask');
   const preset = choices.find((c) => c.id === saved);
   if (!forceAsk && preset) return preset;
