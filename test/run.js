@@ -7,14 +7,17 @@
 // durations the previous run left in test/.timings.json.
 //
 // Options:
-//   --concurrency N   Child processes at once. Unit: processes. Default: max(1, min(8, CPUs - 2)).
+//   --concurrency N   Child processes at once. Unit: processes. Default: max(1, min(6, CPUs / 2)).
 //   --serial          Same as --concurrency 1.
 //   --tier quick|full quick = the quick tier only; full = every file. Default: full.
 //   --only SUBSTRING  Keep only manifest files whose path contains SUBSTRING (repeatable).
 //   --file PATH       Run an ad-hoc file instead of the manifest (repeatable); it is not timed.
-//   --deadline-s N    Wall-clock limit per file. Unit: seconds. Default: 300. On expiry the child's
+//   --deadline-s N    Wall-clock limit per file. Unit: seconds. Default: 120. On expiry the child's
 //                     process group is killed and the file is reported HUNG.
 //   --verbose         Print a failing file's whole output, not only its failing lines.
+//
+// Each child also gets --v8-pool-size=CHILD_V8_POOL_SIZE: V8 otherwise starts about one GC/compile
+// helper thread per core in every child, and six children then oversubscribe the machine.
 //
 // Exit status: 0 all files passed; 1 a file failed, hung, or was killed by a signal;
 // 2 bad usage, an unlisted test file, or nothing selected (a run that checks nothing fails).
@@ -29,7 +32,14 @@ const REPO = path.resolve(__dirname, '..');
 const TIMINGS_FILE = path.join(__dirname, '.timings.json');
 
 /** Default per-file deadline. Unit: seconds. Exhaustion: the child is killed, the file is HUNG. */
-const DEFAULT_DEADLINE_S = 300;
+const DEFAULT_DEADLINE_S = 120;
+/**
+ * V8 helper threads per child. Unit: threads. Measured on 12 cores: 8 children with the default pool
+ * averaged a load of 175 and took 163 s; 6 children with 2 threads each, a load of 10 and 82 s.
+ */
+const CHILD_V8_POOL_SIZE = 2;
+/** Most children the default allows. Unit: processes. */
+const MAX_DEFAULT_CONCURRENCY = 6;
 /** Upper bound on --concurrency. Unit: processes. Exhaustion: usage error. */
 const MAX_CONCURRENCY = 64;
 /**
@@ -47,7 +57,7 @@ const INTERRUPT_GRACE_MS = 2000;
 /** @returns {number} the default concurrency for this machine */
 function defaultConcurrency() {
   const cpus = typeof os.availableParallelism === 'function' ? os.availableParallelism() : os.cpus().length;
-  return Math.max(1, Math.min(8, cpus - 2));
+  return Math.max(1, Math.min(MAX_DEFAULT_CONCURRENCY, Math.floor(cpus / 2)));
 }
 
 /**
@@ -187,7 +197,7 @@ function killTree(pid, signal) {
  */
 function runFile(entry, deadlineS) {
   return new Promise((resolve) => {
-    const args = [];
+    const args = [`--v8-pool-size=${CHILD_V8_POOL_SIZE}`];
     if (entry.heapMb) args.push(`--max-old-space-size=${entry.heapMb}`);
     args.push(entry.file);
     const started = Date.now();

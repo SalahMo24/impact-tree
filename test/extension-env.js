@@ -180,19 +180,8 @@ function fakeWebviewPanel(viewType, title, showOptions, options = {}) {
   return panel;
 }
 
-// Loads a fresh extension against a clean temp git repo. Only the edges are faked:
-// the two analysers, the editor's language-server resolver, and the network-facing
-// async git calls (fetch, rev-parse of FETCH_HEAD, checkout), so the worktree itself
-// never moves. `changedSource` puts a committed TypeScript change on a feature branch,
-// which is what readiness needs before it will warm the language server; `'go'` puts a
-// Go change there instead (with `go.mod`), warmed through the resolver's `services`, whose
-// answers a test sets in `hooks.serverAvailable` and `hooks.serverSymbols`. `clock` (a fake
-// clock, test/fake-clock.js) is handed to activate() through its test seam, so the
-// activation's timers and deadlines move only when the test advances it.
-function createEnv({ prewarm = false, changedSource = false, memento = new Map(), signIn = null, graphql = null, settings = {},
-  remotes = [['origin', 'https://github.com/example/repo.git']], authSession = null, fetch = null, clock = null } = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-ext-commands-'));
-  const sh = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
+// Builds the test repository in `dir`. createEnv copies the first one built for each option set.
+function buildRepo(dir, sh, changedSource, remotes) {
   sh('init', '-q', '--initial-branch=main'); sh('config', 'user.name', 'Test'); sh('config', 'user.email', 'test@example.com');
   fs.writeFileSync(path.join(dir, 'README.md'), 'test');
   fs.writeFileSync(path.join(dir, 'tsconfig.json'), '{"include":["*.ts"]}');
@@ -219,6 +208,32 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     sh('add', '.'); sh('commit', '-qm', 'feature');
     fs.mkdirSync(path.join(dir, 'node_modules'));
     fs.symlinkSync(path.dirname(require.resolve('typescript/package.json')), path.join(dir, 'node_modules', 'typescript'));
+  }
+}
+const repoTemplates = new Map();
+
+// Loads a fresh extension against a clean temp git repo. Only the edges are faked:
+// the two analysers, the editor's language-server resolver, and the network-facing
+// async git calls (fetch, rev-parse of FETCH_HEAD, checkout), so the worktree itself
+// never moves. `changedSource` puts a committed TypeScript change on a feature branch,
+// which is what readiness needs before it will warm the language server; `'go'` puts a
+// Go change there instead (with `go.mod`), warmed through the resolver's `services`, whose
+// answers a test sets in `hooks.serverAvailable` and `hooks.serverSymbols`. `clock` (a fake
+// clock, test/fake-clock.js) is handed to activate() through its test seam, so the
+// activation's timers and deadlines move only when the test advances it.
+function createEnv({ prewarm = false, changedSource = false, memento = new Map(), signIn = null, graphql = null, settings = {},
+  remotes = [['origin', 'https://github.com/example/repo.git']], authSession = null, fetch = null, clock = null } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-ext-commands-'));
+  const sh = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
+  const templateKey = JSON.stringify([changedSource, remotes]);
+  if (repoTemplates.has(templateKey)) {
+    fs.cpSync(repoTemplates.get(templateKey), dir, { recursive: true });
+  } else {
+    buildRepo(dir, sh, changedSource, remotes);
+    const copy = fs.mkdtempSync(path.join(os.tmpdir(), 'it-ext-template-'));
+    fs.cpSync(dir, copy, { recursive: true });
+    repoTemplates.set(templateKey, copy);
+    process.once('exit', () => fs.rmSync(copy, { recursive: true, force: true }));
   }
 
   const commands = new Map();

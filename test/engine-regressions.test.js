@@ -62,7 +62,7 @@ test('TypeScript resolver preserves direct and subclass callers through renamed 
 const inheritanceFixture = (files) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-inheritance-bindings-'));
   for (const [file, text] of Object.entries({
-    'tsconfig.json': '{"compilerOptions":{"strict":true,"module":"commonjs","target":"ES2021"},"include":["**/*.ts"]}',
+    'tsconfig.json': '{"compilerOptions":{"strict":true,"module":"commonjs","target":"ES2021","lib":["es2021"],"types":[],"skipLibCheck":true},"include":["**/*.ts"]}',
     ...files,
   })) {
     fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
@@ -73,7 +73,7 @@ const inheritanceFixture = (files) => {
 const assertInheritanceFixtureValid = (dir) => {
   const config = ts.readConfigFile(path.join(dir, 'tsconfig.json'), ts.sys.readFile).config;
   const parsed = ts.parseJsonConfigFileContent(config, ts.sys, dir);
-  const program = ts.createProgram(parsed.fileNames, parsed.options);
+  const program = ts.createProgram(parsed.fileNames, { ...parsed.options, types: [], skipLibCheck: true });
   assert.deepEqual(ts.getPreEmitDiagnostics(program).map(d => ts.flattenDiagnosticMessageText(d.messageText, ' ')), []);
 };
 

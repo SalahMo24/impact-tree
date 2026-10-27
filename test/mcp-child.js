@@ -6,6 +6,12 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const CLI = path.join(__dirname, '..', 'src', 'cli.js');
+/** Longest wait for one answer from the child. Unit: ms. Exhaustion: the request rejects. */
+const ANSWER_TIMEOUT_MS = 5000;
+/** Children still running; killed when the test process exits so a failed test cannot leave one behind. */
+const live = new Set();
+process.on('exit', () => { for (const c of live) c.kill('SIGKILL'); });
+let afterRegistered = false;
 
 /**
  * @param {string[]} args arguments after `mcp`
@@ -13,6 +19,12 @@ const CLI = path.join(__dirname, '..', 'src', 'cli.js');
  */
 function spawnMcp(args, opts = {}) {
   const child = spawn(process.execPath, [CLI, 'mcp', ...args], { cwd: opts.cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+  live.add(child);
+  if (!afterRegistered) {
+    afterRegistered = true;
+    // A test that fails before end() must not leave a child that keeps the file alive.
+    require('node:test').after(() => { for (const c of live) c.kill('SIGKILL'); });
+  }
   let stderr = '';
   child.stderr.setEncoding('utf8');
   child.stderr.on('data', (d) => { stderr += d; });
@@ -35,12 +47,16 @@ function spawnMcp(args, opts = {}) {
       if (w) { waiting.delete(m.id); w(m); }
     }
   });
-  const exited = new Promise((resolve) => child.once('exit', (code, signal) => resolve({ code, signal })));
+  const exited = new Promise((resolve) => child.once('exit', (code, signal) => { live.delete(child); resolve({ code, signal }); }));
   let next = 1;
   /** @param {string} method @param {any} [params] @returns {Promise<any>} */
-  const request = (method, params) => new Promise((resolve) => {
+  const request = (method, params) => new Promise((resolve, reject) => {
     const id = next++;
-    waiting.set(id, resolve);
+    const timer = setTimeout(() => {
+      waiting.delete(id);
+      reject(new Error(`no answer to ${method} within ${ANSWER_TIMEOUT_MS} ms`));
+    }, ANSWER_TIMEOUT_MS);
+    waiting.set(id, (m) => { clearTimeout(timer); resolve(m); });
     child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
   });
   return {

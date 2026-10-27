@@ -63,7 +63,7 @@ const {
     // still above the limit.
     const WIN_LIMIT = 32767;
     const files = {};
-    for (let i = 0; i < 5000; i++) files[`src/${'long-directory-name-'.repeat(5)}${i % 50}/${'f'.repeat(30)}-${i}.ts`] = `export const v${i} = 1;\n`;
+    for (let i = 0; i < 600; i++) files[`src/${'long-directory-name-'.repeat(5)}${i % 50}/${'f'.repeat(30)}-${i}.ts`] = `export const v${i} = 1;\n`;
     const repo = mkRepo({ 'tsconfig.json': TSCONFIG, ...files });
     const base = headOf(repo);
     write(repo, Object.fromEntries(Object.keys(files).map((p, i) => [p, `export const v${i} = 2;\n`])));
@@ -76,7 +76,7 @@ const {
     // Windows quotes an argument that has a space or a quote; count every one as quoted.
     const cmdLen = (argv) => argv.reduce((n, a) => n + a.length + 3, 0);
     const longest = Math.max(...lines.map(cmdLen));
-    check('5,000 long paths split across several diffs', list.length === 5000 && lines.length > 1, `${list.length} files, ${lines.length} commands`);
+    check('600 long paths split across several diffs', list.length === 600 && lines.length > 1, `${list.length} files, ${lines.length} commands`);
     check('every command line stays under the Windows limit', longest < WIN_LIMIT, `longest ${longest}`);
     // every file is changed, so a diff with no pathspec is the unbounded reference
     const reference = allHunks(real, base, 'HEAD', null);

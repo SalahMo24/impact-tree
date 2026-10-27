@@ -216,8 +216,15 @@ test('parseArgs and the Node version check', () => {
  * A server on in-memory streams, with a fake analysis and (optionally) a fake editor bridge.
  * @param {{ connectBridge?: any, prepare?: any, base?: string }} [extra]
  */
+/** Longest wait for one answer from a server under test. Unit: ms. Exhaustion: the request rejects. */
+const ANSWER_TIMEOUT_MS = 5000;
+/** Inputs of servers still open, so a test that fails before close() cannot keep the file alive. */
+const openInputs = new Set();
+test.after(() => { for (const input of openInputs) input.end(); });
+
 function connect(/** @type {any} */ extra = {}) {
   const input = new PassThrough();
+  openInputs.add(input);
   const output = new PassThrough();
   const f = fakeContext();
   let prepared = 0;
@@ -247,9 +254,13 @@ function connect(/** @type {any} */ extra = {}) {
     }
   });
   let next = 1;
-  const request = (/** @type {string} */ method, /** @type {any} */ params) => new Promise((resolve) => {
+  const request = (/** @type {string} */ method, /** @type {any} */ params) => new Promise((resolve, reject) => {
     const id = next++;
-    waiting.set(id, resolve);
+    const timer = setTimeout(() => {
+      waiting.delete(id);
+      reject(new Error(`no answer to ${method} within ${ANSWER_TIMEOUT_MS} ms`));
+    }, ANSWER_TIMEOUT_MS);
+    waiting.set(id, (/** @type {any} */ m) => { clearTimeout(timer); resolve(m); });
     input.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`);
   });
   const call = async (/** @type {string} */ name, /** @type {any} */ args) => (await /** @type {any} */ (request('tools/call', { name, arguments: args }))).result;
@@ -260,7 +271,7 @@ function connect(/** @type {any} */ extra = {}) {
   return {
     f, request, call, handshake, state: () => ({ prepared, disposed, bases }),
     /** End the agent's side as a client does; resolves when everything is released. */
-    close: async () => { input.end(); await server.closed; },
+    close: async () => { openInputs.delete(input); input.end(); await server.closed; },
   };
 }
 

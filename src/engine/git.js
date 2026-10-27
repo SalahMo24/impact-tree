@@ -236,4 +236,34 @@ function resolveBase(git, spec, { fetch = false, allowLocal = false, remote: rem
   notes.push(`WARNING: ${remote} not found — falling back to local ${name}; diff may include others' commits`);
   return { ref: name, sha, notes };
 }
-module.exports = { makeGit, resolveBase, resolveBaseAsync, fetchBranch, remoteDefaultBranch, refspecFor, isSafeRemoteName, FETCH_ENV, DEFAULT_FETCH_TIMEOUT_MS };
+
+/**
+ * A cheap fingerprint of the repository around `dir`: where the nearest `.git` is and the mtime
+ * of its config. It changes on `git init`, on removing `.git`, and on `git remote add`
+ * (which rewrites the config), so answers cached under it stay current. No process is started.
+ * @param {string} dir
+ * @returns {string}
+ */
+function repoStamp(dir) {
+  const fs = require('fs');
+  const path = require('path');
+  for (let d = path.resolve(dir); ; d = path.dirname(d)) {
+    const dotGit = path.join(d, '.git');
+    let st = null;
+    try { st = fs.statSync(dotGit); } catch { /* not here */ }
+    if (st) {
+      let gitDir = dotGit;
+      if (st.isFile()) {
+        const m = /^gitdir:\s*(.+)$/m.exec(fs.readFileSync(dotGit, 'utf8'));
+        if (m) gitDir = path.resolve(d, m[1].trim());
+        try { gitDir = path.resolve(gitDir, fs.readFileSync(path.join(gitDir, 'commondir'), 'utf8').trim()); } catch { /* not a linked worktree */ }
+      }
+      let cfg = 0;
+      try { cfg = fs.statSync(path.join(gitDir, 'config')).mtimeMs; } catch { /* no config */ }
+      return `${dotGit}:${cfg}`;
+    }
+    if (path.dirname(d) === d) return 'none';
+  }
+}
+
+module.exports = { repoStamp, makeGit, resolveBase, resolveBaseAsync, fetchBranch, remoteDefaultBranch, refspecFor, isSafeRemoteName, FETCH_ENV, DEFAULT_FETCH_TIMEOUT_MS };

@@ -244,12 +244,18 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
    * again when a run begins, so a `git init` followed by Refresh is noticed.
    * @returns {'ok'|'noFolder'|'noGit'}
    */
+  let repoStatusCache = { stamp: null, value: null };
   function repoStatus() {
     const folders = vscode.workspace.workspaceFolders;
     if (!folders || !folders.length) return 'noFolder';
-    const { makeGit } = require('./engine/git');
-    const inside = makeGit(folders[0].uri.fsPath).tryRaw(['rev-parse', '--is-inside-work-tree']);
-    return inside !== null && inside.trim() === 'true' ? 'ok' : 'noGit';
+    const { makeGit, repoStamp } = require('./engine/git');
+    const folder = folders[0].uri.fsPath;
+    const stamp = `${folder}|${repoStamp(folder)}`;
+    if (repoStatusCache.stamp === stamp) return repoStatusCache.value;
+    const inside = makeGit(folder).tryRaw(['rev-parse', '--is-inside-work-tree']);
+    const value = inside !== null && inside.trim() === 'true' ? 'ok' : 'noGit';
+    repoStatusCache = { stamp, value };
+    return value;
   }
 
   const isTierA = () => !!(session.state && session.state.result && session.state.result.tierA);
