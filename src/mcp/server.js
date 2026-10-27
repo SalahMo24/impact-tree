@@ -20,6 +20,7 @@
 // submit_callers to it. Without one, or when it fails, the server works headless; a bridge
 // failure is never fatal.
 
+const fs = require('fs');
 const path = require('path');
 const { fileURLToPath } = require('url');
 const { execFileSync } = require('child_process');
@@ -96,11 +97,12 @@ const notRepoMessage = (cwd) => `start your agent inside a git repository (this 
 
 /**
  * @param {string[]} argv the arguments after `mcp`
- * @param {{ cwd?: string, toplevel?: (cwd: string) => string|null }} [env] replaceable in tests
+ * @param {{ cwd?: string, toplevel?: (cwd: string) => string|null, workspaceFolders?: string|undefined }} [env] replaceable in tests;
+ *   `workspaceFolders`: the editor's folders for this window (Cursor sets WORKSPACE_FOLDER_PATHS for each window's server)
  * @returns {ServerOptions}
  * @throws {Error} on a value that is not valid, with a message for the person who typed it
  */
-function parseArgs(argv, { cwd = process.cwd(), toplevel = repoToplevel } = {}) {
+function parseArgs(argv, { cwd = process.cwd(), toplevel = repoToplevel, workspaceFolders = process.env.WORKSPACE_FOLDER_PATHS } = {}) {
   /** @param {string} name */
   const get = (name) => {
     const i = argv.indexOf(`--${name}`);
@@ -114,11 +116,30 @@ function parseArgs(argv, { cwd = process.cwd(), toplevel = repoToplevel } = {}) 
   if (!Number.isSafeInteger(deadlineMs) || deadlineMs < 1 || deadlineMs > MAX_DEADLINE_MS) throw new Error(`--deadline-ms must be an integer from 1 to ${MAX_DEADLINE_MS}`);
   const base = get('base');
   const explicit = get('repo');
-  const top = explicit ? null : toplevel(cwd);
+  // Started outside a repository: this window's one workspace repository, when the editor says so.
+  const fromWorkspace = workspaceRepos(workspaceFolders, toplevel);
+  const top = explicit ? null : toplevel(cwd) || (fromWorkspace.length === 1 ? fromWorkspace[0] : null);
   return {
     repo: path.resolve(explicit || top || cwd), ...(!explicit && !top ? { notRepo: /** @type {const} */ (true) } : {}), ...(base ? { base } : {}),
     remote: get('remote') || 'origin', allowLocalBase: argv.includes('--allow-local-base'), deadlineMs,
   };
+}
+
+/**
+ * The git repositories of the editor window's folders, from WORKSPACE_FOLDER_PATHS (set by
+ * Cursor for each window's MCP server). Absolute paths only, separated by the platform's
+ * path delimiter or a comma; at most 50.
+ * @param {string|undefined} value @param {(dir: string) => string|null} toplevel
+ * @returns {string[]} sorted, unique
+ */
+function workspaceRepos(value, toplevel) {
+  if (typeof value !== 'string' || value === '' || value.length > 64 * 1024) return [];
+  const repos = new Set();
+  for (const dir of value.split(new RegExp(`[${path.delimiter === ';' ? ';' : ':'},]`)).map((d) => d.trim()).filter((d) => path.isAbsolute(d)).slice(0, 50)) {
+    const top = toplevel(dir);
+    if (top) repos.add(top);
+  }
+  return [...repos].sort();
 }
 
 /**
@@ -240,11 +261,14 @@ const chooseWithTool = (repos) => `call select_repository with the repository to
  * pressed "Analyse with my agent" in the past 30 minutes. Otherwise an error that tells the
  * agent to call `select_repository`, never a guess.
  * @param {{ cwd: string, sdk: any, toplevel?: (cwd: string) => string|null,
- *   editorRepos?: () => Array<{ repo: string, askedAt: number|null }>, now?: () => number }} p
+ *   editorRepos?: () => Array<{ repo: string, askedAt: number|null }>, now?: () => number, workspaceFolders?: string|undefined }} p
  * @returns {Promise<{ repo: string, from: string }>}
  * @throws {ToolError} when there is no single candidate; the message says what was tried and what to do
  */
-async function findRepoFor({ cwd, sdk, toplevel = repoToplevel, editorRepos, now = () => realClock.now() }) {
+async function findRepoFor({ cwd, sdk, toplevel = repoToplevel, editorRepos, now = () => realClock.now(), workspaceFolders = process.env.WORKSPACE_FOLDER_PATHS }) {
+  const fromWindow = workspaceRepos(workspaceFolders, toplevel);
+  if (fromWindow.length === 1) return { repo: fromWindow[0], from: 'the editor window\'s workspace folder' };
+  if (fromWindow.length > 1) throw new ToolError(`the editor window has several git repositories; ${chooseWithTool(fromWindow)}`);
   const fromRoots = await rootRepos(sdk, toplevel);
   if (fromRoots.repos.length === 1) return { repo: fromRoots.repos[0], from: 'the agent\'s workspace folder' };
   if (fromRoots.repos.length > 1) throw new ToolError(`the agent's workspace has several git repositories; ${chooseWithTool(fromRoots.repos)}`);
@@ -259,6 +283,37 @@ async function findRepoFor({ cwd, sdk, toplevel = repoToplevel, editorRepos, now
   }
   throw new ToolError(`${notRepoMessage(cwd)}. Also tried: ${fromRoots.note}; no editor window has Impact Tree's agents setting (impactTree.agents.enabled) on. `
     + `If you know the repository, ${chooseWithTool([])}`);
+}
+
+// ---------------------------------------------------------------------------------------
+// Following the review and the code
+
+const OUTDATED_MESSAGE = 'Impact Tree was updated after this MCP server started, and it still runs the old code. '
+  + 'Restart the impact-tree server in your agent\'s MCP settings (turn it off and on), then call list_cards again. Do not stop its process by hand.';
+
+/** @param {string|null|undefined} sha @returns {string} */
+const short = (sha) => (sha ? sha.slice(0, 8) : 'none');
+
+/** @param {{ base?: { sha?: string } }|null} ctx @returns {string|undefined} the editor's base commit, when it is one */
+const baseCommitOf = (ctx) => (ctx && ctx.base && typeof ctx.base.sha === 'string' && /^[0-9a-f]{40}$/.test(ctx.base.sha) ? ctx.base.sha : undefined);
+
+/** @param {string} repo @returns {string|null} the checkout's HEAD commit, or null when git cannot say */
+function headCommitOf(repo) {
+  try {
+    const out = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return /^[0-9a-f]{40}$/.test(out) ? out : null;
+  } catch { return null; }
+}
+
+// The files whose change means this process runs outdated code (an extension update or a
+// new checkout of the extension). Relative to this file.
+const CODE_FILES = ['server.js', 'tools.js', 'paging.js', 'bridge-client.js', '../engine/agent-results.js', '../../package.json'];
+
+/** @returns {string} size and modification time of the server's code files; "gone" for a removed one */
+function defaultCodeStamp() {
+  return CODE_FILES.map((f) => {
+    try { const st = fs.statSync(path.join(__dirname, f)); return `${st.size}:${st.mtimeMs}`; } catch { return 'gone'; }
+  }).join('|');
 }
 
 // ---------------------------------------------------------------------------------------
@@ -310,6 +365,8 @@ function withDeadline(promise, ms, what) {
  * @property {ServerOptions} options
  * @property {typeof prepare} [prepare] Replaceable in tests.
  * @property {typeof findRepoFor} [findRepo] Replaceable in tests.
+ * @property {(repo: string) => string|null} [headOf] Replaceable in tests: the checkout's HEAD commit.
+ * @property {() => string} [codeStamp] Replaceable in tests: changes when the server's code files change.
  * @property {ConnectBridge} [connectBridge] Replaceable in tests.
  * @property {NodeJS.ReadableStream & { setEncoding?: any }} [input] Default: standard input.
  * @property {NodeJS.WritableStream} [output] Default: standard output.
@@ -342,6 +399,15 @@ function startServer(config) {
   let prepared = null;
   /** @type {Promise<void>|null} */
   let closing = null;
+  const headOf = config.headOf || headCommitOf;
+  const codeStamp = config.codeStamp || defaultCodeStamp;
+  const stampAtStart = codeStamp();
+  /** What the kept analysis was made for: the checkout's head and, without --base, the editor's base commit. */
+  /** @type {{ head: string, editorBase: string|null }|null} */
+  let preparedFor = null;
+  // Review checks run one at a time, so two calls never both start a new analysis.
+  /** @type {Promise<unknown>} */
+  let lane = Promise.resolve();
 
   // The bridge connection runs once, in the background; a failure leaves the server headless.
   const connect = config.connectBridge || connectEditorBridge;
@@ -376,26 +442,83 @@ function startServer(config) {
       attemptBridge();
     }
     if (bridgeAttempt) await bridgeAttempt;
-    const base = options.base || await editorBase();
+    const editorBase = options.base ? undefined : baseCommitOf(await editorContext());
+    const base = options.base || editorBase;
     prepared = await doPrepare(options, { base, signal: abort.signal });
     if (closing) { prepared.dispose(); throw new Error('the server is shutting down'); }
     const { headSha, baseSha } = prepared;
+    preparedFor = { head: headSha, editorBase: editorBase || null };
     return createImpactTools({
       ...prepared.ctx, signal: abort.signal,
       forward: bridge ? (kind, normalised) => forwardToEditor(kind, normalised, { head: headSha, base: baseSha }) : undefined,
     });
   }
-  /** The base the editor reviews against, when one is connected. @returns {Promise<string|undefined>} */
-  async function editorBase() {
-    if (!bridge) return undefined;
+  /** The review the editor shows, when one is connected. @returns {Promise<import('./bridge-client').BridgeContext|null>} */
+  async function editorContext() {
+    if (!bridge) return null;
     try {
-      const c = await withDeadline(bridge.context(), BRIDGE_CONNECT_MS, 'the editor bridge');
-      // The commit, not the ref: the ref may have moved since the editor's analysis.
-      return c && c.base && /^[0-9a-f]{40}$/.test(c.base.sha) ? c.base.sha : undefined;
+      return await withDeadline(bridge.context(), BRIDGE_CONNECT_MS, 'the editor bridge');
     } catch (e) {
-      log(`editor context unavailable, using the default base: ${/** @type {Error} */ (e).message}`);
-      return undefined;
+      log(`editor context unavailable: ${/** @type {Error} */ (e).message}`);
+      return null;
     }
+  }
+
+  /**
+   * Before a tool runs: is this still the code the server started with, and the review its
+   * analysis was made for? When the checkout's head or the editor's base commit moved, the
+   * analysis is dropped (the next call makes a new one) and `notice` says so.
+   * @returns {Promise<{ notice: string|null, ctx: import('./bridge-client').BridgeContext|null }>}
+   * @throws {ToolError} when the extension's code changed after this process started
+   */
+  async function checkReview() {
+    if (codeStamp() !== stampAtStart) throw new ToolError(OUTDATED_MESSAGE);
+    // With --base the editor's base does not matter; its context is read only for list_cards.
+    const ctx = options.base ? null : await editorContext();
+    if (options.notRepo || !prepared || !preparedFor) return { notice: null, ctx };
+    const head = headOf(options.repo);
+    const editorBase = baseCommitOf(ctx) || null;
+    const movedHead = head !== null && head !== preparedFor.head;
+    // Only a base the editor named, both times: an editor connecting later does not count as a move.
+    const movedBase = editorBase !== null && preparedFor.editorBase !== null && editorBase !== preparedFor.editorBase;
+    if (!movedHead && !movedBase) return { notice: null, ctx };
+    const was = preparedFor;
+    const what = [movedHead && `head ${short(was.head)} → ${short(/** @type {string} */ (head))}`,
+      movedBase && `base ${short(was.editorBase)} → ${short(editorBase)}`].filter(Boolean).join(', ');
+    log(`the review moved (${what}): the analysis is made again`);
+    try { prepared.dispose(); } catch (e) { log(`dispose failed: ${/** @type {Error} */ (e).message}`); }
+    prepared = null; preparedFor = null; started = null;
+    return { notice: `The review changed since the analysis was made (${what}); Impact Tree analyses it again. Card and change ids from earlier calls no longer apply: call list_cards again before you submit.`, ctx };
+  }
+
+  /**
+   * One tool call: the review check first (one at a time), then the tool. After a move, only
+   * list_cards answers (from the new analysis); any other tool returns the notice, since the
+   * ids it was given may name the old analysis. list_cards carries the review it describes.
+   * @param {string} name @param {any} args
+   */
+  async function invoke(name, args) {
+    /** @type {{ notice: string|null, ctx: any }} */
+    let checked;
+    try {
+      const turn = lane.then(checkReview, checkReview);
+      lane = turn.catch(() => undefined);
+      checked = await turn;
+    } catch (e) {
+      return errorResult(e instanceof Error ? e.message : String(e));
+    }
+    if (checked.notice && name !== 'list_cards') return errorResult(checked.notice);
+    const res = /** @type {any} */ (await callTool(ready, name, args));
+    if (name !== 'list_cards' || res.isError || !prepared || !preparedFor) return res;
+    const ctx = checked.ctx || await editorContext();
+    const review = {
+      head: prepared.headSha, base: prepared.baseSha,
+      editorHead: ctx ? ctx.head : null,
+      matchesEditor: ctx ? ctx.head === prepared.headSha && (Boolean(options.base) || baseCommitOf(ctx) === preparedFor.editorBase) : null,
+      ...(checked.notice ? { reanalysed: checked.notice } : {}),
+    };
+    const out = { review, ...res.structuredContent };
+    return { content: [{ type: /** @type {const} */ ('text'), text: JSON.stringify(out) }], structuredContent: out };
   }
   /**
    * @param {'cards'|'callers'} kind @param {any} normalised @param {{ head: string, base: string }} meta
@@ -415,24 +538,29 @@ function startServer(config) {
    * `select_repository`: the agent names the repository (the server could not tell, or several
    * windows are open). Switching to another repository drops the analysis made so far.
    * @param {string} asked
-   * @returns {Promise<{ repo: string, changed: boolean }>}
+   * @returns {Promise<{ repo: string, changed: boolean, head: string|null }>}
    */
   async function selectRepository(asked) {
     const top = path.isAbsolute(asked) ? repoToplevel(asked) : null;
     if (!top) throw new ToolError(`not a folder inside a git repository: ${asked} (give an absolute path)`);
-    if (!options.notRepo && options.repo === top) return { repo: top, changed: false };
+    if (!options.notRepo && options.repo === top) {
+      // The same repository: still follow its review (a new head or editor base means a new analysis).
+      const checked = await checkReview();
+      return { repo: top, changed: Boolean(checked.notice), head: headOf(top) };
+    }
     if (started) await started.then(() => undefined, () => undefined);
     if (prepared) { try { prepared.dispose(); } catch (e) { log(`dispose failed: ${/** @type {Error} */ (e).message}`); } prepared = null; }
     started = null;
     if (bridge) { try { bridge.close(); } catch { /* already closed */ } bridge = null; }
     options = { ...options, repo: top, notRepo: undefined };
+    preparedFor = null;
     log(`repository chosen by the agent: ${top}`);
     attemptBridge();
-    return { repo: top, changed: true };
+    return { repo: top, changed: true, head: headOf(top) };
   }
 
   const transport = new StdioServerTransport(/** @type {any} */ (input), /** @type {any} */ (output));
-  const handle = serveStdio(() => { sdk = createSdkServer(ready, selectRepository); return sdk; }, { transport, onerror: (e) => log(`protocol error: ${e.message}`) });
+  const handle = serveStdio(() => { sdk = createSdkServer(ready, selectRepository, invoke); return sdk; }, { transport, onerror: (e) => log(`protocol error: ${e.message}`) });
   if (!options.notRepo) attemptBridge();
 
   /** @type {() => void} */
@@ -461,16 +589,17 @@ function startServer(config) {
 /**
  * An SDK server with every tool registered. The tool bodies wait for `ready()` (the analysis).
  * @param {() => Promise<ReturnType<typeof createImpactTools>>} ready
- * @param {(repo: string) => Promise<{ repo: string, changed: boolean }>} [selectRepository]
+ * @param {(repo: string) => Promise<{ repo: string, changed: boolean, head: string|null }>} [selectRepository]
+ * @param {(name: string, args: any) => Promise<any>} [invoke] runs a tool (default: straight to `ready`)
  */
-function createSdkServer(ready, selectRepository) {
+function createSdkServer(ready, selectRepository, invoke = (name, args) => callTool(ready, name, args)) {
   const server = new McpServer(SERVER_INFO, { instructions: INSTRUCTIONS });
   // The definitions need no analysis; a body gets its tool set once `ready` resolves.
   const defs = createImpactTools({ repo: '/', result: { allChanged: [], deleted: [] }, cards: { clusters: [], sweeps: [], seams: [] } }).tools;
   for (const def of defs) {
     server.registerTool(def.name, {
       title: def.title, description: def.description, inputSchema: def.inputSchema, annotations: def.annotations,
-    }, async (/** @type {any} */ args) => callTool(ready, def.name, args));
+    }, async (/** @type {any} */ args) => invoke(def.name, args));
   }
   if (selectRepository) {
     server.registerTool('select_repository', {
