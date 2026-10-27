@@ -104,8 +104,9 @@ const ORACLE_CHILD_DEADLINE_MS = 4 * 60 * 1000;
 const JEDI_QUERY_DEADLINE_S = 60;
 /** Pyright's start (spawn + initialize). */
 const PYRIGHT_START_DEADLINE_MS = 60000;
-const DEFAULT_CACHE = '/Users/salah/Projects/impact-tree-scratchpad/py-verify-cache';
-const JEDI_PYTHON = '/Users/salah/Projects/impact-tree-scratchpad/py-tools/venv/bin/python';
+const { scratchpadPath } = require('./scratchpad');
+const DEFAULT_CACHE = scratchpadPath('py-verify-cache');
+const JEDI_PYTHON = scratchpadPath('py-tools', 'venv', 'bin', 'python');
 
 /** @param {string[]} args @param {string} flag @param {string} fallback */
 const option = (args, flag, fallback) => { const i = args.indexOf(flag); return i >= 0 && args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : fallback; };

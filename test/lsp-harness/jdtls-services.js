@@ -15,7 +15,8 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { createStdioServerServices } = require('./stdio-server-services');
 
-const DEFAULT_TOOLS = '/Users/salah/Projects/impact-tree-scratchpad/java-tools';
+const { scratchpadPath } = require('./scratchpad');
+const DEFAULT_TOOLS = scratchpadPath('java-tools');
 /** ServiceReady and quiet progress, cold import included (J0: 78 s with an empty m2). */
 const READY_DEADLINE_MS = 6 * 60 * 1000;
 const POLL_MS = 500;
