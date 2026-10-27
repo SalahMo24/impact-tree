@@ -216,11 +216,15 @@ function activate(context, { clock = realClock } = {}) {
 
   // Which remote is the GitHub repository (src/github-remote.js): read from git and the
   // impactTree.githubRemote setting on each call, so a new remote or setting shows at once.
+  let remoteCache = { stamp: null, remotes: [] };
   const githubRemote = () => {
     let remotes = [];
     try {
-      const { makeGit } = require('./engine/git');
-      remotes = parseRemoteList(makeGit(session.repoRoot()).tryRaw(['remote', '-v']) || '');
+      const { makeGit, repoStamp } = require('./engine/git');
+      const root = session.repoRoot();
+      const stamp = `${root}|${repoStamp(root)}`;
+      if (remoteCache.stamp !== stamp) remoteCache = { stamp, remotes: parseRemoteList(makeGit(root).tryRaw(['remote', '-v']) || '') };
+      remotes = remoteCache.remotes;
     } catch { /* no repository: no remotes */ }
     return chooseGitHubRemote(remotes, vscode.workspace.getConfiguration('impactTree').get('githubRemote', ''));
   };

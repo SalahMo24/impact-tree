@@ -8,7 +8,7 @@ const { execFileSync } = require('child_process');
 const { requireTypeScript } = require('./find-typescript');
 
 const J = JSON.stringify;
-const TSCONFIG = J({ compilerOptions: { target: 'es2020', module: 'commonjs', strict: false, experimentalDecorators: true }, include: ['src'] });
+const TSCONFIG = J({ compilerOptions: { target: 'es2020', lib: ['es2020'], types: [], skipLibCheck: true, module: 'commonjs', strict: false, experimentalDecorators: true }, include: ['src'] });
 const TARGET_V1 = 'export function target(a: number) {\n  return a;\n}\n';
 const TARGET_V2 = 'export function target(a: number, strict?: boolean) {\n  return a;\n}\n';
 const fast = { skipForest: true, deferTestReach: true };
@@ -21,6 +21,17 @@ function createLocalHarness() {
   const TMP = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-local-')));
   const run = (cwd, args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   let seq = 0;
+  // An initialised, configured repo built once per process; each test repo starts as a copy.
+  let template = null;
+  const emptyRepo = () => {
+    if (template) return template;
+    template = path.join(TMP, '.template');
+    fs.mkdirSync(template);
+    run(template, ['init', '-q', '--initial-branch=main']);
+    run(template, ['config', 'user.email', 't@example.com']);
+    run(template, ['config', 'user.name', 'test']);
+    return template;
+  };
   let fail = 0;
   const check = (name, cond, extra = '') => {
     console.log(`  ${cond ? 'ok  ' : 'FAIL'} ${name}${extra ? ' — ' + extra : ''}`);
@@ -40,18 +51,25 @@ function createLocalHarness() {
   }
   function mkRepo(files, { parent = TMP, name = `r${seq++}`, ts: withTs = true } = {}) {
     const dir = path.join(parent, name);
-    fs.mkdirSync(dir, { recursive: true });
-    run(dir, ['init', '-q', '--initial-branch=main']);
-    run(dir, ['config', 'user.email', 't@example.com']);
-    run(dir, ['config', 'user.name', 'test']);
+    fs.mkdirSync(path.dirname(dir), { recursive: true });
+    fs.cpSync(emptyRepo(), dir, { recursive: true });
     write(dir, { '.gitignore': 'node_modules\n', ...files });
     run(dir, ['add', '-A']);
     run(dir, ['commit', '-qm', 'base']);
     if (withTs) linkTs(dir);
     return dir;
   }
-  const commit = (dir) => { run(dir, ['add', '-A']); run(dir, ['commit', '-qm', 'c']); return run(dir, ['rev-parse', 'HEAD']).trim(); };
-  const headOf = (dir) => run(dir, ['rev-parse', 'HEAD']).trim();
+  // HEAD's commit read from .git without starting git (a process costs tens of ms on a busy
+  // machine); `rev-parse` when the ref is not a loose file (packed, detached elsewhere).
+  const headOf = (dir) => {
+    try {
+      const head = fs.readFileSync(path.join(dir, '.git', 'HEAD'), 'utf8').trim();
+      const sha = head.startsWith('ref: ') ? fs.readFileSync(path.join(dir, '.git', head.slice(5)), 'utf8').trim() : head;
+      if (/^[0-9a-f]{40}$/.test(sha)) return sha;
+    } catch { /* not a loose ref */ }
+    return run(dir, ['rev-parse', 'HEAD']).trim();
+  };
+  const commit = (dir) => { run(dir, ['add', '-A']); run(dir, ['commit', '-qm', 'c']); return headOf(dir); };
   const byLabel = (r, label) => r.allChanged.find((c) => c.label === label);
   const callStates = (c) => (c ? c.callers.map((x) => `${x.label}[${x.callState}]`) : null);
   const S = makeSymbols(ts);

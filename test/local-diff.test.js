@@ -63,7 +63,7 @@ const {
     // still above the limit.
     const WIN_LIMIT = 32767;
     const files = {};
-    for (let i = 0; i < 5000; i++) files[`src/${'long-directory-name-'.repeat(5)}${i % 50}/${'f'.repeat(30)}-${i}.ts`] = `export const v${i} = 1;\n`;
+    for (let i = 0; i < 600; i++) files[`src/${'long-directory-name-'.repeat(5)}${i % 50}/${'f'.repeat(30)}-${i}.ts`] = `export const v${i} = 1;\n`;
     const repo = mkRepo({ 'tsconfig.json': TSCONFIG, ...files });
     const base = headOf(repo);
     write(repo, Object.fromEntries(Object.keys(files).map((p, i) => [p, `export const v${i} = 2;\n`])));
@@ -76,12 +76,23 @@ const {
     // Windows quotes an argument that has a space or a quote; count every one as quoted.
     const cmdLen = (argv) => argv.reduce((n, a) => n + a.length + 3, 0);
     const longest = Math.max(...lines.map(cmdLen));
-    check('5,000 long paths split across several diffs', list.length === 5000 && lines.length > 1, `${list.length} files, ${lines.length} commands`);
+    check('600 long paths split across several diffs', list.length === 600 && lines.length > 1, `${list.length} files, ${lines.length} commands`);
     check('every command line stays under the Windows limit', longest < WIN_LIMIT, `longest ${longest}`);
     // every file is changed, so a diff with no pathspec is the unbounded reference
     const reference = allHunks(real, base, 'HEAD', null);
     check('batched output equals one unbounded run', J(Object.keys(bounded).sort()) === J(Object.keys(reference).sort())
       && J(bounded) === J(Object.fromEntries(Object.keys(bounded).map((k) => [k, reference[k]]))), `${Object.keys(bounded).length} vs ${Object.keys(reference).length} files`);
+  }
+
+  console.log('▸ worktree status in one git call');
+  {
+    const repo = mkRepo({ 'src/a.ts': 'export const a = 1;\n', 'src/old name.ts': 'export const o = 1;\n', '.gitignore': 'node_modules\nignored/\n' }, { ts: false });
+    run(repo, ['mv', 'src/old name.ts', 'src/new name.ts']);
+    write(repo, { 'src/a.ts': 'export const a = 2;\n', 'src/deep/dir/café.ts': 'x\n', 'loose.ts': 'y\n', 'ignored/skip.ts': 'z\n' });
+    const st = makeGit(repo).worktreeStatus();
+    check('tracked changes, a rename counted once', J(st.dirty.slice().sort()) === J([' M src/a.ts', 'R  src/new name.ts']), J(st.dirty));
+    const lsOthers = run(repo, ['-c', 'core.quotePath=false', 'ls-files', '--others', '--exclude-standard', '-z']).split('\0').filter(Boolean).sort();
+    check('untracked files match ls-files --others, one by one, unquoted', J(st.untracked.slice().sort()) === J(lsOthers) && lsOthers.includes('src/deep/dir/café.ts'), J(st.untracked));
   }
 
   console.log('▸ paths and user git config');

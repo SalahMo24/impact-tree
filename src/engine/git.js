@@ -103,6 +103,26 @@ function makeGit(repo, { objectDirs = [], env: extraEnv = {} } = {}) {
       return git(['status', '--porcelain', ...(pathspec ? [pathspec] : [])])
         .split('\n').filter((l) => l && !l.startsWith('??'));
     },
+    /**
+     * The worktree's state from one `git status`: `dirty` the tracked changes (as isDirty
+     * returns them), `untracked` the untracked, not-ignored files one by one (as
+     * `ls-files --others --exclude-standard` lists them). Throws as isDirty does.
+     * @returns {{ dirty: string[], untracked: string[] }}
+     */
+    worktreeStatus() {
+      const tok = git(['-c', 'core.quotePath=false', 'status', '--porcelain', '-z', '--untracked-files=all']).split('\0');
+      const dirty = [];
+      const untracked = [];
+      for (let i = 0; i < tok.length; i++) {
+        const entry = tok[i];
+        if (!entry) continue;
+        const code = entry.slice(0, 2);
+        if (code === '??') untracked.push(entry.slice(3));
+        else dirty.push(entry);
+        if (code[0] === 'R' || code[0] === 'C') i++;   // -z puts a rename's old path in its own field
+      }
+      return { dirty, untracked };
+    },
     currentBranch() { return git(['rev-parse', '--abbrev-ref', 'HEAD']).trim(); },
   };
 }
@@ -180,9 +200,13 @@ async function fetchBranch(git, name, { timeoutMs = DEFAULT_FETCH_TIMEOUT_MS, re
 function remoteDefaultBranch(git, remote) {
   checkedRemote(remote);
   const prefix = `refs/remotes/${remote}/`;
-  const head = (git.tryRaw(['symbolic-ref', '--quiet', `${prefix}HEAD`]) || '').trim();
+  // One process for the three refs (each git start costs tens of ms on a busy machine):
+  // "<refname>\t<symref target>" for each that exists.
+  const out = git.tryRaw(['for-each-ref', '--format=%(refname)%09%(symref)', `${prefix}HEAD`, `${prefix}main`, `${prefix}master`]) || '';
+  const refs = new Map(out.split('\n').filter(Boolean).map((l) => /** @type {[string, string]} */ (l.split('\t'))));
+  const head = (refs.get(`${prefix}HEAD`) || '').trim();
   if (head.startsWith(prefix) && head.length > prefix.length) return head.slice(prefix.length);
-  for (const branch of ['main', 'master']) if (git.revParse(`${remote}/${branch}`)) return branch;
+  for (const branch of ['main', 'master']) if (refs.has(`${prefix}${branch}`)) return branch;
   return null;
 }
 
@@ -236,4 +260,34 @@ function resolveBase(git, spec, { fetch = false, allowLocal = false, remote: rem
   notes.push(`WARNING: ${remote} not found — falling back to local ${name}; diff may include others' commits`);
   return { ref: name, sha, notes };
 }
-module.exports = { makeGit, resolveBase, resolveBaseAsync, fetchBranch, remoteDefaultBranch, refspecFor, isSafeRemoteName, FETCH_ENV, DEFAULT_FETCH_TIMEOUT_MS };
+
+/**
+ * A cheap fingerprint of the repository around `dir`: where the nearest `.git` is and the mtime
+ * of its config. It changes on `git init`, on removing `.git`, and on `git remote add`
+ * (which rewrites the config), so answers cached under it stay current. No process is started.
+ * @param {string} dir
+ * @returns {string}
+ */
+function repoStamp(dir) {
+  const fs = require('fs');
+  const path = require('path');
+  for (let d = path.resolve(dir); ; d = path.dirname(d)) {
+    const dotGit = path.join(d, '.git');
+    let st = null;
+    try { st = fs.statSync(dotGit); } catch { /* not here */ }
+    if (st) {
+      let gitDir = dotGit;
+      if (st.isFile()) {
+        const m = /^gitdir:\s*(.+)$/m.exec(fs.readFileSync(dotGit, 'utf8'));
+        if (m) gitDir = path.resolve(d, m[1].trim());
+        try { gitDir = path.resolve(gitDir, fs.readFileSync(path.join(gitDir, 'commondir'), 'utf8').trim()); } catch { /* not a linked worktree */ }
+      }
+      let cfg = 0;
+      try { cfg = fs.statSync(path.join(gitDir, 'config')).mtimeMs; } catch { /* no config */ }
+      return `${dotGit}:${cfg}`;
+    }
+    if (path.dirname(d) === d) return 'none';
+  }
+}
+
+module.exports = { repoStamp, makeGit, resolveBase, resolveBaseAsync, fetchBranch, remoteDefaultBranch, refspecFor, isSafeRemoteName, FETCH_ENV, DEFAULT_FETCH_TIMEOUT_MS };

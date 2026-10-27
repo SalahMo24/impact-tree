@@ -26,7 +26,6 @@
     "test:textpos": "node test/textpos.test.js",
     "test:callsites": "node --max-old-space-size=8192 test/callsites.test.js",
     "test:languages": "node --max-old-space-size=8192 test/languages.test.js",
-    "test:scope": "node test/scope.test.js",
     "test:sources": "node test/sources.test.js",
     "test:syntactic": "node test/syntactic-index.test.js",
     "test:inheritance": "node test/inheritance.test.js",

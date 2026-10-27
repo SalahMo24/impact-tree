@@ -141,14 +141,14 @@ async function prepare(ctx) {
   // must be seen.
   clearProjectCache();
   const byComponent = filesByProject(repo, files);
-  // Cache: language services and document registries shared by the projects of this
-  // run. Owner: this `prepare` call, then the run through `extras.dispose`. Key:
-  // TypeScript version and config path for a service, the TypeScript module for a
-  // registry; the config is read once, and a file's version is its mtime, so an edit
-  // during the run is seen by the service. Invalidation: none; the next run builds a new
-  // pool. Disposal: `extras.dispose`, which the pipeline calls once the caller stage is
-  // over (on failure and cancellation too), or the `catch` below when this rejects.
-  const servicePool = { services: new Map(), registries: new Map() };
+  // Cache: language services shared by the projects of this run (their parsed files live
+  // in the process-wide registry of resolver-ts.js, which keeps TypeScript's lib files across
+  // runs). Owner: this `prepare` call, then the run through `extras.dispose`. Key:
+  // TypeScript version and config path; the config is read once, and a file's version is
+  // its mtime, so an edit during the run is seen by the service. Invalidation: none; the
+  // next run builds a new pool. Disposal: `extras.dispose`, which the pipeline calls once
+  // the caller stage is over (on failure and cancellation too), or the `catch` below when this rejects.
+  const servicePool = { services: new Map() };
   const disposePool = () => { for (const svc of servicePool.services.values()) svc.dispose(); };
   /** @type {any} */
   let workspaceGraph;

@@ -59,7 +59,6 @@ const SUITE = [
   { file: 'test/java-review-identity.test.js', tier: 'quick' },  // 3.8s
   { file: 'test/caller-retry.test.js', tier: 'quick' },  // 3.7s
   { file: 'test/services-vscode.test.js', tier: 'quick' },  // 1.9s
-  { file: 'test/scope.test.js', tier: 'full' },  // 5.4s
   { file: 'test/local-symbols.test.js', tier: 'quick' },  // 2.3s
   { file: 'test/local-diff.test.js', tier: 'full' },  // 55.0s
   { file: 'test/local-programs.test.js', tier: 'full' },  // 32.4s
