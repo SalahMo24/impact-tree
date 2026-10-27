@@ -20,7 +20,6 @@
 // submit_callers to it. Without one, or when it fails, the server works headless; a bridge
 // failure is never fatal.
 
-const fs = require('fs');
 const path = require('path');
 const { fileURLToPath } = require('url');
 const { execFileSync } = require('child_process');
@@ -30,6 +29,8 @@ const { realClock } = require('../engine/clock');
 const { z } = require('zod');
 const { createImpactTools } = require('./tools');
 const { ToolError } = require('./paging');
+const { createCodeWatch } = require('./code-watch');
+const { RELOAD_EXIT_CODE, SUPERVISED_ENV } = require('./supervisor');
 
 const SERVER_INFO = { name: 'impact-tree', title: 'Impact Tree', version: '0.1.0' };
 const INSTRUCTIONS = 'Facts about the checked-out pull request from Impact Tree: cluster cards of its changes, callers, references and impact paths to entry points. '
@@ -313,14 +314,6 @@ function headCommitOf(repo) {
 
 // The files whose change means this process runs outdated code (an extension update or a
 // new checkout of the extension). Relative to this file.
-const CODE_FILES = ['server.js', 'tools.js', 'paging.js', 'bridge-client.js', '../engine/agent-results.js', '../../package.json'];
-
-/** @returns {string} size and modification time of the server's code files; "gone" for a removed one */
-function defaultCodeStamp() {
-  return CODE_FILES.map((f) => {
-    try { const st = fs.statSync(path.join(__dirname, f)); return `${st.size}:${st.mtimeMs}`; } catch { return 'gone'; }
-  }).join('|');
-}
 
 // ---------------------------------------------------------------------------------------
 // The editor bridge
@@ -373,6 +366,7 @@ function withDeadline(promise, ms, what) {
  * @property {typeof findRepoFor} [findRepo] Replaceable in tests.
  * @property {(repo: string) => string|null} [headOf] Replaceable in tests: the checkout's HEAD commit.
  * @property {() => string} [codeStamp] Replaceable in tests: changes when the server's code files change.
+ * @property {() => void} [onOutdated] Called when the code changed, before the tool fails; default: exit for the supervisor when supervised.
  * @property {ConnectBridge} [connectBridge] Replaceable in tests.
  * @property {NodeJS.ReadableStream & { setEncoding?: any }} [input] Default: standard input.
  * @property {NodeJS.WritableStream} [output] Default: standard output.
@@ -406,8 +400,12 @@ function startServer(config) {
   /** @type {Promise<void>|null} */
   let closing = null;
   const headOf = config.headOf || headCommitOf;
-  const codeStamp = config.codeStamp || defaultCodeStamp;
-  const stampAtStart = codeStamp();
+  // Whether the extension's code changed since this process started (tests inject a stamp).
+  const codeChanged = config.codeStamp
+    ? ((stamp, atStart) => () => stamp() !== atStart)(config.codeStamp, config.codeStamp())
+    : ((watch) => () => watch.changed())(createCodeWatch(path.join(__dirname, '..', '..')));
+  // Supervised (src/mcp/supervisor.js): exit and let the supervisor restart on the new code and resend the call.
+  const onOutdated = config.onOutdated || (process.env[SUPERVISED_ENV] === '1' ? () => process.exit(RELOAD_EXIT_CODE) : null);
   /** What the kept analysis was made for: the checkout's head and, without --base, the editor's base commit. */
   /** @type {{ head: string, editorBase: string|null }|null} */
   let preparedFor = null;
@@ -478,7 +476,10 @@ function startServer(config) {
    * @throws {ToolError} when the extension's code changed after this process started
    */
   async function checkReview() {
-    if (codeStamp() !== stampAtStart) throw new ToolError(OUTDATED_MESSAGE);
+    if (codeChanged()) {
+      if (onOutdated) { log('the extension\'s code changed: exiting so the supervisor restarts on the new code'); onOutdated(); }
+      throw new ToolError(OUTDATED_MESSAGE);
+    }
     // With --base the editor's base does not matter; its context is read only for list_cards.
     const ctx = options.base ? null : await editorContext();
     if (options.notRepo || !prepared || !preparedFor) return { notice: null, ctx };

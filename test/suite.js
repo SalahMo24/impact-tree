@@ -156,6 +156,7 @@ const SUITE = [
   { file: 'test/agent-cards-view.test.js', tier: 'quick' },
   { file: 'test/agent-ai5.test.js', tier: 'quick' },
   { file: 'test/card-facts.test.js', tier: 'quick' },
+  { file: 'test/mcp-supervisor.test.js', tier: 'quick' },
   { file: 'test/keep-resolvers.test.js', tier: 'quick' },
   { file: 'test/mcp-server.test.js', tier: 'quick' },
   { file: 'test/mcp-checkout.test.js', tier: 'full' },

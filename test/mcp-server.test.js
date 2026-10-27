@@ -235,7 +235,7 @@ function connect(/** @type {any} */ extra = {}) {
   const server = startServer({
     options: { repo: REPO, ...(extra.base ? { base: extra.base } : {}), remote: 'origin', allowLocalBase: false, deadlineMs: 1000, ...(extra.options || {}) },
     input, output, ...(extra.findRepo ? { findRepo: extra.findRepo } : {}),
-    ...(extra.headOf ? { headOf: extra.headOf } : {}), ...(extra.codeStamp ? { codeStamp: extra.codeStamp } : {}),
+    ...(extra.headOf ? { headOf: extra.headOf } : {}), ...(extra.codeStamp ? { codeStamp: extra.codeStamp } : {}), ...(extra.onOutdated ? { onOutdated: extra.onOutdated } : {}),
     connectBridge: extra.connectBridge || (async () => null),
     prepare: extra.prepare || (async (/** @type {any} */ _o, /** @type {any} */ p) => {
       prepared++;
@@ -777,7 +777,9 @@ test('list_cards says when the review does not match the editor (no editor: null
 
 test('outdated code: once the extension\'s files change, every tool says to restart the server', async () => {
   let stamp = 'v1';
-  const s = connect({ codeStamp: () => stamp });
+  let restarts = 0;
+  // Under the supervisor this hook exits the process (exit code 75) and the call is resent to a new server.
+  const s = connect({ codeStamp: () => stamp, onOutdated: () => { restarts++; } });
   await s.handshake();
   assert.ok(!(await s.call('list_cards', {})).isError);
   stamp = 'v2';
@@ -786,6 +788,7 @@ test('outdated code: once the extension\'s files change, every tool says to rest
     assert.equal(r.isError, true);
     assert.match(r.content[0].text, /updated after this MCP server started.*turn it off and on.*Do not stop its process by hand/);
   }
+  assert.equal(restarts, 2, 'the restart hook runs before each refusal');
   await s.close();
 });
 

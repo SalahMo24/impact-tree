@@ -69,14 +69,16 @@ test('launcher: content, atomic write, rewrite only on change, missing folder me
   try {
     const ext = path.join(dir, 'ext');
     fs.mkdirSync(path.join(ext, 'src', 'mcp'), { recursive: true });
-    fs.writeFileSync(path.join(ext, 'src', 'mcp', 'server.js'), "exports.runCli = async (argv) => { console.log('ARGS ' + JSON.stringify(argv)); };\n");
+    // The launcher runs the real supervisor, which starts the folder's src/cli.js mcp and relays its messages.
+    fs.copyFileSync(path.join(__dirname, '..', 'src', 'mcp', 'supervisor.js'), path.join(ext, 'src', 'mcp', 'supervisor.js'));
+    fs.writeFileSync(path.join(ext, 'src', 'cli.js'), "console.log(JSON.stringify({ jsonrpc: '2.0', method: 'args', params: process.argv.slice(2) }));\n");
     const a = ac.ensureLauncher({ storageDir: path.join(dir, 'store'), extensionPath: ext });
     assert.equal(a.launcher, path.join(dir, 'store', 'mcp', 'impact-tree-mcp.cjs'));
     assert.equal(a.written, true);
     assert.deepEqual(fs.readdirSync(path.dirname(a.launcher)), ['impact-tree-mcp.cjs'], 'no temp file left');
     assert.equal(ac.ensureLauncher({ storageDir: path.join(dir, 'store'), extensionPath: ext }).written, false);
     const { execFileSync, spawnSync } = require('node:child_process');
-    assert.equal(execFileSync(process.execPath, [a.launcher, '--repo', '/x'], { encoding: 'utf8' }).trim(), 'ARGS ["--repo","/x"]');
+    assert.deepEqual(JSON.parse(execFileSync(process.execPath, [a.launcher, '--repo', '/x'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] })).params, ['mcp', '--repo', '/x']);
     // A new extension folder rewrites it.
     assert.equal(ac.ensureLauncher({ storageDir: path.join(dir, 'store'), extensionPath: path.join(dir, 'ext2') }).written, true);
     const gone = spawnSync(process.execPath, [a.launcher], { encoding: 'utf8' });
