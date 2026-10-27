@@ -154,6 +154,8 @@ const SUITE = [
   { file: 'test/github-commits.test.js', tier: 'quick' },
   { file: 'test/repeated-edits.test.js', tier: 'quick' },
   { file: 'test/agent-results.test.js', tier: 'quick' },
+  { file: 'test/agent-cards-view.test.js', tier: 'quick' },
+  { file: 'test/agent-ai5.test.js', tier: 'quick' },
   { file: 'test/keep-resolvers.test.js', tier: 'quick' },
   { file: 'test/mcp-server.test.js', tier: 'quick' },
   { file: 'test/mcp-checkout.test.js', tier: 'full' },

@@ -7,6 +7,7 @@
 // screen (reveal needs the same object).
 
 const { cardsViewModel } = require('./cards-view-model');
+const { latestCardsResult } = require('./agent-cards');
 
 /** @typedef {import('./cards-view-model').CardNode} CardNode */
 
@@ -21,7 +22,31 @@ const EMPTY_NODE = /** @type {CardNode} */ ({
  * @typedef {object} CardsSource
  * @property {boolean} enabled Whether `impactTree.cards.enabled` is on.
  * @property {any} state The session's view state: `result`, `cards`, `hintsPending`, `cardsError`.
+ * @property {AgentSource|null} [agent] The agent part (impactTree.agents.enabled), or null/absent when agents are off.
  */
+
+/**
+ * @typedef {object} AgentSource
+ * @property {{ askedAt: number }|null} waiting
+ * @property {boolean} showEngine
+ * @property {Array<{ kind: string, key: string, payload: unknown, storedAt: number }>} results The stored results for the shown head.
+ */
+
+/** @param {number} ms @returns {string} The local time as HH:MM. */
+function clockText(ms) {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/** @param {AgentSource} agent @returns {import('./cards-view-model').AgentInput} */
+function agentInput(agent) {
+  const latest = latestCardsResult(agent.results);
+  return {
+    waiting: agent.waiting ? { askedAtText: clockText(agent.waiting.askedAt) } : null,
+    result: latest ? { key: latest.key, storedAtText: clockText(latest.storedAt), payload: latest.payload } : null,
+    showEngine: agent.showEngine,
+  };
+}
 
 /**
  * @param {any} vscode
@@ -53,7 +78,7 @@ function createCardsProvider(vscode, { getSource }) {
   }
 
   function build() {
-    const { enabled, state } = getSource();
+    const { enabled, state, agent } = getSource();
     parents = new Map(); byId = new Map(); changes = new Map();
     if (!enabled || !state || !state.result) {
       roots = enabled ? [EMPTY_NODE] : [];
@@ -62,6 +87,7 @@ function createCardsProvider(vscode, { getSource }) {
       roots = cardsViewModel({
         result: state.result, cards: state.cards || null, hintsPending: state.hintsPending === true,
         preview: state.result.tierA === true, error: state.cardsError || null,
+        agent: agent ? agentInput(agent) : null,
       });
     }
     index(roots, null);
@@ -76,6 +102,7 @@ function createCardsProvider(vscode, { getSource }) {
   function commandFor(node) {
     const target = node.target;
     if (!target) return undefined;
+    if (target.kind === 'command') return { command: target.command, title: node.label, arguments: target.args };
     if (target.kind === 'card') return { command: REVEAL_COMMAND, title: 'Show card', arguments: [target.id] };
     if (target.kind === 'change') {
       const finding = changes.get(`${target.relPath}#${target.namePos}`);
@@ -107,4 +134,4 @@ function createCardsProvider(vscode, { getSource }) {
   };
 }
 
-module.exports = { createCardsProvider, REVEAL_COMMAND };
+module.exports = { createCardsProvider, REVEAL_COMMAND, clockText };
