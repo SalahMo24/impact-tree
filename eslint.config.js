@@ -39,12 +39,14 @@ const local = { rules: { 'no-wall-clock': require('./eslint-local/no-wall-clock'
 module.exports = [
   // The wall-clock rule covers all of src/: time must come from the injected clock
   // (src/engine/clock.js, which is exempt) unless an allowlist comment says why not.
+  // no-undef also covers all of src/: an identifier used where it is not declared (a local
+  // of activate() read at module scope) breaks only at run time, and the stubbed tests cannot see it.
   {
     files: [...enrolled, ...other].filter((file) => file !== 'src/engine/clock.js'),
     languageOptions: { sourceType: 'commonjs', ecmaVersion: 2022, globals: globals.node },
     plugins: { local },
     linterOptions: { reportUnusedDisableDirectives: 'error' },
-    rules: { 'local/no-wall-clock': 'error' },
+    rules: { 'local/no-wall-clock': 'error', 'no-undef': 'error' },
   },
   // Every other rule covers enrolled files only.
   {

@@ -101,7 +101,8 @@ const ORACLE_CONCURRENCY = 3;
  * alone, several cores and 3 GB; three fit in the G7 machine's 16 GB.
  */
 const GRAPHS_CONCURRENCY = 3;
-const DEFAULT_CACHE = '/Users/salah/Projects/impact-tree-scratchpad/g7/cache';
+const { scratchpadPath } = require('./scratchpad');
+const DEFAULT_CACHE = scratchpadPath('g7', 'cache');
 
 /** @param {string[]} args @param {string} flag @param {string} fallback */
 const option = (args, flag, fallback) => { const i = args.indexOf(flag); return i >= 0 && args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : fallback; };
