@@ -42,6 +42,12 @@ const STYLE = `
 body { color: var(--vscode-foreground); font-family: var(--vscode-font-family); font-size: var(--vscode-font-size); padding: 0 6px 12px 8px; }
 h3 { font-family: var(--vscode-editor-font-family); font-size: 13px; font-weight: 600; margin: 6px 0 2px; word-break: break-all; }
 .where { color: var(--vscode-descriptionForeground); word-break: break-all; }
+.agent { margin: 8px 0; padding: 6px 8px; border-left: 2px solid var(--vscode-textLink-foreground); }
+.agent .what { font-weight: 600; margin-bottom: 4px; }
+.agent dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 2px 8px; }
+.agent dt { color: var(--vscode-descriptionForeground); }
+.agent dd { margin: 0; }
+.agent .by { color: var(--vscode-descriptionForeground); font-size: 11px; margin-top: 4px; }
 .verdict { margin: 10px 0; padding: 7px 9px; border-left: 3px solid var(--vscode-editorWarning-foreground); background: var(--vscode-textBlockQuote-background); }
 .verdict.lv0 { border-left-color: var(--vscode-editorError-foreground); }
 .lv0 { color: var(--vscode-editorError-foreground); } .lv2 { color: var(--vscode-testing-iconPassed); }
@@ -179,12 +185,31 @@ function headHtml(row) {
  * The body for one row, or the hint when there is none.
  * @param {TreeRow|null} row
  * @param {any} result
+ * @param {any} [agentChange] What the agent says the row's change does, or null.
  * @returns {string}
  */
-function bodyHtml(row, result) {
+function bodyHtml(row, result, agentChange = null) {
   if (!row) return `<p class="where">${NO_ROW_HINT}</p>`;
   const isFile = row.type === 'reviewFile' || row.type === 'file';
-  return headHtml(row) + (isFile ? notAnalysedHtml(row) : verdictHtml(row)) + previewLimitsHtml(result);
+  return headHtml(row) + agentHtml(agentChange) + (isFile ? notAnalysedHtml(row) : verdictHtml(row)) + previewLimitsHtml(result);
+}
+
+const KIND_WORDS = { changed: 'Changed', 'may-change': 'May change', new: 'New', same: 'Same behaviour, new way' };
+
+/**
+ * What the user's agent says the change does to behaviour, when it said something.
+ * @param {{ kind: string, what: string, before?: string, after?: string, when?: string, affects?: Array<{ name: string, how: string }> }|null} b
+ * @returns {string}
+ */
+function agentHtml(b) {
+  if (!b || typeof b.what !== 'string') return '';
+  const word = /** @type {Record<string, string>} */ (KIND_WORDS)[b.kind] || 'Changed';
+  const rows = [['Before', b.before], ['After', b.after], ['When', b.when]].filter(([, v]) => typeof v === 'string' && v)
+    .map(([k, v]) => `<dt>${k}</dt><dd>${escapeHtml(v)}</dd>`);
+  (Array.isArray(b.affects) ? b.affects : []).forEach((a, i) => {
+    rows.push(`<dt>${i ? '' : 'Affects'}</dt><dd><b>${escapeHtml(a.name)}</b> — ${escapeHtml(a.how)}</dd>`);
+  });
+  return `<div class="agent"><div class="what">${escapeHtml(word)}: ${escapeHtml(b.what)}</div>${rows.length ? `<dl>${rows.join('')}</dl>` : ''}<div class="by">Written by your agent</div></div>`;
 }
 
 /**
@@ -192,19 +217,19 @@ function bodyHtml(row, result) {
  * @param {TreeRow|null} row A counting row (`finding`, `deleted`, `outside`, `file`) or a
  *   `reviewFile` row; null shows a hint. A caller or tests row is shown as the change it
  *   sits under, which the caller resolves.
- * @param {{ result: any, nonce: string, cspSource: string, progress?: ProgressPresentation|null }} opts
+ * @param {{ result: any, nonce: string, cspSource: string, progress?: ProgressPresentation|null, agentChange?: any }} opts
  *   `result` is the shown result. `nonce` is base64 and fresh per document; `cspSource` is
  *   the webview's. `progress` is the strip above the row; none when absent or null.
  * @returns {string} The whole HTML document.
  */
-function buildDetailHtml(row, { result, nonce, cspSource, progress = null }) {
+function buildDetailHtml(row, { result, nonce, cspSource, progress = null, agentChange = null }) {
   assert.match(nonce, /^[A-Za-z0-9+/=]+$/, 'the nonce must be base64 so it cannot break out of the CSP');
   const csp = `default-src 'none'; style-src ${escapeHtml(cspSource)} 'nonce-${nonce}'; script-src 'nonce-${nonce}';`;
   return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'
     + `<meta http-equiv="Content-Security-Policy" content="${csp}">`
     + '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
     + `<style nonce="${nonce}">${STYLE}</style></head>`
-    + `<body>${progressHtml(progress)}${bodyHtml(row, result)}`
+    + `<body>${progressHtml(progress)}${bodyHtml(row, result, agentChange)}`
     + `<script nonce="${nonce}">${script(nonce)}</script></body></html>`;
 }
 

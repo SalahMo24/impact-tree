@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { buildCardFacts, factsFileText, MAX_FACTS_CHARS, MAX_CALLERS_LISTED } = require('../src/mcp/card-facts');
+const { buildCardFacts, factsFileText, splitDiff, MAX_FACTS_CHARS, MAX_CALLERS_LISTED, MAX_HUNK_CHARS, DIFF_BUDGET_CHARS } = require('../src/mcp/card-facts');
 const { writeFactsFile } = require('../src/agent-facts-file');
 const { validateSubmission } = require('../src/engine/agent-results');
 
@@ -101,13 +101,55 @@ test('facts: long reviews shrink (fewer callers, then short rows) and stay under
   assert.ok(facts.cards[0].members.every((m) => !m.name || m.name.length <= 160));
 });
 
-test('the facts file text: the same value, one card header or member per line', () => {
-  const { facts } = buildCardFacts(fixture(), REVIEW);
+test('the facts file text: the same value, one card header or member per line, a member\'s diff on a line of its own', () => {
+  const input = fixture();
+  input.diffOf = () => `diff --git a/x b/x\n@@ -3,7 +3,7 @@\n${'-old line\n+new line\n'.repeat(100)}`;
+  const { facts } = buildCardFacts(input, REVIEW);
   const text = factsFileText(facts);
   assert.deepEqual(JSON.parse(text), facts);
   const lines = text.trimEnd().split('\n');
-  assert.equal(lines.length, 2 + facts.cards.length * 2 + facts.cards.reduce((n, c) => n + c.members.length, 0));
-  assert.ok(lines.every((l) => l.length < 2000));
+  const members = facts.cards.flatMap((c) => c.members);
+  assert.equal(lines.length, 2 + facts.cards.length * 2 + members.length + members.filter((m) => m.diff !== undefined).length);
+  assert.ok(lines.every((l) => l.length < 2000), 'no line a reader would cut');
+});
+
+/** A fixture with `n` changes in src/ and `n` in test files, the test ones listed first, each with a 2,000-character hunk. */
+function manyWithDiffs(n) {
+  const input = fixture();
+  const mk = (file, i) => ({ ...input.result.allChanged[0], label: `f${i}`, relPath: file, file: `/r/${file}`, namePos: i, startLine: 1, endLine: 50 });
+  const tests = Array.from({ length: n }, (_, i) => mk(`src/t${i}.test.ts`, i));
+  const code = Array.from({ length: n }, (_, i) => mk(`src/c${i}.ts`, n + i));
+  input.result.allChanged = [...tests, ...code];
+  input.cards = { clusters: [{ id: 'K1', label: 'all', members: [...tests, ...code].map((c) => `${c.relPath}#${c.namePos}`) }], sweeps: [], seams: [], hints: [] };
+  input.diffOf = (rel) => `diff --git a/${rel} b/${rel}\n@@ -1,40 +1,40 @@\n${'x'.repeat(2000)}`;
+  return input;
+}
+
+test('diffs: each hunk cut to its cap; changes outside test files first; past the budget a member says "omitted"', () => {
+  const { facts, cut } = buildCardFacts(manyWithDiffs(50), REVIEW);
+  assert.equal(cut, false);
+  const members = facts.cards[0].members;
+  const code = members.filter((m) => !m.file.includes('.test.'));
+  const tests = members.filter((m) => m.file.includes('.test.'));
+  assert.ok(code.every((m) => m.diff !== 'omitted'), 'every change outside tests has its hunk');
+  assert.ok(code.every((m) => m.diff.length <= MAX_HUNK_CHARS + 60 && m.diff.endsWith('(cut; get_change has all of it)')));
+  const given = tests.filter((m) => m.diff !== 'omitted').length;
+  assert.ok(given > 0 && given < tests.length, `${given} test changes got a hunk before the budget ran out`);
+  const used = members.filter((m) => m.diff !== 'omitted').reduce((n, m) => n + m.diff.length, 0);
+  assert.ok(used <= DIFF_BUDGET_CHARS);
+  // No diff at all without a diff source.
+  assert.ok(buildCardFacts(fixture(), REVIEW).facts.cards[0].members.filter((m) => !m.deleted).every((m) => m.diff === 'omitted'));
+});
+
+test('splitDiff: a whole git diff by file, a rename found by either path', () => {
+  const text = 'diff --git a/src/a.ts b/src/a.ts\nindex 1..2\n@@ -1 +1 @@\n-a\n+b\n'
+    + 'diff --git a/old/b.ts b/new/b.ts\nsimilarity index 90%\nrename from old/b.ts\nrename to new/b.ts\n@@ -2 +2 @@\n-c\n+d\n';
+  const diffOf = splitDiff(text);
+  assert.match(diffOf('src/a.ts'), /^diff --git a\/src\/a\.ts b\/src\/a\.ts\n[\s\S]*\+b\n$/);
+  assert.match(diffOf('new/b.ts'), /\+d/);
+  assert.match(diffOf('x.ts', 'old/b.ts'), /\+d/);
+  assert.equal(diffOf('missing.ts'), null);
+  assert.equal(splitDiff('')('a'), null);
 });
 
 test('the facts file: under .impact-tree/cards, ignored by git, replacing the earlier facts file only', async () => {

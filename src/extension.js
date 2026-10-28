@@ -6,6 +6,7 @@ const vscode = require('vscode');
 const { MODES } = require('./engine/analyze');
 const { createTreeProvider } = require('./tree-provider');
 const { createCardsProvider, REVEAL_COMMAND } = require('./cards-provider');
+const { latestCardsResult } = require('./agent-cards');
 const { createReviewNavigation } = require('./review-navigation');
 const { createDetailPanel } = require('./detail-panel');
 const { createCallerComment } = require('./caller-comment');
@@ -132,6 +133,8 @@ function activate(context, { clock = realClock } = {}) {
   // The agent's part of the view (set below, with the bridge): null while agents are off.
   /** @type {() => import('./cards-provider').AgentSource|null} */
   let agentSource = () => null;
+  /** @type {(changeId: string) => any} */
+  let agentChangeOf = () => null;
   const cardsProvider = createCardsProvider(vscode, {
     getSource: () => ({ enabled: owned.cardsEnabled(), state: owned.state, agent: agentSource() }),
   });
@@ -152,7 +155,7 @@ function activate(context, { clock = realClock } = {}) {
   let reviewComments = null;
   let feedbackComments = null;
   const details = createDetailPanel(vscode, { provider, view, getState: () => owned.state, log,
-    checkoutAndAnalyse: (pr) => session.checkoutAndAnalyse(pr) });
+    checkoutAndAnalyse: (pr) => session.checkoutAndAnalyse(pr), agentChange: (id) => agentChangeOf(id) });
   context.subscriptions.push(...details.disposables);
   // Counts follow presentation and progress events, independently of tree repaint scope.
   const showSummary = () => {
@@ -394,6 +397,14 @@ function activate(context, { clock = realClock } = {}) {
     if (!agentsOn()) return null;
     return { waiting: agentCards.waiting, showEngine: agentCards.showEngine, results: agentCards.head ? agentBridge.resultsFor(agentCards.head) : [] };
   };
+  // What the agent said one change does, for Details: from the latest result for the shown head, unless the engine's cards are shown.
+  agentChangeOf = (id) => {
+    const src = agentSource();
+    if (!src || src.showEngine) return null;
+    const latest = latestCardsResult(src.results);
+    const said = latest && latest.payload && Array.isArray(latest.payload.changes) ? latest.payload.changes : [];
+    return said.find((c) => c && c.id === id) || null;
+  };
   // The head of the review shown is read from the repository, so it arrives after the analysis does.
   let headRead = 0;
   const syncAgentHead = async () => {
@@ -405,15 +416,15 @@ function activate(context, { clock = realClock } = {}) {
     if (mine === headRead && agentCards.headChanged(head)) cardsProvider.refresh();
   };
   const analyseWithAgent = createAnalyseWithAgent(vscode, {
-    session: owned, bridge: agentBridge, state: agentCards, chooseAgent, log, redraw: () => cardsProvider.refresh(),
+    session: owned, bridge: agentBridge, state: agentCards, chooseAgent, log, redraw: () => { cardsProvider.refresh(); details.refresh(); },
   });
   context.subscriptions.push(
     vscode.commands.registerCommand('impactTree.analyseWithAgent', () => analyseWithAgent.run()),
     vscode.commands.registerCommand('impactTree.cancelAgentWaiting', () => analyseWithAgent.cancelWaiting()),
     vscode.commands.registerCommand('impactTree.toggleAgentCards', () => analyseWithAgent.toggle()),
     vscode.commands.registerCommand('impactTree.undoAgentResult', (key) => analyseWithAgent.undo(key)),
-    agentBridge.onDidStoreResult((e) => { if (agentCards.stored(e)) cardsProvider.refresh(); }),
-    agentBridge.onDidRemoveResult(() => cardsProvider.refresh()),
+    agentBridge.onDidStoreResult((e) => { if (agentCards.stored(e)) cardsProvider.refresh(); details.refresh(); }),
+    agentBridge.onDidRemoveResult(() => { cardsProvider.refresh(); details.refresh(); }),
     owned.onDidChangeAnalysis(() => { void syncAgentHead(); }), owned.onDidChangeCards(() => { void syncAgentHead(); }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (!e.affectsConfiguration('impactTree.agents.enabled')) return;

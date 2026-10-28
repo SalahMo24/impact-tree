@@ -258,3 +258,18 @@ test('listCallerRows lists callers grouped by file one by one, test callers incl
   assert.equal(impact[0].type, 'callerFile', 'the fixture groups two callers');
   assert.deepEqual(listCallerRows(impact).map((r) => r.label), ['one', 'two', 'a.test.ts']);
 });
+
+test('what the user\'s agent said a change does: kind and line, before / after / when / affects, escaped; nothing when it said nothing', () => {
+  const bad = change('src/a.ts', 'Holder.bad', 10);
+  const result = resultOf({ allChanged: [bad] });
+  const row = findRow(result, 'Holder.bad');
+  const said = { kind: 'changed', what: 'Rejects <script> paths', before: 'accepted any path', after: 'throws UnsupportedPathError', when: 'a path holds \\n',
+    affects: [{ name: 'Hono.#addRoute', how: 'throws at startup' }, { name: 'SmartRouter.match', how: 'falls through' }] };
+  const html = buildDetailHtml(row, { result, nonce: NONCE, cspSource: CSP_SOURCE, agentChange: said });
+  assert.equal(textOf(html), 'Holder.bad src/a.ts:10–19 Changed: Rejects <script> paths Before accepted any path After throws UnsupportedPathError When a path holds \\n'
+    + ' Affects Hono.#addRoute — throws at startup SmartRouter.match — falls through Written by your agent');
+  assert.doesNotMatch(html, /<script> paths/, 'escaped');
+  assert.equal(textOf(buildDetailHtml(row, { result, nonce: NONCE, cspSource: CSP_SOURCE, agentChange: { kind: 'same', what: 'Same result' } })),
+    'Holder.bad src/a.ts:10–19 Same behaviour, new way: Same result Written by your agent');
+  assert.equal(textOf(buildDetailHtml(row, { result, nonce: NONCE, cspSource: CSP_SOURCE, agentChange: null })), 'Holder.bad src/a.ts:10–19');
+});

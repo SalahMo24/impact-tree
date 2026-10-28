@@ -438,8 +438,45 @@ function scoped(node, prefix, home) {
   return out;
 }
 
+/** How each behaviour kind shows: its icon, its word, and its place in a card (lower first). */
+const KIND_SHOW = {
+  changed: { icon: 'warning', word: 'Changed', rank: 0 },
+  'may-change': { icon: 'question', word: 'May change', rank: 1 },
+  new: { icon: 'add', word: 'New', rank: 2 },
+  same: { icon: 'circle-outline', word: 'Same behaviour, new way', rank: 3 },
+};
+
 /**
- * The agent's cards as nodes, engine cards unchanged underneath.
+ * The hover text of a change the agent described: the full before / after / when / affects.
+ * @param {import('./agent-cards').AgentChange} b
+ * @returns {string}
+ */
+function behaviourTooltip(b) {
+  return [
+    `${KIND_SHOW[b.kind].word}: ${b.what}`,
+    b.before && `Before: ${b.before}`, b.after && `After: ${b.after}`, b.when && `When: ${b.when}`,
+    ...(b.affects || []).map((a, i) => `${i ? '        ' : 'Affects: '}${a.name} — ${a.how}`),
+    WRITTEN_BY_AGENT,
+  ].filter(Boolean).join('\n');
+}
+
+/**
+ * One change of an agent card: its name, and the agent's one line with its kind's icon when
+ * the agent described it. Opens the change like the Changes view does.
+ * @param {string} parentId @param {string} id A change id. @param {ReturnType<typeof indexFunctions>} index
+ * @param {Map<string, import('./agent-cards').AgentChange>} behaviour
+ * @returns {CardNode}
+ */
+function behaviourNode(parentId, id, index, behaviour) {
+  const plain = memberNode(parentId, id, index);
+  const b = behaviour.get(id);
+  if (!b) return plain;
+  return { ...plain, id: `${parentId}/change:${id}`, icon: KIND_SHOW[b.kind].icon, description: b.what, tooltip: behaviourTooltip(b), contextValue: 'agentChange' };
+}
+
+/**
+ * The agent's cards as nodes: each card's changes with the agent's one line, worst first, and
+ * the engine's card underneath (entry points, seams, hints) for whoever wants its facts.
  * @param {Extract<ReturnType<typeof resolveAgentResult>, { ok: true }>} agentCards
  * @param {(engineId: string) => CardNode|null} engineNode
  * @param {ReturnType<typeof indexFunctions>} index
@@ -448,28 +485,38 @@ function scoped(node, prefix, home) {
 function agentCardNodes(agentCards, engineNode, index) {
   /** @type {Map<string, string>} */
   const home = new Map();
-  agentCards.cards.forEach((a, i) => { for (const c of a.covers) if (!home.has(c.id)) home.set(c.id, `agent:A${i + 1}/${c.id}`); });
+  agentCards.cards.forEach((a, i) => { for (const c of a.covers) if (!home.has(c.id)) home.set(c.id, `agent:A${i + 1}/engine/${c.id}`); });
+  const rank = (/** @type {string} */ id) => { const b = agentCards.changes.get(id); return b ? KIND_SHOW[b.kind].rank : 9; };
   return agentCards.cards.map((a, i) => {
     const id = `agent:A${i + 1}`;
     /** @type {CardNode[]} */
     const children = [];
-    if (a.reason) children.push(leaf(`${id}/reason`, `Why: ${a.reason}`, 'comment', { tooltip: a.reason }));
     if (a.summary) children.push(leaf(`${id}/summary`, a.summary, 'note', { tooltip: a.summary }));
-    for (const cover of a.covers) {
-      const node = engineNode(cover.id);
-      if (!node) continue;
-      children.push(scoped(node, `${id}/`, home));
-      if (!cover.whole) {
-        const rowId = `${id}/taken:${cover.id}`;
-        children.push({ id: rowId, label: `Members in this card (${cover.taken.length} of ${cover.total})`, icon: 'list-flat', contextValue: 'cardMembers',
-          description: `from ${cover.id}`, children: capped(`${rowId}/more`, cover.taken, MAX_MEMBERS, (m) => memberNode(rowId, m, index)) });
-      }
+    const ids = [...a.ids].sort((x, y) => rank(x) - rank(y));
+    children.push(...capped(`${id}/more`, ids, MAX_MEMBERS, (m) => behaviourNode(id, m, index, agentCards.changes)));
+    const engine = a.covers.map((cover) => engineNode(cover.id)).filter((n) => n !== null).map((n) => scoped(/** @type {CardNode} */ (n), `${id}/engine/`, home));
+    if (engine.length) {
+      children.push({ id: `${id}/engine`, label: 'Engine facts', description: a.covers.map((c) => c.id).join(', '), icon: 'type-hierarchy', contextValue: 'cardsNote',
+        tooltip: 'The engine\'s card(s) these changes come from: entry points, seams and merge hints.', children: engine });
     }
-    const note = a.covers.length > 1 ? `merges ${a.covers.map((c) => (c.whole ? c.id : `part of ${c.id}`)).join(', ')}`
-      : a.covers.length === 1 && !a.covers[0].whole ? `part of ${a.covers[0].id}` : null;
-    return { id, label: a.title, description: ['agent', plural(a.count, 'change'), note].filter(Boolean).join(' · '),
-      tooltip: [a.summary, WRITTEN_BY_AGENT].filter(Boolean).join('\n\n'), icon: 'sparkle', contextValue: 'agentCard', children };
+    const counts = Object.keys(KIND_SHOW).map((k) => [k, ids.filter((m) => { const b = agentCards.changes.get(m); return b && b.kind === k; }).length]);
+    const changed = counts.filter(([k, n]) => n && (k === 'changed' || k === 'may-change')).map(([k, n]) => `${n} ${k === 'changed' ? 'changed' : 'may change'}`);
+    return { id, label: a.title, description: [plural(a.count, 'change'), ...changed].join(' · '),
+      tooltip: [a.summary, a.reason && `Why grouped: ${a.reason}`, WRITTEN_BY_AGENT].filter(Boolean).join('\n\n'), icon: 'sparkle', contextValue: 'agentCard', children };
   });
+}
+
+/**
+ * "Needs your attention": the few changes the agent says to look at first, with their one line.
+ * @param {Extract<ReturnType<typeof resolveAgentResult>, { ok: true }>} agentCards
+ * @param {ReturnType<typeof indexFunctions>} index
+ * @returns {CardNode|null}
+ */
+function attentionNode(agentCards, index) {
+  const ids = agentCards.attention.filter((id) => agentCards.changes.has(id));
+  if (!ids.length) return null;
+  return { id: 'agent:attention', label: `Needs your attention (${ids.length})`, icon: 'eye', contextValue: 'agentAttention',
+    tooltip: 'The changes your agent says to look at first.', children: ids.map((m) => behaviourNode('agent:attention', m, index, agentCards.changes)) };
 }
 
 /**
@@ -501,8 +548,10 @@ function agentSection(agent, cards, engineNode, index) {
   rows.push(undo, leaf('agent:toggle', agent.showEngine ? 'Show agent cards' : 'Show engine cards', 'arrow-swap', {
     contextValue: 'agentToggle', target: { kind: 'command', command: TOGGLE_COMMAND, args: [] } }));
   if (resolved.summary && !agent.showEngine) {
-    rows.push(leaf('agent:summary', `Agent summary: ${resolved.summary.split('\n')[0].slice(0, 120)}`, 'note', { tooltip: `${resolved.summary}\n\n${WRITTEN_BY_AGENT}` }));
+    rows.push(leaf('agent:summary', resolved.summary.split('\n')[0], 'note', { tooltip: `${resolved.summary}\n\n${WRITTEN_BY_AGENT}` }));
   }
+  const attention = agent.showEngine ? null : attentionNode(resolved, index);
+  if (attention) rows.push(attention);
   return { rows, cards: agent.showEngine ? null : agentCardNodes(resolved, engineNode, index) };
 }
 

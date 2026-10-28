@@ -92,6 +92,72 @@ test('cards: bounds', () => {
   assert.match(noisy.errors[MAX_ERRORS], /and \d+ more error/);
 });
 
+// ---- the behaviour review of a cards answer ----
+
+/** The change save gains a caller (handler) and an entry point (POST /save) for the "affects" check. */
+const reviewCtx = () => {
+  const r = JSON.parse(JSON.stringify(result));
+  r.allChanged[0].callers = [{ label: 'handler', file: '/r/src/b.ts', pos: 40 }];
+  r.impactPaths = { [SAVE]: { entries: [{ type: 'http', name: 'POST /save' }] } };
+  return { ...ctx, result: r };
+};
+const placed = [{ title: 'Save', members: [SAVE, HANDLER] }];
+const reviewOf = (/** @type {any} */ extra, c = reviewCtx()) => validateSubmission('cards', { cards: placed, ...extra }, c);
+
+test('behaviour: changes and attention are checked and normalised; an alias names its change', () => {
+  const r = reviewOf({
+    attention: ['dist/a.ts#9'],
+    changes: [
+      { id: 'dist/a.ts#9', kind: 'changed', what: '  Rejects empty input ', before: 'saved anything', after: 'throws on empty', when: 'x is empty',
+        affects: [{ name: 'handler', how: 'now throws on save(\'\')' }, { name: 'POST /save', how: 'answers 500 for an empty body' }] },
+      { id: HANDLER, kind: 'same', what: 'Same call, new variable name' },
+    ],
+  });
+  assert.equal(r.ok, true, JSON.stringify(r.errors));
+  assert.deepEqual(r.normalised.attention, [SAVE]);
+  assert.deepEqual(r.normalised.changes[0], { id: SAVE, kind: 'changed', what: 'Rejects empty input', before: 'saved anything', after: 'throws on empty', when: 'x is empty',
+    affects: [{ name: 'handler', how: 'now throws on save(\'\')' }, { name: 'POST /save', how: 'answers 500 for an empty body' }] });
+  assert.deepEqual(r.normalised.changes[1], { id: HANDLER, kind: 'same', what: 'Same call, new variable name' });
+  assert.equal(reviewOf({}).normalised.changes, undefined, 'both parts are optional');
+});
+
+test('behaviour: every error kind, with its message', () => {
+  const errs = (/** @type {any} */ extra) => reviewOf(extra).errors.join('\n');
+  assert.match(errs({ changes: 'x' }), /answer\.changes must be an array/);
+  assert.match(errs({ changes: [{ id: 'nope#1', kind: 'changed', what: 'x' }] }), /changes\[0\]: unknown change id "nope#1"/);
+  assert.match(errs({ changes: [{ id: SAVE, kind: 'changed', what: 'a' }, { id: SAVE, kind: 'new', what: 'b' }] }), /changes\[1\]: .* is described twice/);
+  assert.match(errs({ changes: [{ id: SAVE, kind: 'broken', what: 'x' }] }), /kind must be one of changed, may-change, same, new/);
+  assert.match(errs({ changes: [{ id: SAVE, kind: 'changed', what: ' ' }] }), /changes\[0\]: empty what/);
+  assert.match(errs({ changes: [{ id: SAVE, kind: 'changed', what: 'w'.repeat(201) }] }), /what is longer than 200 characters; keep it to one line/);
+  assert.match(errs({ changes: [{ id: SAVE, kind: 'changed', what: 'x', before: 'b'.repeat(401) }] }), /changes\[0\]\.before is longer than 400/);
+  assert.match(errs({ changes: [{ id: SAVE, kind: 'changed', what: 'x', affects: [{ name: 'handler', how: '' }] }] }), /how must be 1 to 400 characters/);
+  assert.match(errs({ changes: [{ id: SAVE, kind: 'changed', what: 'x', affects: Array(11).fill({ name: 'handler', how: 'y' }) }] }), /affects must be an array of at most 10/);
+  assert.match(errs({ attention: [SAVE, SAVE, SAVE, SAVE, SAVE, SAVE] }), /answer\.attention must be an array of at most 5 change ids/);
+  assert.match(errs({ attention: [SAVE] }), /attention\[0\]: .* needs an entry in answer\.changes with kind changed or may-change/);
+  assert.match(errs({ attention: [HANDLER], changes: [{ id: HANDLER, kind: 'same', what: 'x' }] }), /needs an entry in answer\.changes with kind changed or may-change/);
+  assert.match(errs({ attention: ['zz#1'] }), /attention\[0\]: unknown change id "zz#1"/);
+});
+
+test('behaviour: an affected name not in the facts is left out and listed, not refused; the card\'s entry points count', () => {
+  const r = reviewOf({ changes: [{ id: SAVE, kind: 'changed', what: 'x', affects: [{ name: 'main', how: 'breaks' }, { name: 'handler', how: 'throws' }] }] });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.normalised.changes[0].affects, [{ name: 'handler', how: 'throws' }]);
+  assert.deepEqual(r.dropped, ['changes[0].affects[0]: "main" is not a caller or entry point of this change or its card in the facts, so it is not shown']);
+  // HANDLER has no callers or entry points of its own, but shares a card with SAVE, which reaches POST /save.
+  const c = reviewCtx();
+  c.cards = { clusters: [{ id: 'K1', members: [SAVE, HANDLER], moved: [] }], sweeps: [] };
+  const both = validateSubmission('cards', { cards: placed, changes: [{ id: HANDLER, kind: 'changed', what: 'x', affects: [{ name: 'public-api POST /save', how: 'y' }] }] }, c);
+  assert.equal(both.ok, true);
+  assert.equal(both.dropped, undefined);
+  assert.equal(both.normalised.changes[0].affects.length, 1);
+});
+
+test('behaviour: a caller name is matched loosely (case, a qualified name); without the analysis it is not checked', () => {
+  assert.equal(reviewOf({ changes: [{ id: SAVE, kind: 'changed', what: 'x', affects: [{ name: 'Handler()', how: 'y' }, { name: 'post /SAVE', how: 'z' }] }] }).ok, true);
+  const noAnalysis = { ...ctx, result: {} };
+  assert.equal(reviewOf({ changes: [{ id: SAVE, kind: 'changed', what: 'x', affects: [{ name: 'anything', how: 'y' }] }] }, noAnalysis).ok, true);
+});
+
 test('callers: by change id or by file, line and name; the normalised form names both', () => {
   const caller = { file: 'src/b.ts', line: 3, name: 'handler', note: ' direct ' };
   const byId = callersOf({ function: SAVE, callers: [caller] });

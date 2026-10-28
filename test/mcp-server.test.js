@@ -385,6 +385,21 @@ test('submit_cards with an editor: checked, forwarded with the head and base, st
   assert.equal(b.seen.closed, 1, 'the bridge is closed on exit');
 });
 
+test('submit_cards with a behaviour review: stored; an affected name not in the facts is left out and said', async () => {
+  const b = fakeBridge();
+  const c = connect({ connectBridge: b.connectBridge });
+  await c.handshake();
+  const answer = { attention: [c.f.ids[0]], cards: [{ title: 'Save and run', members: c.f.ids }],
+    changes: [{ id: c.f.ids[0], kind: 'changed', what: 'save takes y', affects: [{ name: 'handler', how: 'passes no y' }, { name: 'nobody', how: 'x' }] }] };
+  const r = await c.call('submit_cards', { answer });
+  assert.equal(r.isError, undefined, JSON.stringify(r));
+  assert.equal(r.structuredContent.stored, true);
+  assert.match(r.structuredContent.notShown[0], /"nobody" is not a caller or entry point/);
+  assert.deepEqual(b.seen.submits[0].payload.changes[0].affects, [{ name: 'handler', how: 'passes no y' }]);
+  assert.deepEqual(b.seen.submits[0].payload.attention, [c.f.ids[0]]);
+  await c.close();
+});
+
 test('submit_cards with errors: nothing is forwarded, the errors say what to fix', async () => {
   const b = fakeBridge();
   const c = connect({ connectBridge: b.connectBridge });

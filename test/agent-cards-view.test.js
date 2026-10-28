@@ -34,7 +34,14 @@ function agentPayload(f) {
     const c = byId(f, id);
     cards.push({ title: `Group ${id}`, members: [...c.members, ...(c.moved || []).flatMap((m) => [m.from])] });
   }
-  return { summary: 'Eleven groups of related changes.\nSecond line.', cards };
+  // The behaviour review: K3's first change changed (and needs attention), its second the same, one K1 change new.
+  const changes = [
+    { id: k3[0], kind: 'changed', what: 'Runs middleware in registration order', before: 'ran handlers first', after: 'runs middleware first', when: 'a route has middleware',
+      affects: [{ name: 'Hono.dispatch', how: 'responses now pass through middleware' }] },
+    { id: k3[1], kind: 'same', what: 'Same order, built with a loop' },
+    { id: byId(f, 'K1').members[0], kind: 'new', what: 'Escapes raw HTML' },
+  ];
+  return { summary: 'Eleven groups of related changes.\nSecond line.', attention: [k3[0]], changes, cards };
 }
 const result = (f, payload, extra = {}) => ({ key: 'k1', storedAtText: '10:15', payload, ...extra });
 const view = (f, agent) => cardsViewModel({ result: f.result, cards: f.cards, agent });
@@ -89,35 +96,50 @@ if (process.argv.includes('--record')) {
     const f = hono();
     const top = view(f, { waiting: { askedAtText: '09:58' }, result: result(f, agentPayload(f)), showEngine: false }).slice(0, 5);
     assert.deepEqual(top.map((n) => n.label), ['Waiting for your agent… (asked 09:58)', 'Agent result from 10:15 — Undo', 'Show engine cards',
-      'Agent summary: Eleven groups of related changes.', 'Escape raw HTML and pick the request context']);
+      'Eleven groups of related changes.', 'Needs your attention (1)']);
     assert.equal(top[0].contextValue, 'agentWaiting');
     assert.deepEqual(top[1].target, { kind: 'command', command: UNDO_COMMAND, args: ['k1'] });
     assert.deepEqual(top[2].target, { kind: 'command', command: TOGGLE_COMMAND, args: [] });
   });
 
-  test('descriptions say merges and parts; the tooltip marks the text as the agent\'s', () => {
+  test('a card says its changes and how many changed; its tooltip holds the summary, why it was grouped, and who wrote it', () => {
     const f = hono();
     const cards = view(f, { waiting: null, result: result(f, agentPayload(f)), showEngine: false }).filter((n) => n.contextValue === 'agentCard');
-    assert.equal(cards[0].description, `agent · ${byId(f, 'K1').members.length + byId(f, 'K2').members.length} changes · merges K1, K2`);
-    assert.equal(cards[1].description, 'agent · 3 changes · part of K3');
-    assert.equal(cards[2].description, `agent · ${byId(f, 'K3').members.length - 3 + byId(f, 'K4').members.length} changes · merges part of K3, K4`);
-    assert.match(cards[0].tooltip, /Written by your agent; the facts below come from the engine\.$/);
-    assert.equal(cards[3].description, `agent · ${byId(f, 'K5').members.length} changes`);
+    assert.equal(cards[0].description, `${byId(f, 'K1').members.length + byId(f, 'K2').members.length} changes`);
+    assert.equal(cards[1].description, '3 changes · 1 changed');
+    assert.match(cards[1].tooltip, /^compose and its first callers\.\n\nWhy grouped: Split from K3: these callers are not touched by Context\.json\.\n\nWritten by your agent; the facts below come from the engine\.$/);
+    assert.equal(cards[3].description, `${byId(f, 'K5').members.length} changes`);
   });
 
-  test('under an agent card the engine card is the engine\'s own, and a partial cover lists only what it took', () => {
+  test('under a card: its summary, its changes worst first with the agent\'s one line, then the engine\'s card', () => {
     const f = hono();
+    const k3 = byId(f, 'K3').members;
     const engine = cardsViewModel({ result: f.result, cards: f.cards });
     const k3Engine = engine.find((n) => n.id === 'K3');
     const shown = view(f, { waiting: null, result: result(f, agentPayload(f)), showEngine: false }).find((n) => n.label === 'compose: keep the dispatch order');
-    const k3 = shown.children.find((n) => n.id === 'agent:A2/K3');
-    // Same facts, only the ids moved under the agent card.
+    assert.equal(shown.children[0].label, 'compose and its first callers.');
+    const rows = shown.children.slice(1, 4);
+    assert.deepEqual(rows.map((r) => [r.icon, r.description]), [['warning', 'Runs middleware in registration order'], ['circle-outline', 'Same order, built with a loop'], ['symbol-method', rows[2].description]]);
+    assert.equal(rows[0].contextValue, 'agentChange');
+    assert.equal(rows[0].tooltip, 'Changed: Runs middleware in registration order\nBefore: ran handlers first\nAfter: runs middleware first\nWhen: a route has middleware\nAffects: Hono.dispatch — responses now pass through middleware\nWritten by your agent; the facts below come from the engine.');
+    assert.equal(rows[0].target.kind, 'change', 'a row opens its change');
+    assert.ok(rows[2].id.endsWith(`member:${k3[2]}`), 'a change the agent did not describe is a plain row');
+    // The engine's card, same facts, only the ids moved under the agent card.
+    const facts = shown.children.find((n) => n.id === 'agent:A2/engine');
+    assert.equal(facts.label, 'Engine facts');
     const labels = (nodes) => nodes.map((n) => `${n.label}|${n.description || ''}|${n.tooltip || ''}|${labels(n.children || [])}`).join(';');
-    assert.equal(labels(k3.children), labels(k3Engine.children));
-    const taken = shown.children.find((n) => n.id === 'agent:A2/taken:K3');
-    assert.equal(taken.label, `Members in this card (3 of ${byId(f, 'K3').members.length})`);
-    assert.equal(taken.children.length, 3);
-    assert.equal(shown.children[0].label, 'Why: Split from K3: these callers are not touched by Context.json.');
+    assert.equal(labels(facts.children[0].children), labels(k3Engine.children));
+  });
+
+  test('needs your attention lists the changes the agent named, with their one line', () => {
+    const f = hono();
+    const top = view(f, { waiting: null, result: result(f, agentPayload(f)), showEngine: false });
+    const att = top.find((n) => n.id === 'agent:attention');
+    assert.deepEqual(att.children.map((c) => [c.icon, c.description]), [['warning', 'Runs middleware in registration order']]);
+    const engineShown = view(f, { waiting: null, result: result(f, agentPayload(f)), showEngine: true });
+    assert.ok(!engineShown.some((n) => n.id === 'agent:attention'), 'not with the engine cards');
+    const none = agentPayload(f); delete none.attention;
+    assert.ok(!view(f, { waiting: null, result: result(f, none), showEngine: false }).some((n) => n.id === 'agent:attention'));
   });
 
   test('a seam between cards selects the card where it first appears', () => {

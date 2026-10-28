@@ -24,12 +24,23 @@ const { validateSubmission, cardIds } = require('./engine/agent-results');
  * @property {string} [reason]
  * @property {number} count Distinct changes in this card.
  * @property {AgentCover[]} covers In order of first appearance among the card's members.
+ * @property {string[]} ids The card's change ids, in the order the agent listed them.
+ */
+/**
+ * @typedef {object} AgentChange What the agent says one change does to behaviour.
+ * @property {string} id
+ * @property {'changed'|'may-change'|'same'|'new'} kind
+ * @property {string} what One line.
+ * @property {string} [before]
+ * @property {string} [after]
+ * @property {string} [when]
+ * @property {Array<{ name: string, how: string }>} [affects]
  */
 
 /**
  * @param {unknown} payload A stored `cards` result: `{ summary?, cards: [{ title, summary?, members, reason? }] }`.
  * @param {{ clusters?: any[], sweeps?: any[] }|null} cards The engine's cards for the analysis shown.
- * @returns {{ ok: true, summary?: string, cards: AgentCard[] } | { ok: false }}
+ * @returns {{ ok: true, summary?: string, cards: AgentCard[], changes: Map<string, AgentChange>, attention: string[] } | { ok: false }}
  *   `ok: false`: the payload does not fit these cards (another state of the branch, or damaged).
  */
 function resolveAgentResult(payload, cards) {
@@ -52,10 +63,13 @@ function resolveAgentResult(payload, cards) {
   for (const a of verdict.normalised.cards) {
     /** @type {Map<string, Set<string>>} */
     const taken = new Map();
+    /** @type {string[]} */
+    const ids = [];
     for (const m of a.members) {
       const id = required.has(m) ? m : aliases.get(m);
       const home = id === undefined ? undefined : owner.get(id);
       if (id === undefined || home === undefined) return { ok: false };
+      if (!ids.includes(id)) ids.push(id);
       if (!taken.has(home)) taken.set(home, new Set());
       /** @type {Set<string>} */ (taken.get(home)).add(id);
     }
@@ -64,9 +78,11 @@ function resolveAgentResult(payload, cards) {
       return { id, taken: [...set], total, whole: set.size === total };
     });
     out.push({ title: a.title, ...(a.summary ? { summary: a.summary } : {}), ...(a.reason ? { reason: a.reason } : {}),
-      count: covers.reduce((n, c) => n + c.taken.length, 0), covers });
+      count: covers.reduce((n, c) => n + c.taken.length, 0), covers, ids });
   }
-  return { ok: true, ...(verdict.normalised.summary ? { summary: verdict.normalised.summary } : {}), cards: out };
+  /** @type {Map<string, AgentChange>} */
+  const changes = new Map((verdict.normalised.changes || []).map((/** @type {AgentChange} */ c) => [c.id, c]));
+  return { ok: true, ...(verdict.normalised.summary ? { summary: verdict.normalised.summary } : {}), cards: out, changes, attention: verdict.normalised.attention || [] };
 }
 
 /**

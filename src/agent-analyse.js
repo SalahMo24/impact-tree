@@ -11,7 +11,8 @@
 
 const { buildCardsPrompt, MAX_INLINE_FACTS_CHARS } = require('./agent-prompt');
 const { handOff, fitsHandOff } = require('./agent-handoff');
-const { buildCardFacts, factsFileText } = require('./mcp/card-facts');
+const { buildCardFacts, factsFileText, splitDiff } = require('./mcp/card-facts');
+const { execFile } = require('child_process');
 const { writeFactsFile } = require('./agent-facts-file');
 const { realClock } = require('./engine/clock');
 
@@ -21,10 +22,11 @@ const { realClock } = require('./engine/clock');
  *   state: ReturnType<typeof import('./agent-cards-state').createAgentCardsState>,
  *   chooseAgent: (vscode: any, forceAsk: boolean, opts: { title: string, exclude: string[] }) => Promise<{ id: import('./agent-handoff').AgentChoiceId, label: string }|null>,
  *   log: (m: string) => void, redraw: () => void, clock?: import('./engine/clock').Clock,
- *   writeFacts?: typeof writeFactsFile }} deps
- *   `redraw`: refresh the Cards view. `writeFacts`: writes facts too long for the prompt (injectable for tests).
+ *   writeFacts?: typeof writeFactsFile, diffText?: typeof gitDiffText }} deps
+ *   `redraw`: refresh the Cards view. `writeFacts`: writes facts too long for the prompt; `diffText`: the review's
+ *   whole diff, for the hunks in the facts (both injectable for tests).
  */
-function createAnalyseWithAgent(vscode, { session, bridge, state, chooseAgent, log, redraw, clock = realClock, writeFacts = writeFactsFile }) {
+function createAnalyseWithAgent(vscode, { session, bridge, state, chooseAgent, log, redraw, clock = realClock, writeFacts = writeFactsFile, diffText = gitDiffText }) {
   // Only one hand-off at a time: the picker and the hand-off can take a while.
   let running = false;
 
@@ -51,7 +53,9 @@ function createAnalyseWithAgent(vscode, { session, bridge, state, chooseAgent, l
    */
   async function promptFor(ctx, id) {
     const s = session.state;
-    const facts = buildCardFacts({ repo: ctx.repo, result: s.result, cards: s.cards }, {
+    let diff = null;
+    try { diff = await diffText(ctx.repo, ctx.base.sha, ctx.head); } catch (e) { log(`agent: no diff for the facts: ${e && /** @type {any} */ (e).message}`); }
+    const facts = buildCardFacts({ repo: ctx.repo, result: s.result, cards: s.cards, ...(diff ? { diffOf: splitDiff(diff) } : {}) }, {
       head: ctx.head, base: ctx.base.sha, baseRef: ctx.base.ref, pr: ctx.pr ? ctx.pr.number : null,
     });
     if (facts.text.length <= MAX_INLINE_FACTS_CHARS) {
@@ -111,4 +115,19 @@ function createAnalyseWithAgent(vscode, { session, bridge, state, chooseAgent, l
   };
 }
 
-module.exports = { createAnalyseWithAgent };
+/** Largest diff read for the facts. Unit: bytes. A larger one fails and the facts go without hunks. */
+const MAX_DIFF_BYTES = 64 * 1024 * 1024;
+
+/**
+ * The review's whole diff, base to head, without colour.
+ * @param {string} repo @param {string} base @param {string} head
+ * @returns {Promise<string>}
+ */
+function gitDiffText(repo, base, head) {
+  return new Promise((resolve, reject) => {
+    execFile('git', ['-C', repo, 'diff', '--no-color', '-U3', '--no-ext-diff', base, head, '--'], { maxBuffer: MAX_DIFF_BYTES, timeout: 30000 },
+      (err, stdout) => (err ? reject(err) : resolve(stdout)));
+  });
+}
+
+module.exports = { createAnalyseWithAgent, gitDiffText };

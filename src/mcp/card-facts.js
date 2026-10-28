@@ -1,21 +1,23 @@
 // @ts-check
 'use strict';
 
-// The facts an agent needs to title, summarise and merge the cards in one pass: every card
-// with its members, each member's signature change, added throws and callers (with how each
-// call site was updated), the entry points it reaches, its seams and its merge-hint evidence.
-// "Analyse with my agent" hands these over with the prompt (inline or as a file), so the
-// agent answers with one `submit_cards` call instead of reading the MCP tools card by card.
+// The facts an agent needs to review a pull request's behaviour changes and group them in one
+// pass: every card with its members, each member's diff hunk, signature change, added throws
+// and callers (with how each call site was updated), the entry points it reaches, its seams
+// and its merge-hint evidence. "Analyse with my agent" hands these over with the prompt
+// (inline or as a file), so the agent answers with one `submit_cards` call instead of reading
+// the MCP tools card by card.
 //
 // Built from the same analysis shape as the MCP tools (src/mcp/tools.js), so the change ids
-// are the ones `submit_cards` checks. No diff hunks: they are most of the size and the
-// titles do not need them (get_change still has them).
+// are the ones `submit_cards` checks. Diff hunks are on a budget: changes outside test files
+// first, each hunk cut to MAX_HUNK_CHARS; a member past the budget says `diff: "omitted"`
+// and get_change has its hunk.
 //
 // Every string from the code or the history (names, paths, commit subjects) is one line and
 // length-capped: it is data the prompt marks as data. Pure apart from `readText` (line numbers
 // of call sites), which is injectable.
 
-const { makeEnv, impactOf, nameOf, seamsOf } = require('./tools').internals;
+const { makeEnv, impactOf, nameOf, seamsOf, hunkFor } = require('./tools').internals;
 
 /** A member as id, name, file and kinds only: the smallest form. @param {import('./tools').Env} env @param {string} id */
 const shortRow = (env, id) => {
@@ -31,8 +33,14 @@ const MAX_HINTS = 4;
 const MAX_SEAMS = 10;
 const MAX_STR = 160;
 const MAX_SIG = 240;
-/** Longest facts text built. Unit: characters. Over it, callers then entry points are cut further. */
-const MAX_FACTS_CHARS = 150000;
+/** Longest diff hunk kept per change. Unit: characters. */
+const MAX_HUNK_CHARS = 1200;
+/** Diff text kept over all changes. Unit: characters. */
+const DIFF_BUDGET_CHARS = 100000;
+/** Longest facts text built. Unit: characters. Over it, diffs, then callers, then entry points are cut further. */
+const MAX_FACTS_CHARS = 250000;
+/** A test file, by its path: its changes get diff budget last. */
+const TEST_PATH = /(^|\/)(tests?|__tests__|spec|testdata)\/|\.(test|spec)\.[cm]?[jt]sx?$|_test\.(go|py)$|(^|\/)test_[^/]*\.py$/;
 
 /** @param {unknown} v @param {number} [max] @returns {string} */
 function one(v, max = MAX_STR) {
@@ -53,8 +61,9 @@ function evidenceText(e) {
 /**
  * One changed function's facts.
  * @param {import('./tools').Env} env @param {string} id @param {number} callerCap
+ * @param {Map<string, string>} diffs The hunks kept, by change id.
  */
-function memberFacts(env, id, callerCap) {
+function memberFacts(env, id, callerCap, diffs) {
   const c = env.changes.get(id);
   if (!c) return { id, name: one(id) };
   if (c.deletedFn) return { id, name: one(c.label), file: one(c.relPath, 300), deleted: true, before: c.baseSig || c.sig ? one(c.baseSig || c.sig, MAX_SIG) : null };
@@ -85,20 +94,51 @@ function memberFacts(env, id, callerCap) {
       list: callers.slice(0, callerCap).map((r) => `${one(r.x.label, 80)} ${one(env.rel(r.x.file), 200)}:${env.lineAt(r.x.file, r.x.pos) ?? '?'} ${r.state}${r.test ? ' (test)' : ''}`),
     },
     tests: c.testState || null,
+    diff: diffs.has(id) ? diffs.get(id) : 'omitted',
   };
 }
 
 /**
- * @param {{ repo: string, result: any, cards: any, readText?: (abs: string) => string|null }} input
+ * The diff hunks to give, by change id: changes outside test files first, in card order,
+ * each cut to MAX_HUNK_CHARS, until `budget` characters are used.
+ * @param {import('./tools').Env} env @param {number} budget
+ * @returns {Map<string, string>}
+ */
+function pickDiffs(env, budget) {
+  /** @type {Map<string, string>} */
+  const out = new Map();
+  if (budget <= 0 || !env.ctx.diffOf) return out;
+  const ids = env.allCards.flatMap((c) => c.members || []).filter((id) => { const c = env.changes.get(id); return c && !c.deletedFn; });
+  const isTest = (/** @type {string} */ id) => TEST_PATH.test(env.changes.get(id).relPath || '');
+  let used = 0;
+  for (const id of [...ids.filter((id) => !isTest(id)), ...ids.filter(isTest)]) {
+    if (out.has(id)) continue;
+    const h = hunkFor(env, env.changes.get(id)).text;
+    if (!h) continue;
+    const text = h.length > MAX_HUNK_CHARS ? `${h.slice(0, MAX_HUNK_CHARS)}\n… (cut; get_change has all of it)` : h;
+    if (used + text.length > budget) break;
+    out.set(id, text);
+    used += text.length;
+  }
+  return out;
+}
+
+/**
+ * @param {{ repo: string, result: any, cards: any, readText?: (abs: string) => string|null,
+ *   diffOf?: (relPath: string, oldPath: string|undefined) => string|null }} input
  *   `result`: an analysis with `impactPaths`; `cards`: from buildCards (with hints when found).
+ *   `diffOf`: the unified diff of one file between base and head; without it no hunks are given.
  * @param {{ head: string, base: string, baseRef?: string|null, pr?: number|null }} review The
  *   review the facts are for; the agent passes `head` and `base` back to `submit_cards`.
  * @returns {{ facts: any, text: string, cut: boolean }} `text`: compact JSON, at most MAX_FACTS_CHARS
  *   (unless even the smallest form is larger; `cut` then stays true and the agent is told to use the tools).
  */
 function buildCardFacts(input, review) {
-  const env = makeEnv({ repo: input.repo, result: input.result, cards: input.cards, readText: input.readText });
-  const build = (/** @type {number} */ callerCap, /** @type {number} */ entryCap) => ({
+  const env = makeEnv({ repo: input.repo, result: input.result, cards: input.cards, readText: input.readText, diffOf: input.diffOf });
+  /** @type {Map<number, Map<string, string>>} */
+  const diffsBy = new Map();
+  const diffsFor = (/** @type {number} */ budget) => { if (!diffsBy.has(budget)) diffsBy.set(budget, pickDiffs(env, budget)); return /** @type {Map<string, string>} */ (diffsBy.get(budget)); };
+  const build = (/** @type {number} */ callerCap, /** @type {number} */ entryCap, /** @type {number} */ budget) => ({
     review: { head: one(review.head, 64), base: one(review.base, 64), ...(review.baseRef ? { baseRef: one(review.baseRef, 100) } : {}), ...(review.pr ? { pr: review.pr } : {}) },
     changed: env.changes.size,
     notes: env.notes.slice(0, 6).map((n) => one(n, 200)),
@@ -115,18 +155,37 @@ function buildCardFacts(input, review) {
         seamsWith: [...new Set(seamsOf(env, c.id).flatMap((/** @type {any} */ s) => s.clusters).filter((/** @type {string} */ k) => k !== c.id))].slice(0, MAX_SEAMS),
         mergeHints: hints.map((/** @type {any} */ h) => ({ cards: h.clusters, strength: h.strength, evidence: (h.evidence || []).slice(0, MAX_EVIDENCE).map(evidenceText) })),
         ...((c.mirrorMembers || []).length ? { mirrored: c.mirrorMembers.length } : {}),
-        members: members.map((/** @type {string} */ m) => (callerCap < 0 ? shortRow(env, m) : memberFacts(env, m, callerCap))),
+        members: members.map((/** @type {string} */ m) => (callerCap < 0 ? shortRow(env, m) : memberFacts(env, m, callerCap, diffsFor(budget)))),
       };
     }),
   });
-  // Shrink until it fits: fewer callers listed, fewer entry points, then members as short rows.
-  for (const [callerCap, entryCap] of [[MAX_CALLERS_LISTED, MAX_ENTRY_POINTS], [3, 4], [0, 2], [-1, 2]]) {
-    const facts = build(callerCap, entryCap);
+  // Shrink until it fits: half the diffs, fewer callers and entry points, no diffs, then members as short rows.
+  const steps = [[MAX_CALLERS_LISTED, MAX_ENTRY_POINTS, DIFF_BUDGET_CHARS], [MAX_CALLERS_LISTED, MAX_ENTRY_POINTS, DIFF_BUDGET_CHARS / 2],
+    [3, 4, DIFF_BUDGET_CHARS / 4], [0, 2, 0], [-1, 2, 0]];
+  for (const [callerCap, entryCap, budget] of steps) {
+    const facts = build(callerCap, entryCap, budget);
     const text = JSON.stringify(facts);
-    if (text.length <= MAX_FACTS_CHARS) return { facts, text, cut: callerCap !== MAX_CALLERS_LISTED };
+    if (text.length <= MAX_FACTS_CHARS) return { facts, text, cut: callerCap !== MAX_CALLERS_LISTED || budget !== DIFF_BUDGET_CHARS };
     if (callerCap === -1) return { facts, text, cut: true };
   }
   throw new Error('unreachable');
+}
+
+/**
+ * A whole `git diff` split per file, as `diffOf` wants it: the text of each file's section by
+ * its new path (and its old path, for a rename).
+ * @param {string} text @returns {(relPath: string, oldPath: string|undefined) => string|null}
+ */
+function splitDiff(text) {
+  /** @type {Map<string, string>} */
+  const byPath = new Map();
+  for (const part of String(text || '').split(/^(?=diff --git )/m)) {
+    const m = /^diff --git a\/(.+?) b\/(.+?)\n/.exec(part);
+    if (!m) continue;
+    byPath.set(m[2], part);
+    if (!byPath.has(m[1])) byPath.set(m[1], part);
+  }
+  return (relPath, oldPath) => byPath.get(relPath) ?? (oldPath ? byPath.get(oldPath) ?? null : null);
 }
 
 /**
@@ -139,9 +198,14 @@ function factsFileText(facts) {
   const top = JSON.stringify(head).slice(0, -1);
   const cardText = (/** @type {any} */ c) => {
     const { members, ...rest } = c;
-    return `${JSON.stringify(rest).slice(0, -1)},"members":[\n${members.map((/** @type {any} */ m) => JSON.stringify(m)).join(',\n')}\n]}`;
+    // A member's diff goes on a line of its own (JSON allows the line break), so no line is long.
+    const member = (/** @type {any} */ m) => {
+      const { diff, ...fields } = m;
+      return diff === undefined ? JSON.stringify(m) : `${JSON.stringify(fields).slice(0, -1)},\n"diff":${JSON.stringify(diff)}}`;
+    };
+    return `${JSON.stringify(rest).slice(0, -1)},"members":[\n${members.map(member).join(',\n')}\n]}`;
   };
   return `${top},"cards":[\n${cards.map(cardText).join(',\n')}\n]}\n`;
 }
 
-module.exports = { buildCardFacts, factsFileText, MAX_FACTS_CHARS, MAX_CALLERS_LISTED };
+module.exports = { buildCardFacts, factsFileText, splitDiff, MAX_FACTS_CHARS, MAX_CALLERS_LISTED, MAX_HUNK_CHARS, DIFF_BUDGET_CHARS };

@@ -27,26 +27,41 @@
   },
   {
    "id": "agent:summary",
-   "label": "Agent summary: Eleven groups of related changes.",
+   "label": "Eleven groups of related changes.",
    "icon": "note",
    "contextValue": "cardsNote",
    "tooltip": "Eleven groups of related changes.\nSecond line.\n\nWritten by your agent; the facts below come from the engine."
   },
   {
+   "id": "agent:attention",
+   "label": "Needs your attention (1)",
+   "icon": "eye",
+   "contextValue": "agentAttention",
+   "tooltip": "The changes your agent says to look at first.",
+   "children": [
+    {
+     "id": "agent:attention/change:src/compose.ts#300",
+     "label": "compose",
+     "description": "Runs middleware in registration order",
+     "icon": "warning",
+     "contextValue": "agentChange",
+     "tooltip": "Changed: Runs middleware in registration order\nBefore: ran handlers first\nAfter: runs middleware first\nWhen: a route has middleware\nAffects: Hono.dispatch — responses now pass through middleware\nWritten by your agent; the facts below come from the engine.",
+     "target": {
+      "kind": "change",
+      "relPath": "src/compose.ts",
+      "namePos": 300
+     }
+    }
+   ]
+  },
+  {
    "id": "agent:A1",
    "label": "Escape raw HTML and pick the request context",
-   "description": "agent · 15 changes · merges K1, K2",
-   "tooltip": "The html helper and the Lambda request context change together.\n\nWritten by your agent; the facts below come from the engine.",
+   "description": "15 changes",
+   "tooltip": "The html helper and the Lambda request context change together.\n\nWhy grouped: Both change how a request body is turned into text.\n\nWritten by your agent; the facts below come from the engine.",
    "icon": "sparkle",
    "contextValue": "agentCard",
    "children": [
-    {
-     "id": "agent:A1/reason",
-     "label": "Why: Both change how a request body is turned into text.",
-     "icon": "comment",
-     "contextValue": "cardsNote",
-     "tooltip": "Both change how a request body is turned into text."
-    },
     {
      "id": "agent:A1/summary",
      "label": "The html helper and the Lambda request context change together.",
@@ -55,40 +70,219 @@
      "tooltip": "The html helper and the Lambda request context change together."
     },
     {
-     "id": "agent:A1/K1",
-     "label": "K1 · raw and 4 related",
-     "description": "5 changes · mirrored into generated dir",
-     "tooltip": "Files: src/helper/html/index.ts, src/jsx/streaming.ts, src/utils/html.ts\nModule: (root)\n5 copies in generated deno_dist\n2 joined by location",
-     "icon": "layers",
-     "contextValue": "card",
-     "childCount": 7
+     "id": "agent:A1/change:src/helper/html/index.ts#201",
+     "label": "raw",
+     "description": "Escapes raw HTML",
+     "icon": "add",
+     "contextValue": "agentChange",
+     "tooltip": "New: Escapes raw HTML\nWritten by your agent; the facts below come from the engine.",
+     "target": {
+      "kind": "change",
+      "relPath": "src/helper/html/index.ts",
+      "namePos": 201
+     }
     },
     {
-     "id": "agent:A1/K2",
-     "label": "K2 · getRequestContext and 9 related",
-     "description": "10 changes",
-     "tooltip": "Files: src/adapter/aws-lambda/handler.ts\nModule: (root)\n1 joined by location",
-     "icon": "layers",
-     "contextValue": "card",
-     "childCount": 5
+     "id": "agent:A1/member:src/utils/html.ts#635",
+     "label": "stringBufferToString",
+     "description": "src/utils/html.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/utils/html.ts:16",
+     "target": {
+      "kind": "change",
+      "relPath": "src/utils/html.ts",
+      "namePos": 635
+     }
+    },
+    {
+     "id": "agent:A1/member:src/jsx/streaming.ts#2482",
+     "label": "renderToReadableStream.start",
+     "description": "src/jsx/streaming.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/jsx/streaming.ts:85",
+     "target": {
+      "kind": "change",
+      "relPath": "src/jsx/streaming.ts",
+      "namePos": 2482
+     }
+    },
+    {
+     "id": "agent:A1/member:src/jsx/streaming.ts#2723",
+     "label": "renderToReadableStream.start.then",
+     "description": "src/jsx/streaming.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/jsx/streaming.ts:91",
+     "target": {
+      "kind": "change",
+      "relPath": "src/jsx/streaming.ts",
+      "namePos": 2723
+     }
+    },
+    {
+     "id": "agent:A1/member:src/jsx/streaming.ts#379",
+     "label": "Suspense",
+     "description": "src/jsx/streaming.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/jsx/streaming.ts:14",
+     "target": {
+      "kind": "change",
+      "relPath": "src/jsx/streaming.ts",
+      "namePos": 379
+     }
+    },
+    {
+     "id": "agent:A1/member:src/adapter/aws-lambda/handler.ts#2264",
+     "label": "getRequestContext",
+     "description": "param type · return type · src/adapter/aws-lambda/handler.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/adapter/aws-lambda/handler.ts:86",
+     "target": {
+      "kind": "change",
+      "relPath": "src/adapter/aws-lambda/handler.ts",
+      "namePos": 2264
+     }
+    },
+    {
+     "id": "agent:A1/member:src/adapter/aws-lambda/handler.ts#5245",
+     "label": "createRequest",
+     "description": "param type · src/adapter/aws-lambda/handler.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/adapter/aws-lambda/handler.ts:199",
+     "target": {
+      "kind": "change",
+      "relPath": "src/adapter/aws-lambda/handler.ts",
+      "namePos": 5245
+     }
+    },
+    {
+     "id": "agent:A1/member:src/adapter/aws-lambda/handler.ts#7063",
+     "label": "isProxyEventV2",
+     "description": "param type · src/adapter/aws-lambda/handler.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/adapter/aws-lambda/handler.ts:259",
+     "target": {
+      "kind": "change",
+      "relPath": "src/adapter/aws-lambda/handler.ts",
+      "namePos": 7063
+     }
+    },
+    {
+     "id": "agent:A1/member:src/adapter/aws-lambda/handler.ts#4424",
+     "label": "createResult",
+     "description": "param type · src/adapter/aws-lambda/handler.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/adapter/aws-lambda/handler.ts:168",
+     "target": {
+      "kind": "change",
+      "relPath": "src/adapter/aws-lambda/handler.ts",
+      "namePos": 4424
+     }
+    },
+    {
+     "id": "agent:A1/member:src/adapter/aws-lambda/handler.ts#6151",
+     "label": "extractQueryString",
+     "description": "param type · src/adapter/aws-lambda/handler.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/adapter/aws-lambda/handler.ts:228",
+     "target": {
+      "kind": "change",
+      "relPath": "src/adapter/aws-lambda/handler.ts",
+      "namePos": 6151
+     }
+    },
+    {
+     "id": "agent:A1/member:src/adapter/aws-lambda/handler.ts#6428",
+     "label": "getCookies",
+     "description": "param type · src/adapter/aws-lambda/handler.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/adapter/aws-lambda/handler.ts:237",
+     "target": {
+      "kind": "change",
+      "relPath": "src/adapter/aws-lambda/handler.ts",
+      "namePos": 6428
+     }
+    },
+    {
+     "id": "agent:A1/member:src/adapter/aws-lambda/handler.ts#6613",
+     "label": "setCookies",
+     "description": "param type · src/adapter/aws-lambda/handler.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/adapter/aws-lambda/handler.ts:243",
+     "target": {
+      "kind": "change",
+      "relPath": "src/adapter/aws-lambda/handler.ts",
+      "namePos": 6613
+     }
+    },
+    {
+     "id": "agent:A1/member:src/adapter/aws-lambda/handler.ts#2722",
+     "label": "streamHandle",
+     "description": "src/adapter/aws-lambda/handler.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/adapter/aws-lambda/handler.ts:104",
+     "target": {
+      "kind": "change",
+      "relPath": "src/adapter/aws-lambda/handler.ts",
+      "namePos": 2722
+     }
+    },
+    {
+     "id": "agent:A1/member:src/adapter/aws-lambda/handler.ts#3945",
+     "label": "handle",
+     "description": "src/adapter/aws-lambda/handler.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/adapter/aws-lambda/handler.ts:148",
+     "target": {
+      "kind": "change",
+      "relPath": "src/adapter/aws-lambda/handler.ts",
+      "namePos": 3945
+     }
+    },
+    {
+     "id": "agent:A1/member:src/adapter/aws-lambda/handler.ts#6851",
+     "label": "−isProxyEvent",
+     "description": "deleted · src/adapter/aws-lambda/handler.ts",
+     "icon": "trash",
+     "contextValue": "cardMember",
+     "tooltip": "isProxyEvent was deleted from src/adapter/aws-lambda/handler.ts",
+     "target": {
+      "kind": "deleted",
+      "relPath": "src/adapter/aws-lambda/handler.ts",
+      "namePos": 6851
+     }
+    },
+    {
+     "id": "agent:A1/engine",
+     "label": "Engine facts",
+     "description": "K1, K2",
+     "icon": "type-hierarchy",
+     "contextValue": "cardsNote",
+     "tooltip": "The engine's card(s) these changes come from: entry points, seams and merge hints.",
+     "childCount": 2
     }
    ]
   },
   {
    "id": "agent:A2",
    "label": "compose: keep the dispatch order",
-   "description": "agent · 3 changes · part of K3",
-   "tooltip": "compose and its first callers.\n\nWritten by your agent; the facts below come from the engine.",
+   "description": "3 changes · 1 changed",
+   "tooltip": "compose and its first callers.\n\nWhy grouped: Split from K3: these callers are not touched by Context.json.\n\nWritten by your agent; the facts below come from the engine.",
    "icon": "sparkle",
    "contextValue": "agentCard",
    "children": [
-    {
-     "id": "agent:A2/reason",
-     "label": "Why: Split from K3: these callers are not touched by Context.json.",
-     "icon": "comment",
-     "contextValue": "cardsNote",
-     "tooltip": "Split from K3: these callers are not touched by Context.json."
-    },
     {
      "id": "agent:A2/summary",
      "label": "compose and its first callers.",
@@ -97,39 +291,63 @@
      "tooltip": "compose and its first callers."
     },
     {
-     "id": "agent:A2/K3",
-     "label": "K3 · compose and 7 related",
-     "description": "8 changes · mirrored into generated dir",
-     "tooltip": "Files: src/compose.ts, src/hono-base.ts, src/request.ts\nModule: (root)\n8 copies in generated deno_dist\n4 joined by location",
-     "icon": "layers",
-     "contextValue": "card",
-     "childCount": 10
+     "id": "agent:A2/change:src/compose.ts#300",
+     "label": "compose",
+     "description": "Runs middleware in registration order",
+     "icon": "warning",
+     "contextValue": "agentChange",
+     "tooltip": "Changed: Runs middleware in registration order\nBefore: ran handlers first\nAfter: runs middleware first\nWhen: a route has middleware\nAffects: Hono.dispatch — responses now pass through middleware\nWritten by your agent; the facts below come from the engine.",
+     "target": {
+      "kind": "change",
+      "relPath": "src/compose.ts",
+      "namePos": 300
+     }
     },
     {
-     "id": "agent:A2/taken:K3",
-     "label": "Members in this card (3 of 8)",
-     "icon": "list-flat",
-     "contextValue": "cardMembers",
-     "description": "from K3",
-     "childCount": 3
+     "id": "agent:A2/change:src/request.ts#1067",
+     "label": "HonoRequest.constructor",
+     "description": "Same order, built with a loop",
+     "icon": "circle-outline",
+     "contextValue": "agentChange",
+     "tooltip": "Same behaviour, new way: Same order, built with a loop\nWritten by your agent; the facts below come from the engine.",
+     "target": {
+      "kind": "change",
+      "relPath": "src/request.ts",
+      "namePos": 1067
+     }
+    },
+    {
+     "id": "agent:A2/member:src/hono-base.ts#7845",
+     "label": "Hono.dispatch",
+     "description": "src/hono-base.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/hono-base.ts:272",
+     "target": {
+      "kind": "change",
+      "relPath": "src/hono-base.ts",
+      "namePos": 7845
+     }
+    },
+    {
+     "id": "agent:A2/engine",
+     "label": "Engine facts",
+     "description": "K3",
+     "icon": "type-hierarchy",
+     "contextValue": "cardsNote",
+     "tooltip": "The engine's card(s) these changes come from: entry points, seams and merge hints.",
+     "childCount": 1
     }
    ]
   },
   {
    "id": "agent:A3",
    "label": "Context.json and the rest of compose",
-   "description": "agent · 15 changes · merges part of K3, K4",
-   "tooltip": "json responses and the remaining compose changes.\n\nWritten by your agent; the facts below come from the engine.",
+   "description": "15 changes",
+   "tooltip": "json responses and the remaining compose changes.\n\nWhy grouped: The rest of K3 calls Context.json.\n\nWritten by your agent; the facts below come from the engine.",
    "icon": "sparkle",
    "contextValue": "agentCard",
    "children": [
-    {
-     "id": "agent:A3/reason",
-     "label": "Why: The rest of K3 calls Context.json.",
-     "icon": "comment",
-     "contextValue": "cardsNote",
-     "tooltip": "The rest of K3 calls Context.json."
-    },
     {
      "id": "agent:A3/summary",
      "label": "json responses and the remaining compose changes.",
@@ -138,181 +356,918 @@
      "tooltip": "json responses and the remaining compose changes."
     },
     {
-     "id": "agent:A3/K3",
-     "label": "K3 · compose and 7 related",
-     "description": "8 changes · mirrored into generated dir",
-     "tooltip": "Files: src/compose.ts, src/hono-base.ts, src/request.ts\nModule: (root)\n8 copies in generated deno_dist\n4 joined by location",
-     "icon": "layers",
-     "contextValue": "card",
-     "childCount": 10
+     "id": "agent:A3/member:src/compose.ts#598",
+     "label": "compose.dispatch",
+     "description": "src/compose.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/compose.ts:20",
+     "target": {
+      "kind": "change",
+      "relPath": "src/compose.ts",
+      "namePos": 598
+     }
     },
     {
-     "id": "agent:A3/taken:K3",
-     "label": "Members in this card (5 of 8)",
-     "icon": "list-flat",
-     "contextValue": "cardMembers",
-     "description": "from K3",
-     "childCount": 5
+     "id": "agent:A3/member:src/request.ts#1507",
+     "label": "HonoRequest.param",
+     "description": "src/request.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/request.ts:53",
+     "target": {
+      "kind": "change",
+      "relPath": "src/request.ts",
+      "namePos": 1507
+     }
     },
     {
-     "id": "agent:A3/K4",
-     "label": "K4 · Context.json and 9 related",
-     "description": "10 changes · mirrored into generated dir",
-     "tooltip": "Files: src/context.ts, src/utils/html.ts\nModule: (root)\n10 copies in generated deno_dist\n2 joined by location",
-     "icon": "layers",
-     "contextValue": "card",
-     "childCount": 11
+     "id": "agent:A3/member:src/request.ts#5485",
+     "label": "HonoRequest.matchedRoutes",
+     "description": "src/request.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/request.ts:199",
+     "target": {
+      "kind": "change",
+      "relPath": "src/request.ts",
+      "namePos": 5485
+     }
+    },
+    {
+     "id": "agent:A3/member:src/request.ts#5589",
+     "label": "HonoRequest.routePath",
+     "description": "src/request.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/request.ts:203",
+     "target": {
+      "kind": "change",
+      "relPath": "src/request.ts",
+      "namePos": 5589
+     }
+    },
+    {
+     "id": "agent:A3/member:src/request.ts#1359",
+     "label": "−HonoRequest.setParams",
+     "description": "deleted · src/request.ts",
+     "icon": "trash",
+     "contextValue": "cardMember",
+     "tooltip": "HonoRequest.setParams was deleted from src/request.ts",
+     "target": {
+      "kind": "deleted",
+      "relPath": "src/request.ts",
+      "namePos": 1359
+     }
+    },
+    {
+     "id": "agent:A3/member:src/context.ts#8733",
+     "label": "Context.json",
+     "description": "param type · return type · src/context.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/context.ts:307",
+     "target": {
+      "kind": "change",
+      "relPath": "src/context.ts",
+      "namePos": 8733
+     }
+    },
+    {
+     "id": "agent:A3/member:src/context.ts#9644",
+     "label": "Context.jsonT",
+     "description": "param type · return type · src/context.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/context.ts:334",
+     "target": {
+      "kind": "change",
+      "relPath": "src/context.ts",
+      "namePos": 9644
+     }
+    },
+    {
+     "id": "agent:A3/member:src/context.ts#6462",
+     "label": "Context.newResponse",
+     "description": "src/context.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/context.ts:221",
+     "target": {
+      "kind": "change",
+      "relPath": "src/context.ts",
+      "namePos": 6462
+     }
+    },
+    {
+     "id": "agent:A3/member:src/context.ts#10141",
+     "label": "Context.html",
+     "description": "src/context.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/context.ts:350",
+     "target": {
+      "kind": "change",
+      "relPath": "src/context.ts",
+      "namePos": 10141
+     }
+    },
+    {
+     "id": "agent:A3/member:src/context.ts#4917",
+     "label": "Context.setRenderer",
+     "description": "src/context.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/context.ts:159",
+     "target": {
+      "kind": "change",
+      "relPath": "src/context.ts",
+      "namePos": 4917
+     }
+    },
+    {
+     "id": "agent:A3/member:src/context.ts#3427",
+     "label": "Context.renderer",
+     "description": "src/context.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/context.ts:107",
+     "target": {
+      "kind": "change",
+      "relPath": "src/context.ts",
+      "namePos": 3427
+     }
+    },
+    {
+     "id": "agent:A3/member:src/context.ts#4852",
+     "label": "Context.render",
+     "description": "src/context.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/context.ts:157",
+     "target": {
+      "kind": "change",
+      "relPath": "src/context.ts",
+      "namePos": 4852
+     }
+    },
+    {
+     "id": "agent:A3/member:src/context.ts#6020",
+     "label": "Context.status",
+     "description": "src/context.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/context.ts:202",
+     "target": {
+      "kind": "change",
+      "relPath": "src/context.ts",
+      "namePos": 6020
+     }
+    },
+    {
+     "id": "agent:A3/member:src/utils/html.ts#1996",
+     "label": "resolveStream",
+     "description": "src/utils/html.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/utils/html.ts:73",
+     "target": {
+      "kind": "change",
+      "relPath": "src/utils/html.ts",
+      "namePos": 1996
+     }
+    },
+    {
+     "id": "agent:A3/member:src/context.ts#3554",
+     "label": "−Context._renderer",
+     "description": "deleted · src/context.ts",
+     "icon": "trash",
+     "contextValue": "cardMember",
+     "tooltip": "Context._renderer was deleted from src/context.ts",
+     "target": {
+      "kind": "deleted",
+      "relPath": "src/context.ts",
+      "namePos": 3554
+     }
+    },
+    {
+     "id": "agent:A3/engine",
+     "label": "Engine facts",
+     "description": "K3, K4",
+     "icon": "type-hierarchy",
+     "contextValue": "cardsNote",
+     "tooltip": "The engine's card(s) these changes come from: entry points, seams and merge hints.",
+     "childCount": 2
     }
    ]
   },
   {
    "id": "agent:A4",
    "label": "Group K5",
-   "description": "agent · 14 changes",
+   "description": "14 changes",
    "tooltip": "Written by your agent; the facts below come from the engine.",
    "icon": "sparkle",
    "contextValue": "agentCard",
    "children": [
     {
-     "id": "agent:A4/K5",
-     "label": "K5 · createMiddleware and 13 related",
-     "description": "14 changes · mirrored into generated dir",
-     "tooltip": "Files: src/helper/factory/index.ts\nModule: (root)\n14 copies in generated deno_dist\n11 joined by location",
-     "icon": "layers",
-     "contextValue": "card",
-     "childCount": 6
+     "id": "agent:A4/member:src/helper/factory/index.ts#7313",
+     "label": "createMiddleware",
+     "description": "param type · src/helper/factory/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/helper/factory/index.ts:272",
+     "target": {
+      "kind": "change",
+      "relPath": "src/helper/factory/index.ts",
+      "namePos": 7313
+     }
+    },
+    {
+     "id": "agent:A4/member:src/helper/factory/index.ts#1052",
+     "label": "Factory.createHandlers",
+     "description": "src/helper/factory/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/helper/factory/index.ts:36",
+     "target": {
+      "kind": "change",
+      "relPath": "src/helper/factory/index.ts",
+      "namePos": 1052
+     }
+    },
+    {
+     "id": "agent:A4/member:src/helper/factory/index.ts#1469",
+     "label": "Factory.createHandlers",
+     "description": "src/helper/factory/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/helper/factory/index.ts:53",
+     "target": {
+      "kind": "change",
+      "relPath": "src/helper/factory/index.ts",
+      "namePos": 1469
+     }
+    },
+    {
+     "id": "agent:A4/member:src/helper/factory/index.ts#1968",
+     "label": "Factory.createHandlers",
+     "description": "src/helper/factory/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/helper/factory/index.ts:72",
+     "target": {
+      "kind": "change",
+      "relPath": "src/helper/factory/index.ts",
+      "namePos": 1968
+     }
+    },
+    {
+     "id": "agent:A4/member:src/helper/factory/index.ts#2554",
+     "label": "Factory.createHandlers",
+     "description": "src/helper/factory/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/helper/factory/index.ts:93",
+     "target": {
+      "kind": "change",
+      "relPath": "src/helper/factory/index.ts",
+      "namePos": 2554
+     }
+    },
+    {
+     "id": "agent:A4/member:src/helper/factory/index.ts#313",
+     "label": "Factory.createMiddleware",
+     "description": "src/helper/factory/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/helper/factory/index.ts:10",
+     "target": {
+      "kind": "change",
+      "relPath": "src/helper/factory/index.ts",
+      "namePos": 313
+     }
+    },
+    {
+     "id": "agent:A4/member:src/helper/factory/index.ts#3232",
+     "label": "Factory.createHandlers",
+     "description": "src/helper/factory/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/helper/factory/index.ts:116",
+     "target": {
+      "kind": "change",
+      "relPath": "src/helper/factory/index.ts",
+      "namePos": 3232
+     }
+    },
+    {
+     "id": "agent:A4/member:src/helper/factory/index.ts#4039",
+     "label": "Factory.createHandlers",
+     "description": "src/helper/factory/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/helper/factory/index.ts:149",
+     "target": {
+      "kind": "change",
+      "relPath": "src/helper/factory/index.ts",
+      "namePos": 4039
+     }
+    },
+    {
+     "id": "agent:A4/member:src/helper/factory/index.ts#4952",
+     "label": "Factory.createHandlers",
+     "description": "src/helper/factory/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/helper/factory/index.ts:185",
+     "target": {
+      "kind": "change",
+      "relPath": "src/helper/factory/index.ts",
+      "namePos": 4952
+     }
+    },
+    {
+     "id": "agent:A4/member:src/helper/factory/index.ts#524",
+     "label": "Factory.createHandlers",
+     "description": "src/helper/factory/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/helper/factory/index.ts:17",
+     "target": {
+      "kind": "change",
+      "relPath": "src/helper/factory/index.ts",
+      "namePos": 524
+     }
+    },
+    {
+     "id": "agent:A4/member:src/helper/factory/index.ts#5977",
+     "label": "Factory.createHandlers",
+     "description": "src/helper/factory/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/helper/factory/index.ts:224",
+     "target": {
+      "kind": "change",
+      "relPath": "src/helper/factory/index.ts",
+      "namePos": 5977
+     }
+    },
+    {
+     "id": "agent:A4/member:src/helper/factory/index.ts#6993",
+     "label": "Factory.createHandlers",
+     "description": "src/helper/factory/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/helper/factory/index.ts:260",
+     "target": {
+      "kind": "change",
+      "relPath": "src/helper/factory/index.ts",
+      "namePos": 6993
+     }
+    },
+    {
+     "id": "agent:A4/member:src/helper/factory/index.ts#7212",
+     "label": "createFactory",
+     "description": "src/helper/factory/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/helper/factory/index.ts:270",
+     "target": {
+      "kind": "change",
+      "relPath": "src/helper/factory/index.ts",
+      "namePos": 7212
+     }
+    },
+    {
+     "id": "agent:A4/member:src/helper/factory/index.ts#728",
+     "label": "Factory.createHandlers",
+     "description": "src/helper/factory/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/helper/factory/index.ts:25",
+     "target": {
+      "kind": "change",
+      "relPath": "src/helper/factory/index.ts",
+      "namePos": 728
+     }
+    },
+    {
+     "id": "agent:A4/engine",
+     "label": "Engine facts",
+     "description": "K5",
+     "icon": "type-hierarchy",
+     "contextValue": "cardsNote",
+     "tooltip": "The engine's card(s) these changes come from: entry points, seams and merge hints.",
+     "childCount": 1
     }
    ]
   },
   {
    "id": "agent:A5",
    "label": "Group K6",
-   "description": "agent · 1 change",
+   "description": "1 change",
    "tooltip": "Written by your agent; the facts below come from the engine.",
    "icon": "sparkle",
    "contextValue": "agentCard",
    "children": [
     {
-     "id": "agent:A5/K6",
-     "label": "K6 · bearerAuth",
-     "description": "1 change · mirrored into generated dir",
-     "tooltip": "Files: src/middleware/bearer-auth/index.ts\nModule: (root)\n1 copy in generated deno_dist\n1 joined by location",
-     "icon": "layers",
-     "contextValue": "card",
-     "childCount": 7
+     "id": "agent:A5/member:src/middleware/bearer-auth/index.ts#243",
+     "label": "bearerAuth",
+     "description": "param type · src/middleware/bearer-auth/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/middleware/bearer-auth/index.ts:8",
+     "target": {
+      "kind": "change",
+      "relPath": "src/middleware/bearer-auth/index.ts",
+      "namePos": 243
+     }
+    },
+    {
+     "id": "agent:A5/engine",
+     "label": "Engine facts",
+     "description": "K6",
+     "icon": "type-hierarchy",
+     "contextValue": "cardsNote",
+     "tooltip": "The engine's card(s) these changes come from: entry points, seams and merge hints.",
+     "childCount": 1
     }
    ]
   },
   {
    "id": "agent:A6",
    "label": "Group K7",
-   "description": "agent · 6 changes",
+   "description": "6 changes",
    "tooltip": "Written by your agent; the facts below come from the engine.",
    "icon": "sparkle",
    "contextValue": "agentCard",
    "children": [
     {
-     "id": "agent:A6/K7",
-     "label": "K7 · RegExpRouter.add and 5 related",
-     "description": "6 changes · mirrored into generated dir",
-     "tooltip": "Files: src/hono-base.ts, src/router/reg-exp-router/router.ts, src/router/smart-router/router.ts\nModule: (root)\n6 copies in generated deno_dist\n1 joined by location",
-     "icon": "layers",
-     "contextValue": "card",
-     "childCount": 10
+     "id": "agent:A6/member:src/hono-base.ts#7302",
+     "label": "Hono.addRoute",
+     "description": "src/hono-base.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/hono-base.ts:253",
+     "target": {
+      "kind": "change",
+      "relPath": "src/hono-base.ts",
+      "namePos": 7302
+     }
+    },
+    {
+     "id": "agent:A6/member:src/router/reg-exp-router/router.ts#3956",
+     "label": "RegExpRouter.add",
+     "description": "src/router/reg-exp-router/router.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/router/reg-exp-router/router.ts:133",
+     "target": {
+      "kind": "change",
+      "relPath": "src/router/reg-exp-router/router.ts",
+      "namePos": 3956
+     }
+    },
+    {
+     "id": "agent:A6/member:src/router/smart-router/router.ts#434",
+     "label": "SmartRouter.add",
+     "description": "src/router/smart-router/router.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/router/smart-router/router.ts:14",
+     "target": {
+      "kind": "change",
+      "relPath": "src/router/smart-router/router.ts",
+      "namePos": 434
+     }
+    },
+    {
+     "id": "agent:A6/member:src/hono-base.ts#2028",
+     "label": "Hono.constructor",
+     "description": "src/hono-base.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/hono-base.ts:77",
+     "target": {
+      "kind": "change",
+      "relPath": "src/hono-base.ts",
+      "namePos": 2028
+     }
+    },
+    {
+     "id": "agent:A6/member:src/hono-base.ts#4876",
+     "label": "Hono.basePath",
+     "description": "src/hono-base.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/hono-base.ts:170",
+     "target": {
+      "kind": "change",
+      "relPath": "src/hono-base.ts",
+      "namePos": 4876
+     }
+    },
+    {
+     "id": "agent:A6/member:src/hono-base.ts#5785",
+     "label": "Hono.mount",
+     "description": "src/hono-base.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/hono-base.ts:204",
+     "target": {
+      "kind": "change",
+      "relPath": "src/hono-base.ts",
+      "namePos": 5785
+     }
+    },
+    {
+     "id": "agent:A6/engine",
+     "label": "Engine facts",
+     "description": "K7",
+     "icon": "type-hierarchy",
+     "contextValue": "cardsNote",
+     "tooltip": "The engine's card(s) these changes come from: entry points, seams and merge hints.",
+     "childCount": 1
     }
    ]
   },
   {
    "id": "agent:A7",
    "label": "Group K8",
-   "description": "agent · 4 changes",
+   "description": "4 changes",
    "tooltip": "Written by your agent; the facts below come from the engine.",
    "icon": "sparkle",
    "contextValue": "agentCard",
    "children": [
     {
-     "id": "agent:A7/K8",
-     "label": "K8 · childrenToString and 3 related",
-     "description": "4 changes · mirrored into generated dir · moved",
-     "tooltip": "Files: src/jsx/components.ts\nModule: (root)\n4 copies in generated deno_dist\nMoved: 1 function",
-     "icon": "layers",
-     "contextValue": "card",
-     "childCount": 7
+     "id": "agent:A7/member:src/jsx/components.ts#177",
+     "label": "childrenToString",
+     "description": "src/jsx/components.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/jsx/components.ts:7",
+     "target": {
+      "kind": "change",
+      "relPath": "src/jsx/components.ts",
+      "namePos": 177
+     }
+    },
+    {
+     "id": "agent:A7/member:src/jsx/components.ts#1783",
+     "label": "ErrorBoundary.catchCallback",
+     "description": "src/jsx/components.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/jsx/components.ts:62",
+     "target": {
+      "kind": "change",
+      "relPath": "src/jsx/components.ts",
+      "namePos": 1783
+     }
+    },
+    {
+     "id": "agent:A7/member:src/jsx/components.ts#679",
+     "label": "ErrorBoundary",
+     "description": "src/jsx/components.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/jsx/components.ts:28",
+     "target": {
+      "kind": "change",
+      "relPath": "src/jsx/components.ts",
+      "namePos": 679
+     }
+    },
+    {
+     "id": "agent:A7/member:src/jsx/components.ts#959",
+     "label": "ErrorBoundary.fallbackRes",
+     "description": "src/jsx/components.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/jsx/components.ts:41",
+     "target": {
+      "kind": "change",
+      "relPath": "src/jsx/components.ts",
+      "namePos": 959
+     }
+    },
+    {
+     "id": "agent:A7/engine",
+     "label": "Engine facts",
+     "description": "K8",
+     "icon": "type-hierarchy",
+     "contextValue": "cardsNote",
+     "tooltip": "The engine's card(s) these changes come from: entry points, seams and merge hints.",
+     "childCount": 1
     }
    ]
   },
   {
    "id": "agent:A8",
    "label": "Group K9",
-   "description": "agent · 4 changes",
+   "description": "4 changes",
    "tooltip": "Written by your agent; the facts below come from the engine.",
    "icon": "sparkle",
    "contextValue": "agentCard",
    "children": [
     {
-     "id": "agent:A8/K9",
-     "label": "K9 · isMiddleware and 3 related",
-     "description": "4 changes · mirrored into generated dir",
-     "tooltip": "Files: src/helper/dev/index.ts\nModule: (root)\n4 copies in generated deno_dist",
-     "icon": "layers",
-     "contextValue": "card",
-     "childCount": 8
+     "id": "agent:A8/member:src/helper/dev/index.ts#242",
+     "label": "isMiddleware",
+     "description": "src/helper/dev/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/helper/dev/index.ts:15",
+     "target": {
+      "kind": "change",
+      "relPath": "src/helper/dev/index.ts",
+      "namePos": 242
+     }
+    },
+    {
+     "id": "agent:A8/member:src/helper/dev/index.ts#305",
+     "label": "handlerName",
+     "description": "src/helper/dev/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/helper/dev/index.ts:16",
+     "target": {
+      "kind": "change",
+      "relPath": "src/helper/dev/index.ts",
+      "namePos": 305
+     }
+    },
+    {
+     "id": "agent:A8/member:src/helper/dev/index.ts#440",
+     "label": "inspectRoutes",
+     "description": "src/helper/dev/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/helper/dev/index.ts:20",
+     "target": {
+      "kind": "change",
+      "relPath": "src/helper/dev/index.ts",
+      "namePos": 440
+     }
+    },
+    {
+     "id": "agent:A8/member:src/helper/dev/index.ts#676",
+     "label": "showRoutes",
+     "description": "src/helper/dev/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/helper/dev/index.ts:29",
+     "target": {
+      "kind": "change",
+      "relPath": "src/helper/dev/index.ts",
+      "namePos": 676
+     }
+    },
+    {
+     "id": "agent:A8/engine",
+     "label": "Engine facts",
+     "description": "K9",
+     "icon": "type-hierarchy",
+     "contextValue": "cardsNote",
+     "tooltip": "The engine's card(s) these changes come from: entry points, seams and merge hints.",
+     "childCount": 1
     }
    ]
   },
   {
    "id": "agent:A9",
    "label": "Group K10",
-   "description": "agent · 1 change",
+   "description": "1 change",
    "tooltip": "Written by your agent; the facts below come from the engine.",
    "icon": "sparkle",
    "contextValue": "agentCard",
    "children": [
     {
-     "id": "agent:A9/K10",
-     "label": "K10 · childrenToString",
-     "description": "1 change",
-     "tooltip": "Files: src/jsx/streaming.ts\nModule: (root)\n1 joined by location",
-     "icon": "layers",
-     "contextValue": "card",
-     "childCount": 6
+     "id": "agent:A9/member:src/jsx/streaming.ts#174",
+     "label": "−childrenToString",
+     "description": "deleted · src/jsx/streaming.ts",
+     "icon": "trash",
+     "contextValue": "cardMember",
+     "tooltip": "childrenToString was deleted from src/jsx/streaming.ts",
+     "target": {
+      "kind": "deleted",
+      "relPath": "src/jsx/streaming.ts",
+      "namePos": 174
+     }
+    },
+    {
+     "id": "agent:A9/engine",
+     "label": "Engine facts",
+     "description": "K10",
+     "icon": "type-hierarchy",
+     "contextValue": "cardsNote",
+     "tooltip": "The engine's card(s) these changes come from: entry points, seams and merge hints.",
+     "childCount": 1
     }
    ]
   },
   {
    "id": "agent:A10",
    "label": "Group K11",
-   "description": "agent · 1 change",
+   "description": "1 change",
    "tooltip": "Written by your agent; the facts below come from the engine.",
    "icon": "sparkle",
    "contextValue": "agentCard",
    "children": [
     {
-     "id": "agent:A10/K11",
-     "label": "K11 · cors.set",
-     "description": "1 change · mirrored into generated dir",
-     "tooltip": "Files: src/middleware/cors/index.ts\nModule: (root)\n1 copy in generated deno_dist\n1 joined by location",
-     "icon": "layers",
-     "contextValue": "card",
-     "childCount": 7
+     "id": "agent:A10/member:src/middleware/cors/index.ts#930",
+     "label": "−cors.set",
+     "description": "deleted · src/middleware/cors/index.ts",
+     "icon": "trash",
+     "contextValue": "cardMember",
+     "tooltip": "cors.set was deleted from src/middleware/cors/index.ts",
+     "target": {
+      "kind": "deleted",
+      "relPath": "src/middleware/cors/index.ts",
+      "namePos": 930
+     }
+    },
+    {
+     "id": "agent:A10/engine",
+     "label": "Engine facts",
+     "description": "K11",
+     "icon": "type-hierarchy",
+     "contextValue": "cardsNote",
+     "tooltip": "The engine's card(s) these changes come from: entry points, seams and merge hints.",
+     "childCount": 1
     }
    ]
   },
   {
    "id": "agent:A11",
    "label": "Group S1",
-   "description": "agent · 12 changes",
+   "description": "12 changes",
    "tooltip": "Written by your agent; the facts below come from the engine.",
    "icon": "sparkle",
    "contextValue": "agentCard",
    "children": [
     {
-     "id": "agent:A11/S1",
-     "label": "S1 · Similar edit in 12 functions (each: added `function $`; removed `= >`)",
-     "description": "12 changes",
-     "icon": "versions",
-     "contextValue": "cardSweep",
-     "tooltip": "Pattern: ≈  → function $ | = > → \nFiles: src/middleware/basic-auth/index.ts, src/middleware/cache/index.ts, src/middleware/compress/index.ts, src/middleware/cors/index.ts, src/middleware/etag/index.ts, src/middleware/jsx-renderer/index.ts, … +6",
+     "id": "agent:A11/member:src/middleware/basic-auth/index.ts#920",
+     "label": "basicAuth",
+     "description": "src/middleware/basic-auth/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/middleware/basic-auth/index.ts:29",
+     "target": {
+      "kind": "change",
+      "relPath": "src/middleware/basic-auth/index.ts",
+      "namePos": 920
+     }
+    },
+    {
+     "id": "agent:A11/member:src/middleware/cache/index.ts#67",
+     "label": "cache",
+     "description": "src/middleware/cache/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/middleware/cache/index.ts:3",
+     "target": {
+      "kind": "change",
+      "relPath": "src/middleware/cache/index.ts",
+      "namePos": 67
+     }
+    },
+    {
+     "id": "agent:A11/member:src/middleware/compress/index.ts#197",
+     "label": "compress",
+     "description": "src/middleware/compress/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/middleware/compress/index.ts:9",
+     "target": {
+      "kind": "change",
+      "relPath": "src/middleware/compress/index.ts",
+      "namePos": 197
+     }
+    },
+    {
+     "id": "agent:A11/member:src/middleware/cors/index.ts#290",
+     "label": "cors",
+     "description": "src/middleware/cors/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/middleware/cors/index.ts:12",
+     "target": {
+      "kind": "change",
+      "relPath": "src/middleware/cors/index.ts",
+      "namePos": 290
+     }
+    },
+    {
+     "id": "agent:A11/member:src/middleware/etag/index.ts#723",
+     "label": "etag",
+     "description": "src/middleware/etag/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/middleware/etag/index.ts:28",
+     "target": {
+      "kind": "change",
+      "relPath": "src/middleware/etag/index.ts",
+      "namePos": 723
+     }
+    },
+    {
+     "id": "agent:A11/member:src/middleware/jsx-renderer/index.ts#1612",
+     "label": "jsxRenderer",
+     "description": "src/middleware/jsx-renderer/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/middleware/jsx-renderer/index.ts:51",
+     "target": {
+      "kind": "change",
+      "relPath": "src/middleware/jsx-renderer/index.ts",
+      "namePos": 1612
+     }
+    },
+    {
+     "id": "agent:A11/member:src/middleware/jwt/index.ts#401",
+     "label": "jwt",
+     "description": "src/middleware/jwt/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/middleware/jwt/index.ts:14",
+     "target": {
+      "kind": "change",
+      "relPath": "src/middleware/jwt/index.ts",
+      "namePos": 401
+     }
+    },
+    {
+     "id": "agent:A11/member:src/middleware/logger/index.ts#1336",
+     "label": "logger",
+     "description": "src/middleware/logger/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/middleware/logger/index.ts:56",
+     "target": {
+      "kind": "change",
+      "relPath": "src/middleware/logger/index.ts",
+      "namePos": 1336
+     }
+    },
+    {
+     "id": "agent:A11/member:src/middleware/powered-by/index.ts#67",
+     "label": "poweredBy",
+     "description": "src/middleware/powered-by/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/middleware/powered-by/index.ts:3",
+     "target": {
+      "kind": "change",
+      "relPath": "src/middleware/powered-by/index.ts",
+      "namePos": 67
+     }
+    },
+    {
+     "id": "agent:A11/member:src/middleware/pretty-json/index.ts#109",
+     "label": "prettyJSON",
+     "description": "src/middleware/pretty-json/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/middleware/pretty-json/index.ts:7",
+     "target": {
+      "kind": "change",
+      "relPath": "src/middleware/pretty-json/index.ts",
+      "namePos": 109
+     }
+    },
+    {
+     "id": "agent:A11/member:src/middleware/secure-headers/index.ts#2892",
+     "label": "secureHeaders",
+     "description": "src/middleware/secure-headers/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/middleware/secure-headers/index.ts:97",
+     "target": {
+      "kind": "change",
+      "relPath": "src/middleware/secure-headers/index.ts",
+      "namePos": 2892
+     }
+    },
+    {
+     "id": "agent:A11/member:src/middleware/timing/index.ts#614",
+     "label": "timing",
+     "description": "src/middleware/timing/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/middleware/timing/index.ts:34",
+     "target": {
+      "kind": "change",
+      "relPath": "src/middleware/timing/index.ts",
+      "namePos": 614
+     }
+    },
+    {
+     "id": "agent:A11/engine",
+     "label": "Engine facts",
+     "description": "S1",
+     "icon": "type-hierarchy",
+     "contextValue": "cardsNote",
+     "tooltip": "The engine's card(s) these changes come from: entry points, seams and merge hints.",
      "childCount": 1
     }
    ]
@@ -320,18 +1275,161 @@
   {
    "id": "agent:A12",
    "label": "Group S2",
-   "description": "agent · 11 changes",
+   "description": "11 changes",
    "tooltip": "Written by your agent; the facts below come from the engine.",
    "icon": "sparkle",
    "contextValue": "agentCard",
    "children": [
     {
-     "id": "agent:A12/S2",
-     "label": "S2 · Other repeated edits (7 patterns)",
-     "description": "11 changes",
-     "icon": "versions",
-     "contextValue": "cardSweep",
-     "tooltip": "Files: src/context.ts, src/jsx/index.ts, src/request.ts",
+     "id": "agent:A12/member:src/context.ts#4298",
+     "label": "Context.res",
+     "description": "src/context.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/context.ts:137",
+     "target": {
+      "kind": "change",
+      "relPath": "src/context.ts",
+      "namePos": 4298
+     }
+    },
+    {
+     "id": "agent:A12/member:src/context.ts#4427",
+     "label": "Context.res",
+     "description": "src/context.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/context.ts:142",
+     "target": {
+      "kind": "change",
+      "relPath": "src/context.ts",
+      "namePos": 4427
+     }
+    },
+    {
+     "id": "agent:A12/member:src/context.ts#4993",
+     "label": "Context.header",
+     "description": "src/context.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/context.ts:163",
+     "target": {
+      "kind": "change",
+      "relPath": "src/context.ts",
+      "namePos": 4993
+     }
+    },
+    {
+     "id": "agent:A12/member:src/context.ts#4093",
+     "label": "Context.executionCtx",
+     "description": "src/context.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/context.ts:129",
+     "target": {
+      "kind": "change",
+      "relPath": "src/context.ts",
+      "namePos": 4093
+     }
+    },
+    {
+     "id": "agent:A12/member:src/context.ts#8145",
+     "label": "Context.text",
+     "description": "src/context.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/context.ts:288",
+     "target": {
+      "kind": "change",
+      "relPath": "src/context.ts",
+      "namePos": 8145
+     }
+    },
+    {
+     "id": "agent:A12/member:src/jsx/index.ts#6702",
+     "label": "createContext.Provider",
+     "description": "src/jsx/index.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/jsx/index.ts:263",
+     "target": {
+      "kind": "change",
+      "relPath": "src/jsx/index.ts",
+      "namePos": 6702
+     }
+    },
+    {
+     "id": "agent:A12/member:src/request.ts#5092",
+     "label": "HonoRequest.addValidatedData",
+     "description": "src/request.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/request.ts:182",
+     "target": {
+      "kind": "change",
+      "relPath": "src/request.ts",
+      "namePos": 5092
+     }
+    },
+    {
+     "id": "agent:A12/member:src/context.ts#11077",
+     "label": "Context.redirect",
+     "description": "src/context.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/context.ts:378",
+     "target": {
+      "kind": "change",
+      "relPath": "src/context.ts",
+      "namePos": 11077
+     }
+    },
+    {
+     "id": "agent:A12/member:src/context.ts#3578",
+     "label": "Context.constructor",
+     "description": "src/context.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/context.ts:110",
+     "target": {
+      "kind": "change",
+      "relPath": "src/context.ts",
+      "namePos": 3578
+     }
+    },
+    {
+     "id": "agent:A12/member:src/context.ts#3884",
+     "label": "Context.event",
+     "description": "src/context.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/context.ts:121",
+     "target": {
+      "kind": "change",
+      "relPath": "src/context.ts",
+      "namePos": 3884
+     }
+    },
+    {
+     "id": "agent:A12/member:src/request.ts#5291",
+     "label": "HonoRequest.valid",
+     "description": "src/request.ts",
+     "icon": "symbol-method",
+     "contextValue": "cardMember",
+     "tooltip": "src/request.ts:187",
+     "target": {
+      "kind": "change",
+      "relPath": "src/request.ts",
+      "namePos": 5291
+     }
+    },
+    {
+     "id": "agent:A12/engine",
+     "label": "Engine facts",
+     "description": "S2",
+     "icon": "type-hierarchy",
+     "contextValue": "cardsNote",
+     "tooltip": "The engine's card(s) these changes come from: entry points, seams and merge hints.",
      "childCount": 1
     }
    ]
