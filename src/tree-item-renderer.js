@@ -21,6 +21,10 @@ const {
 const { needsAttention, collectCountingRows } = require('./review-tree-model');
 const { describeThreadCounts } = require('./review-threads');
 const { pathTreeMarkdown } = require('./path-tree');
+const { rowLine, tooltipLines } = require('./agent-notes');
+
+/** Agent text in a markdown tooltip: every markdown character escaped, so it stays text. @param {string} s */
+const mdText = (s) => String(s).replace(/[\\`*_{}[\]()#+\-.!|<>~]/g, '\\$&');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 /**
@@ -36,11 +40,16 @@ const { pathTreeMarkdown } = require('./path-tree');
  *   `ViewedNote`; absent for a view that has no GitHub review.
  * - `layout`: 'tree' when file rows sit under folder rows, so a file row does not repeat
  *   its folder; 'flat' (the default) names the folder on the row.
+ * - `agentOf(row)`: what the user's agent said a change row's change does, or null; shown
+ *   after the engine's text and in the tooltip. `agentHowOf(row)`: how the agent says a
+ *   direct caller is affected, or null. Both absent while agents are off.
  * @typedef {{
  *   rowDetail: string, iconMode: string, checkedOf: (row: TreeRow) => boolean|null,
  *   threadCountsOf?: (row: TreeRow) => import('./review-threads').ThreadCounts|null,
  *   viewedOf?: (relPath: string, allTicked: boolean) => ViewedNote|null,
  *   layout?: 'flat'|'tree',
+ *   agentOf?: (row: TreeRow) => import('./agent-notes').AgentChange|null,
+ *   agentHowOf?: (row: TreeRow) => string|null,
  * }} TreeView
  */
 
@@ -374,11 +383,13 @@ function renderChangeItem(vscode, item, n, view) {
   const kinds = f.kinds.filter((/** @type {any} */ k) => k.id !== 'body').map((/** @type {any} */ k) => k.short || k.label);
   const qual = n.ambiguous ? `  ·  ${f.component}` : '';
   item.label = n.ambiguous ? `${n.name}  ‹${f.component}›` : n.name;
-  item.description = describeChangeRow(containerToShow(n),
+  const agent = view.agentOf ? view.agentOf(n) : null;
+  item.description = [describeChangeRow(containerToShow(n),
     view.rowDetail === 'inline' ? `${st.text}${qual}${kinds.length ? '  ·  ' + kinds.join(', ') : ''}` : st.text,
-    n, threadParts(n, view));
+    n, threadParts(n, view)), agent && rowLine(agent)].filter(Boolean).join('  ·  ');
   item.iconPath = rowIcon(f.label, f, toneOf(st));
-  item.tooltip = new vscode.MarkdownString(buildChangeTooltipLines(n, st, kinds).join('\n'));
+  const lines = buildChangeTooltipLines(n, st, kinds);
+  item.tooltip = new vscode.MarkdownString((agent ? [...lines.slice(0, 2), ...tooltipLines(agent, mdText), '', '---', '', ...lines.slice(2)] : lines).join('\n'));
   item.contextValue = 'finding';
   applyCheckbox(vscode, item, n, view);
   item.command = { command: 'impactTree.openChange', title: 'Open change', arguments: [n] };
@@ -429,7 +440,8 @@ function renderCallerItem(vscode, item, n, view) {
   const { updated, untouched, unknown } = n.callSiteUpdates;
   const notUpdated = untouched.length + unknown.length;
   const partlyUpdated = updated.length > 0 && notUpdated > 0;
-  item.description = n.cycle ? state : `${state}  ·  ${base}${n.sites > 1 ? `  ·  ${n.sites} call sites` : ''}`;
+  const how = !n.cycle && view.agentHowOf ? view.agentHowOf(n) : null;
+  item.description = n.cycle ? state : [`${state}  ·  ${base}${n.sites > 1 ? `  ·  ${n.sites} call sites` : ''}`, how].filter(Boolean).join('  ·  ');
   item.iconPath = n.cycle ? new vscode.ThemeIcon('issue-reopened')
     : n.test ? new vscode.ThemeIcon('beaker')
       : rowIcon(n.label, null, n.callState === 'changed-elsewhere' ? CHANGED_ELSEWHERE_TONE : null);
@@ -444,6 +456,7 @@ function renderCallerItem(vscode, item, n, view) {
     ...(n.callState === 'changed-elsewhere'
       ? ['', '---', '', 'This caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating.']
       : []),
+    ...(how ? ['', '---', '', `**Your agent:** ${mdText(how)}`] : []),
   ].join('\n'));
   item.contextValue = n.changed ? 'changedCaller' : 'caller';
   item.command = { command: 'impactTree.openCaller', title: 'Open caller', arguments: [n] };
