@@ -6,10 +6,12 @@
   mode under Local changes), and the separate Changes view is gone. The reviewed row holds
   the review's controls and, in its hover, the review's notices; clicking it still offers
   preview, check out or open on GitHub. Pull request rows no longer have a hover.
-- **Review tab** (experimental, with `impactTree.cards.enabled`): **Open review** shows an
-  overview board (Needs your attention, Behaviour changes, No behaviour change) and the
-  cards one by one, each change with its diff hunk cut to the function, who it affects, its
-  callers and entry points. Read-only for now.
+- **Review tab** (experimental, with `impactTree.cards.enabled`): **Open review** shows the
+  cards, grouped under Needs your attention, Behaviour changes and No behaviour change, the
+  chosen card's changes with their diff hunks cut to the function, and the chosen change's
+  context (your agent's before / after / when and who it affects; Impact Tree's verdict,
+  callers and entry points) in a column that follows the scroll. ⚠ marks only the changes
+  to look at first; `j` / `k` and `n` / `p` move between changes and cards. Read-only for now.
 - **Analyse with my agent** (experimental, with `impactTree.agents.enabled`): **Connect my
   agent…** registers Impact Tree's MCP server with Claude Code, Codex, Cursor or VS Code /
   Copilot; the agent gets the review's facts with the prompt and answers in one

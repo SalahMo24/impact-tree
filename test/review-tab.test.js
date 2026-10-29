@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { reviewTabModel, hunkLines, MAX_HUNK_LINES, MAX_CHIPS } = require('../src/views/review-tab/review-tab-model');
-const { buildReviewTabHtml } = require('../src/views/review-tab/review-tab-html');
+const { buildReviewTabHtml, ATTENTION_WORD } = require('../src/views/review-tab/review-tab-html');
 const { createReviewTab, parseMessage } = require('../src/views/review-tab/review-tab-panel');
 
 const hono = () => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'cards', 'hono-1774.json'), 'utf8'));
@@ -48,6 +48,8 @@ test('no agent result: the engine\'s cards, two columns, red and amber changes n
   for (const c of m.cards) {
     const attention = c.changes.some((id) => m.changes[id].verdict.level <= 1 && !m.changes[id].deleted);
     assert.equal(c.column, attention ? 'attention' : 'changes', c.title);
+    for (const id of c.changes) assert.equal(m.changes[id].attention, m.changes[id].verdict.level <= 1 && !m.changes[id].deleted, id);
+    assert.ok(c.changes.every((id, i) => i === 0 || m.changes[id].attention <= m.changes[c.changes[i - 1]].attention), 'attention first');
     assert.ok(c.chips.length <= MAX_CHIPS);
     assert.match(c.sentence, /^\d+ changes? in \d+ files?$/);
   }
@@ -82,6 +84,8 @@ test('a change: kind, line, before/after/when, affects, verdict, hunk, callers w
   assert.deepEqual(m.cards[1].chips, [{ text: '1 changed', tone: 'warning' }, { text: '1 caller not updated', tone: 'danger' }, { text: 'public API: save', tone: 'plain' }]);
   assert.equal(m.cards[1].why, 'same feature');
   const save = m.changes['src/a.ts#7'];
+  assert.equal(save.attention, true, 'named by the agent');
+  assert.equal(m.changes['src/c.ts#3'].attention, false);
   assert.deepEqual([save.kind, save.what, save.before, save.after, save.when], ['changed', 'rejects empty input', 'saved anything', 'throws on empty', 'x is empty']);
   assert.deepEqual(save.affects, [{ name: 'handler', how: 'throws on save("")' }]);
   assert.equal(save.verdict.level, 0);
@@ -127,6 +131,26 @@ test('the document: escaped, CSP with a nonce, no inline style or handler, every
   assert.ok(html.includes('data-act="deleted" data-id="src/old.ts#1"'));
   assert.ok(html.includes('<span class="add">+  if (!x) throw new Error(&#39;empty&#39;)</span>'));
   assert.throws(() => buildReviewTabHtml(m, { nonce: 'a"b', cspSource: 'x' }));
+});
+
+test('the document reads as one page: cards grouped under their columns, ⚠ only for attention, each fact once, both voices labelled', () => {
+  const m = reviewTabModel({ ...SMALL, agentPayload: AGENT, title: 'PR #9', hunkOf: () => HUNK });
+  const html = buildReviewTabHtml(m, { nonce: 'bm9uY2U=', cspSource: 'https://webview.test' });
+  assert.ok(!html.includes('class="board"') && !html.includes('class="tile'), 'one navigation, not a board and a list');
+  assert.match(html, /<nav class="layers"><div class="lbl">Needs your attention · 1<\/div><button class="layer" data-card="c2">/, 'the attention card under its column');
+  assert.match(html, /No behaviour change · 0<\/div><div class="muted">None<\/div>/);
+  assert.equal((html.match(/Reject empty saves/g) || []).length, 2, 'the card title in the nav and as the heading, nowhere else');
+  assert.equal((html.match(/>rejects empty input</g) || []).length, 1, 'the change\'s line on its row only, not again in the context');
+  assert.equal((html.match(/⚠/g) || []).length, 2, 'the nav entry and the attention change; a changed kind is a word');
+  assert.ok(html.includes(`⚠ ${ATTENTION_WORD}</span><span class="chip warning" title="Your agent's reading">Changed</span><span class="chip verdict lv0" title="Impact Tree's verdict">`));
+  assert.ok(html.includes('<span class="chip" title="Your agent\'s reading">New</span>'));
+  assert.ok(html.includes('<h4>Your agent</h4><dl><dt>Before</dt><dd>saved anything</dd>') && html.includes('<h4>Impact Tree</h4><dl><dt>Verdict</dt>'));
+  assert.ok(html.includes('<details class="why"><summary>Why these changes are one card</summary><div>same feature</div></details>'));
+  assert.ok(html.includes('<details class="diff" open><summary>Diff · 5 lines</summary>'), 'a changed function shows its diff');
+  assert.ok(html.includes('<span class="chip">1 change</span><span class="chip">2 cards</span><span class="chip">1 needs your attention</span>'.replace('1 change<', '3 changes<')));
+  assert.ok(html.includes('position: sticky'), 'the context follows the scroll');
+  const engine = buildReviewTabHtml(reviewTabModel({ ...SMALL, hunkOf: () => HUNK }), { nonce: 'bm9uY2U=', cspSource: 'x' });
+  assert.ok(engine.includes(`⚠ ${ATTENTION_WORD}`) && !engine.includes('<h4>Your agent</h4>'), 'without an agent: the engine\'s red change is pointed at, no agent section');
 });
 
 test('messages: only from the current page, of a known shape', () => {
