@@ -11,7 +11,8 @@
 // Cards are the agent's when its result fits these cards (src/agent/agent-cards.js), else the
 // engine's. The board's columns:
 // - Needs your attention: a card holding a change the agent named in `attention`; with no
-//   agent result, a change the engine marks red or amber (level 0 or 1).
+//   agent result, a change the engine marks red or amber (level 0 or 1). Such a change is
+//   `attention` itself, so the page can point at it.
 // - Behaviour changes: a card with a change the agent calls changed, may-change or new;
 //   with no agent result, every other card ("Other changes").
 // - No behaviour change: the rest (agent result only).
@@ -30,7 +31,7 @@ const KINDS = ['changed', 'may-change', 'new', 'same'];
  * @typedef {{ text: string, tone: 'danger'|'warning'|'plain' }} Chip
  * @typedef {{ id: string, n: number, title: string, sentence: string, chips: Chip[], attention: boolean, column: string, changes: string[], why: string|null }} CardModel
  * @typedef {{ label: string, file: string, line: number|null, state: string, test: boolean, index: number }} CallerModel
- * @typedef {{ id: string, name: string, file: string, line: number|null, deleted: boolean, kind: string|null, what: string|null,
+ * @typedef {{ id: string, name: string, file: string, line: number|null, deleted: boolean, attention: boolean, kind: string|null, what: string|null,
  *   before: string|null, after: string|null, when: string|null, affects: Array<{ name: string, how: string }>,
  *   verdict: { text: string, level: number }, hunk: { lines: Array<{ t: string, s: string }>, more: number }|null,
  *   callers: CallerModel[], callersMore: number, callersComplete: boolean, entries: string[], entriesMore: number }} ChangeModel
@@ -101,6 +102,7 @@ function reviewTabModel({ result, cards, agentPayload = null, title = '', hunkOf
   const resolved = agentPayload ? resolveAgentResult(agentPayload, cards) : { ok: false };
   const agent = resolved.ok ? /** @type {Extract<ReturnType<typeof resolveAgentResult>, { ok: true }>} */ (resolved) : null;
   const said = (/** @type {string} */ id) => (agent ? agent.changes.get(id) || null : null);
+  const attentionIds = new Set(agent ? agent.attention : []);
 
   /** @type {Record<string, ChangeModel>} */
   const changes = {};
@@ -116,6 +118,7 @@ function reviewTabModel({ result, cards, agentPayload = null, title = '', hunkOf
     const entries = ((paths[id] && paths[id].entries) || []).map((/** @type {any} */ e) => `${e.type === 'public-api' ? 'public API' : e.type}: ${e.name}`);
     changes[id] = {
       id, name: c ? c.label : d ? `−${d.label}` : id, file: c ? c.relPath : d ? (d.relPath || d.file) : '', line: c ? c.startLine : null, deleted: !c,
+      attention: agent ? attentionIds.has(id) : !!c && verdict.level <= 1,
       kind: b ? b.kind : null, what: b ? b.what : null, before: (b && b.before) || null, after: (b && b.after) || null, when: (b && b.when) || null,
       affects: (b && b.affects) || [], verdict: { text: verdict.text, level: verdict.level },
       hunk: c ? hunkLines(hunkOf(c), c.startLine, c.endLine) : null,
@@ -132,16 +135,16 @@ function reviewTabModel({ result, cards, agentPayload = null, title = '', hunkOf
   const raw = agent
     ? agent.cards.map((a) => ({ title: a.title, sentence: a.summary || '', ids: a.ids, why: a.reason || null }))
     : [...(cards.clusters || []), ...(cards.sweeps || [])].map((/** @type {any} */ c) => ({ title: c.label, sentence: '', ids: c.members || [], why: null }));
-  const attentionIds = new Set(agent ? agent.attention : []);
   /** @type {CardModel[]} */
   const cardModels = raw.map((r, i) => {
     const ids = r.ids.map(changeOf);
-    const rank = (/** @type {string} */ id) => { const k = changes[id].kind; return k ? KINDS.indexOf(k) : 9; };
-    const ordered = agent ? [...ids].sort((a, b) => rank(a) - rank(b)) : [...ids].sort((a, b) => changes[a].verdict.level - changes[b].verdict.level);
+    // Reading order: what needs attention first, then the agent's kinds (changed, may change, new, same) or the engine's levels.
+    const rank = (/** @type {string} */ id) => { const ch = changes[id]; const k = ch.kind; return (ch.attention ? 0 : 100) + (agent ? (k ? KINDS.indexOf(k) : 9) : ch.verdict.level); };
+    const ordered = [...ids].sort((a, b) => rank(a) - rank(b));
     const count = (/** @type {string} */ k) => ids.filter((id) => changes[id].kind === k).length;
     const stale = ids.reduce((n, id) => { const c = changed.get(id); return n + (c ? c.staleCallers || 0 : 0); }, 0);
     const api = ids.flatMap((id) => changes[id].entries).find((e) => e.startsWith('public API')) || ids.flatMap((id) => changes[id].entries)[0];
-    const attention = agent ? ids.some((id) => attentionIds.has(id)) : ids.some((id) => changes[id].verdict.level <= 1 && !changes[id].deleted);
+    const attention = ids.some((id) => changes[id].attention);
     const moved = agent ? ids.some((id) => ['changed', 'may-change', 'new'].includes(String(changes[id].kind))) : true;
     /** @type {Chip[]} */
     const chips = [];

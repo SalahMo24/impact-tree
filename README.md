@@ -219,9 +219,12 @@ Off by default; turn on `impactTree.cards.enabled` and `impactTree.agents.enable
 
 - **Cards** group a review's changes into related cards, with the entry points each card
   reaches. **Open review** (on the reviewed row, or the Cards view) opens the **review tab**:
-  an overview board with three columns (Needs your attention, Behaviour changes, No
-  behaviour change), then card by card, each change with its diff hunk (cut to the
-  function's lines), who it affects, its callers and entry points. The tab is read-only.
+  the cards listed to the left under Needs your attention, Behaviour changes and No
+  behaviour change; the chosen card's changes in the middle, each with its diff hunk (cut to
+  the function's lines) and ⚠ on the ones to look at first; and the chosen change's context
+  to the right: what your agent said (before / after / when, who it affects) and what Impact
+  Tree found (verdict, callers, entry points). `j` / `k` and `n` / `p` move between changes
+  and cards. The tab is read-only.
 - **Connect my agent…** registers Impact Tree's MCP server with Claude Code, Codex, Cursor
   or VS Code / Copilot. **Analyse with my agent** then hands your agent the review's facts
   (inline in the prompt, or in a file when they are large) and the agent answers in one
