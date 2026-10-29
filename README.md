@@ -174,15 +174,19 @@ until you mark it reviewed, and its tooltip and Details say why.
   analysis using the editor's language server. A no-checkout preview searches the
   files supplied by the PR and cannot establish callers outside those files; it analyses
   TypeScript, JavaScript, Python and Go (Python and Go callers from syntax only).
-- Use the **Changes** view to inspect findings, open diffs, and navigate to callers.
-  **Details** below it shows your review progress and, for a change that needs a look,
-  why. Changed files are listed worst first; **View as tree** (title bar, or
-  `impactTree.fileListLayout`) folds them into their folders, as the GitHub Pull Requests
-  extension does, with folders and files still ordered worst first at every level and a
-  folder ranked by its worst file. Track progress by marking changes reviewed, and filter for what needs
-  attention (callers not updated, or callers to check by hand), unreviewed changes, or
-  unresolved conversations. The title bar keeps Refresh, the tree/list toggle and Submit;
-  the filters, Previous/Next unreviewed (`⇧⌥N` / `⌥N`) and the legend are in its `…` menu.
+- Pick a mode or a pull request: its review opens **under that row** in the Review view, as
+  the GitHub Pull Requests extension nests a pull request's files. The reviewed row carries
+  the review's controls (Open review, the tree/list toggle, Show only needs attention,
+  Refresh, Submit review or Send feedback; the rest in its right-click menu), and its hover
+  lists the review's notices, such as a fetched base or files not analysed. Clicking it
+  again still offers preview, check out or open on GitHub. Other pull request rows have no
+  hover. **Details** below shows your review progress and, for a change that needs a look,
+  why. Changed files are listed worst first; **View as tree** (or
+  `impactTree.fileListLayout`) folds them into their folders, with folders and files still
+  ordered worst first at every level and a folder ranked by its worst file. Track progress
+  by marking changes reviewed, and filter for what needs attention (callers not updated, or
+  callers to check by hand), unreviewed changes, or unresolved conversations.
+  Previous/Next unreviewed (`⇧⌥N` / `⌥N`) and the legend are also in the view's `…` menu.
 - For a GitHub PR, add review comments (in the diff, or **Comment on this call** on a
   caller row, which names the caller when its call is outside the diff), reply to or resolve conversations, and
   submit a review from the pull request tab. Picking a PR from the list, to preview or to
@@ -193,9 +197,9 @@ until you mark it reviewed, and its tooltip and Details say why.
 - While reviewing local changes or a checked-out pull request, leave **feedback** in the
   diff's comment box, or right-click a caller in the tree and pick **Comment on this call**.
   Drafts collect in **Feedback to send** at the
-  top of Changes. In a checked-out pull request, VS Code asks whether a new comment is a
+  top of the review. In a checked-out pull request, VS Code asks whether a new comment is a
   GitHub review comment or feedback for your agent.
-- **Send feedback** (✈ in the title bar; hold ⌥ for **Send feedback to…**) writes the drafts
+- **Send feedback** (✈ on the reviewed row; hold ⌥ for **Send feedback to…**) writes the drafts
   to `.impact-tree/feedback/<date>-<n>.md`, records a checkpoint, and hands the round to
   Claude Code or Codex (in a terminal), the editor's chat (Copilot Chat, Cursor; you press
   Enter), or the clipboard. The agent is asked to write `Status: done` or
@@ -207,7 +211,30 @@ until you mark it reviewed, and its tooltip and Details say why.
   how you want code written, and can later be turned into rules for your agents.
 - Checkpoints are snapshots of the working tree, kept in the editor's storage for this
   workspace, not in `.git`. Old ones are removed automatically; **Clean up stored data**
-  (Changes ⋯ menu) shows what is stored and deletes it on confirmation.
+  (the reviewed row's right-click menu) shows what is stored and deletes it on confirmation.
+
+### Your coding agent and the review tab (experimental)
+
+Off by default; turn on `impactTree.cards.enabled` and `impactTree.agents.enabled`.
+
+- **Cards** group a review's changes into related cards, with the entry points each card
+  reaches. **Open review** (on the reviewed row, or the Cards view) opens the **review tab**:
+  an overview board with three columns (Needs your attention, Behaviour changes, No
+  behaviour change), then card by card, each change with its diff hunk (cut to the
+  function's lines), who it affects, its callers and entry points. The tab is read-only.
+- **Connect my agent…** registers Impact Tree's MCP server with Claude Code, Codex, Cursor
+  or VS Code / Copilot. **Analyse with my agent** then hands your agent the review's facts
+  (inline in the prompt, or in a file when they are large) and the agent answers in one
+  `submit_cards` call: cards in reading order and, for each change, whether its behaviour
+  changed, may change, is new or is the same, with before / after / when and what it
+  affects, plus at most five changes that need your attention.
+- The agent's one-line note shows on the change rows and in the diff's CodeLens, after the
+  engine's own text; the engine's order and counts do not change. **Undo the agent's
+  result** goes back to the engine's cards.
+- Results are kept in this workspace. The window listens on a local socket in a private
+  temporary folder, guarded by a token; nothing leaves your machine. Only a checked-out
+  branch takes part, not a pull request preview. The MCP server restarts itself when the
+  extension's code changes.
 
 ## Install (from source)
 
@@ -244,6 +271,8 @@ checkpoint, from a recorded SHA).
 | `impactTree.tierA.maxFiles` | `300` | maximum files fetched for a no-checkout PR preview |
 | `impactTree.openPullRequestTab` | `true` | open the pull request tab when you preview or check out a PR from the list |
 | `impactTree.agent` | `ask` | where **Send feedback** hands a round: `claude`, `codex`, `chat`, `clipboard`, `save`, or `ask` |
+| `impactTree.cards.enabled` | `false` | the Cards view, the review tab and the entry-point search (experimental) |
+| `impactTree.agents.enabled` | `false` | let your connected coding agent read the shown review and hand back cards (experimental) |
 
 ## Performance
 

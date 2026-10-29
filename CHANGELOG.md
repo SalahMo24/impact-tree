@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **One Review view**: the review opens under the row it came from (the pull request, or the
+  mode under Local changes), and the separate Changes view is gone. The reviewed row holds
+  the review's controls and, in its hover, the review's notices; clicking it still offers
+  preview, check out or open on GitHub. Pull request rows no longer have a hover.
+- **Review tab** (experimental, with `impactTree.cards.enabled`): **Open review** shows an
+  overview board (Needs your attention, Behaviour changes, No behaviour change) and the
+  cards one by one, each change with its diff hunk cut to the function, who it affects, its
+  callers and entry points. Read-only for now.
+- **Analyse with my agent** (experimental, with `impactTree.agents.enabled`): **Connect my
+  agent…** registers Impact Tree's MCP server with Claude Code, Codex, Cursor or VS Code /
+  Copilot; the agent gets the review's facts with the prompt and answers in one
+  `submit_cards` call with cards in reading order and a behaviour review of each change
+  (changed, may change, new or same; before / after / when; what it affects; at most five
+  that need attention). Its one-line note shows on the change rows and in the diff's
+  CodeLens, after the engine's text. The MCP server restarts itself on new extension code
+  instead of answering from an old build.
+- A TypeScript project that does not hold a file is no longer reported as a failed caller
+  query.
+
 - **Go in the PR preview and the CLI**, without gopls: the changed, added and deleted
   functions and methods and their signature kinds, read from the text with the same keys
   as in the editor (so review ticks carry over), and callers from a syntax index: the PR's
