@@ -8,7 +8,7 @@
 // (inline or as a file), so the agent answers with one `submit_cards` call instead of reading
 // the MCP tools card by card.
 //
-// Built from the same analysis shape as the MCP tools (src/mcp/tools.js), so the change ids
+// Built on the same index of the analysis as the MCP tools (./card-env.js), so the change ids
 // are the ones `submit_cards` checks. Diff hunks are on a budget: changes outside test files
 // first, each hunk cut to MAX_HUNK_CHARS; a member past the budget says `diff: "omitted"`
 // and get_change has its hunk.
@@ -17,9 +17,9 @@
 // length-capped: it is data the prompt marks as data. Pure apart from `readText` (line numbers
 // of call sites), which is injectable.
 
-const { makeEnv, impactOf, nameOf, seamsOf, hunkFor } = require('./tools').internals;
+const { makeEnv, impactOf, nameOf, seamsOf, hunkFor } = require('./card-env');
 
-/** A member as id, name, file and kinds only: the smallest form. @param {import('./tools').Env} env @param {string} id */
+/** A member as id, name, file and kinds only: the smallest form. @param {import('./card-env').CardEnv} env @param {string} id */
 const shortRow = (env, id) => {
   const r = /** @type {any} */ (nameOf(env, id));
   return { id, name: one(r.label), ...(r.file ? { file: one(r.file, 300) } : {}), ...(r.kinds ? { kinds: r.kinds.map((/** @type {unknown} */ k) => one(k, 40)) } : {}) };
@@ -60,7 +60,7 @@ function evidenceText(e) {
 
 /**
  * One changed function's facts.
- * @param {import('./tools').Env} env @param {string} id @param {number} callerCap
+ * @param {import('./card-env').CardEnv} env @param {string} id @param {number} callerCap
  * @param {Map<string, string>} diffs The hunks kept, by change id.
  */
 function memberFacts(env, id, callerCap, diffs) {
@@ -101,7 +101,7 @@ function memberFacts(env, id, callerCap, diffs) {
 /**
  * The diff hunks to give, by change id: changes outside test files first, in card order,
  * each cut to MAX_HUNK_CHARS, until `budget` characters are used.
- * @param {import('./tools').Env} env @param {number} budget
+ * @param {import('./card-env').CardEnv} env @param {number} budget
  * @returns {Map<string, string>}
  */
 function pickDiffs(env, budget) {

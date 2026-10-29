@@ -11,7 +11,7 @@
 
 const { buildCardsPrompt, MAX_INLINE_FACTS_CHARS } = require('./agent-prompt');
 const { handOff, fitsHandOff } = require('./agent-handoff');
-const { buildCardFacts, factsFileText, splitDiff } = require('../mcp/card-facts');
+const { buildCardFacts, factsFileText, splitDiff } = require('../engine/card-facts');
 const { execFile } = require('child_process');
 const { writeFactsFile } = require('./agent-facts-file');
 const { realClock } = require('../engine/clock');

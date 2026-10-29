@@ -1,5 +1,5 @@
 'use strict';
-// The facts "Analyse with my agent" hands over with the prompt (src/mcp/card-facts.js), and
+// The facts "Analyse with my agent" hands over with the prompt (src/engine/card-facts.js), and
 // the file they go to when they are too long for it (src/agent/agent-facts-file.js).
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { buildCardFacts, factsFileText, splitDiff, MAX_FACTS_CHARS, MAX_CALLERS_LISTED, MAX_HUNK_CHARS, DIFF_BUDGET_CHARS } = require('../src/mcp/card-facts');
+const { buildCardFacts, factsFileText, splitDiff, MAX_FACTS_CHARS, MAX_CALLERS_LISTED, MAX_HUNK_CHARS, DIFF_BUDGET_CHARS } = require('../src/engine/card-facts');
 const { writeFactsFile } = require('../src/agent/agent-facts-file');
 const { validateSubmission } = require('../src/engine/agent-results');
 
