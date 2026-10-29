@@ -8,6 +8,7 @@ const { createTreeProvider } = require('./tree-provider');
 const { createCardsProvider, REVEAL_COMMAND } = require('./cards-provider');
 const { latestCardsResult } = require('./agent-cards');
 const { agentNotes } = require('./agent-notes');
+const { createReviewTab } = require('./review-tab-panel');
 const { createReviewNavigation } = require('./review-navigation');
 const { createDetailPanel } = require('./detail-panel');
 const { createCallerComment } = require('./caller-comment');
@@ -415,8 +416,16 @@ function activate(context, { clock = realClock } = {}) {
     return notesFor.notes;
   };
   agentChangeOf = (id) => { const notes = agentNotesNow(); return notes ? notes.change(id) : null; };
-  // Everything that shows the agent's result: the Cards view, Details, the Changes rows and lenses.
-  const agentRedraw = () => { cardsProvider.refresh(); details.refresh(); provider.agentChanged(); };
+  // The review tab (U1): the board and the card-by-card review, in an editor tab.
+  const reviewTab = createReviewTab(vscode, {
+    getState: () => owned.state, enabled: () => owned.cardsEnabled(), repoRoot: () => { try { return session.repoRoot(); } catch { return null; } }, log,
+    agentPayload: () => { const src = agentSource(); if (!src || src.showEngine) return null; const latest = latestCardsResult(src.results); return latest ? latest.payload : null; },
+  });
+  context.subscriptions.push(...reviewTab.disposables, vscode.commands.registerCommand('impactTree.openReview', () => reviewTab.open()),
+    owned.onDidChangeAnalysis(() => reviewTab.refresh()), owned.onDidChangeCards(() => reviewTab.refresh()),
+    vscode.workspace.onDidChangeConfiguration((e) => { if (e.affectsConfiguration('impactTree.cards.enabled')) reviewTab.refresh(); }));
+  // Everything that shows the agent's result: the Cards view, Details, the Changes rows and lenses, the review tab.
+  const agentRedraw = () => { cardsProvider.refresh(); details.refresh(); provider.agentChanged(); reviewTab.refresh(); };
   // The head of the review shown is read from the repository, so it arrives after the analysis does.
   let headRead = 0;
   const syncAgentHead = async () => {

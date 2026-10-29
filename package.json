@@ -411,6 +411,12 @@
         "category": "Impact Tree"
       },
       {
+        "command": "impactTree.openReview",
+        "title": "Open review",
+        "category": "Impact Tree",
+        "icon": "$(preview)"
+      },
+      {
         "command": "impactTree.analyseWithAgent",
         "title": "Analyse with my agent",
         "category": "Impact Tree",
@@ -476,6 +482,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "impactTree.openReview",
+          "when": "view == impactTree.cards && config.impactTree.cards.enabled",
+          "group": "navigation@0"
+        },
         {
           "command": "impactTree.analyseWithAgent",
           "when": "view == impactTree.cards && config.impactTree.agents.enabled",
@@ -796,6 +807,10 @@
         {
           "command": "impactTree.feedback.openRoundFile",
           "when": "false"
+        },
+        {
+          "command": "impactTree.openReview",
+          "when": "config.impactTree.cards.enabled"
         }
       ],
       "editor/context": [
