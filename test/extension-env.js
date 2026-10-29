@@ -284,14 +284,21 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       createTreeView: (id, options) => {
         // A test sets `selection` as the user's selection; `reveal` records what was asked.
         const view = { dispose() {}, visible: true, selection: [], onDidChangeCheckboxState: (handler) => { captured.checkbox = handler; return disposable(); },
-          onDidChangeSelection: (handler) => { if (id === 'impactTree.changes') captured.selection.push(handler); return disposable(); },
-          onDidChangeVisibility: (handler) => { if (id === 'impactTree.changes') captured.treeVisibility.push(handler); return disposable(); },
+          onDidChangeSelection: (handler) => { if (id === 'impactTree.sources') captured.selection.push(handler); return disposable(); },
+          onDidChangeVisibility: (handler) => { if (id === 'impactTree.sources') captured.treeVisibility.push(handler); return disposable(); },
           reveal: async (row, options) => {
+            // Opening the reviewed row when a review starts (select and focus both false) is
+            // kept apart, so the reveals a test counts are the ones the reviewer asked for.
+            if (options && options.select === false && options.focus === false) { (seen.hostReveals = seen.hostReveals || []).push(row); return; }
             seen.revealed.push({ row, options });
             if (options.focus) { seen.focus = 'tree'; seen.focusedRow = row; }
           } };
-        if (id === 'impactTree.changes') { captured.tree = options.treeDataProvider; captured.view = view; }
-        if (id === 'impactTree.sources') captured.sources = options.treeDataProvider;
+        // The Review view joins the sources rows and the review (review-sidebar.js): `tree` is the
+        // review's own provider, `sidebar` the joined one.
+        if (id === 'impactTree.sources') {
+          captured.sidebar = options.treeDataProvider; captured.tree = options.treeDataProvider.reviewTree; captured.view = view;
+          captured.sources = options.treeDataProvider;
+        }
         if (id === 'impactTree.cards') { captured.cards = options.treeDataProvider; captured.cardsView = view; }
         return view;
       },

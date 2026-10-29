@@ -699,9 +699,9 @@ test('submit review is offered while a pull request is open; the loading key dis
   env.dispose();
 });
 
-test('each submit-review state has exactly one title entry, and the unavailable one cannot run', () => {
+test('each submit-review state has exactly one entry on the reviewed row, and the unavailable one cannot run', () => {
   const { contributes } = require('../package.json');
-  const entries = contributes.menus['view/title'].filter((m) => /submitReview/.test(m.command));
+  const entries = contributes.menus['view/item/context'].filter((m) => /submitReview/.test(m.command));
   const whenFor = (id) => entries.find((m) => m.command === id).when;
   assert.match(whenFor('impactTree.submitReview'), /impactTree\.hasPullRequestReview && !impactTree\.pullRequestReviewLoading$/);
   assert.match(whenFor('impactTree.submitReviewUnavailable'), /impactTree\.hasPullRequestReview && impactTree\.pullRequestReviewLoading$/);
@@ -937,12 +937,13 @@ test('wired: after GitHub refuses a merge, the tab reloads and stops offering it
   }, { graphql: github.graphql });
 });
 
-test('package.json declares the commands, the tree-title entry and their when clauses', () => {
+test('package.json declares the commands, the reviewed row entry and their when clauses', () => {
   const pkg = require('../package.json');
   const ids = pkg.contributes.commands.map((c) => c.command);
   for (const id of ['impactTree.showPullRequest', 'impactTree.submitReview', 'impactTree.revealReviewThread']) assert.ok(ids.includes(id), id);
-  const title = pkg.contributes.menus['view/title'].find((m) => m.command === 'impactTree.submitReview');
-  assert.equal(title.when, 'view == impactTree.changes && impactTree.hasPullRequestReview && !impactTree.pullRequestReviewLoading');
+  const title = pkg.contributes.menus['view/item/context'].find((m) => m.command === 'impactTree.submitReview');
+  assert.equal(title.when, 'view == impactTree.sources && viewItem == reviewHost && impactTree.hasPullRequestReview && !impactTree.pullRequestReviewLoading');
+  assert.equal(title.group, 'inline@5');
   assert.ok(pkg.contributes.commands.find((c) => c.command === 'impactTree.submitReview').icon);
   assert.equal(pkg.contributes.menus.commandPalette.find((m) => m.command === 'impactTree.revealReviewThread').when, 'false');
 });

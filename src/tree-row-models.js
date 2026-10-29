@@ -394,9 +394,10 @@ function buildNoticeRows(r) {
         + 'Use "Check out and analyse" on the PR for the complete tree.',
     });
   }
-  for (const w of r.warnings) rows.push({ type: 'message', label: w, icon: 'warning' });
+  // `notice` rows go in the review's host row hover (review-sidebar.js), not in the tree.
+  for (const w of r.warnings) rows.push({ type: 'message', label: w, icon: 'warning', notice: 'warning' });
   for (const u of r.unanalysable) {
-    rows.push({ type: 'message', icon: 'circle-slash',
+    rows.push({ type: 'message', icon: 'circle-slash', notice: 'unanalysable',
       label: `${u.count} file(s) in '${u.component}' not analysed`, desc: 'see analysis warning' });
   }
   return rows;

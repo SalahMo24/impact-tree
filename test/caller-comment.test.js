@@ -40,7 +40,7 @@ test('the command and its menu: on caller rows of the change view, hidden from t
   const command = contributes.commands.find((c) => c.command === COMMAND);
   assert.equal(command.title, 'Comment on this call');
   assert.deepEqual(contributes.menus['view/item/context'].filter((m) => m.command === COMMAND),
-    [{ command: COMMAND, when: 'view == impactTree.changes && viewItem =~ /^(caller|changedCaller)$/', group: 'navigation@2' }]);
+    [{ command: COMMAND, when: 'view == impactTree.sources && viewItem =~ /^(caller|changedCaller)$/', group: 'navigation@2' }]);
   assert.equal(contributes.menus.commandPalette.find((m) => m.command === COMMAND).when, 'false');
 });
 

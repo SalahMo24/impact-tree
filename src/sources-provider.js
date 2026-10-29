@@ -1,7 +1,7 @@
 'use strict';
-// The "where do I review from" view: one row for local changes, one for open PRs.
-// It deliberately owns no analysis state — picking a source just fires a command and
-// the results land in the main Changes view, so there is one place to read results.
+// The "where do I review from" rows: one group for local changes, one for open PRs.
+// It deliberately owns no analysis state — picking a source just fires a command, and
+// review-sidebar.js nests the review's rows under the row it came from.
 
 const { groupPullRequests } = require('./pr-groups');
 
@@ -36,7 +36,7 @@ function createSourcesProvider(vscode, {
     const item = new vscode.TreeItem(n.label, vscode.TreeItemCollapsibleState.None);
     item.iconPath = n.avatar ? vscode.Uri.parse(n.avatar) : n.icon ? new vscode.ThemeIcon(n.icon) : undefined;
     item.description = n.desc;
-    if (n.tooltip) item.tooltip = n.tooltip;
+    if (n.tooltip !== undefined) item.tooltip = n.tooltip;
     if (n.command) item.command = { command: n.command, title: n.label, arguments: n.args || [] };
     return item;
   }
@@ -105,9 +105,8 @@ function createSourcesProvider(vscode, {
           // to be said in words as well.
           avatar: p.authorAvatarUrl || null,
           desc: `${p.author}${p.draft ? '  ·  draft' : ''}${via ? `  ·  via ${via.join(', ')}` : ''}${p.isFork ? '  ·  fork' : ''}`,
-          tooltip: `${p.title}\n\n${p.headRef} → ${p.baseRef}\nby ${p.author}\nupdated ${p.updatedAt}`
-            + (via ? `\nreview requested from ${via.join(', ')}` : '')
-            + (p.isFork ? `\n\nFrom fork ${p.headRepo}.` : ''),
+          // No hover: the row already says who and how; the PR tab has the rest.
+          tooltip: '',
           command: 'impactTree.openPullRequest',
           args: [p],
         });

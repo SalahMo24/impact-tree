@@ -47,11 +47,11 @@ const rowsOf = async (env) => {
   return { files, a: (await env.tree().getChildren(files[0])).filter((r) => r.type !== 'spacer') };
 };
 
-test('the view is a webview under the change and cards views, with scripts on and no local resources', () => withEnv(async (env) => {
+test('the view is a webview under the Review and cards views, with scripts on and no local resources', () => withEnv(async (env) => {
   const { contributes } = require('../package.json');
   const views = contributes.views.impactTree;
-  assert.deepEqual(views.map((v) => v.id), ['impactTree.sources', 'impactTree.changes', 'impactTree.cards', 'impactTree.details']);
-  assert.deepEqual(views[3], { type: 'webview', id: 'impactTree.details', name: 'Details', contextualTitle: 'Impact Tree' });
+  assert.deepEqual(views.map((v) => v.id), ['impactTree.sources', 'impactTree.cards', 'impactTree.details']);
+  assert.deepEqual(views[2], { type: 'webview', id: 'impactTree.details', name: 'Details', contextualTitle: 'Impact Tree' });
   const details = env.openDetails();
   assert.deepEqual(details.webview.options, { enableScripts: true, localResourceRoots: [] });
   assert.equal(textOf(details), NOT_FOLLOWED, 'nothing selected yet');

@@ -9,6 +9,8 @@ const { createCardsProvider, REVEAL_COMMAND } = require('./cards-provider');
 const { latestCardsResult } = require('./agent-cards');
 const { agentNotes } = require('./agent-notes');
 const { createReviewTab } = require('./review-tab-panel');
+const { createReviewSidebar, emptyReviewRow } = require('./review-sidebar');
+const { viewStateOf } = require('./view-state');
 const { createReviewNavigation } = require('./review-navigation');
 const { createDetailPanel } = require('./detail-panel');
 const { createCallerComment } = require('./caller-comment');
@@ -130,9 +132,33 @@ function activate(context, { clock = realClock } = {}) {
   });
   session.provider = provider;
   context.subscriptions.push(provider, decorate);
-  const view = vscode.window.createTreeView('impactTree.changes',
-    { treeDataProvider: provider, showCollapseAll: true, manageCheckboxStateManually: true });
-  context.subscriptions.push(view);
+  // The Review view: where to review from, with the review nested under the row it came
+  // from (review-sidebar.js). The PR list joins it when it is built, below.
+  const sidebar = createReviewSidebar(vscode, {
+    tree: provider,
+    getHost: () => {
+      const src = owned.state && owned.state.source;
+      if (!src) return null;
+      if ((src.kind === 'pr' || src.kind === 'checkout') && src.pr && Number.isSafeInteger(src.pr.number)) return { kind: 'pr', number: src.pr.number, title: src.pr.title };
+      return src.kind === 'local' ? { kind: 'local', mode: vscode.workspace.getConfiguration('impactTree').get('mode', 'pr') } : null;
+    },
+    emptyRow: () => emptyReviewRow(viewStateOf({ repo: repoStatus, phase: owned.getPhase(), busy: owned.isBusy(), state: owned.state }), owned.state),
+  });
+  const view = vscode.window.createTreeView('impactTree.sources',
+    { treeDataProvider: sidebar, showCollapseAll: true, manageCheckboxStateManually: true });
+  context.subscriptions.push(view, sidebar, sidebar.followTree());
+  // A new review opens its row, even inside a group the reviewer had closed; a refresh of the
+  // same review (callers retried, a new result) leaves the view where the reviewer is.
+  let revealedFor = '';
+  const revealHost = async () => {
+    const src = owned.state && owned.state.source;
+    const key = src ? JSON.stringify([src.kind, src.pr && src.pr.number]) : '';
+    if (key === revealedFor) return;
+    revealedFor = key;
+    const host = await sidebar.hostRow();
+    if (host) await Promise.resolve(view.reveal(host, { select: false, focus: false, expand: true })).then(undefined, (e) => log(`review: could not show the reviewed row: ${e && e.message}`));
+  };
+  context.subscriptions.push(owned.onDidChangeAnalysis(() => { void revealHost(); }));
   // The Cards view (impactTree.cards.enabled; package.json hides it while the setting is off).
   // It follows the analysis and the cards the session publishes after it; selecting a seam
   // reveals the other card. Disposed with the window.
@@ -171,6 +197,8 @@ function activate(context, { clock = realClock } = {}) {
     // after the counts the reviewer is already using.
     const indexing = owned.getIndexingText();
     const message = indexing === null ? summary.message : summary.message ? `${summary.message} · ${indexing}` : indexing;
+    // At the top of the Review view, always in sight (on the reviewed row it would sit after a
+    // long pull request title and be cut off).
     if (view.message !== message) view.message = message;
     if (view.badge?.value !== badge?.value || view.badge?.tooltip !== badge?.tooltip) view.badge = badge;
     navigation.update();
@@ -331,8 +359,7 @@ function activate(context, { clock = realClock } = {}) {
     getTeams: () => team,
     getRemoteProblem: remoteProblem,
   });
-  context.subscriptions.push(vscode.window.createTreeView('impactTree.sources',
-    { treeDataProvider: sources }));
+  context.subscriptions.push(sidebar.setSources(sources));
 
   // Each load takes a number; only the latest one may publish, so a list for the old
   // repository never lands after the setting changed.

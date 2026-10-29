@@ -81,31 +81,21 @@ test('nothing changed with warnings keeps the warnings and names the mode and ba
 
 // ---- welcome screens in package.json ---------------------------------------------
 
-test('every state without rows has a welcome screen with a next step, and idle offers the three ways in', () => {
+test('the Review view has a welcome screen with a next step for no folder and no repository', () => {
   const welcome = manifest.contributes.viewsWelcome;
   const commands = new Set(manifest.contributes.commands.map((c) => c.command));
   // Contributed by VS Code or its built-in extensions, not by this one.
   const builtIn = new Set(['workbench.action.files.openFolder', 'workbench.action.openSettings', 'git.init', 'impactTree.sources.focus']);
   const forState = (view, when) => welcome.filter((w) => w.view === view && w.when.includes(`impactTree.state == ${when}`));
-  for (const [view, states] of [['impactTree.changes', ['noFolder', 'noGit', 'idle', 'nothingChanged', 'noTypeScript']], ['impactTree.sources', ['noFolder', 'noGit']]]) {
-    for (const state of states) assert.ok(forState(view, state).length > 0, `${view} has a welcome screen for ${state}`);
-  }
+  // The Review view is empty only without a folder or a repository; the other states are rows
+  // under the reviewed row (review-sidebar.js emptyReviewRow), tested in review-sidebar.test.js.
+  for (const state of ['noFolder', 'noGit']) assert.ok(forState('impactTree.sources', state).length > 0, `the Review view has a welcome screen for ${state}`);
+  assert.deepEqual([...new Set(welcome.map((w) => w.view))], ['impactTree.sources']);
   for (const entry of welcome) {
     const links = [...entry.contents.matchAll(/\]\(command:([\w.]+)/g)].map((m) => m[1]);
     assert.ok(links.length > 0, `${entry.when} offers a next step`);
     for (const command of links) assert.ok(commands.has(command) || builtIn.has(command), `${command} exists`);
   }
-  const [idle] = forState('impactTree.changes', 'idle');
-  const link = (label) => new RegExp(`\\[${label}\\]\\(([^)]*)\\)`).exec(idle.contents)?.[1];
-  assert.equal(link('Review my branch'), 'command:impactTree.analyseMode?%5B%22pr%22%5D');
-  assert.equal(link('Review uncommitted \\(agent\\) changes'), 'command:impactTree.analyseMode?%5B%22working%22%5D');
-  assert.equal(link('Open a pull request'), 'command:impactTree.sources.focus');
-  assert.deepEqual(JSON.parse(decodeURIComponent('%5B%22pr%22%5D')), ['pr']);
-  // Nothing changed names its mode for each of the four modes and offers to switch.
-  const nothing = forState('impactTree.changes', 'nothingChanged');
-  assert.deepEqual(nothing.map((w) => /resultMode == (\w+)/.exec(w.when)[1]).sort(), ['branch', 'checkpoint', 'pr', 'working']);
-  for (const w of nothing) assert.match(w.contents, /\[Switch mode\]\(command:impactTree\.selectMode\)/);
-  assert.match(forState('impactTree.changes', 'noTypeScript')[0].contents, /npm install/);
 });
 
 // ---- checkpoint mode without a checkpoint ------------------------------------------

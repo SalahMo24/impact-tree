@@ -267,28 +267,34 @@ test('package.json contributes the commands, the keybinding and the palette gate
   assert.equal(contributes.commands.find((c) => c.command === 'impactTree.previousUnreviewed').title, 'Impact Tree: Go to previous unreviewed change');
   assert.equal(contributes.commands.find((c) => c.command === 'impactTree.nextUnreviewed').title, 'Impact Tree: Go to next unreviewed change');
   assert.equal(env.seen.statusBar.tooltip, 'Go to the next unreviewed change');
-  // the title bar keeps only refresh, the layout toggle and the submit actions ("Submit
-  // review…" for a PR, Send feedback with drafts); the rest is in the overflow menu
-  const changes = contributes.menus['view/title'].filter((m) => m.when.startsWith('view == impactTree.changes'));
-  const groupOf = (id) => changes.filter((m) => m.command === id).map((m) => m.group);
-  assert.deepEqual(changes.filter((m) => m.group.startsWith('navigation')).map((m) => m.command),
-    ['impactTree.refresh', 'impactTree.viewAsTree', 'impactTree.viewAsList',
-      'impactTree.submitReview', 'impactTree.submitReviewUnavailable', 'impactTree.sendFeedback']);
+  // The review's controls are on the reviewed row of the Review view (review-sidebar.js): inline
+  // the review tab, the layout toggle, the attention filter, refresh and the submit actions
+  // ("Submit review…" for a PR, Send feedback with drafts); the rest in its context menu.
+  const HOST = 'view == impactTree.sources && viewItem == reviewHost';
+  const host = contributes.menus['view/item/context'].filter((m) => m.when.startsWith(HOST));
+  const groupOf = (id) => host.filter((m) => m.command === id).map((m) => m.group);
+  assert.deepEqual(host.filter((m) => m.group.startsWith('inline')).map((m) => m.command).sort(),
+    ['impactTree.filterAttention', 'impactTree.filterAttentionOn', 'impactTree.openReview', 'impactTree.refresh', 'impactTree.sendFeedback',
+      'impactTree.submitReview', 'impactTree.submitReviewUnavailable', 'impactTree.viewAsList', 'impactTree.viewAsTree']);
   // one of the two layout icons shows, by the setting
-  assert.equal(changes.find((m) => m.command === 'impactTree.viewAsTree').when, 'view == impactTree.changes && impactTree.fileListLayout != tree');
-  assert.equal(changes.find((m) => m.command === 'impactTree.viewAsList').when, 'view == impactTree.changes && impactTree.fileListLayout == tree');
+  assert.equal(host.find((m) => m.command === 'impactTree.viewAsTree').when, `${HOST} && impactTree.fileListLayout != tree`);
+  assert.equal(host.find((m) => m.command === 'impactTree.viewAsList').when, `${HOST} && impactTree.fileListLayout == tree`);
   // Send feedback shows only with drafts; holding ⌥ turns it into "Send feedback to…".
-  assert.equal(changes.find((m) => m.command === 'impactTree.sendFeedback').when, 'view == impactTree.changes && impactTree.hasFeedbackDrafts');
-  assert.equal(changes.find((m) => m.command === 'impactTree.sendFeedback').alt, 'impactTree.sendFeedbackTo');
-  const order = (id) => Number(changes.find((m) => m.command === id).group.split('@')[1]);
-  assert.ok(order('impactTree.refresh') < order('impactTree.viewAsTree') && order('impactTree.viewAsTree') < order('impactTree.submitReview'), 'the layout toggle sits right after refresh, as in the GitHub Pull Requests view');
+  assert.equal(host.find((m) => m.command === 'impactTree.sendFeedback').when, `${HOST} && impactTree.hasFeedbackDrafts`);
+  assert.equal(host.find((m) => m.command === 'impactTree.sendFeedback').alt, 'impactTree.sendFeedbackTo');
+  const order = (id) => Number(host.find((m) => m.command === id).group.split('@')[1]);
+  assert.ok(order('impactTree.openReview') < order('impactTree.viewAsTree') && order('impactTree.viewAsTree') < order('impactTree.refresh')
+    && order('impactTree.refresh') < order('impactTree.submitReview'), 'review tab, layout, filter, refresh, then submit');
   assert.equal(order('impactTree.viewAsList'), order('impactTree.viewAsTree'), 'the two layout icons take the same slot');
-  // overflow menu: filters, then previous/next, then mode, help (legend first), progress
-  assert.deepEqual(['filterAttention', 'filterAttentionOn', 'filterUnreviewed', 'filterUnreviewedOn', 'filterThreads', 'filterThreadsOn',
+  // context menu: filters, then previous/next, then mode, help (legend first), progress
+  assert.deepEqual(['filterUnreviewed', 'filterUnreviewedOn', 'filterThreads', 'filterThreadsOn',
     'previousUnreviewed', 'nextUnreviewed', 'selectMode', 'setCheckpoint', 'showLegend', 'showLog', 'clearReviewed', 'cleanUpStoredData']
     .map((c) => groupOf(`impactTree.${c}`)[0]),
-  ['0_filter@1', '0_filter@1', '0_filter@2', '0_filter@2', '0_filter@3', '0_filter@3',
-    '0_go@1', '0_go@2', '1_mode@1', '1_mode@2', '2_help@1', '2_help@2', '3_progress@1', '3_progress@2']);
+  ['0_filter@2', '0_filter@2', '0_filter@3', '0_filter@3', '0_go@1', '0_go@2', '1_mode@1', '1_mode@2', '2_help@1', '2_help@2', '3_progress@1', '3_progress@2']);
+  // The view's own title keeps what works without a review row: previous/next, help, and the PR list's refresh.
+  assert.deepEqual(contributes.menus['view/title'].filter((m) => m.when === 'view == impactTree.sources').map((m) => m.command).sort(),
+    ['impactTree.nextUnreviewed', 'impactTree.previousUnreviewed', 'impactTree.refreshPullRequests', 'impactTree.showLegend', 'impactTree.showLog']);
+  assert.ok(!JSON.stringify(contributes).includes('impactTree.changes'), 'the Changes view is gone');
   const palette = Object.fromEntries(contributes.menus.commandPalette.map((m) => [m.command, m.when]));
   for (const id of ['impactTree.filterAttention', 'impactTree.filterUnreviewed', 'impactTree.nextUnreviewed', 'impactTree.previousUnreviewed']) assert.equal(palette[id], 'impactTree.hasReview', id);
   for (const id of ['impactTree.filterAttentionOn', 'impactTree.filterUnreviewedOn', 'impactTree.filterThreadsOn']) assert.equal(palette[id], 'false', id);
@@ -296,8 +302,8 @@ test('package.json contributes the commands, the keybinding and the palette gate
   assert.equal(palette['impactTree.filterThreads'], 'impactTree.hasReviewThreads');
   assert.match(title0(contributes, 'impactTree.filterThreads').when, /&& impactTree\.hasReviewThreads$/);
   assert.doesNotMatch(title0(contributes, 'impactTree.filterThreadsOn').when, /hasReviewThreads/, 'a filter that is on can always be turned off');
-  // in the view title, exactly one command of each pair matches each value of the key
-  const title = contributes.menus['view/title'].filter((m) => /impactTree\.filter/.test(m.command));
+  // on the reviewed row, exactly one command of each pair matches each value of the key
+  const title = contributes.menus['view/item/context'].filter((m) => /impactTree\.filter/.test(m.command));
   const matches = (when, filter) => {
     const [, op, value] = /impactTree\.filter (==|!=) (\w+)/.exec(when);
     return op === '==' ? filter === value : filter !== value;
@@ -339,7 +345,8 @@ test('going to a row by its tree id reveals it as next unreviewed does; an unkno
 });
 
 /** The first view/title entry of a command. */
-const title0 = (contributes, id) => contributes.menus['view/title'].find((m) => m.command === id);
+// The entry of a review control: on the reviewed row of the Review view.
+const title0 = (contributes, id) => contributes.menus['view/item/context'].find((m) => m.command === id && /viewItem == reviewHost/.test(m.when));
 
 test('View as tree writes the layout setting; the setting folds the view and sets the context key', () => withEnv(async (env) => {
   useResult(env);

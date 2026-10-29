@@ -58,11 +58,6 @@
           "contextualTitle": "Impact Tree"
         },
         {
-          "id": "impactTree.changes",
-          "name": "Changes",
-          "contextualTitle": "Impact Tree"
-        },
-        {
           "id": "impactTree.cards",
           "name": "Cards",
           "contextualTitle": "Impact Tree",
@@ -77,46 +72,6 @@
       ]
     },
     "viewsWelcome": [
-      {
-        "view": "impactTree.changes",
-        "contents": "No folder is open, so there is nothing to review.\n[Open Folder](command:workbench.action.files.openFolder)",
-        "when": "impactTree.state == noFolder"
-      },
-      {
-        "view": "impactTree.changes",
-        "contents": "This folder is not a git repository. Impact Tree reviews the difference between git commits.\n[Initialize Repository](command:git.init)\nAlready a repository? [Refresh](command:impactTree.refresh)",
-        "when": "impactTree.state == noGit"
-      },
-      {
-        "view": "impactTree.changes",
-        "contents": "Review a change by what it affects, not just what it touches. Pick where the change is:\n[Review my branch](command:impactTree.analyseMode?%5B%22pr%22%5D)\nThe commits on this branch compared with the base branch: what a pull request will contain.\n[Review uncommitted (agent) changes](command:impactTree.analyseMode?%5B%22working%22%5D)\nWhat you or a coding agent changed since the last commit.\n[Open a pull request](command:impactTree.sources.focus)\nPreview or check out an open pull request from GitHub.",
-        "when": "impactTree.state == idle"
-      },
-      {
-        "view": "impactTree.changes",
-        "contents": "Nothing changed in Branch vs base mode.\nThis branch has no commits beyond the base branch, so a pull request from it would be empty.\n[Switch mode](command:impactTree.selectMode)\n[Change the base branch](command:workbench.action.openSettings?%5B%22impactTree.baseBranch%22%5D)",
-        "when": "impactTree.state == nothingChanged && impactTree.resultMode == pr"
-      },
-      {
-        "view": "impactTree.changes",
-        "contents": "Nothing changed in Branch + uncommitted mode.\nThere are no commits beyond the base branch and no uncommitted edits.\n[Switch mode](command:impactTree.selectMode)\n[Change the base branch](command:workbench.action.openSettings?%5B%22impactTree.baseBranch%22%5D)",
-        "when": "impactTree.state == nothingChanged && impactTree.resultMode == branch"
-      },
-      {
-        "view": "impactTree.changes",
-        "contents": "Nothing changed in Uncommitted (agent) mode.\nThere are no uncommitted edits. Run this after you or a coding agent change files.\n[Switch mode](command:impactTree.selectMode)\n[Refresh](command:impactTree.refresh)",
-        "when": "impactTree.state == nothingChanged && impactTree.resultMode == working"
-      },
-      {
-        "view": "impactTree.changes",
-        "contents": "Nothing changed in Since checkpoint mode.\nNothing has changed since the checkpoint you recorded.\n[Switch mode](command:impactTree.selectMode)\n[Set checkpoint now](command:impactTree.setCheckpoint)",
-        "when": "impactTree.state == nothingChanged && impactTree.resultMode == checkpoint"
-      },
-      {
-        "view": "impactTree.changes",
-        "contents": "Impact Tree could not load TypeScript for the changed files, so none of them was analysed. This is not a result of \"no impact\".\nInstall the project's dependencies (for example npm install), then refresh.\n[Refresh](command:impactTree.refresh)\n[Show log](command:impactTree.showLog)",
-        "when": "impactTree.state == noTypeScript"
-      },
       {
         "view": "impactTree.sources",
         "contents": "No folder is open. Open a repository to review its changes and pull requests.\n[Open Folder](command:workbench.action.files.openFolder)",
@@ -493,79 +448,19 @@
           "group": "navigation@1"
         },
         {
-          "command": "impactTree.refresh",
-          "when": "view == impactTree.changes",
-          "group": "navigation@0"
-        },
-        {
-          "command": "impactTree.filterAttention",
-          "when": "view == impactTree.changes && impactTree.filter != attention",
-          "group": "0_filter@1"
-        },
-        {
-          "command": "impactTree.filterAttentionOn",
-          "when": "view == impactTree.changes && impactTree.filter == attention",
-          "group": "0_filter@1"
-        },
-        {
-          "command": "impactTree.filterUnreviewed",
-          "when": "view == impactTree.changes && impactTree.filter != unreviewed",
-          "group": "0_filter@2"
-        },
-        {
-          "command": "impactTree.filterUnreviewedOn",
-          "when": "view == impactTree.changes && impactTree.filter == unreviewed",
-          "group": "0_filter@2"
-        },
-        {
-          "command": "impactTree.filterThreads",
-          "when": "view == impactTree.changes && impactTree.filter != threads && impactTree.hasReviewThreads",
-          "group": "0_filter@3"
-        },
-        {
-          "command": "impactTree.filterThreadsOn",
-          "when": "view == impactTree.changes && impactTree.filter == threads",
-          "group": "0_filter@3"
-        },
-        {
           "command": "impactTree.previousUnreviewed",
-          "when": "view == impactTree.changes",
+          "when": "view == impactTree.sources",
           "group": "0_go@1"
         },
         {
           "command": "impactTree.nextUnreviewed",
-          "when": "view == impactTree.changes",
+          "when": "view == impactTree.sources",
           "group": "0_go@2"
         },
         {
-          "command": "impactTree.viewAsTree",
-          "when": "view == impactTree.changes && impactTree.fileListLayout != tree",
-          "group": "navigation@1"
-        },
-        {
-          "command": "impactTree.viewAsList",
-          "when": "view == impactTree.changes && impactTree.fileListLayout == tree",
-          "group": "navigation@1"
-        },
-        {
-          "command": "impactTree.selectMode",
-          "when": "view == impactTree.changes",
-          "group": "1_mode@1"
-        },
-        {
-          "command": "impactTree.setCheckpoint",
-          "when": "view == impactTree.changes",
-          "group": "1_mode@2"
-        },
-        {
           "command": "impactTree.showLog",
-          "when": "view == impactTree.changes",
+          "when": "view == impactTree.sources",
           "group": "2_help@2"
-        },
-        {
-          "command": "impactTree.clearReviewed",
-          "when": "view == impactTree.changes",
-          "group": "3_progress@1"
         },
         {
           "command": "impactTree.refreshPullRequests",
@@ -573,30 +468,9 @@
           "group": "navigation@1"
         },
         {
-          "command": "impactTree.submitReview",
-          "when": "view == impactTree.changes && impactTree.hasPullRequestReview && !impactTree.pullRequestReviewLoading",
-          "group": "navigation@7"
-        },
-        {
-          "command": "impactTree.submitReviewUnavailable",
-          "when": "view == impactTree.changes && impactTree.hasPullRequestReview && impactTree.pullRequestReviewLoading",
-          "group": "navigation@7"
-        },
-        {
-          "command": "impactTree.sendFeedback",
-          "alt": "impactTree.sendFeedbackTo",
-          "when": "view == impactTree.changes && impactTree.hasFeedbackDrafts",
-          "group": "navigation@7"
-        },
-        {
           "command": "impactTree.showLegend",
-          "when": "view == impactTree.changes",
+          "when": "view == impactTree.sources",
           "group": "2_help@1"
-        },
-        {
-          "command": "impactTree.cleanUpStoredData",
-          "when": "view == impactTree.changes",
-          "group": "3_progress@2"
         }
       ],
       "commandPalette": [
@@ -908,78 +782,184 @@
       ],
       "view/item/context": [
         {
+          "command": "impactTree.refresh",
+          "when": "view == impactTree.sources && viewItem == reviewHost",
+          "group": "inline@4"
+        },
+        {
+          "command": "impactTree.filterAttention",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.filter != attention",
+          "group": "inline@3"
+        },
+        {
+          "command": "impactTree.filterAttentionOn",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.filter == attention",
+          "group": "inline@3"
+        },
+        {
+          "command": "impactTree.filterUnreviewed",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.filter != unreviewed",
+          "group": "0_filter@2"
+        },
+        {
+          "command": "impactTree.filterUnreviewedOn",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.filter == unreviewed",
+          "group": "0_filter@2"
+        },
+        {
+          "command": "impactTree.filterThreads",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.filter != threads && impactTree.hasReviewThreads",
+          "group": "0_filter@3"
+        },
+        {
+          "command": "impactTree.filterThreadsOn",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.filter == threads",
+          "group": "0_filter@3"
+        },
+        {
+          "command": "impactTree.previousUnreviewed",
+          "when": "view == impactTree.sources && viewItem == reviewHost",
+          "group": "0_go@1"
+        },
+        {
+          "command": "impactTree.nextUnreviewed",
+          "when": "view == impactTree.sources && viewItem == reviewHost",
+          "group": "0_go@2"
+        },
+        {
+          "command": "impactTree.viewAsTree",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.fileListLayout != tree",
+          "group": "inline@2"
+        },
+        {
+          "command": "impactTree.viewAsList",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.fileListLayout == tree",
+          "group": "inline@2"
+        },
+        {
+          "command": "impactTree.selectMode",
+          "when": "view == impactTree.sources && viewItem == reviewHost",
+          "group": "1_mode@1"
+        },
+        {
+          "command": "impactTree.setCheckpoint",
+          "when": "view == impactTree.sources && viewItem == reviewHost",
+          "group": "1_mode@2"
+        },
+        {
+          "command": "impactTree.showLog",
+          "when": "view == impactTree.sources && viewItem == reviewHost",
+          "group": "2_help@2"
+        },
+        {
+          "command": "impactTree.clearReviewed",
+          "when": "view == impactTree.sources && viewItem == reviewHost",
+          "group": "3_progress@1"
+        },
+        {
+          "command": "impactTree.submitReview",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.hasPullRequestReview && !impactTree.pullRequestReviewLoading",
+          "group": "inline@5"
+        },
+        {
+          "command": "impactTree.submitReviewUnavailable",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.hasPullRequestReview && impactTree.pullRequestReviewLoading",
+          "group": "inline@5"
+        },
+        {
+          "command": "impactTree.sendFeedback",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.hasFeedbackDrafts",
+          "group": "inline@6",
+          "alt": "impactTree.sendFeedbackTo"
+        },
+        {
+          "command": "impactTree.showLegend",
+          "when": "view == impactTree.sources && viewItem == reviewHost",
+          "group": "2_help@1"
+        },
+        {
+          "command": "impactTree.cleanUpStoredData",
+          "when": "view == impactTree.sources && viewItem == reviewHost",
+          "group": "3_progress@2"
+        },
+        {
+          "command": "impactTree.openReview",
+          "when": "view == impactTree.sources && viewItem == reviewHost && config.impactTree.cards.enabled",
+          "group": "inline@1"
+        },
+        {
           "command": "impactTree.showCallers",
-          "when": "view == impactTree.changes && viewItem == finding",
+          "when": "view == impactTree.sources && viewItem == finding",
           "group": "navigation@1"
         },
         {
           "command": "impactTree.commentOnCall",
-          "when": "view == impactTree.changes && viewItem =~ /^(caller|changedCaller)$/",
+          "when": "view == impactTree.sources && viewItem =~ /^(caller|changedCaller)$/",
           "group": "navigation@2"
         },
         {
           "command": "impactTree.showCallers",
-          "when": "view == impactTree.changes && viewItem == finding",
+          "when": "view == impactTree.sources && viewItem == finding",
           "group": "inline@1"
         },
         {
           "command": "impactTree.retryViewedSync",
-          "when": "view == impactTree.changes && viewItem =~ /ViewedFailed$/",
+          "when": "view == impactTree.sources && viewItem =~ /ViewedFailed$/",
           "group": "inline"
         },
         {
           "command": "impactTree.feedback.edit",
-          "when": "view == impactTree.changes && viewItem == feedbackDraft",
+          "when": "view == impactTree.sources && viewItem == feedbackDraft",
           "group": "inline@1"
         },
         {
           "command": "impactTree.feedback.delete",
-          "when": "view == impactTree.changes && viewItem == feedbackDraft",
+          "when": "view == impactTree.sources && viewItem == feedbackDraft",
           "group": "inline@2"
         },
         {
           "command": "impactTree.feedback.edit",
-          "when": "view == impactTree.changes && viewItem == feedbackDraft",
+          "when": "view == impactTree.sources && viewItem == feedbackDraft",
           "group": "navigation@1"
         },
         {
           "command": "impactTree.feedback.delete",
-          "when": "view == impactTree.changes && viewItem == feedbackDraft",
+          "when": "view == impactTree.sources && viewItem == feedbackDraft",
           "group": "navigation@2"
         },
         {
           "command": "impactTree.sendFeedback",
-          "when": "view == impactTree.changes && viewItem == feedbackGroup",
+          "when": "view == impactTree.sources && viewItem == feedbackGroup",
           "group": "inline@1"
         },
         {
           "command": "impactTree.sendFeedback",
-          "when": "view == impactTree.changes && viewItem =~ /^feedback(Group|Draft)$/",
+          "when": "view == impactTree.sources && viewItem =~ /^feedback(Group|Draft)$/",
           "group": "send@1"
         },
         {
           "command": "impactTree.sendFeedbackTo",
-          "when": "view == impactTree.changes && viewItem =~ /^feedback(Group|Draft)$/",
+          "when": "view == impactTree.sources && viewItem =~ /^feedback(Group|Draft)$/",
           "group": "send@2"
         },
         {
           "command": "impactTree.feedback.reply",
-          "when": "view == impactTree.changes && viewItem == feedbackRoundItem",
+          "when": "view == impactTree.sources && viewItem == feedbackRoundItem",
           "group": "inline@1"
         },
         {
           "command": "impactTree.feedback.reply",
-          "when": "view == impactTree.changes && viewItem == feedbackRoundItem",
+          "when": "view == impactTree.sources && viewItem == feedbackRoundItem",
           "group": "navigation@1"
         },
         {
           "command": "impactTree.feedback.openRoundFile",
-          "when": "view == impactTree.changes && viewItem == feedbackRound",
+          "when": "view == impactTree.sources && viewItem == feedbackRound",
           "group": "inline@1"
         },
         {
           "command": "impactTree.feedback.openRoundFile",
-          "when": "view == impactTree.changes && viewItem == feedbackRound",
+          "when": "view == impactTree.sources && viewItem == feedbackRound",
           "group": "navigation@1"
         },
         {

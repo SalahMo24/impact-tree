@@ -468,7 +468,7 @@ test('the contributions: comment buttons, comment and tree actions scoped to the
   // The draft commands act on draft rows only (a sent round's rows have their own, F4).
   const draftCommands = new Set(Object.values(COMMANDS));
   for (const m of menus['view/item/context'].filter((x) => draftCommands.has(x.command))) {
-    assert.equal(m.when, 'view == impactTree.changes && viewItem == feedbackDraft');
+    assert.equal(m.when, 'view == impactTree.sources && viewItem == feedbackDraft');
   }
   // Every other comment menu entry still belongs to the pull request controller.
   for (const menu of ['comments/commentThread/context', 'comments/commentThread/title', 'comments/comment/title', 'comments/comment/context']) {
