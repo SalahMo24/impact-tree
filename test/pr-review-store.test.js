@@ -7,8 +7,8 @@ const assert = require('node:assert/strict');
 
 const {
   createPullRequestReviewStore, changedPaths, reviewDataOf, reviewTargetOf, ReviewStoreError, MergeOutcomeUnknownError,
-} = require('../src/pr-review-store');
-const { GitHubGraphQLError, GitHubAuthError, GitHubRateLimitError, GitHubResponseError, GitHubTimeoutError, GitHubHttpError } = require('../src/github-request');
+} = require('../src/github/pr-review-store');
+const { GitHubGraphQLError, GitHubAuthError, GitHubRateLimitError, GitHubResponseError, GitHubTimeoutError, GitHubHttpError } = require('../src/github/github-request');
 
 const HEAD = 'a'.repeat(40);
 const TARGET = Object.freeze({ owner: 'o', name: 'r', number: 7, headOid: HEAD });

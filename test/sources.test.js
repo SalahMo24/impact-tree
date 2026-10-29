@@ -3,8 +3,8 @@
 // Covers the source picker without an Extension Host. The bug this guards against is
 // the one that shipped: a view that exists in code but renders nothing, because its
 // states (signed out, empty, error, loading) were never exercised.
-const { createSourcesProvider } = require('../src/sources-provider');
-const { parseRemote } = require('../src/github');
+const { createSourcesProvider } = require('../src/views/sidebar/sources-provider');
+const { parseRemote } = require('../src/github/github');
 
 const vscodeStub = {
   EventEmitter: class { constructor() { this.event = () => ({ dispose() {} }); } fire() {} },

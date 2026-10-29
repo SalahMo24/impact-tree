@@ -9,10 +9,10 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { createSnapshotStore } = require('../src/engine/snapshot-store');
-const { createFeedbackRoundView } = require('../src/feedback-round-view');
-const { saveRound } = require('../src/feedback-send');
-const { withSentRound, ROUNDS_KEY } = require('../src/feedback-round-model');
-const { buildRoundGroup } = require('../src/feedback-tree');
+const { createFeedbackRoundView } = require('../src/feedback/feedback-round-view');
+const { saveRound } = require('../src/feedback/feedback-send');
+const { withSentRound, ROUNDS_KEY } = require('../src/feedback/feedback-round-model');
+const { buildRoundGroup } = require('../src/feedback/feedback-tree');
 
 const git = (cwd, args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 

@@ -6,11 +6,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const baseStub = require('./vscode-stub');
-const { createTreeProvider } = require('../src/tree-provider');
-const { buildFileRows, filterFileRows, buildReviewSummary } = require('../src/review-tree-model');
+const { createTreeProvider } = require('../src/views/changes/tree-provider');
+const { buildFileRows, filterFileRows, buildReviewSummary } = require('../src/views/changes/review-tree-model');
 const {
   threadsViewOf, assignFileThreads, countThreads, describeThreadCounts, threadsMessageSuffix, buildThreadSection,
-} = require('../src/review-threads');
+} = require('../src/views/changes/review-threads');
 
 // An emitter that delivers, as VS Code's does.
 class Emitter {

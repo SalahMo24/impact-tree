@@ -1,6 +1,6 @@
 // @ts-check
 'use strict';
-// Where the editor's TypeScript server is warmed (src/readiness.js): a real function or
+// Where the editor's TypeScript server is warmed (src/session/readiness.js): a real function or
 // method name in a changed file, so the server loads the project that file is in.
 const fs = require('fs');
 const path = require('path');

@@ -2,7 +2,7 @@
 'use strict';
 // What a caller resolver adds for a Java target to the callers jdtls reports
 // (docs/MULTI_LANGUAGE_PLAN.md, J4; `EditorCallerExtras` in ../types.js). Applied by the
-// editor's resolver (src/resolver-vscode.js) and, the same way, by the jdtls harness
+// editor's resolver (src/session/resolver-vscode.js) and, the same way, by the jdtls harness
 // (test/lsp-harness/java-e2e.js through harness-languages.js).
 //
 // - Value uses are not calls. jdtls lists a method reference (`parser::next`, `Foo::new`)

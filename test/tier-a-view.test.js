@@ -3,9 +3,9 @@
 // Tier A preview, without an Extension Host: opening a caller whose file changed
 // away from the call site, and the A/M/D/R badge on each row.
 const path = require('path');
-const { callerOpen } = require('../src/review-open');
-const { createTreeProvider } = require('../src/tree-provider');
-const { createDecorationProvider, STATUS_BADGE } = require('../src/decorations');
+const { callerOpen } = require('../src/diff-editor/review-open');
+const { createTreeProvider } = require('../src/views/changes/tree-provider');
+const { createDecorationProvider, STATUS_BADGE } = require('../src/diff-editor/decorations');
 
 let fail = 0;
 const check = (name, cond, extra = '') => {

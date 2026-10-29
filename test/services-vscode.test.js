@@ -1,5 +1,5 @@
 'use strict';
-// The editor's LanguageServices (src/services-vscode.js) and the shared caller default
+// The editor's LanguageServices (src/session/services-vscode.js) and the shared caller default
 // built on them (src/languages/callers-from-hierarchy.js), over a stubbed command API:
 // - a deadline that runs out and the outstanding-request cap reject, retryable;
 // - while cold, caller queries go one at a time within a budget, and a new analysis
@@ -18,7 +18,7 @@ const path = require('path');
 const vscodeStub = require('./vscode-stub');
 const {
   createVscodeServices, sweepBaseCopies, MAX_OUTSTANDING_REQUESTS, MAX_BASE_TEXT_CHARS, STALE_BASE_COPY_MS,
-} = require('../src/services-vscode');
+} = require('../src/session/services-vscode');
 const { callersFromHierarchy, queryHierarchy } = require('../src/languages/callers-from-hierarchy');
 const { createFakeClock } = require('./fake-clock');
 

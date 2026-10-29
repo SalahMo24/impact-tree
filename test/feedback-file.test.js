@@ -7,8 +7,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const f = require('../src/feedback-file');
-const io = require('../src/feedback-files-io');
+const f = require('../src/feedback/feedback-file');
+const io = require('../src/feedback/feedback-files-io');
 
 const item = (id, extra = {}) => ({
   id, file: 'src/session.js', line: 212, symbol: 'runAnalysis', caller: null,

@@ -1,6 +1,6 @@
 // @ts-check
 'use strict';
-// What the editor's agent bridge (src/agent-bridge.js) and the MCP server's client
+// What the editor's agent bridge (src/agent/agent-bridge.js) and the MCP server's client
 // (src/mcp/bridge-client.js) agree on: where the per-repository lock file lives, what it
 // holds, how a request line looks, and the bounds on all of it. Local only: a Unix socket
 // (a named pipe on Windows) in a private temp directory, reachable by this user alone.

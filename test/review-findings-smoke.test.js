@@ -25,7 +25,7 @@ test('a replaced caller query cannot overwrite the replacement analysis cache', 
     throw new Error(`unexpected command ${name}`);
   } } };
   const originalLoad = Module._load;
-  const modulePath = require.resolve('../src/resolver-vscode');
+  const modulePath = require.resolve('../src/session/resolver-vscode');
   const previous = require.cache[modulePath];
   let older;
   try {

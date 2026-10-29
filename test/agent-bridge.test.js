@@ -1,5 +1,5 @@
 'use strict';
-// The bridge between the editor and the user's own agent (src/agent-bridge.js) and the MCP
+// The bridge between the editor and the user's own agent (src/agent/agent-bridge.js) and the MCP
 // server's client of it (src/mcp/bridge-client.js), over real sockets in a temp directory.
 // The submission validator (AI3a) and the repository's HEAD are injected.
 const test = require('node:test');
@@ -8,7 +8,7 @@ const fs = require('fs');
 const os = require('os');
 const net = require('net');
 const path = require('path');
-const { createAgentBridge, STORAGE_KEY, MAX_ENTRIES_PER_HEAD, MAX_HEADS } = require('../src/agent-bridge');
+const { createAgentBridge, STORAGE_KEY, MAX_ENTRIES_PER_HEAD, MAX_HEADS } = require('../src/agent/agent-bridge');
 const { connectBridge } = require('../src/mcp/bridge-client');
 const P = require('../src/mcp/bridge-protocol');
 

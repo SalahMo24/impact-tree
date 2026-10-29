@@ -8,8 +8,8 @@ const {
   loadPullRequestReview, threadsForRange, threadsForFile, openCount, pendingCount,
   DEFAULT_BUDGETS, COMMENTS_PER_THREAD,
   TEAM_UNNAMED,
-} = require('../src/pr-review-data');
-const { GitHubResponseError, GitHubGraphQLError, GitHubRateLimitError } = require('../src/github-request');
+} = require('../src/github/pr-review-data');
+const { GitHubResponseError, GitHubGraphQLError, GitHubRateLimitError } = require('../src/github/github-request');
 const { isAnalysisCancelled, AnalysisCancelledError } = require('../src/engine/cancellation');
 
 const TARGET = { owner: 'o', name: 'r', number: 7 };

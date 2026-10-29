@@ -10,7 +10,7 @@ const { execFileSync } = require('child_process');
 const ts = require('typescript');
 const { analyze } = require('../src/engine/analyze');
 const { analyzeRemote } = require('../src/engine/analyze-remote');
-const { createModuleCallerPool } = require('../src/module-caller-pool');
+const { createModuleCallerPool } = require('../src/session/module-caller-pool');
 const { makeGit } = require('../src/engine/git');
 const { withEnv, localResult, previewResult, finding, pull, deferred } = require('./extension-env');
 const { createFakeClock } = require('./fake-clock');
@@ -213,7 +213,7 @@ test('cancelling a worker request terminates it; late responses cannot publish i
 async function withResolver(executeCommand, fn) {
   const editor = require('./vscode-stub');
   const original = Module._load;
-  const id = require.resolve('../src/resolver-vscode');
+  const id = require.resolve('../src/session/resolver-vscode');
   const previous = require.cache[id];
   Module._load = function(name, ...args) { return name === 'vscode' ? { ...editor,
     Position: class { constructor(line, character) { this.line = line; this.character = character; } },

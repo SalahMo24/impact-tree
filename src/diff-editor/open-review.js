@@ -1,0 +1,208 @@
+'use strict';
+const path = require('path');
+const { prQuery } = require('./pr-documents');
+
+/**
+ * Opening a finding, file, or caller as a document or diff. `review-open.js` decides
+ * what to open; this adapter talks to the editor.
+ *
+ * @param {*} vscode
+ * @param {object} session
+ * @param {{ log?: (message: string) => void }} [options]
+ */
+function createOpenReview(vscode, session, { log = () => {} } = {}) {
+  // Correlate clicks with the editor that actually opened. Only addresses and timings
+  // are logged; source text is never logged. The counter belongs to this activation.
+  let openId = 0;
+  async function trackOpen(kind, uri, open) {
+    const id = ++openId;
+    // wall-clock: log-only — how long opening an editor took, for the log
+    const started = Date.now();
+    log(`editor #${id}: request ${kind} ${uri.toString()}`);
+    try {
+      await open();
+      const input = vscode.window.tabGroups?.activeTabGroup?.activeTab?.input;
+      const activeKind = input?.original && input?.modified ? 'diff' : input?.uri ? 'file' : 'unknown';
+      const activeUri = input?.modified || input?.uri;
+      // wall-clock: log-only — the duration logged
+      log(`editor #${id}: completed ${kind} in ${Date.now() - started}ms; active=${activeKind}${activeUri ? ` ${activeUri.toString()}` : ''}`);
+    } catch (e) {
+      log(`editor #${id}: failed ${kind}: ${e && e.message || 'unknown error'}`);
+      throw e;
+    }
+  }
+
+  function openDiff(left, right, title, options) {
+    log(`editor: base ${left.toString()}`);
+    return trackOpen('diff', right, () => vscode.commands.executeCommand('vscode.diff', left, right, title,
+      ...(options ? [options] : [])));
+  }
+
+  let callSiteDecoration = null;
+  function decorationType() {
+    if (!callSiteDecoration) {
+      callSiteDecoration = vscode.window.createTextEditorDecorationType({
+        backgroundColor: new vscode.ThemeColor('editor.findMatchHighlightBackground'),
+        border: '1px solid',
+        borderColor: new vscode.ThemeColor('editor.findMatchBorder'),
+        borderRadius: '2px',
+        overviewRulerColor: new vscode.ThemeColor('editorOverviewRuler.findMatchForeground'),
+        overviewRulerLane: vscode.OverviewRulerLane.Center,
+      });
+    }
+    return callSiteDecoration;
+  }
+
+  function rangesFor(file, sites) {
+    const { offsetToPosition } = require('../engine/textpos');
+    const out = [];
+    for (const s2 of sites || []) {
+      const a = offsetToPosition(file, s2.start);
+      const b = offsetToPosition(file, s2.end);
+      if (a && b) out.push(new vscode.Range(a.line, a.character, b.line, b.character));
+    }
+    return out;
+  }
+
+  function sameDoc(a, b) {
+    if (!a || !b) return false;
+    return a.scheme === b.scheme
+      && String(a.path || '').replace(/^\/+/, '') === String(b.path || '').replace(/^\/+/, '')
+      && (a.query || '') === (b.query || '');
+  }
+
+  async function highlight(file, sites, opened) {
+    const ranges = rangesFor(file, sites);
+    if (!ranges.length) return;
+    // the freshly opened editor (for a diff this is the modified side)
+    for (const ed of vscode.window.visibleTextEditors) {
+      const u = ed.document.uri;
+      const hit = opened ? sameDoc(u, opened) : u.fsPath === file;
+      if (hit) ed.setDecorations(decorationType(), ranges);
+    }
+  }
+
+  // A tab's address names the file's old path and whether this side exists, so the tab
+  // can be rebuilt from GitHub alone once its revision is no longer held.
+  function prUri(relPath, side) {
+    const result = session.state.result;
+    const file = { path: relPath, basePath: result.basePaths?.[relPath], status: result.fileStatus?.[relPath] };
+    return vscode.Uri.from({ scheme: 'impacttree-pr', path: relPath, query: prQuery(result, side, file) });
+  }
+
+  function baseUriFor(relPath) {
+    // In a Tier A preview the base revision is not in the local object database, so it
+    // has to come from the API-fetched text rather than `git show`.
+    if (session.isTierA()) return prUri(relPath, 'base');
+    return vscode.Uri.from({ scheme: 'impacttree-base', path: session.state.result.basePaths?.[relPath] || relPath, query: session.state.result.base.sha });
+  }
+
+  // The right-hand side of a diff. Locally that is the file on disk; in a Tier A
+  // preview the worktree is on some unrelated branch, so showing it would be actively
+  // misleading -- serve the PR's own text instead.
+  function headUriFor(relPath, absPath) {
+    if (session.isTierA()) return prUri(relPath, 'head');
+    return vscode.Uri.file(absPath || path.join(session.repoRoot(), relPath));
+  }
+
+  // A changed symbol opens as a diff at its hunk; an unchanged affected caller opens
+  // at the call site, because there is nothing to diff there.
+  async function openChange(node) {
+    const f = node.finding;
+    const right = headUriFor(f.relPath, f.file);
+    const sel = new vscode.Range(f.startLine - 1, 0, f.startLine - 1, 0);
+    const rhs = session.isTierA() ? `PR #${session.state.result.prNumber}` : 'working tree';
+    await openDiff(baseUriFor(f.relPath), right,
+      `${path.basename(f.relPath)} (${String(session.state.result.base.sha).slice(0, 7)} ↔ ${rhs})`, { selection: sel });
+  }
+
+  // deleted symbols and non-code files: diff against base where possible
+  async function openFile(node) {
+    const rel = node.relPath;
+    const abs = headUriFor(rel);
+    const inDiff = session.state && session.state.changedPaths && session.state.changedPaths.has(rel);
+    const exists = session.isTierA() || require('fs').existsSync(abs.fsPath);
+    try {
+      if (!exists) {
+        // deleted file: show the base revision alone
+        const base = baseUriFor(rel);
+        await trackOpen('base-only (head missing)', base, () => vscode.window.showTextDocument(base, { preview: true }));
+      } else if (inDiff || node.status) {
+        // A row of changed lines (outside functions) opens at the first of them; a deletion
+        // marker `N - 0.5` is the gap before line N.
+        const first = node.ranges && node.ranges[0];
+        const line = first ? Math.max(0, Math.ceil(first[0]) - 1) : null;
+        await openDiff(baseUriFor(rel), abs,
+          `${require('path').basename(rel)} (${String(session.state.result.base.sha).slice(0, 7)} ↔ ${session.isTierA() ? `PR #${session.state.result.prNumber}` : 'working tree'})`,
+          line === null ? undefined : { selection: new vscode.Range(line, 0, line, 0) });
+      } else {
+        await trackOpen('file (outside diff)', abs, () => vscode.window.showTextDocument(abs));
+      }
+    } catch (e) {
+      vscode.window.showWarningMessage(`Impact Tree: cannot open ${rel} — ${e.message}`);
+    }
+  }
+
+  // What opening a caller shows, and the address of the document its call lands in. A
+  // caller is diffed whenever the FILE differs from base, not just when this symbol changed:
+  // that is what surfaces "other changes in the file". Diffing a file identical to base would
+  // show two panes of the same content, so that case opens plain.
+  function planCaller(node) {
+    const rel = session.state && session.state.rel ? session.state.rel(node.file) : null;
+    const always = vscode.workspace.getConfiguration('impactTree').get('alwaysDiffCallers', false);
+    const fileChanged = !!(rel && session.state.changedPaths && session.state.changedPaths.has(rel));
+    const { callerOpen } = require('./review-open');
+    const plan = callerOpen({
+      tierA: session.isTierA(), rel, baseRel: session.state?.result?.basePaths?.[rel], status: session.state?.result?.fileStatus?.[rel], absPath: node.file, fileChanged, always,
+      baseSha: session.state && session.state.result && session.state.result.base && session.state.result.base.sha,
+      prNumber: session.state && session.state.result && session.state.result.prNumber,
+      headSha: session.state?.result?.headSha,
+    });
+    return { rel, plan };
+  }
+
+  function toUri(spec) {
+    if (spec.scheme === 'file') return vscode.Uri.file(spec.path);
+    if (spec.scheme === 'impacttree-pr') return vscode.Uri.from({ scheme: 'impacttree-pr', path: spec.path, query: spec.query });
+    return vscode.Uri.from({ scheme: 'impacttree-base', path: spec.path, query: spec.query });
+  }
+
+  // The document a caller opens in: the right side of its diff, else the plain editor's.
+  function callerUri(node) {
+    const { plan } = planCaller(node);
+    return toUri(plan.kind === 'diff' ? plan.right : plan.uri);
+  }
+
+  async function openCaller(node) {
+    const { offsetToPosition } = require('../engine/textpos');
+    // land on the first call site, not the caller's own declaration -- the call is
+    // the thing the reviewer came to look at
+    const anchor = (node.callSites && node.callSites[0] && node.callSites[0].start) != null
+      ? node.callSites[0].start : node.pos;
+    const p = offsetToPosition(node.file, anchor) || { line: 0, character: 0 };
+    const sel = new vscode.Range(p.line, p.character, p.line, p.character);
+    const { rel, plan } = planCaller(node);
+    let opened;
+    if (plan.kind === 'diff') {
+      opened = toUri(plan.right);
+      await openDiff(toUri(plan.left), opened,
+        `${require('path').basename(rel)} (${String(session.state.result.base.sha).slice(0, 7)} ↔ ${plan.rhsName})`,
+        { selection: sel });
+    } else {
+      opened = toUri(plan.uri);
+      await trackOpen('file (unchanged caller)', opened, async () => {
+        try { await vscode.window.showTextDocument(opened, { selection: sel }); }
+        catch { await vscode.commands.executeCommand('vscode.open', opened, { selection: sel }); }
+      });
+    }
+    await highlight(node.file, node.callSites, opened);
+  }
+
+  // The head side of a changed file as the review diff shows it: the document a comment
+  // on it is drawn on.
+  const headUri = (relPath) => headUriFor(relPath);
+
+  return { openChange, openFile, openCaller, callerUri, headUri };
+}
+
+module.exports = { createOpenReview };

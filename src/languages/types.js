@@ -70,7 +70,7 @@
  */
 
 /**
- * One symbol of one side of a file as the review identity (src/review-identity.js) reads
+ * One symbol of one side of a file as the review identity (src/session/review-identity.js) reads
  * it: the part of a `CollectedSymbol` that locates its declaration. Offsets are into the
  * text whose hash `RecordedSide.textHash` holds.
  * @typedef {object} ReviewSymbol
@@ -337,7 +337,7 @@
  *   server, and `clock`, which times those waits (src/engine/clock.js; omitted: the real
  *   clock).
  * - `warmUpTarget` (optional, editor only): where to warm the editor's language server for
- *   this language (src/readiness.js): a function or method name in one of `files` (this
+ *   this language (src/session/readiness.js): a function or method name in one of `files` (this
  *   language's changed files, repository-relative, in diff order), so the server loads
  *   the project that file is in. The language decides how many files it tries. Null: none
  *   found, or the server is not available (no notice: the analysis reports that). May

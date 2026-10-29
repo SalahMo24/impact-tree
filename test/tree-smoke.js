@@ -6,7 +6,7 @@
 const path = require('path');
 const { analyze } = require('../src/engine/analyze');
 const { createTsResolver } = require('../src/engine/resolver-ts');
-const { createTreeProvider } = require('../src/tree-provider');
+const { createTreeProvider } = require('../src/views/changes/tree-provider');
 
 const vscodeStub = {
   MarkdownString: class { constructor(v) { this.value = v; } },
@@ -86,17 +86,17 @@ const check = (name, cond, extra = '') => {
     absPath: (p2) => path.join(repo, p2), error: null };
   let busy = false;
   let phase = 'ready';
-  const { createDecorationProvider } = require('../src/decorations');
+  const { createDecorationProvider } = require('../src/diff-editor/decorations');
   const decorate = createDecorationProvider(vscodeStub);
-  const { createReviewState } = require('../src/review-state');
+  const { createReviewState } = require('../src/session/review-state');
   const mem = { m: new Map(), get(k) { return this.m.get(k); }, update(k, v) { this.m.set(k, v); } };
   const review = createReviewState(mem);
-  const { createReviewIdentity, localRevisions } = require('../src/review-identity');
+  const { createReviewIdentity, localRevisions } = require('../src/session/review-identity');
   const identify = createReviewIdentity(loadTypeScript(repo,repo), repo, localRevisions(repo, result, require('../src/engine/git').makeGit(repo)));
   review.configure('smoke-review', identify);
   const provider = createTreeProvider(vscodeStub, {
     getState: () => state, resolver, isBusy: () => busy, decorate, getPhase: () => phase, review });
-  const { classifyRowVerdict } = require('../src/tree-row-models');
+  const { classifyRowVerdict } = require('../src/views/changes/tree-row-models');
 
   console.log('▸ readiness states');
   for (const [ph, label, hint] of [
@@ -186,7 +186,7 @@ const check = (name, cond, extra = '') => {
     const it = provider.getTreeItem(dupLabels[0]);
     check('ambiguous row names its component', /‹.+›/.test(String(it.label)), String(it.label));
   }
-  const { LEGEND } = require('../src/tree-provider');
+  const { LEGEND } = require('../src/views/changes/tree-provider');
   check('the legend command explains every marker', LEGEND.length >= 8, `${LEGEND.length} entries`);
   check('legend distinguishes call-updated from changed-elsewhere',
     LEGEND.some(([, label, desc]) => /callers updated/i.test(`${label} ${desc}`)) && LEGEND.some(([, label, desc]) => /not on the call line/i.test(`${label} ${desc}`)));
@@ -194,7 +194,7 @@ const check = (name, cond, extra = '') => {
   // `<what is reviewed> · <n> need attention · <left> of <total> left` (P1 vocabulary); the
   // words come from the model, and the numbers must be the counts.
   const counts = provider.reviewCounts();
-  const { MODE_LABELS, attentionCountText } = require('../src/tree-row-models');
+  const { MODE_LABELS, attentionCountText } = require('../src/views/changes/tree-row-models');
   check('the summary is the view message',
     summary.message === `${MODE_LABELS[result.mode]} · ${attentionCountText(counts.attention)} · ${counts.left} of ${counts.total} left`, String(summary.message));
   check('the summary counts every counting row', counts.total === fileRows.length - graphFiles.length + graphFiles.reduce((n, f) => n + f.rows.length, 0), `${counts.total}`);
@@ -255,7 +255,7 @@ const check = (name, cond, extra = '') => {
   // ThemeIcon.File cannot be tinted, so in file mode a red or amber row swaps it for the
   // tinted error / warning icon (P2); a calm row keeps ThemeIcon.File.
   {
-    const { LEVEL_TONES } = require('../src/tree-row-models');
+    const { LEVEL_TONES } = require('../src/views/changes/tree-row-models');
     const tone = LEVEL_TONES[classifyRowVerdict(worst).level];
     const icon = provider.getTreeItem(worst).iconPath;
     check('iconMode="file" gives a change row the file glyph, tinted error/warning when red or amber',

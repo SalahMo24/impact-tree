@@ -3,8 +3,8 @@
 // each choice runs, and the AGENTS.md / CLAUDE.md pointer text.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { choicesFor, planHandOff, handOff, onPath } = require('../src/agent-handoff');
-const { withPointer, targetsFor, MARKER } = require('../src/agent-pointer');
+const { choicesFor, planHandOff, handOff, onPath } = require('../src/agent/agent-handoff');
+const { withPointer, targetsFor, MARKER } = require('../src/agent/agent-pointer');
 
 const PROMPT = 'Read .impact-tree/feedback/2026-10-20-2.md and address each item. Under each item write "Status: done". Don\'t `rm` $HOME';
 

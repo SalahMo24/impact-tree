@@ -88,7 +88,7 @@ const { analyze } = require('../../src/engine/analyze');
 const { createPyrightServices, DEFAULT_PYRIGHT } = require('./pyright-services');
 const { languageServicesOver, createHierarchyResolver } = require('./harness-languages');
 const { pythonProvider } = require('../../src/languages/python/provider');
-const { classifyChangeVerdict, toneOf } = require('../../src/tree-row-models');
+const { classifyChangeVerdict, toneOf } = require('../../src/views/changes/tree-row-models');
 const { pythonRules } = require('../../src/languages/python/rules');
 
 /** The corpus: squash-merged httpx PRs; `head` is the squash commit, `base` its parent. */

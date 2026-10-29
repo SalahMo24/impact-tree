@@ -2,7 +2,7 @@
 // Warm-up and first-index progress for Java (J5, docs/MULTI_LANGUAGE_PLAN.md; the shared code
 // is Go's, G5): a review whose changed files include Java and no TypeScript warms the
 // editor's jdtls at the first method or constructor it lists in the first changed Java file
-// (`javaProvider.warmUpTarget`, asked by src/readiness.js), searching into types because jdtls
+// (`javaProvider.warmUpTarget`, asked by src/session/readiness.js), searching into types because jdtls
 // lists methods as their type's children and a field may come first. The first-run message
 // names that server. The shared wording has no per-language note, so it does not say that a
 // first Maven or Gradle import can take over a minute. The session runs through

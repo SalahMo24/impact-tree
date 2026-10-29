@@ -6,9 +6,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 
-const { createGitHub } = require('../src/github');
+const { createGitHub } = require('../src/github/github');
 const { isAnalysisCancelled } = require('../src/engine/cancellation');
-const { createSourcesProvider } = require('../src/sources-provider');
+const { createSourcesProvider } = require('../src/views/sidebar/sources-provider');
 const { analyzeRemote } = require('../src/engine/analyze-remote');
 const { clearVirtualText } = require('../src/engine/textpos');
 const { findTypeScript, missingPrerequisite } = require('./find-typescript');

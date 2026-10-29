@@ -2,7 +2,7 @@
 // Warm-up and first-index progress for Go (G5, docs/MULTI_LANGUAGE_PLAN.md): a review whose
 // changed files include Go and no TypeScript warms the editor's Go server at the first
 // function gopls lists in the first changed Go file (`goProvider.warmUpTarget`, asked by
-// src/readiness.js), and the first-run message names that server. A failed request is
+// src/session/readiness.js), and the first-run message names that server. A failed request is
 // logged and the analysis goes on; an editor without Go support gets no second notice
 // (the analysis reports it once, see server-symbols.test.js). The session runs through
 // test/extension-env.js with a fake clock and hand-released gates.

@@ -4,9 +4,9 @@ const assert = require('node:assert/strict');
 const path = require('path');
 const vscode = require('./vscode-stub');
 const { analyzeRemote } = require('../src/engine/analyze-remote');
-const { createOpenReview } = require('../src/open-review');
-const { createPrDocuments } = require('../src/pr-documents');
-const { registerContentProviders } = require('../src/content-providers');
+const { createOpenReview } = require('../src/diff-editor/open-review');
+const { createPrDocuments } = require('../src/diff-editor/pr-documents');
+const { registerContentProviders } = require('../src/diff-editor/content-providers');
 
 test('docs/config-only previews reopen renamed base files at their old paths', async () => {
   for (const renamed of ['README.md', 'config.json']) {

@@ -379,7 +379,7 @@ function indexModules(ctx, changed) {
 const editorCallers = ({ trace, services, repoRoot }) => require('./editor-extras').createGoEditorExtras({ trace, services, repoRoot });
 
 /**
- * Where the editor's Go server is warmed (src/readiness.js): the name of the first
+ * Where the editor's Go server is warmed (src/session/readiness.js): the name of the first
  * function or method gopls lists in the first changed Go file. Only that file is asked:
  * each answer from a server that is still loading can take seconds, and any file of the
  * module makes gopls load the module. Null when the editor has no Go support (logged; the

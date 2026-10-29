@@ -3,7 +3,7 @@
 const path = require('path');
 const { analyze, MODES, modeLabel } = require('./engine/analyze');
 const { buildCards } = require('./engine/cards');
-const { blastText } = require('./cli-format');
+const { blastText } = require('./cli/cli-format');
 const { isNotComputedReason, isSyntaxOnlyReason } = require('./engine/resolver-not-computed');
 
 const argv = process.argv.slice(2);

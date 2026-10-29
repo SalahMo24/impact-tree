@@ -200,7 +200,7 @@ async function walkOne({ resolver, changed, repo, facts, limits, deadline, signa
   const ends = [];
   /** @type {Set<string>} */
   const reasons = new Set();
-  // The tree's rule (src/tree-row-models.js, classifyChangeVerdict): a caller not updated
+  // The tree's rule (src/views/changes/tree-row-models.js, classifyChangeVerdict): a caller not updated
   // matters only when the signature or throws changed; a body-only edit leaves callers
   // untouched as a matter of course. A caller that is itself a changed member
   // (`changed-elsewhere`) is part of the change, not a caller left behind.

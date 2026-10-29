@@ -8,9 +8,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
-const { buildFileRows, buildImpactRows } = require('../src/review-tree-model');
-const { buildDetailHtml, listCallerRows, progressPresentation, escapeHtml } = require('../src/detail-panel-html');
-const { STATE_NAMES, PREVIEW_LIMITS_NOTE } = require('../src/tree-row-models');
+const { buildFileRows, buildImpactRows } = require('../src/views/changes/review-tree-model');
+const { buildDetailHtml, listCallerRows, progressPresentation, escapeHtml } = require('../src/views/details/detail-panel-html');
+const { STATE_NAMES, PREVIEW_LIMITS_NOTE } = require('../src/views/changes/tree-row-models');
 
 const uriOf = (file, pos) => (file ? `uri:${file}${pos == null ? '' : `#${pos}`}` : null);
 const rel = (f) => f.replace('/r/', '');

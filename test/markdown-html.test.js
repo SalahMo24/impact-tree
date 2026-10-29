@@ -5,7 +5,7 @@
 // from anywhere but GitHub). Through the public function only.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { renderMarkdown, MAX_MARKDOWN_CHARS, IMAGE_ORIGINS } = require('../src/markdown-html');
+const { renderMarkdown, MAX_MARKDOWN_CHARS, IMAGE_ORIGINS } = require('../src/views/pr-tab/markdown-html');
 
 const BASE = 'https://github.com/o/r';
 

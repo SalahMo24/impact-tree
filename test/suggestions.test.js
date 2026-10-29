@@ -5,7 +5,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   parseSuggestions, suggestionBlock, applyDecision, linesChanged, suggestionEdit, splitLines, eolOf,
-} = require('../src/suggestions');
+} = require('../src/diff-editor/suggestions');
 
 const texts = (body) => parseSuggestions(body).map((s) => s.text);
 

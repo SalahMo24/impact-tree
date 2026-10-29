@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { withEnv, finding, localResult } = require('./extension-env');
-const { treeItemId } = require('../src/review-tree-model');
+const { treeItemId } = require('../src/views/changes/review-tree-model');
 const { createPage } = require('./webview-page');
 
 async function prepare(env) {

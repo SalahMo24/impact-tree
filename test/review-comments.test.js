@@ -14,12 +14,12 @@ const { createCommentsApi, withEnv, overviewAnswer } = require('./extension-env'
 const {
   commentingContextOf, documentSide, commentableLines, acceptsComment, threadSpecsFor,
   rowCommentPlace, chooseCommentLine, callerContextBlock, withCallerContext, callerDraftLabel,
-} = require('../src/review-comments-model');
+} = require('../src/diff-editor/review-comments-model');
 const {
   createReviewComments, CommentNotSentError, COMMANDS, PENDING_CONTEXT_KEY, SUGGEST_CONTEXT_KEY, CONTROLLER_ID, FILE_COMMENT_LABEL, SUGGESTION_DRAFT,
-} = require('../src/review-comments');
-const { createPullRequestReviewStore, reviewDataOf: reviewDataOfStore } = require('../src/pr-review-store');
-const { prQuery } = require('../src/pr-documents');
+} = require('../src/diff-editor/review-comments');
+const { createPullRequestReviewStore, reviewDataOf: reviewDataOfStore } = require('../src/github/pr-review-store');
+const { prQuery } = require('../src/diff-editor/pr-documents');
 
 const HEAD = 'a'.repeat(40);
 const BASE = 'c'.repeat(40);

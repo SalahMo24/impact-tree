@@ -68,12 +68,12 @@ async function withResolver(run) {
       throw new Error(`unexpected command: ${name}`);
     } } };
   const originalLoad = Module._load;
-  const resolverPath = require.resolve('../src/resolver-vscode');
+  const resolverPath = require.resolve('../src/session/resolver-vscode');
   const originalModule = require.cache[resolverPath];
   try {
     Module._load = function (name, ...args) { return name === 'vscode' ? stub : originalLoad.call(this, name, ...args); };
     delete require.cache[resolverPath];
-    const resolver = require('../src/resolver-vscode').createVscodeResolver({ ts: compiler, repoRoot: repo, filterInherited: false });
+    const resolver = require('../src/session/resolver-vscode').createVscodeResolver({ ts: compiler, repoRoot: repo, filterInherited: false });
     await run({ resolver, absolute, posOf, parses, location,
       setIncomingCalls: (calls) => { incomingCalls = calls; },
       setReferences: (fn) => { references = fn; }, failDefinitions: (on) => { failDefinition = on; } });

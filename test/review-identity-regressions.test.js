@@ -7,10 +7,10 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { analyzeRemote } = require('../src/engine/analyze-remote');
-const { createReviewState } = require('../src/review-state');
-const { createReviewIdentity } = require('../src/review-identity');
-const { createTreeProvider } = require('../src/tree-provider');
-const { createPrDocuments, prQuery } = require('../src/pr-documents');
+const { createReviewState } = require('../src/session/review-state');
+const { createReviewIdentity } = require('../src/session/review-identity');
+const { createTreeProvider } = require('../src/views/changes/tree-provider');
+const { createPrDocuments, prQuery } = require('../src/diff-editor/pr-documents');
 const { registerVirtualText, clearVirtualText } = require('../src/engine/textpos');
 const { ts, root } = require('./bug-regressions-helpers');
 
@@ -119,7 +119,7 @@ test('deleted rows and unrecorded callers in one file have their own review iden
 });
 
 test('preview identities come from the PR, never from the local checkout', async () => {
-  const { previewRevisions } = require('../src/review-identity');
+  const { previewRevisions } = require('../src/session/review-identity');
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'it-preview-id-'));
   try {
     const base = 'export function kept() { return 1; }\nexport function gone() {}\n';
@@ -172,7 +172,7 @@ test('preview identities come from the PR, never from the local checkout', async
 test('local review identities reuse the base texts the analysis loaded', async () => {
   const { analyze } = require('../src/engine/analyze');
   const { makeGit } = require('../src/engine/git');
-  const { localRevisions } = require('../src/review-identity');
+  const { localRevisions } = require('../src/session/review-identity');
   const { execFileSync } = require('child_process');
   const repo = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-base-texts-')));
   const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();

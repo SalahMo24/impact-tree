@@ -7,9 +7,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
-const { viewStateOf, contextKeysOf, allUnanalysable, isNothingChanged } = require('../src/view-state');
-const { buildPlaceholderRows } = require('../src/tree-row-models');
-const { blastText } = require('../src/cli-format');
+const { viewStateOf, contextKeysOf, allUnanalysable, isNothingChanged } = require('../src/views/changes/view-state');
+const { buildPlaceholderRows } = require('../src/views/changes/tree-row-models');
+const { blastText } = require('../src/cli/cli-format');
 const { localResult, finding, withEnv } = require('./extension-env');
 const { createFakeClock } = require('./fake-clock');
 const manifest = require('../package.json');

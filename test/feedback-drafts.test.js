@@ -5,7 +5,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   createFeedbackDrafts, readStored, clampQuote, STORAGE_KEY, VERSION, MAX_ITEMS, MAX_BODY_CHARS, ID_PATTERN,
-} = require('../src/feedback-drafts');
+} = require('../src/feedback/feedback-drafts');
 
 /** A memento whose writes are recorded; `hold()` makes the next write wait for release. */
 function fakeMemento(initial) {

@@ -8,8 +8,8 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { createSnapshotStore } = require('../src/engine/snapshot-store');
-const { saveRound, reviewedLabel } = require('../src/feedback-send');
-const { parseRound } = require('../src/feedback-file');
+const { saveRound, reviewedLabel } = require('../src/feedback/feedback-send');
+const { parseRound } = require('../src/feedback/feedback-file');
 
 const git = (cwd, args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 

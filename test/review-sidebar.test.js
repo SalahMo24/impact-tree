@@ -1,11 +1,11 @@
 'use strict';
-// The Review view as one tree (src/review-sidebar.js): the review nested under the row it came
+// The Review view as one tree (src/views/sidebar/review-sidebar.js): the review nested under the row it came
 // from, the review's controls and notices on that row, no hover on pull request rows, and
 // parents that let the review rows be revealed.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const stub = require('./vscode-stub');
-const { createReviewSidebar, emptyReviewRow, isNotice } = require('../src/review-sidebar');
+const { createReviewSidebar, emptyReviewRow, isNotice } = require('../src/views/sidebar/review-sidebar');
 
 const vscode = { ...stub, EventEmitter: class {
   constructor() { const ls = []; this.event = (l) => { ls.push(l); return { dispose() {} }; }; this.fire = (v) => ls.forEach((l) => l(v)); this.dispose = () => {}; }

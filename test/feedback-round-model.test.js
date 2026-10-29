@@ -3,7 +3,7 @@
 // attention whenever they disagree or either is unknown, and the stored round memory.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const m = require('../src/feedback-round-model');
+const m = require('../src/feedback/feedback-round-model');
 
 const SHA = 'a'.repeat(40);
 const item = (id, extra = {}) => ({ id, file: 'src/a.ts', line: 12, symbol: 'run', summary: `fix ${id}`, ...extra });

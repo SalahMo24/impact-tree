@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { createTreeProvider } = require('../src/tree-provider');
+const { createTreeProvider } = require('../src/views/changes/tree-provider');
 const { clearVirtualText } = require('../src/engine/textpos');
 const { ts, root, response } = require('./bug-regressions-helpers');
 const { createFakeClock } = require('./fake-clock');
@@ -80,7 +80,7 @@ test('editor commands refresh the selected PR, preserve preview documents, and r
       throw new Error('Unexpected request '+url);
     };
     Module._load = function(name, ...args) { return name === 'vscode' ? stub : originalLoad.call(this, name, ...args); };
-    for (const name of ['../src/extension','../src/resolver-vscode']) delete require.cache[require.resolve(name)];
+    for (const name of ['../src/extension','../src/session/resolver-vscode']) delete require.cache[require.resolve(name)];
     const extension = require('../src/extension');
     const first = context(); extension.activate(first);
     await commands.get('impactTree.openPullRequest')({ number: 7, title: 'test', headSha: 'stale' });
@@ -126,7 +126,7 @@ test('editor commands refresh the selected PR, preserve preview documents, and r
     second.subscriptions.forEach((s) => s.dispose()); extension.deactivate();
   } finally {
     Module._load = originalLoad; global.fetch = originalFetch;
-    for (const name of ['../src/extension','../src/resolver-vscode']) delete require.cache[require.resolve(name)];
+    for (const name of ['../src/extension','../src/session/resolver-vscode']) delete require.cache[require.resolve(name)];
     fs.rmSync(dir, { recursive: true, force: true }); clearVirtualText();
   }
 });
@@ -143,14 +143,14 @@ test('editor resolver resets per-run statistics and classifies tests relative to
       return [];
     } } };
     Module._load = function(name, ...args) { return name === 'vscode' ? stub : originalLoad.call(this,name,...args); };
-    delete require.cache[require.resolve('../src/resolver-vscode')];
-    const resolver = require('../src/resolver-vscode').createVscodeResolver({ repoRoot: repo });
+    delete require.cache[require.resolve('../src/session/resolver-vscode')];
+    const resolver = require('../src/session/resolver-vscode').createVscodeResolver({ repoRoot: repo });
     assert.equal((await resolver.incoming(file,0))[0].test, false);
     assert.equal(resolver.stats().incomingCalls,1);
     resolver.clear();
     assert.equal(resolver.stats().incomingCalls,0); assert.deepEqual(resolver.stats().emptyAt,[]);
     assert.equal(resolver.isWarm(),true);
-  } finally { Module._load = originalLoad; delete require.cache[require.resolve('../src/resolver-vscode')]; fs.rmSync(dir,{recursive:true,force:true}); }
+  } finally { Module._load = originalLoad; delete require.cache[require.resolve('../src/session/resolver-vscode')]; fs.rmSync(dir,{recursive:true,force:true}); }
 });
 
 test('editor distinguishes no references, callbacks, failed queries, and unsupported providers', async () => {
@@ -171,8 +171,8 @@ test('editor distinguishes no references, callbacks, failed queries, and unsuppo
     } } };
   try {
     Module._load=function(name,...args){return name==='vscode'?stub:original.call(this,name,...args);};
-    delete require.cache[require.resolve('../src/resolver-vscode')];
-    const {createVscodeResolver}=require('../src/resolver-vscode');
+    delete require.cache[require.resolve('../src/session/resolver-vscode')];
+    const {createVscodeResolver}=require('../src/session/resolver-vscode');
     for(const [m,expected] of [['none','none'],['callback','unknown'],['failed','unknown'],['refs-failed','unknown'],['unsupported','unknown'],['no-result','unknown']]) {
       // The default cold phase, on a fake clock: a server that never has an item polls for
       // the whole cold deadline, which the test fast-forwards instead of waiting out.
@@ -182,7 +182,7 @@ test('editor distinguishes no references, callbacks, failed queries, and unsuppo
       assert.equal((await state).state,expected,m);
       assert.equal(clock.pending(),0,`${m}: no timer left behind`);
     }
-  } finally { Module._load=original; delete require.cache[require.resolve('../src/resolver-vscode')]; fs.rmSync(dir,{recursive:true,force:true}); }
+  } finally { Module._load=original; delete require.cache[require.resolve('../src/session/resolver-vscode')]; fs.rmSync(dir,{recursive:true,force:true}); }
 });
 
 test('a finding with no callers found is not shown as updated', () => {
@@ -235,8 +235,8 @@ test('editor caller queries report whether they completed, and retry incomplete 
   try {
     Module._load = function (name, ...args) { return name === 'vscode' ? stub : original.call(this, name, ...args); };
     require.cache[cqrsId] = fakeCqrs;
-    delete require.cache[require.resolve('../src/resolver-vscode')];
-    const { createVscodeResolver } = require('../src/resolver-vscode');
+    delete require.cache[require.resolve('../src/session/resolver-vscode')];
+    const { createVscodeResolver } = require('../src/session/resolver-vscode');
     const resolver = createVscodeResolver({ repoRoot: dir, retries: 0, ts, filterInherited: false });
     const first = await resolver.incomingWithStatus(file, 9);
     assert.equal(first.complete, false);
@@ -254,7 +254,7 @@ test('editor caller queries report whether they completed, and retry incomplete 
   } finally {
     Module._load = original;
     if (realCqrs) require.cache[cqrsId] = realCqrs; else delete require.cache[cqrsId];
-    delete require.cache[require.resolve('../src/resolver-vscode')];
+    delete require.cache[require.resolve('../src/session/resolver-vscode')];
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -262,7 +262,7 @@ test('editor caller queries report whether they completed, and retry incomplete 
 // ---- readiness: a failed warm-up must be retried, not remembered ---------------------
 test('ensureReady retries after a failed prepare, shares a running one, and keeps a successful one', async () => {
   const analyzeModule = require('../src/languages/typescript/load');
-  const resolverPath = require.resolve('../src/resolver-vscode');
+  const resolverPath = require.resolve('../src/session/resolver-vscode');
   const realLoad = analyzeModule.loadTypeScript, realResolver = require.cache[resolverPath];
   let creations = 0, failNext = true;
   analyzeModule.loadTypeScript = () => ts;
@@ -274,7 +274,7 @@ test('ensureReady retries after a failed prepare, shares a running one, and keep
     },
   } };
   try {
-    const { createReadiness } = require('../src/readiness');
+    const { createReadiness } = require('../src/session/readiness');
     const vscodeStub = { workspace: { getConfiguration: () => ({ get: (_, fallback) => fallback }) } };
     const logs = [];
     const session = { repoRoot: () => os.tmpdir(), phase: 'idle', resolver: null, readyPromise: null };

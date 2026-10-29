@@ -56,12 +56,12 @@ async function measure() {
     const stub = { ...require('./vscode-stub'), Position: class { constructor(line, character) { Object.assign(this, { line, character }); } },
       commands: { executeCommand: async (name) => name === 'vscode.prepareCallHierarchy' ? [{}] : [] } };
     const originalLoad = Module._load;
-    const resolverPath = require.resolve('../src/resolver-vscode');
+    const resolverPath = require.resolve('../src/session/resolver-vscode');
     const originalModule = require.cache[resolverPath];
     try {
       Module._load = function (name, ...args) { return name === 'vscode' ? stub : originalLoad.call(this, name, ...args); };
       delete require.cache[resolverPath];
-      resolver = require('../src/resolver-vscode').createVscodeResolver({ ts: compiler, repoRoot: repo, filterInherited: false });
+      resolver = require('../src/session/resolver-vscode').createVscodeResolver({ ts: compiler, repoRoot: repo, filterInherited: false });
     } finally {
       Module._load = originalLoad;
       if (originalModule) require.cache[resolverPath] = originalModule;

@@ -411,13 +411,13 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     // The cards engine (src/engine/cards.js, cards-remote.js), faked by `hooks.cardsEngine`: each
     // call is recorded in `seen.cardsCalls`, and the hook may hold or fail it. The real modules
     // are asked for only when no hook is set. Matched by the name the session requires.
-    if (hooks.cardsEngine && parent && parent.filename && parent.filename.startsWith(SRC)
-      && /^\.\/engine\/cards(-remote)?$/.test(name)) {
+    if (hooks.cardsEngine && parent && parent.filename && parent.filename.startsWith(path.join(SRC, 'session') + path.sep)
+      && /^\.\.\/engine\/cards(-remote)?$/.test(name)) {
       return hooks.cardsEngine;
     }
     // The language-server resolver: its warm-up and its caller queries can be held, as a
     // slow server would, and like the real one it cannot be told to stop.
-    if (resolved === path.join(SRC, 'resolver-vscode.js')) {
+    if (resolved === path.join(SRC, 'session/resolver-vscode.js')) {
       return { createVscodeResolver: () => ({
         isWarm: () => hooks.warm,
         expectReload: () => { seen.reloads = (seen.reloads || 0) + 1; },
@@ -440,7 +440,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     // reads and writes through it). GitHub's HTTP client is always replaced: a test's own
     // `fetch`, or one that refuses, so no test reaches api.github.com (the PR list loads at
     // startup) and none depends on the network or on GitHub's answer to a made-up repository.
-    if (resolved === path.join(SRC, 'github.js')) {
+    if (resolved === path.join(SRC, 'github/github.js')) {
       const real = originalLoad.call(this, name, parent, ...rest);
       const client = fetch || offlineFetch;
       return { ...real, createGitHub: (vs, o) => ({ ...real.createGitHub(vs, { ...o, fetch: client }), ...(signIn ? { signIn } : {}), ...(graphql ? { graphql } : {}) }) };
@@ -454,7 +454,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     }
     return originalLoad.call(this, name, parent, ...rest);
   };
-  const reload = () => { for (const n of ['../src/extension', '../src/resolver-vscode']) delete require.cache[require.resolve(n)]; };
+  const reload = () => { for (const n of ['../src/extension', '../src/session/resolver-vscode']) delete require.cache[require.resolve(n)]; };
   reload();
   const extension = require('../src/extension');
   const context = { subscriptions: [], workspaceState: { get: (k) => memento.get(k), update: async (k, v) => { memento.set(k, v); } } };

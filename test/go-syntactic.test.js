@@ -13,7 +13,7 @@ const { analyzeRemote } = require('../src/engine/analyze-remote');
 const { clearVirtualText } = require('../src/engine/textpos');
 const { goOutline, skipNonCode } = require('../src/languages/go/outline');
 const { collectGoSymbols, goProvider } = require('../src/languages/go/provider');
-const models = require('../src/tree-row-models');
+const models = require('../src/views/changes/tree-row-models');
 const { ts, root } = require('./bug-regressions-helpers');
 
 /** Each symbol as [name, kind, the text its range covers]. */

@@ -8,8 +8,8 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { createSnapshotStore } = require('../src/engine/snapshot-store');
-const { codeChangesFor, statusesOf } = require('../src/feedback-readback');
-const { renderRound } = require('../src/feedback-file');
+const { codeChangesFor, statusesOf } = require('../src/feedback/feedback-readback');
+const { renderRound } = require('../src/feedback/feedback-file');
 
 const git = (cwd, args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 const lines = (n, tag = 'line') => Array.from({ length: n }, (_, i) => `${tag} ${i + 1}`).join('\n') + '\n';

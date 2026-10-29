@@ -4,8 +4,8 @@
 // old tree stored). Inputs are deep-frozen, so a function that modified one would throw.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const model = require('../src/review-tree-model');
-const { NO_SITE_EVIDENCE } = require('../src/tree-row-models');
+const model = require('../src/views/changes/review-tree-model');
+const { NO_SITE_EVIDENCE } = require('../src/views/changes/tree-row-models');
 
 const deepFreeze = (v) => {
   if (v && typeof v === 'object' && !Object.isFrozen(v)) {
@@ -588,9 +588,9 @@ test('tree item ids exist for file and counting rows only, and are unique in the
 test('review ids of the new rows equal the ids the old tree gives the same symbols', async () => {
   const vscode = require('./vscode-stub');
   const store = new Map();
-  const { createReviewState } = require('../src/review-state');
-  const { createReviewIdentity } = require('../src/review-identity');
-  const { createTreeProvider } = require('../src/tree-provider');
+  const { createReviewState } = require('../src/session/review-state');
+  const { createReviewIdentity } = require('../src/session/review-identity');
+  const { createTreeProvider } = require('../src/views/changes/tree-provider');
   const { ts, root } = require('./bug-regressions-helpers');
   const base = "import { a } from './a';\nexport function target() { return 0; }\nexport function gone() { return 1; }\n";
   const head = "import { b } from './a';\nexport function target() { return 1; }\n";

@@ -4,8 +4,8 @@
 // The pure part runs on built rows; the harness part is further down.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { lensPlan, lensTitles, callerLocations, noCallersMessage } = require('../src/review-lens');
-const { treeItemId } = require('../src/review-tree-model');
+const { lensPlan, lensTitles, callerLocations, noCallersMessage } = require('../src/diff-editor/review-lens');
+const { treeItemId } = require('../src/views/changes/review-tree-model');
 
 const BODY = { id: 'body' };
 const RISKY = { id: 'signature', label: 'signature' };
@@ -116,8 +116,8 @@ test('the message for a change without callers says whether the search finished'
 const path = require('path');
 const fs = require('fs');
 const { localResult, finding, previewResult, pull, withEnv } = require('./extension-env');
-const { prQuery } = require('../src/pr-documents');
-const { createOpenReview } = require('../src/open-review');
+const { prQuery } = require('../src/diff-editor/pr-documents');
+const { createOpenReview } = require('../src/diff-editor/open-review');
 
 const SITE = { start: 22, end: 25 };
 const OTHER_SITE = { start: 30, end: 32 };

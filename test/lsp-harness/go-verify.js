@@ -81,7 +81,7 @@ const { analyze } = require('../../src/engine/analyze');
 const { createGoplsServices } = require('./gopls-services');
 const { languageServicesOver, createHierarchyResolver } = require('./harness-languages');
 const { goProvider } = require('../../src/languages/go/provider');
-const { classifyChangeVerdict, toneOf } = require('../../src/tree-row-models');
+const { classifyChangeVerdict, toneOf } = require('../../src/views/changes/tree-row-models');
 
 /**
  * The corpus: merged cli/cli pull requests. `merge` is the merge commit on trunk, `head` its
@@ -718,7 +718,7 @@ async function pipelineFor(repo, pr, goplsPath, warm, syntactic = false, preview
     const statusOf = { A: 'added', D: 'removed', M: 'modified' };
     const gh = {
       listPullRequestFiles: async () => {
-        // Renames as GitHub lists them (src/github.js: status `renamed`, `previous_filename` as
+        // Renames as GitHub lists them (src/github/github.js: status `renamed`, `previous_filename` as
         // `oldPath`), with git's default similarity, as the oracle's pairs follow them (`-M`).
         const files = git(repo, 'diff', '--name-status', '-M', pr.base, pr.head).trim().split('\n').filter(Boolean).map((l) => {
           const [st, a, b] = l.split('\t');

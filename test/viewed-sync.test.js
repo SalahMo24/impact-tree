@@ -5,10 +5,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const baseVscode = require('./vscode-stub');
-const { createTreeProvider } = require('../src/tree-provider');
-const { renderTreeItem } = require('../src/tree-item-renderer');
-const { createReviewState } = require('../src/review-state');
-const { createViewedSync, recordWant, nextWrite, finishWrite, noteFor } = require('../src/viewed-sync');
+const { createTreeProvider } = require('../src/views/changes/tree-provider');
+const { renderTreeItem } = require('../src/views/changes/tree-item-renderer');
+const { createReviewState } = require('../src/session/review-state');
+const { createViewedSync, recordWant, nextWrite, finishWrite, noteFor } = require('../src/diff-editor/viewed-sync');
 
 // The shared stub's emitter delivers nothing; these tests need real events.
 class Emitter {

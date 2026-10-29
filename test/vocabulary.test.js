@@ -325,7 +325,7 @@ test('the mode labels come from one table and the setting values are unchanged',
   const setting = pkg.contributes.configuration.properties['impactTree.mode'];
   assert.deepEqual(setting.enum, ['pr', 'branch', 'working', 'checkpoint']);
   for (const m of Object.values(MODES)) assert.ok(setting.description.includes(m.label), `the setting description names ${m.label}`);
-  const { MODE_LABELS } = require('../src/tree-row-models');
+  const { MODE_LABELS } = require('../src/views/changes/tree-row-models');
   assert.deepEqual(MODE_LABELS, Object.fromEntries(Object.entries(MODES).map(([id, m]) => [id, m.label])));
 });
 
@@ -343,12 +343,12 @@ test('README.md: no retired term', () => {
 // bar, commands and quick picks, notifications, the CodeLens and the CLI. Modules that only
 // write the output channel (viewed-sync, resolver-vscode, ...) are not listed.
 const SOURCES = [
-  'tree-row-models', 'tree-item-renderer', 'tree-provider', 'tree-grouping', 'review-tree-model', 'sources-provider',
-  'detail-panel-html', 'detail-panel', 'pr-overview-html', 'pr-overview-panel', 'pr-actions', 'pr-review-data',
-  'review-navigation', 'review-lens', 'review-open', 'open-review', 'commands', 'session', 'cli', 'cli-format',
-  'view-state', 'path-tree', 'decorations', 'extension', 'readiness', 'review-threads', 'review-comments',
+  'views/changes/tree-row-models', 'views/changes/tree-item-renderer', 'views/changes/tree-provider', 'views/changes/tree-grouping', 'views/changes/review-tree-model', 'views/sidebar/sources-provider',
+  'views/details/detail-panel-html', 'views/details/detail-panel', 'views/pr-tab/pr-overview-html', 'views/pr-tab/pr-overview-panel', 'session/pr-actions', 'github/pr-review-data',
+  'diff-editor/review-navigation', 'diff-editor/review-lens', 'diff-editor/review-open', 'diff-editor/open-review', 'session/commands', 'session/session', 'cli', 'cli/cli-format',
+  'views/changes/view-state', 'views/changes/path-tree', 'diff-editor/decorations', 'extension', 'session/readiness', 'views/changes/review-threads', 'diff-editor/review-comments',
   'engine/analyze', 'engine/analyze-remote',
-  'feedback-drafts', 'feedback-comments', 'feedback-comments-model', 'feedback-tree',
+  'feedback/feedback-drafts', 'feedback/feedback-comments', 'feedback/feedback-comments-model', 'feedback/feedback-tree',
 ].map((name) => `src/${name}.js`);
 
 test('the user-facing source modules use no retired term in their string literals', () => {

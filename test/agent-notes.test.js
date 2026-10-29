@@ -1,5 +1,5 @@
 'use strict';
-// What the user's agent said, on the Changes rows and the diff lenses (src/agent-notes.js,
+// What the user's agent said, on the Changes rows and the diff lenses (src/agent/agent-notes.js,
 // tree-item-renderer.js, tree-provider.js, review-lens.js): after the engine's text, never
 // instead of it; the engine's order and counts unchanged; gone when the notes are.
 const test = require('node:test');
@@ -9,10 +9,10 @@ const stub = require('./vscode-stub');
 const vscode = { ...stub, EventEmitter: class {
   constructor() { const ls = []; this.event = (l) => { ls.push(l); return { dispose() {} }; }; this.fire = (v) => ls.forEach((l) => l(v)); this.dispose = () => {}; }
 } };
-const { createTreeProvider } = require('../src/tree-provider');
-const { agentNotes, rowLine, tooltipLines, callerChangeId } = require('../src/agent-notes');
-const { lensPlan, lensTitles } = require('../src/review-lens');
-const { treeItemId } = require('../src/review-tree-model');
+const { createTreeProvider } = require('../src/views/changes/tree-provider');
+const { agentNotes, rowLine, tooltipLines, callerChangeId } = require('../src/agent/agent-notes');
+const { lensPlan, lensTitles } = require('../src/diff-editor/review-lens');
+const { treeItemId } = require('../src/views/changes/review-tree-model');
 
 const BODY = { id: 'body', label: 'body' };
 const SIG = { id: 'sig', label: 'signature', short: 'sig' };

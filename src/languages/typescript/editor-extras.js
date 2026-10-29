@@ -1,6 +1,6 @@
 // @ts-check
 'use strict';
-// What the editor's resolver (src/resolver-vscode.js) adds for a TypeScript/JavaScript
+// What the editor's resolver (src/session/resolver-vscode.js) adds for a TypeScript/JavaScript
 // target to the callers the language server reports: the inheritance filter, command-bus
 // (CQRS) edges, and users the server cannot see. The resolver keeps the cache, the
 // analysis generation and the stats; these only decide what to add or remove.

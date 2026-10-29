@@ -1,16 +1,16 @@
 'use strict';
 // Preview documents: one revision is held, any other is fetched when a tab asks for it,
 // and a failed fetch says why instead of showing an empty file. GitHub is the real
-// client (src/github.js) over an injected `fetch`, so the failures are the named errors
+// client (src/github/github.js) over an injected `fetch`, so the failures are the named errors
 // the content provider receives in production, not stand-ins for them.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vscode = require('./vscode-stub');
-const { createGitHub } = require('../src/github');
-const { createPrDocuments, prQuery } = require('../src/pr-documents');
-const { registerContentProviders } = require('../src/content-providers');
-const { callerOpen } = require('../src/review-open');
-const { createOpenReview } = require('../src/open-review');
+const { createGitHub } = require('../src/github/github');
+const { createPrDocuments, prQuery } = require('../src/diff-editor/pr-documents');
+const { registerContentProviders } = require('../src/diff-editor/content-providers');
+const { callerOpen } = require('../src/diff-editor/review-open');
+const { createOpenReview } = require('../src/diff-editor/open-review');
 const { createFakeClock } = require('./fake-clock');
 
 const SLUG = { owner: 'o', repo: 'r' };

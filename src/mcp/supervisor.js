@@ -2,7 +2,7 @@
 'use strict';
 
 // Keeps one MCP connection alive across new code. The agent starts the stable launcher
-// (src/agent-connect.js), which runs this supervisor; it starts the real server
+// (src/agent/agent-connect.js), which runs this supervisor; it starts the real server
 // (`src/cli.js mcp`) as a child and relays newline-delimited JSON-RPC both ways.
 //
 // When the extension's code changes, the child exits with RELOAD_EXIT_CODE instead of

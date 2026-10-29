@@ -2,8 +2,8 @@
 // The retention policy (pure) and the review-progress usage bookkeeping it relies on.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { planCleanup, summarize, formatBytes } = require('../src/storage-cleanup');
-const { createReviewState, listReviewKeys, deleteReviewKeys, META_KEY, META_MAX_ENTRIES } = require('../src/review-state');
+const { planCleanup, summarize, formatBytes } = require('../src/storage/storage-cleanup');
+const { createReviewState, listReviewKeys, deleteReviewKeys, META_KEY, META_MAX_ENTRIES } = require('../src/session/review-state');
 
 const DAY = 86400000;
 const NOW = 1_800_000_000_000;

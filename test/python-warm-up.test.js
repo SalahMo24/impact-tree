@@ -2,7 +2,7 @@
 // Warm-up and first-index progress for Python (P5, docs/MULTI_LANGUAGE_PLAN.md; the shared
 // code is Go's, G5): a review whose changed files include Python and no TypeScript warms
 // the editor's Pyright at the first function or method it lists in the first changed Python
-// file (`pythonProvider.warmUpTarget`, asked by src/readiness.js), searching into classes
+// file (`pythonProvider.warmUpTarget`, asked by src/session/readiness.js), searching into classes
 // because Pyright lists methods as their class's children. The first-run message names that
 // server. The session runs through test/extension-env.js (its one symbols hook is called
 // `serverSymbols`, for every language) with a fake clock and hand-released gates.

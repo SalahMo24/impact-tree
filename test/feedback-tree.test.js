@@ -7,9 +7,9 @@ const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
 const { localResult, finding, previewResult, pull, withEnv } = require('./extension-env');
-const { buildFeedbackGroup, feedbackStatusText, FIRST_LINE_MAX } = require('../src/feedback-tree');
-const { STORAGE_KEY } = require('../src/feedback-drafts');
-const { treeItemId } = require('../src/review-tree-model');
+const { buildFeedbackGroup, feedbackStatusText, FIRST_LINE_MAX } = require('../src/feedback/feedback-tree');
+const { STORAGE_KEY } = require('../src/feedback/feedback-drafts');
+const { treeItemId } = require('../src/views/changes/review-tree-model');
 
 const item = (id, over = {}) => ({ id, file: 'src/a.ts', line: 12, symbol: 'run', caller: null, quote: 'run();', body: `body of ${id}`, createdAtMs: 1000, ...over });
 

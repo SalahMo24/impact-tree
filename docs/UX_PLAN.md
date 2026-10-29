@@ -276,7 +276,7 @@ Branch: feat/x · Reviewed: Uncommitted (agent)
 For the agent: address each item. Under each one, write `Status: done` or
 `Status: skipped — reason`. Don't change anything else in this file.
 
-## 1. src/session.js:212 · runAnalysis
+## 1. src/session/session.js:212 · runAnalysis
 <!-- item id=<id> -->
 > } catch { /* ignore */ }
 Don't swallow errors here.

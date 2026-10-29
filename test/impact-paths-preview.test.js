@@ -79,7 +79,7 @@ test('a preview result keeps the PR file listing for the cards, outside its JSON
     const r = await run(fakeHost().gh);
     assert.deepEqual(r.listedFiles.files.map((f) => [f.path, f.patch]), [['lib/a.ts', hunk(1)], ['lib/use.ts', hunk(2)]]);
     assert.ok(!Object.keys(r).includes('listedFiles'));
-    const { previewFilesOf } = require('../src/pr-actions');
+    const { previewFilesOf } = require('../src/session/pr-actions');
     assert.equal(previewFilesOf(r), r.listedFiles);
   } finally { clearVirtualText(); }
 });

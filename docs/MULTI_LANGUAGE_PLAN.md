@@ -12,7 +12,7 @@ source files**: every `.go` file is dropped at `src/engine/analyze.js:253` by
 README's "the caller graph is multi-language" is true of the caller lookup only; the
 extension never reaches it for other languages.
 
-Already language-agnostic: the caller lookup in `src/resolver-vscode.js` (call hierarchy at
+Already language-agnostic: the caller lookup in `src/session/resolver-vscode.js` (call hierarchy at
 a UTF-16 offset, no extension filter; gopls answered correctly for
 `simulateRefreshTokenExpired` in that PR, first query ~100 s while indexing on an Intel
 Mac), call-site classification (`call-sites.js`), test reach and blast radius
@@ -239,7 +239,7 @@ Done 2026-10-24. `src/languages/server-symbols.js` (`prepareFromServerSymbols`) 
 shared `prepare` for server-backed languages; `src/engine/changed-symbols.js` was split so
 its matcher (`changedFromSymbols`) takes collected symbols, TypeScript output unchanged
 (14-case baseline). Base sides go through a temporary copy in the extension's storage
-(`src/services-vscode.js`, at most 2 Mi characters, removed in `finally`, leftovers swept
+(`src/session/services-vscode.js`, at most 2 Mi characters, removed in `finally`, leftovers swept
 at startup). A Go method's key uses its receiver's base type (`(Config).Size` for
 `(*Config).Size`), so a `T` ↔ `*T` change is one `type-changed` method, not a delete and an
 add. Checked end to end against gopls on cli/cli PR #14752 (`test/lsp-harness/go-e2e.js`):
@@ -814,7 +814,7 @@ the 10 httpx PRs (every per-PR result identical), and the signature oracle (http
 - **A1. One caller-extras step.** The order in which a language's `EditorCallerExtras`
   apply to a call-hierarchy answer (`explainIncomplete`, `filter`, `moreCallers`) is written
   once (`applyCallerExtras` in `src/languages/callers-from-hierarchy.js`), shared by
-  `src/resolver-vscode.js` and the harness (`test/lsp-harness/harness-languages.js`), so G7
+  `src/session/resolver-vscode.js` and the harness (`test/lsp-harness/harness-languages.js`), so G7
   and P7 verify the code the editor runs. The harness now de-duplicates `moreCallers`'
   callers as the editor does.
 - **A2. Shared text helpers, one Python lexer.** Line starts and offset → line, path
