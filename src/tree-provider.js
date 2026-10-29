@@ -1,5 +1,6 @@
 // @ts-check
 'use strict';
+const { callerChangeId } = require('./agent-notes');
 const { nodeId } = require('./review-state');
 const { prQuery } = require('./pr-documents');
 const { viewStateOf } = require('./view-state');
@@ -73,6 +74,7 @@ const { buildFeedbackGroup, renderFeedbackItem, buildRoundGroup, renderRoundItem
  *   getFeedbackDrafts?: () => readonly import('./feedback-drafts').FeedbackItem[],
  *   getFeedbackRound?: () => import('./feedback-round-view').RoundView|null,
  *   getLayout?: () => 'flat'|'tree',
+ *   getAgentNotes?: () => import('./agent-notes').AgentNotes|null,
  * }} deps `getThreads` is what is known of the review threads of the pull request under
  *   review (`threadsViewOf` of the review store); a review without one has none. Call
  *   `threadsChanged` whenever its answer may have changed. `viewedOf` says what a file row
@@ -83,13 +85,14 @@ const { buildFeedbackGroup, renderFeedbackItem, buildRoundGroup, renderRoundItem
  *   happened to the last sent round, shown as the "Feedback round N" group above it; call
  *   `feedbackChanged` whenever it changes too. `getLayout` says how the file rows are laid
  *   out, read on each root read: `flat` (the default) lists them, `tree` folds them into
- *   folders; call `refresh('layout')` when its answer changes.
+ *   folders; call `refresh('layout')` when its answer changes. `getAgentNotes` is what the user's
+ *   agent said about the changes, or null; call `agentChanged` whenever its answer changes.
  */
 function createTreeProvider(vscode, {
   getState, resolver, isBusy = () => false, decorate = null, getPhase = () => 'ready', review = null,
   getAnalysisId = () => 0, isCurrentAnalysis = () => true, getThreads = () => threadsModel.NO_THREADS,
   viewedOf = () => null, getRepoStatus = () => 'ok', getFeedbackDrafts = () => [], getFeedbackRound = () => null,
-  getLayout = () => 'flat',
+  getLayout = () => 'flat', getAgentNotes = () => null,
 }) {
   // The "Feedback to send" group: one row object for the provider's life, so a drafts change
   // can repaint it alone (`feedbackChanged`); its text is refreshed each time the root is
@@ -162,6 +165,21 @@ function createTreeProvider(vscode, {
       threadCountsOf,
       viewedOf,
       layout: /** @type {'flat'|'tree'} */ (getLayout() === 'tree' ? 'tree' : 'flat'),
+      ...agentView(st),
+    };
+  };
+  /**
+   * The agent's notes as the renderer reads them: a change row by its change id, a direct
+   * caller (one level under its change) by the change it calls and its own label.
+   * @param {any} st The session state.
+   */
+  const agentView = (st) => {
+    const notes = getAgentNotes();
+    if (!notes) return {};
+    const rel = st && st.rel ? st.rel : null;
+    return {
+      agentOf: (/** @type {TreeRow} */ row) => (row.finding ? notes.change(`${row.finding.relPath}#${row.finding.namePos}`) : null),
+      agentHowOf: (/** @type {TreeRow} */ row) => (Array.isArray(row.path) && row.path.length === 1 ? notes.how(callerChangeId(row.path[0], rel), row.label) : null),
     };
   };
   // file:///path#offset — unique per symbol so decorations do not collide, while the
@@ -220,6 +238,8 @@ function createTreeProvider(vscode, {
   const _emitter = new vscode.EventEmitter();
   const presentation = new vscode.EventEmitter();
   const progress = new vscode.EventEmitter();
+  // Fires when what the user's agent said changed (stored, undone, toggled): rows and lenses repaint.
+  const agentEvents = new vscode.EventEmitter();
   const threadEvents = new vscode.EventEmitter();
   // The file rows the view was last given at the root, so a thread change can tell whether
   // the `threads` filter now shows other files. Null until the root is read.
@@ -620,6 +640,12 @@ function createTreeProvider(vscode, {
     },
     onDidChangeTreeData: _emitter.event,
     onDidChangePresentation: presentation.event,
+    /** Fires after `agentChanged` repainted the rows. */
+    onDidChangeAgent: agentEvents.event,
+    /** What the user's agent said changed: repaints every row, then tells the lenses. */
+    agentChanged() { if (disposed) return; _emitter.fire(); agentEvents.fire(undefined); },
+    /** The agent's note on a change, by change id, or null. @param {string} id */
+    agentNoteOf: (id) => { const notes = getAgentNotes(); return notes ? notes.change(id) : null; },
     onDidChangeReview: progress.event,
     /** Fires `{ paths }` after `threadsChanged` repainted the rows. */
     onDidChangeThreads: threadEvents.event,
@@ -636,7 +662,7 @@ function createTreeProvider(vscode, {
       built = null;
       threadIndex = null;
       shownRoots = null;
-      _emitter.dispose(); presentation.dispose(); progress.dispose(); threadEvents.dispose();
+      _emitter.dispose(); presentation.dispose(); progress.dispose(); threadEvents.dispose(); agentEvents.dispose();
     },
     /** @param {TreeRow} n */
     getTreeItem(n) {

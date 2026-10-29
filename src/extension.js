@@ -6,6 +6,8 @@ const vscode = require('vscode');
 const { MODES } = require('./engine/analyze');
 const { createTreeProvider } = require('./tree-provider');
 const { createCardsProvider, REVEAL_COMMAND } = require('./cards-provider');
+const { latestCardsResult } = require('./agent-cards');
+const { agentNotes } = require('./agent-notes');
 const { createReviewNavigation } = require('./review-navigation');
 const { createDetailPanel } = require('./detail-panel');
 const { createCallerComment } = require('./caller-comment');
@@ -20,6 +22,9 @@ const { createPrDocuments } = require('./pr-documents');
 const { createSession } = require('./session');
 const { createAgentBridge } = require('./agent-bridge');
 const { createAgentConnect } = require('./agent-connect-commands');
+const { createAgentCardsState } = require('./agent-cards-state');
+const { createAnalyseWithAgent } = require('./agent-analyse');
+const { chooseAgent } = require('./feedback-send');
 const { createSnapshotStoreGetter } = require('./snapshot-storage');
 const { createPrActions } = require('./pr-actions');
 const { createPullRequestReviewStore, reviewTargetOf } = require('./pr-review-store');
@@ -101,7 +106,11 @@ function activate(context, { clock = realClock } = {}) {
   // Whether the window has a folder and a repository: asked at activation, when the folders
   // change and whenever a run begins (so `git init` then Refresh is noticed), not on every repaint.
   let repoStatus = owned.repoStatus();
+  // What the user's agent said about the changes, shown on the Changes rows and lenses (set below, with the bridge).
+  /** @type {() => import('./agent-notes').AgentNotes|null} */
+  let agentNotesNow = () => null;
   const provider = createTreeProvider(vscode, {
+    getAgentNotes: () => agentNotesNow(),
     getRepoStatus: () => repoStatus,
     getThreads: () => (reviewStore ? threadsViewOf(reviewStore.getState()) : NO_THREADS),
     decorate,
@@ -126,8 +135,13 @@ function activate(context, { clock = realClock } = {}) {
   // The Cards view (impactTree.cards.enabled; package.json hides it while the setting is off).
   // It follows the analysis and the cards the session publishes after it; selecting a seam
   // reveals the other card. Disposed with the window.
+  // The agent's part of the view (set below, with the bridge): null while agents are off.
+  /** @type {() => import('./cards-provider').AgentSource|null} */
+  let agentSource = () => null;
+  /** @type {(changeId: string) => any} */
+  let agentChangeOf = () => null;
   const cardsProvider = createCardsProvider(vscode, {
-    getSource: () => ({ enabled: owned.cardsEnabled(), state: owned.state }),
+    getSource: () => ({ enabled: owned.cardsEnabled(), state: owned.state, agent: agentSource() }),
   });
   const cardsView = vscode.window.createTreeView('impactTree.cards', { treeDataProvider: cardsProvider, showCollapseAll: true });
   context.subscriptions.push(cardsProvider, cardsView,
@@ -146,7 +160,7 @@ function activate(context, { clock = realClock } = {}) {
   let reviewComments = null;
   let feedbackComments = null;
   const details = createDetailPanel(vscode, { provider, view, getState: () => owned.state, log,
-    checkoutAndAnalyse: (pr) => session.checkoutAndAnalyse(pr) });
+    checkoutAndAnalyse: (pr) => session.checkoutAndAnalyse(pr), agentChange: (id) => agentChangeOf(id) });
   context.subscriptions.push(...details.disposables);
   // Counts follow presentation and progress events, independently of tree repaint scope.
   const showSummary = () => {
@@ -379,6 +393,58 @@ function activate(context, { clock = realClock } = {}) {
     if (e.affectsConfiguration('impactTree.agents.enabled')) syncAgentBridge();
   }));
   syncAgentBridge();
+
+  // "Analyse with my agent" and the agent's cards in the Cards view. The waiting state and the
+  // shown head live in memory only; results live in the bridge's workspace state.
+  const agentCards = createAgentCardsState();
+  const agentsOn = () => vscode.workspace.getConfiguration('impactTree').get('agents.enabled', false) === true;
+  agentSource = () => {
+    if (!agentsOn()) return null;
+    return { waiting: agentCards.waiting, showEngine: agentCards.showEngine, results: agentCards.head ? agentBridge.resultsFor(agentCards.head) : [] };
+  };
+  // What the agent said about the changes: the latest result for the shown head, unless the
+  // engine's cards are shown. Built once per stored result.
+  /** @type {{ key: string|null, notes: import('./agent-notes').AgentNotes|null }} */
+  let notesFor = { key: null, notes: null };
+  agentNotesNow = () => {
+    const src = agentSource();
+    if (!src || src.showEngine) return null;
+    const latest = latestCardsResult(src.results);
+    if (!latest) return null;
+    if (notesFor.key !== latest.key) notesFor = { key: latest.key, notes: agentNotes(latest.payload) };
+    return notesFor.notes;
+  };
+  agentChangeOf = (id) => { const notes = agentNotesNow(); return notes ? notes.change(id) : null; };
+  // Everything that shows the agent's result: the Cards view, Details, the Changes rows and lenses.
+  const agentRedraw = () => { cardsProvider.refresh(); details.refresh(); provider.agentChanged(); };
+  // The head of the review shown is read from the repository, so it arrives after the analysis does.
+  let headRead = 0;
+  const syncAgentHead = async () => {
+    const mine = ++headRead;
+    let head = null;
+    if (agentsOn()) {
+      try { const ctx = await agentBridge.context(); head = ctx ? ctx.head : null; } catch (e) { log(`agent: could not read the head: ${e && e.message}`); }
+    }
+    if (mine === headRead && agentCards.headChanged(head)) agentRedraw();
+  };
+  const analyseWithAgent = createAnalyseWithAgent(vscode, {
+    session: owned, bridge: agentBridge, state: agentCards, chooseAgent, log, redraw: agentRedraw,
+  });
+  context.subscriptions.push(
+    vscode.commands.registerCommand('impactTree.analyseWithAgent', () => analyseWithAgent.run()),
+    vscode.commands.registerCommand('impactTree.cancelAgentWaiting', () => analyseWithAgent.cancelWaiting()),
+    vscode.commands.registerCommand('impactTree.toggleAgentCards', () => analyseWithAgent.toggle()),
+    vscode.commands.registerCommand('impactTree.undoAgentResult', (key) => analyseWithAgent.undo(key)),
+    agentBridge.onDidStoreResult((e) => { agentCards.stored(e); agentRedraw(); }),
+    agentBridge.onDidRemoveResult(() => agentRedraw()),
+    owned.onDidChangeAnalysis(() => { void syncAgentHead(); }), owned.onDidChangeCards(() => { void syncAgentHead(); }),
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (!e.affectsConfiguration('impactTree.agents.enabled')) return;
+      agentCards.reset();
+      void syncAgentHead();
+      agentRedraw();
+    }));
+  void syncAgentHead();
 
   publishContext();
 

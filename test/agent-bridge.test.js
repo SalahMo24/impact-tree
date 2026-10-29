@@ -21,20 +21,29 @@ const vscodeFake = { EventEmitter: class {
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'itb-'));
 
 /** One editor window on a fresh repository directory, with a fake session and workspace state. */
-function editor({ lockDir = tmp(), repo = tmp(), validator = () => ({ ok: true }), head = SHA('a'), source = { kind: 'local' }, tierA = false } = {}) {
+function editor({ lockDir = tmp(), repo = tmp(), validator = () => ({ ok: true }), head = SHA('a'), source = { kind: 'local' }, tierA = false, updateDelayMs = 0, idleTimeoutMs } = {}) {
   const memento = new Map();
+  // `updateDelayMs` makes every storage write take that long, and records whether two ran at once.
+  const writing = { now: 0, overlapped: false };
   const session = { state: { result: { mode: 'pr', base: { ref: 'main', sha: SHA('b') }, tierA }, source, cards: { clusters: [] } }, repoRoot: () => repo };
   const logs = [];
   const world = { head, validated: [] };
   const bridge = createAgentBridge(vscodeFake, {
     session, log: (m) => logs.push(m), lockDir,
-    workspaceState: { get: (k) => memento.get(k), update: async (k, v) => { memento.set(k, JSON.parse(JSON.stringify(v))); } },
+    workspaceState: { get: (k) => memento.get(k), update: async (k, v) => {
+      writing.now++;
+      if (writing.now > 1) writing.overlapped = true;
+      if (updateDelayMs) await new Promise((r) => setTimeout(r, updateDelayMs));
+      memento.set(k, JSON.parse(JSON.stringify(v)));
+      writing.now--;
+    } },
     validator: (kind, payload, given) => { world.validated.push({ kind, payload, given }); return validator(kind, payload, given); },
     readHead: async () => world.head,
+    ...(idleTimeoutMs ? { idleTimeoutMs } : {}),
   });
   const stored = [];
   bridge.onDidStoreResult((e) => stored.push(e));
-  return { bridge, session, memento, lockDir, repo, logs, world, stored };
+  return { bridge, session, memento, lockDir, repo, logs, world, stored, writing };
 }
 
 const meta = (e) => ({ head: e.world.head, base: SHA('b') });
@@ -405,4 +414,105 @@ test('a client request that is not answered in time fails', async () => {
     await assert.rejects(() => client.context(), /in time/);
     client.close();
   } finally { server.close(); }
+});
+
+// ---- AI5: Undo and the request log ----
+
+test('removeResult: takes out one result, fires an event, drops an empty head, ignores an unknown key', async () => {
+  const e = editor({ validator: (kind, payload) => ({ ok: true, normalised: payload }) });
+  const removed = [];
+  e.bridge.onDidRemoveResult((x) => removed.push(x));
+  await e.bridge.start();
+  try {
+    const client = await connectBridge({ repo: e.repo, lockDir: e.lockDir });
+    await client.submit('cards', { n: 1 }, meta(e));
+    await client.submit('cards', { n: 2 }, meta(e));
+    const [first, second] = e.bridge.resultsFor(SHA('a'));
+    assert.equal(await e.bridge.removeResult(SHA('a'), 'no-such-key'), false);
+    assert.equal(await e.bridge.removeResult(SHA('z'), first.key), false, 'another head');
+    assert.deepEqual(removed, []);
+    assert.equal(await e.bridge.removeResult(SHA('a'), first.key), true);
+    assert.deepEqual(e.bridge.resultsFor(SHA('a')).map((r) => r.key), [second.key]);
+    assert.deepEqual(removed, [{ kind: 'cards', head: SHA('a'), key: first.key }]);
+    assert.equal(await e.bridge.removeResult(SHA('a'), second.key), true);
+    assert.deepEqual(e.memento.get(STORAGE_KEY), {}, 'the head is dropped');
+    // Removed means storable again.
+    assert.deepEqual(await client.submit('cards', { n: 1 }, meta(e)), { stored: true });
+    client.close();
+  } finally { await e.bridge.stop(); }
+});
+
+test('removeResult runs in the queue of the other writes: none overlaps, none is lost', async () => {
+  const e = editor({ validator: (kind, payload) => ({ ok: true, normalised: payload }), updateDelayMs: 15 });
+  await e.bridge.start();
+  try {
+    const client = await connectBridge({ repo: e.repo, lockDir: e.lockDir });
+    await client.submit('cards', { n: 1 }, meta(e));
+    const [one] = e.bridge.resultsFor(SHA('a'));
+    const [, removed] = await Promise.all([client.submit('cards', { n: 2 }, meta(e)), e.bridge.removeResult(SHA('a'), one.key), client.submit('cards', { n: 3 }, meta(e))]);
+    assert.equal(removed, true);
+    assert.equal(e.writing.overlapped, false);
+    assert.deepEqual(e.bridge.resultsFor(SHA('a')).map((r) => r.payload.n).sort(), [2, 3]);
+    client.close();
+  } finally { await e.bridge.stop(); }
+});
+
+test('the log has one line per request and never the payload', async () => {
+  const secret = 'SECRET-TITLE-DO-NOT-LOG';
+  let verdict = { ok: true };
+  const e = editor({ validator: () => verdict });
+  await e.bridge.start();
+  try {
+    const client = await connectBridge({ repo: e.repo, lockDir: e.lockDir });
+    await client.context();
+    await client.submit('cards', { cards: [{ title: secret }] }, meta(e));
+    await client.submit('cards', { cards: [{ title: secret }] }, meta(e));
+    verdict = { ok: false, errors: [`${secret} is wrong`] };
+    await client.submit('callers', { function: secret }, meta(e));
+    await client.submit('cards', { cards: [{ title: secret }] }, { head: SHA('f'), base: SHA('b') });
+    client.close();
+    const lines = e.logs.filter((l) => l.startsWith('agent: '));
+    assert.deepEqual(lines, [
+      'agent: context asked',
+      'agent: cards submitted — stored',
+      'agent: cards submitted — already stored',
+      'agent: callers submitted — refused: the result does not match the editor\'s review',
+      `agent: cards submitted — refused: the editor's review moved to ${SHA('a')}; re-run on it`,
+    ]);
+    assert.ok(!e.logs.some((l) => l.includes(secret)));
+  } finally { await e.bridge.stop(); }
+});
+
+test('markAsked writes when this window asked into its lock, and the client lists it', async () => {
+  const e = editor();
+  assert.equal(e.bridge.markAsked(), false, 'not running: nothing to mark');
+  await e.bridge.start();
+  try {
+    const before = JSON.parse(fs.readFileSync(e.bridge.address.lockFile, 'utf8'));
+    assert.equal(before.askedAt, undefined);
+    assert.equal(e.bridge.markAsked(), true);
+    const after = JSON.parse(fs.readFileSync(e.bridge.address.lockFile, 'utf8'));
+    assert.equal(typeof after.askedAt, 'number');
+    assert.deepEqual({ ...after, askedAt: undefined }, { ...before, askedAt: undefined }, 'the rest of the lock is unchanged');
+    assert.equal(fs.statSync(e.bridge.address.lockFile).mode & 0o777, 0o600);
+    const { liveEditorRepos } = require('../src/mcp/bridge-client');
+    assert.deepEqual(liveEditorRepos({ lockDir: e.lockDir }), [{ repo: fs.realpathSync(e.repo), askedAt: after.askedAt }]);
+    const client = await connectBridge({ repo: e.repo, lockDir: e.lockDir });
+    assert.ok(await client.context(), 'the client still connects with the new lock');
+    client.close();
+  } finally { await e.bridge.stop(); }
+});
+
+test('the client reopens its connection after the editor closed it for being idle; close() ends it for good', async () => {
+  const e = editor({ idleTimeoutMs: 100 });
+  await e.bridge.start();
+  try {
+    const client = await connectBridge({ repo: e.repo, lockDir: e.lockDir });
+    assert.ok(await client.context());
+    await new Promise((r) => setTimeout(r, 300));   // the editor drops the idle connection
+    assert.equal((await client.submit('cards', { a: 1 }, meta(e))).stored, true, 'a submit after the idle gap reconnects');
+    assert.ok(await client.context());
+    client.close();
+    await assert.rejects(client.context(), /closed/);
+  } finally { await e.bridge.stop(); }
 });

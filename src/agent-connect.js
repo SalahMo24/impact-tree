@@ -124,19 +124,19 @@ const NO_RUNTIME_MESSAGE = "Impact Tree's agent tools need Node 20 or later: ins
  * @returns {string}
  */
 function launcherSource(extensionPath) {
-  const server = path.join(extensionPath, 'src', 'mcp', 'server.js');
+  const supervisor = path.join(extensionPath, 'src', 'mcp', 'supervisor.js');
+  // The supervisor runs the server as a child and restarts it when the extension's code
+  // changes, so an update (or an edited development folder) needs no restart by hand.
   return `'use strict';
 // Written by the Impact Tree extension; rewritten when it activates. Do not edit.
 const fs = require('fs');
-const server = ${JSON.stringify(server)};
-if (!fs.existsSync(server)) {
-  process.stderr.write('Impact Tree: its extension folder is gone (' + server + '). Reload the editor with Impact Tree installed, or run "Impact Tree: Connect my agent" again.\\n');
+const extension = ${JSON.stringify(extensionPath)};
+const supervisor = ${JSON.stringify(supervisor)};
+if (!fs.existsSync(supervisor)) {
+  process.stderr.write('Impact Tree: its extension folder is gone (' + extension + '). Reload the editor with Impact Tree installed, or run "Impact Tree: Connect my agent" again.\\n');
   process.exit(1);
 }
-require(server).runCli(process.argv.slice(2)).catch((e) => {
-  process.stderr.write('Impact Tree: ' + (e && e.message) + '\\n');
-  process.exit(1);
-});
+require(supervisor).runSupervised(extension);
 `;
 }
 

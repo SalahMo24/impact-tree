@@ -38,6 +38,18 @@ const MAX_MISSING_LISTED = 30;
 
 const CALLER_KINDS = ['call', 'registration', 'reference'];
 
+// The behaviour review of a cards submission (`answer.changes`, `answer.attention`).
+/** What a change does to behaviour: changed (same input, different outcome), may-change (some inputs may now end differently), same (same behaviour, new way), new (added behaviour). */
+const BEHAVIOUR_KINDS = ['changed', 'may-change', 'same', 'new'];
+// The one line shown in the list. Unit: UTF-16 code units.
+const MAX_WHAT_CHARS = 200;
+// Before, after, when, and how one caller is affected. Unit: UTF-16 code units.
+const MAX_DETAIL_CHARS = 400;
+// Callers and entry points named as affected per change. Unit: items.
+const MAX_AFFECTS = 10;
+// Changes in "needs your attention". Unit: ids.
+const MAX_ATTENTION = 5;
+
 /**
  * @typedef {object} ChangeInfo
  * @property {string} id `relPath#namePos`
@@ -63,6 +75,8 @@ const CALLER_KINDS = ['call', 'registration', 'reference'];
  * @property {string[]} errors Each names the field and what to change; at most MAX_ERRORS + 1.
  * @property {any} [normalised] Present when ok: the payload with trimmed strings, defaults
  *   filled and duplicates removed; forward this, not the raw payload.
+ * @property {string[]} [dropped] Present when ok and something was left out instead of
+ *   refused: an "affects" name that is not a caller or entry point in the facts.
  */
 
 /**
@@ -78,7 +92,7 @@ const CALLER_KINDS = ['call', 'registration', 'reference'];
  * @throws {TypeError} when `kind` is not one of the two, or `'callers'` has no way to read files
  */
 function validateSubmission(kind, payload, ctx) {
-  if (kind === 'cards') return finish(validateCards(payload, cardIds(ctx.cards)));
+  if (kind === 'cards') return finish(validateCards(payload, { ...cardIds(ctx.cards), known: affectedNames(ctx.result, ctx.cards) }));
   if (kind === 'callers') {
     const readText = ctx.readText || (ctx.repo ? readFromDisk(ctx.repo) : null);
     if (!readText) throw new TypeError('validateSubmission("callers") needs ctx.readText or ctx.repo');
@@ -87,12 +101,13 @@ function validateSubmission(kind, payload, ctx) {
   throw new TypeError(`unknown submission kind ${JSON.stringify(kind)}`);
 }
 
-/** @param {{ errors: string[], normalised?: any }} r @returns {SubmissionResult} */
+/** @param {{ errors: string[], normalised?: any, dropped?: string[] }} r @returns {SubmissionResult} */
 function finish(r) {
   const ok = r.errors.length === 0;
   const errors = r.errors.length > MAX_ERRORS
     ? [...r.errors.slice(0, MAX_ERRORS), `…and ${r.errors.length - MAX_ERRORS} more error(s)`] : r.errors;
-  return ok ? { ok, errors, normalised: r.normalised } : { ok, errors };
+  if (!ok) return { ok, errors };
+  return { ok, errors, normalised: r.normalised, ...(r.dropped && r.dropped.length ? { dropped: r.dropped.slice(0, MAX_ERRORS) } : {}) };
 }
 
 /** @param {string} repo @returns {(relPath: string) => string|null} */
@@ -155,10 +170,10 @@ function optionalText(v, where, max, errors) {
 }
 
 /**
- * @param {any} answer @param {{ required: Set<string>, aliases: Map<string, string> }} ids
- * @returns {{ errors: string[], normalised?: any }}
+ * @param {any} answer @param {{ required: Set<string>, aliases: Map<string, string>, known?: (id: string) => string[]|null }} ids
+ * @returns {{ errors: string[], normalised?: any, dropped?: string[] }}
  */
-function validateCards(answer, { required, aliases }) {
+function validateCards(answer, { required, aliases, known = () => null }) {
   const errors = /** @type {string[]} */ ([]);
   if (!answer || typeof answer !== 'object' || !Array.isArray(answer.cards)) return { errors: ['answer.cards must be an array'] };
   if (answer.cards.length > MAX_CARDS) return { errors: [`answer.cards has ${answer.cards.length} cards; at most ${MAX_CARDS}`] };
@@ -174,7 +189,117 @@ function validateCards(answer, { required, aliases }) {
   for (const [id, at] of placed) if (at.length > 1) errors.push(`${id} is in more than one card: ${at.map((i) => `cards[${i}]`).join(', ')}`);
   const missing = [...required].filter((id) => !placed.has(id));
   if (missing.length) errors.push(`${missing.length} change id(s) in no card: ${missing.slice(0, MAX_MISSING_LISTED).join(', ')}${missing.length > MAX_MISSING_LISTED ? ', …' : ''}`);
-  return { errors, normalised: errors.length ? undefined : { ...(summary ? { summary } : {}), cards } };
+  /** @type {string[]} */
+  const dropped = [];
+  const behaviour = checkBehaviour(answer, { required, aliases, known, errors, dropped });
+  return { errors, dropped, normalised: errors.length ? undefined : { ...(summary ? { summary } : {}), cards, ...behaviour } };
+}
+
+/**
+ * The behaviour review part of a cards answer: one entry per change the agent describes, and
+ * the few changes that need the reviewer's attention. Every id must be a change of the cards.
+ * An affected name that is not a caller or entry point of that change (or of its card) is
+ * left out and listed in `dropped`, not refused: the rest of the review is still worth saving.
+ * @param {any} answer
+ * @param {{ required: Set<string>, aliases: Map<string, string>, known: (id: string) => string[]|null, errors: string[], dropped: string[] }} s
+ *   `known`: the caller labels and entry point names of a change, or null when not known (no check).
+ * @returns {{ changes?: any[], attention?: string[] }}
+ */
+function checkBehaviour(answer, { required, aliases, known, errors, dropped }) {
+  /** @type {any} */
+  const out = {};
+  /** @type {Map<string, string>} */
+  const kindOf = new Map();
+  if (answer.changes !== undefined) {
+    if (!Array.isArray(answer.changes)) { errors.push('answer.changes must be an array'); return out; }
+    if (answer.changes.length > required.size + aliases.size) { errors.push(`answer.changes has ${answer.changes.length} entries; there are ${required.size} changes`); return out; }
+    out.changes = [];
+    answer.changes.forEach((/** @type {any} */ c, /** @type {number} */ i) => {
+      const where = `changes[${i}]`;
+      if (!c || typeof c !== 'object') { errors.push(`${where} is not an object`); return; }
+      const id = typeof c.id === 'string' ? (required.has(c.id) ? c.id : aliases.get(c.id)) : undefined;
+      if (!id) { errors.push(`${where}: unknown change id ${JSON.stringify(c.id)}`); return; }
+      if (kindOf.has(id)) { errors.push(`${where}: ${id} is described twice`); return; }
+      if (!BEHAVIOUR_KINDS.includes(c.kind)) { errors.push(`${where}: kind must be one of ${BEHAVIOUR_KINDS.join(', ')}`); return; }
+      kindOf.set(id, c.kind);
+      const what = typeof c.what === 'string' ? c.what.trim() : '';
+      if (!what) errors.push(`${where}: empty what`);
+      else if (what.length > MAX_WHAT_CHARS) errors.push(`${where}: what is longer than ${MAX_WHAT_CHARS} characters; keep it to one line`);
+      const before = optionalText(c.before, `${where}.before`, MAX_DETAIL_CHARS, errors);
+      const after = optionalText(c.after, `${where}.after`, MAX_DETAIL_CHARS, errors);
+      const when = optionalText(c.when, `${where}.when`, MAX_DETAIL_CHARS, errors);
+      const affects = checkAffects(c.affects, where, known(id), errors, dropped);
+      out.changes.push({ id, kind: c.kind, what, ...(before ? { before } : {}), ...(after ? { after } : {}), ...(when ? { when } : {}), ...(affects.length ? { affects } : {}) });
+    });
+  }
+  if (answer.attention !== undefined) {
+    if (!Array.isArray(answer.attention) || answer.attention.length > MAX_ATTENTION) { errors.push(`answer.attention must be an array of at most ${MAX_ATTENTION} change ids`); return out; }
+    out.attention = [];
+    answer.attention.forEach((/** @type {unknown} */ a, /** @type {number} */ i) => {
+      const id = typeof a === 'string' ? (required.has(a) ? a : aliases.get(a)) : undefined;
+      if (!id) { errors.push(`attention[${i}]: unknown change id ${JSON.stringify(a)}`); return; }
+      const kind = kindOf.get(id);
+      if (kind !== 'changed' && kind !== 'may-change') { errors.push(`attention[${i}]: ${id} needs an entry in answer.changes with kind changed or may-change`); return; }
+      if (!out.attention.includes(id)) out.attention.push(id);
+    });
+  }
+  return out;
+}
+
+/**
+ * @param {unknown} v @param {string} where @param {string[]|null} names The change's callers and entry points, or null (not checked).
+ * @param {string[]} errors @param {string[]} dropped
+ * @returns {Array<{ name: string, how: string }>}
+ */
+function checkAffects(v, where, names, errors, dropped) {
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v) || v.length > MAX_AFFECTS) { errors.push(`${where}.affects must be an array of at most ${MAX_AFFECTS} items`); return []; }
+  /** @type {Array<{ name: string, how: string }>} */
+  const out = [];
+  v.forEach((/** @type {any} */ a, /** @type {number} */ j) => {
+    const at = `${where}.affects[${j}]`;
+    const name = a && typeof a.name === 'string' ? a.name.trim() : '';
+    const how = a && typeof a.how === 'string' ? a.how.trim() : '';
+    if (!name || name.length > MAX_TITLE_CHARS) { errors.push(`${at}: name must be 1 to ${MAX_TITLE_CHARS} characters`); return; }
+    if (!how || how.length > MAX_DETAIL_CHARS) { errors.push(`${at}: how must be 1 to ${MAX_DETAIL_CHARS} characters`); return; }
+    if (names && !names.some((n) => sameName(n, name))) {
+      dropped.push(`${at}: ${JSON.stringify(name)} is not a caller or entry point of this change or its card in the facts, so it is not shown`);
+      return;
+    }
+    out.push({ name, how });
+  });
+  return out;
+}
+
+/** A name the agent wrote names a known caller or entry point: one holds the other, ignoring case. @param {string} known @param {string} written */
+function sameName(known, written) {
+  const a = known.toLowerCase(); const b = written.toLowerCase();
+  return a.length > 1 && b.length > 1 && (a.includes(b) || b.includes(a));
+}
+
+/**
+ * The names a change may say it affects: its callers, and the entry points of its card (the
+ * facts list entry points per card).
+ * @param {any} result @param {{ clusters?: any[], sweeps?: any[] }|null} [cards]
+ * @returns {(id: string) => string[]|null} null for a change the result does not hold
+ */
+function affectedNames(result, cards) {
+  const changes = indexChanges(result || {});
+  const paths = (result && result.impactPaths) || {};
+  const entriesOf = (/** @type {string} */ id) => ((paths[id] && paths[id].entries) || []).map((/** @type {any} */ e) => e && e.name).filter(Boolean).map(String);
+  /** @type {Map<string, string[]>} */
+  const cardEntries = new Map();
+  for (const c of [...((cards && cards.clusters) || []), ...((cards && cards.sweeps) || [])]) {
+    const names = [...new Set((c.members || []).flatMap(entriesOf))];
+    for (const m of c.members || []) cardEntries.set(m, [...(cardEntries.get(m) || []), ...names]);
+  }
+  return (id) => {
+    const c = changes.get(id);
+    if (!c) return null;
+    const names = new Set([...entriesOf(id), ...(cardEntries.get(id) || [])]);
+    for (const x of c.callers || []) if (x && x.label) names.add(String(x.label));
+    return [...names];
+  };
 }
 
 /**
@@ -349,5 +474,5 @@ function checkCaller(c, where, callee, read, errors) {
 
 module.exports = {
   validateSubmission, checkEvidence, indexChanges, cardIds, isRelativePath, lineStarts, lineOf, escapeRe,
-  MAX_CARDS, MAX_CALLERS, MAX_ERRORS, MAX_LINE, IDENTIFIER,
+  MAX_CARDS, MAX_CALLERS, MAX_ERRORS, MAX_LINE, IDENTIFIER, BEHAVIOUR_KINDS, MAX_WHAT_CHARS, MAX_ATTENTION,
 };

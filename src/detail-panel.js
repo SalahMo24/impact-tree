@@ -75,11 +75,13 @@ function parseMessage(message, token) {
  *   getState: () => { result: any, rel: (file: string) => string, source?: any }|null,
  *   log: (message: string) => void,
  *   checkoutAndAnalyse?: (pr: any) => Promise<unknown>,
+ *   agentChange?: (changeId: string) => any,
  * }} deps `view` is the change view; `getState` the session state. `checkoutAndAnalyse`
  *   checks out a pull request and analyses it; a Preview's page offers it for the PR shown.
- * @returns {{ disposables: Array<{ dispose(): any }> }}
+ *   `agentChange`: what the user's agent said a change does to behaviour, or null.
+ * @returns {{ disposables: Array<{ dispose(): any }>, refresh: () => void }}
  */
-function createDetailPanel(vscode, { provider, view, getState, log, checkoutAndAnalyse = async () => undefined }) {
+function createDetailPanel(vscode, { provider, view, getState, log, checkoutAndAnalyse = async () => undefined, agentChange = () => null }) {
   /** @type {any} */
   let webviewView = null;
   /** @type {Array<{ dispose(): any }>} */
@@ -138,7 +140,9 @@ function createDetailPanel(vscode, { provider, view, getState, log, checkoutAndA
     const state = getState();
     const progress = progressPresentation(provider.reviewProgress());
     const nonce = crypto.randomBytes(16).toString('base64');
-    const html = buildDetailHtml(row, { result: state && state.result, nonce, cspSource: webviewView.webview.cspSource, progress });
+    const f = row && row.type === 'finding' ? row.finding : null;
+    const said = f ? agentChange(`${f.relPath}#${f.namePos}`) : null;
+    const html = buildDetailHtml(row, { result: state && state.result, nonce, cspSource: webviewView.webview.cspSource, progress, agentChange: said });
     renderToken = nonce;
     renderedVersion = provider.reviewVersion();
     lastProgress = progress;
@@ -261,6 +265,8 @@ function createDetailPanel(vscode, { provider, view, getState, log, checkoutAndA
   };
 
   return {
+    /** Shows the panel again, for a change of what the agent said. */
+    refresh: () => render(),
     disposables: [
       vscode.window.registerWebviewViewProvider('impactTree.details', webviewProvider),
       vscode.commands.registerCommand('impactTree.showChange', showChange),

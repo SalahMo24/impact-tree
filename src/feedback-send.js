@@ -16,7 +16,7 @@ const path = require('path');
 const { renderRound, promptFor } = require('./feedback-file');
 const { writeRound, listRounds } = require('./feedback-files-io');
 const { nextRoundNumber } = require('./feedback-file');
-const { choicesFor, handOff, onPath, CHAT_COMMAND, CLAUDE_EXTENSION_ID } = require('./agent-handoff');
+const { choicesFor, handOff, onPath, isCursor, CHAT_COMMAND, CLAUDE_EXTENSION_ID } = require('./agent-handoff');
 const { withPointer, targetsFor } = require('./agent-pointer');
 const { readSentRounds, withSentRound, summaryOf, ROUNDS_KEY } = require('./feedback-round-model');
 const { modeLabel } = require('./engine/mode-labels');
@@ -174,18 +174,22 @@ async function saveRound({ repo, store, items, branch, reviewed, now = realClock
  * is forced. A pick from the picker is remembered in the user's settings.
  * @param {any} vscode
  * @param {boolean} forceAsk
+ * @param {{ title?: string, exclude?: string[] }} [opts] `title`: the picker's title. `exclude`: choices that make no
+ *   sense for this caller (a saved setting naming one of them is ignored and the picker shows).
  * @returns {Promise<{ id: import('./agent-handoff').AgentChoiceId, label: string }|null>}
  */
-async function chooseAgent(vscode, forceAsk) {
+async function chooseAgent(vscode, forceAsk, { title = 'Impact Tree: Send feedback to…', exclude = [] } = {}) {
   const cfg = vscode.workspace.getConfiguration('impactTree');
   const chatAvailable = (await vscode.commands.getCommands(true)).includes(CHAT_COMMAND);
-  const choices = choicesFor({ cliFound: (exe) => onPath(exe, { pathEnv: process.env.PATH, platform: process.platform }), chatAvailable, claudeExtension: Boolean(vscode.extensions && vscode.extensions.getExtension(CLAUDE_EXTENSION_ID)) });
+  const choices = choicesFor({ cliFound: (exe) => onPath(exe, { pathEnv: process.env.PATH, platform: process.platform }), chatAvailable,
+    claudeExtension: Boolean(vscode.extensions && vscode.extensions.getExtension(CLAUDE_EXTENSION_ID)), inCursor: isCursor(vscode.env && vscode.env.appName) })
+    .filter((c) => !exclude.includes(c.id));
   const saved = cfg.get('agent', 'ask');
   const preset = choices.find((c) => c.id === saved);
   if (!forceAsk && preset) return preset;
   const pick = await vscode.window.showQuickPick(
     choices.map((c) => ({ label: c.label, description: c.description, id: c.id })),
-    { title: 'Impact Tree: Send feedback to…', placeHolder: 'Remembered for next time; "Send feedback to…" asks again' });
+    { title, placeHolder: 'Remembered for next time; "Send feedback to…" asks again' });
   if (!pick) return null;
   await cfg.update('agent', pick.id, vscode.ConfigurationTarget.Global);
   return { id: pick.id, label: pick.label };
@@ -231,4 +235,4 @@ async function offerPointer(vscode, deps, repo, o) {
   }
 }
 
-module.exports = { createSendFeedback, saveRound, reviewedLabel, POINTER_KEY };
+module.exports = { chooseAgent, createSendFeedback, saveRound, reviewedLabel, POINTER_KEY };

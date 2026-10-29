@@ -4,50 +4,61 @@ const { classifyRowVerdict } = require('./tree-row-models');
 const { treeItemId } = require('./review-tree-model');
 const { listCallerRows } = require('./detail-panel-html');
 const { headRelPath } = require('./detail-panel');
+const { rowLine, LENS_KINDS } = require('./agent-notes');
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 /** @typedef {{ line: number, character: number }} TextPosition */
 
 // The review diff flags the changes that need action, and any change's callers are one
-// command away. The lens is on a change that needs attention (level 0 or 1) in a document
-// that is the head side of a file the shown result reviews; the callers peek works on any
-// changed function. What the lens says and where the peek points are decided by the pure
+// command away. The lens is on a change that needs attention (level 0 or 1), or that the
+// user's agent says changed or may change behaviour, in a document that is the head side of
+// a file the shown result reviews; the agent's line comes first. The callers peek works on
+// any changed function. What the lens says and where the peek points are decided by the pure
 // functions here; `createReviewLens` connects them to the editor.
 
 /**
- * What the lens of one change is made of.
- * @typedef {{ id: string, line: number, verdict: string, hasCallers: boolean, reviewed: boolean }} LensEntry
+ * What the lens of one change is made of. `verdict` is null when the engine finds the change
+ * fine and only the agent's line earns it a lens; `agent` is that line, or null.
+ * @typedef {{ id: string, line: number, verdict: string|null, agent: string|null, hasCallers: boolean, reviewed: boolean }} LensEntry
  */
 
 /**
- * The lenses a file's rows get: one entry for each change at level 0 or 1, on the change's
- * first line. A deleted symbol has no line in the head file, and an outside or file row is
- * not a function, so none of them gets a lens.
+ * The lenses a file's rows get: one entry for each change at level 0 or 1, and for each
+ * change the agent says changed or may change behaviour, on the change's first line. A
+ * deleted symbol has no line in the head file, and an outside or file row is not a function,
+ * so none of them gets a lens.
  * @param {TreeRow[]} rows The rows of one file from the shown review.
  * @param {(row: TreeRow) => boolean} isReviewed Whether a counting row is reviewed.
+ * @param {(changeId: string) => import('./agent-notes').AgentChange|null} [agentOf] What the agent said, by change id.
  * @returns {LensEntry[]} In the order of `rows`; `line` is 0-based.
  */
-function lensPlan(rows, isReviewed) {
+function lensPlan(rows, isReviewed, agentOf = () => null) {
   /** @type {LensEntry[]} */
   const plan = [];
   for (const row of rows) {
     const id = treeItemId(row);
     if (row.type !== 'finding' || !id) continue;
     const verdict = classifyRowVerdict(row);
-    if (verdict.level > 1) continue;
-    plan.push({ id, line: row.finding.startLine - 1, verdict: verdict.text,
+    const said = agentOf(`${row.finding.relPath}#${row.finding.namePos}`);
+    const agent = said && LENS_KINDS.has(said.kind) ? rowLine(said) : null;
+    if (verdict.level > 1 && !agent) continue;
+    plan.push({ id, line: row.finding.startLine - 1, verdict: verdict.level > 1 ? null : verdict.text, agent,
       hasCallers: (row.finding.callers || []).length > 0, reviewed: isReviewed(row) });
   }
   return plan;
 }
 
+/** Longest agent line in a lens. Unit: characters. A longer one is cut; Details has it whole. */
+const MAX_LENS_AGENT_CHARS = 100;
+
 /**
- * The titles of a change's three lenses. A change without callers has nothing to peek at,
- * so it gets no callers lens.
+ * The titles of a change's lenses: the agent's line, the engine's verdict, the callers peek
+ * and the tick. A change without callers has nothing to peek at, so it gets no callers lens.
  * @param {LensEntry} entry
- * @returns {{ verdict: string, callers: string|null, tick: string }}
+ * @returns {{ agent: string|null, verdict: string|null, callers: string|null, tick: string }}
  */
 const lensTitles = (entry) => ({
+  agent: entry.agent ? (entry.agent.length > MAX_LENS_AGENT_CHARS ? `${entry.agent.slice(0, MAX_LENS_AGENT_CHARS - 1)}…` : entry.agent) : null,
   verdict: entry.verdict,
   callers: entry.hasCallers ? 'Show callers' : null,
   tick: entry.reviewed ? '✓ Reviewed' : 'Mark reviewed',
@@ -131,11 +142,12 @@ function createReviewLens(vscode, { provider, getState, callerUri, positionOf, l
       if (!relPath) return [];
       const analysisId = provider.reviewVersion();
       if (analysisId === null) return [];
-      return lensPlan(provider.changeRowsOf(relPath), provider.isReviewed).flatMap((entry) => {
+      return lensPlan(provider.changeRowsOf(relPath), provider.isReviewed, provider.agentNoteOf).flatMap((entry) => {
         const at = new vscode.Range(entry.line, 0, entry.line, 0);
         const titles = lensTitles(entry);
         return [
-          new vscode.CodeLens(at, { title: titles.verdict, command: 'impactTree.showChange', arguments: [entry.id] }),
+          ...(titles.agent ? [new vscode.CodeLens(at, { title: titles.agent, command: 'impactTree.showChange', arguments: [entry.id] })] : []),
+          ...(titles.verdict ? [new vscode.CodeLens(at, { title: titles.verdict, command: 'impactTree.showChange', arguments: [entry.id] })] : []),
           ...(titles.callers ? [new vscode.CodeLens(at, { title: titles.callers, command: 'impactTree.showCallers', arguments: [entry.id] })] : []),
           new vscode.CodeLens(at, { title: titles.tick, command: 'impactTree.setReviewed', arguments: [entry.id, !entry.reviewed, analysisId] }),
         ];
@@ -207,6 +219,7 @@ function createReviewLens(vscode, { provider, getState, callerUri, positionOf, l
         cancelProgress(); changed.fire();
       }),
       provider.onDidChangeReview(progressChanged),
+      provider.onDidChangeAgent(() => { cancelProgress(); changed.fire(); }),
       { dispose: cancelProgress },
       vscode.commands.registerCommand('impactTree.showCallers', showCallers),
       vscode.commands.registerCommand('impactTree.setReviewed', setReviewed),

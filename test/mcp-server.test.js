@@ -14,6 +14,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { startServer, parseArgs, assertNodeVersion, HELP, findRepoFor } = require('../src/mcp/server');
 const { ToolError } = require('../src/mcp/paging');
+// Cursor sets this for its terminals too; the lookup tests below name their own folders.
+delete process.env.WORKSPACE_FOLDER_PATHS;
 
 const REPO = '/repo';
 const files = /** @type {Record<string, string>} */ ({
@@ -233,11 +235,12 @@ function connect(/** @type {any} */ extra = {}) {
   const server = startServer({
     options: { repo: REPO, ...(extra.base ? { base: extra.base } : {}), remote: 'origin', allowLocalBase: false, deadlineMs: 1000, ...(extra.options || {}) },
     input, output, ...(extra.findRepo ? { findRepo: extra.findRepo } : {}),
+    ...(extra.headOf ? { headOf: extra.headOf } : {}), ...(extra.codeStamp ? { codeStamp: extra.codeStamp } : {}), ...(extra.onOutdated ? { onOutdated: extra.onOutdated } : {}),
     connectBridge: extra.connectBridge || (async () => null),
     prepare: extra.prepare || (async (/** @type {any} */ _o, /** @type {any} */ p) => {
       prepared++;
       bases.push(p.base);
-      return { ctx: f.ctx, headSha: 'headsha', baseSha: 'basesha', dispose: () => { disposed++; } };
+      return { ctx: f.ctx, headSha: extra.headOf ? extra.headOf() : 'headsha', baseSha: 'basesha', dispose: () => { disposed++; } };
     }),
   });
   const waiting = new Map();
@@ -275,7 +278,7 @@ function connect(/** @type {any} */ extra = {}) {
   };
 }
 
-test('handshake, tools/list with the 11 read-only tools and the 2 write-back tools, and shape of results', async () => {
+test('handshake, tools/list with the 11 read-only tools, the 2 write-back tools and select_repository, and shape of results', async () => {
   const c = connect();
   const init = /** @type {any} */ (await c.request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } }));
   assert.equal(init.result.protocolVersion, '2025-06-18');
@@ -285,7 +288,7 @@ test('handshake, tools/list with the 11 read-only tools and the 2 write-back too
   assert.equal(c.state().prepared, 0, 'initialize does not start the analysis');
   const list = /** @type {any} */ (await c.request('tools/list')).result.tools;
   assert.equal(c.state().prepared, 0, 'nor does tools/list');
-  assert.deepEqual(list.map((/** @type {any} */ t) => t.name), ['list_cards', 'get_card', 'get_change', 'callers_of', 'find_references', 'impact_paths', 'validate_cards', 'check_evidence', 'get_source', 'list_files', 'search_code', 'submit_cards', 'submit_callers']);
+  assert.deepEqual(list.map((/** @type {any} */ t) => t.name), ['list_cards', 'get_card', 'get_change', 'callers_of', 'find_references', 'impact_paths', 'validate_cards', 'check_evidence', 'get_source', 'list_files', 'search_code', 'submit_cards', 'submit_callers', 'select_repository']);
   for (const t of list) {
     assert.equal(t.inputSchema.type, 'object', t.name);
     assert.ok(t.description.length > 20, t.name);
@@ -310,7 +313,7 @@ test('a 2026 client claims its protocol in _meta and still lists the tools', asy
   const list = /** @type {any} */ (await c.request('tools/list', { _meta: {
     'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientInfo': { name: 't', version: '1' }, 'io.modelcontextprotocol/clientCapabilities': {},
   } }));
-  assert.equal(list.result.tools.length, 13);
+  assert.equal(list.result.tools.length, 14);
   await c.close();
 });
 
@@ -356,7 +359,7 @@ test('an analysis that fails fails every tool call with its message, and nothing
 function fakeBridge(/** @type {any} */ over = {}) {
   const seen = { submits: /** @type {any[]} */ ([]), closed: 0, contexts: 0 };
   const bridge = {
-    context: async () => { seen.contexts++; return { repo: REPO, mode: 'pr', base: { ref: 'origin/dev', sha: 'basesha' }, head: 'headsha' }; },
+    context: async () => { seen.contexts++; return { repo: REPO, mode: 'pr', base: { ref: 'origin/dev', sha: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' }, head: 'headsha' }; },
     submit: async (/** @type {string} */ kind, /** @type {any} */ payload, /** @type {any} */ meta) => { seen.submits.push({ kind, payload, meta }); return { stored: true }; },
     close: () => { seen.closed++; },
     ...over,
@@ -377,9 +380,24 @@ test('submit_cards with an editor: checked, forwarded with the head and base, st
   assert.equal(b.seen.submits[0].kind, 'cards');
   assert.equal(b.seen.submits[0].payload.cards[0].title, 'Save and run', 'the normalised payload is forwarded');
   assert.equal(b.seen.submits[0].payload.summary, 'whole PR');
-  assert.deepEqual(c.state().bases, ['origin/dev'], 'the base comes from the editor when --base is absent');
+  assert.deepEqual(c.state().bases, ['bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'], 'the base is the editor\'s base commit (its ref may have moved since) when --base is absent');
   await c.close();
   assert.equal(b.seen.closed, 1, 'the bridge is closed on exit');
+});
+
+test('submit_cards with a behaviour review: stored; an affected name not in the facts is left out and said', async () => {
+  const b = fakeBridge();
+  const c = connect({ connectBridge: b.connectBridge });
+  await c.handshake();
+  const answer = { attention: [c.f.ids[0]], cards: [{ title: 'Save and run', members: c.f.ids }],
+    changes: [{ id: c.f.ids[0], kind: 'changed', what: 'save takes y', affects: [{ name: 'handler', how: 'passes no y' }, { name: 'nobody', how: 'x' }] }] };
+  const r = await c.call('submit_cards', { answer });
+  assert.equal(r.isError, undefined, JSON.stringify(r));
+  assert.equal(r.structuredContent.stored, true);
+  assert.match(r.structuredContent.notShown[0], /"nobody" is not a caller or entry point/);
+  assert.deepEqual(b.seen.submits[0].payload.changes[0].affects, [{ name: 'handler', how: 'passes no y' }]);
+  assert.deepEqual(b.seen.submits[0].payload.attention, [c.f.ids[0]]);
+  await c.close();
 });
 
 test('submit_cards with errors: nothing is forwarded, the errors say what to fix', async () => {
@@ -448,9 +466,12 @@ test('--base wins over the editor base', async () => {
   const b = fakeBridge();
   const c = connect({ connectBridge: b.connectBridge, base: 'release' });
   await c.handshake();
-  await c.call('list_cards', {});
+  await c.call('get_card', { id: 'K1' });
   assert.deepEqual(c.state().bases, ['release']);
-  assert.equal(b.seen.contexts, 0, 'the editor is not asked when --base is given');
+  assert.equal(b.seen.contexts, 0, 'the editor is not asked for a base when --base is given');
+  const listed = (await c.call('list_cards', {})).structuredContent;
+  assert.equal(b.seen.contexts, 1, 'list_cards asks once, to say whether the review matches the editor');
+  assert.equal(listed.review.editorHead, 'headsha');
   await c.close();
 });
 
@@ -463,7 +484,7 @@ test('node src/cli.js mcp: handshake and tools/list over stdio without any analy
   const init = await s.handshake();
   assert.equal(init.result.serverInfo.name, 'impact-tree');
   const list = (await s.request('tools/list')).result.tools;
-  assert.equal(list.length, 13);
+  assert.equal(list.length, 14);
   assert.ok(list.every((/** @type {any} */ t) => t.inputSchema && t.inputSchema.type === 'object'));
   assert.deepEqual(await s.end(), { code: 0, signal: null }, 'closing the input ends the server');
   assert.doesNotMatch(s.stderr(), /analysed/, 'a client that only lists tools never pays for an analysis');
@@ -529,13 +550,13 @@ test('not in a repository: the server starts, lists its tools, and every tool re
   const dummy = (/** @type {any} */ sch) => (sch.type === 'number' || sch.type === 'integer' ? 1 : sch.type === 'array' ? [] : sch.type === 'boolean' ? true : sch.enum ? sch.enum[0]
     : sch.type === 'object' ? Object.fromEntries((sch.required || []).map((/** @type {string} */ k) => [k, dummy(sch.properties[k] || {})])) : 'xx');
   const argsOf = (/** @type {any} */ t) => dummy(t.inputSchema);
-  for (const t of tools) {
+  for (const t of tools.filter((/** @type {any} */ x) => x.name !== 'select_repository')) {
     const n = id++;
     send({ id: n, method: 'tools/call', params: { name: t.name, arguments: argsOf(t) } });
     const r = (await until(n)).result;
     assert.equal(r.isError, true, t.name);
     assert.ok(r.content[0].text.startsWith('start your agent inside a git repository (this folder is not one): /not/a/repo. Also tried: '), t.name);
-    assert.match(r.content[0].text, /does not share its workspace folders.*no editor window has Impact Tree's agents setting/, t.name);
+    assert.match(r.content[0].text, /does not share its workspace folders.*no editor window has Impact Tree's agents setting.*call select_repository/, t.name);
   }
   assert.equal(prepared, 0);
   input.end(); await server.closed;
@@ -554,14 +575,14 @@ test('findRepoFor: the agent\'s one workspace repository, else the one editor wi
   const none = () => [];
   assert.deepEqual(await findRepoFor({ cwd: '/home', sdk: sdkWithRoots(['file:///w/hono/src', 'file:///w/notes']), toplevel, editorRepos: none }),
     { repo: '/w/hono', from: 'the agent\'s workspace folder' });
-  await assert.rejects(findRepoFor({ cwd: '/home', sdk: sdkWithRoots(['file:///w/hono', 'file:///w/cli']), toplevel, editorRepos: () => ['/e/one'] }),
-    (e) => e instanceof ToolError && /several git repositories \(\/w\/cli, \/w\/hono\)/.test(e.message));
+  await assert.rejects(findRepoFor({ cwd: '/home', sdk: sdkWithRoots(['file:///w/hono', 'file:///w/cli']), toplevel, editorRepos: () => [{ repo: '/e/one', askedAt: null }] }),
+    (e) => e instanceof ToolError && /several git repositories; call select_repository with the repository to review \(one of: \/w\/cli, \/w\/hono\); do not change the MCP configuration/.test(e.message));
   // No roots from the agent: the editor window decides; one that is no longer a repository is skipped.
-  assert.deepEqual(await findRepoFor({ cwd: '/home', sdk: sdkWithRoots(null), toplevel, editorRepos: () => ['/e/one', '/gone'] }),
+  assert.deepEqual(await findRepoFor({ cwd: '/home', sdk: sdkWithRoots(null), toplevel, editorRepos: () => [{ repo: '/e/one', askedAt: null }, { repo: '/gone', askedAt: null }] }),
     { repo: '/e/one', from: 'the editor window with Impact Tree\'s agents setting on' });
-  assert.deepEqual((await findRepoFor({ cwd: '/home', sdk: sdkWithRoots(['https://x/y']), toplevel, editorRepos: () => ['/e/two'] })).repo, '/e/two');
-  await assert.rejects(findRepoFor({ cwd: '/home', sdk: null, toplevel, editorRepos: () => ['/e/one', '/e/two'] }),
-    (e) => e instanceof ToolError && /more than one editor window/.test(e.message));
+  assert.deepEqual((await findRepoFor({ cwd: '/home', sdk: sdkWithRoots(['https://x/y']), toplevel, editorRepos: () => [{ repo: '/e/two', askedAt: null }] })).repo, '/e/two');
+  await assert.rejects(findRepoFor({ cwd: '/home', sdk: null, toplevel, editorRepos: () => [{ repo: '/e/one', askedAt: null }, { repo: '/e/two', askedAt: null }] }),
+    (e) => e instanceof ToolError && /more than one editor window .*call select_repository .*one of: \/e\/one, \/e\/two/.test(e.message));
   await assert.rejects(findRepoFor({ cwd: '/home', sdk: sdkWithRoots([]), toplevel, editorRepos: none }),
     (e) => e instanceof ToolError && /this folder is not one\): \/home\. Also tried: none of the agent's workspace folders/.test(e.message));
   const failing = { server: { getClientCapabilities: () => ({ roots: {} }), listRoots: async () => { throw new Error('boom'); } } };
@@ -596,6 +617,205 @@ test('liveEditorRepos: only live, well-formed locks filed under their own reposi
   fs.writeFileSync(P.lockPathFor(dir, '/r/dead'), JSON.stringify(lock('/r/dead', 2 ** 30)));
   fs.writeFileSync(P.lockPathFor(dir, '/r/bad'), '{not json');
   fs.writeFileSync(P.lockPathFor(dir, '/r/elsewhere'), JSON.stringify(lock('/r/other', process.pid)));   // filed under another name
-  assert.deepEqual(liveEditorRepos({ lockDir: dir }), ['/r/live']);
+  assert.deepEqual(liveEditorRepos({ lockDir: dir }), [{ repo: '/r/live', askedAt: null }]);
+  fs.writeFileSync(P.lockPathFor(dir, '/r/live'), JSON.stringify({ ...lock('/r/live', process.pid), askedAt: 1234 }));
+  assert.deepEqual(liveEditorRepos({ lockDir: dir }), [{ repo: '/r/live', askedAt: 1234 }]);
+  fs.writeFileSync(P.lockPathFor(dir, '/r/live'), JSON.stringify({ ...lock('/r/live', process.pid), askedAt: 'soon' }));
+  assert.deepEqual(liveEditorRepos({ lockDir: dir }), [], 'a lock with a malformed askedAt is not trusted');
   assert.deepEqual(liveEditorRepos({ lockDir: path.join(dir, 'missing') }), []);
+});
+
+test('findRepoFor: among several editor windows, the one where "Analyse with my agent" was pressed last in the past 30 minutes', async () => {
+  const toplevel = tops({ '/e/one': '/e/one', '/e/two': '/e/two', '/e/three': '/e/three' });
+  const now = () => 10_000_000;
+  const editors = (/** @type {Array<number|null>} */ asked) => () => ['/e/one', '/e/two', '/e/three'].map((repo, i) => ({ repo, askedAt: asked[i] }));
+  assert.deepEqual(await findRepoFor({ cwd: '/home', sdk: null, toplevel, now, editorRepos: editors([null, 9_000_000, 9_500_000]) }),
+    { repo: '/e/three', from: 'the editor window where "Analyse with my agent" was pressed last' });
+  // Pressed more than 30 minutes ago, or (clock skew) in the future: not counted.
+  await assert.rejects(findRepoFor({ cwd: '/home', sdk: null, toplevel, now, editorRepos: editors([null, 10_000_000 - 31 * 60_000, 10_000_001]) }),
+    (e) => e instanceof ToolError && /call select_repository/.test(e.message));
+});
+
+test('select_repository: names the repository when the server cannot tell; switching drops the analysis so far', async () => {
+  const fs = require('node:fs'); const os = require('node:os'); const path = require('node:path');
+  const { execFileSync } = require('node:child_process');
+  const make = (/** @type {string} */ name) => { const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `it-sel-${name}-`))); execFileSync('git', ['init', '-q'], { cwd: d }); return d; };
+  const one = make('one'); const two = make('two');
+  const seenRepos = /** @type {string[]} */ ([]);
+  const s = connect({
+    options: { repo: '/home', notRepo: true },
+    findRepo: async () => { throw new ToolError('more than one editor window; call select_repository'); },
+    prepare: async (/** @type {any} */ o) => { seenRepos.push(o.repo); return { ctx: fakeContext().ctx, headSha: 'h', baseSha: 'b', dispose: () => {} }; },
+  });
+  await s.handshake();
+  assert.equal((await s.call('list_cards', {})).isError, true);
+  const bad = await s.call('select_repository', { repo: 'relative/path' });
+  assert.equal(bad.isError, true);
+  assert.match(bad.content[0].text, /not a folder inside a git repository/);
+  assert.deepEqual((await s.call('select_repository', { repo: path.join(one, '.') })).structuredContent, { repo: one, changed: true, head: null });
+  assert.ok(!(await s.call('list_cards', {})).isError);
+  assert.deepEqual((await s.call('select_repository', { repo: one })).structuredContent, { repo: one, changed: false, head: null });
+  assert.deepEqual((await s.call('select_repository', { repo: two })).structuredContent, { repo: two, changed: true, head: null });
+  assert.ok(!(await s.call('list_cards', {})).isError);
+  assert.deepEqual(seenRepos, [one, two]);
+  assert.equal(s.state().disposed, 0, 'the fake prepare above has its own dispose');
+  await s.close();
+});
+
+test('list_cards with detail: members, entry points, seams and merge hints per card; without it, the short form', async () => {
+  const s = connect();
+  await s.handshake();
+  const short = (await s.call('list_cards', {})).structuredContent;
+  assert.equal(short.cards[0].memberList, undefined);
+  const full = (await s.call('list_cards', { detail: true })).structuredContent;
+  assert.equal(full.cards.length, short.cards.length);
+  for (const c of full.cards) {
+    assert.ok(Array.isArray(c.memberList) && c.memberList.length === Math.min(c.members, 40), c.id);
+    assert.ok(c.memberList.every((/** @type {any} */ m) => typeof m.id === 'string' && typeof m.label === 'string'), c.id);
+    assert.ok(Array.isArray(c.entryPoints) && typeof c.entryPointsTotal === 'number' && Array.isArray(c.seamsWith) && Array.isArray(c.mergeHints), c.id);
+    assert.ok(!c.seamsWith.includes(c.id), 'a card has no seam with itself');
+  }
+  assert.ok(JSON.stringify(full).length <= MAX_TEXT_CHARS);
+  await s.close();
+});
+
+// ---- following the review the editor shows -----------------------------------------------
+
+const SHA1 = 'a'.repeat(40); const SHA2 = 'c'.repeat(40); const BASE1 = 'b'.repeat(40); const BASE2 = 'd'.repeat(40);
+
+test('the review moved (new head): the analysis is made again; other tools and a stale submit say to call list_cards first', async () => {
+  let head = SHA1;
+  const b = fakeBridge({ context: async () => ({ repo: REPO, mode: 'pr', base: { ref: 'origin/dev', sha: BASE1 }, head }) });
+  const s = connect({ connectBridge: b.connectBridge, headOf: () => head });
+  await s.handshake();
+  const first = (await s.call('list_cards', {})).structuredContent;
+  assert.deepEqual(first.review, { head: SHA1, base: 'basesha', editorHead: SHA1, matchesEditor: true });
+  const id = first.cards[0].id;
+  head = SHA2;   // the user checked out another branch
+  const stale = await s.call('submit_cards', { answer: { cards: [{ title: 't', members: s.f.ids }] } });
+  assert.equal(stale.isError, true);
+  assert.match(stale.content[0].text, /review changed since the analysis was made \(head aaaaaaaa → cccccccc\).*call list_cards again before you submit/);
+  assert.equal(b.seen.submits.length, 0, 'nothing is forwarded for the old review');
+  assert.equal(s.state().disposed, 1, 'the old analysis is released');
+  const again = (await s.call('list_cards', {})).structuredContent;
+  assert.equal(s.state().prepared, 2);
+  assert.deepEqual(again.review, { head: SHA2, base: 'basesha', editorHead: SHA2, matchesEditor: true });
+  assert.ok(!(await s.call('get_card', { id })).isError, 'after list_cards the tools answer from the new analysis');
+  await s.close();
+});
+
+test('the review moved (the editor\'s base commit changed): analysed again against the new base', async () => {
+  let base = BASE1;
+  const b = fakeBridge({ context: async () => ({ repo: REPO, mode: 'pr', base: { ref: 'origin/main', sha: base }, head: SHA1 }) });
+  const s = connect({ connectBridge: b.connectBridge, headOf: () => SHA1 });
+  await s.handshake();
+  await s.call('list_cards', {});
+  base = BASE2;
+  const r = (await s.call('list_cards', {})).structuredContent;
+  assert.match(r.review.reanalysed, /base bbbbbbbb → dddddddd/);
+  assert.deepEqual(s.state().bases, [BASE1, BASE2]);
+  await s.close();
+});
+
+// ---- one pass: cards written from the prompt's facts, stamped with their review ----------
+
+test('one pass: a stamped submit_cards is the only call; the server analyses that review, checks and stores', async () => {
+  const b = fakeBridge({ context: async () => ({ repo: REPO, mode: 'pr', base: { ref: 'origin/dev', sha: BASE1 }, head: SHA1 }) });
+  const s = connect({ connectBridge: b.connectBridge, headOf: () => SHA1 });
+  await s.handshake();
+  const r = await s.call('submit_cards', { review: { head: SHA1, base: BASE1 }, answer: { cards: [{ title: 'Save and run', members: s.f.ids }] } });
+  assert.equal(r.isError, undefined, JSON.stringify(r));
+  assert.deepEqual(r.structuredContent, { stored: true });
+  assert.equal(s.state().prepared, 1);
+  assert.deepEqual(s.state().bases, [BASE1]);
+  assert.equal(b.seen.submits.length, 1);
+  await s.close();
+});
+
+test('one pass: after the review moved, a submit stamped with the new review analyses it again and stores; a short stamp works', async () => {
+  let head = SHA1;
+  const b = fakeBridge({ context: async () => ({ repo: REPO, mode: 'pr', base: { ref: 'origin/dev', sha: BASE1 }, head }) });
+  const s = connect({ connectBridge: b.connectBridge, headOf: () => head });
+  await s.handshake();
+  await s.call('list_cards', {});
+  head = SHA2;
+  const r = await s.call('submit_cards', { review: { head: SHA2.slice(0, 12), base: BASE1 }, answer: { cards: [{ title: 'Save and run', members: s.f.ids }] } });
+  assert.equal(r.isError, undefined, JSON.stringify(r));
+  assert.deepEqual(r.structuredContent, { stored: true });
+  assert.deepEqual([s.state().prepared, s.state().disposed], [2, 1]);
+  assert.deepEqual(b.seen.submits[0].meta, { head: SHA2, base: 'basesha' });
+  await s.close();
+});
+
+test('one pass: a stamp for another head or another base is refused and nothing is saved', async () => {
+  const b = fakeBridge({ context: async () => ({ repo: REPO, mode: 'pr', base: { ref: 'origin/dev', sha: BASE1 }, head: SHA2 }) });
+  const s = connect({ connectBridge: b.connectBridge, headOf: () => SHA2 });
+  await s.handshake();
+  const answer = { cards: [{ title: 'Save and run', members: s.f.ids }] };
+  const oldHead = await s.call('submit_cards', { review: { head: SHA1, base: BASE1 }, answer });
+  assert.equal(oldHead.isError, true);
+  assert.match(oldHead.content[0].text, /written for head aaaaaaaa, base bbbbbbbb, but \/repo is now at cccccccc.*select_repository.*Analyse with my agent/);
+  const oldBase = await s.call('submit_cards', { review: { head: SHA2, base: BASE2 }, answer });
+  assert.equal(oldBase.isError, true);
+  assert.match(oldBase.content[0].text, /the editor now reviews against base bbbbbbbb\. Nothing was saved/);
+  assert.equal(b.seen.submits.length, 0);
+  assert.ok((await s.call('submit_cards', { review: { head: 'zz', base: BASE1 }, answer })).isError, 'a stamp that is not a commit id is refused by the schema');
+  await s.close();
+});
+
+test('one pass without an editor: the stamp is checked against the analysis\'s own base', async () => {
+  const f = fakeContext();
+  const s = connect({ headOf: () => SHA1, prepare: async () => ({ ctx: f.ctx, headSha: SHA1, baseSha: BASE1, dispose: () => {} }) });
+  await s.handshake();
+  const answer = { cards: [{ title: 'Save and run', members: f.ids }] };
+  const ok = await s.call('submit_cards', { review: { head: SHA1, base: BASE1 }, answer });
+  assert.equal(ok.isError, undefined, JSON.stringify(ok));
+  assert.equal(ok.structuredContent.stored, false, 'checked; no editor to save in');
+  const bad = await s.call('submit_cards', { review: { head: SHA1, base: BASE2 }, answer });
+  assert.match(bad.content[0].text, /the analysis here is against base bbbbbbbb/);
+  await s.close();
+});
+
+test('list_cards says when the review does not match the editor (no editor: null)', async () => {
+  const b = fakeBridge({ context: async () => ({ repo: REPO, mode: 'pr', base: { ref: 'x', sha: BASE1 }, head: SHA2 }) });
+  const s = connect({ connectBridge: b.connectBridge, headOf: () => SHA1 });
+  await s.handshake();
+  // The editor shows another head than the checkout's: a moved review on the next call, and said here.
+  const r = (await s.call('list_cards', {})).structuredContent;
+  assert.equal(r.review.matchesEditor, false);
+  await s.close();
+  const h = connect({ headOf: () => SHA1 });
+  await h.handshake();
+  assert.deepEqual((await h.call('list_cards', {})).structuredContent.review, { head: SHA1, base: 'basesha', editorHead: null, matchesEditor: null });
+  await h.close();
+});
+
+test('outdated code: once the extension\'s files change, every tool says to restart the server', async () => {
+  let stamp = 'v1';
+  let restarts = 0;
+  // Under the supervisor this hook exits the process (exit code 75) and the call is resent to a new server.
+  const s = connect({ codeStamp: () => stamp, onOutdated: () => { restarts++; } });
+  await s.handshake();
+  assert.ok(!(await s.call('list_cards', {})).isError);
+  stamp = 'v2';
+  for (const name of ['list_cards', 'get_card']) {
+    const r = await s.call(name, name === 'get_card' ? { id: 'K1' } : {});
+    assert.equal(r.isError, true);
+    assert.match(r.content[0].text, /updated after this MCP server started.*turn it off and on.*Do not stop its process by hand/);
+  }
+  assert.equal(restarts, 2, 'the restart hook runs before each refusal');
+  await s.close();
+});
+
+test('WORKSPACE_FOLDER_PATHS: the window\'s one repository wins over guessing among editor windows', async () => {
+  const toplevel = tops({ '/w/hono': '/w/hono', '/w/hono/src': '/w/hono', '/w/cli': '/w/cli' });
+  assert.equal(parseArgs([], { cwd: '/', toplevel, workspaceFolders: '/w/hono' }).repo, '/w/hono');
+  assert.equal(parseArgs([], { cwd: '/', toplevel, workspaceFolders: '/w/hono' }).notRepo, undefined);
+  assert.equal(parseArgs([], { cwd: '/', toplevel, workspaceFolders: '/w/hono,/w/cli' }).notRepo, true, 'several: not guessed here');
+  assert.equal(parseArgs([], { cwd: '/', toplevel, workspaceFolders: 'relative/dir' }).notRepo, true);
+  const editors = () => [{ repo: '/e/one', askedAt: 1 }];
+  assert.deepEqual(await findRepoFor({ cwd: '/', sdk: null, toplevel, editorRepos: editors, workspaceFolders: '/w/hono/src' }),
+    { repo: '/w/hono', from: 'the editor window\'s workspace folder' });
+  await assert.rejects(findRepoFor({ cwd: '/', sdk: null, toplevel, editorRepos: editors, workspaceFolders: '/w/hono:/w/cli' }),
+    (e) => e instanceof ToolError && /editor window has several git repositories; call select_repository .*\/w\/cli, \/w\/hono/.test(e.message));
 });

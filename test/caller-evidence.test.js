@@ -174,6 +174,37 @@ test('tree: a mixed caller expands as not updated and says how many calls were',
 });
 
 // ---- caller completeness: every adapter's callerState ----------------------------------
+test('TypeScript resolver: a project that does not hold the file is not a failed query', async () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-ts-solution-')));
+  try {
+    const files = {
+      // As in hono: the root lists projects, one of which (scripts) holds none of the source. Its
+      // service throws "Could not find source file" for a.ts, which once marked every caller
+      // list of the repository incomplete.
+      'tsconfig.json': '{"files":[],"references":[{"path":"./tsconfig.src.json"},{"path":"./scripts/tsconfig.json"}]}',
+      'tsconfig.src.json': '{"include":["a.ts","b.ts"]}',
+      'scripts/tsconfig.json': '{"include":["*.ts"]}',
+      'scripts/tool.ts': 'export function tool() { return 1; }\n',
+      'a.ts': 'export function target() {}\nexport function lonely() {}\n',
+      'b.ts': "import { target } from './a'; export function caller() { target(); }\n",
+    };
+    for (const [f, text] of Object.entries(files)) { fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true }); fs.writeFileSync(path.join(dir, f), text); }
+    const file = path.join(dir, 'a.ts');
+    const at = (name) => files['a.ts'].indexOf(`function ${name}`) + 'function '.length;
+    let created = 0;
+    const counting = { ...ts, createLanguageService: (...a) => { created++; return ts.createLanguageService(...a); } };
+    const resolver = createTsResolver(counting, dir, { filterInherited: false });
+    assert.equal(created, 2, 'both referenced projects are loaded');
+    const found = await resolver.callerState(file, at('target'));
+    assert.deepEqual([found.state, found.complete, found.reason], ['resolved', true, undefined]);
+    assert.deepEqual(found.callers.map((c) => c.label), ['caller']);
+    const none = await resolver.callerState(file, at('lonely'));
+    assert.deepEqual([none.state, none.complete, none.reason], ['none', true, undefined]);
+    assert.equal(resolver.findReferences(file, at('target')).failed, false);
+    resolver.dispose();
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('TypeScript resolver: callerState says whether every service answered', async () => {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-ts-complete-')));
   try {

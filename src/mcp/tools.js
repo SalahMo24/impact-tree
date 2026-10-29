@@ -20,6 +20,7 @@ const { z } = require('zod');
 const { ToolError, intArg, paged, fitObject, MAX_PAGE_SIZE, MAX_PAGE, DEFAULT_PAGE_SIZE } = require('./paging');
 const {
   validateSubmission, checkEvidence, indexChanges, isRelativePath, lineStarts, lineOf, escapeRe, MAX_LINE, IDENTIFIER,
+  BEHAVIOUR_KINDS, MAX_WHAT_CHARS, MAX_ATTENTION,
 } = require('../engine/agent-results');
 
 // Lines one get_source call returns at most. Unit: lines.
@@ -31,6 +32,9 @@ const MAX_HUNK_CHARS = 6000;
 // Deadline for one `impact_paths` call. Unit: ms.
 const QUERY_DEADLINE_MS = 10000;
 // Caller rows shown by get_card's merge hints and seams. Unit: items.
+// list_cards with detail: members and entry points listed per card (more: get_card). Unit: items.
+const MAX_DETAIL_MEMBERS = 40;
+const MAX_DETAIL_ENTRIES = 8;
 const MAX_HINTS_SHOWN = 15;
 const MAX_SEAMS_SHOWN = 20;
 const MAX_FILES_SHOWN = 30;
@@ -209,17 +213,32 @@ function nameOf(env, id) {
 function addCardTools(tools, env) {
   tools.push({
     name: 'list_cards', title: 'List cluster cards', annotations: READ_ONLY,
-    description: 'The PR\'s changes grouped into cards (and repeated-edit sweeps). Per card: id, label, member count, caller stats, entry-point types its changes reach, and a seam summary. Paged.',
-    inputSchema: z.object({ ...pageShape }).strict(),
+    description: 'The PR\'s changes grouped into cards (and repeated-edit sweeps). Per card: id, label, member count, caller stats, entry-point types its changes reach, and a seam summary. '
+      + 'With detail: true, also each card\'s members (id, name, file, change kinds), its entry points, the cards it has seams with, and its merge hints: usually enough to title, summarise and merge every card without get_card. Paged.',
+    inputSchema: z.object({
+      ...pageShape,
+      detail: z.boolean().optional().describe('Add members, entry points, seams and merge hints to each card (fewer calls than get_card per card).'),
+    }).strict(),
     run: async (args) => {
       const items = env.allCards.map((c) => {
         const im = impactOf(env, c.members || []);
         /** @type {Record<string, number>} */
         const seamTypes = {};
         for (const s of seamsOf(env, c.id)) seamTypes[s.type] = (seamTypes[s.type] || 0) + 1;
-        return {
+        const item = {
           id: c.id, kind: c.kind, label: c.label, members: (c.members || []).length, mirrored: (c.mirrorMembers || []).length,
           stats: c.stats, entryTypes: im.entryTypes, testOnlyMembers: im.testOnlyMembers, seams: seamTypes, impactComplete: im.complete,
+        };
+        if (args.detail !== true) return item;
+        const members = (c.members || []).map((/** @type {string} */ m) => nameOf(env, m));
+        return {
+          ...item,
+          memberList: members.slice(0, MAX_DETAIL_MEMBERS), membersShown: Math.min(members.length, MAX_DETAIL_MEMBERS),
+          entryPoints: im.entryPoints.slice(0, MAX_DETAIL_ENTRIES).map((e) => ({ type: e.type, name: e.name })), entryPointsTotal: im.entryPoints.length,
+          seamsWith: [...new Set(seamsOf(env, c.id).flatMap((/** @type {any} */ s) => s.clusters).filter((/** @type {string} */ k) => k !== c.id))].slice(0, MAX_SEAMS_SHOWN),
+          mergeHints: env.hints.filter((/** @type {any} */ h) => h.clusters.includes(c.id) && h.strength >= 1).slice(0, 3)
+            .map((/** @type {any} */ h) => ({ cards: h.clusters, strength: h.strength })),
+          impactReasons: im.complete ? [] : im.reasons.slice(0, 2),
         };
       });
       return paged({ pr: { base: env.result.base && env.result.base.ref, changed: env.changes.size, cards: env.allCards.length }, limits: env.notes }, 'cards', items, args);
@@ -425,14 +444,30 @@ async function findReferences(env, loc, args) {
 // ---------------------------------------------------------------------------------------
 // Checks the agent can run on its own answer
 
-/** @param {ToolDef[]} tools @param {Env} env */
-function addCheckTools(tools, env) {
-  const cardsAnswer = z.object({
-    summary: z.string().optional(),
+/** The answer of submit_cards and validate_cards: the behaviour review and the card set. */
+function cardsAnswerSchema() {
+  return z.object({
+    summary: z.string().optional().describe('One paragraph on what the PR changes in behaviour.'),
+    attention: z.array(z.string()).optional().describe(`At most ${MAX_ATTENTION} change ids the reviewer should look at first (each with kind changed or may-change in changes).`),
+    changes: z.array(z.object({
+      id: z.string().describe('Change id from the facts.'),
+      kind: z.enum(/** @type {[string, ...string[]]} */ (BEHAVIOUR_KINDS)).describe('changed: the same input now gives a different outcome; may-change: some inputs may now end differently; same: same behaviour, done another way; new: added behaviour.'),
+      what: z.string().describe(`One line, at most ${MAX_WHAT_CHARS} characters: what is different.`),
+      before: z.string().optional().describe('What it did.'),
+      after: z.string().optional().describe('What it does now.'),
+      when: z.string().optional().describe('The inputs or conditions where the outcome differs.'),
+      affects: z.array(z.object({ name: z.string().describe('A caller or entry point of this change from the facts.'), how: z.string().describe('How it is affected.') })).optional(),
+    })).optional().describe('What each change does to behaviour; one entry per change you describe.'),
     cards: z.array(z.object({
-      title: z.string(), summary: z.string().optional(), members: z.array(z.string()), reason: z.string().optional(),
+      title: z.string(), summary: z.string().optional(), members: z.array(z.string()),
+      reason: z.string().optional().describe('Why these members belong together; required in spirit when you merged or split.'),
     })),
   });
+}
+
+/** @param {ToolDef[]} tools @param {Env} env */
+function addCheckTools(tools, env) {
+  const cardsAnswer = cardsAnswerSchema();
   tools.push({
     name: 'validate_cards', title: 'Validate a card answer', annotations: READ_ONLY,
     description: 'Check a proposed card set: every change id exactly once (mirrored, moved and generated ids count as their card\'s), no unknown ids, non-empty titles. Returns ok and errors[]; fix and resubmit until ok. Nothing is saved: submit_cards saves.',
@@ -544,31 +579,30 @@ function addCodeTools(tools, env) {
 /**
  * Check a submission and hand it to the editor.
  * @param {Env} env @param {'cards'|'callers'} kind @param {unknown} payload
- * @returns {Promise<{ stored: boolean, reason?: string }>}
+ * @returns {Promise<{ stored: boolean, reason?: string, notShown?: string[] }>}
+ *   `notShown`: parts left out instead of refused (an "affects" name not in the facts); nothing to fix.
  * @throws {ToolError} listing what to fix, when the submission or the editor rejects it
  */
 async function submit(env, kind, payload) {
   const check = validateSubmission(kind, payload, submissionContext(env));
   if (!check.ok) throw new ToolError(`submit_${kind} rejected; fix these and submit again:\n- ${check.errors.join('\n- ')}`);
-  if (!env.ctx.forward) return { stored: false, reason: NO_EDITOR_REASON };
+  if (!env.ctx.forward) return { stored: false, reason: NO_EDITOR_REASON, ...(check.dropped ? { notShown: check.dropped } : {}) };
   const sent = await env.ctx.forward(kind, check.normalised);
   if (sent.errors && sent.errors.length) throw new ToolError(`the editor rejected the ${kind} submission:\n- ${sent.errors.join('\n- ')}`);
-  return { stored: sent.stored === true, ...(sent.reason ? { reason: sent.reason } : {}) };
+  return { stored: sent.stored === true, ...(sent.reason ? { reason: sent.reason } : {}), ...(check.dropped ? { notShown: check.dropped } : {}) };
 }
 
 /** @param {ToolDef[]} tools @param {Env} env */
 function addSubmitTools(tools, env) {
   tools.push({
     name: 'submit_cards', title: 'Submit refined cards', annotations: WRITE_BACK,
-    description: 'Submit your card set (names, summaries, merges and splits as members lists). It is checked like validate_cards; on errors nothing is saved and the errors say what to fix. When it passes it is handed to the editor, which shows it marked as from the agent. Returns stored and, when not stored, the reason (for example no editor connected).',
+    description: 'Submit your review: what each change does to behaviour (changes), the few that need the reviewer\'s attention, and the card set (names, summaries, merges and splits as members lists). It is checked like validate_cards; on errors nothing is saved and the errors say what to fix. When it passes it is handed to the editor, which shows it marked as from the agent. Returns stored and, when not stored, the reason (for example no editor connected).',
     inputSchema: z.object({
-      answer: z.object({
-        summary: z.string().optional().describe('One paragraph on the whole PR.'),
-        cards: z.array(z.object({
-          title: z.string(), summary: z.string().optional(), members: z.array(z.string()),
-          reason: z.string().optional().describe('Why these members belong together; required in spirit when you merged or split.'),
-        })),
-      }),
+      review: z.object({
+        head: z.string().regex(/^[0-9a-f]{7,64}$/i).describe('The head commit the facts were for, as the prompt gives it.'),
+        base: z.string().regex(/^[0-9a-f]{7,64}$/i).describe('The base commit the facts were for, as the prompt gives it.'),
+      }).strict().optional().describe('The review your cards are for, from the prompt. With it, a server whose analysis is older analyses that review first and then checks and saves your cards; a review that is no longer the one the editor shows is refused.'),
+      answer: cardsAnswerSchema(),
     }).strict(),
     run: async (args) => submit(env, 'cards', args.answer),
   });
@@ -597,4 +631,6 @@ function addSubmitTools(tools, env) {
 
 module.exports = {
   createImpactTools, NO_EDITOR_REASON, MAX_SOURCE_LINES, MAX_SEARCH_HITS, QUERY_DEADLINE_MS,
+  // For src/mcp/card-facts.js, which builds the same facts in one block.
+  internals: { makeEnv, impactOf, nameOf, seamsOf, hunkFor },
 };

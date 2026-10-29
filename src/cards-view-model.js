@@ -13,15 +13,18 @@
 // repository-wide token counts.
 
 const { previewLimitsNote } = require('./tree-row-models');
+const { resolveAgentResult } = require('./agent-cards');
 
 /**
  * What activating a node does, as data.
  * - `change`: open the existing change row of a changed function (`impactTree.openChange`).
  * - `deleted`: open what the Changes view opens for a deleted function (`impactTree.openFile`).
  * - `card`: select another card or sweep in this view.
+ * - `command`: run an editor command of this extension with these arguments (the agent rows).
  * @typedef {{ kind: 'change', relPath: string, namePos: number }
  *   | { kind: 'deleted', relPath: string, namePos: number }
- *   | { kind: 'card', id: string }} CardTarget
+ *   | { kind: 'card', id: string }
+ *   | { kind: 'command', command: string, args: string[] }} CardTarget
  */
 
 /**
@@ -405,16 +408,163 @@ function previewNotice(result) {
     description: 'callers and entry points from the PR\'s files; hints without repo-wide counts', tooltip: lines.join('\n') });
 }
 
+// ---- the agent's cards (impactTree.agents.enabled) -----------------------------------------
+
+const UNDO_COMMAND = 'impactTree.undoAgentResult';
+const TOGGLE_COMMAND = 'impactTree.toggleAgentCards';
+const WRITTEN_BY_AGENT = 'Written by your agent; the facts below come from the engine.';
+
+/**
+ * What the agent part of the view needs, all of it already checked or formatted by the caller.
+ * @typedef {object} AgentInput
+ * @property {{ askedAtText: string }|null} waiting A hand-off is waiting for the agent's cards.
+ * @property {{ key: string, storedAtText: string, payload: unknown }|null} result The latest stored `cards` result for the shown head.
+ * @property {boolean} showEngine The user asked for the engine's cards although a result exists.
+ */
+
+/**
+ * The engine node of card or sweep `id` with every id under `prefix`, so the same card can appear under
+ * more than one agent card; a seam's target moves to where that card first appears.
+ * @param {CardNode} node
+ * @param {string} prefix
+ * @param {Map<string, string>} home engine card id to the node id where it first appears
+ * @returns {CardNode}
+ */
+function scoped(node, prefix, home) {
+  /** @type {CardNode} */
+  const out = { ...node, id: `${prefix}${node.id}` };
+  if (node.target && node.target.kind === 'card') out.target = { kind: 'card', id: home.get(node.target.id) || node.target.id };
+  if (node.children) out.children = node.children.map((c) => scoped(c, prefix, home));
+  return out;
+}
+
+/** How each behaviour kind shows: its icon, its word, and its place in a card (lower first). */
+const KIND_SHOW = {
+  changed: { icon: 'warning', word: 'Changed', rank: 0 },
+  'may-change': { icon: 'question', word: 'May change', rank: 1 },
+  new: { icon: 'add', word: 'New', rank: 2 },
+  same: { icon: 'circle-outline', word: 'Same behaviour, new way', rank: 3 },
+};
+
+/**
+ * The hover text of a change the agent described: the full before / after / when / affects.
+ * @param {import('./agent-cards').AgentChange} b
+ * @returns {string}
+ */
+function behaviourTooltip(b) {
+  return [
+    `${KIND_SHOW[b.kind].word}: ${b.what}`,
+    b.before && `Before: ${b.before}`, b.after && `After: ${b.after}`, b.when && `When: ${b.when}`,
+    ...(b.affects || []).map((a, i) => `${i ? '        ' : 'Affects: '}${a.name} — ${a.how}`),
+    WRITTEN_BY_AGENT,
+  ].filter(Boolean).join('\n');
+}
+
+/**
+ * One change of an agent card: its name, and the agent's one line with its kind's icon when
+ * the agent described it. Opens the change like the Changes view does.
+ * @param {string} parentId @param {string} id A change id. @param {ReturnType<typeof indexFunctions>} index
+ * @param {Map<string, import('./agent-cards').AgentChange>} behaviour
+ * @returns {CardNode}
+ */
+function behaviourNode(parentId, id, index, behaviour) {
+  const plain = memberNode(parentId, id, index);
+  const b = behaviour.get(id);
+  if (!b) return plain;
+  return { ...plain, id: `${parentId}/change:${id}`, icon: KIND_SHOW[b.kind].icon, description: b.what, tooltip: behaviourTooltip(b), contextValue: 'agentChange' };
+}
+
+/**
+ * The agent's cards as nodes: each card's changes with the agent's one line, worst first, and
+ * the engine's card underneath (entry points, seams, hints) for whoever wants its facts.
+ * @param {Extract<ReturnType<typeof resolveAgentResult>, { ok: true }>} agentCards
+ * @param {(engineId: string) => CardNode|null} engineNode
+ * @param {ReturnType<typeof indexFunctions>} index
+ * @returns {CardNode[]}
+ */
+function agentCardNodes(agentCards, engineNode, index) {
+  /** @type {Map<string, string>} */
+  const home = new Map();
+  agentCards.cards.forEach((a, i) => { for (const c of a.covers) if (!home.has(c.id)) home.set(c.id, `agent:A${i + 1}/engine/${c.id}`); });
+  const rank = (/** @type {string} */ id) => { const b = agentCards.changes.get(id); return b ? KIND_SHOW[b.kind].rank : 9; };
+  return agentCards.cards.map((a, i) => {
+    const id = `agent:A${i + 1}`;
+    /** @type {CardNode[]} */
+    const children = [];
+    if (a.summary) children.push(leaf(`${id}/summary`, a.summary, 'note', { tooltip: a.summary }));
+    const ids = [...a.ids].sort((x, y) => rank(x) - rank(y));
+    children.push(...capped(`${id}/more`, ids, MAX_MEMBERS, (m) => behaviourNode(id, m, index, agentCards.changes)));
+    const engine = a.covers.map((cover) => engineNode(cover.id)).filter((n) => n !== null).map((n) => scoped(/** @type {CardNode} */ (n), `${id}/engine/`, home));
+    if (engine.length) {
+      children.push({ id: `${id}/engine`, label: 'Engine facts', description: a.covers.map((c) => c.id).join(', '), icon: 'type-hierarchy', contextValue: 'cardsNote',
+        tooltip: 'The engine\'s card(s) these changes come from: entry points, seams and merge hints.', children: engine });
+    }
+    const counts = Object.keys(KIND_SHOW).map((k) => [k, ids.filter((m) => { const b = agentCards.changes.get(m); return b && b.kind === k; }).length]);
+    const changed = counts.filter(([k, n]) => n && (k === 'changed' || k === 'may-change')).map(([k, n]) => `${n} ${k === 'changed' ? 'changed' : 'may change'}`);
+    return { id, label: a.title, description: [plural(a.count, 'change'), ...changed].join(' · '),
+      tooltip: [a.summary, a.reason && `Why grouped: ${a.reason}`, WRITTEN_BY_AGENT].filter(Boolean).join('\n\n'), icon: 'sparkle', contextValue: 'agentCard', children };
+  });
+}
+
+/**
+ * "Needs your attention": the few changes the agent says to look at first, with their one line.
+ * @param {Extract<ReturnType<typeof resolveAgentResult>, { ok: true }>} agentCards
+ * @param {ReturnType<typeof indexFunctions>} index
+ * @returns {CardNode|null}
+ */
+function attentionNode(agentCards, index) {
+  const ids = agentCards.attention.filter((id) => agentCards.changes.has(id));
+  if (!ids.length) return null;
+  return { id: 'agent:attention', label: `Needs your attention (${ids.length})`, icon: 'eye', contextValue: 'agentAttention',
+    tooltip: 'The changes your agent says to look at first.', children: ids.map((m) => behaviourNode('agent:attention', m, index, agentCards.changes)) };
+}
+
+/**
+ * The rows the agent adds above the cards, and the cards to show instead of the engine's (null: the engine's).
+ * @param {AgentInput} agent
+ * @param {any} cards
+ * @param {(engineId: string) => CardNode|null} engineNode
+ * @param {ReturnType<typeof indexFunctions>} index
+ * @returns {{ rows: CardNode[], cards: CardNode[]|null }}
+ */
+function agentSection(agent, cards, engineNode, index) {
+  /** @type {CardNode[]} */
+  const rows = [];
+  if (agent.waiting) {
+    rows.push(leaf('agent:waiting', `Waiting for your agent… (asked ${agent.waiting.askedAtText})`, 'loading~spin', {
+      contextValue: 'agentWaiting',
+      tooltip: 'Impact Tree asked your agent to refine these cards. Check the prompt in your agent, send it, and let it finish. Its result appears here when it saves it with submit_cards. "Cancel waiting" only stops this row; it does not stop the agent.' }));
+  }
+  if (!agent.result) return { rows, cards: null };
+  const undo = leaf('agent:undo', `Agent result from ${agent.result.storedAtText} — Undo`, 'discard', {
+    contextValue: 'agentUndo', target: { kind: 'command', command: UNDO_COMMAND, args: [agent.result.key] },
+    tooltip: 'Remove this result and return to the engine\'s cards.' });
+  const resolved = resolveAgentResult(agent.result.payload, cards);
+  if (!resolved.ok) {
+    rows.push(undo, leaf('agent:stale', 'The agent\'s result is for another state of this branch', 'warning', {
+      tooltip: 'The result does not match the cards of this analysis (the branch moved or the cards changed), so it is not shown. Ask your agent again, or undo it.' }));
+    return { rows, cards: null };
+  }
+  rows.push(undo, leaf('agent:toggle', agent.showEngine ? 'Show agent cards' : 'Show engine cards', 'arrow-swap', {
+    contextValue: 'agentToggle', target: { kind: 'command', command: TOGGLE_COMMAND, args: [] } }));
+  if (resolved.summary && !agent.showEngine) {
+    rows.push(leaf('agent:summary', resolved.summary.split('\n')[0], 'note', { tooltip: `${resolved.summary}\n\n${WRITTEN_BY_AGENT}` }));
+  }
+  const attention = agent.showEngine ? null : attentionNode(resolved, index);
+  if (attention) rows.push(attention);
+  return { rows, cards: agent.showEngine ? null : agentCardNodes(resolved, engineNode, index) };
+}
+
 /**
  * The Cards view's tree.
- * @param {{ result: any, cards: any|null, hintsPending?: boolean, preview?: boolean, error?: string|null }} input
+ * @param {{ result: any, cards: any|null, hintsPending?: boolean, preview?: boolean, error?: string|null, agent?: AgentInput|null }} input
  *   `result`: an `analyze()` or `analyzeRemote()` result, with `impactPaths` when they were asked
  *   for. `cards`: `buildCardsFromFacts` or `addHints` output, or null before they exist.
  *   `hintsPending`: merge hints are still being found. `preview`: the result is a pull request
  *   preview. `error`: why cards or hints could not be built, shown as a note.
  * @returns {CardNode[]}
  */
-function cardsViewModel({ result, cards, hintsPending = false, preview = false, error = null }) {
+function cardsViewModel({ result, cards, hintsPending = false, preview = false, error = null, agent = null }) {
   const changes = (result.allChanged || []).length + (result.deleted || []).length;
   if (changes < MIN_CHANGES_FOR_CARDS) {
     return [leaf('notice:small', `Cards appear for pull requests with ${MIN_CHANGES_FOR_CARDS} or more changes.`, 'info')];
@@ -435,7 +585,14 @@ function cardsViewModel({ result, cards, hintsPending = false, preview = false, 
   const ctx = { result, cards, byId, index };
   const nodes = [...(cards.clusters || []).map((/** @type {any} */ c) => cardNode(c, ctx)), ...(cards.sweeps || []).map((/** @type {any} */ s) => sweepNode(s, index))];
   if (!nodes.length) nodes.push(leaf('notice:none', 'No cards: the changes did not group.', 'info'));
-  return pruned([...top, ...nodes]);
+  if (!agent || preview) return pruned([...top, ...nodes]);
+  const engineNode = (/** @type {string} */ id) => {
+    const c = byId.get(id);
+    if (!c) return null;
+    return (cards.sweeps || []).includes(c) ? sweepNode(c, index) : cardNode(c, ctx);
+  };
+  const section = agentSection(agent, cards, engineNode, index);
+  return pruned([...section.rows, ...top, ...(section.cards || nodes)]);
 }
 
-module.exports = { cardsViewModel, MIN_CHANGES_FOR_CARDS, MAX_MEMBERS, MAX_ENTRIES, MAX_SEAMS, MAX_HINTS };
+module.exports = { cardsViewModel, UNDO_COMMAND, TOGGLE_COMMAND, MIN_CHANGES_FOR_CARDS, MAX_MEMBERS, MAX_ENTRIES, MAX_SEAMS, MAX_HINTS };

@@ -148,9 +148,14 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
     if (!test) prodServices.push(svc);
   }
   if (!services.length) return null;
-  const inProgram = (file) => services.some((ls) => {
+  // Whether `ls`'s project contains `file`. A project that does not (a solution-style root
+  // tsconfig that only lists references, a tsconfig for another folder) cannot hold a caller
+  // of it, and its service throws "Could not find source file" when asked: that is not a
+  // failed query, so the loops below skip such a project instead of counting the throw.
+  const holds = (ls, file) => {
     try { return !!ls.getProgram().getSourceFile(file); } catch { return false; }
-  });
+  };
+  const inProgram = (file) => services.some((ls) => holds(ls, file));
 
   // definition/reference primitives the CQRS provider needs, backed by the same services
   const cqrs = makeCqrsEdges(ts, {
@@ -207,6 +212,7 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
     const use = withTests ? services : prodServices;
     let failed = false;
     for (const ls of use) {
+      if (!holds(ls, file)) continue;
       let calls = [];
       try { calls = ls.provideCallHierarchyIncomingCalls(file, pos) || []; } catch { failed = true; calls = []; }
       for (const c of calls) {
@@ -245,6 +251,7 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
     let count = 0;
     let failed = false;
     for (const ls of services) {
+      if (!holds(ls, file)) continue;
       let refs = [];
       try { refs = ls.findReferences(file, pos) || []; } catch { failed = true; refs = []; }
       for (const r of refs) count += r.references.filter((x) => !x.isDefinition).length;
@@ -325,6 +332,7 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
       const seen = new Map();
       let failed = false;
       for (const ls of services) {
+        if (!holds(ls, file)) continue;
         let found = [];
         try { found = ls.findReferences(file, pos) || []; } catch { failed = true; found = []; }
         for (const r of found) {

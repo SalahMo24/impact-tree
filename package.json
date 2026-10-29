@@ -411,6 +411,28 @@
         "category": "Impact Tree"
       },
       {
+        "command": "impactTree.analyseWithAgent",
+        "title": "Analyse with my agent",
+        "category": "Impact Tree",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "impactTree.cancelAgentWaiting",
+        "title": "Cancel waiting",
+        "category": "Impact Tree",
+        "icon": "$(close)"
+      },
+      {
+        "command": "impactTree.toggleAgentCards",
+        "title": "Show engine cards or agent cards",
+        "category": "Impact Tree"
+      },
+      {
+        "command": "impactTree.undoAgentResult",
+        "title": "Undo the agent's result",
+        "category": "Impact Tree"
+      },
+      {
         "command": "impactTree.sendFeedback",
         "title": "Send feedback",
         "category": "Impact Tree",
@@ -454,6 +476,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "impactTree.analyseWithAgent",
+          "when": "view == impactTree.cards && config.impactTree.agents.enabled",
+          "group": "navigation@1"
+        },
         {
           "command": "impactTree.refresh",
           "when": "view == impactTree.changes",
@@ -562,6 +589,22 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "impactTree.analyseWithAgent",
+          "when": "config.impactTree.agents.enabled && config.impactTree.cards.enabled"
+        },
+        {
+          "command": "impactTree.cancelAgentWaiting",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.toggleAgentCards",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.undoAgentResult",
+          "when": "false"
+        },
         {
           "command": "impactTree.connectAgent",
           "when": "config.impactTree.agents.enabled"
@@ -923,6 +966,11 @@
           "command": "impactTree.feedback.openRoundFile",
           "when": "view == impactTree.changes && viewItem == feedbackRound",
           "group": "navigation@1"
+        },
+        {
+          "command": "impactTree.cancelAgentWaiting",
+          "when": "view == impactTree.cards && viewItem == agentWaiting",
+          "group": "inline"
         }
       ],
       "comments/comment/context": [
@@ -1116,6 +1164,7 @@
             "claude",
             "claude-vscode",
             "codex",
+            "cursor-chat",
             "chat",
             "clipboard",
             "save"
@@ -1126,11 +1175,12 @@
             "Claude Code: run claude with the prompt in a terminal",
             "Claude Code (VS Code extension): fill its panel with the prompt through a link; you press Enter",
             "Codex: run codex with the prompt in a terminal",
+            "Cursor (when this editor is Cursor): open the prompt through Cursor's link; you confirm it and send it",
             "Fill the editor's chat (VS Code Copilot Chat, Cursor) with the prompt; you press Enter",
             "Copy the prompt to the clipboard",
             "Only save the feedback file"
           ],
-          "description": "Where Send feedback hands a feedback round. \"Send feedback to…\" always asks."
+          "description": "Where Send feedback hands a feedback round, and where Analyse with my agent hands its prompt. \"Send feedback to…\" always asks."
         }
       }
     }

@@ -42,7 +42,8 @@ const MAX_ID_LENGTH = 64;
 function createAgentBridge(vscode, { session, workspaceState, log, lockDir = P.defaultLockDir(), validator, readHead = defaultReadHead,
   clock = realClock, idleTimeoutMs = IDLE_TIMEOUT_MS }) {
   const emitter = new vscode.EventEmitter();
-  /** @type {{ server: net.Server, sockets: Set<net.Socket>, lockFile: string, socketPath: string, token: string, repo: string } | null} */
+  const removedEmitter = new vscode.EventEmitter();
+  /** @type {{ server: net.Server, sockets: Set<net.Socket>, lockFile: string, socketPath: string, token: string, repo: string, startedAt: number } | null} */
   let running = null;
   // Each start/stop moves this on, so a start that was overtaken by a stop cleans up after itself.
   let generation = 0;
@@ -96,6 +97,30 @@ function createAgentBridge(vscode, { session, workspaceState, log, lockDir = P.d
     return job;
   }
 
+  /**
+   * Removes one stored result (the user's Undo). Runs in the same queue as `store`, so it reads what the
+   * previous write left. A head left with no results is dropped.
+   * @param {string} head @param {string} key
+   * @returns {Promise<boolean>} Whether a result was removed.
+   */
+  function removeResult(head, key) {
+    const job = writes.then(async () => {
+      const all = readAll();
+      const list = all[head];
+      if (!list || !list.some((e) => e.key === key)) return null;
+      const kept = list.filter((e) => e.key !== key);
+      const gone = list.find((e) => e.key === key);
+      if (kept.length) all[head] = kept; else delete all[head];
+      await workspaceState.update(STORAGE_KEY, all);
+      return gone ? gone.kind : null;
+    });
+    writes = job.then(() => undefined, () => undefined);
+    return job.then((kind) => {
+      if (kind) removedEmitter.fire({ kind, head, key });
+      return kind !== null;
+    });
+  }
+
   // ---- what the editor is showing ----
 
   /** @returns {boolean} Whether the review shown is a pull request preview (no repository the server can analyse). */
@@ -124,10 +149,20 @@ function createAgentBridge(vscode, { session, workspaceState, log, lockDir = P.d
   }
 
   /**
+   * Handles a submission and logs one line about it: the kind and the outcome, never the payload.
    * @param {unknown} params A request's params, unchecked.
    * @returns {Promise<{ stored: boolean, reason?: string, errors?: string[] }>}
    */
   async function submit(params) {
+    const kind = params && typeof params === 'object' && P.KINDS.includes(/** @type {any} */ (params).kind) ? /** @type {any} */ (params).kind : 'result';
+    const answer = await submitChecked(params);
+    const outcome = answer.stored ? (answer.reason === 'already stored' ? 'already stored' : 'stored') : `refused: ${answer.reason || 'not accepted'}`;
+    log(`agent: ${kind} submitted — ${outcome}`);
+    return answer;
+  }
+
+  /** @param {unknown} params @returns {Promise<{ stored: boolean, reason?: string, errors?: string[] }>} */
+  async function submitChecked(params) {
     const p = /** @type {any} */ (params);
     if (!p || typeof p !== 'object' || !P.KINDS.includes(p.kind)) return { stored: false, reason: 'unknown kind of result' };
     if (!p.payload || typeof p.payload !== 'object') return { stored: false, reason: 'the payload must be an object' };
@@ -209,6 +244,7 @@ function createAgentBridge(vscode, { session, workspaceState, log, lockDir = P.d
       if (typeof req.token !== 'string' || !tokenMatches(req.token, token)) { reply({ id, error: { message: 'bad token' } }, true); return; }
       if (!P.METHODS.includes(req.method)) { reply({ id, error: { message: 'unknown method' } }); return; }
       const params = req.params && typeof req.params === 'object' ? req.params : {};
+      if (req.method === 'context') log('agent: context asked');
       const work = req.method === 'context' ? currentContext() : submit(params);
       work.then((result) => reply({ id, result }), (e) => {
         log(`agent bridge: ${req.method} failed: ${e && e.message}`);
@@ -255,8 +291,9 @@ function createAgentBridge(vscode, { session, workspaceState, log, lockDir = P.d
       });
       if (process.platform !== 'win32') fs.chmodSync(socketPath, 0o600);
       if (mine !== generation) { listening.close(); fs.rmSync(socketPath, { force: true }); return; }
-      writeLockAtomically(lockFile, { version: 1, pid: process.pid, repo, socket: socketPath, token, startedAt: clock.now() });
-      running = { server: listening, sockets, lockFile, socketPath, token, repo };
+      const startedAt = clock.now();
+      writeLockAtomically(lockFile, { version: 1, pid: process.pid, repo, socket: socketPath, token, startedAt });
+      running = { server: listening, sockets, lockFile, socketPath, token, repo, startedAt };
       log('agent bridge: listening for the user\'s agent (local only)');
     } catch (e) {
       log(`agent bridge: could not start: ${e && /** @type {any} */ (e).message}`);
@@ -285,9 +322,28 @@ function createAgentBridge(vscode, { session, workspaceState, log, lockDir = P.d
 
   return {
     start, stop,
-    dispose() { emitter.dispose(); stop().catch((e) => log(`agent bridge: stop failed: ${e && e.message}`)); },
+    dispose() { emitter.dispose(); removedEmitter.dispose(); stop().catch((e) => log(`agent bridge: stop failed: ${e && e.message}`)); },
     onDidStoreResult: emitter.event,
-    resultsFor,
+    onDidRemoveResult: removedEmitter.event,
+    resultsFor, removeResult,
+    /**
+     * Marks this window as the one that just asked the user's agent (the lock's `askedAt`), so a
+     * server started outside any repository picks this window when several have agents on.
+     * @returns {boolean} false when the bridge is not running or the lock cannot be written
+     */
+    markAsked() {
+      if (!running) return false;
+      const r = running;
+      try {
+        writeLockAtomically(r.lockFile, { version: 1, pid: process.pid, repo: r.repo, socket: r.socketPath, token: r.token, startedAt: r.startedAt, askedAt: clock.now() });
+        return true;
+      } catch (e) {
+        log(`agent bridge: could not mark this window as asking: ${/** @type {any} */ (e).message}`);
+        return false;
+      }
+    },
+    /** The review the editor shows, as the agent's server is told it; null while there is no finished checkout or local review. */
+    context: currentContext,
     /** For tests: the socket and lock this bridge listens on, or null. */
     get address() { return running ? { socket: running.socketPath, lockFile: running.lockFile } : null; },
   };
