@@ -6,7 +6,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const { localResult, finding, withEnv } = require('./extension-env');
-const { nextKeyHint, statusBarText } = require('../src/review-navigation');
+const { nextKeyHint, statusBarText } = require('../src/diff-editor/review-navigation');
 
 const SITE = { start: 22, end: 25 };
 const caller = (file) => ({ file, pos: 7, label: 'user', test: false, callSites: [SITE], sites: 1,
@@ -328,8 +328,8 @@ test('the rows the approve check lists: unreviewed rows needing attention, in di
 }));
 
 test('going to a row by its tree id reveals it as next unreviewed does; an unknown id reveals nothing', async () => {
-  const { createReviewNavigation } = require('../src/review-navigation');
-  const { treeItemId } = require('../src/review-tree-model');
+  const { createReviewNavigation } = require('../src/diff-editor/review-navigation');
+  const { treeItemId } = require('../src/views/changes/review-tree-model');
   const row = { type: 'finding', label: 'bad', pos: 10, finding: { relPath: 'a.ts' } };
   const revealed = [];
   const vscode = { StatusBarAlignment: { Left: 1 }, window: { createStatusBarItem: () => ({ show() {}, hide() {}, dispose() {} }) },

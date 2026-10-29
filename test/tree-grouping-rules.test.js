@@ -4,7 +4,7 @@
 // strict mode) instead of passing by accident.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { groupCallerRowsByFile } = require('../src/tree-grouping');
+const { groupCallerRowsByFile } = require('../src/views/changes/tree-grouping');
 
 const deepFreeze = (v) => {
   if (v && typeof v === 'object' && !Object.isFrozen(v)) {

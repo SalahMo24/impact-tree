@@ -2,7 +2,7 @@
 const path = require('path');
 const ts = require('typescript');
 const { createSyntacticIndex } = require('../src/engine/syntactic-index');
-const { createGitHub } = require('../src/github');
+const { createGitHub } = require('../src/github/github');
 const assert = require('node:assert/strict');
 
 const root = '/review';

@@ -4,11 +4,11 @@
 // agent-cards-view.test.js; the bridge's Undo and log lines are in agent-bridge.test.js.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildCardsPrompt, MAX_PROMPT_CHARS } = require('../src/agent-prompt');
-const { choicesFor, planHandOff, handOff, isCursor, MAX_CURSOR_URL_CHARS, AGENT_SETTING_VALUES } = require('../src/agent-handoff');
-const { createAgentCardsState } = require('../src/agent-cards-state');
-const { createAnalyseWithAgent } = require('../src/agent-analyse');
-const { createCardsProvider } = require('../src/cards-provider');
+const { buildCardsPrompt, MAX_PROMPT_CHARS } = require('../src/agent/agent-prompt');
+const { choicesFor, planHandOff, handOff, isCursor, MAX_CURSOR_URL_CHARS, AGENT_SETTING_VALUES } = require('../src/agent/agent-handoff');
+const { createAgentCardsState } = require('../src/agent/agent-cards-state');
+const { createAnalyseWithAgent } = require('../src/agent/agent-analyse');
+const { createCardsProvider } = require('../src/views/cards/cards-provider');
 
 const CTX = { repo: '/work/hono', base: { ref: 'main', sha: 'b'.repeat(40) }, head: 'a'.repeat(40), pr: { number: 1774 } };
 

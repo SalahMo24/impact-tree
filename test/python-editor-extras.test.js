@@ -435,7 +435,7 @@ test('hits on string literals are skipped from one scan of the file, however man
   assert.match(String(more.incompleteReason), /^1 call by this name that the language server could not resolve/);
 });
 
-// A5 through the editor's resolver (src/resolver-vscode.js) with the vscode stub: an
+// A5 through the editor's resolver (src/session/resolver-vscode.js) with the vscode stub: an
 // `__init__` lists its class's constructions, the merged answer is cached, the target query
 // is counted, and a target answer that outlives `clear()` is not used.
 test('the editor resolver lists an __init__\'s constructions from its class (A5)', async () => {
@@ -465,8 +465,8 @@ test('the editor resolver lists an __init__\'s constructions from its class (A5)
     } } };
   try {
     Module._load = function (/** @type {string} */ name, /** @type {any[]} */ ...args) { return name === 'vscode' ? stub : original.call(this, name, ...args); };
-    delete require.cache[require.resolve('../src/resolver-vscode')];
-    const { createVscodeResolver } = require('../src/resolver-vscode');
+    delete require.cache[require.resolve('../src/session/resolver-vscode')];
+    const { createVscodeResolver } = require('../src/session/resolver-vscode');
     const clock = createFakeClock();
     const resolver = createVscodeResolver({ repoRoot: dir, retries: 0, clock });
     const initPos = text.indexOf('__init__');
@@ -493,7 +493,7 @@ test('the editor resolver lists an __init__\'s constructions from its class (A5)
     assert.deepEqual(await late, { callers: [], complete: false, reason: 'caller query belongs to an earlier analysis' });
   } finally {
     Module._load = original;
-    delete require.cache[require.resolve('../src/resolver-vscode')];
+    delete require.cache[require.resolve('../src/session/resolver-vscode')];
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

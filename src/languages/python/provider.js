@@ -10,7 +10,7 @@
 //
 // Callers (P4): the shared call-hierarchy default plus Python's extras (./editor-extras.js:
 // duplicated sites, value uses, protocol methods, decorator registration, duck typing).
-// The server's warm-up (P5): `warmUpTarget` below, asked by src/readiness.js.
+// The server's warm-up (P5): `warmUpTarget` below, asked by src/session/readiness.js.
 // Without a server (the CLI, the no-checkout preview; A4): `prepareSyntactic`, the same
 // candidates from a text outline (`pythonOutline`), callers from a syntax-only index (A8).
 //
@@ -622,7 +622,7 @@ function firstCallable(symbols) {
 }
 
 /**
- * Where the editor's Python server is warmed (src/readiness.js): the name of the first
+ * Where the editor's Python server is warmed (src/session/readiness.js): the name of the first
  * function or method Pyright lists in the first changed Python file. Only that file is
  * asked: each answer from a server that is still loading can take seconds, and any file of
  * the project makes Pyright load it. Null when the editor has no Python support (logged;

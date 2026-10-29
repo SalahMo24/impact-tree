@@ -4,7 +4,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { groupPullRequests } = require('../src/pr-groups');
+const { groupPullRequests } = require('../src/github/pr-groups');
 
 const pr = (number, over = {}) => ({
   number, author: 'someone', requestedReviewers: [], requestedTeams: [], ...over,

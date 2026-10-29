@@ -5,7 +5,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vscode = require('./vscode-stub');
-const { createTreeProvider } = require('../src/tree-provider');
+const { createTreeProvider } = require('../src/views/changes/tree-provider');
 
 const BODY = [{ id: 'body', label: 'body' }];
 let at = 0;

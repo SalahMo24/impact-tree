@@ -1,5 +1,5 @@
 'use strict';
-// The Cards view's tree as data (src/cards-view-model.js), for four live analyses trimmed to
+// The Cards view's tree as data (src/views/cards/cards-view-model.js), for four live analyses trimmed to
 // the fields the model reads (test/fixtures/cards/), recorded in cards-view-model.expected.json,
 // plus the behaviours that matter on their own: what "no entry point" means, tags, deleted
 // members, the display caps. Any difference from the recording is a visible change.
@@ -10,7 +10,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { cardsViewModel, MAX_MEMBERS } = require('../src/cards-view-model');
+const { cardsViewModel, MAX_MEMBERS } = require('../src/views/cards/cards-view-model');
 
 const FIXTURES = path.join(__dirname, 'fixtures', 'cards');
 const EXPECTED = path.join(__dirname, 'cards-view-model.expected.json');

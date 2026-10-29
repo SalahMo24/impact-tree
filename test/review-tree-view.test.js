@@ -4,9 +4,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vscode = require('./vscode-stub');
-const { createTreeProvider } = require('../src/tree-provider');
-const { createReviewState } = require('../src/review-state');
-const { buildReviewSummary } = require('../src/review-tree-model');
+const { createTreeProvider } = require('../src/views/changes/tree-provider');
+const { createReviewState } = require('../src/session/review-state');
+const { buildReviewSummary } = require('../src/views/changes/review-tree-model');
 
 const { Checked, Unchecked } = vscode.TreeItemCheckboxState;
 const { Expanded, Collapsed, None } = vscode.TreeItemCollapsibleState;
@@ -127,7 +127,7 @@ test('caller, caller-file, message and tests rows have no checkbox', async () =>
 test('a tick stored by the old tree on a top-level change shows ticked in the new one', async () => {
   // The fixture and the stored id are those of review-tree-model.test.js's identity test;
   // the id is the one the section tree gave this change before it was removed.
-  const { createReviewIdentity } = require('../src/review-identity');
+  const { createReviewIdentity } = require('../src/session/review-identity');
   const { ts, root } = require('./bug-regressions-helpers');
   const base = "import { a } from './a';\nexport function target() { return 0; }\nexport function gone() { return 1; }\n";
   const head = "import { b } from './a';\nexport function target() { return 1; }\n";

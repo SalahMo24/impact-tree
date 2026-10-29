@@ -6,7 +6,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createGitHub } = require('../src/github');
+const { createGitHub } = require('../src/github/github');
 
 const SLUG = { owner: 'o', repo: 'r' };
 

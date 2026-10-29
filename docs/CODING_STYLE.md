@@ -485,7 +485,7 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      (`forest.js`), and the module-caller index (`module-callers.js`).
    - Planned: budgets for the rest of the forest and for UI row construction.
 3. Add request deadlines, cancellation, analysis ownership, and predictable cleanup.
-   - Exists: analysis ownership in `src/session.js`. One private lifecycle (`starting`,
+   - Exists: analysis ownership in `src/session/session.js`. One private lifecycle (`starting`,
      `preparing`, `analysing`, `checkingOut`, `ready`, `disposed`); every entry point
      goes through session operations (`beginAnalysisRun`, `completeAnalysisRun`,
      `failAnalysisRun`, `releaseAnalysisRunResources`, `beginCheckout`/`endCheckout`,
@@ -502,7 +502,7 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      `AnalysisCancelledError` (`src/engine/cancellation.js`). The editor's language
      server cannot be cancelled: its in-flight query finishes and the answer is dropped.
    - Exists: bounded GitHub requests. Every call goes through `fetchBounded`
-     (`src/github-request.js`), which applies a 30 s deadline, the caller's
+     (`src/github/github-request.js`), which applies a 30 s deadline, the caller's
      `AbortSignal` (so cancelling stops an in-flight request, and a late body is never
      read), and size limits enforced while the body streams (2 MiB per file, 10 MiB per
      JSON response). The open-PR list is capped at 10 pages and reports truncation only
@@ -527,8 +527,8 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      covers, invalidation and disposal: the TypeScript, editor and syntactic resolvers and
      their service pool, the syntactic index, `textpos` line starts and virtual text, the
      review-identity caches, the inheritance filter, and the session-owned
-     `resolver`/`readyPromise` (`src/session.js`).
-   - Exists: `prDocuments` (`src/pr-documents.js`) holds only the current preview's text;
+     `resolver`/`readyPromise` (`src/session/session.js`).
+   - Exists: `prDocuments` (`src/diff-editor/pr-documents.js`) holds only the current preview's text;
      publishing a new preview releases the previous one. An `impacttree-pr:` address
      carries the PR number, head commit and merge-base commit, the base-side path of a
      renamed file (`from`), and `absent=1` for a side that does not exist. `prQuery` is the
@@ -536,7 +536,7 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      the last two because no command opens them.
    - Exists: a tab on a revision that is not held is fetched from GitHub through
      `gh.fileAtRef` at the commit and path in its address, under the request limits in
-     `src/github-request.js`, and nothing it fetches is kept. A failure shows a message
+     `src/github/github-request.js`, and nothing it fetches is kept. A failure shows a message
      naming the cause (signed out, no longer on GitHub, timeout, too large, other) and what
      to do; a side marked absent is an empty document without a request.
    - Exists: file-row review tokens are not cached. Measured on t3code (Apple M3 Pro,
@@ -547,7 +547,7 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
    - Planned: a stat-keyed token cache, if reviews of more than about a thousand changed
      files prove common; measure again before adding it.
    - Exists: the snapshot store (`src/engine/snapshot-store.js`) is owned by the extension
-     activation (created in `src/snapshot-storage.js` from `context.storageUri`). It keeps
+     activation (created in `src/storage/snapshot-storage.js` from `context.storageUri`). It keeps
      checkpoint snapshots under `<storage>/impact-tree/`, serializes its manifest writes,
      and writes nothing to `.git` (objects go to its own folder; temporary indexes are
      removed in `finally`, leftovers swept at startup). Retention: F5.
@@ -560,21 +560,21 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      there is no other list. Enrolled today: `src/engine/concurrency.js`,
      `src/engine/call-sites.js`, `src/engine/caller-contract.js`,
      `src/engine/cancellation.js`, `src/engine/settings.js`, `src/engine/test-reach.js`,
-     `src/github-request.js`, `src/github.js`, `src/github-remote.js`, and the tree's provider, pure row models,
-     grouping and renderer (`src/tree-provider.js`, `src/review-tree-model.js`,
-     `src/tree-row-models.js`, `src/tree-grouping.js`, `src/tree-item-renderer.js`), the
-     review navigation (`src/review-navigation.js`), and the detail panel and its HTML
-     builder (`src/detail-panel.js`, `src/detail-panel-html.js`), and the review lens and callers
-     peek (`src/review-lens.js`), and the feedback drafts (`src/feedback-drafts.js`,
-     `src/feedback-comments.js`, `src/feedback-comments-model.js`, `src/feedback-tree.js`), the
-     feedback rounds (`src/feedback-file.js`, `src/feedback-files-io.js`, `src/feedback-send.js`,
-     `src/feedback-readback.js`, `src/feedback-round-model.js`, `src/feedback-round-view.js`,
-     `src/agent-handoff.js`, `src/agent-pointer.js`), the snapshot store
-     (`src/engine/snapshot-store.js`, `src/engine/diff-index.js`, `src/snapshot-storage.js`) the
-     cleanup of stored data (`src/storage-cleanup.js`, `src/storage-cleanup-run.js`), the
+     `src/github/github-request.js`, `src/github/github.js`, `src/github/github-remote.js`, and the tree's provider, pure row models,
+     grouping and renderer (`src/views/changes/tree-provider.js`, `src/views/changes/review-tree-model.js`,
+     `src/views/changes/tree-row-models.js`, `src/views/changes/tree-grouping.js`, `src/views/changes/tree-item-renderer.js`), the
+     review navigation (`src/diff-editor/review-navigation.js`), and the detail panel and its HTML
+     builder (`src/views/details/detail-panel.js`, `src/views/details/detail-panel-html.js`), and the review lens and callers
+     peek (`src/diff-editor/review-lens.js`), and the feedback drafts (`src/feedback/feedback-drafts.js`,
+     `src/feedback/feedback-comments.js`, `src/feedback/feedback-comments-model.js`, `src/feedback/feedback-tree.js`), the
+     feedback rounds (`src/feedback/feedback-file.js`, `src/feedback/feedback-files-io.js`, `src/feedback/feedback-send.js`,
+     `src/feedback/feedback-readback.js`, `src/feedback/feedback-round-model.js`, `src/feedback/feedback-round-view.js`,
+     `src/agent/agent-handoff.js`, `src/agent/agent-pointer.js`), the snapshot store
+     (`src/engine/snapshot-store.js`, `src/engine/diff-index.js`, `src/storage/snapshot-storage.js`) the
+     cleanup of stored data (`src/storage/storage-cleanup.js`, `src/storage/storage-cleanup-run.js`), the
      search for users the editor's language server did not reach (`src/engine/unseen-users.js`),
-     the suggested changes in review comments (`src/suggestions.js`), and the language
-     registry, providers and editor services (`src/languages/**`, `src/services-vscode.js`).
+     the suggested changes in review comments (`src/diff-editor/suggestions.js`), and the language
+     registry, providers and editor services (`src/languages/**`, `src/session/services-vscode.js`).
    - Planned: type-aware lint rules such as `no-floating-promises` (whether to add them
      before the review loop is an open decision), and enrolling the remaining modules.
 

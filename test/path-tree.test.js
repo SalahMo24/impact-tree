@@ -3,7 +3,7 @@
 // middle folders merged onto one line, shortened with `…` when that line is too long.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { pathTreeLines, pathTreeMarkdown } = require('../src/path-tree');
+const { pathTreeLines, pathTreeMarkdown } = require('../src/views/changes/path-tree');
 
 test('a file at the repo root is just its name', () => {
   assert.deepEqual(pathTreeLines('package.json'), { lines: ['package.json'], truncated: false });

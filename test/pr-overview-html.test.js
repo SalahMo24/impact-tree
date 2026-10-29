@@ -7,7 +7,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   buildPullRequestHtml, pageModelOf, mergeStateOf, buttonRules, mergeRules, pendingStatusOf, submittedMessage, firstLineOf, formatWhen, refsBaseOf, OWN_PR_REASON,
-} = require('../src/pr-overview-html');
+} = require('../src/views/pr-tab/pr-overview-html');
 const { createFormPage } = require('./webview-page');
 
 const NONCE = 'bm9uY2UxMjM0NTY3OA==';

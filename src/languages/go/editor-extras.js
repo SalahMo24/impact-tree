@@ -2,7 +2,7 @@
 'use strict';
 // What a caller resolver adds for a Go target to the callers gopls reports
 // (docs/MULTI_LANGUAGE_PLAN.md, G4; `EditorCallerExtras` in ../types.js). Applied by the
-// editor's resolver (src/resolver-vscode.js) and, the same way, by the gopls test harness
+// editor's resolver (src/session/resolver-vscode.js) and, the same way, by the gopls test harness
 // (test/lsp-harness/harness-languages.js).
 //
 // - Value uses are not calls. gopls lists a function used as a value (`Args: f`, `g(f)`, a

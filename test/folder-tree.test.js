@@ -4,7 +4,7 @@
 // deep-frozen, so folding that modified a file row would throw.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { foldFileRows, markFirstPathOpen, compareRanked } = require('../src/folder-tree');
+const { foldFileRows, markFirstPathOpen, compareRanked } = require('../src/views/changes/folder-tree');
 
 const deepFreeze = (v) => {
   if (v && typeof v === 'object' && !Object.isFrozen(v)) {

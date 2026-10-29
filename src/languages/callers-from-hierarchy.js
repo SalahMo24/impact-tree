@@ -209,7 +209,7 @@ function callerTargetsOf(extras, file, pos) {
 
 /**
  * A call-hierarchy query's answer with one language's caller extras applied, in the one
- * order the editor's resolver (src/resolver-vscode.js) and the test harness
+ * order the editor's resolver (src/session/resolver-vscode.js) and the test harness
  * (test/lsp-harness/harness-languages.js) both use, so the harness's verifications check
  * the editor's own composition:
  * 1. Caller targets (`callerTargets`): each other position is asked through `askAt` (at most

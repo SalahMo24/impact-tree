@@ -38,7 +38,7 @@ async function withResolver(incoming, fn) {
       if (name === 'vscode.provideIncomingCalls') { calls.incoming++; return incoming(); }
       return [];
     } } };
-  const id = require.resolve('../src/resolver-vscode');
+  const id = require.resolve('../src/session/resolver-vscode');
   const original = Module._load;
   Module._load = function (name, ...rest) { return name === 'vscode' ? stub : original.call(this, name, ...rest); };
   try {

@@ -4,7 +4,7 @@
 // ticked after a confirmation, and can also drop the current checkpoint when asked.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createAutoCleanup, createCleanupCommand } = require('../src/storage-cleanup-run');
+const { createAutoCleanup, createCleanupCommand } = require('../src/storage/storage-cleanup-run');
 
 const DAY = 86400000;
 const NOW = 100 * DAY;

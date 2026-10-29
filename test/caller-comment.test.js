@@ -5,7 +5,7 @@
 // feedback-comments.test.js.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createCallerComment, COMMAND } = require('../src/caller-comment');
+const { createCallerComment, COMMAND } = require('../src/diff-editor/caller-comment');
 
 const change = { type: 'finding', label: 'bad', relPath: 'a.ts' };
 const group = { type: 'callerFile', label: 'b.ts' };

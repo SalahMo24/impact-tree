@@ -1,6 +1,6 @@
 // @ts-check
 'use strict';
-// The TypeScript steps of a review identity (src/review-identity.js): parsing a side of a
+// The TypeScript steps of a review identity (src/session/review-identity.js): parsing a side of a
 // file, its symbols, its text without them, and the declarations a caller is anchored at.
 // Hashing and caching are the identity's; nothing here keeps state.
 const { createHash } = require('crypto');

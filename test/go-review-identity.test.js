@@ -15,7 +15,7 @@ const { createHash } = require('crypto');
 const { execFileSync } = require('child_process');
 const { analyze } = require('../src/engine/analyze');
 const { makeGit } = require('../src/engine/git');
-const { createReviewIdentity, localRevisions } = require('../src/review-identity');
+const { createReviewIdentity, localRevisions } = require('../src/session/review-identity');
 const texts = require('./go-symbols/texts');
 const recorded = require('./go-symbols/recorded.json');
 

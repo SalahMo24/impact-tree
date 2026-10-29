@@ -6,9 +6,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { reviewTabModel, hunkLines, MAX_HUNK_LINES, MAX_CHIPS } = require('../src/review-tab-model');
-const { buildReviewTabHtml } = require('../src/review-tab-html');
-const { createReviewTab, parseMessage } = require('../src/review-tab-panel');
+const { reviewTabModel, hunkLines, MAX_HUNK_LINES, MAX_CHIPS } = require('../src/views/review-tab/review-tab-model');
+const { buildReviewTabHtml } = require('../src/views/review-tab/review-tab-html');
+const { createReviewTab, parseMessage } = require('../src/views/review-tab/review-tab-panel');
 
 const hono = () => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'cards', 'hono-1774.json'), 'utf8'));
 const byId = (f, id) => [...f.cards.clusters, ...f.cards.sweeps].find((c) => c.id === id);

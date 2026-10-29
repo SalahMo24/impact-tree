@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { createTreeProvider } = require('../src/tree-provider');
+const { createTreeProvider } = require('../src/views/changes/tree-provider');
 const { createInheritanceFilter } = require('../src/engine/inheritance');
 const { ts, root, CONCURRENCY_CASES, assertConcurrencyWarnings } = require('./bug-regressions-helpers');
 

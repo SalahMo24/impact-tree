@@ -57,7 +57,7 @@ const { messageOf } = require('./text');
 /**
  * Document-symbol requests one `prepare` has in flight at once. Unit: files (each asks for
  * at most two sides, one after the other). Default and only value: 4. The editor's services
- * cap all outstanding requests at 32 (src/services-vscode.js) and caller queries share that
+ * cap all outstanding requests at 32 (src/session/services-vscode.js) and caller queries share that
  * cap, so this leaves them room; warm symbol answers take tens of milliseconds (G0), so 4
  * keeps a 200-file review to a few seconds. Owner and enforcement: `mapLimit` in
  * `prepareFromServerSymbols`. There is no exhaustion: it bounds simultaneous work, and the

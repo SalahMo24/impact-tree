@@ -167,7 +167,7 @@ test('readTextOfOffsets validates its limit', () => {
   assert.equal(textpos.readTextOfOffsets('/nowhere/at/all.go', { maxBytes: 10 }), null);
 });
 
-// Through the editor's resolver (src/resolver-vscode.js) with the vscode stub: what the
+// Through the editor's resolver (src/session/resolver-vscode.js) with the vscode stub: what the
 // reviewer ends up with for a Go target.
 test('the editor resolver applies the Go extras: value uses, mixed callers and build tags', async () => {
   const Module = require('module'), original = Module._load;
@@ -205,8 +205,8 @@ test('the editor resolver applies the Go extras: value uses, mixed callers and b
     } } };
   try {
     Module._load = function (/** @type {string} */ name, /** @type {any[]} */ ...args) { return name === 'vscode' ? stub : original.call(this, name, ...args); };
-    delete require.cache[require.resolve('../src/resolver-vscode')];
-    const { createVscodeResolver } = require('../src/resolver-vscode');
+    delete require.cache[require.resolve('../src/session/resolver-vscode')];
+    const { createVscodeResolver } = require('../src/session/resolver-vscode');
     const namePos = fs.readFileSync(target, 'utf8').indexOf('run');
     const ask = async () => {
       const clock = createFakeClock();
@@ -251,7 +251,7 @@ test('the editor resolver applies the Go extras: value uses, mixed callers and b
     assert.deepEqual(answer, { callers: [], complete: false, reason: NOT_IN_BUILD_REASON });
   } finally {
     Module._load = original;
-    delete require.cache[require.resolve('../src/resolver-vscode')];
+    delete require.cache[require.resolve('../src/session/resolver-vscode')];
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

@@ -11,10 +11,10 @@ const { analyze } = require('../src/engine/analyze');
 const { analyzeRemote } = require('../src/engine/analyze-remote');
 const { clearVirtualText } = require('../src/engine/textpos');
 const { createLocalHarness } = require('./local-repo');
-const { createTreeProvider } = require('../src/tree-provider');
-const { createReviewState } = require('../src/review-state');
-const { createReviewIdentity, localRevisions, previewRevisions } = require('../src/review-identity');
-const models = require('../src/tree-row-models');
+const { createTreeProvider } = require('../src/views/changes/tree-provider');
+const { createReviewState } = require('../src/session/review-state');
+const { createReviewIdentity, localRevisions, previewRevisions } = require('../src/session/review-identity');
+const models = require('../src/views/changes/tree-row-models');
 const { ts } = require('./bug-regressions-helpers');
 
 const h = createLocalHarness();

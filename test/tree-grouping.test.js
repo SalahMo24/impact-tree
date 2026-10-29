@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vscode = require('./vscode-stub');
-const { createTreeProvider } = require('../src/tree-provider');
+const { createTreeProvider } = require('../src/views/changes/tree-provider');
 
 // A caller-file group takes its worst member's state: △ (changed elsewhere) needs more
 // attention than ○ (not changed), which needs more than ✓ (call updated).

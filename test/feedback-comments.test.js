@@ -11,10 +11,10 @@ const path = require('path');
 
 const baseStub = require('./vscode-stub');
 const { createCommentsApi } = require('./extension-env');
-const { feedbackContextOf, headFilesOf, drawsDrafts, relPathOf, symbolAt, draftThreadSpecs, draftLabel } = require('../src/feedback-comments-model');
-const { createFeedbackComments, COMMANDS, CONTROLLER_ID, CONTROLLER_LABEL } = require('../src/feedback-comments');
-const { createFeedbackDrafts } = require('../src/feedback-drafts');
-const { CONTROLLER_ID: REVIEW_CONTROLLER_ID } = require('../src/review-comments');
+const { feedbackContextOf, headFilesOf, drawsDrafts, relPathOf, symbolAt, draftThreadSpecs, draftLabel } = require('../src/feedback/feedback-comments-model');
+const { createFeedbackComments, COMMANDS, CONTROLLER_ID, CONTROLLER_LABEL } = require('../src/feedback/feedback-comments');
+const { createFeedbackDrafts } = require('../src/feedback/feedback-drafts');
+const { CONTROLLER_ID: REVIEW_CONTROLLER_ID } = require('../src/diff-editor/review-comments');
 
 const REPO = path.join(os.tmpdir(), 'it-feedback-comments-repo');
 const { Uri } = baseStub;

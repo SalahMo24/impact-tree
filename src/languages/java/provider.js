@@ -436,7 +436,7 @@ function firstCallable(symbols) {
 }
 
 /**
- * Where the editor's Java server is warmed (src/readiness.js): the first method or
+ * Where the editor's Java server is warmed (src/session/readiness.js): the first method or
  * constructor jdtls lists in the first changed Java file, as Go's and Python's. Only that
  * file is asked: jdtls imports the whole Maven or Gradle project when it is first asked
  * about any file of it (J0). Null when the editor has no Java support (logged; the analysis

@@ -4,11 +4,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const vscode = require('./vscode-stub');
-const { createTreeProvider } = require('../src/tree-provider');
-const { renderTreeItem } = require('../src/tree-item-renderer');
-const { createReviewState } = require('../src/review-state');
-const { createDecorationProvider } = require('../src/decorations');
-const model = require('../src/review-tree-model');
+const { createTreeProvider } = require('../src/views/changes/tree-provider');
+const { renderTreeItem } = require('../src/views/changes/tree-item-renderer');
+const { createReviewState } = require('../src/session/review-state');
+const { createDecorationProvider } = require('../src/diff-editor/decorations');
+const model = require('../src/views/changes/review-tree-model');
 
 const BODY = { id: 'body', label: 'body' };
 const SIG = { id: 'sig', label: 'signature', short: 'sig' };
@@ -347,7 +347,7 @@ test('the spacer is not a counting row, and counts, line lookup and next-unrevie
 });
 
 // ---- 7. fewer states (P2): three colours in the tree, the exact state in words ------------
-const { stateNameOf, classifyChangeVerdict } = require('../src/tree-row-models');
+const { stateNameOf, classifyChangeVerdict } = require('../src/views/changes/tree-row-models');
 const STATE_GLYPHS = /[⛔✓●∅△○?−≡🧪↑]/u;
 const ERROR = 'list.errorForeground';
 const WARNING = 'list.warningForeground';
@@ -432,7 +432,7 @@ test('caller rows say the call state in words; only a caller changed elsewhere i
 });
 
 test('the legend explains the colours without glyph tokens, and the state names are frozen and distinct', () => {
-  const { LEGEND, STATE_NAMES } = require('../src/tree-row-models');
+  const { LEGEND, STATE_NAMES } = require('../src/views/changes/tree-row-models');
   const names = [...STATE_NAMES.levels, STATE_NAMES.deleted, STATE_NAMES.outside];
   const legendText = LEGEND.map(([, label, desc]) => `${label} ${desc}`).join('\n');
   assert.match(legendText, /Red icon — Callers not updated/);

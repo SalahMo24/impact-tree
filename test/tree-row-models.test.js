@@ -3,7 +3,7 @@
 // vscode stub. Inputs are deep-frozen, so a builder that modified one would throw.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const models = require('../src/tree-row-models');
+const models = require('../src/views/changes/tree-row-models');
 
 const deepFreeze = (v) => {
   if (v && typeof v === 'object' && !Object.isFrozen(v)) {

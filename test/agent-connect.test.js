@@ -1,15 +1,15 @@
 // @ts-check
 'use strict';
-// Connecting the user's agents (src/agent-connect.js, src/agent-connect-commands.js) with fake
+// Connecting the user's agents (src/agent/agent-connect.js, src/agent/agent-connect-commands.js) with fake
 // processes and a fake editor: nothing here runs claude, codex or opens a link.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const ac = require('../src/agent-connect');
-const { createAgentConnect } = require('../src/agent-connect-commands');
-const { planHandOff, handOff, choicesFor, MAX_URI_PROMPT_CHARS } = require('../src/agent-handoff');
+const ac = require('../src/agent/agent-connect');
+const { createAgentConnect } = require('../src/agent/agent-connect-commands');
+const { planHandOff, handOff, choicesFor, MAX_URI_PROMPT_CHARS } = require('../src/agent/agent-handoff');
 
 const PATH_RT = /** @type {ac.Runtime} */ ({ command: '/usr/bin/node', env: {}, kind: 'path' });
 const EDITOR_RT = /** @type {ac.Runtime} */ ({ command: '/Apps/Code Helper', env: { ELECTRON_RUN_AS_NODE: '1' }, kind: 'editor' });

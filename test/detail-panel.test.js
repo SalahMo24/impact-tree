@@ -7,8 +7,8 @@ const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
 const { localResult, finding, previewResult, pull, withEnv } = require('./extension-env');
-const { prQuery } = require('../src/pr-documents');
-const { treeItemId } = require('../src/review-tree-model');
+const { prQuery } = require('../src/diff-editor/pr-documents');
+const { treeItemId } = require('../src/views/changes/review-tree-model');
 
 const SITE = { start: 22, end: 25 };
 const caller = (file) => ({ file, pos: 7, label: 'user', test: false, callSites: [SITE], sites: 1,

@@ -12,8 +12,8 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const vscode = require('./vscode-stub');
-const { createTreeProvider } = require('../src/tree-provider');
-const { createReviewState } = require('../src/review-state');
+const { createTreeProvider } = require('../src/views/changes/tree-provider');
+const { createReviewState } = require('../src/session/review-state');
 const { changedSymbolKeys } = require('../src/engine/changed-symbols');
 
 const EXPECTED = path.join(__dirname, 'tree-characterization.expected.json');

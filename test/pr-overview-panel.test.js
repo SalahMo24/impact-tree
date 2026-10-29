@@ -6,7 +6,7 @@
 // webview panel is the shared fake, which runs the page's real script.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createPullRequestPanel, parseMessage, MAX_DRAFTS } = require('../src/pr-overview-panel');
+const { createPullRequestPanel, parseMessage, MAX_DRAFTS } = require('../src/views/pr-tab/pr-overview-panel');
 const { fakeWebviewPanel, deferred, overviewAnswer } = require('./extension-env');
 const vscodeStub = require('./vscode-stub');
 
@@ -904,7 +904,7 @@ test('wired: merging through the tab sends the reviewed head to GitHub, shows th
 });
 
 test('wired: after GitHub refuses a merge, the tab reloads and stops offering it', async () => {
-  const { GitHubGraphQLError } = require('../src/github-request');
+  const { GitHubGraphQLError } = require('../src/github/github-request');
   const NEWER = 'e'.repeat(40);
   const github = { pending: false, state: 'OPEN', mutations: [], refused: false };
   github.graphql = async (query, variables) => {

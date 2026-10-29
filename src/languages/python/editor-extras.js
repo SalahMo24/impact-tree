@@ -2,7 +2,7 @@
 'use strict';
 // What a caller resolver adds for a Python target to the callers Pyright reports
 // (docs/MULTI_LANGUAGE_PLAN.md, P-D4 and P4; `EditorCallerExtras` in ../types.js). Applied
-// by the editor's resolver (src/resolver-vscode.js) and, the same way, by the test harness
+// by the editor's resolver (src/session/resolver-vscode.js) and, the same way, by the test harness
 // (test/lsp-harness/harness-languages.js). Pyright's blind spots, measured in P0
 // (test/lsp-harness/P0-REPORT.md §3–§5), and what is done about each:
 //

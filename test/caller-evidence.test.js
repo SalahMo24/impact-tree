@@ -13,8 +13,8 @@ const { execFileSync } = require('child_process');
 const ts = require('typescript');
 const vscodeStub = require('./vscode-stub');
 const { analyze } = require('../src/engine/analyze');
-const { createTreeProvider } = require('../src/tree-provider');
-const { createDecorationProvider } = require('../src/decorations');
+const { createTreeProvider } = require('../src/views/changes/tree-provider');
+const { createDecorationProvider } = require('../src/diff-editor/decorations');
 const { createSyntacticIndex } = require('../src/engine/syntactic-index');
 const { createSyntacticResolver } = require('../src/engine/resolver-syntactic');
 const { createTsResolver } = require('../src/engine/resolver-ts');
@@ -124,12 +124,12 @@ test('PR preview: a caller with an edited and an untouched call is stale', async
 function withVscodeModule(stub, fn) {
   const original = Module._load;
   Module._load = function (name, ...args) { return name === 'vscode' ? stub : original.call(this, name, ...args); };
-  delete require.cache[require.resolve('../src/resolver-vscode')];
-  delete require.cache[require.resolve('../src/session')];
+  delete require.cache[require.resolve('../src/session/resolver-vscode')];
+  delete require.cache[require.resolve('../src/session/session')];
   try { return fn(); } finally {
     Module._load = original;
-    delete require.cache[require.resolve('../src/resolver-vscode')];
-    delete require.cache[require.resolve('../src/session')];
+    delete require.cache[require.resolve('../src/session/resolver-vscode')];
+    delete require.cache[require.resolve('../src/session/session')];
   }
 }
 
@@ -150,7 +150,7 @@ test('tree: a mixed caller expands as not updated and says how many calls were',
   return withVscodeModule(stub, async () => {
     registerVirtualText(file, text);
     try {
-      const { createSession } = require('../src/session');
+      const { createSession } = require('../src/session/session');
       const session = createSession(stub, { log() {}, review: null });
       const changedRanges = { 'src/use.ts': [[3, 3], [13, 13], [15, 15]] };
       session.viewStateFromResult({ allChanged: callers.map((c) => ({ file: c.file, namePos: c.pos })), changedPaths: [], changedRanges }, repo);
@@ -316,7 +316,7 @@ test('editor resolver: an empty answer is unknown when a test project the server
     } } };
   try {
     await withVscodeModule(stub, async () => {
-      const { createVscodeResolver } = require('../src/resolver-vscode');
+      const { createVscodeResolver } = require('../src/session/resolver-vscode');
       const answer = () => createVscodeResolver({ repoRoot: dir, retries: 0, ts, filterInherited: false }).callerState(file, pos);
       assert.deepEqual(await answer(), { state: 'none', callers: [], complete: true }, 'nothing else names it');
       fs.writeFileSync(spec, "import { target } from 'src/a';\ntarget();\n");
@@ -351,7 +351,7 @@ test('editor resolver: callerState keeps the completeness of the answer', async 
   require.cache[cqrsId] = fakeCqrs;
   try {
     await withVscodeModule(stub, async () => {
-      const { createVscodeResolver } = require('../src/resolver-vscode');
+      const { createVscodeResolver } = require('../src/session/resolver-vscode');
       const answer = async () => {
         const cs = await createVscodeResolver({ repoRoot: dir, retries: 0, ts, filterInherited: false }).callerState(file, 9);
         return [cs.state, cs.complete, cs.reason];

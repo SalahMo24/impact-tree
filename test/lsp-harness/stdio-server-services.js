@@ -19,7 +19,7 @@ const DEFAULT_DEADLINE_MS = 240000;
 
 /**
  * Longest base-side text written to a temporary file (UTF-16 code units), as in the
- * editor's services (src/services-vscode.js MAX_BASE_TEXT_CHARS); larger is refused.
+ * editor's services (src/session/services-vscode.js MAX_BASE_TEXT_CHARS); larger is refused.
  */
 const MAX_BASE_TEXT_CHARS = 2 * 1024 * 1024;
 

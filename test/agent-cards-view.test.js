@@ -1,5 +1,5 @@
 'use strict';
-// The Cards view with an agent's result (src/cards-view-model.js, src/agent-cards.js): the
+// The Cards view with an agent's result (src/views/cards/cards-view-model.js, src/agent/agent-cards.js): the
 // agent's cards first, the engine's facts unchanged underneath, a partial cover listing only
 // the members it took, a stale result not shown. Recorded in agent-cards-view.expected.json;
 // any difference from the recording is a visible change.
@@ -10,8 +10,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { cardsViewModel, UNDO_COMMAND, TOGGLE_COMMAND } = require('../src/cards-view-model');
-const { resolveAgentResult, latestCardsResult } = require('../src/agent-cards');
+const { cardsViewModel, UNDO_COMMAND, TOGGLE_COMMAND } = require('../src/views/cards/cards-view-model');
+const { resolveAgentResult, latestCardsResult } = require('../src/agent/agent-cards');
 
 const EXPECTED = path.join(__dirname, 'agent-cards-view.expected.json');
 const load = (name) => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'cards', `${name}.json`), 'utf8'));

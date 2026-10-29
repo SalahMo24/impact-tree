@@ -1,9 +1,9 @@
 'use strict';
 // Which git remote is the GitHub repository: parsing `git remote -v`, the automatic choice,
-// the setting, and the sentence shown when there is no choice (src/github-remote.js).
+// the setting, and the sentence shown when there is no choice (src/github/github-remote.js).
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parseRemoteList, chooseGitHubRemote, isSafeRemoteName, describeRemoteProblem, baseRemoteOf, otherRepositoryProblem } = require('../src/github-remote');
+const { parseRemoteList, chooseGitHubRemote, isSafeRemoteName, describeRemoteProblem, baseRemoteOf, otherRepositoryProblem } = require('../src/github/github-remote');
 
 const remote = (name, url) => ({ name, url });
 const GH = (owner, repo = 'repo') => `https://github.com/${owner}/${repo}.git`;

@@ -18,10 +18,10 @@ const vscode = require('./vscode-stub');
 const { ts, root } = require('./bug-regressions-helpers');
 const { analyzeRemote } = require('../src/engine/analyze-remote');
 const { clearVirtualText } = require('../src/engine/textpos');
-const { renderTreeItem } = require('../src/tree-item-renderer');
-const { buildDetailHtml } = require('../src/detail-panel-html');
-const models = require('../src/tree-row-models');
-const tree = require('../src/review-tree-model');
+const { renderTreeItem } = require('../src/views/changes/tree-item-renderer');
+const { buildDetailHtml } = require('../src/views/details/detail-panel-html');
+const models = require('../src/views/changes/tree-row-models');
+const tree = require('../src/views/changes/review-tree-model');
 const { LANGUAGES, useLanguagesForTest } = require('../src/languages');
 
 /** Registers Go without `prepareSyntactic` (a language with no text analysis) until the returned function is called. */

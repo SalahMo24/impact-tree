@@ -1,6 +1,6 @@
 // @ts-check
 'use strict';
-// The MCP server's side of the editor bridge (src/agent-bridge.js): finds the live editor
+// The MCP server's side of the editor bridge (src/agent/agent-bridge.js): finds the live editor
 // bridge for a repository through its lock file, connects, and offers `context` (which
 // review the user is looking at) and `submit` (hand a result back to the editor).
 const fs = require('fs');

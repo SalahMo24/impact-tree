@@ -4,47 +4,47 @@ const fs = require('fs');
 const os = require('os');
 const vscode = require('vscode');
 const { MODES } = require('./engine/analyze');
-const { createTreeProvider } = require('./tree-provider');
-const { createCardsProvider, REVEAL_COMMAND } = require('./cards-provider');
-const { latestCardsResult } = require('./agent-cards');
-const { agentNotes } = require('./agent-notes');
-const { createReviewTab } = require('./review-tab-panel');
-const { createReviewSidebar, emptyReviewRow } = require('./review-sidebar');
-const { viewStateOf } = require('./view-state');
-const { createReviewNavigation } = require('./review-navigation');
-const { createDetailPanel } = require('./detail-panel');
-const { createCallerComment } = require('./caller-comment');
-const { createReviewLens } = require('./review-lens');
+const { createTreeProvider } = require('./views/changes/tree-provider');
+const { createCardsProvider, REVEAL_COMMAND } = require('./views/cards/cards-provider');
+const { latestCardsResult } = require('./agent/agent-cards');
+const { agentNotes } = require('./agent/agent-notes');
+const { createReviewTab } = require('./views/review-tab/review-tab-panel');
+const { createReviewSidebar, emptyReviewRow } = require('./views/sidebar/review-sidebar');
+const { viewStateOf } = require('./views/changes/view-state');
+const { createReviewNavigation } = require('./diff-editor/review-navigation');
+const { createDetailPanel } = require('./views/details/detail-panel');
+const { createCallerComment } = require('./diff-editor/caller-comment');
+const { createReviewLens } = require('./diff-editor/review-lens');
 const { readLineOfOffset, offsetToPosition } = require('./engine/textpos');
-const { createDecorationProvider } = require('./decorations');
-const { createReviewState } = require('./review-state');
-const { createGitHub } = require('./github');
-const { parseRemoteList, chooseGitHubRemote, describeRemoteProblem, baseRemoteOf } = require('./github-remote');
-const { createSourcesProvider } = require('./sources-provider');
-const { createPrDocuments } = require('./pr-documents');
-const { createSession } = require('./session');
-const { createAgentBridge } = require('./agent-bridge');
-const { createAgentConnect } = require('./agent-connect-commands');
-const { createAgentCardsState } = require('./agent-cards-state');
-const { createAnalyseWithAgent } = require('./agent-analyse');
-const { chooseAgent } = require('./feedback-send');
-const { createSnapshotStoreGetter } = require('./snapshot-storage');
-const { createPrActions } = require('./pr-actions');
-const { createPullRequestReviewStore, reviewTargetOf } = require('./pr-review-store');
-const { createViewedSync } = require('./viewed-sync');
-const { createOpenReview } = require('./open-review');
-const { threadsViewOf, NO_THREADS } = require('./review-threads');
-const { createReviewComments } = require('./review-comments');
-const { createPullRequestPanel } = require('./pr-overview-panel');
-const { registerContentProviders } = require('./content-providers');
-const { registerCommands } = require('./commands');
-const { contextKeysOf } = require('./view-state');
-const { createFeedbackDrafts } = require('./feedback-drafts');
-const { createFeedbackComments } = require('./feedback-comments');
-const { createFeedbackStatus, SHOW_DRAFTS_COMMAND } = require('./feedback-tree');
-const { createFeedbackRoundView } = require('./feedback-round-view');
-const { createSendFeedback } = require('./feedback-send');
-const { createAutoCleanup, createCleanupCommand } = require('./storage-cleanup-run');
+const { createDecorationProvider } = require('./diff-editor/decorations');
+const { createReviewState } = require('./session/review-state');
+const { createGitHub } = require('./github/github');
+const { parseRemoteList, chooseGitHubRemote, describeRemoteProblem, baseRemoteOf } = require('./github/github-remote');
+const { createSourcesProvider } = require('./views/sidebar/sources-provider');
+const { createPrDocuments } = require('./diff-editor/pr-documents');
+const { createSession } = require('./session/session');
+const { createAgentBridge } = require('./agent/agent-bridge');
+const { createAgentConnect } = require('./agent/agent-connect-commands');
+const { createAgentCardsState } = require('./agent/agent-cards-state');
+const { createAnalyseWithAgent } = require('./agent/agent-analyse');
+const { chooseAgent } = require('./feedback/feedback-send');
+const { createSnapshotStoreGetter } = require('./storage/snapshot-storage');
+const { createPrActions } = require('./session/pr-actions');
+const { createPullRequestReviewStore, reviewTargetOf } = require('./github/pr-review-store');
+const { createViewedSync } = require('./diff-editor/viewed-sync');
+const { createOpenReview } = require('./diff-editor/open-review');
+const { threadsViewOf, NO_THREADS } = require('./views/changes/review-threads');
+const { createReviewComments } = require('./diff-editor/review-comments');
+const { createPullRequestPanel } = require('./views/pr-tab/pr-overview-panel');
+const { registerContentProviders } = require('./diff-editor/content-providers');
+const { registerCommands } = require('./session/commands');
+const { contextKeysOf } = require('./views/changes/view-state');
+const { createFeedbackDrafts } = require('./feedback/feedback-drafts');
+const { createFeedbackComments } = require('./feedback/feedback-comments');
+const { createFeedbackStatus, SHOW_DRAFTS_COMMAND } = require('./feedback/feedback-tree');
+const { createFeedbackRoundView } = require('./feedback/feedback-round-view');
+const { createSendFeedback } = require('./feedback/feedback-send');
+const { createAutoCleanup, createCleanupCommand } = require('./storage/storage-cleanup-run');
 const { realClock } = require('./engine/clock');
 
 // Bumped whenever extension-side behaviour changes, so the exthost log proves which
@@ -110,7 +110,7 @@ function activate(context, { clock = realClock } = {}) {
   // change and whenever a run begins (so `git init` then Refresh is noticed), not on every repaint.
   let repoStatus = owned.repoStatus();
   // What the user's agent said about the changes, shown on the Changes rows and lenses (set below, with the bridge).
-  /** @type {() => import('./agent-notes').AgentNotes|null} */
+  /** @type {() => import('./agent/agent-notes').AgentNotes|null} */
   let agentNotesNow = () => null;
   const provider = createTreeProvider(vscode, {
     getAgentNotes: () => agentNotesNow(),
@@ -163,7 +163,7 @@ function activate(context, { clock = realClock } = {}) {
   // It follows the analysis and the cards the session publishes after it; selecting a seam
   // reveals the other card. Disposed with the window.
   // The agent's part of the view (set below, with the bridge): null while agents are off.
-  /** @type {() => import('./cards-provider').AgentSource|null} */
+  /** @type {() => import('./views/cards/cards-provider').AgentSource|null} */
   let agentSource = () => null;
   /** @type {(changeId: string) => any} */
   let agentChangeOf = () => null;
@@ -251,7 +251,7 @@ function activate(context, { clock = realClock } = {}) {
   // Only decides which group a PR is listed under; a failure here never hides the PRs.
   let team = { teams: [], truncated: false, error: null };
 
-  // Which remote is the GitHub repository (src/github-remote.js): read from git and the
+  // Which remote is the GitHub repository (src/github/github-remote.js): read from git and the
   // impactTree.githubRemote setting on each call, so a new remote or setting shows at once.
   let remoteCache = { stamp: null, remotes: [] };
   const githubRemote = () => {
@@ -432,7 +432,7 @@ function activate(context, { clock = realClock } = {}) {
   };
   // What the agent said about the changes: the latest result for the shown head, unless the
   // engine's cards are shown. Built once per stored result.
-  /** @type {{ key: string|null, notes: import('./agent-notes').AgentNotes|null }} */
+  /** @type {{ key: string|null, notes: import('./agent/agent-notes').AgentNotes|null }} */
   let notesFor = { key: null, notes: null };
   agentNotesNow = () => {
     const src = agentSource();

@@ -63,7 +63,7 @@ async function runPr(/** @type {typeof PRS[number]} */ pr) {
   const statusOf = /** @type {Record<string,string>} */ ({ A: 'added', D: 'removed', M: 'modified' });
   const gh = {
     listPullRequestFiles: async () => {
-      // Renames as GitHub lists them (src/github.js: status `renamed`, `previous_filename` as
+      // Renames as GitHub lists them (src/github/github.js: status `renamed`, `previous_filename` as
       // `oldPath`), with git's default similarity.
       const files = git(repo, ['diff', '--name-status', '-M', base, head]).trim().split('\n').filter(Boolean).map((l) => {
         const [s, a, b] = l.split('\t');
