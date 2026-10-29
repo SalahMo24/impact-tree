@@ -706,7 +706,7 @@ async function editorMain(repo, corpus) {
   try {
     git(repo, 'checkout', '-q', '--detach', corpus[0].head);
     await server.start();
-    console.log(`jdtls ready in ${((Date.now() - t0) / 1000).toFixed(1)} s (-data ${JDTLS_DATA})`);
+    console.log(`jdtls ready in ${((Date.now() - t0) / 1000).toFixed(1)} s (-data ${JDTLS_DATA}); status: ${server.javaServerStatus.busyReason() || 'not busy'}; import events ${JSON.stringify(server.importEvents)}`);
     console.log('PR      switch  quiet   ours  oracle  precision  recall   kinds | targets  c.tp  c.fp  c.fn  c.prec  c.recall | oracles  pipeline');
     for (const pr of corpus) {
       const sw = await switchTo(server, repo, pr.head);
@@ -731,6 +731,8 @@ async function editorMain(repo, corpus) {
       const notAnalysed = (result.unanalysable || []).length;
       console.log(`#${String(pr.number).padEnd(6)} ${String(sw.files).padStart(6)} ${`${(sw.quietMs / 1000).toFixed(1)}s`.padStart(6)} ${String(cmp.ours).padStart(5)} ${String(cmp.oracle).padStart(7)}  ${pct(cmp.tp, cmp.ours).padStart(9)} ${pct(cmp.tp, cmp.oracle).padStart(7)}  ${`${ok}/${cmp.kinds.length}`.padStart(6)} | ${String(cc.targets).padStart(7)} ${String(cc.tp).padStart(5)} ${String(cc.fp.length).padStart(5)} ${String(cc.fn.length).padStart(5)}  ${pct(cc.tp, cc.tp + cc.fp.length).padStart(6)}  ${pct(cc.tp, cc.tp + cc.fn.length).padStart(7)} | ${`${(oMs / 1000).toFixed(1)}s${oa.cached && ob.cached ? ' c' : ''}`.padStart(7)}  ${(pMs / 1000).toFixed(1)}s ${JSON.stringify(cc.states)}${notAnalysed ? ` (${notAnalysed} not analysed)` : ''}`);
       if (process.env.J6_ROWS) for (const r of cc.rows) console.log(`    ${JSON.stringify(r)}`);
+      // J6 pass 3: the import-end events seen so far (ms from ServiceReady) and the status now.
+      if (pr === corpus[0] && server.importEvents) console.log(`  import events ${JSON.stringify(server.importEvents)}; status now: ${server.javaServerStatus.busyReason() || 'not busy'}`);
     }
   } finally {
     clearTimeout(killTimer);
@@ -751,6 +753,7 @@ async function editorMain(repo, corpus) {
   list('misses on a complete answer (must be 0)', T.notIncomplete);
   list('misses on a complete answer in a module outside jdtls\' view of the workspace (reported apart)', T.outsideOnComplete);
   list('shown as fine with a non-updated caller javac knows (must be 0)', T.fine);
+  console.log(`import-end events (200/100, ms from ServiceReady): ${JSON.stringify(server.importEvents)}; record ${server.recordFile}`);
   console.log(`caches ${CACHE_ROOT}, ${CALLERS_CACHE}; jdtls -data ${JDTLS_DATA}; wall time ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   const pass = T.extra.length === 0 && T.tp >= 0.98 * T.oracle && T.wrongKinds.length === 0 && T.notIncomplete.length === 0 && T.fine.length === 0;
   process.exitCode = pass ? 0 : 1;

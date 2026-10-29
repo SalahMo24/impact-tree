@@ -60,6 +60,13 @@ function createJdtlsServices(options) {
   const settingsXml = path.join(tools, 'maven-settings.xml');
   const { command, args, env } = jdtlsCommand(tools, options.dataDir);
   let ready = false;
+  let readyAt = 0;
+  /** @type {() => void} */
+  let resolveServerReady = () => {};
+  const serverReady = new Promise((r) => { resolveServerReady = () => r(undefined); });
+  /** Every import-end event (200 / 100) with its time from ServiceReady (negative: before). */
+  /** @type {Array<{ eventType: number, msFromReady: number|null }>} */
+  const importEvents = [];
   const openTokens = new Set();
   let lastProgressAt = 0;
   /** @type {Map<string, Array<{ message: string }>>} */
@@ -82,7 +89,7 @@ function createJdtlsServices(options) {
       if (method === 'language/eventNotification' && params) for (const l of eventListeners) l(params);
       // Project-level diagnostics (a project folder or a build file), read by the Java status.
       if (method === 'textDocument/publishDiagnostics' && params && !/\.java$/.test(params.uri)) projectDiagnostics.set(params.uri, params.diagnostics || []);
-      if (method === 'language/status' && params && params.type === 'ServiceReady') ready = true;
+      if (method === 'language/status' && params && params.type === 'ServiceReady') { if (!ready) { readyAt = Date.now(); resolveServerReady(); } ready = true; }
       if (method === '$/progress' && params && params.value) {
         lastProgressAt = Date.now();
         if (params.value.kind === 'begin') openTokens.add(params.token);
@@ -146,17 +153,30 @@ function createJdtlsServices(options) {
   /** @type {Record<string, Function>} */
   const on = {};
   const handler = (/** @type {string} */ name) => (/** @type {Function} */ fn) => { on[name] = fn; return { dispose() {} }; };
+  // The build-file record (server-status.js, J6 pass 3) is a JSON file beside the `-data`, as
+  // the editor's is in workspaceState beside redhat.java's workspace storage.
+  const recordFile = `${options.dataDir.replace(/\/$/, '')}.build-file-record.json`;
   const javaServerStatus = createJavaServerStatus({
-    api: { serverMode: 'Standard', onDidProjectsImport: handler('imported'), onDidClasspathUpdate: handler('classpath') },
+    api: { serverMode: 'Standard', serverReady: () => serverReady, onDidProjectsImport: handler('imported'), onDidClasspathUpdate: handler('classpath') },
     watch: () => ({ onDidChange: handler('buildFile'), onDidCreate: handler('buildFileCreated'), onDidDelete: handler('buildFileDeleted'), dispose() {} }),
     diagnostics: () => [...projectDiagnostics].map(([uri, list]) => [{ path: uri, fsPath: fileURLToPath(uri) }, list]),
+    buildFiles: {
+      folders: () => [options.repo],
+      store: {
+        get: () => { try { return JSON.parse(fs.readFileSync(recordFile, 'utf8')); } catch { return undefined; } },
+        set: (/** @type {any} */ record) => fs.writeFileSync(recordFile, JSON.stringify(record)),
+      },
+    },
+  });
+  eventListeners.push((/** @type {any} */ params) => {
+    if (params.eventType === 200 || params.eventType === 100) importEvents.push({ eventType: params.eventType, msFromReady: readyAt ? Date.now() - readyAt : null });
   });
   eventListeners.push((/** @type {any} */ params) => {
     if (params.eventType === 200 && on.imported) on.imported(params.data);
     if (params.eventType === 100 && on.classpath) on.classpath(params.data);
   });
   const buildFilesChanged = () => { if (on.buildFile) on.buildFile(); };
-  return { ...services, start, waitQuiet, javaServerStatus, buildFilesChanged };
+  return { ...services, start, waitQuiet, javaServerStatus, buildFilesChanged, importEvents, recordFile };
 }
 
 module.exports = { createJdtlsServices, DEFAULT_TOOLS };

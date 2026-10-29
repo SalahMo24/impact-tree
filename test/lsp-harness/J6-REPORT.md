@@ -7,7 +7,90 @@ node test/lsp-harness/java-verify.js            # all 12 PRs of java-verify-corp
 J6_ROWS=1 node test/lsp-harness/java-verify.js 2072   # one PR, with a row per target
 ```
 
-Pass 2 (below) comes first; the pass 1 sections after it are kept as they were.
+Pass 3 comes first, then pass 2; the pass 1 sections after them are kept as they were.
+
+## Pass 3: a build file changed while the server was down
+
+Pass 2's gap: jdtls starts from a `-data` imported at another state, reports ready, then
+re-imports, and the editor saw no signal (run 3: 5 misses on complete answers in #1700).
+
+### What the editor does now (`src/languages/java/server-status.js`)
+
+- **Record:** a SHA-256 over every build file (pom.xml, build.gradle(.kts), settings.gradle(.kts))
+  in the workspace folders: relative path and content (not mtime). Kept in the extension's
+  `workspaceState` (`impactTree.java.buildFileRecord`, `{ version: 1, stamp }`), given at
+  activation (`setEditorJavaBuildFileStore`, `src/extension.js`).
+- **Written** at every `onDidProjectsImport` / `onDidClasspathUpdate` after `serverReady()`.
+  Events before ready are not recorded (measured below: jdtls sends one from its old `-data`).
+- **Compared** when Java's status is made and again at `serverReady()`. A different stamp: "a
+  build file changed since the Java language server last imported the project". No record:
+  "no import … has been seen yet in this workspace". Either holds until an import event after
+  ready.
+- **Deadline:** 120 000 ms from ready (injected clock). After it the answer stays incomplete,
+  with "; the re-import was not confirmed within 120 s"; only an import event ends it.
+- **Caps** (`BUILD_FILE_LIMITS`, checked before each admission): 200 build files, depth 24,
+  5000 folders, 1 MiB per build file; `target/`, `build/`, `node_modules/`, `out/` and
+  dot-folders skipped. A cap or a read error: "the build files could not all be read (…)",
+  incomplete until an import event after ready. gson-verify: 8 build files, 18 ms.
+- **Residual:** an import that ended before the status existed is not seen; such a window
+  stays incomplete (not confirmed) until the next import event.
+- **Harness mirror** (`jdtls-services.js`): `serverReady` resolves at ServiceReady, the record
+  is `<-data>.build-file-record.json`, and `importEvents` lists every 200/100 with its time
+  from ServiceReady.
+- **Tests:** `test/java-build-file-record.test.js` (5 tests, ~0.1 s): changed → incomplete until
+  an import, which records; unchanged → complete; no record / unknown format → incomplete until
+  the first import after ready (one before ready does not count); deadline → stays incomplete
+  with its reason; caps (files at and over, depth, folders, size, read error).
+
+### Does jdtls fire an import event after a startup re-import?
+
+Yes, as `onDidClasspathUpdate` (event 100), not `onDidProjectsImport` (200). Full run from
+`-data` at #2944 with #1700 checked out: one 200 **before** ServiceReady, then the first 100
+at 11.7 s after it, and 100s at every later switch; no 200 after ready. So both events end
+the check, and the pre-ready 200 must not (it is the old `-data`'s).
+
+### Editor run (once, from a stale `-data`: imported at #2944, first PR #1700)
+
+167 s, exit 0. The build-file limit was then depth 8, so the check read "could not all be read
+(folders deeper than 8)" from the start until the first 100 after ready: incomplete, as for a
+change. Depth is now 24 (gson's source trees are 12+ deep).
+
+| PR | switch | quiet | functions | kinds | targets | TP | FP | FN | pipeline | states |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| #1700 | (start) | – | 13 / 13 | 9/9 | 13 | 591 | 0 | 6 | 6.7 s | 12 resolved, 1 unknown |
+| #1904 | 163 | 6.9 s | 14 / 14 | 13/13 | 14 | 339 | 6 | 46 | 8.8 s | 13 resolved, 1 unknown |
+| #2072 | 122 | 5.1 s | 13 / 13 | 9/9 | 11 | 177 | 4 | 11 | 1.0 s | 11 resolved |
+| #2498 | 282 | 7.5 s | 12 / 12 | 6/6 | 8 | 35 | 8 | 0 | 1.5 s | 8 resolved |
+| #2588 | 179 | 8.2 s | 3 / 3 | 1/1 | 3 | 19 | 0 | 0 | 0.6 s | 3 resolved |
+| #2759 | 79 | 7.8 s | 5 / 5 | 5/5 | 5 | 58 | 0 | 0 | 0.7 s | 5 resolved |
+| #2776 | 75 | 8.5 s | 2 / 2 | 1/1 | 2 | 2 | 0 | 0 | 0.9 s | 2 resolved |
+| #2838 | 16 | 7.4 s | 105 / 105 | 17/17 | 61 | 549 | 233 | 9 | 32.0 s | 58 resolved, 1 none, 2 unknown |
+| #2879 | 49 | 7.7 s | 9 / 9 | 7/7 | 7 | 205 | 0 | 0 | 1.3 s | 7 resolved |
+| #2951 | 93 | 13.7 s | 25 / 25 | 3/3 | 17 | 15 | 193 | 0 | 2.6 s | 17 resolved |
+| #2950 | 23 | 11.3 s | 10 / 10 | 6/6 | 10 | 18 | 26 | 0 | 1.2 s | 10 resolved |
+| #2944 | 4 | 4.2 s | 13 / 13 | 13/13 | 13 | 60 | 10 | 19 | 1.3 s | 13 resolved |
+| **total** | | | **224 / 224** | **90/90** | 164 | 2068 | 480 | 91 | | 159 resolved, 4 unknown, 1 none |
+
+- **0 misses on a complete answer** (no exclusion needed: jdtls attributed the 11 proto sites
+  as javac did, as in pass 2 run 3); 0 outside jdtls' view; 0 shown as fine.
+- -32603: 1 of 165 (`equals(Object)`).
+- **Single-PR check with depth 24** (`java-verify.js 1700`, 19 s, exit 0; `-data` at #2944, no
+  record): status "no import … seen yet" from the start; #1700 had 44 misses (the re-import had
+  not finished: run 3 saw 5), all on incomplete answers; 0 on complete. No import event came
+  before the run ended, so no record was written; the record-mismatch path in a live run is
+  covered by the unit tests only.
+
+### Pass 3 end checks (sequential)
+
+| Check | Result | Wall time |
+| --- | --- | --- |
+| `npm test` | exit 0, 141 files, 0 failed | 35 s |
+| `npm run lint` | exit 0 | 4 s |
+| `npm run typecheck` | exit 0 | 7 s |
+| baseline `compare.sh` | ALL SAME | – |
+| `preview-golden.js --compare` | exit 0, 21 same | 113 s |
+| `java-verify.js --syntactic` | exit 0, 224/224, 90/90 | 8 s |
+| `java-e2e.js` | exit 0 | 17 s |
 
 ## Pass 2
 
