@@ -319,7 +319,11 @@ const prepare = (ctx) => require('../server-symbols').prepareFromServerSymbols(c
  * DI factories and annotation-processed types read incomplete with their reason.
  * @type {NonNullable<import('../types').LanguageProvider['editorCallers']>}
  */
-const editorCallers = ({ trace, services, repoRoot, clock }) => require('./editor-extras').createJavaEditorExtras({ trace, services, repoRoot, ...(clock ? { clock } : {}) });
+const editorCallers = ({ trace, services, repoRoot, clock, javaServerStatus }) => require('./editor-extras').createJavaEditorExtras({
+  trace, services, repoRoot, ...(clock ? { clock } : {}),
+  // The editor's: redhat.java's import state (./server-status.js); the harness passes its own.
+  serverStatus: javaServerStatus !== undefined ? javaServerStatus : require('./server-status').editorJavaServerStatus(),
+});
 
 /**
  * `prepare` where there is no language server (the CLI, the no-checkout preview; J7, J8): the

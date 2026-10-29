@@ -96,9 +96,10 @@ function createHierarchyResolver(services, { extras = null } = {}) {
   const incomingWithStatus = async (file, pos, withTests = true) => {
     const query = extras ? extras.query(file, pos) : null;
     const retryRejected = extras?.retryRejected ?? null;
-    const hierarchy = await queryHierarchy(services, headDoc(file), pos, { retryRejected });
+    const gate = extras?.queryGate ?? null;
+    const hierarchy = await queryHierarchy(services, headDoc(file), pos, { retryRejected, gate });
     const applied = await applyCallerExtras(hierarchy, {
-      extras, query, file, pos, withTests, askAt: (f, p) => queryHierarchy(services, headDoc(f), p, { retryRejected }),
+      extras, query, file, pos, withTests, askAt: (f, p) => queryHierarchy(services, headDoc(f), p, { retryRejected, gate }),
     });
     if (applied.stale) throw new Error('harness: a query cannot be stale here (no clear())');
     return applied.answer;

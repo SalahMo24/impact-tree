@@ -51,12 +51,34 @@
 //   and none of 61 on the same PR one query at a time. A second rejection, or any other, is
 //   incomplete with its message: the shared `queryHierarchy` keeps every rejection as the reason.
 
+// - At most JAVA_CALLER_QUERY_LIMIT Java caller queries run at once (`queryGate`); the
+//   analysis' other languages keep its concurrency. The rest wait in a queue.
+// - An empty incoming-calls answer for an override or an overridable method is incomplete
+//   (EMPTY_ANSWER_REASON): VS Code's `vscode.provideIncomingCalls` returns `[]` when the
+//   provider fails, so a jdtls -32603 can reach the editor as "no callers" (J6 pass 2).
+// - While the Java language server imports or rebuilds the projects (`serverStatus`, from
+//   redhat.java's API and jdtls' project diagnostics in the editor, ./server-status.js), or
+//   while a project's build path is broken, an answer is incomplete with the reason it gives
+//   (J6 #1904: extras/metrics/proto at compliance 1.6, which jdtls does not build, had none
+//   of their calls listed).
+
 const path = require('path');
+const { createQueryGate } = require('../callers-from-hierarchy');
 const { readTextOfOffsets } = require('../../engine/textpos');
 const { withDeadline } = require('../../engine/deadline');
 const { realClock } = require('../../engine/clock');
 
 /** @typedef {import('../../engine/caller-contract').CallerRow} CallerRow */
+
+// Budget: Java caller queries in flight at once, per resolver (count). Default 2, approved by
+// the owner (J6 pass 2). Owner: Java's editor extras; enforced by `queryGate`, through which
+// the resolver's and the harness's `queryHierarchy` run every Java call-hierarchy query,
+// retries included. Exhaustion: the next query waits in a first-come queue, never fails; the
+// queue holds at most the analysis' parallel queries (impactTree.concurrency, at most 32).
+// Why: jdtls rejected 3-6% of incomingCalls with -32603 at 8 parallel queries (J6), 0 at 1.
+const JAVA_CALLER_QUERY_LIMIT = 2;
+const IMPORTED_DURING_REASON = 'the Java language server re-imported the project while the query ran';
+const EMPTY_ANSWER_REASON = 'the language server returned no callers for a method that overrides or can be overridden; an empty answer can hide a failed query';
 
 // The largest Java file read, for a caller's sites or the target's declaration, in bytes on
 // disk. Hand-written Java files are rarely above a few hundred KiB; a larger one (generated
@@ -360,10 +382,12 @@ async function targetReasons(env, file, pos, hasCallers) {
   if (overrides) {
     const supers = type.supertypes.length ? type.supertypes.join(', ') : 'its supertype';
     reasons.push(`${OVERRIDES_REASON} (${supers}.${decl.name})`);
+    if (!hasCallers) reasons.push(EMPTY_ANSWER_REASON);
     return reasons;
   }
   const overridable = !has('final') && type.kind !== 'record' && type.kind !== 'none'
     && !type.modifiers.has('final');
+  if (overridable && !hasCallers) reasons.push(EMPTY_ANSWER_REASON);
   if (overridable) {
     const r = await overriddenReason(env, file, pos);
     if (r) reasons.push(r);
@@ -372,10 +396,13 @@ async function targetReasons(env, file, pos, hasCallers) {
 }
 
 /**
- * Java's caller extras. Holds no state between queries.
+ * Java's caller extras. Holds no state between queries but the query gate's queue.
  * @param {{ trace?: (message: string) => void, readText?: (file: string) => string|null,
  *   services?: import('../types').LanguageServices|null, repoRoot?: string|null, timeoutMs?: number,
- *   clock?: import('../../engine/clock').Clock }} [options]
+ *   clock?: import('../../engine/clock').Clock, serverStatus?: import('./server-status').JavaServerStatus|null,
+ *   queryLimit?: number }} [options]
+ *   `serverStatus`: the Java language server's import state (./server-status.js); absent: none
+ *   known (tests, the harness). `queryLimit`: JAVA_CALLER_QUERY_LIMIT (tests).
  *   `readText` (tests): a file's text; by default through src/engine/textpos.js, the text
  *   the sites' offsets were converted from, up to MAX_JAVA_FILE_BYTES. `services`: where an
  *   overridable method's implementations are asked; without it none is asked (tests).
@@ -385,8 +412,11 @@ async function targetReasons(env, file, pos, hasCallers) {
 function createJavaEditorExtras({
   trace = () => {}, readText = (file) => readTextOfOffsets(file, { maxBytes: MAX_JAVA_FILE_BYTES }),
   services = null, repoRoot = null, timeoutMs = IMPLEMENTATIONS_TIMEOUT_MS, clock = realClock,
+  serverStatus = null, queryLimit = JAVA_CALLER_QUERY_LIMIT,
 } = {}) {
+  const status = serverStatus || { busyReason: () => null, epoch: () => 0 };
   return {
+    queryGate: createQueryGate(queryLimit),
     // Java never suppresses a query.
     suppressedReason: 'caller query not asked',
     // Callers dropped for using the method only as a value. Callers in jdtls' default
@@ -397,6 +427,10 @@ function createJavaEditorExtras({
     query(file, pos) {
       let sawValueUse = false;
       let kept = 0;
+      // The server's state when the query starts: busy then, busy at the end, or an import
+      // that began or ended in between (the epoch moved), and the answer may be the old one.
+      const busyAtStart = status.busyReason();
+      const epochAtStart = status.epoch();
       return {
         isSuppressed: () => false,
         filter(callers) {
@@ -410,8 +444,11 @@ function createJavaEditorExtras({
           return { kept: r.kept, dropped: r.dropped - r.notWorkspace };
         },
         async moreCallers() {
-          if (sawValueUse) return { callers: [], incompleteReason: VALUE_USE_REASON };
-          const reasons = await targetReasons({ services, readText, trace, timeoutMs, clock }, file, pos, kept > 0);
+          const busy = busyAtStart || status.busyReason()
+            || (status.epoch() !== epochAtStart ? IMPORTED_DURING_REASON : null);
+          const serverReasons = busy ? [busy] : [];
+          if (sawValueUse) return { callers: [], incompleteReason: [...serverReasons, VALUE_USE_REASON].join('; ') };
+          const reasons = [...serverReasons, ...await targetReasons({ services, readText, trace, timeoutMs, clock }, file, pos, kept > 0)];
           return { callers: [], incompleteReason: reasons.length ? reasons.join('; ') : null };
         },
       };
@@ -425,6 +462,7 @@ function createJavaEditorExtras({
 module.exports = {
   isTransientRejection,
   createJavaEditorExtras, filterJavaCallers, isJavaCallSite, maskJava, declarationAt, targetReasons,
+  JAVA_CALLER_QUERY_LIMIT, EMPTY_ANSWER_REASON, IMPORTED_DURING_REASON,
   MAX_JAVA_FILE_BYTES, IMPLEMENTATIONS_TIMEOUT_MS, VALUE_USE_REASON, OVERRIDES_REASON, OVERRIDDEN_REASON,
   IMPLICIT_SUPER_REASON, UNBUILT_REASON, DI_FACTORY_REASON, GENERATED_REASON, UNREAD_TARGET_REASON,
 };

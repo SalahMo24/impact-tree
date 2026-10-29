@@ -62,6 +62,10 @@ function createJdtlsServices(options) {
   let ready = false;
   const openTokens = new Set();
   let lastProgressAt = 0;
+  /** @type {Map<string, Array<{ message: string }>>} */
+  const projectDiagnostics = new Map();
+  /** @type {Array<(params: any) => void>} */
+  const eventListeners = [];
   const services = createStdioServerServices({
     repo: options.repo, command, args, env, languageId: 'java',
     deadlineMs: options.deadlineMs || 120000,
@@ -71,6 +75,13 @@ function createJdtlsServices(options) {
     // editor's Java extras drop it (src/languages/java/editor-extras.js).
     skipCallerUri: (uri) => uri.includes('/jdt.ls-java-project/'),
     onNotification: (method, params) => {
+      // J6_TRACE=1: every notification but Java diagnostics, timed, on stderr (debugging a switch).
+      if (process.env.J6_TRACE && !(method === 'textDocument/publishDiagnostics' && /\.java$/.test(params.uri))) {
+        process.stderr.write(`[jdtls ${new Date().toISOString().slice(11, 23)}] ${method} ${JSON.stringify(params).slice(0, 300)}\n`);
+      }
+      if (method === 'language/eventNotification' && params) for (const l of eventListeners) l(params);
+      // Project-level diagnostics (a project folder or a build file), read by the Java status.
+      if (method === 'textDocument/publishDiagnostics' && params && !/\.java$/.test(params.uri)) projectDiagnostics.set(params.uri, params.diagnostics || []);
       if (method === 'language/status' && params && params.type === 'ServiceReady') ready = true;
       if (method === '$/progress' && params && params.value) {
         lastProgressAt = Date.now();
@@ -124,7 +135,28 @@ function createJdtlsServices(options) {
     }
     throw new Error(`jdtls: not quiet within ${deadlineMs} ms (${openTokens.size} progress open)`);
   };
-  return { ...services, start, waitQuiet };
+  // What the editor reads from redhat.java (src/languages/java/server-status.js), built from
+  // jdtls' own notifications the way redhat.java builds its API: `onDidProjectsImport` and
+  // `onDidClasspathUpdate` are jdtls' `language/eventNotification` 200 and 100, the build-file
+  // watcher is `buildFilesChanged()` (called by the harness after a checkout that changed a
+  // pom), and the project diagnostics are the ones jdtls published. Progress is not read: the
+  // editor cannot see it.
+  const { createJavaServerStatus } = require('../../src/languages/java/server-status');
+  const { fileURLToPath } = require('url');
+  /** @type {Record<string, Function>} */
+  const on = {};
+  const handler = (/** @type {string} */ name) => (/** @type {Function} */ fn) => { on[name] = fn; return { dispose() {} }; };
+  const javaServerStatus = createJavaServerStatus({
+    api: { serverMode: 'Standard', onDidProjectsImport: handler('imported'), onDidClasspathUpdate: handler('classpath') },
+    watch: () => ({ onDidChange: handler('buildFile'), onDidCreate: handler('buildFileCreated'), onDidDelete: handler('buildFileDeleted'), dispose() {} }),
+    diagnostics: () => [...projectDiagnostics].map(([uri, list]) => [{ path: uri, fsPath: fileURLToPath(uri) }, list]),
+  });
+  eventListeners.push((/** @type {any} */ params) => {
+    if (params.eventType === 200 && on.imported) on.imported(params.data);
+    if (params.eventType === 100 && on.classpath) on.classpath(params.data);
+  });
+  const buildFilesChanged = () => { if (on.buildFile) on.buildFile(); };
+  return { ...services, start, waitQuiet, javaServerStatus, buildFilesChanged };
 }
 
 module.exports = { createJdtlsServices, DEFAULT_TOOLS };

@@ -106,7 +106,8 @@ function createVscodeResolver({
     const isHandler = !!(extras && extras.isSuppressed());
     if (isHandler) stats.cqrsSuppressed++;
     const retryRejected = languageExtras?.retryRejected ?? null;
-    const answer = isHandler ? { ready: true, rows: [] } : await queryHierarchy(services, headDoc(file), pos, { retryRejected });
+    const gate = languageExtras?.queryGate ?? null;
+    const answer = isHandler ? { ready: true, rows: [] } : await queryHierarchy(services, headDoc(file), pos, { retryRejected, gate });
     if (startedGeneration !== generation) return staleAnswer();
     const { ready } = answer;
     const dt = clock.now() - t;
@@ -121,7 +122,7 @@ function createVscodeResolver({
     // `filter` drops what the server over-reports; `moreCallers` adds what it cannot see.
     const applied = await applyCallerExtras(answer, {
       extras: languageExtras, query: extras, file, pos, withTests,
-      askAt: (f, p) => queryHierarchy(services, headDoc(f), p, { retryRejected }),
+      askAt: (f, p) => queryHierarchy(services, headDoc(f), p, { retryRejected, gate }),
       isStale: () => startedGeneration !== generation,
     });
     if (applied.stale) return staleAnswer();

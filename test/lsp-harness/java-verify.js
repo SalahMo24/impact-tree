@@ -531,6 +531,8 @@ async function switchTo(server, repo, sha) {
   if (git(repo, 'rev-parse', 'HEAD').trim() !== sha) throw new Error(`${repo} is not at ${sha}`);
   const { pathToFileURL } = require('url');
   server.closeAll();
+  // The editor's build-file watcher (src/languages/java/server-status.js) sees the checkout.
+  if (server.buildFilesChanged && changed.some((p) => /(^|\/)(pom\.xml|build\.gradle(\.kts)?|settings\.gradle(\.kts)?)$/.test(p))) server.buildFilesChanged();
   server.client.notify('workspace/didChangeWatchedFiles', {
     changes: changed.map((p) => ({ uri: pathToFileURL(path.join(repo, p)).toString(), type: fs.existsSync(path.join(repo, p)) ? 2 : 3 })),
   });
@@ -548,7 +550,7 @@ async function editorPipeline(server, repo, pr) {
     languageServices: services,
     makeResolver: ({ language }) => {
       const extras = language === 'java' && javaProvider.editorCallers
-        ? javaProvider.editorCallers({ ts: null, services, repoRoot: repo, trace: () => {}, filterInherited: false, onWarmupRetry: () => {} })
+        ? javaProvider.editorCallers({ ts: null, services, repoRoot: repo, trace: () => {}, filterInherited: false, onWarmupRetry: () => {}, javaServerStatus: server.javaServerStatus || null })
         : null;
       return createHierarchyResolver(services, { extras });
     },
@@ -575,7 +577,7 @@ function touchedLines(repo, pr) {
 }
 
 function editorCallerCheck(repo, pr, result, oracle) {
-  const { classifyChangeVerdict, toneOf } = require('../../src/tree-row-models');
+  const { classifyChangeVerdict, toneOf } = require('../../src/views/changes/tree-row-models');
   const { OVERRIDES_REASON } = require('../../src/languages/java/editor-extras');
   const { isTestPath } = require('../../src/languages');
   const rel = (abs) => path.relative(repo, abs).split(path.sep).join('/');
@@ -656,7 +658,7 @@ function editorCallerCheck(repo, pr, result, oracle) {
         if ((skippedByFile.get(file) || []).some((p) => p >= s.start && p < s.end)) continue;
         // Not javac's target here: name what javac resolved the site's call to.
         const other = inRange[0];
-        const overReport = reason.startsWith(OVERRIDES_REASON);
+        const overReport = reason.includes(OVERRIDES_REASON);
         const state = `answer ${reason ? 'incomplete' : 'COMPLETE'}`;
         const verdict = overReport ? `jdtls over-report on an override: javac resolved it to ${other ? `${other.target.file}#${other.target.pos}` : 'a method outside the tree (the JDK\'s), so oracle (b) lists no call'}; answer incomplete (overrides)`
           : codeAt(file, s.start).startsWith('@') ? `an annotation element set in an annotation (a use, not an invocation: javac records no call); ${state}`
