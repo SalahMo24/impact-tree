@@ -442,27 +442,28 @@ test('the contributions: a keybinding in a review editor, a context menu on chan
   const { contributes } = require('../package.json');
   assert.deepEqual(contributes.keybindings.filter((k) => k.command === 'impactTree.showCallers'),
     [{ command: 'impactTree.showCallers', key: 'shift+alt+c', when: 'editorTextFocus && impactTree.hasReview' }]);
-  assert.deepEqual(contributes.menus['view/item/context'].map((m) => [m.command, m.when, m.group]), [
-    ['impactTree.showCallers', 'view == impactTree.changes && viewItem == finding', 'navigation@1'],
+  // The reviewed row's controls are tested in review-navigation.test.js.
+  assert.deepEqual(contributes.menus['view/item/context'].filter((m) => !/viewItem == reviewHost/.test(m.when)).map((m) => [m.command, m.when, m.group]), [
+    ['impactTree.showCallers', 'view == impactTree.sources && viewItem == finding', 'navigation@1'],
     // a caller row (changed or not): Comment on this call (test/caller-comment.test.js)
-    ['impactTree.commentOnCall', 'view == impactTree.changes && viewItem =~ /^(caller|changedCaller)$/', 'navigation@2'],
+    ['impactTree.commentOnCall', 'view == impactTree.sources && viewItem =~ /^(caller|changedCaller)$/', 'navigation@2'],
     // the inline icon passes the same change row as the context menu (tested below)
-    ['impactTree.showCallers', 'view == impactTree.changes && viewItem == finding', 'inline@1'],
-    ['impactTree.retryViewedSync', 'view == impactTree.changes && viewItem =~ /ViewedFailed$/', 'inline'],
+    ['impactTree.showCallers', 'view == impactTree.sources && viewItem == finding', 'inline@1'],
+    ['impactTree.retryViewedSync', 'view == impactTree.sources && viewItem =~ /ViewedFailed$/', 'inline'],
     // a feedback draft row of the "Feedback to send" group (F1): Edit and Delete, inline and in its menu
-    ['impactTree.feedback.edit', 'view == impactTree.changes && viewItem == feedbackDraft', 'inline@1'],
-    ['impactTree.feedback.delete', 'view == impactTree.changes && viewItem == feedbackDraft', 'inline@2'],
-    ['impactTree.feedback.edit', 'view == impactTree.changes && viewItem == feedbackDraft', 'navigation@1'],
-    ['impactTree.feedback.delete', 'view == impactTree.changes && viewItem == feedbackDraft', 'navigation@2'],
+    ['impactTree.feedback.edit', 'view == impactTree.sources && viewItem == feedbackDraft', 'inline@1'],
+    ['impactTree.feedback.delete', 'view == impactTree.sources && viewItem == feedbackDraft', 'inline@2'],
+    ['impactTree.feedback.edit', 'view == impactTree.sources && viewItem == feedbackDraft', 'navigation@1'],
+    ['impactTree.feedback.delete', 'view == impactTree.sources && viewItem == feedbackDraft', 'navigation@2'],
     // Send feedback on the drafts group (inline) and in the drafts' menus (F3)
-    ['impactTree.sendFeedback', 'view == impactTree.changes && viewItem == feedbackGroup', 'inline@1'],
-    ['impactTree.sendFeedback', 'view == impactTree.changes && viewItem =~ /^feedback(Group|Draft)$/', 'send@1'],
-    ['impactTree.sendFeedbackTo', 'view == impactTree.changes && viewItem =~ /^feedback(Group|Draft)$/', 'send@2'],
+    ['impactTree.sendFeedback', 'view == impactTree.sources && viewItem == feedbackGroup', 'inline@1'],
+    ['impactTree.sendFeedback', 'view == impactTree.sources && viewItem =~ /^feedback(Group|Draft)$/', 'send@1'],
+    ['impactTree.sendFeedbackTo', 'view == impactTree.sources && viewItem =~ /^feedback(Group|Draft)$/', 'send@2'],
     // a sent round's items: Reply in next round; the round: Open feedback file (F4)
-    ['impactTree.feedback.reply', 'view == impactTree.changes && viewItem == feedbackRoundItem', 'inline@1'],
-    ['impactTree.feedback.reply', 'view == impactTree.changes && viewItem == feedbackRoundItem', 'navigation@1'],
-    ['impactTree.feedback.openRoundFile', 'view == impactTree.changes && viewItem == feedbackRound', 'inline@1'],
-    ['impactTree.feedback.openRoundFile', 'view == impactTree.changes && viewItem == feedbackRound', 'navigation@1'],
+    ['impactTree.feedback.reply', 'view == impactTree.sources && viewItem == feedbackRoundItem', 'inline@1'],
+    ['impactTree.feedback.reply', 'view == impactTree.sources && viewItem == feedbackRoundItem', 'navigation@1'],
+    ['impactTree.feedback.openRoundFile', 'view == impactTree.sources && viewItem == feedbackRound', 'inline@1'],
+    ['impactTree.feedback.openRoundFile', 'view == impactTree.sources && viewItem == feedbackRound', 'navigation@1'],
     // the Cards view's "Waiting for your agent…" row: Cancel waiting (AI5)
     ['impactTree.cancelAgentWaiting', 'view == impactTree.cards && viewItem == agentWaiting', 'inline'],
   ]);

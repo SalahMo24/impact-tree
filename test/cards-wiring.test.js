@@ -52,8 +52,7 @@ test('the setting is off by default: the view is hidden, the analysis asks for n
   const view = manifest.contributes.views.impactTree.find((v) => v.id === 'impactTree.cards');
   assert.equal(view.when, 'config.impactTree.cards.enabled');
   const names = manifest.contributes.views.impactTree.map((v) => v.id);
-  assert.deepEqual(names.slice(names.indexOf('impactTree.changes'), names.indexOf('impactTree.details') + 1),
-    ['impactTree.changes', 'impactTree.cards', 'impactTree.details'], 'after Changes, before Details');
+  assert.deepEqual(names, ['impactTree.sources', 'impactTree.cards', 'impactTree.details'], 'after Review, before Details');
 
   env.hooks.cardsEngine = fakeEngine(env);
   env.hooks.localResult = (o) => localResult(o, { findings: four(env) });

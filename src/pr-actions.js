@@ -51,7 +51,7 @@ function createPrActions(vscode, session, { log, gh, repoSlug, githubRemote, sou
     if (!run) return;
     try {
       await vscode.window.withProgress(
-        { location: { viewId: 'impactTree.changes' }, title: `Impact Tree: PR #${pr.number}` },
+        { location: { viewId: 'impactTree.sources' }, title: `Impact Tree: PR #${pr.number}` },
         async (progress) => {
           // wall-clock: log-only — preview timings, for the log
           const t0 = Date.now();

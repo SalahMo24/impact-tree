@@ -765,7 +765,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
         return;
       }
       await vscode.window.withProgress(
-        { location: { viewId: 'impactTree.changes' }, title: 'Impact Tree' },
+        { location: { viewId: 'impactTree.sources' }, title: 'Impact Tree' },
         async (progress) => {
           session.ensureResolver();
           beginAnalysingStage(run);

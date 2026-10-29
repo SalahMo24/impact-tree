@@ -118,8 +118,10 @@ test('a fork PR listed by GitHub says only where it comes from', async () => {
     const rows = (await Promise.all(groups.map((g) => sources.getChildren(g)))).flat();
     const row = rows.find((r) => r.type === 'pr');
     assert.ok(row, 'the fork PR is listed');
-    assert.match(row.tooltip, /From fork someone\/repo\.$/);
-    assert.ok(!/fetch/.test(row.tooltip));
+    // Pull request rows have no hover: the row itself says it is a fork.
+    assert.match(row.desc, /  ·  fork$/);
+    assert.equal(row.tooltip, '');
+    assert.equal(sources.getTreeItem(row).tooltip, '');
   }, forkSetup({ fetch: net.fetchImpl }));
 });
 
