@@ -60,7 +60,7 @@ test('the reviewed pull request holds the review: its group opens, its row is th
   const item = sidebar.getTreeItem(two);
   assert.equal(item.contextValue, 'reviewHost');
   assert.equal(item.collapsibleState, vscode.TreeItemCollapsibleState.Expanded);
-  assert.equal(item.command, undefined, 'clicking it does not start its review again');
+  assert.equal(item.command.command, 'impactTree.openPullRequest', 'clicking it still offers preview, check out or open on GitHub');
   const rows = await sidebar.getChildren(two);
   assert.deepEqual(rows.map((r) => r.label), ['Resolving callers…', 'a.ts'], 'the notice left the tree');
   assert.equal(sidebar.getTreeItem(two).tooltip, 'fetched origin/main', 'it is in the reviewed row\'s hover');

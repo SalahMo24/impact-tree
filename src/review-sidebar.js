@@ -111,8 +111,8 @@ function createReviewSidebar(vscode, { tree, getHost, emptyRow = () => null }) {
     item.collapsibleState = vscode.TreeItemCollapsibleState.Expanded;
     item.contextValue = 'reviewHost';
     item.tooltip = notices.length ? notices.map((n) => `${n.label}${n.desc ? ` — ${n.desc}` : ''}`).join('\n') : '';
-    // Clicking the host does not start its review again.
-    item.command = undefined;
+    // Clicking it still offers the pull request's choices (preview, check out, open on
+    // GitHub), so a preview can be followed by a checkout from the same row.
     return item;
   }
 
