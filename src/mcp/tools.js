@@ -14,21 +14,18 @@
 // Pure apart from reading files at the head (`readText`), running `git diff` for hunks
 // (`diffOf`) and the caller searches of the live resolvers; all three are injectable.
 
-const fs = require('fs');
-const path = require('path');
 const { z } = require('zod');
 const { ToolError, intArg, paged, fitObject, MAX_PAGE_SIZE, MAX_PAGE, DEFAULT_PAGE_SIZE } = require('./paging');
 const {
-  validateSubmission, checkEvidence, indexChanges, isRelativePath, lineStarts, lineOf, escapeRe, MAX_LINE, IDENTIFIER,
+  validateSubmission, checkEvidence, isRelativePath, lineStarts, escapeRe, MAX_LINE, IDENTIFIER,
   BEHAVIOUR_KINDS, MAX_WHAT_CHARS, MAX_ATTENTION,
 } = require('../engine/agent-results');
+const { makeEnv, impactOf, seamsOf, nameOf, hunkFor } = require('../engine/card-env');
 
 // Lines one get_source call returns at most. Unit: lines.
 const MAX_SOURCE_LINES = 400;
 // search_code hits at most. Unit: matching lines.
 const MAX_SEARCH_HITS = 200;
-// Diff text kept per change. Unit: characters.
-const MAX_HUNK_CHARS = 6000;
 // Deadline for one `impact_paths` call. Unit: ms.
 const QUERY_DEADLINE_MS = 10000;
 // Caller rows shown by get_card's merge hints and seams. Unit: items.
@@ -113,98 +110,11 @@ function createImpactTools(ctx) {
   };
 }
 
-// ---------------------------------------------------------------------------------------
-// Shared state of one tool set
 
-/**
- * @param {Parameters<typeof createImpactTools>[0]} ctx
- */
-function makeEnv(ctx) {
-  const { repo, result } = ctx;
-  const readText = ctx.readText || ((/** @type {string} */ abs) => { try { return fs.readFileSync(abs, 'utf8'); } catch { return null; } });
-  const rel = (/** @type {string} */ abs) => path.relative(repo, abs).split(path.sep).join('/');
-  const abs = (/** @type {string} */ relPath) => path.resolve(repo, relPath);
-  /** @type {Map<string, number[]>} */
-  const startsCache = new Map();
-  const changes = indexChanges(result, rel);
-  const allCards = [
-    ...ctx.cards.clusters.map((c) => ({ ...c, kind: 'card' })),
-    ...(ctx.cards.sweeps || []).map((s) => ({ ...s, kind: 'sweep' })),
-  ];
-  return {
-    ctx, repo, result, readText, rel, abs, changes, allCards,
-    cardById: new Map(allCards.map((c) => [c.id, c])),
-    hints: ctx.cards.hints || [],
-    seams: ctx.cards.seams || [],
-    units: ctx.units || [],
-    notes: [...(ctx.notes || []), ...(ctx.cards.hintNotes || [])],
-    paths: result.impactPaths || {},
-    /** 1-based line of a UTF-16 offset in a file, or null when the file cannot be read. @param {string} file @param {number} offset */
-    lineAt(file, offset) {
-      if (!startsCache.has(file)) { const t = readText(file); startsCache.set(file, t === null ? [] : lineStarts(t)); }
-      const starts = /** @type {number[]} */ (startsCache.get(file));
-      return starts.length ? lineOf(starts, offset) : null;
-    },
-    /** @type {Map<string, string|null>} Diff text per file; one diff per file. */
-    diffCache: new Map(),
-    /** Text of a repository-relative file at the head. @param {string} relPath */
-    readRel: (relPath) => readText(abs(relPath)),
-  };
-}
 
-/** @typedef {ReturnType<typeof makeEnv>} Env */
 
-/**
- * Impact facts of a set of changes, summed from their impact paths.
- * @param {Env} env @param {string[]} members
- */
-function impactOf(env, members) {
-  const entries = new Map();
-  /** @type {Record<string, number>} */
-  const ends = {};
-  /** @type {Map<string, number>} */
-  const reasons = new Map();
-  /** @type {any[]} */
-  const top = [];
-  let walked = 0;
-  let complete = 0;
-  let testOnly = 0;
-  for (const id of members) {
-    const p = env.paths[id];
-    if (!p) continue;
-    walked++;
-    if (p.complete) complete++;
-    if (p.testOnly) testOnly++;
-    for (const e of p.entries || []) entries.set(`${e.type}|${e.name}`, { type: e.type, name: e.name, file: e.file, depth: e.depth, via: e.via });
-    for (const [k, v] of Object.entries((p.summary && p.summary.ends) || {})) ends[k] = (ends[k] || 0) + /** @type {number} */ (v);
-    for (const r of p.incompleteReasons || []) reasons.set(r, (reasons.get(r) || 0) + 1);
-    for (const t of p.topPaths || []) top.push({ from: id, ...t });
-  }
-  const rank = (/** @type {any} */ t) => (t.throughStale ? 0 : 10) + (t.end === 'entry' ? 0 : 1);
-  top.sort((a, b) => rank(a) - rank(b) || a.via.length - b.via.length);
-  /** @type {Record<string, number>} */
-  const entryTypes = {};
-  for (const e of entries.values()) entryTypes[e.type] = (entryTypes[e.type] || 0) + 1;
-  return {
-    entryPoints: [...entries.values()], entryTypes, pathEnds: ends, topPaths: top.slice(0, 5), walked, testOnlyMembers: testOnly,
-    complete: walked === members.length && complete === walked,
-    reasons: [...(walked < members.length ? [`${members.length - walked} member(s) have no impact paths (deleted or not walked)`] : []),
-      ...[...reasons.entries()].sort((a, b) => b[1] - a[1]).map(([r, n]) => `${r} (×${n})`)],
-  };
-}
-
-/** The seams that involve a card. @param {Env} env @param {string} id */
-const seamsOf = (env, id) => env.seams.filter((/** @type {any} */ s) => (s.clusters || []).includes(id));
-
-/** A change as a short row. @param {Env} env @param {string} id */
-function nameOf(env, id) {
-  const c = env.changes.get(id);
-  if (!c) return { id, label: id };
-  return {
-    id, label: c.label, file: c.relPath || env.rel(c.file), lines: c.deletedFn ? null : [c.startLine, c.endLine],
-    kinds: c.deletedFn ? ['deleted'] : (c.kinds || []).map((/** @type {any} */ k) => k.id), ...(c.added ? { added: true } : {}),
-  };
-}
+/** @typedef {Parameters<typeof createImpactTools>[0]} ToolsCtx */
+/** @typedef {Omit<import('../engine/card-env').CardEnv<ToolsCtx>, 'units'> & { units: Unit[] }} Env */
 
 // ---------------------------------------------------------------------------------------
 // Facts about cards and changes
@@ -297,29 +207,6 @@ function getChange(env, id) {
   });
 }
 
-/**
- * The hunks of the file diff that overlap the function's lines.
- * @param {Env} env @param {any} c
- * @returns {{ text: string|null, complete: boolean }}
- */
-function hunkFor(env, c) {
-  const diffOf = env.ctx.diffOf;
-  if (!diffOf) return { text: null, complete: false };
-  const cache = env.diffCache;
-  if (!cache.has(c.relPath)) cache.set(c.relPath, diffOf(c.relPath, c.oldPath));
-  const diff = cache.get(c.relPath);
-  if (diff === null || diff === undefined) return { text: null, complete: false };
-  const out = [];
-  for (const h of diff.split(/\n(?=@@ )/)) {
-    const m = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(h);
-    if (!m) continue;
-    const start = Number(m[1]);
-    const end = start + Math.max(0, Number(m[2] ?? 1) - 1);
-    if (end >= c.startLine && start <= c.endLine) out.push(h);
-  }
-  const text = out.join('\n');
-  return text.length > MAX_HUNK_CHARS ? { text: `${text.slice(0, MAX_HUNK_CHARS)}\n… (cut at ${MAX_HUNK_CHARS} characters)`, complete: false } : { text, complete: true };
-}
 
 // ---------------------------------------------------------------------------------------
 // Facts about any function
@@ -631,6 +518,4 @@ function addSubmitTools(tools, env) {
 
 module.exports = {
   createImpactTools, NO_EDITOR_REASON, MAX_SOURCE_LINES, MAX_SEARCH_HITS, QUERY_DEADLINE_MS,
-  // For src/mcp/card-facts.js, which builds the same facts in one block.
-  internals: { makeEnv, impactOf, nameOf, seamsOf, hunkFor },
 };

@@ -3,7 +3,7 @@
 
 // The prompt "Analyse with my agent" hands to the user's own coding agent: review what each
 // change does to behaviour, then group the changes into cards. It carries the facts about
-// every card and change (src/mcp/card-facts.js), inline or as a file the prompt names, so the
+// every card and change (src/engine/card-facts.js), inline or as a file the prompt names, so the
 // agent can answer with one `submit_cards` call instead of reading the MCP tools card by card. The facts are JSON in a fenced block marked as data: names, paths and commit
 // subjects in them come from the code and its history, so the prompt says they are data,
 // not instructions. Pure.
