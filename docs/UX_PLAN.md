@@ -392,5 +392,10 @@ used only Details' progress bar. So:
   tree, its context menu, the keyboard or the diff. The callers' 💬 moved to **Comment on
   this call** on a direct caller row's context menu (PR review comment, else feedback draft).
 
+**Review view merged (2026-10-29, owner).** The Changes view is folded into the Review view:
+the review nests under the pull request or mode it came from, and the title-bar controls
+above moved onto that row. The review tab (U1) and the agent's behaviour review are behind
+`impactTree.cards.enabled` and `impactTree.agents.enabled`.
+
 If the owner agrees, `RELEASE_PLAN.md` gets a short note pointing here and its U section
 is updated to say which tasks moved; nothing in C or R changes.
