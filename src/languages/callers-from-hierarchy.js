@@ -34,7 +34,8 @@ const isRetryable = (e) => !!e && typeof e === 'object' && 'retryable' in e && e
 /**
  * Asks for the incoming calls at `pos`: one `prepareCallHierarchy` and the `incomingCalls`
  * of its first item, run as one caller query when the services schedule those. A rejection
- * is kept as the reason, never read as "no callers".
+ * is kept as the reason, never read as "no callers". The incoming calls are always asked
+ * when an item is listed, which the editor's prepared-hierarchy budget relies on.
  * @param {LanguageServices} services
  * @param {DocRef} doc
  * @param {number} pos UTF-16 offset of the symbol's name.

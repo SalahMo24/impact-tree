@@ -15,6 +15,7 @@ const { makeGit } = require('../src/engine/git');
 const { withEnv, localResult, previewResult, finding, pull, deferred } = require('./extension-env');
 const { createFakeClock } = require('./fake-clock');
 const flush = () => new Promise(setImmediate);
+const until = async (cond) => { for (let i = 0; i < 2000 && !cond(); i++) await flush(); };
 
 function temporaryRepo() {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-loading-')));
@@ -268,15 +269,18 @@ test('timed-out provider commands keep their admission slots until the provider 
   const repo = temporaryRepo(), held = deferred();
   let calls = 0, hanging = true;
   try {
+    // Only incoming calls hang: a hanging prepare would wait at the prepared-hierarchy
+    // budget (8, tested in prepared-hierarchies.test.js) before reaching the request cap.
     await withResolver(async name => {
+      if (name === 'vscode.prepareCallHierarchy') return [{}];
       calls++;
       if (hanging) return held.promise;
-      return name === 'vscode.prepareCallHierarchy' ? [{}] : [];
+      return [];
     }, async create => {
       const resolver = create({ repoRoot: repo.dir, queryTimeoutMs: 20, coldBudgetMs: 0, filterInherited: false, clock });
       const file = path.join(repo.dir, 'a.js');
       const running = Array.from({ length: 32 }, () => resolver.incomingWithStatus(file, 9));
-      await flush();
+      await until(() => calls === 32);
       assert.equal(calls, 32);
       const blocked = await resolver.incomingWithStatus(file, 9);
       assert.equal(blocked.complete, false);

@@ -108,7 +108,9 @@
  * @property {(doc: DocRef) => Promise<ServerSymbol[]|null>} documentSymbols
  * @property {(doc: DocRef, pos: number) => Promise<unknown[]|null>} prepareCallHierarchy
  *   Opaque call-hierarchy items, passed back to `incomingCalls` unchanged. Empty: the
- *   server is up and has no item at `pos`.
+ *   server is up and has no item at `pos`. Items listed must be followed by the
+ *   `incomingCalls` of one of them: the editor holds a slot of its prepared-hierarchy
+ *   budget until then (MAX_PREPARED_HIERARCHIES, src/session/services-vscode.js).
  * @property {(item: unknown) => Promise<import('../engine/caller-contract').CallerRow[]|null>} incomingCalls
  * @property {(doc: DocRef, pos: number) => Promise<ServerLocation[]|null>} references
  * @property {(doc: DocRef, pos: number) => Promise<ServerLocation[]|null>} implementations
