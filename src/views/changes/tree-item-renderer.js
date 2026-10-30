@@ -18,7 +18,8 @@ const path = require('path');
 const {
   CALL_STATE, LEVEL_TONES, NOT_ANALYSED_DESC, notAnalysedText, attentionCountText, CHANGED_ELSEWHERE_TONE, toneOf, classifyChangeVerdict, classifyDeletedVerdict,
 } = require('./tree-row-models');
-const { needsAttention, collectCountingRows } = require('./review-tree-model');
+const { needsAttention, collectCountingRows, NO_AGENT_ATTENTION } = require('./review-tree-model');
+const { describeCard, describeOthers } = require('./card-order');
 const { describeThreadCounts } = require('./review-threads');
 const { pathTreeMarkdown } = require('./path-tree');
 const { rowLine, tooltipLines } = require('../../agent/agent-notes');
@@ -40,14 +41,21 @@ const mdText = (s) => String(s).replace(/[\\`*_{}[\]()#+\-.!|<>~]/g, '\\$&');
  *   `ViewedNote`; absent for a view that has no GitHub review.
  * - `layout`: 'tree' when file rows sit under folder rows, so a file row does not repeat
  *   its folder; 'flat' (the default) names the folder on the row.
+ * - `order`: 'cards' in the By card order, where a change row is not under its file and so
+ *   ends its description with the file's name; 'files' (the default) is the Files order.
  * - `agentOf(row)`: what the user's agent said a change row's change does, or null; shown
- *   after the engine's text and in the tooltip. `agentHowOf(row)`: how the agent says a
- *   direct caller is affected, or null. Both absent while agents are off.
+ *   after the engine's text and in the tooltip, with the agent's own icon for the kind.
+ *   `agentHowOf(row)`: how the agent says a direct caller is affected, or null. Both absent
+ *   while agents are off.
+ * - `agentAttention`: the change ids the agent named in `attention`, which need attention
+ *   beside the engine's own flags (one set for every count, gate G15).
+ * - `cardTooltipOf(row)`: the hover lines of a card row (its facts), or an empty list.
  * @typedef {{
  *   rowDetail: string, iconMode: string, checkedOf: (row: TreeRow) => boolean|null,
  *   threadCountsOf?: (row: TreeRow) => import('./review-threads').ThreadCounts|null,
  *   viewedOf?: (relPath: string, allTicked: boolean) => ViewedNote|null,
- *   layout?: 'flat'|'tree',
+ *   layout?: 'flat'|'tree', order?: 'files'|'cards', agentAttention?: import('./review-tree-model').AgentAttention,
+ *   cardTooltipOf?: (row: TreeRow) => string[],
  *   agentOf?: (row: TreeRow) => import('../../agent/agent-notes').AgentChange|null,
  *   agentHowOf?: (row: TreeRow) => string|null,
  * }} TreeView
@@ -99,6 +107,22 @@ function viewedNote(view, relPath, allTicked) {
  * @returns {string|null}
  */
 const folderNote = (row, view) => (view.layout === 'tree' ? null : lastFolder(row.relPath));
+
+/**
+ * The file a row names at its end in the By card order, where the row is not under its
+ * file; nothing in the Files order, where the file row above it says so.
+ * @param {TreeRow} row A change, deleted or top-level row.
+ * @param {TreeView} view
+ * @returns {string|null}
+ */
+const basenameNote = (row, view) => (view.order === 'cards' ? path.basename(row.relPath ?? row.finding?.relPath ?? '') || null : null);
+
+/** The icon of each kind the agent gives a change; none for "same behaviour, a new way". */
+/** @type {Readonly<Record<string, string>>} */
+const AGENT_KIND_ICON = Object.freeze({ changed: 'edit', 'may-change': 'question', new: 'add' });
+
+/** @param {TreeView} view @returns {import('./review-tree-model').AgentAttention} */
+const attentionOf = (view) => view.agentAttention || NO_AGENT_ATTENTION;
 
 /**
  * @param {string} label
@@ -195,7 +219,7 @@ function renderReviewFileItem(vscode, n, view) {
   /** @type {TreeRow[]} */
   const rows = n.rows;
   const left = rows.filter((r) => !view.checkedOf(r));
-  const attention = left.filter(needsAttention);
+  const attention = left.filter((r) => needsAttention(r, attentionOf(view)));
   const viewed = viewedNote(view, n.relPath, left.length === 0);
   item.description = [
     attention.length ? attentionCountText(attention.length) : null,
@@ -231,7 +255,7 @@ function renderFolderItem(vscode, n, view) {
   item.iconPath = vscode.ThemeIcon.Folder;
   const rows = collectCountingRows(n.files);
   const left = rows.filter((r) => !view.checkedOf(r));
-  const attention = left.filter(needsAttention);
+  const attention = left.filter((r) => needsAttention(r, attentionOf(view)));
   const files = `${n.fileCount} file${n.fileCount === 1 ? '' : 's'}`;
   // Only the attention count on the row, so a chain of nested folders stays readable as
   // a path; progress and size are in the tooltip.
@@ -306,13 +330,14 @@ function renderPlainItem(vscode, item, n, view) {
       item.iconPath = new vscode.ThemeIcon(n.icon || 'info');
       item.tooltip = n.tooltip || n.label;
       if (n.command) item.command = { command: n.command, title: n.label };
+      if (n.contextValue) item.contextValue = n.contextValue;
       return item;
     case 'deleted': {
       const st = classifyDeletedVerdict();
       item.collapsibleState = vscode.TreeItemCollapsibleState.None;
       // VS Code cannot strike a tree label through, so the icon says it is gone.
       item.label = n.name;
-      item.description = describeChangeRow(containerToShow(n), st.text, null);
+      item.description = [describeChangeRow(containerToShow(n), st.text, null), basenameNote(n, view)].filter(Boolean).join('  ·  ');
       // Semantics beat decoration here: it keeps `trash` whatever iconMode says, in the
       // level's amber (an unsearched deleted symbol is never "fine").
       item.iconPath = new vscode.ThemeIcon('trash', new vscode.ThemeColor(/** @type {import('./tree-row-models').IconTone} */ (LEVEL_TONES[st.level]).color));
@@ -325,7 +350,7 @@ function renderPlainItem(vscode, item, n, view) {
     case 'outside':
       item.collapsibleState = vscode.TreeItemCollapsibleState.None;
       // The file row it sits under names the file.
-      item.description = [n.desc, ...threadParts(n, view)].filter(Boolean).join('  ·  ');
+      item.description = [n.desc, ...threadParts(n, view), basenameNote(n, view)].filter(Boolean).join('  ·  ');
       // No icon of its own: the row is the last under its file, and its words say what it is.
       item.tooltip = new vscode.MarkdownString([
         `**Top-level changes** — \`${n.relPath}\``, '', n.desc, '',
@@ -393,8 +418,11 @@ function renderChangeItem(vscode, item, n, view) {
   const agent = view.agentOf ? view.agentOf(n) : null;
   item.description = [describeChangeRow(containerToShow(n),
     view.rowDetail === 'inline' ? `${st.text}${qual}${kinds.length ? '  ·  ' + kinds.join(', ') : ''}` : st.text,
-    n, threadParts(n, view)), agent && rowLine(agent)].filter(Boolean).join('  ·  ');
-  item.iconPath = rowIcon(f.label, f, toneOf(st));
+    n, threadParts(n, view)), agent && rowLine(agent), basenameNote(n, view)].filter(Boolean).join('  ·  ');
+  // The agent's own kind icon, never the engine's: the colour is still the verdict's.
+  const tone = toneOf(st);
+  const kindIcon = agent ? AGENT_KIND_ICON[agent.kind] : undefined;
+  item.iconPath = kindIcon ? new vscode.ThemeIcon(kindIcon, tone ? new vscode.ThemeColor(tone.color) : undefined) : rowIcon(f.label, f, tone);
   const lines = buildChangeTooltipLines(n, st, kinds);
   item.tooltip = new vscode.MarkdownString((agent ? [...lines.slice(0, 2), ...tooltipLines(agent, mdText), '', '---', '', ...lines.slice(2)] : lines).join('\n'));
   item.contextValue = 'finding';
@@ -496,6 +524,39 @@ function renderBrowseItem(vscode, n) {
 }
 
 /**
+ * A card of the By card order: a group of related changes, not a finding. It has no checkbox
+ * (the changes under it keep theirs). Its description says how many changes it holds and how
+ * many of them still need attention.
+ * @param {any} vscode
+ * @param {TreeRow} n A `card` row.
+ * @param {TreeView} view
+ */
+function renderCardItem(vscode, n, view) {
+  const item = new vscode.TreeItem(n.label, n.expanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
+  item.iconPath = new vscode.ThemeIcon(n.card.agent ? 'sparkle' : 'layers');
+  item.description = describeCard(n, { isReviewed: (r) => view.checkedOf(r) === true, attention: attentionOf(view) });
+  const lines = view.cardTooltipOf ? view.cardTooltipOf(n) : [];
+  item.tooltip = [n.label, ...(lines.length ? [''] : []), ...lines].join('\n');
+  item.contextValue = 'card';
+  return item;
+}
+
+/**
+ * The container of the changes no card holds: files without a call graph, files that only
+ * have top-level changes, and what a card left out. It has no checkbox.
+ * @param {any} vscode
+ * @param {TreeRow} n An `others` row.
+ */
+function renderOthersItem(vscode, n) {
+  const item = new vscode.TreeItem(n.label, n.expanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
+  item.iconPath = new vscode.ThemeIcon('files');
+  item.description = describeOthers(n);
+  item.tooltip = 'The changes that are in no card: files without a call graph, files whose only change is top-level lines, and changes the cards left out.';
+  item.contextValue = 'others';
+  return item;
+}
+
+/**
  * Renders one row as a TreeItem. Every expandable row starts collapsed, except a file row
  * the provider marks `expanded`.
  * @param {any} vscode The vscode module (or a stand-in with the same constructors).
@@ -509,6 +570,8 @@ function renderTreeItem(vscode, n, view) {
   if (n.type === 'file') return renderFileItem(vscode, n, view);
   if (n.type === 'spacer') return renderSpacerItem(vscode);
   if (n.type === 'browse') return renderBrowseItem(vscode, n);
+  if (n.type === 'card') return renderCardItem(vscode, n, view);
+  if (n.type === 'others') return renderOthersItem(vscode, n);
   const collapsible = n.type === 'message' || n.cycle
     ? vscode.TreeItemCollapsibleState.None
     : vscode.TreeItemCollapsibleState.Collapsed;

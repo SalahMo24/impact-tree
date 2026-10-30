@@ -299,7 +299,6 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
           captured.sidebar = options.treeDataProvider; captured.tree = options.treeDataProvider.reviewTree; captured.view = view;
           captured.sources = options.treeDataProvider;
         }
-        if (id === 'impactTree.cards') { captured.cards = options.treeDataProvider; captured.cardsView = view; }
         return view;
       },
       // `progress` records each withProgress call: its options and every message reported to it.

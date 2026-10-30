@@ -1,14 +1,13 @@
 'use strict';
 // "Analyse with my agent" (AI5): the prompt, the hand-off inside Cursor, the waiting state
 // and the command that ties them together. The agent's cards in the view are in
-// agent-cards-view.test.js; the bridge's Undo and log lines are in agent-bridge.test.js.
+// review-order-cards.test.js; the bridge's Undo and log lines are in agent-bridge.test.js.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { buildCardsPrompt, MAX_PROMPT_CHARS } = require('../src/agent/agent-prompt');
 const { choicesFor, planHandOff, handOff, isCursor, MAX_CURSOR_URL_CHARS, AGENT_SETTING_VALUES } = require('../src/agent/agent-handoff');
 const { createAgentCardsState } = require('../src/agent/agent-cards-state');
 const { createAnalyseWithAgent } = require('../src/agent/agent-analyse');
-const { createCardsProvider } = require('../src/views/cards/cards-provider');
 
 const CTX = { repo: '/work/hono', base: { ref: 'main', sha: 'b'.repeat(40) }, head: 'a'.repeat(40), pr: { number: 1774 } };
 
@@ -251,36 +250,18 @@ test('cancel waiting redraws once; undo asks the bridge to remove that key for t
   assert.deepEqual(w.removed, [[CTX.head, 'key-1']]);
 });
 
-// ---- the provider hands the agent part to the view ----
+// ---- the review tree shows the agent part: test/review-order-cards.test.js ----
 
-test('the provider shows the waiting row and the stored agent result, and runs the command of a command target', () => {
-  const fs = require('fs'), path = require('path');
-  const f = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'cards', 'hono-1774.json'), 'utf8'));
-  const cards = [...f.cards.clusters, ...f.cards.sweeps];
-  const payload = { cards: cards.map((c) => ({ title: `T ${c.id}`, members: c.members })) };
-  const vscode = { EventEmitter: class { constructor() { this.event = () => ({ dispose() {} }); } fire() {} dispose() {} },
-    TreeItem: class { constructor(label, state) { this.label = label; this.collapsibleState = state; } }, ThemeIcon: class { constructor(id) { this.id = id; } },
-    TreeItemCollapsibleState: { None: 0, Collapsed: 1 } };
-  let agent = { waiting: { askedAt: new Date(2026, 0, 2, 9, 5).getTime() }, showEngine: false, results: [{ kind: 'cards', key: 'k', payload, storedAt: new Date(2026, 0, 2, 10, 7).getTime() }] };
-  const provider = createCardsProvider(vscode, { getSource: () => ({ enabled: true, state: { result: f.result, cards: f.cards }, agent }) });
-  const roots = provider.getChildren();
-  assert.deepEqual(roots.slice(0, 2).map((n) => n.label), ['Waiting for your agent… (asked 09:05)', 'Agent result from 10:07 — Undo']);
-  const item = provider.getTreeItem(roots[1]);
-  assert.deepEqual(item.command, { command: 'impactTree.undoAgentResult', title: roots[1].label, arguments: ['k'] });
-  assert.equal(provider.getTreeItem(roots[0]).contextValue, 'agentWaiting');
-  agent = null;
-  provider.refresh();
-  assert.ok(!provider.getChildren().some((n) => n.id.startsWith('agent:')));
-});
-
-test('the manifest wires the command into the Cards view title and the palette behind the setting', () => {
+test('the manifest wires the command into the reviewed row and the palette behind the setting', () => {
   const pkg = require('../package.json');
   const menus = pkg.contributes.menus;
-  const title = menus['view/title'].find((m) => m.command === 'impactTree.analyseWithAgent');
-  assert.equal(title.when, 'view == impactTree.cards && config.impactTree.agents.enabled');
+  const host = menus['view/item/context'].filter((m) => m.command === 'impactTree.analyseWithAgent');
+  assert.deepEqual(host.map((m) => m.group).sort(), ['1_mode@4', 'inline@8']);
+  for (const m of host) assert.equal(m.when, 'view == impactTree.sources && viewItem == reviewHost && config.impactTree.agents.enabled && impactTree.hasCards');
+  assert.equal(menus['view/title'].some((m) => m.command === 'impactTree.analyseWithAgent'), false, 'not a title action: the Cards view is gone');
   assert.match(menus.commandPalette.find((m) => m.command === 'impactTree.analyseWithAgent').when, /config\.impactTree\.agents\.enabled/);
   const cmd = pkg.contributes.commands.find((c) => c.command === 'impactTree.analyseWithAgent');
   assert.equal(cmd.title, 'Analyse with my agent');
   assert.equal(cmd.icon, '$(sparkle)');
-  assert.ok(menus['view/item/context'].some((m) => m.command === 'impactTree.cancelAgentWaiting' && m.group === 'inline'));
+  assert.ok(menus['view/item/context'].some((m) => m.command === 'impactTree.cancelAgentWaiting' && m.group === 'inline' && /viewItem == agentWaiting/.test(m.when)));
 });

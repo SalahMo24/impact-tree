@@ -71,7 +71,8 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
     /** @type {TreeRow|undefined} */
     let row = view.selection[0];
     // The calm state's "Browse all" container stands there too.
-    if (row && (row.type === 'folder' || row.type === 'browse')) row = row.files[0];
+    // So does a card, or the By card order's container of the rest: it stands before its first row.
+    if (row && (row.type === 'folder' || row.type === 'browse' || row.type === 'card' || row.type === 'others')) row = row.files[0];
     // A file's spacer stands for the end of the file it closes: the walk goes on after it.
     if (row && row.type === 'spacer') row = provider.changeRowsOf(row.relPath).at(-1) || provider.getParent(row);
     while (row && treeItemId(row) === undefined) row = provider.getParent(row);
@@ -111,11 +112,17 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
   /** @param {'flat'|'tree'} layout */
   const setLayout = (layout) => () => vscode.workspace.getConfiguration('impactTree')
     .update('fileListLayout', layout, vscode.ConfigurationTarget.Global);
+  // The order is a workspace setting (`impactTree.reviewOrder`): the review is the same rows
+  // in either, so it follows the workspace; the extension's configuration listener repaints.
+  /** @param {'files'|'cards'} order */
+  const setOrder = (order) => () => vscode.workspace.getConfiguration('impactTree')
+    .update('reviewOrder', order, vscode.ConfigurationTarget.Workspace);
   const on = (/** @type {string} */ id, /** @type {() => any} */ fn) => vscode.commands.registerCommand(id, fn);
   return {
     disposables: [
       bar,
       on('impactTree.viewAsTree', setLayout('tree')), on('impactTree.viewAsList', setLayout('flat')),
+      on('impactTree.orderByCards', setOrder('cards')), on('impactTree.orderByFiles', setOrder('files')),
       // Each filter is two commands, one per state of its title icon: a command contribution
       // cannot show on/off by itself, so package.json shows the one that matches the filter.
       on('impactTree.filterAttention', toggle('attention')), on('impactTree.filterAttentionOn', toggle('attention')),
@@ -129,6 +136,9 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
       const counts = provider.reviewCounts();
       setContext('impactTree.filter', provider.getFilter());
       setContext('impactTree.fileListLayout', provider.getLayout());
+      // The order the view draws (`cards` only while the review has cards), and whether it has any.
+      setContext('impactTree.reviewOrder', provider.getOrder());
+      setContext('impactTree.hasCards', provider.hasCards());
       setContext('impactTree.hasReview', counts !== null);
       // The threads filter is offered only once a pull request's threads are loaded.
       setContext('impactTree.hasReviewThreads', counts !== null && provider.threadsView().status === 'ready');

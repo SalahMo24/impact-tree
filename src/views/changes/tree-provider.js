@@ -8,6 +8,8 @@ const models = require('./tree-row-models');
 const reviewTree = require('./review-tree-model');
 const { groupCallerRowsByFile } = require('./tree-grouping');
 const { foldFileRows, markFirstPathOpen } = require('./folder-tree');
+const cardOrder = require('./card-order');
+const { NO_AGENT_REVIEW } = require('../../agent/agent-review');
 const { renderTreeItem } = require('./tree-item-renderer');
 const threadsModel = require('./review-threads');
 const { buildFeedbackGroup, renderFeedbackItem, buildRoundGroup, renderRoundItem } = require('../../feedback/feedback-tree');
@@ -75,6 +77,9 @@ const { buildFeedbackGroup, renderFeedbackItem, buildRoundGroup, renderRoundItem
  *   getFeedbackRound?: () => import('../../feedback/feedback-round-view').RoundView|null,
  *   getLayout?: () => 'flat'|'tree',
  *   getAgentNotes?: () => import('../../agent/agent-notes').AgentNotes|null,
+ *   getAgentReview?: () => import('../../agent/agent-review').AgentReview,
+ *   getCards?: () => { clusters?: any[], sweeps?: any[], seams?: any[] }|null,
+ *   getOrder?: () => 'files'|'cards',
  * }} deps `getThreads` is what is known of the review threads of the pull request under
  *   review (`threadsViewOf` of the review store); a review without one has none. Call
  *   `threadsChanged` whenever its answer may have changed. `viewedOf` says what a file row
@@ -87,12 +92,19 @@ const { buildFeedbackGroup, renderFeedbackItem, buildRoundGroup, renderRoundItem
  *   out, read on each root read: `flat` (the default) lists them, `tree` folds them into
  *   folders; call `refresh('layout')` when its answer changes. `getAgentNotes` is what the user's
  *   agent said about the changes, or null; call `agentChanged` whenever its answer changes.
+ *   `getAgentReview` is the rest of what the agent said (gate G15): the attention set, its
+ *   cards, the hand-off's state; the attention set joins the engine's verdicts in every count
+ *   and filter. `getCards` is the engine's cards of the shown review, null when cards are
+ *   off or not yet built. `getOrder` is the order the reviewer chose, `files` (the default)
+ *   or `cards`: the By card order is used only while the review has cards (`hasCards`); call
+ *   `refresh('order')` when either answer changes.
  */
 function createTreeProvider(vscode, {
   getState, resolver, isBusy = () => false, decorate = null, getPhase = () => 'ready', review = null,
   getAnalysisId = () => 0, isCurrentAnalysis = () => true, getThreads = () => threadsModel.NO_THREADS,
   viewedOf = () => null, getRepoStatus = () => 'ok', getFeedbackDrafts = () => [], getFeedbackRound = () => null,
-  getLayout = () => 'flat', getAgentNotes = () => null,
+  getLayout = () => 'flat', getAgentNotes = () => null, getAgentReview = () => NO_AGENT_REVIEW, getCards = () => null,
+  getOrder = () => 'files',
 }) {
   // The "Feedback to send" group: one row object for the provider's life, so a drafts change
   // can repaint it alone (`feedbackChanged`); its text is refreshed each time the root is
@@ -158,13 +170,18 @@ function createTreeProvider(vscode, {
   // Read at render time, so a settings change shows on the next refresh.
   const viewOf = () => {
     const st = getState();
+    const order = effectiveOrder();
     return {
       rowDetail: (st && st.rowDetail) || 'hover',
       iconMode: (st && st.iconMode) || 'symbol',
       checkedOf,
       threadCountsOf,
       viewedOf,
-      layout: /** @type {'flat'|'tree'} */ (getLayout() === 'tree' ? 'tree' : 'flat'),
+      // The folders of the tree layout belong to the Files order; "Other changes" lists its files flat.
+      layout: /** @type {'flat'|'tree'} */ (getLayout() === 'tree' && order === 'files' ? 'tree' : 'flat'),
+      order,
+      agentAttention: attentionSet(),
+      cardTooltipOf: (/** @type {TreeRow} */ row) => cardOrder.cardTooltipLines(row.card, { result: st && st.result, cards: getCards() }),
       ...agentView(st),
     };
   };
@@ -174,7 +191,7 @@ function createTreeProvider(vscode, {
    * @param {any} st The session state.
    */
   const agentView = (st) => {
-    const notes = getAgentNotes();
+    const notes = getAgentNotes() || getAgentReview().notes;
     if (!notes) return {};
     const rel = st && st.rel ? st.rel : null;
     return {
@@ -282,6 +299,19 @@ function createTreeProvider(vscode, {
   // parent behind. Garbage with the provider.
   /** @type {{ row: TreeRow|null, parents: WeakMap<TreeRow, TreeRow> }} */
   let browsed = { row: null, parents: new WeakMap() };
+  // The By card order's groups of the last root read: the card or "Other changes" container
+  // each counting row (and each file row held whole by the container) sits under. Owner: this
+  // provider. Replaced whole on every root read, so a read in the Files order leaves no card
+  // parent behind and a reveal never climbs into a card of an earlier read. Garbage with the
+  // provider.
+  /** @type {{ parents: WeakMap<TreeRow, TreeRow>, groups: TreeRow[] }} */
+  let carded = { parents: new WeakMap(), groups: [] };
+  // Cache: the groups of the By card order built from the shown rows. Owner: this provider.
+  // Key: the built rows, the engine's cards, and the agent's cards and attention set (each
+  // an object the owner of the answer replaces when it changes). Invalidation: replaced by
+  // the next read after any part of the key changes. Disposal: garbage with the provider.
+  /** @type {{ rows: TreeRow[], cards: any, agentCards: any, attention: any, value: ReturnType<typeof cardOrder.buildCardGroups> }|null} */
+  let groupsCache = null;
   // Cache: which row each review thread belongs to, per file. Owner: this provider. Key:
   // the file rows (`built`) and the threads array the store's model holds; the store
   // replaces the model on every load, so a new array is new data. Invalidation: dropped
@@ -321,6 +351,50 @@ function createTreeProvider(vscode, {
   /** @type {import('./review-tree-model').OpenThreadsOf} */
   const openThreadsOf = (row) => { const counts = threadCountsOf(row); return counts ? counts.open : null; };
 
+  /** @returns {import('./review-tree-model').AgentAttention} The change ids the agent named, empty with no result shown. */
+  const attentionSet = () => getAgentReview().attention;
+  /**
+   * Whether the shown review has cards the By card order can draw: cards are on and built, there
+   * are enough changes for them to say more than a list, and at least one card or sweep exists.
+   * @returns {boolean}
+   */
+  function hasCards() {
+    const state = shownState();
+    const cards = getCards();
+    if (!state || !cards) return false;
+    const changes = (state.result.allChanged || []).length + (state.result.deleted || []).length;
+    return changes >= cardOrder.MIN_CHANGES_FOR_CARDS && (cards.clusters || []).length + (cards.sweeps || []).length > 0;
+  }
+  /** @returns {'files'|'cards'} The order the next root read uses: the chosen one, unless there are no cards to draw. */
+  const effectiveOrder = () => (getOrder() === 'cards' && hasCards() ? 'cards' : 'files');
+  /**
+   * The By card order's groups of the shown rows.
+   * @param {ReturnType<typeof builtFor>} current
+   */
+  function groupsOf(current) {
+    const agent = getAgentReview();
+    const cards = getCards();
+    if (groupsCache && groupsCache.rows === current.rows && groupsCache.cards === cards
+      && groupsCache.agentCards === agent.cards && groupsCache.attention === agent.attention) return groupsCache.value;
+    const value = cardOrder.buildCardGroups(current.rows, cardOrder.orderCardsOf(cards, agent.cards), agent.attention);
+    groupsCache = { rows: current.rows, cards, agentCards: agent.cards, attention: agent.attention, value };
+    return value;
+  }
+  /**
+   * The groups to walk, in the order the By card order shows them.
+   * @param {ReturnType<typeof builtFor>} current
+   * @returns {TreeRow[]}
+   */
+  function walkGroups(current) {
+    const made = groupsOf(current);
+    return made.others ? [...made.groups, made.others] : made.groups;
+  }
+  /**
+   * The rows to walk for next/previous unreviewed: the file rows, or the groups of the By card order.
+   * @param {ReturnType<typeof builtFor>} current
+   * @returns {TreeRow[]}
+   */
+  const walkRows = (current) => (effectiveOrder() === 'cards' ? walkGroups(current) : current.rows);
   /**
    * The file rows of the shown result, built once per analysis and result.
    * @param {ProviderState} state
@@ -394,17 +468,129 @@ function createTreeProvider(vscode, {
     const made = builtFor(st);
     scheduleDecorationFlush();
     publishDecorations(analysisId, made.decorations);
-    const kept = reviewTree.filterFileRows(made.rows, filter, isReviewed, openThreadsOf).map((e) => e.file);
+    const files = effectiveOrder() === 'cards' ? cardRows(made) : fileOrderRows(made);
+    const notices = [...models.buildNoticeRows(st.result), ...agentRows()];
+    if (filter !== 'all' && files.length === 0) return [...notices, reviewTree.buildEmptyFilterRow(filter, getThreads().status)];
+    const calm = calmRows(st, made.rows, files);
+    return calm ? [...notices, ...calm] : [...notices, ...files];
+  }
+
+  /**
+   * The Files order's root rows: the file rows the filter kept (or their folders), the worst path open.
+   * @param {ReturnType<typeof builtFor>} made
+   * @returns {TreeRow[]}
+   */
+  function fileOrderRows(made) {
+    carded = { parents: new WeakMap(), groups: [] };
+    const kept = reviewTree.filterFileRows(made.rows, filter, isReviewed, openThreadsOf, attentionSet()).map((e) => e.file);
     shownRoots = kept;
     // These rows are provider-owned. Keep the canonical objects so getParent,
     // actions and subsequent reads all refer to the same file, including the first.
     const files = layoutRows(kept);
     // Only the worst path starts open, so the first thing on screen is the thing to look at.
     markFirstPathOpen(files);
-    const notices = models.buildNoticeRows(st.result);
-    if (filter !== 'all' && files.length === 0) return [...notices, reviewTree.buildEmptyFilterRow(filter, getThreads().status)];
-    const calm = calmRows(st, made.rows, files);
-    return calm ? [...notices, ...calm] : [...notices, ...files];
+    return files;
+  }
+
+  /**
+   * The By card order's root rows: a row per card that has a row the filter keeps, then the
+   * "Other changes" container when it has one. The groups hold the canonical rows; the first
+   * card starts open. Records which group each row sits under (`carded`) and leaves no
+   * folding behind.
+   * @param {ReturnType<typeof builtFor>} made
+   * @returns {TreeRow[]}
+   */
+  function cardRows(made) {
+    folded = { parents: new WeakMap() };
+    const { shown, others, rest } = cardRootsOf(made);
+    const parents = new WeakMap();
+    shown.forEach((g, i) => { g.expanded = i === 0; for (const row of g.rows) parents.set(row, g); });
+    if (others) {
+      others.expanded = false;
+      others.fileCount = new Set(rest.map((r) => r.relPath ?? r.finding?.relPath)).size;
+      for (const child of rest) parents.set(child, others);
+    }
+    const roots = others && rest.length ? [...shown, others] : shown;
+    carded = { parents, groups: roots };
+    shownRoots = roots;
+    return roots;
+  }
+
+  /**
+   * What the filter leaves of the By card order: the cards with a row it keeps, and the
+   * "Other changes" container with what it keeps (`rest`).
+   * @param {ReturnType<typeof builtFor>} made
+   * @returns {{ shown: TreeRow[], others: TreeRow|null, rest: TreeRow[] }}
+   */
+  function cardRootsOf(made) {
+    const { groups, others } = groupsOf(made);
+    return { shown: groups.filter((g) => visibleRows(g).length > 0), others, rest: others ? othersChildren(others) : [] };
+  }
+
+  /**
+   * The root rows the view shows for the shown rows under the filter, in either order.
+   * @param {ReturnType<typeof builtFor>} current
+   * @returns {TreeRow[]}
+   */
+  function rootsOf(current) {
+    if (effectiveOrder() !== 'cards') return reviewTree.filterFileRows(current.rows, filter, isReviewed, openThreadsOf, attentionSet()).map((e) => e.file);
+    const { shown, others, rest } = cardRootsOf(current);
+    return others && rest.length ? [...shown, others] : shown;
+  }
+
+  /**
+   * The root row to repaint for a change in what a row says: in the By card order the card or
+   * container it sits under; in the Files order its file, or the root folder above it.
+   * @param {ReturnType<typeof builtFor>} current
+   * @param {TreeRow} row A counting row.
+   * @param {TreeRow[]} roots The root rows shown (`rootsOf`).
+   * @returns {TreeRow|null} Null when the row's file or card is not shown.
+   */
+  function repaintRootOf(current, row, roots) {
+    if (effectiveOrder() !== 'cards') {
+      const file = current.parents.get(row) || row;
+      return roots.includes(file) ? repaintTargetOf(file) : null;
+    }
+    const group = carded.parents.get(row) || carded.parents.get(current.parents.get(row) || row) || null;
+    return group && roots.includes(group) ? group : null;
+  }
+
+  /**
+   * What an "Other changes" container shows under the filter: the file rows it holds whole
+   * and the loose rows of the files a card only partly holds, in the Files order's order.
+   * @param {TreeRow} others
+   * @returns {TreeRow[]}
+   */
+  function othersChildren(others) {
+    const current = builtFor(/** @type {ProviderState} */ (shownState()));
+    const { leftFiles, leftRows } = groupsOf(current);
+    const loose = new Set(leftRows);
+    const passing = new Set(reviewTree.filterFileRows([others], filter, isReviewed, openThreadsOf, attentionSet()).flatMap((e) => e.rows));
+    const whole = new Set(leftFiles);
+    return current.rows.flatMap((f) => (whole.has(f) ? (reviewTree.collectCountingRows([f]).some((r) => passing.has(r)) ? [f] : [])
+      : (f.rows || []).filter((/** @type {TreeRow} */ r) => loose.has(r) && passing.has(r))));
+  }
+
+  /**
+   * The rows the agent adds at the root of the review: a progress row while a hand-off waits
+   * for the agent's result, and a notice (shown in the reviewed row's hover) when the stored
+   * result is for another state of the branch.
+   * @returns {TreeRow[]}
+   */
+  function agentRows() {
+    const agent = getAgentReview();
+    /** @type {TreeRow[]} */
+    const rows = [];
+    if (agent.waiting) {
+      rows.push({ type: 'message', icon: 'loading~spin', contextValue: 'agentWaiting', label: `Waiting for your agent… (asked ${agent.waiting.askedAtText})`,
+        tooltip: 'Impact Tree asked your agent to refine the cards. Check the prompt in your agent, send it, and let it finish. Its result appears here when it saves it with submit_cards. "Cancel waiting" only stops this row; it does not stop the agent.' });
+    }
+    if (agent.stale) {
+      rows.push({ type: 'message', icon: 'warning', notice: 'agent', label: 'The agent\'s result is for another state of this branch',
+        desc: 'ask again, or undo it',
+        tooltip: 'The result does not match the cards of this analysis (the branch moved or the cards changed), so its cards and attention list are not used. Ask your agent again, or undo it.' });
+    }
+    return rows;
   }
 
   /**
@@ -419,7 +605,7 @@ function createTreeProvider(vscode, {
   function calmRows(state, allFiles, rootFiles) {
     browsed = { row: null, parents: new WeakMap() };
     if (filter !== 'all') return null;
-    const calm = reviewTree.buildCalmRows(state.result, reviewTree.countReview(allFiles, isReviewed));
+    const calm = reviewTree.buildCalmRows(state.result, reviewTree.countReview(allFiles, isReviewed, attentionSet()));
     if (!calm) return null;
     const row = { ...calm.browse, children: rootFiles, files: allFiles };
     for (const child of rootFiles) browsed.parents.set(child, row);
@@ -463,7 +649,7 @@ function createTreeProvider(vscode, {
    * @param {TreeRow} file
    * @returns {TreeRow[]}
    */
-  const visibleRows = (file) => reviewTree.filterFileRows([file], filter, isReviewed, openThreadsOf).flatMap((e) => e.rows);
+  const visibleRows = (file) => reviewTree.filterFileRows([file], filter, isReviewed, openThreadsOf, attentionSet()).flatMap((e) => e.rows);
   // The children of an open file: its visible rows and the gap after them, or nothing
   // when the filter hides every row.
   /** @param {TreeRow} file @returns {TreeRow[]} */
@@ -540,7 +726,7 @@ function createTreeProvider(vscode, {
 
   /**
    * Full presentation invalidation, reserved for analysis, phase, filter and layout changes.
-   * @param {'analysis'|'filter'|'layout'} [reason]
+   * @param {'analysis'|'filter'|'layout'|'order'} [reason]
    */
   function refresh(reason = 'analysis') {
     if (disposed) return;
@@ -558,7 +744,7 @@ function createTreeProvider(vscode, {
     const state = shownState();
     if (disposed || !state || !review) return;
     const current = builtFor(state);
-    const rootsBefore = reviewTree.filterFileRows(current.rows, filter, isReviewed, openThreadsOf).map((e) => e.file);
+    const rootsBefore = rootsOf(current);
     const canonical = new Set(current.rows.flatMap((file) => [file, ...(file.rows || [])]));
     /** @type {Map<TreeRow, boolean>} */
     const requested = new Map();
@@ -579,12 +765,13 @@ function createTreeProvider(vscode, {
       filePaths: Object.freeze([...new Set(changed.filter(([row]) => row.type === 'finding').map(([row]) => row.finding.relPath))]) });
     progress.fire(event);
     if (disposed || !isCurrentAnalysis(current.analysisId) || getState()?.result !== current.result) return;
-    const rootsAfter = reviewTree.filterFileRows(current.rows, filter, isReviewed, openThreadsOf).map((e) => e.file);
+    const rootsAfter = rootsOf(current);
     if (rootsBefore.length !== rootsAfter.length || rootsBefore.some((row, i) => row !== rootsAfter[i])) {
-      _emitter.fire(); // A file appeared/disappeared, including the empty-filter hint.
+      _emitter.fire(); // A file or card appeared/disappeared, including the empty-filter hint.
       return;
     }
-    for (const file of files) if (rootsAfter.includes(file)) _emitter.fire(repaintTargetOf(file));
+    const targets = new Set(changed.map(([row]) => repaintRootOf(current, row, rootsAfter)));
+    for (const root of targets) if (root) _emitter.fire(root);
   }
 
   /**
@@ -611,12 +798,12 @@ function createTreeProvider(vscode, {
     const state = shownState();
     if (state) {
       const current = builtFor(state);
-      const roots = reviewTree.filterFileRows(current.rows, filter, isReviewed, openThreadsOf).map((e) => e.file);
+      const roots = rootsOf(current);
       if (shownRoots && (roots.length !== shownRoots.length || roots.some((row, i) => row !== /** @type {TreeRow[]} */ (shownRoots)[i]))) {
         _emitter.fire(); // the `threads` filter shows other files
       } else {
         const named = new Set(paths || []);
-        for (const file of roots) if (all || named.has(file.relPath)) _emitter.fire(file);
+        for (const root of roots) if (all || (root.rows || []).some((/** @type {TreeRow} */ r) => named.has(r.relPath ?? r.finding?.relPath)) || named.has(root.relPath)) _emitter.fire(root);
       }
     }
     threadEvents.fire({ paths });
@@ -631,7 +818,14 @@ function createTreeProvider(vscode, {
     const state = shownState();
     if (disposed || !state) return;
     const wanted = new Set(relPaths);
-    const shown = reviewTree.filterFileRows(builtFor(state).rows, filter, isReviewed, openThreadsOf).map((e) => e.file);
+    const current = builtFor(state);
+    if (effectiveOrder() === 'cards') {
+      // Only the files "Other changes" holds whole are drawn as files.
+      const { others, rest } = cardRootsOf(current);
+      if (others && rest.some((r) => r.type !== 'finding' && wanted.has(r.relPath))) _emitter.fire(others);
+      return;
+    }
+    const shown = reviewTree.filterFileRows(current.rows, filter, isReviewed, openThreadsOf, attentionSet()).map((e) => e.file);
     for (const file of shown) if (wanted.has(file.relPath)) _emitter.fire(file);
   }
 
@@ -671,7 +865,13 @@ function createTreeProvider(vscode, {
     /** Fires after `agentChanged` repainted the rows. */
     onDidChangeAgent: agentEvents.event,
     /** What the user's agent said changed: repaints every row, then tells the lenses. */
-    agentChanged() { if (disposed) return; _emitter.fire(); agentEvents.fire(undefined); },
+    agentChanged() {
+      if (disposed) return;
+      _emitter.fire();
+      // The attention set changed with it: the counts, badge and menus follow.
+      presentation.fire({ reason: 'agent' });
+      agentEvents.fire(undefined);
+    },
     /** The agent's note on a change, by change id, or null. @param {string} id */
     agentNoteOf: (id) => { const notes = getAgentNotes(); return notes ? notes.change(id) : null; },
     onDidChangeReview: progress.event,
@@ -691,6 +891,8 @@ function createTreeProvider(vscode, {
       threadIndex = null;
       shownRoots = null;
       browsed = { row: null, parents: new WeakMap() };
+      carded = { parents: new WeakMap(), groups: [] };
+      groupsCache = null;
       _emitter.dispose(); presentation.dispose(); progress.dispose(); threadEvents.dispose(); agentEvents.dispose();
     },
     /** @param {TreeRow} n */
@@ -719,7 +921,7 @@ function createTreeProvider(vscode, {
      * @param {TreeRow} n
      * @returns {TreeRow|undefined}
      */
-    getParent: (n) => feedbackParents.get(n) || folded.parents.get(n) || browsed.parents.get(n) || built?.parents.get(n),
+    getParent: (n) => feedbackParents.get(n) || folded.parents.get(n) || browsed.parents.get(n) || carded.parents.get(n) || built?.parents.get(n),
     /** @param {TreeRow} [node] */
     async getChildren(node) {
       const analysisId = getAnalysisId();
@@ -727,6 +929,8 @@ function createTreeProvider(vscode, {
       if (!node) return rootRows(getState(), analysisId);
       switch (node.type) {
         case 'folder': case 'browse': return node.children;
+        case 'card': return visibleRows(node);
+        case 'others': return othersChildren(node);
         case 'reviewFile': return adopt(node, fileChildren(node));
         case 'finding': return adopt(node, impactRows(node, analysisId));
         case 'caller': return node.cycle ? [] : adopt(node, await callerRows(node, analysisId));
@@ -755,7 +959,7 @@ function createTreeProvider(vscode, {
     summarize() {
       const state = summaryState();
       if (!state) return { message: undefined, badge: undefined };
-      const counts = reviewTree.countReview(builtFor(state).rows, isReviewed);
+      const counts = reviewTree.countReview(builtFor(state).rows, isReviewed, attentionSet());
       return reviewTree.buildReviewSummary(state.result, state.source, counts, filter, threadsModel.threadsMessageSuffix(getThreads()));
     },
     /**
@@ -764,7 +968,7 @@ function createTreeProvider(vscode, {
      */
     reviewCounts() {
       const state = shownState();
-      return state ? reviewTree.countReview(builtFor(state).rows, isReviewed) : null;
+      return state ? reviewTree.countReview(builtFor(state).rows, isReviewed, attentionSet()) : null;
     },
     /**
      * The unreviewed rows that need attention, in display order, whatever the filter.
@@ -773,7 +977,7 @@ function createTreeProvider(vscode, {
      */
     attentionLeft() {
       const state = shownState();
-      return state ? reviewTree.listAttentionLeft(builtFor(state).rows, isReviewed) : null;
+      return state ? reviewTree.listAttentionLeft(builtFor(state).rows, isReviewed, attentionSet()) : null;
     },
     /**
      * What the Details progress strip shows: the review's source line and its counts
@@ -784,7 +988,7 @@ function createTreeProvider(vscode, {
     reviewProgress() {
       const state = shownState();
       if (!state) return null;
-      const counts = reviewTree.countReview(builtFor(state).rows, isReviewed);
+      const counts = reviewTree.countReview(builtFor(state).rows, isReviewed, attentionSet());
       return counts.total ? { line: reviewTree.describeReviewSource(state.result, state.source), ...counts } : null;
     },
     /**
@@ -800,6 +1004,15 @@ function createTreeProvider(vscode, {
     },
     /** @returns {import('./review-tree-model').ReviewFilter} */
     getFilter: () => filter,
+    /** @returns {boolean} Whether the shown review has cards the By card order can draw. */
+    hasCards,
+    /** @returns {'files'|'cards'} The order the next root read uses. */
+    getOrder: effectiveOrder,
+    /** @returns {string|null} The first line of the agent's summary, for the reviewed row's hover; null when none is shown. */
+    agentSummaryLine() {
+      const summary = getAgentReview().summary;
+      return summary ? summary.split('\n')[0] : null;
+    },
     /** @returns {'flat'|'tree'} The layout the next root read uses. */
     getLayout: () => (getLayout() === 'tree' ? 'tree' : 'flat'),
     /**
@@ -820,7 +1033,7 @@ function createTreeProvider(vscode, {
      */
     nextUnreviewed(after) {
       const state = shownState();
-      return state ? reviewTree.findNextUnreviewed(builtFor(state).rows, { after, isReviewed, filter, openThreadsOf }) : null;
+      return state ? reviewTree.findNextUnreviewed(walkRows(builtFor(state)), { after, isReviewed, filter, openThreadsOf, agentAttention: attentionSet() }) : null;
     },
     /**
      * The first unreviewed row before `before` in the order the view shows, under the active
@@ -830,7 +1043,7 @@ function createTreeProvider(vscode, {
      */
     previousUnreviewed(before) {
       const state = shownState();
-      return state ? reviewTree.findPreviousUnreviewed(builtFor(state).rows, { after: before, isReviewed, filter, openThreadsOf }) : null;
+      return state ? reviewTree.findPreviousUnreviewed(walkRows(builtFor(state)), { after: before, isReviewed, filter, openThreadsOf, agentAttention: attentionSet() }) : null;
     },
     /**
      * Whether a counting row is ticked.

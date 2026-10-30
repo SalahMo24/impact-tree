@@ -89,8 +89,6 @@ const SUITE = [
   { file: 'test/tier-a-view.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/tree-grouping.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/tree-characterization.test.js', tier: 'quick' },  // 0.2s
-  { file: 'test/cards-view-model.test.js', tier: 'quick' },  // 0.2s
-  { file: 'test/cards-wiring.test.js', tier: 'full' },  // 7s
   { file: 'test/agent-bridge.test.js', tier: 'quick' },
   { file: 'test/agent-bridge-wiring.test.js', tier: 'quick' },
   { file: 'test/tree-grouping-rules.test.js', tier: 'quick' },  // 0.2s
@@ -156,7 +154,7 @@ const SUITE = [
   { file: 'test/github-commits.test.js', tier: 'quick' },
   { file: 'test/repeated-edits.test.js', tier: 'quick' },
   { file: 'test/agent-results.test.js', tier: 'quick' },
-  { file: 'test/agent-cards-view.test.js', tier: 'quick' },
+  { file: 'test/review-order-cards.test.js', tier: 'quick' },
   { file: 'test/agent-ai5.test.js', tier: 'quick' },
   { file: 'test/card-facts.test.js', tier: 'quick' },
   { file: 'test/mcp-supervisor.test.js', tier: 'quick' },

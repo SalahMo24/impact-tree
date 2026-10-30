@@ -66,6 +66,10 @@ const LEGEND = [
   ['error', 'Red icon — Callers not updated', 'a signature or throw change; review these first'],
   ['warning', 'Amber icon — Check by hand', 'callers unknown, a deleted symbol, or a caller changed but not on the call line'],
   ['pass', 'No colour — Fine', 'callers updated, a body-only change, or nothing calls it'],
+  ['edit', 'Pencil icon — your agent says it changed behaviour', 'on a change row, when your agent described it; replaces the symbol icon'],
+  ['question', 'Question-mark icon — your agent says it may change behaviour', 'on a change row, when your agent described it'],
+  ['add', 'Plus icon — your agent says it is new', 'on a change row, when your agent described it. Same behaviour, a new way: no kind icon'],
+  ['layers', 'Layers icon — a card', 'a group of related changes in the By card order; a sparkle is your agent\'s card'],
   ['beaker', 'Beaker icon — test that reaches this code', ''],
   ['issue-reopened', 'Reopened-issue icon — cycle', 'already shown higher up in the tree'],
 ];
@@ -512,7 +516,7 @@ function buildDeletedRows(deleted, { result, uriOf }) {
   const rows = deleted.map((d) => {
     const uri = uriOf(d.file, d.namePos);
     decorations.push({ uri, status: getFileStatus(result, d.relPath) || 'deleted', tooltip: `${d.label} deleted`, tint: false });
-    return { type: 'deleted', label: d.label, key: d.key, relPath: d.relPath, file: d.file, decorationUri: uri };
+    return { type: 'deleted', label: d.label, key: d.key, relPath: d.relPath, file: d.file, namePos: d.namePos, decorationUri: uri };
   });
   return { rows, decorations };
 }

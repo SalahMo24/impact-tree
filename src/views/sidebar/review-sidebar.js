@@ -31,7 +31,7 @@ const BACK_ROW = Object.freeze({ type: 'picker', label: 'Review something else�
   desc: 'pull requests and local changes', command: 'impactTree.showPicker' });
 
 /** Whether a root row of the review tree is a notice that belongs in the host's hover. @param {TreeRow} row */
-const isNotice = (row) => row.type === 'message' && (row.notice === 'warning' || row.notice === 'unanalysable' || row.notice === 'preview');
+const isNotice = (row) => row.type === 'message' && (row.notice === 'warning' || row.notice === 'unanalysable' || row.notice === 'preview' || row.notice === 'agent');
 
 /**
  * @param {any} vscode
@@ -145,7 +145,9 @@ function createReviewSidebar(vscode, { tree, getHost, emptyRow = () => null }) {
     if (node !== host) return item;
     item.collapsibleState = vscode.TreeItemCollapsibleState.Expanded;
     item.contextValue = 'reviewHost';
-    item.tooltip = notices.length ? notices.map((n) => `${n.label}${n.desc ? ` — ${n.desc}` : ''}`).join('\n') : '';
+    // The agent's summary joins it as its first line (the whole of it is on the review tab).
+    const summary = typeof tree.agentSummaryLine === 'function' ? tree.agentSummaryLine() : null;
+    item.tooltip = [...notices.map((n) => `${n.label}${n.desc ? ` — ${n.desc}` : ''}`), ...(summary ? [`Your agent: ${summary}`] : [])].join('\n');
     // A preview says so on the host's row; its limits are in the hover above. Asked of the
     // tree, not read from the notices, which are only known once the host's children are.
     if (typeof tree.isPreview === 'function' && tree.isPreview()) item.description = [item.description, 'preview'].filter(Boolean).join('  ·  ');

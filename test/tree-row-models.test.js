@@ -192,7 +192,7 @@ test('change rows mark shared labels, carry reach notes, and ask for one decorat
 test('deleted rows fall back to the deleted status', () => {
   const deleted = deepFreeze([{ label: 'gone', key: 'k', relPath: 'o.ts', file: '/r/o.ts', namePos: 3 }]);
   const { rows, decorations } = models.buildDeletedRows(deleted, { result: resultOf({ fileStatus: {} }), uriOf });
-  assert.deepEqual(rows[0], { type: 'deleted', label: 'gone', key: 'k', relPath: 'o.ts', file: '/r/o.ts', decorationUri: 'uri:/r/o.ts#3' });
+  assert.deepEqual(rows[0], { type: 'deleted', label: 'gone', key: 'k', relPath: 'o.ts', file: '/r/o.ts', namePos: 3, decorationUri: 'uri:/r/o.ts#3' });
   assert.deepEqual(decorations, [{ uri: 'uri:/r/o.ts#3', status: 'deleted', tooltip: 'gone deleted', tint: false }]);
   assert.equal(models.buildDeletedRows(deleted, { result: resultOf({ fileStatus: { 'o.ts': 'modified' } }), uriOf }).decorations[0].status, 'modified');
 });

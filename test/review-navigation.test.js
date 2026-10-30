@@ -277,8 +277,22 @@ test('package.json contributes the commands, the keybinding and the palette gate
   const host = contributes.menus['view/item/context'].filter((m) => m.when.startsWith(HOST));
   const groupOf = (id) => host.filter((m) => m.command === id).map((m) => m.group);
   assert.deepEqual(host.filter((m) => m.group.startsWith('inline')).map((m) => m.command).sort(),
-    ['impactTree.computeTestReach', 'impactTree.filterAttention', 'impactTree.filterAttentionOn', 'impactTree.openReview', 'impactTree.refresh', 'impactTree.sendFeedback',
-      'impactTree.submitReview', 'impactTree.submitReviewUnavailable', 'impactTree.viewAsList', 'impactTree.viewAsTree']);
+    ['impactTree.analyseWithAgent', 'impactTree.computeTestReach', 'impactTree.filterAttention', 'impactTree.filterAttentionOn', 'impactTree.openReview', 'impactTree.orderByCards', 'impactTree.orderByFiles',
+      'impactTree.refresh', 'impactTree.sendFeedback', 'impactTree.submitReview', 'impactTree.submitReviewUnavailable', 'impactTree.viewAsList', 'impactTree.viewAsTree']);
+  // L4: the order next to the layout toggle (one of the two shows, by the order the view draws; By card only with cards;
+  // the layout toggle is the Files order's), the agent's entries behind the setting and a result, the housekeeping in the menu.
+  assert.equal(host.find((m) => m.command === 'impactTree.orderByCards').when, `${HOST} && impactTree.hasCards && impactTree.reviewOrder != cards`);
+  assert.equal(host.find((m) => m.command === 'impactTree.orderByFiles').when, `${HOST} && impactTree.reviewOrder == cards`);
+  assert.deepEqual(groupOf('impactTree.orderByCards').sort(), ['0_order@1', 'inline@2']);
+  assert.deepEqual(groupOf('impactTree.orderByFiles').sort(), ['0_order@1', 'inline@2']);
+  assert.match(host.find((m) => m.command === 'impactTree.viewAsTree').when, /&& impactTree\.reviewOrder != cards$/);
+  assert.deepEqual(groupOf('impactTree.analyseWithAgent').sort(), ['1_mode@4', 'inline@8']);
+  assert.deepEqual(groupOf('impactTree.undoAgentResult'), ['1_mode@5']);
+  assert.deepEqual([...groupOf('impactTree.toggleAgentCards'), ...groupOf('impactTree.showAgentCards')], ['1_mode@6', '1_mode@6']);
+  for (const id of ['undoAgentResult', 'toggleAgentCards', 'showAgentCards']) assert.match(host.find((m) => m.command === `impactTree.${id}`).when, /impactTree\.hasAgentResult/);
+  const icons = Object.fromEntries(['orderByCards', 'orderByFiles'].map((c) => [c, contributes.commands.find((x) => x.command === `impactTree.${c}`)]));
+  assert.deepEqual([icons.orderByCards.icon, icons.orderByCards.title, icons.orderByFiles.icon, icons.orderByFiles.title], ['$(layers)', 'Impact Tree: Order by card', '$(list-flat)', 'Impact Tree: Order by file']);
+  assert.equal(contributes.views.impactTree.some((v) => v.id === 'impactTree.cards'), false, 'the Cards view is gone');
   // Finding the tests is a mode of the review, not a row: inline and in the menu, only while no
   // review's tests were searched (L3).
   const reach = host.filter((m) => m.command === 'impactTree.computeTestReach');
@@ -287,8 +301,8 @@ test('package.json contributes the commands, the keybinding and the palette gate
   const reachCommand = contributes.commands.find((c) => c.command === 'impactTree.computeTestReach');
   assert.deepEqual([reachCommand.title, reachCommand.icon], ['Impact Tree: Find the tests that cover this review', '$(beaker)']);
   // one of the two layout icons shows, by the setting
-  assert.equal(host.find((m) => m.command === 'impactTree.viewAsTree').when, `${HOST} && impactTree.fileListLayout != tree`);
-  assert.equal(host.find((m) => m.command === 'impactTree.viewAsList').when, `${HOST} && impactTree.fileListLayout == tree`);
+  assert.equal(host.find((m) => m.command === 'impactTree.viewAsTree').when, `${HOST} && impactTree.fileListLayout != tree && impactTree.reviewOrder != cards`);
+  assert.equal(host.find((m) => m.command === 'impactTree.viewAsList').when, `${HOST} && impactTree.fileListLayout == tree && impactTree.reviewOrder != cards`);
   // Send feedback shows only with drafts; holding ⌥ turns it into "Send feedback to…".
   assert.equal(host.find((m) => m.command === 'impactTree.sendFeedback').when, `${HOST} && impactTree.hasFeedbackDrafts`);
   assert.equal(host.find((m) => m.command === 'impactTree.sendFeedback').alt, 'impactTree.sendFeedbackTo');
@@ -403,4 +417,21 @@ test('with nothing to flag the status bar says so, and the walk starts from the 
   env.tick(files[0], true);
   assert.equal(env.seen.statusBar.text, said, 'ticking a quiet change does not move it');
   assert.equal(env.tree().getParent(files[1]), roots[1], 'a reveal of a file under the container climbs through it');
+}));
+
+test('Order by card and Order by file write the workspace setting; the keys say the order drawn and whether there are cards', () => withEnv(async (env) => {
+  useResult(env);
+  await env.refresh();
+  assert.equal(env.seen.contexts['impactTree.reviewOrder'], 'files');
+  assert.equal(env.seen.contexts['impactTree.hasCards'], false, 'cards are off in this window');
+  const updates = [];
+  env.vscode.workspace.getConfiguration('impactTree').update = async (name, value, target) => { updates.push([name, value, target]); };
+  await env.run('impactTree.orderByCards');
+  assert.deepEqual(updates, [['reviewOrder', 'cards', 2]], 'the command only writes the setting, for this workspace');
+  env.changeSetting('reviewOrder', 'cards');
+  // A review without cards is drawn by file whatever the setting says, so the file toggle does not show.
+  assert.equal(env.seen.contexts['impactTree.reviewOrder'], 'files');
+  assert.deepEqual((await env.tree().getChildren()).map((r) => r.type), ['reviewFile', 'reviewFile', 'file']);
+  await env.run('impactTree.orderByFiles');
+  assert.deepEqual(updates.at(-1), ['reviewOrder', 'files', 2]);
 }));
