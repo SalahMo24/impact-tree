@@ -3,15 +3,14 @@
 
 // What the user's agent said about the changes, for the views that show it next to the
 // engine's own facts: the Changes view (a change row's line and tooltip, a caller row's
-// "how") and the review diff's CodeLens. Built from the latest stored `cards` result of the
-// shown head (its `changes`), which the bridge checked when it stored it. The engine's
+// "how") and the notes beside the code in the review diff (`agent-threads.js`). Built from
+// the latest stored `cards` result of the shown head (its `changes`), which the bridge
+// checked when it stored it. The engine's
 // verdicts, order and counts never depend on it: the agent's text is added after them. Pure.
 
 /** The marker of each kind, read before the agent's one line. */
 const MARK = Object.freeze({ changed: '⚠', 'may-change': '?', new: '+', same: '=' });
 const WORD = Object.freeze({ changed: 'Changed', 'may-change': 'May change', new: 'New', same: 'Same behaviour, new way' });
-/** Kinds that get a lens in the diff: the ones that can surprise a caller. */
-const LENS_KINDS = new Set(['changed', 'may-change']);
 
 /**
  * @typedef {{ id: string, kind: 'changed'|'may-change'|'same'|'new', what: string, before?: string, after?: string, when?: string,
@@ -77,4 +76,4 @@ function callerChangeId(key, rel) {
   return `${rel ? rel(file) : file}#${key.slice(at + 1)}`;
 }
 
-module.exports = { agentNotes, rowLine, tooltipLines, callerChangeId, MARK, WORD, LENS_KINDS };
+module.exports = { agentNotes, rowLine, tooltipLines, callerChangeId, sameName, MARK, WORD };

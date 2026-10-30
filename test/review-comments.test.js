@@ -857,6 +857,23 @@ test('Comment on this change opens the head-side diff and adds an empty draft at
   assert.deepEqual(env.store.calls, [{ name: 'addComment', input: { path: 'src/a.ts', side: 'RIGHT', line: 40, body: 'why?', mode: 'startReview' } }]);
 });
 
+test('a draft started with a text opens in edit mode holding it, sends nothing until a button is pressed, and is sent as edited', async () => {
+  const env = setup();
+  await env.idle();
+  const draft = await env.comments.commentOnRowWith(changeRow(20, 42), 'Changed — x\n\nBefore: a');
+  assert.deepEqual(env.opened, [['src/a.ts', 40]]);
+  assert.deepEqual([draft.range.start.line, draft.comments.length, draft.canReply], [39, 1, false]);
+  const [c] = draft.comments;
+  assert.deepEqual([c.mode, c.contextValue, c.body.value, c.body.isTrusted], [baseStub.CommentMode.Editing, SUGGESTION_DRAFT, 'Changed — x\n\nBefore: a', false]);
+  assert.deepEqual(env.store.calls, [], 'opening the draft sends nothing');
+  c.body = 'Changed — x, edited';
+  await env.editor.run(COMMANDS.startReview, c);
+  assert.deepEqual(env.store.calls, [{ name: 'addComment', input: { path: 'src/a.ts', side: 'RIGHT', line: 40, body: 'Changed — x, edited', mode: 'startReview' } }]);
+  // A row outside the diff is refused as for an empty draft, and no text is kept anywhere.
+  assert.equal(await env.comments.commentOnRowWith(changeRow(20, 30), 'text'), null);
+  assert.equal(env.controller.threads.filter((t) => !t.disposed && t.comments.length).length, 0);
+});
+
 test('a row with no line in the diff, or a review whose threads are not loaded, is refused with the reason', async () => {
   const env = setup();
   await env.idle();

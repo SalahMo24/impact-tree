@@ -472,7 +472,7 @@ test('the contributions: comment buttons, comment and tree actions scoped to the
   }
   // Every other comment menu entry still belongs to the pull request controller.
   for (const menu of ['comments/commentThread/context', 'comments/commentThread/title', 'comments/comment/title', 'comments/comment/context']) {
-    for (const m of menus[menu] || []) assert.match(m.when, /^commentController == impactTree\.(review|feedback) /, `${menu} ${m.command}`);
+    for (const m of menus[menu] || []) assert.match(m.when, /^commentController == impactTree\.(review|feedback|agent) /, `${menu} ${m.command}`);
   }
   const declared = new Map(contributes.commands.map((c) => [c.command, c]));
   for (const id of [...Object.values(COMMANDS), 'impactTree.feedback.showDrafts']) {

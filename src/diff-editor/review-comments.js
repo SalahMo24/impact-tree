@@ -129,11 +129,13 @@ const bodyText = (body) => (typeof body === 'string' ? body : isObject(body) && 
  * @param {any} vscode
  * @param {ReviewCommentsDeps} deps
  * @returns {{ dispose(): void, whenIdle(): Promise<void>, commentOnRow: (row: any) => Promise<any>,
- *   commentOnCaller: (row: any, caller: CallerContext) => Promise<any>, revealThread: (threadId: unknown) => Promise<boolean> }}
+ *   commentOnRowWith: (row: any, text: string) => Promise<any>, commentOnCaller: (row: any, caller: CallerContext) => Promise<any>, revealThread: (threadId: unknown) => Promise<boolean> }}
  *   `whenIdle` settles once no draw is pending. `commentOnRow` starts a draft on a change,
  *   outside or file row; `commentOnCaller` one about a caller of a change; each resolves to
  *   the draft thread, or null when it could not be started (the reason is shown).
- *   `revealThread` opens a thread's file in the review diff at its line.
+ *   `commentOnRowWith` starts one on a change's line that already holds `text`, open for
+ *   editing; the reviewer sends it, or drops it. `revealThread` opens a thread's file in the
+ *   review diff at its line.
  */
 function createReviewComments(vscode, { store, getSession, repoRoot, readHead, contextEvents, log = () => {}, headUri, openDiff, readAtCommit }) {
   let disposed = false;
@@ -609,8 +611,10 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
    * @param {number} line 1-based.
    * @param {Draft} draft
    * @param {string|undefined} label
+   * @param {string} [text] A text the draft opens with, in edit mode, for the reviewer to
+   *   change and send (the agent's note, "Post to the PR"); without it the box is empty.
    */
-  async function openDraft(uri, line, draft, label) {
+  async function openDraft(uri, line, draft, label, text) {
     const owner = controller;
     const forTarget = targetKey();
     await /** @type {(relPath: string, line: number|null) => Promise<void>} */ (openDiff)(draft.relPath, line);
@@ -621,6 +625,16 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
     thread.label = label;
     thread.contextValue = draft.callerContext ? 'callerContext' : '';
     thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    if (text !== undefined) {
+      // As a suggestion draft: VS Code cannot fill a comment box, so the text is a comment
+      // already open for editing, with the same buttons. Nothing is sent until one is pressed.
+      const comment = { body: markdown(text), mode: vscode.CommentMode.Editing, contextValue: SUGGESTION_DRAFT,
+        author: { name: 'you' }, label: 'Draft · from your agent' };
+      suggestionDrafts.add(comment);
+      commentThreads.set(comment, thread);
+      thread.comments = [comment];
+      thread.canReply = false;
+    }
     return thread;
   }
 
@@ -629,9 +643,10 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
    * a change's or outside row's line (`chooseCommentLine`).
    * @param {any} row
    * @param {CallerContext|null} [callerContext] The caller the comment is about.
+   * @param {string} [text] The text the draft opens with, for a line comment; see `openDraft`.
    * @returns {Promise<any>} The draft thread, or null.
    */
-  async function commentOnRow(row, callerContext = null) {
+  async function commentOnRow(row, callerContext = null, text = undefined) {
     const fileLevel = isObject(row) && (row.type === 'reviewFile' || row.type === 'file');
     const place = fileLevel ? null : isObject(row) ? rowCommentPlace(/** @type {any} */ (row)) : null;
     if (!fileLevel && !place) return null;
@@ -645,7 +660,7 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
     const choice = chooseCommentLine(commentableLines(ctx, head.at, Number.MAX_SAFE_INTEGER), /** @type {import('./review-comments-model').CommentPlace} */ (place));
     if ('problem' in choice) { tell(`cannot comment here: ${choice.problem}.`); return null; }
     return openDraft(head.uri, choice.line, { relPath, fileLevel: false, callerContext },
-      callerContext ? callerDraftLabel(callerContext) : undefined);
+      callerContext ? callerDraftLabel(callerContext) : undefined, text);
   }
 
   /**
@@ -955,6 +970,7 @@ function createReviewComments(vscode, { store, getSession, repoRoot, readHead, c
       while (drawing) await drawing;
     },
     commentOnRow: (/** @type {any} */ row) => commentOnRow(row),
+    commentOnRowWith: (/** @type {any} */ row, /** @type {string} */ text) => commentOnRow(row, null, text),
     commentOnCaller,
     revealThread,
   };
