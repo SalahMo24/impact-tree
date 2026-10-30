@@ -1,7 +1,8 @@
 'use strict';
 // The Review view as one tree (src/views/sidebar/review-sidebar.js): the review nested under the row it came
 // from, the review's controls and notices on that row, no hover on pull request rows, and
-// parents that let the review rows be revealed.
+// parents that let the review rows be revealed. While a review is shown the root is the
+// review alone, with Review something else… above it to draw the groups again (L1).
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const stub = require('./vscode-stub');
@@ -41,14 +42,71 @@ function fakeTree(roots = [{ type: 'message', label: 'fetched origin/main', icon
   };
 }
 
+/**
+ * A sidebar with its groups drawn (Review something else… asked for), as the tests of the
+ * nesting need; `scopedRoots` is what the first read gave: the review alone when one is shown.
+ */
 async function sidebarWith(host, { tree = fakeTree(), sources = fakeSources(), emptyRow } = {}) {
   const sidebar = createReviewSidebar(vscode, { tree, getHost: () => host, emptyRow });
   sidebar.setSources(sources);
+  const scopedRoots = await sidebar.getChildren();
+  sidebar.showPicker();
   const roots = await sidebar.getChildren();
   const prsGroup = roots[1];
   const groups = await sidebar.getChildren(prsGroup);
-  return { sidebar, roots, groups, tree, sources };
+  return { sidebar, roots, scopedRoots, groups, tree, sources };
 }
+
+test('with a review open the root is Review something else… and the reviewed row; the groups come back on request and go on a new review', async () => {
+  let current = { kind: 'pr', number: 2 };
+  const tree = fakeTree();
+  const sidebar = createReviewSidebar(vscode, { tree, getHost: () => current });
+  sidebar.setSources(fakeSources());
+  const fired = [];
+  sidebar.onDidChangeTreeData((r) => fired.push(r));
+  const [back, host] = await sidebar.getChildren();
+  assert.equal(sidebar.isScoped(), true);
+  assert.deepEqual([back.label, host.label], ['Review something else…', '#2  two']);
+  assert.equal(host, await sidebar.hostRow());
+  const backItem = sidebar.getTreeItem(back);
+  assert.equal(backItem.command.command, 'impactTree.showPicker');
+  assert.equal(backItem.collapsibleState, vscode.TreeItemCollapsibleState.None);
+  assert.deepEqual(await sidebar.getChildren(back), []);
+  const hostItem = sidebar.getTreeItem(host);
+  assert.equal(hostItem.contextValue, 'reviewHost');
+  assert.equal(hostItem.collapsibleState, vscode.TreeItemCollapsibleState.Expanded);
+  assert.deepEqual((await sidebar.getChildren(host)).map((r) => r.label), ['Resolving callers…', 'a.ts']);
+  assert.equal(sidebar.getParent(host), undefined, 'the reviewed row is a root: a reveal stops there');
+  assert.equal(sidebar.getParent(back), undefined);
+  assert.equal(sidebar.getParent(FILE), host);
+  // The groups again: the reviewed row is found under its group, with a parent.
+  sidebar.showPicker();
+  assert.deepEqual(fired, [undefined]);
+  sidebar.showPicker();
+  assert.deepEqual(fired, [undefined], 'asking twice fires once');
+  const roots = await sidebar.getChildren();
+  assert.equal(sidebar.isScoped(), false);
+  assert.deepEqual(roots.map((r) => r.label), ['Local changes', 'Pull requests']);
+  const groups = await sidebar.getChildren(roots[1]);
+  const [, two] = await sidebar.getChildren(groups[1]);
+  assert.equal(two, await sidebar.hostRow());
+  assert.equal(sidebar.getParent(two), groups[1]);
+  // A refresh of the same review keeps the groups; a review of another source hides them.
+  sidebar.followTree();
+  tree.fire(undefined);
+  assert.deepEqual((await sidebar.getChildren()).map((r) => r.label), ['Local changes', 'Pull requests']);
+  current = { kind: 'pr', number: 1 };
+  tree.fire(undefined);
+  assert.deepEqual((await sidebar.getChildren()).map((r) => r.label), ['Review something else…', '#1  one']);
+  // No review: the groups, and nothing to ask for.
+  current = null;
+  tree.fire(undefined);
+  assert.deepEqual((await sidebar.getChildren()).map((r) => r.label), ['Local changes', 'Pull requests']);
+  assert.equal(sidebar.isScoped(), false);
+  const before = fired.length;
+  sidebar.showPicker();
+  assert.equal(fired.length, before, 'nothing to show: no refresh');
+});
 
 test('the reviewed pull request holds the review: its group opens, its row is the header, its notices are its hover', async () => {
   const { sidebar, groups } = await sidebarWith({ kind: 'pr', number: 2 });
@@ -86,6 +144,7 @@ test('parents: a change row reveals through its file, the reviewed row, its grou
 
 test('a reviewed pull request missing from the list gets its own row at the top; a local review sits under its mode', async () => {
   const missing = await sidebarWith({ kind: 'pr', number: 99, title: 'not open' });
+  assert.deepEqual(missing.scopedRoots.map((r) => r.label), ['Review something else…', '#99  not open'], 'the review alone, as for a listed one');
   assert.equal(missing.roots[0].label, '#99  not open');
   assert.equal(await missing.sidebar.hostRow(), missing.roots[0]);
   assert.equal(missing.sidebar.getTreeItem(missing.roots[0]).contextValue, 'reviewHost');
@@ -99,6 +158,7 @@ test('a reviewed pull request missing from the list gets its own row at the top;
 test('nothing reviewed: no host, the rows are the sources\'; an empty review shows the empty row', async () => {
   const none = await sidebarWith(null);
   assert.equal(await none.sidebar.hostRow(), null);
+  assert.deepEqual(none.scopedRoots.map((r) => r.label), ['Local changes', 'Pull requests'], 'nothing to scope to');
   assert.deepEqual(none.roots.map((r) => r.label), ['Local changes', 'Pull requests']);
   const empty = await sidebarWith({ kind: 'pr', number: 1 }, { tree: fakeTree([]), emptyRow: () => ({ type: 'message', label: 'Nothing changed' }) });
   const [host] = await empty.sidebar.getChildren(empty.groups[1]);
