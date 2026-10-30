@@ -215,6 +215,19 @@ test('the command says what is missing and hands nothing over', async () => {
   assert.match(await said(GOOD, null), /no finished review of a checked-out branch/);
 });
 
+test('the command: an agent that is not connected, and not connected now, is sent nothing', async () => {
+  const state = createAgentCardsState();
+  const sent = [];
+  const vscode = { window: { showInformationMessage: () => {}, showErrorMessage: () => {} }, env: { clipboard: { writeText: async (t) => { sent.push(t); } } } };
+  const checked = [];
+  const cmd = createAnalyseWithAgent(vscode, { session: { state: GOOD }, state, log: () => {}, redraw: () => {}, bridge: { context: async () => CTX, markAsked: () => true },
+    chooseAgent: async () => ({ id: 'clipboard', label: 'Copy prompt' }), ensureConnected: async (id) => { checked.push(id); return false; } });
+  await cmd.run();
+  assert.deepEqual(checked, ['clipboard']);
+  assert.deepEqual(sent, []);
+  assert.equal(state.waiting, null);
+});
+
 test('the command: a failed hand-off, or no pick, does not start waiting', async () => {
   const w = world({ state: GOOD });
   w.calls.length = 0;

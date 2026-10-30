@@ -495,7 +495,7 @@ function activate(context, { clock = realClock } = {}) {
     if (agentCards.headChanged(head) && (before || agentShowsAnything())) agentRedraw();
   };
   const analyseWithAgent = createAnalyseWithAgent(vscode, {
-    session: owned, bridge: agentBridge, state: agentCards, chooseAgent, log, redraw: agentRedraw,
+    session: owned, bridge: agentBridge, state: agentCards, chooseAgent, ensureConnected: (id) => agentConnect.ensureConnected(id), log, redraw: agentRedraw,
   });
   context.subscriptions.push(
     vscode.commands.registerCommand('impactTree.analyseWithAgent', () => analyseWithAgent.run()),

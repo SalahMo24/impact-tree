@@ -21,12 +21,14 @@ const { realClock } = require('../engine/clock');
  * @param {{ session: any, bridge: { context: () => Promise<any>, removeResult: (head: string, key: string) => Promise<boolean>, markAsked: () => boolean },
  *   state: ReturnType<typeof import('./agent-cards-state').createAgentCardsState>,
  *   chooseAgent: (vscode: any, forceAsk: boolean, opts: { title: string, exclude: string[] }) => Promise<{ id: import('./agent-handoff').AgentChoiceId, label: string }|null>,
+ *   ensureConnected?: (id: import('./agent-handoff').AgentChoiceId) => Promise<boolean>,
  *   log: (m: string) => void, redraw: () => void, clock?: import('../engine/clock').Clock,
  *   writeFacts?: typeof writeFactsFile, diffText?: typeof gitDiffText }} deps
- *   `redraw`: refresh the Cards view. `writeFacts`: writes facts too long for the prompt; `diffText`: the review's
+ *   `ensureConnected`: checks the agent can reach submit_cards (and offers to connect it); false: send nothing.
+ *   Omitted: no check. `redraw`: refresh the Cards view. `writeFacts`: writes facts too long for the prompt; `diffText`: the review's
  *   whole diff, for the hunks in the facts (both injectable for tests).
  */
-function createAnalyseWithAgent(vscode, { session, bridge, state, chooseAgent, log, redraw, clock = realClock, writeFacts = writeFactsFile, diffText = gitDiffText }) {
+function createAnalyseWithAgent(vscode, { session, bridge, state, chooseAgent, ensureConnected = async () => true, log, redraw, clock = realClock, writeFacts = writeFactsFile, diffText = gitDiffText }) {
   // Only one hand-off at a time: the picker and the hand-off can take a while.
   let running = false;
 
@@ -77,6 +79,7 @@ function createAnalyseWithAgent(vscode, { session, bridge, state, chooseAgent, l
       if (!ctx) { say('there is no finished review of a checked-out branch to hand over (a preview or an analysis still running does not count).'); return; }
       const choice = await chooseAgent(vscode, false, { title: 'Impact Tree: Analyse with…', exclude: ['save'] });
       if (!choice) return;
+      if (!await ensureConnected(choice.id)) return;
       let sentence;
       try {
         const prompt = await promptFor(ctx, choice.id);
