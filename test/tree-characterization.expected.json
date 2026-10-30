@@ -2,10 +2,10 @@
  "local, hover detail, file icons, src/open.ts and docs/a.md ticked": {
   "summary": {
    "badge": {
-    "tooltip": "11 of 16 left to review",
-    "value": 11
+    "tooltip": "5 of 6 need attention still to look at",
+    "value": 5
    },
-   "message": "Branch + uncommitted (requested Branch vs base) · 5 need attention · 11 of 16 left"
+   "message": "Branch + uncommitted (requested Branch vs base) · 5 need attention · 1 of 6 looked at"
   },
   "rows": [
    {
@@ -171,7 +171,7 @@
      "label": "store.ts",
      "resourceUri": "uri:file:///repo/src/store.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ store.ts\n```\n\n_modified_\n\n5 changes, 3 need attention, 4 left to review"
+      "markdown": "```\nsrc/\n└─ store.ts\n```\n\n_modified_\n\n5 changes, 3 need attention, 1 marked reviewed"
      }
     }
    },
@@ -772,7 +772,7 @@
      "label": "big.ts",
      "resourceUri": "uri:file:///repo/src/big.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ big.ts\n```\n\n_modified_\n\n1 change, 1 needs attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ big.ts\n```\n\n_modified_\n\n1 change, 1 needs attention, 0 marked reviewed"
      }
     }
    },
@@ -1204,7 +1204,7 @@
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/api/util.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ api/\n   └─ util.ts\n```\n\n_modified_\n\n1 change, 1 needs attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ api/\n   └─ util.ts\n```\n\n_modified_\n\n1 change, 1 needs attention, 0 marked reviewed"
      }
     }
    },
@@ -1276,7 +1276,7 @@
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/web/util.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ web/\n   └─ util.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ web/\n   └─ util.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 0 marked reviewed"
      }
     }
    },
@@ -1347,7 +1347,7 @@
      "label": "open.ts",
      "resourceUri": "uri:file:///repo/src/open.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ open.ts\n```\n\n_added_\n\n3 changes, 0 need attention, 0 left to review"
+      "markdown": "```\nsrc/\n└─ open.ts\n```\n\n_added_\n\n3 changes, 0 need attention, 3 marked reviewed"
      }
     }
    },
@@ -1572,7 +1572,7 @@
      "label": "ready.ts",
      "resourceUri": "uri:file:///repo/src/ready.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ ready.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ ready.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 0 marked reviewed"
      }
     }
    },
@@ -1689,7 +1689,7 @@
      "label": "use.ts",
      "resourceUri": "uri:file:///repo/src/use.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ use.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ use.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 0 marked reviewed"
      }
     }
    },
@@ -1888,10 +1888,10 @@
  "local, inline detail, symbol icons, no review": {
   "summary": {
    "badge": {
-    "tooltip": "16 of 16 left to review",
-    "value": 16
+    "tooltip": "6 of 6 need attention still to look at",
+    "value": 6
    },
-   "message": "Branch + uncommitted (requested Branch vs base) · 6 need attention · 16 of 16 left"
+   "message": "Branch + uncommitted (requested Branch vs base) · 6 need attention · 0 of 6 looked at"
   },
   "rows": [
    {
@@ -2056,7 +2056,7 @@
      "label": "store.ts",
      "resourceUri": "uri:file:///repo/src/store.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ store.ts\n```\n\n_modified_\n\n5 changes, 4 need attention, 5 left to review"
+      "markdown": "```\nsrc/\n└─ store.ts\n```\n\n_modified_\n\n5 changes, 4 need attention, 0 marked reviewed"
      }
     }
    },
@@ -2651,7 +2651,7 @@
      "label": "big.ts",
      "resourceUri": "uri:file:///repo/src/big.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ big.ts\n```\n\n_modified_\n\n1 change, 1 needs attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ big.ts\n```\n\n_modified_\n\n1 change, 1 needs attention, 0 marked reviewed"
      }
     }
    },
@@ -3081,7 +3081,7 @@
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/api/util.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ api/\n   └─ util.ts\n```\n\n_modified_\n\n1 change, 1 needs attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ api/\n   └─ util.ts\n```\n\n_modified_\n\n1 change, 1 needs attention, 0 marked reviewed"
      }
     }
    },
@@ -3151,7 +3151,7 @@
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/web/util.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ web/\n   └─ util.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ web/\n   └─ util.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 0 marked reviewed"
      }
     }
    },
@@ -3220,7 +3220,7 @@
      "label": "open.ts",
      "resourceUri": "uri:file:///repo/src/open.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ open.ts\n```\n\n_added_\n\n3 changes, 0 need attention, 3 left to review"
+      "markdown": "```\nsrc/\n└─ open.ts\n```\n\n_added_\n\n3 changes, 0 need attention, 0 marked reviewed"
      }
     }
    },
@@ -3441,7 +3441,7 @@
      "label": "ready.ts",
      "resourceUri": "uri:file:///repo/src/ready.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ ready.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ ready.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 0 marked reviewed"
      }
     }
    },
@@ -3556,7 +3556,7 @@
      "label": "use.ts",
      "resourceUri": "uri:file:///repo/src/use.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ use.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ use.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 0 marked reviewed"
      }
     }
    },
@@ -3751,10 +3751,10 @@
  "local, test reach not computed": {
   "summary": {
    "badge": {
-    "tooltip": "16 of 16 left to review",
-    "value": 16
+    "tooltip": "6 of 6 need attention still to look at",
+    "value": 6
    },
-   "message": "Branch + uncommitted (requested Branch vs base) · 6 need attention · 16 of 16 left"
+   "message": "Branch + uncommitted (requested Branch vs base) · 6 need attention · 0 of 6 looked at"
   },
   "rows": [
    {
@@ -3919,7 +3919,7 @@
      "label": "store.ts",
      "resourceUri": "uri:file:///repo/src/store.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ store.ts\n```\n\n_modified_\n\n5 changes, 4 need attention, 5 left to review"
+      "markdown": "```\nsrc/\n└─ store.ts\n```\n\n_modified_\n\n5 changes, 4 need attention, 0 marked reviewed"
      }
     }
    },
@@ -4527,7 +4527,7 @@
      "label": "big.ts",
      "resourceUri": "uri:file:///repo/src/big.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ big.ts\n```\n\n_modified_\n\n1 change, 1 needs attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ big.ts\n```\n\n_modified_\n\n1 change, 1 needs attention, 0 marked reviewed"
      }
     }
    },
@@ -4962,7 +4962,7 @@
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/api/util.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ api/\n   └─ util.ts\n```\n\n_modified_\n\n1 change, 1 needs attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ api/\n   └─ util.ts\n```\n\n_modified_\n\n1 change, 1 needs attention, 0 marked reviewed"
      }
     }
    },
@@ -5037,7 +5037,7 @@
      "label": "util.ts",
      "resourceUri": "uri:file:///repo/src/web/util.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ web/\n   └─ util.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ web/\n   └─ util.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 0 marked reviewed"
      }
     }
    },
@@ -5111,7 +5111,7 @@
      "label": "open.ts",
      "resourceUri": "uri:file:///repo/src/open.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ open.ts\n```\n\n_added_\n\n3 changes, 0 need attention, 3 left to review"
+      "markdown": "```\nsrc/\n└─ open.ts\n```\n\n_added_\n\n3 changes, 0 need attention, 0 marked reviewed"
      }
     }
    },
@@ -5347,7 +5347,7 @@
      "label": "ready.ts",
      "resourceUri": "uri:file:///repo/src/ready.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ ready.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ ready.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 0 marked reviewed"
      }
     }
    },
@@ -5467,7 +5467,7 @@
      "label": "use.ts",
      "resourceUri": "uri:file:///repo/src/use.ts",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ use.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ use.ts\n```\n\n_modified_\n\n1 change, 0 need attention, 0 marked reviewed"
      }
     }
    },
@@ -5667,10 +5667,10 @@
  "PR preview, hover detail, a file without a call graph ticked": {
   "summary": {
    "badge": {
-    "tooltip": "5 of 6 left to review",
-    "value": 5
+    "tooltip": "2 of 2 need attention still to look at",
+    "value": 2
    },
-   "message": "PR #7 · 2 need attention · 5 of 6 left"
+   "message": "PR #7 · 2 need attention · 0 of 2 looked at"
   },
   "rows": [
    {
@@ -5756,7 +5756,7 @@
      "label": "service.ts",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ service.ts\n```\n\n_modified_\n\n2 changes, 1 needs attention, 2 left to review"
+      "markdown": "```\nsrc/\n└─ service.ts\n```\n\n_modified_\n\n2 changes, 1 needs attention, 0 marked reviewed"
      }
     }
    },
@@ -6114,7 +6114,7 @@
      "label": "gone.ts",
      "resourceUri": "uri:impacttree-pr:///src/gone.ts?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ gone.ts\n```\n\n_deleted_\n\n1 change, 1 needs attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ gone.ts\n```\n\n_deleted_\n\n1 change, 1 needs attention, 0 marked reviewed"
      }
     }
    },
@@ -6176,7 +6176,7 @@
      "label": "caller.ts",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ caller.ts\n```\n\n_added_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ caller.ts\n```\n\n_added_\n\n1 change, 0 need attention, 0 marked reviewed"
      }
     }
    },
@@ -6283,10 +6283,10 @@
  "PR preview, inline detail, symbol icons": {
   "summary": {
    "badge": {
-    "tooltip": "6 of 6 left to review",
-    "value": 6
+    "tooltip": "2 of 2 need attention still to look at",
+    "value": 2
    },
-   "message": "PR #7 · 2 need attention · 6 of 6 left"
+   "message": "PR #7 · 2 need attention · 0 of 2 looked at"
   },
   "rows": [
    {
@@ -6371,7 +6371,7 @@
      "label": "service.ts",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ service.ts\n```\n\n_modified_\n\n2 changes, 1 needs attention, 2 left to review"
+      "markdown": "```\nsrc/\n└─ service.ts\n```\n\n_modified_\n\n2 changes, 1 needs attention, 0 marked reviewed"
      }
     }
    },
@@ -6726,7 +6726,7 @@
      "label": "gone.ts",
      "resourceUri": "uri:impacttree-pr:///src/gone.ts?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ gone.ts\n```\n\n_deleted_\n\n1 change, 1 needs attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ gone.ts\n```\n\n_deleted_\n\n1 change, 1 needs attention, 0 marked reviewed"
      }
     }
    },
@@ -6786,7 +6786,7 @@
      "label": "caller.ts",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "```\nsrc/\n└─ caller.ts\n```\n\n_added_\n\n1 change, 0 need attention, 1 left to review"
+      "markdown": "```\nsrc/\n└─ caller.ts\n```\n\n_added_\n\n1 change, 0 need attention, 0 marked reviewed"
      }
     }
    },
@@ -6879,6 +6879,955 @@
      "resourceUri": "uri:impacttree-pr:///docs/sub/moved.md?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
       "markdown": "```\ndocs/\n└─ sub/\n   └─ moved.md\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
+     }
+    }
+   },
+   {
+    "flushes": 1
+   }
+  ]
+ },
+ "local, nothing needs attention": {
+  "summary": {
+   "message": "Branch + uncommitted · 4 changes · nothing needs attention"
+  },
+  "rows": [
+   {
+    "expanded": "",
+    "registered": [
+     [
+      "file:///repo/src/read.ts#40",
+      "modified",
+      "src/read.ts:4"
+     ],
+     [
+      "file:///repo/src/read.ts#240",
+      "modified",
+      "src/read.ts:24"
+     ],
+     [
+      "file:///repo/src/alone.ts#30",
+      "added",
+      "src/alone.ts:3"
+     ],
+     [
+      "file:///repo/src/read.ts",
+      "modified",
+      "src/read.ts"
+     ],
+     [
+      "file:///repo/src/alone.ts",
+      "added",
+      "src/alone.ts"
+     ],
+     [
+      "file:///repo/docs/a.md",
+      "modified",
+      "docs/a.md"
+     ]
+    ]
+   },
+   {
+    "at": "/0:Nothing to flag",
+    "item": {
+     "collapsible": 0,
+     "decoration": null,
+     "description": "every caller updated, or a body-only change",
+     "icon": "pass",
+     "label": "Nothing to flag",
+     "tooltip": "Nothing to flag"
+    }
+   },
+   {
+    "at": "/1:Browse all 4 changes",
+    "item": {
+     "collapsible": 1,
+     "contextValue": "browse",
+     "decoration": null,
+     "icon": "list-flat",
+     "label": "Browse all 4 changes",
+     "tooltip": "Nothing here needs attention. Open it to read the changes anyway; each can still be marked reviewed."
+    }
+   },
+   {
+    "at": "/1:Browse all 4 changes/0:read.ts",
+    "item": {
+     "collapsible": 2,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openFile",
+      "title": "Open diff"
+     },
+     "contextValue": "reviewFile",
+     "decoration": {
+      "status": "modified",
+      "tooltip": "src/read.ts"
+     },
+     "description": "0/2  ·  src",
+     "icon": "__file__",
+     "label": "read.ts",
+     "resourceUri": "uri:file:///repo/src/read.ts",
+     "tooltip": {
+      "markdown": "```\nsrc/\n└─ read.ts\n```\n\n_modified_\n\n2 changes, 0 need attention, 0 marked reviewed"
+     }
+    }
+   },
+   {
+    "at": "/1:Browse all 4 changes/0:read.ts/0:read",
+    "item": {
+     "collapsible": 1,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openChange",
+      "title": "Open change"
+     },
+     "contextValue": "finding",
+     "decoration": {
+      "status": "modified",
+      "tooltip": "src/read.ts:4"
+     },
+     "description": "reaches 1 caller",
+     "icon": "symbol-function",
+     "label": "read",
+     "resourceUri": "uri:file:///repo/src/read.ts#40",
+     "tooltip": {
+      "markdown": "**read**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/read.ts:4`  ·  component `(root)`\n\n_score 1_"
+     }
+    }
+   },
+   {
+    "expanded": "/1:Browse all 4 changes/0:read.ts/0:read",
+    "registered": [
+     [
+      "file:///repo/src/boot.ts#1",
+      null,
+      "src/boot.ts"
+     ]
+    ]
+   },
+   {
+    "at": "/1:Browse all 4 changes/0:read.ts/0:read/0:boot",
+    "item": {
+     "collapsible": 1,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openCaller",
+      "title": "Open caller"
+     },
+     "contextValue": "caller",
+     "decoration": {
+      "status": null,
+      "tooltip": "src/boot.ts"
+     },
+     "description": "call updated  ·  boot.ts",
+     "icon": "symbol-function",
+     "label": "boot",
+     "resourceUri": "uri:file:///repo/src/boot.ts#1",
+     "tooltip": {
+      "markdown": "**boot**\n\n**call updated**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
+     }
+    }
+   },
+   {
+    "at": "/1:Browse all 4 changes/0:read.ts/0:read/0:boot/0:Callers could not be loaded",
+    "item": {
+     "collapsible": 0,
+     "decoration": null,
+     "description": "refresh to retry",
+     "icon": "warning",
+     "label": "Callers could not be loaded",
+     "tooltip": "tsserver crashed"
+    }
+   },
+   {
+    "at": "/1:Browse all 4 changes/0:read.ts/0:read/1:Tested by readSpec",
+    "item": {
+     "collapsible": 0,
+     "decoration": null,
+     "icon": "beaker",
+     "label": "Tested by readSpec",
+     "tooltip": "Tested by readSpec"
+    }
+   },
+   {
+    "at": "/1:Browse all 4 changes/0:read.ts/1:write",
+    "item": {
+     "collapsible": 1,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openChange",
+      "title": "Open change"
+     },
+     "contextValue": "finding",
+     "decoration": {
+      "status": "modified",
+      "tooltip": "src/read.ts:24"
+     },
+     "description": "no callers",
+     "icon": "symbol-function",
+     "label": "write",
+     "resourceUri": "uri:file:///repo/src/read.ts#240",
+     "tooltip": {
+      "markdown": "**write**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n`src/read.ts:24`  ·  component `(root)`\n\n_score 1_"
+     }
+    }
+   },
+   {
+    "at": "/1:Browse all 4 changes/0:read.ts/1:write/0:Tested by writeSpec",
+    "item": {
+     "collapsible": 0,
+     "decoration": null,
+     "icon": "beaker",
+     "label": "Tested by writeSpec",
+     "tooltip": "Tested by writeSpec"
+    }
+   },
+   {
+    "at": "/1:Browse all 4 changes/0:read.ts/2:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
+    "at": "/1:Browse all 4 changes/1:alone.ts",
+    "item": {
+     "collapsible": 1,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openFile",
+      "title": "Open diff"
+     },
+     "contextValue": "reviewFile",
+     "decoration": {
+      "status": "added",
+      "tooltip": "src/alone.ts"
+     },
+     "description": "0/1  ·  src",
+     "icon": "__file__",
+     "label": "alone.ts",
+     "resourceUri": "uri:file:///repo/src/alone.ts",
+     "tooltip": {
+      "markdown": "```\nsrc/\n└─ alone.ts\n```\n\n_added_\n\n1 change, 0 need attention, 0 marked reviewed"
+     }
+    }
+   },
+   {
+    "at": "/1:Browse all 4 changes/1:alone.ts/0:alone",
+    "item": {
+     "collapsible": 1,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openChange",
+      "title": "Open change"
+     },
+     "contextValue": "finding",
+     "decoration": {
+      "status": "added",
+      "tooltip": "src/alone.ts:3"
+     },
+     "description": "no callers",
+     "icon": "symbol-function",
+     "label": "alone",
+     "resourceUri": "uri:file:///repo/src/alone.ts#30",
+     "tooltip": {
+      "markdown": "**alone**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n`src/alone.ts:3`  ·  component `(root)`\n\n_score 1_"
+     }
+    }
+   },
+   {
+    "at": "/1:Browse all 4 changes/1:alone.ts/0:alone/0:Tested by aloneSpec",
+    "item": {
+     "collapsible": 0,
+     "decoration": null,
+     "icon": "beaker",
+     "label": "Tested by aloneSpec",
+     "tooltip": "Tested by aloneSpec"
+    }
+   },
+   {
+    "at": "/1:Browse all 4 changes/1:alone.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
+    "at": "/1:Browse all 4 changes/2:a.md",
+    "item": {
+     "collapsible": 0,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openFile",
+      "title": "Open diff"
+     },
+     "decoration": {
+      "status": "modified",
+      "tooltip": "docs/a.md"
+     },
+     "description": "no call graph  ·  docs",
+     "label": "a.md",
+     "resourceUri": "uri:file:///repo/docs/a.md",
+     "tooltip": {
+      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
+     }
+    }
+   },
+   {
+    "flushes": 1
+   }
+  ]
+ },
+ "local, nothing needs attention, a warning on the analysis": {
+  "summary": {
+   "message": "Branch + uncommitted · 4 changes · nothing needs attention"
+  },
+  "rows": [
+   {
+    "expanded": "",
+    "registered": [
+     [
+      "file:///repo/src/read.ts#40",
+      "modified",
+      "src/read.ts:4"
+     ],
+     [
+      "file:///repo/src/read.ts#240",
+      "modified",
+      "src/read.ts:24"
+     ],
+     [
+      "file:///repo/src/alone.ts#30",
+      "added",
+      "src/alone.ts:3"
+     ],
+     [
+      "file:///repo/src/read.ts",
+      "modified",
+      "src/read.ts"
+     ],
+     [
+      "file:///repo/src/alone.ts",
+      "added",
+      "src/alone.ts"
+     ],
+     [
+      "file:///repo/docs/a.md",
+      "modified",
+      "docs/a.md"
+     ]
+    ]
+   },
+   {
+    "at": "/0:1 changed file(s) were too large to analyse",
+    "item": {
+     "collapsible": 0,
+     "decoration": null,
+     "icon": "warning",
+     "label": "1 changed file(s) were too large to analyse",
+     "tooltip": "1 changed file(s) were too large to analyse"
+    }
+   },
+   {
+    "at": "/1:Nothing to flag in what was searched",
+    "item": {
+     "collapsible": 0,
+     "decoration": null,
+     "description": "some callers or files could not be searched",
+     "icon": "info",
+     "label": "Nothing to flag in what was searched",
+     "tooltip": "Nothing to flag in what was searched"
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes",
+    "item": {
+     "collapsible": 1,
+     "contextValue": "browse",
+     "decoration": null,
+     "icon": "list-flat",
+     "label": "Browse all 4 changes",
+     "tooltip": "Nothing here needs attention. Open it to read the changes anyway; each can still be marked reviewed."
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/0:read.ts",
+    "item": {
+     "collapsible": 2,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openFile",
+      "title": "Open diff"
+     },
+     "contextValue": "reviewFile",
+     "decoration": {
+      "status": "modified",
+      "tooltip": "src/read.ts"
+     },
+     "description": "0/2  ·  src",
+     "icon": "__file__",
+     "label": "read.ts",
+     "resourceUri": "uri:file:///repo/src/read.ts",
+     "tooltip": {
+      "markdown": "```\nsrc/\n└─ read.ts\n```\n\n_modified_\n\n2 changes, 0 need attention, 0 marked reviewed"
+     }
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/0:read.ts/0:read",
+    "item": {
+     "collapsible": 1,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openChange",
+      "title": "Open change"
+     },
+     "contextValue": "finding",
+     "decoration": {
+      "status": "modified",
+      "tooltip": "src/read.ts:4"
+     },
+     "description": "reaches 1 caller",
+     "icon": "symbol-function",
+     "label": "read",
+     "resourceUri": "uri:file:///repo/src/read.ts#40",
+     "tooltip": {
+      "markdown": "**read**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/read.ts:4`  ·  component `(root)`\n\n_score 1_"
+     }
+    }
+   },
+   {
+    "expanded": "/2:Browse all 4 changes/0:read.ts/0:read",
+    "registered": [
+     [
+      "file:///repo/src/boot.ts#1",
+      null,
+      "src/boot.ts"
+     ]
+    ]
+   },
+   {
+    "at": "/2:Browse all 4 changes/0:read.ts/0:read/0:boot",
+    "item": {
+     "collapsible": 1,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openCaller",
+      "title": "Open caller"
+     },
+     "contextValue": "caller",
+     "decoration": {
+      "status": null,
+      "tooltip": "src/boot.ts"
+     },
+     "description": "call updated  ·  boot.ts",
+     "icon": "symbol-function",
+     "label": "boot",
+     "resourceUri": "uri:file:///repo/src/boot.ts#1",
+     "tooltip": {
+      "markdown": "**boot**\n\n**call updated**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
+     }
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/0:read.ts/0:read/0:boot/0:Callers could not be loaded",
+    "item": {
+     "collapsible": 0,
+     "decoration": null,
+     "description": "refresh to retry",
+     "icon": "warning",
+     "label": "Callers could not be loaded",
+     "tooltip": "tsserver crashed"
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/0:read.ts/0:read/1:Tested by readSpec",
+    "item": {
+     "collapsible": 0,
+     "decoration": null,
+     "icon": "beaker",
+     "label": "Tested by readSpec",
+     "tooltip": "Tested by readSpec"
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/0:read.ts/1:write",
+    "item": {
+     "collapsible": 1,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openChange",
+      "title": "Open change"
+     },
+     "contextValue": "finding",
+     "decoration": {
+      "status": "modified",
+      "tooltip": "src/read.ts:24"
+     },
+     "description": "no callers",
+     "icon": "symbol-function",
+     "label": "write",
+     "resourceUri": "uri:file:///repo/src/read.ts#240",
+     "tooltip": {
+      "markdown": "**write**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n`src/read.ts:24`  ·  component `(root)`\n\n_score 1_"
+     }
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/0:read.ts/1:write/0:Tested by writeSpec",
+    "item": {
+     "collapsible": 0,
+     "decoration": null,
+     "icon": "beaker",
+     "label": "Tested by writeSpec",
+     "tooltip": "Tested by writeSpec"
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/0:read.ts/2:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/1:alone.ts",
+    "item": {
+     "collapsible": 1,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openFile",
+      "title": "Open diff"
+     },
+     "contextValue": "reviewFile",
+     "decoration": {
+      "status": "added",
+      "tooltip": "src/alone.ts"
+     },
+     "description": "0/1  ·  src",
+     "icon": "__file__",
+     "label": "alone.ts",
+     "resourceUri": "uri:file:///repo/src/alone.ts",
+     "tooltip": {
+      "markdown": "```\nsrc/\n└─ alone.ts\n```\n\n_added_\n\n1 change, 0 need attention, 0 marked reviewed"
+     }
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/1:alone.ts/0:alone",
+    "item": {
+     "collapsible": 1,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openChange",
+      "title": "Open change"
+     },
+     "contextValue": "finding",
+     "decoration": {
+      "status": "added",
+      "tooltip": "src/alone.ts:3"
+     },
+     "description": "no callers",
+     "icon": "symbol-function",
+     "label": "alone",
+     "resourceUri": "uri:file:///repo/src/alone.ts#30",
+     "tooltip": {
+      "markdown": "**alone**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n`src/alone.ts:3`  ·  component `(root)`\n\n_score 1_"
+     }
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/1:alone.ts/0:alone/0:Tested by aloneSpec",
+    "item": {
+     "collapsible": 0,
+     "decoration": null,
+     "icon": "beaker",
+     "label": "Tested by aloneSpec",
+     "tooltip": "Tested by aloneSpec"
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/1:alone.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/2:a.md",
+    "item": {
+     "collapsible": 0,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openFile",
+      "title": "Open diff"
+     },
+     "decoration": {
+      "status": "modified",
+      "tooltip": "docs/a.md"
+     },
+     "description": "no call graph  ·  docs",
+     "label": "a.md",
+     "resourceUri": "uri:file:///repo/docs/a.md",
+     "tooltip": {
+      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
+     }
+    }
+   },
+   {
+    "flushes": 1
+   }
+  ]
+ },
+ "PR preview, nothing needs attention": {
+  "summary": {
+   "message": "PR #7 · 4 changes · nothing needs attention"
+  },
+  "rows": [
+   {
+    "expanded": "",
+    "registered": [
+     [
+      "impacttree-pr:///src/read.ts?side=head&revision=7%3Aheadsha%3Abasesha#40",
+      "modified",
+      "src/read.ts:4"
+     ],
+     [
+      "impacttree-pr:///src/read.ts?side=head&revision=7%3Aheadsha%3Abasesha#240",
+      "modified",
+      "src/read.ts:24"
+     ],
+     [
+      "impacttree-pr:///src/alone.ts?side=head&revision=7%3Aheadsha%3Abasesha#30",
+      "added",
+      "src/alone.ts:3"
+     ],
+     [
+      "impacttree-pr:///src/read.ts?side=head&revision=7%3Aheadsha%3Abasesha",
+      "modified",
+      "src/read.ts"
+     ],
+     [
+      "impacttree-pr:///src/alone.ts?side=head&revision=7%3Aheadsha%3Abasesha",
+      "added",
+      "src/alone.ts"
+     ],
+     [
+      "impacttree-pr:///docs/a.md?side=head&revision=7%3Aheadsha%3Abasesha",
+      "modified",
+      "docs/a.md"
+     ]
+    ]
+   },
+   {
+    "at": "/0:Preview — PR files only (3 file(s))",
+    "item": {
+     "collapsible": 0,
+     "decoration": null,
+     "description": "Preview: callers outside this PR and tests are not searched.",
+     "icon": "eye",
+     "label": "Preview — PR files only (3 file(s))",
+     "tooltip": "Built from the pull request's own files via the GitHub API.\nYour worktree was not touched.\n\nAny caller living in a file this PR does not change is invisible here.\nUse \"Check out and analyse\" on the PR for the complete tree."
+    }
+   },
+   {
+    "at": "/1:Nothing to flag in what was searched",
+    "item": {
+     "collapsible": 0,
+     "decoration": null,
+     "description": "check out and analyse for the full picture",
+     "icon": "info",
+     "label": "Nothing to flag in what was searched",
+     "tooltip": "Nothing to flag in what was searched"
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes",
+    "item": {
+     "collapsible": 1,
+     "contextValue": "browse",
+     "decoration": null,
+     "icon": "list-flat",
+     "label": "Browse all 4 changes",
+     "tooltip": "Nothing here needs attention. Open it to read the changes anyway; each can still be marked reviewed."
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/0:read.ts",
+    "item": {
+     "collapsible": 2,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openFile",
+      "title": "Open diff"
+     },
+     "contextValue": "reviewFile",
+     "decoration": {
+      "status": "modified",
+      "tooltip": "src/read.ts"
+     },
+     "description": "0/2  ·  src",
+     "icon": "__file__",
+     "label": "read.ts",
+     "resourceUri": "uri:impacttree-pr:///src/read.ts?side=head&revision=7%3Aheadsha%3Abasesha",
+     "tooltip": {
+      "markdown": "```\nsrc/\n└─ read.ts\n```\n\n_modified_\n\n2 changes, 0 need attention, 0 marked reviewed"
+     }
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/0:read.ts/0:read",
+    "item": {
+     "collapsible": 1,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openChange",
+      "title": "Open change"
+     },
+     "contextValue": "finding",
+     "decoration": {
+      "status": "modified",
+      "tooltip": "src/read.ts:4"
+     },
+     "description": "reaches 1 caller",
+     "icon": "symbol-function",
+     "label": "read",
+     "resourceUri": "uri:impacttree-pr:///src/read.ts?side=head&revision=7%3Aheadsha%3Abasesha#40",
+     "tooltip": {
+      "markdown": "**read**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/read.ts:4`  ·  component `(root)`\n\n_score 1_"
+     }
+    }
+   },
+   {
+    "expanded": "/2:Browse all 4 changes/0:read.ts/0:read",
+    "registered": [
+     [
+      "impacttree-pr:///src/boot.ts?side=head&revision=7%3Aheadsha%3Abasesha#1",
+      null,
+      "src/boot.ts"
+     ]
+    ]
+   },
+   {
+    "at": "/2:Browse all 4 changes/0:read.ts/0:read/0:boot",
+    "item": {
+     "collapsible": 1,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openCaller",
+      "title": "Open caller"
+     },
+     "contextValue": "caller",
+     "decoration": {
+      "status": null,
+      "tooltip": "src/boot.ts"
+     },
+     "description": "call updated  ·  boot.ts",
+     "icon": "symbol-function",
+     "label": "boot",
+     "resourceUri": "uri:impacttree-pr:///src/boot.ts?side=head&revision=7%3Aheadsha%3Abasesha#1",
+     "tooltip": {
+      "markdown": "**boot**\n\n**call updated**\n\n`src/boot.ts`\n\n1 call site to the changed symbol"
+     }
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/0:read.ts/0:read/0:boot/0:Callers could not be loaded",
+    "item": {
+     "collapsible": 0,
+     "decoration": null,
+     "description": "refresh to retry",
+     "icon": "warning",
+     "label": "Callers could not be loaded",
+     "tooltip": "this resolver does not report whether its caller search finished"
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/0:read.ts/0:read/1:Tests are not searched in a PR preview",
+    "item": {
+     "collapsible": 0,
+     "decoration": null,
+     "icon": "beaker",
+     "label": "Tests are not searched in a PR preview",
+     "tooltip": "A preview reads only the pull request's own files. Check out the PR to see which tests reach this change."
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/0:read.ts/1:write",
+    "item": {
+     "collapsible": 1,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openChange",
+      "title": "Open change"
+     },
+     "contextValue": "finding",
+     "decoration": {
+      "status": "modified",
+      "tooltip": "src/read.ts:24"
+     },
+     "description": "no callers",
+     "icon": "symbol-function",
+     "label": "write",
+     "resourceUri": "uri:impacttree-pr:///src/read.ts?side=head&revision=7%3Aheadsha%3Abasesha#240",
+     "tooltip": {
+      "markdown": "**write**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n`src/read.ts:24`  ·  component `(root)`\n\n_score 1_"
+     }
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/0:read.ts/1:write/0:Tests are not searched in a PR preview",
+    "item": {
+     "collapsible": 0,
+     "decoration": null,
+     "icon": "beaker",
+     "label": "Tests are not searched in a PR preview",
+     "tooltip": "A preview reads only the pull request's own files. Check out the PR to see which tests reach this change."
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/0:read.ts/2:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/1:alone.ts",
+    "item": {
+     "collapsible": 1,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openFile",
+      "title": "Open diff"
+     },
+     "contextValue": "reviewFile",
+     "decoration": {
+      "status": "added",
+      "tooltip": "src/alone.ts"
+     },
+     "description": "0/1  ·  src",
+     "icon": "__file__",
+     "label": "alone.ts",
+     "resourceUri": "uri:impacttree-pr:///src/alone.ts?side=head&revision=7%3Aheadsha%3Abasesha",
+     "tooltip": {
+      "markdown": "```\nsrc/\n└─ alone.ts\n```\n\n_added_\n\n1 change, 0 need attention, 0 marked reviewed"
+     }
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/1:alone.ts/0:alone",
+    "item": {
+     "collapsible": 1,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openChange",
+      "title": "Open change"
+     },
+     "contextValue": "finding",
+     "decoration": {
+      "status": "added",
+      "tooltip": "src/alone.ts:3"
+     },
+     "description": "no callers",
+     "icon": "symbol-function",
+     "label": "alone",
+     "resourceUri": "uri:impacttree-pr:///src/alone.ts?side=head&revision=7%3Aheadsha%3Abasesha#30",
+     "tooltip": {
+      "markdown": "**alone**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n`src/alone.ts:3`  ·  component `(root)`\n\n_score 1_"
+     }
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/1:alone.ts/0:alone/0:Tests are not searched in a PR preview",
+    "item": {
+     "collapsible": 0,
+     "decoration": null,
+     "icon": "beaker",
+     "label": "Tests are not searched in a PR preview",
+     "tooltip": "A preview reads only the pull request's own files. Check out the PR to see which tests reach this change."
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/1:alone.ts/1:",
+    "item": {
+     "collapsible": 0,
+     "contextValue": "spacer",
+     "decoration": null,
+     "label": ""
+    }
+   },
+   {
+    "at": "/2:Browse all 4 changes/2:a.md",
+    "item": {
+     "collapsible": 0,
+     "command": {
+      "arguments": [
+       "<this row>"
+      ],
+      "command": "impactTree.openFile",
+      "title": "Open diff"
+     },
+     "decoration": {
+      "status": "modified",
+      "tooltip": "docs/a.md"
+     },
+     "description": "no call graph  ·  docs",
+     "icon": "__file__",
+     "label": "a.md",
+     "resourceUri": "uri:impacttree-pr:///docs/a.md?side=head&revision=7%3Aheadsha%3Abasesha",
+     "tooltip": {
+      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
      }
     }
    },

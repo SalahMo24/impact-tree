@@ -3,6 +3,7 @@
 // an open file group, through the provider and the vscode stub. Each test names one item.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { rootFiles } = require('./root-files');
 const vscode = require('./vscode-stub');
 const { createTreeProvider } = require('../src/views/changes/tree-provider');
 const { renderTreeItem } = require('../src/views/changes/tree-item-renderer');
@@ -41,7 +42,7 @@ function viewOf(result, { state = {}, review = null } = {}) {
     resolver: { incomingWithStatus: async () => ({ callers: [], complete: true }) }, review,
     decorate: { register: (uri, d) => decorated.push({ uri: uri.toString(), ...d }), flush() {} },
   });
-  const files = async () => (await provider.getChildren()).filter((r) => r.type === 'reviewFile' || r.type === 'file');
+  const files = async () => (await rootFiles(provider)).filter((r) => r.type === 'reviewFile' || r.type === 'file');
   const fileAt = async (relPath) => (await files()).find((f) => f.relPath === relPath);
   return { provider, decorated, files, fileAt, item: (row) => provider.getTreeItem(row) };
 }
@@ -263,14 +264,14 @@ test('in either detail mode a row says its state in words; inline adds the chang
 });
 
 // ---- 6. the one-line summary -------------------------------------------------------------
-test('the summary reads PR or mode, the attention count, what is left and the filter', () => {
-  const counts = { total: 5, left: 3, attention: 2 };
+test('the summary reads PR or mode, the attention count, how many were looked at and the filter', () => {
+  const counts = { total: 5, left: 3, attention: 2, attentionTotal: 4 };
   const result = resultOf({ base: { ref: 'origin/main', sha: 'abc' } });
-  assert.equal(model.buildReviewSummary(result, { kind: 'pr', pr: { number: 15 } }, counts).message, 'PR #15 · 2 need attention · 3 of 5 left');
-  assert.equal(model.buildReviewSummary(result, { kind: 'local' }, counts).message, 'Branch + uncommitted · 2 need attention · 3 of 5 left');
+  assert.equal(model.buildReviewSummary(result, { kind: 'pr', pr: { number: 15 } }, counts).message, 'PR #15 · 2 need attention · 2 of 4 looked at');
+  assert.equal(model.buildReviewSummary(result, { kind: 'local' }, counts).message, 'Branch + uncommitted · 2 need attention · 2 of 4 looked at');
   assert.equal(model.buildReviewSummary(result, { kind: 'pr', pr: { number: 15 } }, counts, 'attention').message,
-    'PR #15 · 2 need attention · 3 of 5 left · filter: needs attention');
-  assert.equal(model.buildReviewSummary(result, null, counts, 'unreviewed').message, 'Branch + uncommitted · 2 need attention · 3 of 5 left · filter: unreviewed');
+    'PR #15 · 2 need attention · 2 of 4 looked at · filter: needs attention');
+  assert.equal(model.buildReviewSummary(result, null, counts, 'unreviewed').message, 'Branch + uncommitted · 2 need attention · 2 of 4 looked at · filter: unreviewed');
   assert.doesNotMatch(model.buildReviewSummary(result, null, counts).message, /origin\/main/, 'the base is not named');
 });
 
@@ -331,7 +332,7 @@ test('the spacer is not a counting row, and counts, line lookup and next-unrevie
   const spacer = model.buildSpacerRow(rows[0]);
   assert.deepEqual(model.collectCountingRows(rows).filter((r) => r.type === 'spacer'), []);
   assert.deepEqual(model.collectTickTargets(spacer), [], 'it has no checkbox to stand for');
-  assert.deepEqual(provider.reviewCounts(), { total: 3, left: 3, attention: 1 });
+  assert.deepEqual(provider.reviewCounts(), { total: 3, left: 3, attention: 1, attentionTotal: 1 });
   assert.equal(provider.rowAtLine('src/a.ts', 31)?.type, 'finding');
   assert.equal(provider.rowAtLine('src/a.ts', 500)?.type, 'reviewFile', 'a line in no change is the file, never its spacer');
   assert.equal(provider.rowById('spacer:src/a.ts'), null);

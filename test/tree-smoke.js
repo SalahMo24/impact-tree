@@ -191,12 +191,15 @@ const check = (name, cond, extra = '') => {
   check('legend distinguishes call-updated from changed-elsewhere',
     LEGEND.some(([, label, desc]) => /callers updated/i.test(`${label} ${desc}`)) && LEGEND.some(([, label, desc]) => /not on the call line/i.test(`${label} ${desc}`)));
   const summary = provider.summarize();
-  // `<what is reviewed> · <n> need attention · <left> of <total> left` (P1 vocabulary); the
-  // words come from the model, and the numbers must be the counts.
+  // `<what is reviewed> · <n> need attention · <looked> of <attentionTotal> looked at`, or
+  // `<total> changes · nothing needs attention` when none does (gate G14); the words come
+  // from the model, and the numbers must be the counts.
   const counts = provider.reviewCounts();
   const { MODE_LABELS, attentionCountText } = require('../src/views/changes/tree-row-models');
   check('the summary is the view message',
-    summary.message === `${MODE_LABELS[result.mode]} · ${attentionCountText(counts.attention)} · ${counts.left} of ${counts.total} left`, String(summary.message));
+    summary.message === (counts.attentionTotal > 0
+      ? `${MODE_LABELS[result.mode]} · ${attentionCountText(counts.attention)} · ${counts.attentionTotal - counts.attention} of ${counts.attentionTotal} looked at`
+      : `${MODE_LABELS[result.mode]} · ${counts.total} change${counts.total === 1 ? '' : 's'} · nothing needs attention`), String(summary.message));
   check('the summary counts every counting row', counts.total === fileRows.length - graphFiles.length + graphFiles.reduce((n, f) => n + f.rows.length, 0), `${counts.total}`);
 
   console.log('▸ decorations (git badge + severity colour)');
@@ -318,13 +321,19 @@ const check = (name, cond, extra = '') => {
   {
     const file = graphFiles[0];
     const rows = (await provider.getChildren(file)).filter((r) => r.type !== 'spacer');
-    const left = () => Number(/(\d+) of \d+ left$/.exec(provider.summarize().message)[1]);
+    const left = () => provider.reviewCounts().left;
     const start = left();
     check('a file starts unchecked', provider.getTreeItem(file).checkboxState === vscodeStub.TreeItemCheckboxState.Unchecked);
     provider.setChecked(file, true);
     check('ticking a file ticks its rows', rows.every((r) => provider.getTreeItem(r).checkboxState === vscodeStub.TreeItemCheckboxState.Checked));
     check('and the file shows ticked', provider.getTreeItem(file).checkboxState === vscodeStub.TreeItemCheckboxState.Checked);
-    check('the summary counts them', left() === start - rows.length, `${start} -> ${left()}`);
+    check('the counts see them', left() === start - rows.length, `${start} -> ${left()}`);
+    {
+      // the message counts the rows that need attention, looked at or not
+      const c = provider.reviewCounts();
+      const said = c.attentionTotal > 0 ? `${c.attentionTotal - c.attention} of ${c.attentionTotal} looked at` : 'nothing needs attention';
+      check('the summary says how many that need attention were looked at', provider.summarize().message.includes(said), provider.summarize().message);
+    }
     provider.setChecked(rows[0], false);
     check('unticking one row unticks the file', provider.getTreeItem(file).checkboxState === vscodeStub.TreeItemCheckboxState.Unchecked);
     const id = review.id(rows[1] || rows[0]);

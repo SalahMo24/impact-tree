@@ -441,9 +441,9 @@ test('toggling a filter turns it on, turns the other off, and a second toggle re
 
 test('the summary names a filter that narrows the tree and says nothing for all', () => {
   const result = { mode: 'branch', base: { ref: 'main' } };
-  const counts = { total: 5, left: 3, attention: 1 };
-  assert.equal(model.buildReviewSummary(result, null, counts).message, 'Branch + uncommitted · 1 needs attention · 3 of 5 left');
-  assert.equal(model.buildReviewSummary(result, null, counts, 'all').message, 'Branch + uncommitted · 1 needs attention · 3 of 5 left');
+  const counts = { total: 5, left: 3, attention: 1, attentionTotal: 3 };
+  assert.equal(model.buildReviewSummary(result, null, counts).message, 'Branch + uncommitted · 1 needs attention · 2 of 3 looked at');
+  assert.equal(model.buildReviewSummary(result, null, counts, 'all').message, 'Branch + uncommitted · 1 needs attention · 2 of 3 looked at');
   assert.match(model.buildReviewSummary(result, null, counts, 'attention').message, / · filter: needs attention$/);
   assert.match(model.buildReviewSummary(result, null, counts, 'unreviewed').message, / · filter: unreviewed$/);
 });
@@ -630,4 +630,105 @@ test('review ids of the new rows equal the ids the old tree gives the same symbo
   }
   assert.deepEqual(shown.map((r) => [r.type, provider.getTreeItem(r).checkboxState]),
     [['reviewFile', 1], ['deleted', 1], ['finding', 1], ['outside', 1], ['file', 1]]);
+});
+
+// ---- one definition of done (gate G14): progress counts the rows that need attention ----
+// a.js: bad (needs attention), mid and low (quiet), an outside row (quiet); b.js: unk (needs
+// attention); c.js: q (quiet); n.md has no call graph (quiet): 7 counting rows, 2 that need attention.
+test('countReview counts the rows that need attention, ticked or not, beside every row', () => {
+  const { rows, row, ticked, isReviewed } = walkRows();
+  assert.deepEqual(model.countReview(rows, isReviewed), { total: 7, left: 7, attention: 2, attentionTotal: 2 });
+  ticked.add(row('a.js', 'bad'));
+  ticked.add(row('a.js', 'mid'));
+  assert.deepEqual(model.countReview(rows, isReviewed), { total: 7, left: 5, attention: 1, attentionTotal: 2 },
+    'ticking a row that needs attention looks at it; ticking a quiet one changes nothing but `left`');
+  for (const f of rows) for (const r of model.collectCountingRows([f])) ticked.add(r);
+  assert.deepEqual(model.countReview(rows, isReviewed), { total: 7, left: 0, attention: 0, attentionTotal: 2 }, 'attentionTotal does not fall as rows are ticked');
+});
+
+test('a file that was not analysed needs attention and is in attentionTotal; a plain file is not', () => {
+  const { rows } = build(resultOf({ allChanged: [], otherFiles: [{ path: 'a.zig', status: 'added', notAnalysed: { language: 'Zig', reason: 'no support' } }, { path: 'b.md', status: 'added' }] }));
+  assert.deepEqual(model.countReview(rows, () => false), { total: 2, left: 2, attention: 1, attentionTotal: 1 });
+});
+
+test('describeProgress words: looked at, or the calm count of changes', () => {
+  assert.deepEqual(model.describeProgress({ total: 107, left: 100, attention: 3, attentionTotal: 5 }),
+    { looked: 2, attentionTotal: 5, lookedAtText: '2 of 5 looked at', calmText: '107 changes', summaryText: '3 need attention · 2 of 5 looked at' });
+  assert.deepEqual(model.describeProgress({ total: 1, left: 1, attention: 0, attentionTotal: 0 }),
+    { looked: 0, attentionTotal: 0, lookedAtText: null, calmText: '1 change', summaryText: '1 change · nothing needs attention' });
+});
+
+test('buildReviewSummary: the badge is the rows that need attention still unreviewed, none once looked at', () => {
+  const result = resultOf({ base: { ref: 'main' } });
+  const source = { kind: 'pr', pr: { number: 27095 } };
+  assert.deepEqual(model.buildReviewSummary(result, source, { total: 107, left: 107, attention: 0, attentionTotal: 0 }),
+    { message: 'PR #27095 · 107 changes · nothing needs attention', badge: undefined }, 'a clean PR is not a 107-item chore');
+  assert.deepEqual(model.buildReviewSummary(result, source, { total: 107, left: 100, attention: 2, attentionTotal: 3 }),
+    { message: 'PR #27095 · 2 need attention · 1 of 3 looked at', badge: { value: 2, tooltip: '2 of 3 need attention still to look at' } });
+});
+
+// ---- the calm state ----------------------------------------------------------------------
+const calmOf = (result, isReviewed = () => false) => {
+  const { rows } = build(result);
+  return { rows, calm: model.buildCalmRows(deepFreeze(result), model.countReview(rows, isReviewed)) };
+};
+
+test('nothing needs attention: a "Nothing to flag" row and one collapsed container named for the changes', () => {
+  const { calm } = calmOf(resultOf({ allChanged: [quiet('a.js', 'a'), reaches('a.js', 'b'), quiet('c.js', 'c')], otherFiles: [{ path: 'n.md', status: 'added' }] }));
+  assert.deepEqual(calm.calm, { type: 'message', icon: 'pass', label: 'Nothing to flag', desc: 'every caller updated, or a body-only change' });
+  assert.deepEqual(calm.browse, { type: 'browse', label: 'Browse all 4 changes', icon: 'list-flat', expanded: false });
+});
+
+test('the container reads "1 change" for one, and ticking every row does not change the calm state', () => {
+  const result = resultOf({ allChanged: [quiet('a.js', 'a')] });
+  assert.equal(calmOf(result).calm.browse.label, 'Browse all 1 change');
+  assert.equal(calmOf(result, () => true).calm.browse.label, 'Browse all 1 change');
+});
+
+test('anything that needs attention, or no file at all, is not calm', () => {
+  assert.equal(calmOf(resultOf({ allChanged: [quiet('a.js', 'a'), stale1('b.js', 'bad')] })).calm, null);
+  assert.equal(calmOf(resultOf({ allChanged: [], otherFiles: [{ path: 'a.zig', status: 'added', notAnalysed: { language: 'Zig', reason: 'x' } }] })).calm, null,
+    'a file that was not analysed needs a look');
+  assert.equal(calmOf(resultOf({ allChanged: [] })).calm, null, 'no file row, no container');
+});
+
+test('the calm row hedges when the analysis was incomplete, naming what to do', () => {
+  const quietResult = (extra) => resultOf({ allChanged: [quiet('a.js', 'a')], ...extra });
+  const hedge = (extra) => calmOf(quietResult(extra)).calm.calm;
+  assert.deepEqual(hedge({ tierA: true }), { type: 'message', icon: 'info', label: 'Nothing to flag in what was searched', desc: 'check out and analyse for the full picture' });
+  const searched = { type: 'message', icon: 'info', label: 'Nothing to flag in what was searched', desc: 'some callers or files could not be searched' };
+  assert.deepEqual(hedge({ warnings: ['gopls did not answer'] }), searched, 'a warning');
+  assert.deepEqual(hedge({ callersPending: true }), searched, 'callers still resolving');
+  assert.deepEqual(hedge({ unanalysable: [{ component: 'web', count: 3 }] }), searched, 'a component that could not be analysed');
+  assert.deepEqual(calmOf(resultOf({ allChanged: [quiet('a.js', 'a'), change('b.js', 'b', { callersComplete: false })] })).calm.calm, searched,
+    'a change whose caller search did not finish');
+  assert.equal(model.isAnalysisIncomplete(quietResult({ warnings: [], unanalysable: [] })), false);
+  assert.equal(model.isAnalysisIncomplete(quietResult({ allChanged: [change('a.js', 'a', { callersComplete: true })] })), false, 'a finished search is complete');
+  // a preview wins over the other reasons: the advice that fixes it is to check out
+  assert.equal(hedge({ tierA: true, warnings: ['w'] }).desc, 'check out and analyse for the full picture');
+});
+
+// ---- the container is invisible to counting, ticking and the walk -------------------------
+test('a browse row stands for its files: counting rows, tick targets and counts see through it', () => {
+  const { rows, calm } = calmOf(resultOf({ allChanged: [quiet('a.js', 'a'), reaches('a.js', 'b'), quiet('c.js', 'c')], otherFiles: [{ path: 'n.md', status: 'added' }] }));
+  const browse = { ...calm.browse, children: rows, files: rows };
+  assert.deepEqual(model.collectCountingRows([browse]), model.collectCountingRows(rows));
+  assert.deepEqual(model.collectTickTargets(browse), model.collectCountingRows(rows));
+  assert.deepEqual(model.countReview([browse], () => false), model.countReview(rows, () => false));
+  assert.equal(model.treeItemId(browse), undefined, 'it is not a row a tick or a reveal addresses');
+});
+
+test('the walk, line lookup and filters read the file rows, with or without the container', () => {
+  const { rows, calm } = calmOf(resultOf({ allChanged: [quiet('a.js', 'a'), quiet('c.js', 'c')], otherFiles: [{ path: 'n.md', status: 'added' }] }));
+  assert.ok(calm);
+  const ticked = new Set();
+  const isReviewed = (r) => ticked.has(r);
+  const first = model.findNextUnreviewed(rows, { isReviewed, filter: 'all' });
+  assert.equal(first.label, 'a');
+  ticked.add(first);
+  assert.equal(model.findNextUnreviewed(rows, { after: first, isReviewed, filter: 'all' }).label, 'c');
+  assert.equal(model.findPreviousUnreviewed(rows, { after: first, isReviewed, filter: 'all' }).label, 'n.md', 'wraps up to the last row');
+  assert.equal(model.findRowAtLine(rows, 'c.js', 1).type, 'reviewFile');
+  assert.deepEqual(shownLabels(model.filterFileRows(rows, 'attention', isReviewed)), [], 'no row needs attention');
+  assert.deepEqual(shownLabels(model.filterFileRows(rows, 'unreviewed', isReviewed)), [['c.js', ['c']], ['n.md', ['n.md']]]);
 });

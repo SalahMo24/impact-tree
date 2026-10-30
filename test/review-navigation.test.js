@@ -41,7 +41,7 @@ test('the hint names the key for the platform', () => {
   assert.equal(nextKeyHint('darwin'), '⌥N');
   assert.equal(nextKeyHint('linux'), 'Alt+N');
   assert.equal(nextKeyHint('win32'), 'Alt+N');
-  assert.equal(statusBarText({ left: 3, attention: 1 }, 'darwin'), '$(checklist) 3 left · 1 needs attention · ⌥N next');
+  assert.equal(statusBarText({ total: 5, left: 3, attention: 1, attentionTotal: 3 }, 'darwin'), '$(checklist) 1 needs attention · 2 of 3 looked at · ⌥N next');
 });
 
 test('the status bar is hidden with no review, and shows what is left, the attention count and the key', () => withEnv(async (env) => {
@@ -53,11 +53,11 @@ test('the status bar is hidden with no review, and shows what is left, the atten
   assert.equal(env.seen.contexts['impactTree.filter'], 'all');
   await env.refresh();
   assert.equal(bar.visible, true);
-  assert.equal(bar.text, `$(checklist) 4 left · 1 needs attention · ${NEXT_KEY} next`);
+  assert.equal(bar.text, `$(checklist) 1 needs attention · 0 of 1 looked at · ${NEXT_KEY} next`);
   assert.equal(env.seen.contexts['impactTree.hasReview'], true);
   const { rows } = await rowsOf(env);
   env.tick(rows[0], true);
-  assert.equal(bar.text, `$(checklist) 3 left · 0 need attention · ${NEXT_KEY} next`, 'it follows a tick');
+  assert.equal(bar.text, `$(checklist) 0 need attention · 1 of 1 looked at · ${NEXT_KEY} next`, 'it follows a tick');
 }));
 
 test('the status bar hides again when the review goes away', () => withEnv(async (env) => {
@@ -78,12 +78,12 @@ test('the filter commands narrow the tree, name the filter and set the context k
   useResult(env);
   await env.refresh();
   assert.deepEqual(await shown(env), ALL);
-  assert.equal(env.view().message, 'Branch vs base · 1 needs attention · 4 of 4 left');
+  assert.equal(env.view().message, 'Branch vs base · 1 needs attention · 0 of 1 looked at');
 
   env.run('impactTree.filterAttention');
   assert.equal(env.seen.contexts['impactTree.filter'], 'attention');
   assert.deepEqual(await shown(env), ['a.ts', '  bad'], 'only the rows that need attention, and only their files');
-  assert.equal(env.view().message, 'Branch vs base · 1 needs attention · 4 of 4 left · filter: needs attention');
+  assert.equal(env.view().message, 'Branch vs base · 1 needs attention · 0 of 1 looked at · filter: needs attention');
 
   env.run('impactTree.filterUnreviewed');
   assert.equal(env.seen.contexts['impactTree.filter'], 'unreviewed', 'one turns the other off');
@@ -217,7 +217,7 @@ test('next unreviewed from an editor focuses the tree so Space reviews the selec
   assert.equal(env.isTicked(rows[0]), true);
   assert.equal(env.isTicked(rows[1]), false, 'the following row stays unreviewed');
   assert.equal(env.seen.editorSpaces, 0, 'Space is not delivered to the editor');
-  assert.equal(env.seen.statusBar.text.split(' ')[1], '3', 'the review count follows the keyboard tick');
+  assert.equal(env.seen.statusBar.text.split(' ')[1], '0', 'the count of rows that need attention follows the keyboard tick (`bad` was the one)');
 }));
 
 test('next unreviewed follows the active filter and wraps', () => withEnv(async (env) => {
@@ -238,7 +238,7 @@ test('with nothing left it reports it and reveals nothing', () => withEnv(async 
   await env.run('impactTree.nextUnreviewed');
   assert.deepEqual(env.seen.infos, ['Impact Tree: all reviewed']);
   assert.deepEqual(env.seen.revealed, []);
-  assert.equal(env.seen.statusBar.text, `$(checklist) 0 left · 0 need attention · ${NEXT_KEY} next`);
+  assert.equal(env.seen.statusBar.text, `$(checklist) 0 need attention · 1 of 1 looked at · ${NEXT_KEY} next`);
   env.tick(rows[0], false);
   env.run('impactTree.filterAttention');
   env.tick(rows[0], true);
@@ -366,4 +366,31 @@ test('View as tree writes the layout setting; the setting folds the view and set
   assert.deepEqual(updates.at(-1), ['fileListLayout', 'flat', 1]);
   env.changeSetting('fileListLayout', 'flat');
   assert.equal(env.seen.contexts['impactTree.fileListLayout'], 'flat');
+}));
+
+// ---- nothing needs attention (gate G14) ------------------------------------------------
+// a.ts and b.ts each hold one body-only change nobody calls; notes.md has no call graph.
+function useCalmResult(env) {
+  const a = path.join(env.dir, 'a.ts'), b = path.join(env.dir, 'b.ts');
+  const body = [{ id: 'body', label: 'body' }];
+  const findings = [{ ...finding('one', a, 10), startLine: 10, endLine: 12, kinds: body }, { ...finding('two', b, 5), startLine: 5, endLine: 6, kinds: body }]
+    .map((c) => ({ ...c, throwsAdded: [] }));
+  env.hooks.localResult = (o) => ({ ...localResult(o, { findings }), otherFiles: [{ path: 'notes.md', status: 'added' }] });
+}
+
+test('with nothing to flag the status bar says so, and the walk starts from the container', () => withEnv(async (env) => {
+  useCalmResult(env);
+  await env.refresh();
+  const said = `$(checklist) 3 changes · nothing needs attention · ${NEXT_KEY} next`;
+  assert.equal(env.seen.statusBar.text, said);
+  assert.equal(env.view().message, 'Branch vs base · 3 changes · nothing needs attention');
+  const roots = await env.tree().getChildren();
+  assert.deepEqual(roots.map((r) => r.type), ['message', 'browse']);
+  const files = await env.tree().getChildren(roots[1]);
+  env.view().selection = [roots[1]];
+  await env.run('impactTree.nextUnreviewed');
+  assert.equal(env.seen.revealed.at(-1).row.label, 'one', 'from the container the walk starts at its first file, as from a folder');
+  env.tick(files[0], true);
+  assert.equal(env.seen.statusBar.text, said, 'ticking a quiet change does not move it');
+  assert.equal(env.tree().getParent(files[1]), roots[1], 'a reveal of a file under the container climbs through it');
 }));

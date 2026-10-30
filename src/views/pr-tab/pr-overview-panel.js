@@ -113,7 +113,7 @@ function parseMessage(message, token) {
  * @param {any} vscode
  * @param {{
  *   store: Pick<import('../../github/pr-review-store').PullRequestReviewStore, 'getState'|'onDidChange'|'submitReview'|'discardPendingReview'|'mergePullRequest'|'refresh'>,
- *   provider: { attentionLeft: () => TreeRow[]|null, reviewCounts: () => { total: number, left: number }|null,
+ *   provider: { attentionLeft: () => TreeRow[]|null, reviewCounts: () => import('../changes/review-tree-model').ReviewCounts|null,
  *     onDidChangeReview: (listener: (e: any) => void) => { dispose(): any },
  *     onDidChangePresentation: (listener: (e: any) => void) => { dispose(): any } },
  *   revealRow: (id: string) => Promise<boolean>,

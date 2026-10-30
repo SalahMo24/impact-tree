@@ -110,6 +110,20 @@ function previewResult() {
   };
 }
 
+// Nothing needs attention (gate G14): two body-only changes with their callers updated or none,
+// and a file without a call graph. The calm row, and the files in one collapsed container.
+function calmResult(extra = {}) {
+  const read = change('src/read.ts', 'read', 4, withCallers([resultCaller('src/boot.ts', 1, 'boot', updatedAt(2))], { testState: 'covered', tests: ['readSpec'] }));
+  const write = change('src/read.ts', 'write', 24, { testState: 'covered', tests: ['writeSpec'] });
+  const alone = change('src/alone.ts', 'alone', 3, { testState: 'covered', tests: ['aloneSpec'] });
+  return {
+    allChanged: [read, write, alone], findings: [], deleted: [], outside: [], warnings: [], unanalysable: [],
+    otherFiles: [{ path: 'docs/a.md', status: 'modified' }], untested: [], testUnknown: [], testReachComputed: true, reachDepth: 3,
+    fileStatus: { 'src/read.ts': 'modified', 'src/alone.ts': 'added', 'docs/a.md': 'modified' },
+    mode: 'branch', requestedMode: 'branch', base: { ref: 'origin/main', sha: 'abcdef1234567890' }, changedFileCount: 3, ...extra,
+  };
+}
+
 // ---- lazy caller expansion (a caller row's own callers) --------------------------------
 const site = (start, updated, extra = {}) => ({ start, end: start + 4, updated, ...extra });
 const caller = (relPath, pos, label, callSites, extra = {}) => ({
@@ -263,6 +277,17 @@ const STATES = {
   }),
   'PR preview, inline detail, symbol icons': () => renderTree({
     state: viewState(previewResult(), { rowDetail: 'inline', iconMode: 'symbol', source: { kind: 'pr', pr: { number: 7 } } }),
+    resolver: previewResolver,
+  }),
+  'local, nothing needs attention': () => renderTree({
+    state: viewState(calmResult(), { rowDetail: 'hover', iconMode: 'symbol' }), resolver: localResolver,
+  }),
+  'local, nothing needs attention, a warning on the analysis': () => renderTree({
+    state: viewState(calmResult({ warnings: ['1 changed file(s) were too large to analyse'] }), { rowDetail: 'hover', iconMode: 'symbol' }), resolver: localResolver,
+  }),
+  'PR preview, nothing needs attention': () => renderTree({
+    state: viewState(calmResult({ tierA: true, prNumber: 7, headSha: 'headsha', base: { ref: 'main', sha: 'basesha' }, mode: 'pr-preview', testReachComputed: false }),
+      { rowDetail: 'hover', source: { kind: 'pr', pr: { number: 7 } } }),
     resolver: previewResolver,
   }),
   'phase starting': () => renderTree({ state: null, resolver: localResolver, getPhase: () => 'starting' }),

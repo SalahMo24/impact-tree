@@ -492,7 +492,12 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     // The change rows of every file the tree shows, in display order.
     async changeRows() {
       const rows = [];
+      // A review with nothing to flag keeps its files in one collapsed "Browse all" row.
+      const tops = [];
       for (const top of await captured.tree.getChildren()) {
+        if (top.type === 'browse') tops.push(...await captured.tree.getChildren(top)); else tops.push(top);
+      }
+      for (const top of tops) {
         if (top.type === 'reviewFile') rows.push(...await captured.tree.getChildren(top));
       }
       return rows.filter((r) => r.type === 'finding');

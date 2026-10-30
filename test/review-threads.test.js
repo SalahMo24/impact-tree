@@ -5,6 +5,7 @@
 // event emitter that delivers, so a test sees exactly which rows were repainted.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { rootFiles } = require('./root-files');
 const baseStub = require('./vscode-stub');
 const { createTreeProvider } = require('../src/views/changes/tree-provider');
 const { buildFileRows, filterFileRows, buildReviewSummary } = require('../src/views/changes/review-tree-model');
@@ -78,7 +79,7 @@ function view(result = sampleResult(), threads = { status: 'ready', threads: THR
   provider.onDidChangeTreeData((row) => events.push(row));
   provider.onDidChangePresentation((e) => presentations.push(e.reason));
   provider.onDidChangeThreads((e) => threadEvents.push(e));
-  const roots = async () => (await provider.getChildren()).filter((r) => r.type === 'reviewFile' || r.type === 'file');
+  const roots = async () => (await rootFiles(provider)).filter((r) => r.type === 'reviewFile' || r.type === 'file');
   const fileAt = async (relPath) => (await roots()).find((f) => f.relPath === relPath);
   const rowsOf = async (file) => (await provider.getChildren(file)).filter((r) => r.type !== 'spacer');
   const rowAt = async (relPath, label) => (await rowsOf(await fileAt(relPath))).find((r) => r.label === label);
@@ -129,15 +130,15 @@ test('the store\'s state: loading and failed are never zero threads', () => {
 test('the message adds the pull request\'s counts when not zero, or that threads were not loaded', () => {
   const result = sampleResult();
   const source = { kind: 'pr', pr: { number: 7 } };
-  const counts = { total: 5, left: 5, attention: 0 };
+  const counts = { total: 5, left: 5, attention: 0, attentionTotal: 0 };
   const message = (threads, filter) => buildReviewSummary(result, source, counts, filter, threadsMessageSuffix(threads)).message;
-  assert.equal(message({ status: 'ready', threads: THREADS }), 'PR #7 · 0 need attention · 5 of 5 left · 💬 9 · ✎ 2');
-  assert.equal(message({ status: 'ready', threads: THREADS }, 'threads'), 'PR #7 · 0 need attention · 5 of 5 left · 💬 9 · ✎ 2 · filter: unresolved threads');
-  assert.equal(message({ status: 'ready', threads: [thread(1, { isResolved: true })] }), 'PR #7 · 0 need attention · 5 of 5 left');
-  assert.equal(message({ status: 'ready', threads: [thread(1, {}, [mine(1)])] }), 'PR #7 · 0 need attention · 5 of 5 left · ✎ 1');
-  assert.equal(message({ status: 'loading' }), 'PR #7 · 0 need attention · 5 of 5 left');
-  assert.equal(message({ status: 'failed', message: 'x' }), 'PR #7 · 0 need attention · 5 of 5 left · ⚠ threads not loaded');
-  assert.equal(message({ status: 'none' }), 'PR #7 · 0 need attention · 5 of 5 left');
+  assert.equal(message({ status: 'ready', threads: THREADS }), 'PR #7 · 5 changes · nothing needs attention · 💬 9 · ✎ 2');
+  assert.equal(message({ status: 'ready', threads: THREADS }, 'threads'), 'PR #7 · 5 changes · nothing needs attention · 💬 9 · ✎ 2 · filter: unresolved threads');
+  assert.equal(message({ status: 'ready', threads: [thread(1, { isResolved: true })] }), 'PR #7 · 5 changes · nothing needs attention');
+  assert.equal(message({ status: 'ready', threads: [thread(1, {}, [mine(1)])] }), 'PR #7 · 5 changes · nothing needs attention · ✎ 1');
+  assert.equal(message({ status: 'loading' }), 'PR #7 · 5 changes · nothing needs attention');
+  assert.equal(message({ status: 'failed', message: 'x' }), 'PR #7 · 5 changes · nothing needs attention · ⚠ threads not loaded');
+  assert.equal(message({ status: 'none' }), 'PR #7 · 5 changes · nothing needs attention');
 });
 
 test('the threads filter keeps rows with unresolved threads, and files whose only ones are on no row', () => {

@@ -1,7 +1,6 @@
 // @ts-check
 'use strict';
-const { treeItemId } = require('../views/changes/review-tree-model');
-const { attentionCountText } = require('../views/changes/tree-row-models');
+const { treeItemId, describeProgress } = require('../views/changes/review-tree-model');
 
 /** @typedef {import('../views/changes/tree-row-models').TreeRow} TreeRow */
 
@@ -18,12 +17,14 @@ const { attentionCountText } = require('../views/changes/tree-row-models');
 const nextKeyHint = (platform) => (platform === 'darwin' ? '⌥N' : 'Alt+N');
 
 /**
- * The status bar text of a shown review: what is left, what needs attention, how to go on.
- * @param {{ left: number, attention: number }} counts
+ * The status bar text of a shown review: the view message's own numbers and words
+ * (`2 need attention · 3 of 5 looked at`, or `107 changes · nothing needs attention`), then
+ * how to go on.
+ * @param {import('../views/changes/review-tree-model').ReviewCounts} counts
  * @param {string} platform
  * @returns {string}
  */
-const statusBarText = ({ left, attention }, platform) => `$(checklist) ${left} left · ${attentionCountText(attention)} · ${nextKeyHint(platform)} next`;
+const statusBarText = (counts, platform) => `$(checklist) ${describeProgress(counts).summaryText} · ${nextKeyHint(platform)} next`;
 
 /**
  * What "nothing is left" means under a filter, since "all reviewed" would be untrue when
@@ -69,7 +70,8 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
   const startOfWalk = () => {
     /** @type {TreeRow|undefined} */
     let row = view.selection[0];
-    if (row && row.type === 'folder') row = row.files[0];
+    // The calm state's "Browse all" container stands there too.
+    if (row && (row.type === 'folder' || row.type === 'browse')) row = row.files[0];
     // A file's spacer stands for the end of the file it closes: the walk goes on after it.
     if (row && row.type === 'spacer') row = provider.changeRowsOf(row.relPath).at(-1) || provider.getParent(row);
     while (row && treeItemId(row) === undefined) row = provider.getParent(row);

@@ -273,6 +273,15 @@ function createTreeProvider(vscode, {
   // with the provider.
   /** @type {{ folders: Set<TreeRow>, parents: WeakMap<TreeRow, TreeRow> }} */
   let folded = { folders: new Set(), parents: new WeakMap() };
+  // The calm state's container (gate G14) of the last root read: the "Browse all N changes"
+  // row, and the rows it holds (the file rows, or their root folders in the tree layout),
+  // each of which has it as its parent. It exists only while the filter is `all` and
+  // nothing needs attention; the file rows themselves are the canonical ones of `built`, so
+  // ticks, counts, filters and the walk never see the container. Owner: this provider.
+  // Replaced whole on every root read, so a read without the calm state leaves no browse
+  // parent behind. Garbage with the provider.
+  /** @type {{ row: TreeRow|null, parents: WeakMap<TreeRow, TreeRow> }} */
+  let browsed = { row: null, parents: new WeakMap() };
   // Cache: which row each review thread belongs to, per file. Owner: this provider. Key:
   // the file rows (`built`) and the threads array the store's model holds; the store
   // replaces the model on every load, so a new array is new data. Invalidation: dropped
@@ -394,7 +403,28 @@ function createTreeProvider(vscode, {
     markFirstPathOpen(files);
     const notices = models.buildNoticeRows(st.result);
     if (filter !== 'all' && files.length === 0) return [...notices, reviewTree.buildEmptyFilterRow(filter, getThreads().status)];
-    return [...notices, ...files];
+    const calm = calmRows(st, made.rows, files);
+    return calm ? [...notices, ...calm] : [...notices, ...files];
+  }
+
+  /**
+   * The calm state of the review (gate G14): under the filter `all`, when no row needs
+   * attention, a message row saying so and one collapsed container holding the root rows.
+   * Records the container (`browsed`) either way.
+   * @param {ProviderState} state
+   * @param {TreeRow[]} allFiles Every file row of the result.
+   * @param {TreeRow[]} rootFiles The root rows `layoutRows` made from them.
+   * @returns {TreeRow[]|null} The message row and the container; null when the review is not calm.
+   */
+  function calmRows(state, allFiles, rootFiles) {
+    browsed = { row: null, parents: new WeakMap() };
+    if (filter !== 'all') return null;
+    const calm = reviewTree.buildCalmRows(state.result, reviewTree.countReview(allFiles, isReviewed));
+    if (!calm) return null;
+    const row = { ...calm.browse, children: rootFiles, files: allFiles };
+    for (const child of rootFiles) browsed.parents.set(child, row);
+    browsed.row = row;
+    return [calm.calm, row];
   }
 
   /**
@@ -662,6 +692,7 @@ function createTreeProvider(vscode, {
       built = null;
       threadIndex = null;
       shownRoots = null;
+      browsed = { row: null, parents: new WeakMap() };
       _emitter.dispose(); presentation.dispose(); progress.dispose(); threadEvents.dispose(); agentEvents.dispose();
     },
     /** @param {TreeRow} n */
@@ -680,7 +711,7 @@ function createTreeProvider(vscode, {
         return item;
       }
       const item = renderTreeItem(vscode, n, viewOf());
-      const id = reviewTree.treeItemId(n) || built?.childIds.get(n);
+      const id = reviewTree.treeItemId(n) || built?.childIds.get(n) || (n.type === 'browse' ? 'browse:all' : undefined);
       if (id) item.id = id;
       return item;
     },
@@ -690,14 +721,14 @@ function createTreeProvider(vscode, {
      * @param {TreeRow} n
      * @returns {TreeRow|undefined}
      */
-    getParent: (n) => feedbackParents.get(n) || folded.parents.get(n) || built?.parents.get(n),
+    getParent: (n) => feedbackParents.get(n) || folded.parents.get(n) || browsed.parents.get(n) || built?.parents.get(n),
     /** @param {TreeRow} [node] */
     async getChildren(node) {
       const analysisId = getAnalysisId();
       if (disposed) return [];
       if (!node) return rootRows(getState(), analysisId);
       switch (node.type) {
-        case 'folder': return node.children;
+        case 'folder': case 'browse': return node.children;
         case 'reviewFile': return adopt(node, fileChildren(node));
         case 'finding': return adopt(node, impactRows(node, analysisId));
         case 'caller': return node.cycle ? [] : adopt(node, await callerRows(node, analysisId));
@@ -731,7 +762,7 @@ function createTreeProvider(vscode, {
     },
     /**
      * How far the shown review has got.
-     * @returns {{ total: number, left: number, attention: number }|null} Null when no review is shown.
+     * @returns {import('./review-tree-model').ReviewCounts|null} Null when no review is shown.
      */
     reviewCounts() {
       const state = shownState();
@@ -747,8 +778,9 @@ function createTreeProvider(vscode, {
       return state ? reviewTree.listAttentionLeft(builtFor(state).rows, isReviewed) : null;
     },
     /**
-     * What the Details progress strip shows: the review's source line and its counts.
-     * @returns {{ line: string, total: number, left: number, attention: number }|null} Null
+     * What the Details progress strip shows: the review's source line and its counts
+     * (`countReview`; the strip reads `attentionTotal` and `attention`).
+     * @returns {({ line: string } & import('./review-tree-model').ReviewCounts)|null} Null
      *   when no review is shown or it has no counting rows.
      */
     reviewProgress() {

@@ -116,8 +116,9 @@ const METHOD_NOT_ALLOWED = {
  *   analysing): the unreviewed rows are then unknown, which is not "none".
  * @property {AttentionItem[]} attention Unreviewed rows needing attention, in tree order.
  * @property {number} unresolvedThreads Unresolved threads someone has posted in.
- * @property {number} left Rows not ticked; meaningful only when `progressKnown`.
- * @property {number} total Counting rows; meaningful only when `progressKnown`.
+ * @property {number} attentionTotal Rows that need attention, reviewed or not (the review's
+ *   own measure of done); meaningful only when `progressKnown`.
+ * @property {number} looked Of those, the ones already looked at; meaningful only when `progressKnown`.
  *
  * @typedef {object} PendingComment
  * @property {string} threadId
@@ -231,7 +232,7 @@ function attentionItem(row) {
 /**
  * The approve check for loaded data, or null when nothing stands against approving.
  * @param {import('../../github/pr-review-data').ReviewModel} data
- * @param {{ attentionLeft: TreeRow[]|null, counts: { total: number, left: number }|null }} progress
+ * @param {{ attentionLeft: TreeRow[]|null, counts: import('../changes/review-tree-model').ReviewCounts|null }} progress
  * @returns {ApproveCheck|null}
  */
 function approveCheckOf(data, { attentionLeft, counts }) {
@@ -242,7 +243,7 @@ function approveCheckOf(data, { attentionLeft, counts }) {
   if (progressKnown && attention.length === 0 && unresolvedThreads === 0) return null;
   return {
     progressKnown, attention: /** @type {AttentionItem[]} */ (attention), unresolvedThreads,
-    left: counts ? counts.left : 0, total: counts ? counts.total : 0,
+    attentionTotal: counts ? counts.attentionTotal : 0, looked: counts ? counts.attentionTotal - counts.attention : 0,
   };
 }
 
@@ -262,7 +263,7 @@ function overviewViewOf(overview, pr) {
 /**
  * The page model for the store's state. Pure.
  * @param {ReviewStoreState} state
- * @param {{ attentionLeft: TreeRow[]|null, counts: { total: number, left: number }|null,
+ * @param {{ attentionLeft: TreeRow[]|null, counts: import('../changes/review-tree-model').ReviewCounts|null,
  *   draft: string, error: string|null, busy: null|'submit'|'discard'|'merge',
  *   mergeResult?: { ok: boolean, text: string }|null }} panel `attentionLeft`
  *   and `counts` come from the tree (null while it shows no review); the rest is the panel's.
@@ -612,7 +613,8 @@ function checkHtml(check) {
   }
   const t = check.unresolvedThreads;
   if (t) items.push(`<li>${t} thread${t === 1 ? ' is' : 's are'} unresolved</li>`);
-  if (check.progressKnown) items.push(`<li>${check.left} of ${check.total} rows are not reviewed</li>`);
+  // The same words as the review's own message: how many of the changes that need attention were looked at.
+  if (check.progressKnown && check.attentionTotal > 0) items.push(`<li>${check.looked} of ${check.attentionTotal} looked at</li>`);
   return `<div class="check" data-el="check"><b>Before you approve:</b><ul>${items.join('')}</ul>`
     + '<label><input type="checkbox" data-el="anyway"> Approve anyway</label></div>';
 }
