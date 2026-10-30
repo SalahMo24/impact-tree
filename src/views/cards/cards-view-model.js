@@ -586,7 +586,7 @@ function cardsViewModel({ result, cards, hintsPending = false, preview = false, 
   }
   const notes = cards.hintNotes || [];
   if (hintsPending) top.push(leaf('notice:hints-loading', 'Grouping cards…', 'loading~spin', { tooltip: 'Which cards may belong together is still being worked out.' }));
-  else if (notes.length) top.push(leaf('notice:hint-notes', 'Some cards may belong together', 'warning', { description: `${plural(notes.length, 'note')}`, tooltip: `Finding which cards may belong together did not finish cleanly:\n${notes.join('\n')}` }));
+  else if (notes.length) top.push(leaf('notice:hint-notes', 'Grouping cards did not finish cleanly', 'warning', { description: `${plural(notes.length, 'note')}`, tooltip: `Finding which cards may belong together did not finish cleanly:\n${notes.join('\n')}` }));
   const index = indexFunctions(result);
   const byId = new Map((cards.clusters || []).map((/** @type {any} */ c) => [c.id, c]));
   for (const s of cards.sweeps || []) byId.set(s.id, s);

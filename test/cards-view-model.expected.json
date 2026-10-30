@@ -7021,7 +7021,7 @@
  "cli-14752 hint notes": [
   {
    "id": "notice:hint-notes",
-   "label": "Some cards may belong together",
+   "label": "Grouping cards did not finish cleanly",
    "icon": "warning",
    "contextValue": "cardsNote",
    "description": "1 note",

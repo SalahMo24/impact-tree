@@ -65,7 +65,7 @@ const RETIRED = [
   { name: 'reaches N callers', re: /\breaches (?:\d+ )?callers?\b|\breaches $/, use: '"called from N place(s)"' },
   { name: 'Compute test reachability', re: /\bcompute test reachability\b/i, use: '"Find the tests that cover this" (the command: "Find the tests that cover this review")' },
   { name: 'extra caller queries', re: /\bextra caller quer(y|ies)\b/i, use: '"searches the callers again — on demand"' },
-  { name: 'merge hints', re: /\bmerge hints?\b/i, use: '"Grouping cards…" / "Some cards may belong together"; in prose "cards that may belong together"' },
+  { name: 'merge hints', re: /\bmerge hints?\b/i, use: '"Grouping cards…" / "Grouping cards did not finish cleanly"; in prose "cards that may belong together"' },
   { name: 'card key in a label', re: /\bK\d+ · /, use: 'the card\'s name; the `K<n>` key is the tooltip\'s ("card K1")' },
   { name: 'and N related', re: /\band \d+ related\b/i, use: '"<name> + N related"' },
   { name: 'analyze', re: /\banalyz(e|es|ing|ed|er)\b/i, use: '"Analyse" (code identifiers and CLI flags keep `analyze`)' },
