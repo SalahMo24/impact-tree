@@ -38,7 +38,7 @@ function dirIsOurs(dir) {
 const MAX_LOCKS_LISTED = 50;
 
 /**
- * The repositories of every editor window whose bridge is live (the agents setting on): a
+ * The repositories of every editor window whose bridge is live (Impact Tree open in it): a
  * lock that parses, names a live process, and sits under its own repository's name. Used
  * when the server was started outside any repository (Cursor starts servers in the home
  * folder) and the agent shares no workspace folder.

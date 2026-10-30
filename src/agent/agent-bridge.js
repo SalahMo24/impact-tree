@@ -1,6 +1,6 @@
 // @ts-check
 'use strict';
-// The editor's side of the bridge to the user's own agent (impactTree.agents.enabled). The
+// The editor's side of the bridge to the user's own agent, started with each window. The
 // agent starts our MCP server as a separate process; this bridge tells that server which
 // review the editor is showing and takes back the results the agent submits (cards with
 // titles and summaries, callers it found), re-checking each against the editor's CURRENT

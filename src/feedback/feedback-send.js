@@ -180,19 +180,58 @@ async function saveRound({ repo, store, items, branch, reviewed, now = realClock
  */
 async function chooseAgent(vscode, forceAsk, { title = 'Impact Tree: Send feedback to…', exclude = [] } = {}) {
   const cfg = vscode.workspace.getConfiguration('impactTree');
-  const chatAvailable = (await vscode.commands.getCommands(true)).includes(CHAT_COMMAND);
-  const choices = choicesFor({ cliFound: (exe) => onPath(exe, { pathEnv: process.env.PATH, platform: process.platform }), chatAvailable,
-    claudeExtension: Boolean(vscode.extensions && vscode.extensions.getExtension(CLAUDE_EXTENSION_ID)), inCursor: isCursor(vscode.env && vscode.env.appName) })
-    .filter((c) => !exclude.includes(c.id));
+  const choices = (await availableChoices(vscode)).filter((c) => !exclude.includes(c.id));
   const saved = cfg.get('agent', 'ask');
   const preset = choices.find((c) => c.id === saved);
   if (!forceAsk && preset) return preset;
   const pick = await vscode.window.showQuickPick(
     choices.map((c) => ({ label: c.label, description: c.description, id: c.id })),
-    { title, placeHolder: 'Remembered for next time; "Send feedback to…" asks again' });
+    { title, placeHolder: 'Remembered for next time; change it with "Impact Tree: Choose my agent…"' });
   if (!pick) return null;
   await cfg.update('agent', pick.id, vscode.ConfigurationTarget.Global);
   return { id: pick.id, label: pick.label };
+}
+
+/**
+ * The agents this editor can hand a prompt to, in the order the pickers show them.
+ * @param {any} vscode
+ * @returns {Promise<Array<{ id: import('../agent/agent-handoff').AgentChoiceId, label: string, description?: string }>>}
+ */
+async function availableChoices(vscode) {
+  const chatAvailable = (await vscode.commands.getCommands(true)).includes(CHAT_COMMAND);
+  return choicesFor({ cliFound: (exe) => onPath(exe, { pathEnv: process.env.PATH, platform: process.platform }), chatAvailable,
+    claudeExtension: Boolean(vscode.extensions && vscode.extensions.getExtension(CLAUDE_EXTENSION_ID)), inCursor: isCursor(vscode.env && vscode.env.appName) });
+}
+
+/** The switch's id for "no fixed agent": the setting's `ask`. */
+const ASK_EACH_TIME = 'ask';
+
+/**
+ * "Choose my agent…": always shows the picker, the current agent marked, and saves the pick
+ * in the user's `impactTree.agent` setting. "Analyse with my agent" and "Send feedback" then
+ * use it; "Ask each time" makes them ask. "Only save the feedback file" is not offered: it
+ * reviews nothing (it stays available in the setting and in "Send feedback to…").
+ * @param {any} vscode
+ * @returns {Promise<string|null>} The id saved, or null when the picker was dismissed.
+ */
+async function chooseReviewAgent(vscode) {
+  const cfg = vscode.workspace.getConfiguration('impactTree');
+  const saved = cfg.get('agent', ASK_EACH_TIME);
+  const choices = (await availableChoices(vscode)).filter((c) => c.id !== 'save');
+  const items = [...choices, { id: ASK_EACH_TIME, label: 'Ask each time', description: 'pick an agent on every hand-off' }]
+    .map((c) => ({ label: c.label, description: c.id === saved ? `${c.description ? `${c.description} · ` : ''}current` : c.description, id: c.id }));
+  // A saved agent this editor cannot reach (its CLI is gone) is still named, so the reviewer sees why it is not used.
+  const unreachable = saved !== ASK_EACH_TIME && saved !== 'save' && !choices.some((c) => c.id === saved);
+  const pick = await vscode.window.showQuickPick(items, {
+    title: 'Impact Tree: Choose the agent that reviews with you',
+    placeHolder: unreachable ? `"${saved}" is saved but not available here; choose another` : 'Used by "Analyse with my agent" and "Send feedback"',
+  });
+  if (!pick) return null;
+  await cfg.update('agent', pick.id, vscode.ConfigurationTarget.Global);
+  vscode.window.showInformationMessage(pick.id === ASK_EACH_TIME
+    ? 'Impact Tree: you will be asked which agent to use each time.'
+    : `Impact Tree: ${pick.label} now reviews with you.`);
+  return pick.id;
 }
 
 /** @param {any} vscode @param {string} message @param {string} absPath @param {(m: string) => void} log */
@@ -235,4 +274,4 @@ async function offerPointer(vscode, deps, repo, o) {
   }
 }
 
-module.exports = { chooseAgent, createSendFeedback, saveRound, reviewedLabel, POINTER_KEY };
+module.exports = { chooseAgent, chooseReviewAgent, createSendFeedback, saveRound, reviewedLabel, POINTER_KEY };

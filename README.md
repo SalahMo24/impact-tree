@@ -291,9 +291,11 @@ until you mark it reviewed, and its tooltip and Details say why.
   workspace, not in `.git`. Old ones are removed automatically; **Clean up stored data**
   (the reviewed row's right-click menu) shows what is stored and deletes it on confirmation.
 
-### Your coding agent and the review tab (experimental)
+### Your coding agent and the review tab
 
-Off by default; turn on `impactTree.cards.enabled` and `impactTree.agents.enabled`.
+On in every window, with nothing to turn on. The bridge your agent talks to is a local
+socket in a private temporary folder, guarded by a token; nothing leaves your machine. Only
+reviews of a checked-out branch take part; a pull request preview does not.
 
 - **Cards** group a review's changes into related cards, with the entry points each card
   reaches. The Review view lists them in the **By card** order: **Order by card** (the layers
@@ -318,6 +320,11 @@ Off by default; turn on `impactTree.cards.enabled` and `impactTree.agents.enable
   `submit_cards` call: cards in reading order and, for each change, whether its behaviour
   changed, may change, is new or is the same, with before / after / when and what it
   affects, plus at most five changes that need your attention.
+- **Choose my agent…** (the reviewed row's `…` menu, or the command palette) switches the
+  agent that reviews with you: Claude Code or Codex in a terminal, Claude Code's VS Code
+  panel, Cursor's chat, the editor's chat, the clipboard, or **Ask each time**. The current
+  one is marked; the pick is saved in `impactTree.agent` and used by **Analyse with my agent**
+  and **Send feedback**.
 - The agent's one-line note shows on the change rows, after the engine's own text, and a change row's icon is the agent's own: a pencil for changed, a
   question mark for may change, a plus for new, none for same behaviour. The changes the agent
   names in `attention` need attention beside the ones the engine flags (callers not updated,
@@ -378,10 +385,8 @@ checkpoint, from a recorded SHA).
 | `impactTree.reachDepth` | `2` | caller levels searched for the tests that cover a change, from 1 to 6 |
 | `impactTree.tierA.maxFiles` | `300` | maximum files fetched for a no-checkout PR preview |
 | `impactTree.openPullRequestTab` | `true` | open the pull request tab when you preview or check out a PR from the list |
-| `impactTree.agent` | `ask` | where **Send feedback** hands a round: `claude`, `codex`, `chat`, `clipboard`, `save`, or `ask` |
-| `impactTree.reviewOrder` | `files` | list the review by `files` or by `cards` (needs `impactTree.cards.enabled`; a review without cards is listed by file); also **Order by card** / **Order by file** on the reviewed row |
-| `impactTree.cards.enabled` | `false` | cards: the By card order, the review tab and the entry-point search (experimental) |
-| `impactTree.agents.enabled` | `false` | let your connected coding agent read the shown review and hand back cards (experimental) |
+| `impactTree.agent` | `ask` | the agent that reviews with you, used by **Analyse with my agent** and **Send feedback**: `claude`, `claude-vscode`, `codex`, `cursor-chat`, `chat`, `clipboard`, `save`, or `ask`; switch it with **Choose my agent…** |
+| `impactTree.reviewOrder` | `files` | list the review by `files` or by `cards` (a review without cards is listed by file); also **Order by card** / **Order by file** on the reviewed row |
 
 ## Performance
 

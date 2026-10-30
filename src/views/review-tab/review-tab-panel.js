@@ -51,13 +51,13 @@ function workingTreeDiff(repo, base) {
 /**
  * @param {any} vscode
  * @param {{
- *   getState: () => any, enabled: () => boolean, agentPayload: () => unknown, repoRoot: () => string|null, log: (m: string) => void,
+ *   getState: () => any, agentPayload: () => unknown, repoRoot: () => string|null, log: (m: string) => void,
  *   diffText?: (repo: string, base: string) => Promise<string>, readText?: (abs: string) => string|null,
  * }} deps `getState`: the session state (result, cards, rel, source). `agentPayload`: the latest stored
  *   agent result for the shown head, or null. `diffText` and `readText` are injectable for tests.
  * @returns {{ open: () => void, refresh: () => void, disposables: Array<{ dispose(): any }> }}
  */
-function createReviewTab(vscode, { getState, enabled, agentPayload, repoRoot, log, diffText = workingTreeDiff, readText = defaultRead }) {
+function createReviewTab(vscode, { getState, agentPayload, repoRoot, log, diffText = workingTreeDiff, readText = defaultRead }) {
   /** @type {{ panel: any, token: string|null, subscriptions: Array<{ dispose(): any }> }|null} */
   let current = null;
   /** The diff for the hunks, by `repo base`; a read in flight is the promise. */
@@ -88,7 +88,6 @@ function createReviewTab(vscode, { getState, enabled, agentPayload, repoRoot, lo
   function pageHtml(/** @type {string} */ nonce, /** @type {string} */ cspSource) {
     const state = getState();
     const message = (/** @type {string} */ text) => `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none';"></head><body><p>${text}</p></body></html>`;
-    if (!enabled()) return message('Turn on Impact Tree cards (impactTree.cards.enabled) to use the review tab.');
     if (!state || !state.result) return message('Review a branch or a pull request first.');
     if (!state.cards) return message(state.cardsError ? 'Cards could not be built for this review.' : 'Cards are built when the analysis finishes.');
     const result = state.result;
