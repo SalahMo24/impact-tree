@@ -157,12 +157,13 @@ Numbered after `RELEASE_PLAN.md`'s G1–G7.
   or "107 changes · nothing needs attention" when there are none; ticking stays on every
   row for reviewers who read everything, but is not counted against them. Alternative:
   keep counting every row and start the filter at **Needs attention** instead of all.
-- **G15. One attention set (L4, L6).** Proposal: a change needs attention when the engine
+- **G15. One attention set (L4, L6).** Decided 2026-10-30 (owner): the proposal. Proposal: a change needs attention when the engine
   flags it (level 0 or 1) or the agent named it in `attention`; the tree's order and badge,
   the Details strip, the review tab's first column and the diff notes all count that one
   set. Alternative: keep the agent's list separate under its own word ("Your agent
   suggests looking at"), never "attention".
-- **G16. Where the agent's note shows in the diff (L6).** Proposal: a read-only comment
+- **G16. Where the agent's note shows in the diff (L6).** Decided 2026-10-30 (owner): the
+  proposal. Proposal: a read-only comment
   thread per change the agent described, expanded when the change needs attention and
   collapsed to its gutter glyph otherwise; the CodeLens agent line goes, since the thread's
   first line says the same. Alternative: keep the CodeLens line as the headline and start
@@ -605,8 +606,8 @@ above moved onto that row. The review tab (U1) and the agent's behaviour review 
 
 **Part L (proposed 2026-10-30; G13 and G14 decided the same day; L1 merged as PR #108,
 L2 as #109, L5 as #110 and L3 as #111, all 2026-10-30; L4 revised and L6 proposed the same
-day after a second screenshot; L4 no longer waits for W1 and runs next, then L6, once
-G15 and G16 are decided; the editor walk on the t3code PR is the owner's next check).** L1–L3 and L5 fix what the screenshot study found and
+day after a second screenshot; L4 no longer waits for W1 and runs next, then L6; G15 and
+G16 decided as proposed the same day; the editor walk on the t3code PR is the owner's next check).** L1–L3 and L5 fix what the screenshot study found and
 touch only the sidebar's shape and words, so they can run next, before W1, once G13 and
 G14 are decided; L4 waits for W1. If v1 ships first, L1–L3 go in the first release after
 it, ahead of W1–W2.
