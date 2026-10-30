@@ -201,7 +201,7 @@
       },
       {
         "command": "impactTree.computeTestReach",
-        "title": "Impact Tree: Compute test reachability"
+        "title": "Impact Tree: Find the tests that cover this review"
       },
       {
         "command": "impactTree.clearReviewed",
@@ -1129,7 +1129,7 @@
         "impactTree.cards.enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Show a Cards view that groups the changes of a review into related cards, with the entry points each card reaches and which cards may belong together. Turning it on adds the entry-point search to each analysis (a few seconds on the largest pull requests) and, for a local review, reads the repository's history for merge hints. Takes effect from the next analysis (Refresh)."
+          "description": "Show a Cards view that groups the changes of a review into related cards, with the entry points each card reaches and which cards may belong together. Turning it on adds the entry-point search to each analysis (a few seconds on the largest pull requests) and, for a local review, reads the repository's history to find which cards may belong together. Takes effect from the next analysis (Refresh)."
         },
         "impactTree.agents.enabled": {
           "type": "boolean",

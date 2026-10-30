@@ -61,9 +61,9 @@ test('every risky kind and every caller outcome gets the level the review rules 
 
 test('a body-only change is never needs-attention, however many callers were left alone', () => {
   const table = [
-    ['callers, none touched', { staleCallers: 2, callers: callersOf(2) }, 3, 'reaches 2 callers'],
-    ['one caller', { staleCallers: 1, callers: callersOf(1) }, 3, 'reaches 1 caller'],
-    ['callers, search incomplete', { callersComplete: false, callers: callersOf(1) }, 3, 'reaches 1 caller'],
+    ['callers, none touched', { staleCallers: 2, callers: callersOf(2) }, 3, 'called from 2 places'],
+    ['one caller', { staleCallers: 1, callers: callersOf(1) }, 3, 'called from 1 place'],
+    ['callers, search incomplete', { callersComplete: false, callers: callersOf(1) }, 3, 'called from 1 place'],
     ['callers unknown', { callerState: 'unknown', callers: [] }, 3, 'callers unknown'],
     ['incomplete and nothing found', { callerState: 'none', callersComplete: false, callers: [] }, 3, 'callers unknown'],
     ['a state the result does not define', { callerState: 'anything', callers: [] }, 3, 'callers unknown'],

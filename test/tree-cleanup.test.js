@@ -364,7 +364,7 @@ const LEVEL_ROWS = [
   ['level 1', findingRow('l1', { kinds: [SIG], callerState: 'unknown' }), WARNING, 'callers unknown', 'warning'],
   ['level 1, DI', findingRow('l1di', { kinds: [SIG], callerState: 'di' }), WARNING, 'DI-constructed', 'warning'],
   ['level 2', findingRow('l2', { kinds: [SIG], callerState: 'resolved', callers: [updatedCaller] }), undefined, 'all callers updated', null],
-  ['level 3', findingRow('l3', { callerState: 'resolved', callers: [callerOf('src/u.ts', 'u', 3)] }), undefined, 'reaches 1 caller', null],
+  ['level 3', findingRow('l3', { callerState: 'resolved', callers: [callerOf('src/u.ts', 'u', 3)] }), undefined, 'called from 1 place', null],
   ['level 4', findingRow('l4', {}), undefined, 'no callers', null],
 ];
 

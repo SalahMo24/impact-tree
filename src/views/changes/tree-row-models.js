@@ -182,7 +182,7 @@ function classifyBodyOnlyVerdict(change) {
   const which = untouched === 0
     ? `${n === 1 ? 'Its caller was' : `All ${n} callers were`} updated too; ${check(n)}.`
     : `${untouched} of ${n} caller${n === 1 ? '' : 's'} ${untouched === 1 ? 'is' : 'are'} unchanged, which is expected; ${check(untouched)}.`;
-  return { level: 3, text: `reaches ${n} caller${n === 1 ? '' : 's'}`,
+  return { level: 3, text: `called from ${n} place${n === 1 ? '' : 's'}`,
     sentence: `Only the body changed: the signature is the same, so callers still compile. ${which}${mayBeMissing ? ' More callers may be missing.' : ''}` };
 }
 
@@ -527,8 +527,8 @@ function buildFileLeafRows(files, { absPath, uriOf }) {
 }
 
 /** @returns {TreeRow} The row that runs the deferred test-reach walk when clicked. */
-const buildComputeTestReachRow = () => ({ type: 'message', label: 'Compute test reachability', icon: 'play',
-  desc: 'extra caller queries — run on demand', command: 'impactTree.computeTestReach' });
+const buildComputeTestReachRow = () => ({ type: 'message', label: 'Find the tests that cover this', icon: 'play',
+  desc: 'searches the callers again — on demand', command: 'impactTree.computeTestReach' });
 
 /**
  * The callers a review shows: those in paths the review excludes (untracked files in a

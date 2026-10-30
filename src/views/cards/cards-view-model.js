@@ -9,7 +9,7 @@
 // What a card establishes is bounded by the analysis it was built from (docs/CODING_STYLE.md
 // section 1): entry points are "at least" whenever a path is a lower bound or a search did
 // not finish, and "none found" never reads as "none exist". Callers and entry points of a
-// preview come from the pull request's own files only; its merge hints have no
+// preview come from the pull request's own files only; the cards that may belong together have no
 // repository-wide token counts.
 
 const { previewLimitsNote } = require('../changes/tree-row-models');
@@ -280,7 +280,7 @@ function seamsNode(id, seams, byId, index) {
   return { id: `${id}/seams`, label: `Seams (${mine.length})`, icon: 'git-compare', contextValue: 'cardSeams',
     children: capped(`${id}/seams/more`, mine, MAX_SEAMS, ({ other, seam }) => ({
       id: `${id}/seam:${seam.type}:${other}:${seam.at ? `${seam.at.relPath}#${seam.at.label}` : ''}`,
-      label: `${other} · ${byId.get(other).label}`, description: seamText(seam, index), icon: 'link', contextValue: 'cardSeam',
+      label: cardName(byId.get(other)), description: seamText(seam, index), icon: 'link', contextValue: 'cardSeam',
       tooltip: seam.type === 'type' ? 'A signature in one card names a type the other card changes; this does not show the first uses the second\'s behaviour.' : undefined,
       target: { kind: 'card', id: other },
     })) };
@@ -314,12 +314,20 @@ function hintNodes(id, hints, byId) {
   return capped(`${id}/hints/more`, mine, MAX_HINTS, (h) => {
     const other = h.clusters.find((/** @type {string} */ c) => c !== id) || id;
     const evidence = (h.evidence || []).filter((/** @type {any} */ e) => !e.broad).map(evidenceText);
-    return { id: `${id}/hint:${h.clusters.join('+')}`, label: `May belong with ${other}: ${shortList(evidence, MAX_EVIDENCE)}`,
+    return { id: `${id}/hint:${h.clusters.join('+')}`, label: `May belong with ${byId.has(other) ? cardName(byId.get(other)) : other}: ${shortList(evidence, MAX_EVIDENCE)}`,
       description: `strength ${h.strength}`, icon: 'lightbulb', contextValue: 'cardHint',
       tooltip: 'Evidence that the two cards are one change (shared commit, tokens, tests, folder). It does not prove they are.',
       ...(byId.has(other) ? { target: { kind: 'card', id: other } } : {}) };
   });
 }
+
+/**
+ * The name a card shows: its label, with the engine's "and N related" written "+ N related".
+ * The `K<n>` key is the tooltip's, not the label's.
+ * @param {any} c a cluster (or a sweep, whose label is shown as it is)
+ * @returns {string}
+ */
+const cardName = (c) => String(c.label).replace(/ and (\d+) related$/, ' + $1 related');
 
 // ---- cards and sweeps --------------------------------------------------------------------
 
@@ -336,7 +344,7 @@ function tagsOf(c) {
 
 /** @param {any} c a cluster @returns {string} */
 function cardTooltip(c) {
-  const lines = [`Files: ${shortList(c.files || [], 6)}`, `Module: ${c.module || '(root)'}`];
+  const lines = [`card ${c.id}`, `Files: ${shortList(c.files || [], 6)}`, `Module: ${c.module || '(root)'}`];
   if (c.mirrorOf) lines.push(`${plural((c.mirrorMembers || []).length, 'copy', 'copies')} in generated ${c.mirrorOf.dirs ? c.mirrorOf.dirs.join(', ') : c.mirrorOf.dir}`);
   if ((c.moved || []).length) lines.push(`Moved: ${plural(c.moved.length, 'function')}`);
   if (c.generated) lines.push(`Generated code in ${c.generated.dir}`);
@@ -368,7 +376,7 @@ function cardNode(c, { result, cards, byId, index }) {
   }
   children.push(...hintNodes(c.id, cards.hints || [], byId), membersNode(c.id, c.members || [], index));
   const tags = tagsOf(c);
-  return { id: c.id, label: `${c.id} · ${c.label}`, description: [plural(c.stats && c.stats.members != null ? c.stats.members : (c.members || []).length, 'change'), ...tags].join(' · '),
+  return { id: c.id, label: cardName(c), description: [plural(c.stats && c.stats.members != null ? c.stats.members : (c.members || []).length, 'change'), ...tags].join(' · '),
     tooltip: cardTooltip(c), icon: c.testHelpers ? 'beaker' : 'layers', contextValue: 'card', children };
 }
 
@@ -401,11 +409,11 @@ function pruned(nodes) {
 function previewNotice(result) {
   const lines = [
     `${previewLimitsNote(result)} Entry points are found from the pull request's own files too.`,
-    'Merge hints are found without repository-wide token counts, so fewer are found than after a checkout.',
+    'Cards that may belong together are found without repository-wide token counts, so fewer are found than after a checkout.',
     ...(result.warnings || []),
   ];
   return leaf('notice:preview', 'Preview — cards see the PR\'s own files only', 'eye', {
-    description: 'callers and entry points from the PR\'s files; hints without repo-wide counts', tooltip: lines.join('\n') });
+    description: 'callers and entry points from the PR\'s files; grouping cards without repo-wide counts', tooltip: lines.join('\n') });
 }
 
 // ---- the agent's cards (impactTree.agents.enabled) -----------------------------------------
@@ -497,7 +505,7 @@ function agentCardNodes(agentCards, engineNode, index) {
     const engine = a.covers.map((cover) => engineNode(cover.id)).filter((n) => n !== null).map((n) => scoped(/** @type {CardNode} */ (n), `${id}/engine/`, home));
     if (engine.length) {
       children.push({ id: `${id}/engine`, label: 'Engine facts', description: a.covers.map((c) => c.id).join(', '), icon: 'type-hierarchy', contextValue: 'cardsNote',
-        tooltip: 'The engine\'s card(s) these changes come from: entry points, seams and merge hints.', children: engine });
+        tooltip: 'The engine\'s card(s) these changes come from: entry points, seams and the cards that may belong together.', children: engine });
     }
     const counts = Object.keys(KIND_SHOW).map((k) => [k, ids.filter((m) => { const b = agentCards.changes.get(m); return b && b.kind === k; }).length]);
     const changed = counts.filter(([k, n]) => n && (k === 'changed' || k === 'may-change')).map(([k, n]) => `${n} ${k === 'changed' ? 'changed' : 'may change'}`);
@@ -560,7 +568,7 @@ function agentSection(agent, cards, engineNode, index) {
  * @param {{ result: any, cards: any|null, hintsPending?: boolean, preview?: boolean, error?: string|null, agent?: AgentInput|null }} input
  *   `result`: an `analyze()` or `analyzeRemote()` result, with `impactPaths` when they were asked
  *   for. `cards`: `buildCardsFromFacts` or `addHints` output, or null before they exist.
- *   `hintsPending`: merge hints are still being found. `preview`: the result is a pull request
+ *   `hintsPending`: the cards that may belong together are still being found. `preview`: the result is a pull request
  *   preview. `error`: why cards or hints could not be built, shown as a note.
  * @returns {CardNode[]}
  */
@@ -577,8 +585,8 @@ function cardsViewModel({ result, cards, hintsPending = false, preview = false, 
     return pruned(top);
   }
   const notes = cards.hintNotes || [];
-  if (hintsPending) top.push(leaf('notice:hints-loading', 'Merge hints loading…', 'loading~spin', { tooltip: 'Which cards may belong together is still being worked out.' }));
-  else if (notes.length) top.push(leaf('notice:hint-notes', 'Merge hints are incomplete', 'warning', { description: `${plural(notes.length, 'note')}`, tooltip: notes.join('\n') }));
+  if (hintsPending) top.push(leaf('notice:hints-loading', 'Grouping cards…', 'loading~spin', { tooltip: 'Which cards may belong together is still being worked out.' }));
+  else if (notes.length) top.push(leaf('notice:hint-notes', 'Some cards may belong together', 'warning', { description: `${plural(notes.length, 'note')}`, tooltip: `Finding which cards may belong together did not finish cleanly:\n${notes.join('\n')}` }));
   const index = indexFunctions(result);
   const byId = new Map((cards.clusters || []).map((/** @type {any} */ c) => [c.id, c]));
   for (const s of cards.sweeps || []) byId.set(s.id, s);

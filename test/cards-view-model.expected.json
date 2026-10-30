@@ -2,9 +2,9 @@
  "cli-14752": [
   {
    "id": "K1",
-   "label": "K1 · (*AuthConfig).refreshCredentialForUser and 7 related",
+   "label": "(*AuthConfig).refreshCredentialForUser + 7 related",
    "description": "8 changes",
-   "tooltip": "Files: internal/config/refreshable.go, internal/debug/config_disabled.go, pkg/cmd/factory/default.go\nModule: (root)\n3 joined by location",
+   "tooltip": "card K1\nFiles: internal/config/refreshable.go, internal/debug/config_disabled.go, pkg/cmd/factory/default.go\nModule: (root)\n3 joined by location",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -42,7 +42,7 @@
      "children": [
       {
        "id": "K1/seam:call:K3:",
-       "label": "K3 · Config and 2 related",
+       "label": "Config + 2 related",
        "description": "call: accessTokenNeedsRefresh → Config, simulateRefreshTokenExpired → Config, … +1",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -55,7 +55,7 @@
     },
     {
      "id": "K1/hint:K1+K3",
-     "label": "May belong with K3: commit \"feat(debug): add build-gated internal debug configuration\", token RefreshTokenExpiresIn, token AccessTokenExpiresIn, token VerboseTokenRefresh, … +4",
+     "label": "May belong with Config + 2 related: commit \"feat(debug): add build-gated internal debug configuration\", token RefreshTokenExpiresIn, token AccessTokenExpiresIn, token VerboseTokenRefresh, … +4",
      "description": "strength 3",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -67,7 +67,7 @@
     },
     {
      "id": "K1/hint:K1+K2",
-     "label": "May belong with K2: token github.com/cli/cli/v2/internal/debug",
+     "label": "May belong with Format + 1 related: token github.com/cli/cli/v2/internal/debug",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -193,9 +193,9 @@
   },
   {
    "id": "K2",
-   "label": "K2 · Format and 1 related",
+   "label": "Format + 1 related",
    "description": "2 changes",
-   "tooltip": "Files: pkg/cmd/version/version.go\nModule: (root)",
+   "tooltip": "card K2\nFiles: pkg/cmd/version/version.go\nModule: (root)",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -235,7 +235,7 @@
     },
     {
      "id": "K2/hint:K1+K2",
-     "label": "May belong with K1: token github.com/cli/cli/v2/internal/debug",
+     "label": "May belong with (*AuthConfig).refreshCredentialForUser + 7 related: token github.com/cli/cli/v2/internal/debug",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -283,9 +283,9 @@
   },
   {
    "id": "K3",
-   "label": "K3 · Config and 2 related",
+   "label": "Config + 2 related",
    "description": "3 changes",
-   "tooltip": "Files: internal/debug/config.go, internal/debug/config_enabled.go\nModule: (root)",
+   "tooltip": "card K3\nFiles: internal/debug/config.go, internal/debug/config_enabled.go\nModule: (root)",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -323,7 +323,7 @@
      "children": [
       {
        "id": "K3/seam:call:K1:",
-       "label": "K1 · (*AuthConfig).refreshCredentialForUser and 7 related",
+       "label": "(*AuthConfig).refreshCredentialForUser + 7 related",
        "description": "call: accessTokenNeedsRefresh → Config, simulateRefreshTokenExpired → Config, … +1",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -336,7 +336,7 @@
     },
     {
      "id": "K3/hint:K1+K3",
-     "label": "May belong with K1: commit \"feat(debug): add build-gated internal debug configuration\", token RefreshTokenExpiresIn, token AccessTokenExpiresIn, token VerboseTokenRefresh, … +4",
+     "label": "May belong with (*AuthConfig).refreshCredentialForUser + 7 related: commit \"feat(debug): add build-gated internal debug configuration\", token RefreshTokenExpiresIn, token AccessTokenExpiresIn, token VerboseTokenRefresh, … +4",
      "description": "strength 3",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -348,7 +348,7 @@
     },
     {
      "id": "K3/hint:K3+K4",
-     "label": "May belong with K4: token LookupEnv",
+     "label": "May belong with builtWithTags + 1 related: token LookupEnv",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -409,9 +409,9 @@
   },
   {
    "id": "K4",
-   "label": "K4 · builtWithTags and 1 related",
+   "label": "builtWithTags + 1 related",
    "description": "2 changes",
-   "tooltip": "Files: script/build.go\nModule: (root)",
+   "tooltip": "card K4\nFiles: script/build.go\nModule: (root)",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -443,7 +443,7 @@
     },
     {
      "id": "K4/hint:K3+K4",
-     "label": "May belong with K3: token LookupEnv",
+     "label": "May belong with Config + 2 related: token LookupEnv",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -493,9 +493,9 @@
  "t3code-e8dfc42": [
   {
    "id": "K1",
-   "label": "K1 · resolveOffset and 7 related",
+   "label": "resolveOffset + 7 related",
    "description": "8 changes",
-   "tooltip": "Files: scripts/dev-runner.mjs\nModule: (inferred)\n1 joined by location",
+   "tooltip": "card K1\nFiles: scripts/dev-runner.mjs\nModule: (inferred)\n1 joined by location",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -631,9 +631,9 @@
   },
   {
    "id": "K2",
-   "label": "K2 · getRenderablePatch and 5 related",
+   "label": "getRenderablePatch + 5 related",
    "description": "6 changes · hub",
-   "tooltip": "Files: apps/web/src/components/DiffPanel.tsx, apps/web/src/components/ui/toggle-group.tsx, apps/web/src/diffRouteSearch.ts\nModule: apps/web\nHub: links several other cards.\n5 joined by location",
+   "tooltip": "card K2\nFiles: apps/web/src/components/DiffPanel.tsx, apps/web/src/components/ui/toggle-group.tsx, apps/web/src/diffRouteSearch.ts\nModule: apps/web\nHub: links several other cards.\n5 joined by location",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -671,7 +671,7 @@
      "children": [
       {
        "id": "K2/seam:call:K4:",
-       "label": "K4 · checkpointDiffQueryOptions and 1 related",
+       "label": "checkpointDiffQueryOptions + 1 related",
        "description": "call: DiffPanel → checkpointDiffQueryOptions",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -684,7 +684,7 @@
     },
     {
      "id": "K2/hint:K2+K4",
-     "label": "May belong with K4: commit \"buuuunch of cleanup\", commit \"frontend\", token checkpointDiffQueryOptions",
+     "label": "May belong with checkpointDiffQueryOptions + 1 related: commit \"buuuunch of cleanup\", commit \"frontend\", token checkpointDiffQueryOptions",
      "description": "strength 2",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -696,7 +696,7 @@
     },
     {
      "id": "K2/hint:K2+K3",
-     "label": "May belong with K3: commit \"buuuunch of cleanup\", commit \"frontend\"",
+     "label": "May belong with serverConfigQueryOptions + 9 related: commit \"buuuunch of cleanup\", commit \"frontend\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -796,9 +796,9 @@
   },
   {
    "id": "K3",
-   "label": "K3 · serverConfigQueryOptions and 9 related",
+   "label": "serverConfigQueryOptions + 9 related",
    "description": "10 changes",
-   "tooltip": "Files: apps/web/src/lib/gitReactQuery.ts, apps/web/src/lib/serverReactQuery.ts, apps/web/src/lib/utils.ts\nModule: apps/web",
+   "tooltip": "card K3\nFiles: apps/web/src/lib/gitReactQuery.ts, apps/web/src/lib/serverReactQuery.ts, apps/web/src/lib/utils.ts\nModule: apps/web",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -854,7 +854,7 @@
     },
     {
      "id": "K3/hint:K3+K4",
-     "label": "May belong with K4: commit \"buuuunch of cleanup\", commit \"frontend\", same signature change api : NativeApi | undefined , → , folder apps/web/src/lib",
+     "label": "May belong with checkpointDiffQueryOptions + 1 related: commit \"buuuunch of cleanup\", commit \"frontend\", same signature change api : NativeApi | undefined , → , folder apps/web/src/lib",
      "description": "strength 2",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -866,7 +866,7 @@
     },
     {
      "id": "K3/hint:K2+K3",
-     "label": "May belong with K2: commit \"buuuunch of cleanup\", commit \"frontend\"",
+     "label": "May belong with getRenderablePatch + 5 related: commit \"buuuunch of cleanup\", commit \"frontend\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -1018,9 +1018,9 @@
   },
   {
    "id": "K4",
-   "label": "K4 · checkpointDiffQueryOptions and 1 related",
+   "label": "checkpointDiffQueryOptions + 1 related",
    "description": "2 changes",
-   "tooltip": "Files: apps/web/src/lib/providerReactQuery.ts\nModule: apps/web",
+   "tooltip": "card K4\nFiles: apps/web/src/lib/providerReactQuery.ts\nModule: apps/web",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -1048,7 +1048,7 @@
      "children": [
       {
        "id": "K4/seam:call:K2:",
-       "label": "K2 · getRenderablePatch and 5 related",
+       "label": "getRenderablePatch + 5 related",
        "description": "call: DiffPanel → checkpointDiffQueryOptions",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -1061,7 +1061,7 @@
     },
     {
      "id": "K4/hint:K3+K4",
-     "label": "May belong with K3: commit \"buuuunch of cleanup\", commit \"frontend\", same signature change api : NativeApi | undefined , → , folder apps/web/src/lib",
+     "label": "May belong with serverConfigQueryOptions + 9 related: commit \"buuuunch of cleanup\", commit \"frontend\", same signature change api : NativeApi | undefined , → , folder apps/web/src/lib",
      "description": "strength 2",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -1073,7 +1073,7 @@
     },
     {
      "id": "K4/hint:K2+K4",
-     "label": "May belong with K2: commit \"buuuunch of cleanup\", commit \"frontend\", token checkpointDiffQueryOptions",
+     "label": "May belong with getRenderablePatch + 5 related: commit \"buuuunch of cleanup\", commit \"frontend\", token checkpointDiffQueryOptions",
      "description": "strength 2",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -1121,9 +1121,9 @@
   },
   {
    "id": "K5",
-   "label": "K5 · CodexAppServerManager.requireSession and 8 related",
+   "label": "CodexAppServerManager.requireSession + 8 related",
    "description": "9 changes",
-   "tooltip": "Files: apps/server/src/codexAppServerManager.ts\nModule: apps/server\n2 joined by location",
+   "tooltip": "card K5\nFiles: apps/server/src/codexAppServerManager.ts\nModule: apps/server\n2 joined by location",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -1152,7 +1152,7 @@
     },
     {
      "id": "K5/hint:K5+K6",
-     "label": "May belong with K6: commit \"Bind provider sessions to thread IDs and preserve resume cursors\", commit \"delegate trimming to schema\", commit \"small nits\", commit \"rewrite\", … +6",
+     "label": "May belong with CodexAppServerManager.stopSession + 4 related: commit \"Bind provider sessions to thread IDs and preserve resume cursors\", commit \"delegate trimming to schema\", commit \"small nits\", commit \"rewrite\", … +6",
      "description": "strength 4",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -1291,9 +1291,9 @@
   },
   {
    "id": "K6",
-   "label": "K6 · CodexAppServerManager.stopSession and 4 related",
+   "label": "CodexAppServerManager.stopSession + 4 related",
    "description": "5 changes",
-   "tooltip": "Files: apps/server/src/codexAppServerManager.ts\nModule: apps/server",
+   "tooltip": "card K6\nFiles: apps/server/src/codexAppServerManager.ts\nModule: apps/server",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -1322,7 +1322,7 @@
     },
     {
      "id": "K6/hint:K5+K6",
-     "label": "May belong with K5: commit \"Bind provider sessions to thread IDs and preserve resume cursors\", commit \"delegate trimming to schema\", commit \"small nits\", commit \"rewrite\", … +6",
+     "label": "May belong with CodexAppServerManager.requireSession + 8 related: commit \"Bind provider sessions to thread IDs and preserve resume cursors\", commit \"delegate trimming to schema\", commit \"small nits\", commit \"rewrite\", … +6",
      "description": "strength 4",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -3043,9 +3043,9 @@
  "hono-1774": [
   {
    "id": "K1",
-   "label": "K1 · raw and 4 related",
+   "label": "raw + 4 related",
    "description": "5 changes · mirrored into generated dir",
-   "tooltip": "Files: src/helper/html/index.ts, src/jsx/streaming.ts, src/utils/html.ts\nModule: (root)\n5 copies in generated deno_dist\n2 joined by location",
+   "tooltip": "card K1\nFiles: src/helper/html/index.ts, src/jsx/streaming.ts, src/utils/html.ts\nModule: (root)\n5 copies in generated deno_dist\n2 joined by location",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -3113,7 +3113,7 @@
      "children": [
       {
        "id": "K1/seam:call:K8:",
-       "label": "K8 · childrenToString and 3 related",
+       "label": "childrenToString + 3 related",
        "description": "call: ErrorBoundary → raw, Suspense → childrenToString",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -3126,7 +3126,7 @@
     },
     {
      "id": "K1/hint:K1+K4",
-     "label": "May belong with K4: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\", token HtmlEscapedCallbackOpts, token HtmlEscapedCallback, token resolveStream, … +4",
+     "label": "May belong with Context.json + 9 related: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\", token HtmlEscapedCallbackOpts, token HtmlEscapedCallback, token resolveStream, … +4",
      "description": "strength 3",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -3138,7 +3138,7 @@
     },
     {
      "id": "K1/hint:K1+K10",
-     "label": "May belong with K10: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\", token ./components, token H:${index}, token components, … +2",
+     "label": "May belong with childrenToString: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\", token ./components, token H:${index}, token components, … +2",
      "description": "strength 2",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -3150,7 +3150,7 @@
     },
     {
      "id": "K1/hint:K1+K8",
-     "label": "May belong with K8: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\", 1 test call both, folder src/jsx",
+     "label": "May belong with childrenToString + 3 related: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\", 1 test call both, folder src/jsx",
      "description": "strength 2",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -3237,9 +3237,9 @@
   },
   {
    "id": "K2",
-   "label": "K2 · getRequestContext and 9 related",
+   "label": "getRequestContext + 9 related",
    "description": "10 changes",
-   "tooltip": "Files: src/adapter/aws-lambda/handler.ts\nModule: (root)\n1 joined by location",
+   "tooltip": "card K2\nFiles: src/adapter/aws-lambda/handler.ts\nModule: (root)\n1 joined by location",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -3283,7 +3283,7 @@
      "children": [
       {
        "id": "K2/seam:type:K3:",
-       "label": "K3 · compose and 7 related",
+       "label": "compose + 7 related",
        "description": "shared type (approximate): Hono",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -3295,7 +3295,7 @@
       },
       {
        "id": "K2/seam:type:K7:",
-       "label": "K7 · RegExpRouter.add and 5 related",
+       "label": "RegExpRouter.add + 5 related",
        "description": "shared type (approximate): Hono",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -3309,7 +3309,7 @@
     },
     {
      "id": "K2/hint:K2+K4",
-     "label": "May belong with K4: token Headers, token entries",
+     "label": "May belong with Context.json + 9 related: token Headers, token entries",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -3461,9 +3461,9 @@
   },
   {
    "id": "K3",
-   "label": "K3 · compose and 7 related",
+   "label": "compose + 7 related",
    "description": "8 changes · mirrored into generated dir",
-   "tooltip": "Files: src/compose.ts, src/hono-base.ts, src/request.ts\nModule: (root)\n8 copies in generated deno_dist\n4 joined by location",
+   "tooltip": "card K3\nFiles: src/compose.ts, src/hono-base.ts, src/request.ts\nModule: (root)\n8 copies in generated deno_dist\n4 joined by location",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -3555,7 +3555,7 @@
      "children": [
       {
        "id": "K3/seam:type:K2:",
-       "label": "K2 · getRequestContext and 9 related",
+       "label": "getRequestContext + 9 related",
        "description": "shared type (approximate): Hono",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -3567,7 +3567,7 @@
       },
       {
        "id": "K3/seam:type:K7:",
-       "label": "K7 · RegExpRouter.add and 5 related",
+       "label": "RegExpRouter.add + 5 related",
        "description": "shared type (approximate): Hono",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -3579,7 +3579,7 @@
       },
       {
        "id": "K3/seam:type:K9:",
-       "label": "K9 · isMiddleware and 3 related",
+       "label": "isMiddleware + 3 related",
        "description": "shared type (approximate): Hono",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -3593,7 +3593,7 @@
     },
     {
      "id": "K3/hint:K3+K7",
-     "label": "May belong with K7: commit \"refactor: use `#` for private properties (#1762)\", commit \"fix(types): Keep `Env` types with changed routes (#1757)\", commit \"feat: Ensure that calls to `c.json()` have a type equivalent to `c.jsonT()` (#1728)\", commit \"feat(request): Introduce `matchedRoutes` and `routePath` for `HonoRequest` (#1744)\", … +8",
+     "label": "May belong with RegExpRouter.add + 5 related: commit \"refactor: use `#` for private properties (#1762)\", commit \"fix(types): Keep `Env` types with changed routes (#1757)\", commit \"feat: Ensure that calls to `c.json()` have a type equivalent to `c.jsonT()` (#1728)\", commit \"feat(request): Introduce `matchedRoutes` and `routePath` for `HonoRequest` (#1744)\", … +8",
      "description": "strength 3",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -3605,7 +3605,7 @@
     },
     {
      "id": "K3/hint:K3+K4",
-     "label": "May belong with K4: commit \"refactor: use `#` for private properties (#1762)\", commit \"feat: Ensure that calls to `c.json()` have a type equivalent to `c.jsonT()` (#1728)\", 3 tests call both, folder src",
+     "label": "May belong with Context.json + 9 related: commit \"refactor: use `#` for private properties (#1762)\", commit \"feat: Ensure that calls to `c.json()` have a type equivalent to `c.jsonT()` (#1728)\", 3 tests call both, folder src",
      "description": "strength 2",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -3617,7 +3617,7 @@
     },
     {
      "id": "K3/hint:K3+K9",
-     "label": "May belong with K9: commit \"feat(request): Introduce `matchedRoutes` and `routePath` for `HonoRequest` (#1744)\", commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
+     "label": "May belong with isMiddleware + 3 related: commit \"feat(request): Introduce `matchedRoutes` and `routePath` for `HonoRequest` (#1744)\", commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -3629,7 +3629,7 @@
     },
     {
      "id": "K3/hint:K3+K5",
-     "label": "May belong with K5: 1 test call both",
+     "label": "May belong with createMiddleware + 13 related: 1 test call both",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -3641,7 +3641,7 @@
     },
     {
      "id": "K3/hint:K3+K6",
-     "label": "May belong with K6: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
+     "label": "May belong with bearerAuth: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -3653,7 +3653,7 @@
     },
     {
      "id": "K3/hint:K3+K11",
-     "label": "May belong with K11: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
+     "label": "May belong with cors.set: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -3779,9 +3779,9 @@
   },
   {
    "id": "K4",
-   "label": "K4 · Context.json and 9 related",
+   "label": "Context.json + 9 related",
    "description": "10 changes · mirrored into generated dir",
-   "tooltip": "Files: src/context.ts, src/utils/html.ts\nModule: (root)\n10 copies in generated deno_dist\n2 joined by location",
+   "tooltip": "card K4\nFiles: src/context.ts, src/utils/html.ts\nModule: (root)\n10 copies in generated deno_dist\n2 joined by location",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -3873,7 +3873,7 @@
      "children": [
       {
        "id": "K4/seam:type:K7:",
-       "label": "K7 · RegExpRouter.add and 5 related",
+       "label": "RegExpRouter.add + 5 related",
        "description": "shared type (approximate): Context",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -3887,7 +3887,7 @@
     },
     {
      "id": "K4/hint:K1+K4",
-     "label": "May belong with K1: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\", token HtmlEscapedCallbackOpts, token HtmlEscapedCallback, token resolveStream, … +4",
+     "label": "May belong with raw + 4 related: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\", token HtmlEscapedCallbackOpts, token HtmlEscapedCallback, token resolveStream, … +4",
      "description": "strength 3",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -3899,7 +3899,7 @@
     },
     {
      "id": "K4/hint:K3+K4",
-     "label": "May belong with K3: commit \"refactor: use `#` for private properties (#1762)\", commit \"feat: Ensure that calls to `c.json()` have a type equivalent to `c.jsonT()` (#1728)\", 3 tests call both, folder src",
+     "label": "May belong with compose + 7 related: commit \"refactor: use `#` for private properties (#1762)\", commit \"feat: Ensure that calls to `c.json()` have a type equivalent to `c.jsonT()` (#1728)\", 3 tests call both, folder src",
      "description": "strength 2",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -3911,7 +3911,7 @@
     },
     {
      "id": "K4/hint:K4+K7",
-     "label": "May belong with K7: commit \"refactor: use `#` for private properties (#1762)\", commit \"feat: Ensure that calls to `c.json()` have a type equivalent to `c.jsonT()` (#1728)\", 5 tests call both, folder src",
+     "label": "May belong with RegExpRouter.add + 5 related: commit \"refactor: use `#` for private properties (#1762)\", commit \"feat: Ensure that calls to `c.json()` have a type equivalent to `c.jsonT()` (#1728)\", 5 tests call both, folder src",
      "description": "strength 2",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -3923,7 +3923,7 @@
     },
     {
      "id": "K4/hint:K4+K8",
-     "label": "May belong with K8: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\", 1 test call both",
+     "label": "May belong with childrenToString + 3 related: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\", 1 test call both",
      "description": "strength 2",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -3935,7 +3935,7 @@
     },
     {
      "id": "K4/hint:K2+K4",
-     "label": "May belong with K2: token Headers, token entries",
+     "label": "May belong with getRequestContext + 9 related: token Headers, token entries",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -3947,7 +3947,7 @@
     },
     {
      "id": "K4/hint:K4+K5",
-     "label": "May belong with K5: 2 tests call both",
+     "label": "May belong with createMiddleware + 13 related: 2 tests call both",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -3959,7 +3959,7 @@
     },
     {
      "id": "K4/hint:K4+K10",
-     "label": "May belong with K10: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\"",
+     "label": "May belong with childrenToString: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -4111,9 +4111,9 @@
   },
   {
    "id": "K5",
-   "label": "K5 · createMiddleware and 13 related",
+   "label": "createMiddleware + 13 related",
    "description": "14 changes · mirrored into generated dir",
-   "tooltip": "Files: src/helper/factory/index.ts\nModule: (root)\n14 copies in generated deno_dist\n11 joined by location",
+   "tooltip": "card K5\nFiles: src/helper/factory/index.ts\nModule: (root)\n14 copies in generated deno_dist\n11 joined by location",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -4167,7 +4167,7 @@
     },
     {
      "id": "K5/hint:K3+K5",
-     "label": "May belong with K3: 1 test call both",
+     "label": "May belong with compose + 7 related: 1 test call both",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -4179,7 +4179,7 @@
     },
     {
      "id": "K5/hint:K4+K5",
-     "label": "May belong with K4: 2 tests call both",
+     "label": "May belong with Context.json + 9 related: 2 tests call both",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -4191,7 +4191,7 @@
     },
     {
      "id": "K5/hint:K5+K7",
-     "label": "May belong with K7: 1 test call both",
+     "label": "May belong with RegExpRouter.add + 5 related: 1 test call both",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -4395,9 +4395,9 @@
   },
   {
    "id": "K6",
-   "label": "K6 · bearerAuth",
+   "label": "bearerAuth",
    "description": "1 change · mirrored into generated dir",
-   "tooltip": "Files: src/middleware/bearer-auth/index.ts\nModule: (root)\n1 copy in generated deno_dist\n1 joined by location",
+   "tooltip": "card K6\nFiles: src/middleware/bearer-auth/index.ts\nModule: (root)\n1 copy in generated deno_dist\n1 joined by location",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -4427,7 +4427,7 @@
     },
     {
      "id": "K6/hint:K3+K6",
-     "label": "May belong with K3: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
+     "label": "May belong with compose + 7 related: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -4439,7 +4439,7 @@
     },
     {
      "id": "K6/hint:K6+K7",
-     "label": "May belong with K7: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
+     "label": "May belong with RegExpRouter.add + 5 related: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -4451,7 +4451,7 @@
     },
     {
      "id": "K6/hint:K6+K9",
-     "label": "May belong with K9: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
+     "label": "May belong with isMiddleware + 3 related: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -4463,7 +4463,7 @@
     },
     {
      "id": "K6/hint:K6+K11",
-     "label": "May belong with K11: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
+     "label": "May belong with cors.set: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -4498,9 +4498,9 @@
   },
   {
    "id": "K7",
-   "label": "K7 · RegExpRouter.add and 5 related",
+   "label": "RegExpRouter.add + 5 related",
    "description": "6 changes · mirrored into generated dir",
-   "tooltip": "Files: src/hono-base.ts, src/router/reg-exp-router/router.ts, src/router/smart-router/router.ts\nModule: (root)\n6 copies in generated deno_dist\n1 joined by location",
+   "tooltip": "card K7\nFiles: src/hono-base.ts, src/router/reg-exp-router/router.ts, src/router/smart-router/router.ts\nModule: (root)\n6 copies in generated deno_dist\n1 joined by location",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -4584,7 +4584,7 @@
      "children": [
       {
        "id": "K7/seam:type:K2:",
-       "label": "K2 · getRequestContext and 9 related",
+       "label": "getRequestContext + 9 related",
        "description": "shared type (approximate): Hono",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -4596,7 +4596,7 @@
       },
       {
        "id": "K7/seam:type:K3:",
-       "label": "K3 · compose and 7 related",
+       "label": "compose + 7 related",
        "description": "shared type (approximate): Hono",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -4608,7 +4608,7 @@
       },
       {
        "id": "K7/seam:type:K4:",
-       "label": "K4 · Context.json and 9 related",
+       "label": "Context.json + 9 related",
        "description": "shared type (approximate): Context",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -4620,7 +4620,7 @@
       },
       {
        "id": "K7/seam:type:K9:",
-       "label": "K9 · isMiddleware and 3 related",
+       "label": "isMiddleware + 3 related",
        "description": "shared type (approximate): Hono",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -4634,7 +4634,7 @@
     },
     {
      "id": "K7/hint:K3+K7",
-     "label": "May belong with K3: commit \"refactor: use `#` for private properties (#1762)\", commit \"fix(types): Keep `Env` types with changed routes (#1757)\", commit \"feat: Ensure that calls to `c.json()` have a type equivalent to `c.jsonT()` (#1728)\", commit \"feat(request): Introduce `matchedRoutes` and `routePath` for `HonoRequest` (#1744)\", … +8",
+     "label": "May belong with compose + 7 related: commit \"refactor: use `#` for private properties (#1762)\", commit \"fix(types): Keep `Env` types with changed routes (#1757)\", commit \"feat: Ensure that calls to `c.json()` have a type equivalent to `c.jsonT()` (#1728)\", commit \"feat(request): Introduce `matchedRoutes` and `routePath` for `HonoRequest` (#1744)\", … +8",
      "description": "strength 3",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -4646,7 +4646,7 @@
     },
     {
      "id": "K7/hint:K4+K7",
-     "label": "May belong with K4: commit \"refactor: use `#` for private properties (#1762)\", commit \"feat: Ensure that calls to `c.json()` have a type equivalent to `c.jsonT()` (#1728)\", 5 tests call both, folder src",
+     "label": "May belong with Context.json + 9 related: commit \"refactor: use `#` for private properties (#1762)\", commit \"feat: Ensure that calls to `c.json()` have a type equivalent to `c.jsonT()` (#1728)\", 5 tests call both, folder src",
      "description": "strength 2",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -4658,7 +4658,7 @@
     },
     {
      "id": "K7/hint:K7+K9",
-     "label": "May belong with K9: commit \"feat(request): Introduce `matchedRoutes` and `routePath` for `HonoRequest` (#1744)\", commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
+     "label": "May belong with isMiddleware + 3 related: commit \"feat(request): Introduce `matchedRoutes` and `routePath` for `HonoRequest` (#1744)\", commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -4670,7 +4670,7 @@
     },
     {
      "id": "K7/hint:K5+K7",
-     "label": "May belong with K5: 1 test call both",
+     "label": "May belong with createMiddleware + 13 related: 1 test call both",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -4682,7 +4682,7 @@
     },
     {
      "id": "K7/hint:K6+K7",
-     "label": "May belong with K6: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
+     "label": "May belong with bearerAuth: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -4694,7 +4694,7 @@
     },
     {
      "id": "K7/hint:K7+K11",
-     "label": "May belong with K11: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
+     "label": "May belong with cors.set: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -4794,9 +4794,9 @@
   },
   {
    "id": "K8",
-   "label": "K8 · childrenToString and 3 related",
+   "label": "childrenToString + 3 related",
    "description": "4 changes · mirrored into generated dir · moved",
-   "tooltip": "Files: src/jsx/components.ts\nModule: (root)\n4 copies in generated deno_dist\nMoved: 1 function",
+   "tooltip": "card K8\nFiles: src/jsx/components.ts\nModule: (root)\n4 copies in generated deno_dist\nMoved: 1 function",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -4856,7 +4856,7 @@
      "children": [
       {
        "id": "K8/seam:call:K1:",
-       "label": "K1 · raw and 4 related",
+       "label": "raw + 4 related",
        "description": "call: ErrorBoundary → raw, Suspense → childrenToString",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -4869,7 +4869,7 @@
     },
     {
      "id": "K8/hint:K1+K8",
-     "label": "May belong with K1: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\", 1 test call both, folder src/jsx",
+     "label": "May belong with raw + 4 related: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\", 1 test call both, folder src/jsx",
      "description": "strength 2",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -4881,7 +4881,7 @@
     },
     {
      "id": "K8/hint:K4+K8",
-     "label": "May belong with K4: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\", 1 test call both",
+     "label": "May belong with Context.json + 9 related: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\", 1 test call both",
      "description": "strength 2",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -4893,7 +4893,7 @@
     },
     {
      "id": "K8/hint:K8+K10",
-     "label": "May belong with K10: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\", folder src/jsx",
+     "label": "May belong with childrenToString: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\", folder src/jsx",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -4967,9 +4967,9 @@
   },
   {
    "id": "K9",
-   "label": "K9 · isMiddleware and 3 related",
+   "label": "isMiddleware + 3 related",
    "description": "4 changes · mirrored into generated dir",
-   "tooltip": "Files: src/helper/dev/index.ts\nModule: (root)\n4 copies in generated deno_dist",
+   "tooltip": "card K9\nFiles: src/helper/dev/index.ts\nModule: (root)\n4 copies in generated deno_dist",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -5013,7 +5013,7 @@
      "children": [
       {
        "id": "K9/seam:type:K3:",
-       "label": "K3 · compose and 7 related",
+       "label": "compose + 7 related",
        "description": "shared type (approximate): Hono",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -5025,7 +5025,7 @@
       },
       {
        "id": "K9/seam:type:K7:",
-       "label": "K7 · RegExpRouter.add and 5 related",
+       "label": "RegExpRouter.add + 5 related",
        "description": "shared type (approximate): Hono",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -5039,7 +5039,7 @@
     },
     {
      "id": "K9/hint:K3+K9",
-     "label": "May belong with K3: commit \"feat(request): Introduce `matchedRoutes` and `routePath` for `HonoRequest` (#1744)\", commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
+     "label": "May belong with compose + 7 related: commit \"feat(request): Introduce `matchedRoutes` and `routePath` for `HonoRequest` (#1744)\", commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -5051,7 +5051,7 @@
     },
     {
      "id": "K9/hint:K7+K9",
-     "label": "May belong with K7: commit \"feat(request): Introduce `matchedRoutes` and `routePath` for `HonoRequest` (#1744)\", commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
+     "label": "May belong with RegExpRouter.add + 5 related: commit \"feat(request): Introduce `matchedRoutes` and `routePath` for `HonoRequest` (#1744)\", commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -5063,7 +5063,7 @@
     },
     {
      "id": "K9/hint:K6+K9",
-     "label": "May belong with K6: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
+     "label": "May belong with bearerAuth: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -5075,7 +5075,7 @@
     },
     {
      "id": "K9/hint:K9+K11",
-     "label": "May belong with K11: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
+     "label": "May belong with cors.set: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -5149,9 +5149,9 @@
   },
   {
    "id": "K10",
-   "label": "K10 · childrenToString",
+   "label": "childrenToString",
    "description": "1 change",
-   "tooltip": "Files: src/jsx/streaming.ts\nModule: (root)\n1 joined by location",
+   "tooltip": "card K10\nFiles: src/jsx/streaming.ts\nModule: (root)\n1 joined by location",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -5173,7 +5173,7 @@
     },
     {
      "id": "K10/hint:K1+K10",
-     "label": "May belong with K1: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\", token ./components, token H:${index}, token components, … +2",
+     "label": "May belong with raw + 4 related: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\", token ./components, token H:${index}, token components, … +2",
      "description": "strength 2",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -5185,7 +5185,7 @@
     },
     {
      "id": "K10/hint:K8+K10",
-     "label": "May belong with K8: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\", folder src/jsx",
+     "label": "May belong with childrenToString + 3 related: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\", folder src/jsx",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -5197,7 +5197,7 @@
     },
     {
      "id": "K10/hint:K4+K10",
-     "label": "May belong with K4: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\"",
+     "label": "May belong with Context.json + 9 related: commit \"feat(jsx): Introduce `ErrorBoundary` component (#1714)\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -5232,9 +5232,9 @@
   },
   {
    "id": "K11",
-   "label": "K11 · cors.set",
+   "label": "cors.set",
    "description": "1 change · mirrored into generated dir",
-   "tooltip": "Files: src/middleware/cors/index.ts\nModule: (root)\n1 copy in generated deno_dist\n1 joined by location",
+   "tooltip": "card K11\nFiles: src/middleware/cors/index.ts\nModule: (root)\n1 copy in generated deno_dist\n1 joined by location",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -5256,7 +5256,7 @@
     },
     {
      "id": "K11/hint:K3+K11",
-     "label": "May belong with K3: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
+     "label": "May belong with compose + 7 related: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -5268,7 +5268,7 @@
     },
     {
      "id": "K11/hint:K6+K11",
-     "label": "May belong with K6: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
+     "label": "May belong with bearerAuth: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -5280,7 +5280,7 @@
     },
     {
      "id": "K11/hint:K7+K11",
-     "label": "May belong with K7: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
+     "label": "May belong with RegExpRouter.add + 5 related: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -5292,7 +5292,7 @@
     },
     {
      "id": "K11/hint:K9+K11",
-     "label": "May belong with K9: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
+     "label": "May belong with isMiddleware + 3 related: commit \"feat(helper/dev): Introduce `inspectRoutes()` and `showRoutes()` (#1716)\"",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -5664,9 +5664,9 @@
  "httpx-1600": [
   {
    "id": "K1",
-   "label": "K1 · QueryParams.update and 17 related",
+   "label": "QueryParams.update + 17 related",
    "description": "18 changes",
-   "tooltip": "Files: httpx/_client.py, httpx/_models.py, httpx/_utils.py\nModule: (root)\n9 joined by location",
+   "tooltip": "card K1\nFiles: httpx/_client.py, httpx/_models.py, httpx/_utils.py\nModule: (root)\n9 joined by location",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -6099,14 +6099,14 @@
    "label": "Preview — cards see the PR's own files only",
    "icon": "eye",
    "contextValue": "cardsNote",
-   "description": "callers and entry points from the PR's files; hints without repo-wide counts",
-   "tooltip": "Preview: callers outside this PR and tests are not searched. Go callers are from syntax only, in the PR's own files: calls through an interface are not resolved; check out the PR to find them all in the editor. Entry points are found from the pull request's own files too.\nMerge hints are found without repository-wide token counts, so fewer are found than after a checkout.\n7 changed Go file(s) read from their text: changed functions and signature kinds; Go callers from syntax only: the module github.com/cli/cli/v2 (980 Go file(s) indexed); calls through an interface or a function value, and receivers whose type is not written, are not resolved"
+   "description": "callers and entry points from the PR's files; grouping cards without repo-wide counts",
+   "tooltip": "Preview: callers outside this PR and tests are not searched. Go callers are from syntax only, in the PR's own files: calls through an interface are not resolved; check out the PR to find them all in the editor. Entry points are found from the pull request's own files too.\nCards that may belong together are found without repository-wide token counts, so fewer are found than after a checkout.\n7 changed Go file(s) read from their text: changed functions and signature kinds; Go callers from syntax only: the module github.com/cli/cli/v2 (980 Go file(s) indexed); calls through an interface or a function value, and receivers whose type is not written, are not resolved"
   },
   {
    "id": "K1",
-   "label": "K1 · (*AuthConfig).refreshCredentialForUser and 7 related",
+   "label": "(*AuthConfig).refreshCredentialForUser + 7 related",
    "description": "8 changes",
-   "tooltip": "Files: internal/config/refreshable.go, internal/debug/config_disabled.go, pkg/cmd/factory/default.go\nModule: (root)\n3 joined by location",
+   "tooltip": "card K1\nFiles: internal/config/refreshable.go, internal/debug/config_disabled.go, pkg/cmd/factory/default.go\nModule: (root)\n3 joined by location",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -6144,7 +6144,7 @@
      "children": [
       {
        "id": "K1/seam:call:K3:",
-       "label": "K3 · Config and 2 related",
+       "label": "Config + 2 related",
        "description": "call: accessTokenNeedsRefresh → Config, simulateRefreshTokenExpired → Config, … +1",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -6157,7 +6157,7 @@
     },
     {
      "id": "K1/hint:K1+K3",
-     "label": "May belong with K3: commit \"feat(debug): add build-gated internal debug configuration\", token RefreshTokenExpiresIn, token AccessTokenExpiresIn, token VerboseTokenRefresh, … +4",
+     "label": "May belong with Config + 2 related: commit \"feat(debug): add build-gated internal debug configuration\", token RefreshTokenExpiresIn, token AccessTokenExpiresIn, token VerboseTokenRefresh, … +4",
      "description": "strength 3",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -6169,7 +6169,7 @@
     },
     {
      "id": "K1/hint:K1+K2",
-     "label": "May belong with K2: token github.com/cli/cli/v2/internal/debug",
+     "label": "May belong with Format + 1 related: token github.com/cli/cli/v2/internal/debug",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -6295,9 +6295,9 @@
   },
   {
    "id": "K2",
-   "label": "K2 · Format and 1 related",
+   "label": "Format + 1 related",
    "description": "2 changes",
-   "tooltip": "Files: pkg/cmd/version/version.go\nModule: (root)",
+   "tooltip": "card K2\nFiles: pkg/cmd/version/version.go\nModule: (root)",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -6337,7 +6337,7 @@
     },
     {
      "id": "K2/hint:K1+K2",
-     "label": "May belong with K1: token github.com/cli/cli/v2/internal/debug",
+     "label": "May belong with (*AuthConfig).refreshCredentialForUser + 7 related: token github.com/cli/cli/v2/internal/debug",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -6385,9 +6385,9 @@
   },
   {
    "id": "K3",
-   "label": "K3 · Config and 2 related",
+   "label": "Config + 2 related",
    "description": "3 changes",
-   "tooltip": "Files: internal/debug/config.go, internal/debug/config_enabled.go\nModule: (root)",
+   "tooltip": "card K3\nFiles: internal/debug/config.go, internal/debug/config_enabled.go\nModule: (root)",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -6425,7 +6425,7 @@
      "children": [
       {
        "id": "K3/seam:call:K1:",
-       "label": "K1 · (*AuthConfig).refreshCredentialForUser and 7 related",
+       "label": "(*AuthConfig).refreshCredentialForUser + 7 related",
        "description": "call: accessTokenNeedsRefresh → Config, simulateRefreshTokenExpired → Config, … +1",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -6438,7 +6438,7 @@
     },
     {
      "id": "K3/hint:K1+K3",
-     "label": "May belong with K1: commit \"feat(debug): add build-gated internal debug configuration\", token RefreshTokenExpiresIn, token AccessTokenExpiresIn, token VerboseTokenRefresh, … +4",
+     "label": "May belong with (*AuthConfig).refreshCredentialForUser + 7 related: commit \"feat(debug): add build-gated internal debug configuration\", token RefreshTokenExpiresIn, token AccessTokenExpiresIn, token VerboseTokenRefresh, … +4",
      "description": "strength 3",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -6450,7 +6450,7 @@
     },
     {
      "id": "K3/hint:K3+K4",
-     "label": "May belong with K4: token LookupEnv",
+     "label": "May belong with builtWithTags + 1 related: token LookupEnv",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -6511,9 +6511,9 @@
   },
   {
    "id": "K4",
-   "label": "K4 · builtWithTags and 1 related",
+   "label": "builtWithTags + 1 related",
    "description": "2 changes",
-   "tooltip": "Files: script/build.go\nModule: (root)",
+   "tooltip": "card K4\nFiles: script/build.go\nModule: (root)",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -6545,7 +6545,7 @@
     },
     {
      "id": "K4/hint:K3+K4",
-     "label": "May belong with K3: token LookupEnv",
+     "label": "May belong with Config + 2 related: token LookupEnv",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -6595,16 +6595,16 @@
  "cli-14752 hints pending": [
   {
    "id": "notice:hints-loading",
-   "label": "Merge hints loading…",
+   "label": "Grouping cards…",
    "icon": "loading~spin",
    "contextValue": "cardsNote",
    "tooltip": "Which cards may belong together is still being worked out."
   },
   {
    "id": "K1",
-   "label": "K1 · (*AuthConfig).refreshCredentialForUser and 7 related",
+   "label": "(*AuthConfig).refreshCredentialForUser + 7 related",
    "description": "8 changes",
-   "tooltip": "Files: internal/config/refreshable.go, internal/debug/config_disabled.go, pkg/cmd/factory/default.go\nModule: (root)\n3 joined by location",
+   "tooltip": "card K1\nFiles: internal/config/refreshable.go, internal/debug/config_disabled.go, pkg/cmd/factory/default.go\nModule: (root)\n3 joined by location",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -6642,7 +6642,7 @@
      "children": [
       {
        "id": "K1/seam:call:K3:",
-       "label": "K3 · Config and 2 related",
+       "label": "Config + 2 related",
        "description": "call: accessTokenNeedsRefresh → Config, simulateRefreshTokenExpired → Config, … +1",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -6769,9 +6769,9 @@
   },
   {
    "id": "K2",
-   "label": "K2 · Format and 1 related",
+   "label": "Format + 1 related",
    "description": "2 changes",
-   "tooltip": "Files: pkg/cmd/version/version.go\nModule: (root)",
+   "tooltip": "card K2\nFiles: pkg/cmd/version/version.go\nModule: (root)",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -6847,9 +6847,9 @@
   },
   {
    "id": "K3",
-   "label": "K3 · Config and 2 related",
+   "label": "Config + 2 related",
    "description": "3 changes",
-   "tooltip": "Files: internal/debug/config.go, internal/debug/config_enabled.go\nModule: (root)",
+   "tooltip": "card K3\nFiles: internal/debug/config.go, internal/debug/config_enabled.go\nModule: (root)",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -6887,7 +6887,7 @@
      "children": [
       {
        "id": "K3/seam:call:K1:",
-       "label": "K1 · (*AuthConfig).refreshCredentialForUser and 7 related",
+       "label": "(*AuthConfig).refreshCredentialForUser + 7 related",
        "description": "call: accessTokenNeedsRefresh → Config, simulateRefreshTokenExpired → Config, … +1",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -6949,9 +6949,9 @@
   },
   {
    "id": "K4",
-   "label": "K4 · builtWithTags and 1 related",
+   "label": "builtWithTags + 1 related",
    "description": "2 changes",
-   "tooltip": "Files: script/build.go\nModule: (root)",
+   "tooltip": "card K4\nFiles: script/build.go\nModule: (root)",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -7021,17 +7021,17 @@
  "cli-14752 hint notes": [
   {
    "id": "notice:hint-notes",
-   "label": "Merge hints are incomplete",
+   "label": "Some cards may belong together",
    "icon": "warning",
    "contextValue": "cardsNote",
    "description": "1 note",
-   "tooltip": "git log failed: timeout"
+   "tooltip": "Finding which cards may belong together did not finish cleanly:\ngit log failed: timeout"
   },
   {
    "id": "K1",
-   "label": "K1 · (*AuthConfig).refreshCredentialForUser and 7 related",
+   "label": "(*AuthConfig).refreshCredentialForUser + 7 related",
    "description": "8 changes",
-   "tooltip": "Files: internal/config/refreshable.go, internal/debug/config_disabled.go, pkg/cmd/factory/default.go\nModule: (root)\n3 joined by location",
+   "tooltip": "card K1\nFiles: internal/config/refreshable.go, internal/debug/config_disabled.go, pkg/cmd/factory/default.go\nModule: (root)\n3 joined by location",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -7069,7 +7069,7 @@
      "children": [
       {
        "id": "K1/seam:call:K3:",
-       "label": "K3 · Config and 2 related",
+       "label": "Config + 2 related",
        "description": "call: accessTokenNeedsRefresh → Config, simulateRefreshTokenExpired → Config, … +1",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -7082,7 +7082,7 @@
     },
     {
      "id": "K1/hint:K1+K3",
-     "label": "May belong with K3: commit \"feat(debug): add build-gated internal debug configuration\", token RefreshTokenExpiresIn, token AccessTokenExpiresIn, token VerboseTokenRefresh, … +4",
+     "label": "May belong with Config + 2 related: commit \"feat(debug): add build-gated internal debug configuration\", token RefreshTokenExpiresIn, token AccessTokenExpiresIn, token VerboseTokenRefresh, … +4",
      "description": "strength 3",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -7094,7 +7094,7 @@
     },
     {
      "id": "K1/hint:K1+K2",
-     "label": "May belong with K2: token github.com/cli/cli/v2/internal/debug",
+     "label": "May belong with Format + 1 related: token github.com/cli/cli/v2/internal/debug",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -7220,9 +7220,9 @@
   },
   {
    "id": "K2",
-   "label": "K2 · Format and 1 related",
+   "label": "Format + 1 related",
    "description": "2 changes",
-   "tooltip": "Files: pkg/cmd/version/version.go\nModule: (root)",
+   "tooltip": "card K2\nFiles: pkg/cmd/version/version.go\nModule: (root)",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -7262,7 +7262,7 @@
     },
     {
      "id": "K2/hint:K1+K2",
-     "label": "May belong with K1: token github.com/cli/cli/v2/internal/debug",
+     "label": "May belong with (*AuthConfig).refreshCredentialForUser + 7 related: token github.com/cli/cli/v2/internal/debug",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -7310,9 +7310,9 @@
   },
   {
    "id": "K3",
-   "label": "K3 · Config and 2 related",
+   "label": "Config + 2 related",
    "description": "3 changes",
-   "tooltip": "Files: internal/debug/config.go, internal/debug/config_enabled.go\nModule: (root)",
+   "tooltip": "card K3\nFiles: internal/debug/config.go, internal/debug/config_enabled.go\nModule: (root)",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -7350,7 +7350,7 @@
      "children": [
       {
        "id": "K3/seam:call:K1:",
-       "label": "K1 · (*AuthConfig).refreshCredentialForUser and 7 related",
+       "label": "(*AuthConfig).refreshCredentialForUser + 7 related",
        "description": "call: accessTokenNeedsRefresh → Config, simulateRefreshTokenExpired → Config, … +1",
        "icon": "link",
        "contextValue": "cardSeam",
@@ -7363,7 +7363,7 @@
     },
     {
      "id": "K3/hint:K1+K3",
-     "label": "May belong with K1: commit \"feat(debug): add build-gated internal debug configuration\", token RefreshTokenExpiresIn, token AccessTokenExpiresIn, token VerboseTokenRefresh, … +4",
+     "label": "May belong with (*AuthConfig).refreshCredentialForUser + 7 related: commit \"feat(debug): add build-gated internal debug configuration\", token RefreshTokenExpiresIn, token AccessTokenExpiresIn, token VerboseTokenRefresh, … +4",
      "description": "strength 3",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -7375,7 +7375,7 @@
     },
     {
      "id": "K3/hint:K3+K4",
-     "label": "May belong with K4: token LookupEnv",
+     "label": "May belong with builtWithTags + 1 related: token LookupEnv",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",
@@ -7436,9 +7436,9 @@
   },
   {
    "id": "K4",
-   "label": "K4 · builtWithTags and 1 related",
+   "label": "builtWithTags + 1 related",
    "description": "2 changes",
-   "tooltip": "Files: script/build.go\nModule: (root)",
+   "tooltip": "card K4\nFiles: script/build.go\nModule: (root)",
    "icon": "layers",
    "contextValue": "card",
    "children": [
@@ -7470,7 +7470,7 @@
     },
     {
      "id": "K4/hint:K3+K4",
-     "label": "May belong with K3: token LookupEnv",
+     "label": "May belong with Config + 2 related: token LookupEnv",
      "description": "strength 1",
      "icon": "lightbulb",
      "contextValue": "cardHint",

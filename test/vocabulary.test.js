@@ -61,6 +61,13 @@ const RETIRED = [
   { name: 'rebind hint', re: /\(rebind it in Keyboard Shortcuts\)|\brebind\b/i, use: 'nothing; the title stays plain' },
   { name: 'state in a title', re: /\(now (showing|hiding)/i, use: 'a plain title; the icon shows the state' },
   { name: 'needing attention', re: /\bneeding attention\b/i, use: '"Needs attention" / "N need attention"' },
+  // L5 (words a reviewer knows). A `reaches ${n} caller` template is seen as "reaches " + " caller".
+  { name: 'reaches N callers', re: /\breaches (?:\d+ )?callers?\b|\breaches $/, use: '"called from N place(s)"' },
+  { name: 'Compute test reachability', re: /\bcompute test reachability\b/i, use: '"Find the tests that cover this" (the command: "Find the tests that cover this review")' },
+  { name: 'extra caller queries', re: /\bextra caller quer(y|ies)\b/i, use: '"searches the callers again — on demand"' },
+  { name: 'merge hints', re: /\bmerge hints?\b/i, use: '"Grouping cards…" / "Some cards may belong together"; in prose "cards that may belong together"' },
+  { name: 'card key in a label', re: /\bK\d+ · /, use: 'the card\'s name; the `K<n>` key is the tooltip\'s ("card K1")' },
+  { name: 'and N related', re: /\band \d+ related\b/i, use: '"<name> + N related"' },
   { name: 'analyze', re: /\banalyz(e|es|ing|ed|er)\b/i, use: '"Analyse" (code identifiers and CLI flags keep `analyze`)' },
 ];
 
@@ -83,6 +90,7 @@ const ALLOWED_LITERALS = [
   { re: /^stale$/, why: 'an error code of the review store (internal)' },
   { re: /^STALE$/, why: 'a value of GitHub\'s check run conclusion, validated at the boundary (data, not prose)' },
   { re: /^\[data-act="tick"\]$/, why: 'a selector of the page script' },
+  { re: /^agent:stale$/, why: 'the id of a Cards view node (internal)' },
   { re: /^analyze$/, why: 'a property name used as a string key' },
 ];
 
@@ -251,6 +259,13 @@ test('the rules flag each retired term and allow what is deliberately kept', () 
   assert.deepEqual(terms('changes needing attention'), ['needing attention']);
   assert.deepEqual(terms('Analyse as soon as the window opens'), []);
   assert.deepEqual(terms('Analyze the diff'), ['analyze']);
+  assert.deepEqual(terms('reaches 3 callers'), ['reaches N callers']);
+  assert.deepEqual(terms('reaches '), ['reaches N callers'], 'a template hole after "reaches "');
+  assert.deepEqual(terms('called from 3 places; entry points a card reaches'), []);
+  assert.deepEqual(terms('Impact Tree: Compute test reachability'), ['Compute test reachability']);
+  assert.deepEqual(terms('Merge hints loading…'), ['merge hints']);
+  assert.deepEqual(terms('K1 · save and 2 related'), ['card key in a label', 'and N related']);
+  assert.deepEqual(terms('save + 2 related'), []);
   assert.deepEqual(terms('run npm run analyze -- --mode pr'), [], 'the npm script is allowed');
   assert.deepEqual(terms('impact-tree analyze --repo x'), [], 'the CLI command is allowed');
   assert.deepEqual(terms('`impactTree.tierA.maxFiles`'), [], 'the setting key stays');
@@ -343,7 +358,7 @@ test('README.md: no retired term', () => {
 // bar, commands and quick picks, notifications, the CodeLens and the CLI. Modules that only
 // write the output channel (viewed-sync, resolver-vscode, ...) are not listed.
 const SOURCES = [
-  'views/changes/tree-row-models', 'views/changes/tree-item-renderer', 'views/changes/tree-provider', 'views/changes/tree-grouping', 'views/changes/review-tree-model', 'views/sidebar/sources-provider',
+  'views/changes/tree-row-models', 'views/changes/tree-item-renderer', 'views/changes/tree-provider', 'views/changes/tree-grouping', 'views/changes/review-tree-model', 'views/sidebar/sources-provider', 'views/cards/cards-view-model', 'views/cards/cards-provider', 'mcp/tools',
   'views/details/detail-panel-html', 'views/details/detail-panel', 'views/pr-tab/pr-overview-html', 'views/pr-tab/pr-overview-panel', 'session/pr-actions', 'github/pr-review-data',
   'diff-editor/review-navigation', 'diff-editor/review-lens', 'diff-editor/review-open', 'diff-editor/open-review', 'session/commands', 'session/session', 'cli', 'cli/cli-format',
   'views/changes/view-state', 'views/changes/path-tree', 'diff-editor/decorations', 'extension', 'session/readiness', 'views/changes/review-threads', 'diff-editor/review-comments',

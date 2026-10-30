@@ -126,14 +126,14 @@ function createSourcesProvider(vscode, {
         }
         // Counts sit in the description so the label, and with it the expansion state the
         // user chose, stays the same as PRs move between groups.
-        const group = (key, label, icon, expanded, prRows, notes = []) => N({
-          type: 'group', key, label, icon, expanded, desc: String(prRows.length), children: [...notes, ...prRows],
+        const group = (key, label, icon, expanded, prRows, notes = [], capped = false) => N({
+          type: 'group', key, label, icon, expanded, desc: capped ? `first ${prs.length}` : String(prRows.length), children: [...notes, ...prRows],
         });
         const out = [
           group('pr-requested', 'Review requested', 'eye', true,
             requested.map(({ pr, via }) => prRow(pr, via)), teamWarnings),
           group('pr-mine', 'Yours', 'account', true, mine.map((p) => prRow(p))),
-          group('pr-others', 'Everyone else', 'organization', false, others.map((p) => prRow(p))),
+          group('pr-others', 'Everyone else', 'organization', false, others.map((p) => prRow(p)), [], getPrsTruncated()),
         ];
         // Same rule as the truncated-files warning: say the list is partial, never let
         // a capped list pass as every open PR.

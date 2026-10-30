@@ -33,7 +33,7 @@ and nothing about *how the changes relate* — or which callers you forgot to up
   already shown higher up
 - **Badge** — git status against the **review base** (not `HEAD`, so it stays correct on a PR)
 - **Words** — the exact state next to the name: `2 of 3 callers not updated`, `callers unknown`,
-  `all callers updated`, `reaches 3 callers`, `no callers`, `deleted`; on a caller,
+  `all callers updated`, `called from 3 places`, `no callers`, `deleted`; on a caller,
   `call updated`, `changed, but not at the call` or `not changed`
 - **Hover** — signatures before/after, added `throw`s, and the callers not updated, by name
 
@@ -343,7 +343,7 @@ checkpoint, from a recorded SHA).
 | `impactTree.iconMode` | `symbol` | `file` glyphs or `symbol` kinds on code rows |
 | `impactTree.rowDetail` | `hover` | a change row's verdict words and kinds in the tooltip, or `inline` |
 | `impactTree.prewarm` | `true` | index at startup so the first run is fast |
-| `impactTree.reachDepth` | `2` | caller levels searched for test reachability, from 1 to 6 |
+| `impactTree.reachDepth` | `2` | caller levels searched for the tests that cover a change, from 1 to 6 |
 | `impactTree.tierA.maxFiles` | `300` | maximum files fetched for a no-checkout PR preview |
 | `impactTree.openPullRequestTab` | `true` | open the pull request tab when you preview or check out a PR from the list |
 | `impactTree.agent` | `ask` | where **Send feedback** hands a round: `claude`, `codex`, `chat`, `clipboard`, `save`, or `ask` |
