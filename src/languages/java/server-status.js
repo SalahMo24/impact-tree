@@ -29,12 +29,22 @@
 //   JSON file beside its `-data`). Format `{ version: 1, stamp }`; anything else is no record.
 // - **When written:** at every `onDidProjectsImport` / `onDidClasspathUpdate` after
 //   `serverReady()` resolved, with the files as they are then (an import that ends reflects
-//   them; a later change is the watcher's). Events before ready are not recorded: jdtls may
-//   still be on the old `-data`.
+//   them; a later change is the watcher's), and when a no-record or matching-record start has
+//   settled (IMPORT_SETTLE_MS, below). Events before ready are not recorded: jdtls may still
+//   be on the old `-data`.
 // - **When compared:** when the status is made and again when `serverReady()` resolves. A
-//   different stamp, or no record (first run), makes Java answers incomplete
-//   (BUILD_FILE_SINCE_IMPORT_REASON / BUILD_FILE_FIRST_REASON) until the next import event
-//   after ready.
+//   different stamp makes Java answers incomplete (BUILD_FILE_SINCE_IMPORT_REASON) until the
+//   next import event after ready.
+// - **No record or a matching one (J6 pass 4):** a clean start may send no import event after
+//   ready at all (measured), so waiting for one would leave every answer incomplete for the
+//   session. Instead the server must *settle*: answers read incomplete (BUILD_FILE_FIRST_REASON
+//   / BUILD_FILE_SETTLING_REASON) until IMPORT_SETTLE_MS (on the injected clock) pass after
+//   `serverReady()` with no import event and no build-file change; each one restarts the
+//   period. Then the record is written (the files as they are then) and answers read complete.
+//   Budget: unit ms, default IMPORT_SETTLE_MS, owner the status (one timer, cleared when it
+//   fires or is restarted, unref'd); exhaustion: an import that stays silent for longer than
+//   the period after ready is not seen (none measured: the stale start's first event came at
+//   11.7 s, see IMPORT_SETTLE_MS).
 // - **Deadline:** IMPORT_CONFIRM_DEADLINE_MS (120 000 ms from ready, on the injected clock) for
 //   that event; after it, answers stay incomplete, saying the re-import was not confirmed. Only
 //   an import event ends it (e.g. "Java: Reload Projects"). Residual: an import that ended
@@ -72,6 +82,14 @@ const STAMPED_NAMES = new Set([...BUILD_FILE_NAMES, 'settings.gradle', 'settings
 const SKIPPED_DIRS = new Set(['target', 'build', 'node_modules', 'out']);
 const BUILD_FILE_LIMITS = Object.freeze({ maxFiles: 200, maxDepth: 24, maxDirs: 5000, maxFileBytes: 1024 * 1024 });
 const IMPORT_CONFIRM_DEADLINE_MS = 120000;
+/**
+ * Quiet period after ready (ms) before a start with no record or a matching one reads
+ * complete. Measured (J6 pass 3 and 4): a stale `-data` sent its first post-ready event 11.7 s
+ * after ready and re-imported for ~14 s; clean starts sent no post-ready event. 30 s is over
+ * twice the longest silent gap seen.
+ */
+const IMPORT_SETTLE_MS = 30000;
+const BUILD_FILE_SETTLING_REASON = 'the Java language server had just started and may still be re-importing the project';
 const BUILD_FILE_RECORD_KEY = 'impactTree.java.buildFileRecord';
 const BUILD_FILE_SINCE_IMPORT_REASON = 'a build file changed since the Java language server last imported the project';
 const BUILD_FILE_FIRST_REASON = 'no import of the project by the Java language server has been seen yet in this workspace';
@@ -148,6 +166,10 @@ function createJavaServerStatus({ api, watch, diagnostics, own = () => {}, hasBu
   /** @type {string|null} */
   let sinceImport = null;
   let deadlinePassed = false;
+  /** Whether `sinceImport` ends after a quiet period (no record or a matching one), not at an import event. */
+  let settling = false;
+  /** @type {unknown} */
+  let settleTimer = null;
   /** @type {unknown} */
   let deadlineTimer = null;
   const bump = () => { epoch++; };
@@ -160,21 +182,44 @@ function createJavaServerStatus({ api, watch, diagnostics, own = () => {}, hasBu
       const rec = buildFiles.store.get();
       const recorded = rec && rec.version === 1 && typeof rec.stamp === 'string' ? rec.stamp : null;
       // A mismatch found earlier stays until an import event: comparing again does not clear it.
-      if (now.stamp === null) sinceImport = /** @type {{ reason: string }} */ (now).reason;
-      else if (recorded === null) sinceImport = BUILD_FILE_FIRST_REASON;
-      else if (recorded !== now.stamp) sinceImport = BUILD_FILE_SINCE_IMPORT_REASON;
+      if (now.stamp === null) { sinceImport = /** @type {{ reason: string }} */ (now).reason; settling = false; }
+      else if (recorded !== null && recorded !== now.stamp) { sinceImport = BUILD_FILE_SINCE_IMPORT_REASON; settling = false; }
+      else if (!sinceImport && (recorded === null || ready)) { sinceImport = recorded === null ? BUILD_FILE_FIRST_REASON : BUILD_FILE_SETTLING_REASON; settling = true; }
     } catch (e) {
       sinceImport = `${BUILD_FILES_UNKNOWN_REASON} (${String(/** @type {any} */ (e).message).slice(0, 120)})`;
+      settling = false;
     }
     if (was !== sinceImport) bump();
     if (ready && sinceImport && !deadlineTimer) {
       deadlineTimer = clock.setTimeout(() => { if (sinceImport) { deadlinePassed = true; bump(); } }, IMPORT_CONFIRM_DEADLINE_MS);
       if (clock.unref) clock.unref(deadlineTimer);
     }
+    if (ready && settling) restartSettle();
   };
+  /** Writes the record of the files as they are now and ends `sinceImport`; a stamp not known keeps it. */
+  const record = () => {
+    if (!buildFiles) return;
+    try {
+      const now = (buildFiles.stamp || stampBuildFiles)(buildFiles.folders());
+      if (now.stamp === null) { sinceImport = /** @type {{ reason: string }} */ (now).reason; settling = false; bump(); return; }
+      buildFiles.store.set({ version: 1, stamp: now.stamp });
+    } catch { /* not recorded: the next window compares with the older record (safe) */ }
+    sinceImport = null;
+    settling = false;
+    deadlinePassed = false;
+    if (deadlineTimer) { clock.clearTimeout(deadlineTimer); deadlineTimer = null; }
+  };
+  /** (Re)starts the quiet period after which a settling start reads complete. */
+  function restartSettle() {
+    if (settleTimer) clock.clearTimeout(settleTimer);
+    settleTimer = clock.setTimeout(() => { settleTimer = null; if (settling) { record(); bump(); } }, IMPORT_SETTLE_MS);
+    if (clock.unref) clock.unref(settleTimer);
+  }
   const imported = () => {
     buildFileChanged = false;
-    if (buildFiles && ready) {
+    // Settling: an import event means jdtls is still working, so the quiet period restarts.
+    if (buildFiles && ready && settling) restartSettle();
+    else if (buildFiles && ready) {
       try {
         const now = (buildFiles.stamp || stampBuildFiles)(buildFiles.folders());
         if (now.stamp !== null) buildFiles.store.set({ version: 1, stamp: now.stamp });
@@ -201,7 +246,7 @@ function createJavaServerStatus({ api, watch, diagnostics, own = () => {}, hasBu
     try {
       const w = watch(BUILD_FILES);
       own(w);
-      const changed = () => { buildFileChanged = true; bump(); };
+      const changed = () => { buildFileChanged = true; if (ready && settling) restartSettle(); bump(); };
       for (const on of [w.onDidChange, w.onDidCreate, w.onDidDelete]) own(on.call(w, changed));
     } catch { /* no watcher: build-file changes are not seen */ }
   }
@@ -285,6 +330,6 @@ function editorJavaServerStatus() {
 
 module.exports = {
   createJavaServerStatus, editorJavaServerStatus, setEditorJavaBuildFileStore, stampBuildFiles,
-  BUILD_FILE_LIMITS, IMPORT_CONFIRM_DEADLINE_MS, BUILD_FILE_RECORD_KEY, BUILD_FILE_SINCE_IMPORT_REASON,
+  BUILD_FILE_LIMITS, IMPORT_CONFIRM_DEADLINE_MS, IMPORT_SETTLE_MS, BUILD_FILE_SETTLING_REASON, BUILD_FILE_RECORD_KEY, BUILD_FILE_SINCE_IMPORT_REASON,
   BUILD_FILE_FIRST_REASON, BUILD_FILES_UNKNOWN_REASON, IMPORTING_REASON, LIGHTWEIGHT_REASON, BUILD_FILE_REASON, BROKEN_BUILD_PATH,
 };

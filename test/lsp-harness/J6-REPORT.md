@@ -7,7 +7,81 @@ node test/lsp-harness/java-verify.js            # all 12 PRs of java-verify-corp
 J6_ROWS=1 node test/lsp-harness/java-verify.js 2072   # one PR, with a row per target
 ```
 
-Pass 3 comes first, then pass 2; the pass 1 sections after them are kept as they were.
+Pass 4 comes first, then passes 3 and 2; the pass 1 sections after them are kept as they were.
+
+## Pass 4: clean starts and first imports
+
+Pass 3's open risk: with no record, or a clean start, jdtls may send no import event after
+ready, so every Java answer would read incomplete for the session.
+
+### Measured (`test/lsp-harness/java-measure-start.js`, gson-verify at 6b9db2e = #1700, 120 s after ServiceReady)
+
+| Start | Events 200/100 | `$/progress` after ready | Status at 120 s |
+| --- | --- | --- | --- |
+| (a1) `-data` gson-verify, no record (pass 3 code) | one 200 before ready; **none after** | Update project ×9, Building, Register Watchers: 0.0–5.0 s | "no import … seen yet; not confirmed within 120 s" |
+| (a2) clean start: same `-data` again, no record | one 200 before ready; **none after** | the same: 0.0–5.2 s | not busy (settled at 30 s, record written) |
+| (b) first import: new empty `-data`, no record (deleted after) | one 200 before ready; **none after** | Updating module path, Building, Searching: 0.1–7.3 s | not busy |
+| stale: `-data` at #1700, checkout #2944, record of #1700 (20 s window) | one 200 before ready; none in 20 s | – | "a build file changed since …" (mismatch path) |
+
+So the risk was real: neither a clean start nor a first import sends an import event after
+ready (jdtls re-updates its projects for ~5–7 s after ready with progress only, which the
+editor cannot see).
+
+### Fix (`server-status.js`)
+
+- **No record, or a matching record:** after `serverReady()` the status *settles*: answers read
+  incomplete ("no import … seen yet" / "the Java language server had just started and may still
+  be re-importing the project") until `IMPORT_SETTLE_MS` = 30 000 ms (injected clock) pass with
+  no import/classpath event and no build-file change; each one restarts the period. Then the
+  record is written and answers read complete. Past the 120 s deadline without settling, the
+  reason adds "not confirmed"; settling still ends it later.
+- **Why 30 s is safe:** the longest silent stretch after ready seen is 11.7 s (pass 3's stale
+  start: first event 100 at 11.7 s, re-import ~14 s); clean starts and first imports end their
+  progress by 7.3 s. 30 s is over twice the longest. A matching record now also waits out the
+  period (before: complete at ready).
+- **Unchanged:** a mismatch (a build file differs from the record) or unknown build files stay
+  incomplete until an import event after ready; events before ready are ignored.
+- **Tests:** `test/java-build-file-record.test.js` (7 tests, ~0.2 s): matching → settles at
+  exactly 30 s; no record / unknown format → settles and records (time before ready does not
+  count); an event at 11.7 s and a later one restart the period, and a later build-file change
+  is incomplete until an import; events that keep coming → "not confirmed", then settles.
+
+### Editor run (final code, depth 24; `-data` imported at #2944, no record; first PR #1700)
+
+211 s, exit 0. #1700's first answers: "no import … seen yet" (the settling path, no record);
+the first post-ready event 100 came at 17.6 s.
+
+| PR | switch | quiet | functions | kinds | targets | TP | FP | FN | pipeline | states |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| #1700 | (start) | – | 13 / 13 | 9/9 | 13 | 555 | 0 | 42 | 10.1 s | 12 resolved, 1 unknown |
+| #1904 | 163 | 8.7 s | 14 / 14 | 13/13 | 14 | 339 | 6 | 46 | 12.3 s | 13 resolved, 1 unknown |
+| #2072 | 122 | 8.2 s | 13 / 13 | 9/9 | 11 | 177 | 4 | 11 | 1.6 s | 11 resolved |
+| #2498 | 282 | 11.3 s | 12 / 12 | 6/6 | 8 | 35 | 8 | 0 | 2.6 s | 8 resolved |
+| #2588 | 179 | 9.5 s | 3 / 3 | 1/1 | 3 | 19 | 0 | 0 | 0.9 s | 3 resolved |
+| #2759 | 79 | 8.3 s | 5 / 5 | 5/5 | 5 | 58 | 0 | 0 | 1.0 s | 5 resolved |
+| #2776 | 75 | 9.3 s | 2 / 2 | 1/1 | 2 | 2 | 0 | 0 | 1.1 s | 2 resolved |
+| #2838 | 16 | 8.7 s | 105 / 105 | 17/17 | 61 | 549 | 233 | 9 | 39.7 s | 58 resolved, 3 unknown |
+| #2879 | 49 | 8.6 s | 9 / 9 | 7/7 | 7 | 205 | 0 | 0 | 1.7 s | 7 resolved |
+| #2951 | 93 | 18.3 s | 25 / 25 | 3/3 | 17 | 15 | 193 | 0 | 3.0 s | 17 resolved |
+| #2950 | 23 | 13.4 s | 10 / 10 | 6/6 | 10 | 18 | 26 | 0 | 1.4 s | 10 resolved |
+| #2944 | 4 | 4.6 s | 13 / 13 | 13/13 | 13 | 60 | 10 | 19 | 1.6 s | 13 resolved |
+| **total** | | | **224 / 224** | **90/90** | 164 | 2032 | 480 | 127 | | 159 resolved, 5 unknown |
+
+- **0 misses on a complete answer** (no exclusion needed); 0 outside jdtls' view; 0 shown as
+  fine. #1700's 42 and #1904's 46 misses are all on incomplete answers.
+- -32603: 1 of 165 (`equals(Object)`).
+
+### Pass 4 end checks (sequential)
+
+| Check | Result | Wall time |
+| --- | --- | --- |
+| `npm test` | 141 files, 0 failed | 32 s |
+| `npm run lint` | exit 0 | 4 s |
+| `npm run typecheck` | exit 0 | 5 s |
+| `preview-golden.js --compare` | exit 0, 21 same | 114 s |
+| `java-verify.js --syntactic` | exit 0, 224/224, 90/90 | 7 s |
+| `java-e2e.js` | exit 0 | 13 s |
+| baseline `compare.sh` | exit 0, ALL SAME | 32 s |
 
 ## Pass 3: a build file changed while the server was down
 

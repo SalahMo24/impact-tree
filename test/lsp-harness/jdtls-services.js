@@ -67,6 +67,9 @@ function createJdtlsServices(options) {
   /** Every import-end event (200 / 100) with its time from ServiceReady (negative: before). */
   /** @type {Array<{ eventType: number, msFromReady: number|null }>} */
   const importEvents = [];
+  /** Every `$/progress` begin/end with its time from ServiceReady (null: before), for J6's start measurements. */
+  /** @type {Array<{ kind: string, title: string, msFromReady: number|null }>} */
+  const progressEvents = [];
   const openTokens = new Set();
   let lastProgressAt = 0;
   /** @type {Map<string, Array<{ message: string }>>} */
@@ -92,6 +95,7 @@ function createJdtlsServices(options) {
       if (method === 'language/status' && params && params.type === 'ServiceReady') { if (!ready) { readyAt = Date.now(); resolveServerReady(); } ready = true; }
       if (method === '$/progress' && params && params.value) {
         lastProgressAt = Date.now();
+        if (params.value.kind === 'begin' || params.value.kind === 'end') progressEvents.push({ kind: params.value.kind, title: String(params.value.title || params.token).slice(0, 60), msFromReady: readyAt ? Date.now() - readyAt : null });
         if (params.value.kind === 'begin') openTokens.add(params.token);
         if (params.value.kind === 'end') openTokens.delete(params.token);
       }
@@ -176,7 +180,7 @@ function createJdtlsServices(options) {
     if (params.eventType === 100 && on.classpath) on.classpath(params.data);
   });
   const buildFilesChanged = () => { if (on.buildFile) on.buildFile(); };
-  return { ...services, start, waitQuiet, javaServerStatus, buildFilesChanged, importEvents, recordFile };
+  return { ...services, start, waitQuiet, javaServerStatus, buildFilesChanged, importEvents, progressEvents, readyAt: () => readyAt, recordFile };
 }
 
 module.exports = { createJdtlsServices, DEFAULT_TOOLS };
