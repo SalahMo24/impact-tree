@@ -135,13 +135,15 @@ Numbered after `RELEASE_PLAN.md`'s G1–G7.
   new one each time?
 - **G3 / G4 from `RELEASE_PLAN.md`**: decided 2026-10-20. No per-agent turn hook; feedback
   rounds with a snapshot checkpoint and a feedback file per round instead (Part F).
-- **G13. Where the review lives once it is open (L1).** The nesting decided 2026-10-29 stays
+- **G13. Where the review lives once it is open (L1).** Decided 2026-10-30 (owner): the
+  proposal, host row as root. The nesting decided 2026-10-29 stays
   the model. Proposal: while a review is shown, the view's root is one row **Choose what
   to review…** (the picker, opened on click) and the host row, expanded; the Pull requests
   and Local changes groups are not drawn above it. Alternative: a second view, **Review**,
   under a **Start** picker view that collapses itself when a review opens. Either way, in
   list layout a change row is at depth 2 (file, change) and a caller at depth 3.
-- **G14. What "left" counts (L2).** Proposal: progress counts the rows that need attention
+- **G14. What "left" counts (L2).** Decided 2026-10-30 (owner): the proposal, attention
+  rows only. Proposal: progress counts the rows that need attention
   (⛔ and ?); the message, badge and Details strip say "3 need attention · 1 looked at",
   or "107 changes · nothing needs attention" when there are none; ticking stays on every
   row for reviewers who read everything, but is not counted against them. Alternative:
@@ -522,7 +524,8 @@ the review nests under the pull request or mode it came from, and the title-bar 
 above moved onto that row. The review tab (U1) and the agent's behaviour review are behind
 `impactTree.cards.enabled` and `impactTree.agents.enabled`.
 
-**Part L (proposed 2026-10-30).** L1–L3 and L5 fix what the screenshot study found and
+**Part L (proposed 2026-10-30; G13 and G14 decided the same day, implementation started
+with L1 and L2).** L1–L3 and L5 fix what the screenshot study found and
 touch only the sidebar's shape and words, so they can run next, before W1, once G13 and
 G14 are decided; L4 waits for W1. If v1 ships first, L1–L3 go in the first release after
 it, ahead of W1–W2.
