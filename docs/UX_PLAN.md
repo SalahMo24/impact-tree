@@ -95,8 +95,17 @@ Found in the code; each has a task below.
     Details split the height in thirds. Details, kept small by the minimal pass, shows a
     name and a path for a quiet row while the tree it serves is squeezed to a few rows. (L4)
 
+14. **The Cards view hides the feature.** With an agent result, the view opens with three
+    housekeeping rows (Undo, Show engine cards, the summary cut to one line), then a
+    "Needs your attention (4)" group that repeats changes drawn again under their card,
+    while Details says "2 need attention" (the engine's set, not the agent's). The card
+    itself is collapsed at the bottom. What the agent produces (summary, before/after,
+    who is affected, entry points, seams) needs width a 300 px tree does not have.
+    (L4 revised, L6)
+
 Items 8–13 were found 2026-10-30 on a screenshot of t3code PR #27095 (107 changes, none
-needing attention, cards and agents on). Part L below has their tasks.
+needing attention, cards and agents on); item 14 the same day on a second screenshot
+with an agent result. Part L below has their tasks.
 
 ## Gates (owner decisions)
 
@@ -148,6 +157,16 @@ Numbered after `RELEASE_PLAN.md`'s G1–G7.
   or "107 changes · nothing needs attention" when there are none; ticking stays on every
   row for reviewers who read everything, but is not counted against them. Alternative:
   keep counting every row and start the filter at **Needs attention** instead of all.
+- **G15. One attention set (L4, L6).** Proposal: a change needs attention when the engine
+  flags it (level 0 or 1) or the agent named it in `attention`; the tree's order and badge,
+  the Details strip, the review tab's first column and the diff notes all count that one
+  set. Alternative: keep the agent's list separate under its own word ("Your agent
+  suggests looking at"), never "attention".
+- **G16. Where the agent's note shows in the diff (L6).** Proposal: a read-only comment
+  thread per change the agent described, expanded when the change needs attention and
+  collapsed to its gutter glyph otherwise; the CodeLens agent line goes, since the thread's
+  first line says the same. Alternative: keep the CodeLens line as the headline and start
+  every thread collapsed.
 
 ## Part P: plain first run (confusion fixes)
 
@@ -456,17 +475,39 @@ Acceptance:
   never rows among the files: the host row's hover and description carry them, and the
   Cards view's title carries its spinner.
 
-### L4. Two panels, not three
+### L4. The Cards panel retired: one tree, two orders (revised 2026-10-30; gate G15)
 
-Acceptance: the Cards view is folded into the Review view as a second order of the same
-tree, **By card**, under the order toggle W1 adds (**Path** / **Files** / **By card**),
-with the card's entry points and merge hints in the card row's hover; the Cards view and
-`impactTree.openReview`'s title-bar place go away; agent results (`impactTree.agents.enabled`)
-decorate the card rows they describe. The sidebar then holds Review and Details, and the
-Review view is the taller one on first open (contributed with its initial size where the
-VS Code API allows it, else documented as a one-time drag). Not before W1; if W1 stays
-after v1, L4 does too, and until then `impactTree.cards.enabled` stays off by default,
-which it is.
+Revised after item 14: the Cards panel is not slimmed, it goes. The sidebar's job is
+navigation; the review tab (U1) is where the agent's text has room. No longer waits for
+W1: an order of the tree stands on its own, and **Path** joins the toggle when W1 lands.
+
+Acceptance:
+- The `impactTree.cards` view and `cards-provider.js` are removed; `cards-view-model.js`
+  keeps what the review tab and the By card order share.
+- The Review view's title gets an order toggle, **Files** / **By card** (By card offered
+  when the result has cards, so with `impactTree.cards.enabled` and a review of at least
+  `MIN_CHANGES_FOR_CARDS` changes). The order is a workspace setting
+  (`impactTree.reviewOrder`, default `files`).
+- By card: one row per card (sparkle icon; the card's title; description
+  `4 changes · 2 need attention`), cards that hold an attention change first, then by
+  size, sweeps last; under a card its changes, worst first, each with its kind icon and the
+  agent's one line (the engine's verdict text when there is no agent result), and a
+  deleted symbol with its minus. A change in two cards is drawn once, under the first.
+  Files without a card ("Other changes") close the list.
+- The kind icons are the agent's own and never the engine's: pencil for changed, question
+  mark for may change, plus for new, none for same behaviour, minus for deleted; the legend
+  lists them.
+- Ticks, filters, the calm state, Next/Previous unreviewed, reveal from the diff and the
+  Details panel work in both orders (the counting rows are the same objects); the
+  characterization snapshot gains a By card state for the hono fixture with an agent
+  result.
+- The three housekeeping rows move: **Analyse with my agent** is an inline sparkle on the
+  reviewed row and in its `…` menu; **Undo agent result** and **Show engine cards** are in
+  that menu while a result exists; the agent's summary (first line) joins the reviewed
+  row's hover, and the whole of it the review tab. **Open review** stays a title action.
+- "Needs your attention" is not a group: as G15 decides, the attention set orders the
+  cards, feeds the badge and the Details strip, and decides which notes open (L6).
+- The sidebar then holds Review and Details only; README and the legend say so.
 
 ### L5. Words a reviewer knows (extends G8)
 
@@ -484,8 +525,46 @@ rows added to the G8 table:
 | Everyone else · 1000 | Everyone else · first 1000 |
 | 107 of 107 left | as G14 |
 
+### L6. The agent's notes beside the code (gates G15, G16)
+
+Proposed 2026-10-30 (owner's idea): the per-change text the agent writes (what changed,
+before, after, when, who is affected) is read best next to the hunk it explains, as
+CodeRabbit's inline comments are, but kept for the reviewer and never posted.
+
+Acceptance:
+- A third comment controller, id `impactTree.agent`, label "Impact Tree: your agent's
+  notes", with no `commentingRangeProvider` (it never competes with the GitHub and
+  feedback controllers when the reviewer adds a comment) and `canReply: false`.
+- One thread per change the agent described, in the review diff at the change's head-side
+  range (the side and URI `review-comments.js` uses for GitHub threads), author "Your
+  agent" with the sparkle, one comment whose markdown body is: `**Changed** — what` (or
+  May change / New / Same behaviour, new way), then **Before**, **After**, **When** as
+  short paragraphs when given, then **Affects** as a list where each name is a command link
+  that opens the call site (the caller row's "Open caller"), then the engine's verdict
+  sentence in italics, then "Written by your agent; the facts come from the engine." Nothing
+  the agent did not say is added, and an `affects` name the engine does not know is left
+  out, as `agent-cards.js` already does.
+- Threads are made when a review diff opens and a result for the shown head exists, rebuilt
+  on a new analysis or result, and disposed on Undo or when the result no longer fits the
+  branch (the stale case of `agent-cards.js`); a thread never outlives the result it came
+  from. The pattern is `review-comments.js`.
+- Expansion as G16 decides. With the proposal: expanded for a change in the attention set
+  (G15), collapsed otherwise; the CodeLens agent line (`agent-notes.js`) is removed for
+  changes that have a thread.
+- Thread title actions: **Mark reviewed** (the row's tick), **Reply in next round** (a
+  feedback draft at that line, F1; local reviews and checked-out pull requests only), and,
+  for a pull request under review, **Post to the PR** (the existing review-comment path,
+  with the note's text prefilled for editing; never automatic). Local reviews have no
+  Post.
+- The Comments panel lists the notes under the controller's label; the Changes rows and
+  Details keep the agent's one line (step 2 of Part AI) so the tree and the diff agree.
+- Tests: placement per change on the hono e2e fixture (range, side, body text recorded as
+  a characterization); rebuild and dispose on result change, Undo and a stale result; no
+  commenting ranges offered; each action wired; nothing posted by any path a test can
+  reach without the explicit Post action.
+
 Owner check: U8's usability walk, repeated after L1–L3 with the one question "what do you
-look at first?", on the same t3code PR.
+look at first?", on the same t3code PR; repeated after L4 and L6 with an agent result.
 
 ## Order, and changes to `RELEASE_PLAN.md`
 
@@ -525,8 +604,9 @@ above moved onto that row. The review tab (U1) and the agent's behaviour review 
 `impactTree.cards.enabled` and `impactTree.agents.enabled`.
 
 **Part L (proposed 2026-10-30; G13 and G14 decided the same day; L1 merged as PR #108,
-L2 as #109, L5 as #110 and L3 as #111, all 2026-10-30; L4 waits for W1; the editor walk
-on the t3code PR is the owner's next check).** L1–L3 and L5 fix what the screenshot study found and
+L2 as #109, L5 as #110 and L3 as #111, all 2026-10-30; L4 revised and L6 proposed the same
+day after a second screenshot; L4 no longer waits for W1 and runs next, then L6, once
+G15 and G16 are decided; the editor walk on the t3code PR is the owner's next check).** L1–L3 and L5 fix what the screenshot study found and
 touch only the sidebar's shape and words, so they can run next, before W1, once G13 and
 G14 are decided; L4 waits for W1. If v1 ships first, L1–L3 go in the first release after
 it, ahead of W1–W2.
