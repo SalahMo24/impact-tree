@@ -69,7 +69,7 @@ test('all marking routes patch Details, refresh one file, and leave unchanged de
     await tree.getChildren(current[0]);
     await settleBatches();
     assert.equal(env.isTicked(first), on);
-    assert.equal(stripOf(details).count, on ? '1 of 4 reviewed' : '0 of 4 reviewed');
+    assert.equal(stripOf(details).count, on ? '1 of 1 looked at' : '0 of 1 looked at');
   }
   assert.deepEqual(treeEvents, [aFile, aFile, aFile]);
   assert.equal(progress.length, 3);
@@ -81,7 +81,10 @@ test('all marking routes patch Details, refresh one file, and leave unchanged de
   const posted = details.posted.length;
   env.tick(user, true);
   await settleBatches();
-  assert.deepEqual(details.posted.slice(posted).map(m => m.type), ['progress'], 'an unrelated tick patches only the strip');
+  assert.deepEqual(details.posted.slice(posted), [], 'a row that does not need attention leaves the strip as it was');
+  env.tick(first, false);
+  await settleBatches();
+  assert.deepEqual(details.posted.slice(posted).map(m => m.type), ['progress'], 'a tick that moves the strip patches only the strip');
   assert.equal(details.loads, loads);
   assert.equal(env.seen.executed.slice(beforeCommands).filter(([name]) => name === 'vscode.diff' || name === 'vscode.open').length, 0);
 }));
@@ -97,7 +100,7 @@ test('one file gesture updates the progress strip, and repeated marks publish no
   env.lensProvider().provider.onDidChangeCodeLenses(() => lenses++);
   tree.setCheckedBatch([{ row: aFile, on: true }, { row: notes, on: true }]);
   assert.ok(env.isTicked(first) && env.isTicked(second));
-  assert.equal(stripOf(details).count, '3 of 4 reviewed');
+  assert.equal(stripOf(details).count, '1 of 1 looked at');
   assert.equal(details.loads, loads);
   assert.deepEqual(events, [aFile, notes]);
   assert.equal(progress.length, 1, 'one notification for the gesture');
@@ -113,9 +116,9 @@ test('one file gesture updates the progress strip, and repeated marks publish no
   await settleBatches();
   assert.equal(lenses, 1, 'a plain file has no review lenses');
   tree.clearReviewed();
-  assert.equal(env.seen.statusBar.text.split(' ')[1], '4');
+  assert.match(env.seen.statusBar.text, /^\$\(checklist\) 1 needs attention · 0 of 1 looked at · /);
   assert.equal(env.isTicked(first), false);
-  assert.equal(stripOf(details).count, '0 of 4 reviewed');
+  assert.equal(stripOf(details).count, '0 of 1 looked at');
   assert.equal(details.loads, loads);
 }));
 
@@ -222,16 +225,16 @@ test('decoration changes are scoped, deduplicated, and flushed once across repea
 test('any tick updates the progress strip by a patch, also a tick of a row other than the one shown', () => withEnv(async env => {
   const { first, second, user } = await prepare(env);
   const details = env.openDetails();
-  env.select([first]);
+  env.select([second]);
   const loads = details.loads, page = details.webview.html;
-  assert.deepEqual(stripOf(details), { count: '0 of 4 reviewed', attention: '1 needs attention' });
+  assert.deepEqual(stripOf(details), { count: '0 of 1 looked at', attention: '1 needs attention' });
   env.tick(user, true);
-  assert.equal(stripOf(details).count, '1 of 4 reviewed');
-  assert.deepEqual(details.posted.map(m => m.type), ['progress']);
+  assert.deepEqual(stripOf(details), { count: '0 of 1 looked at', attention: '1 needs attention' }, 'a row that does not need attention is not counted');
+  assert.deepEqual(details.posted, [], 'and the strip is not re-sent');
 
-  env.tick(first, true);
-  assert.deepEqual(stripOf(details), { count: '2 of 4 reviewed', attention: 'nothing needs attention' });
-  assert.deepEqual(details.posted.map(m => m.type), ['progress', 'progress'], 'only strip patches: the page has no per-row fields');
+  env.tick(first, true);   // a row other than the one shown
+  assert.deepEqual(stripOf(details), { count: '1 of 1 looked at', attention: 'nothing needs attention' });
+  assert.deepEqual(details.posted.map(m => m.type), ['progress'], 'only a strip patch: the page has no per-row fields');
 
   details.posted.length = 0;
   env.tick(second, false); // already unreviewed: nothing changes
@@ -245,35 +248,35 @@ test('the strip is on the page with nothing selected and the meter follows ticks
   const { first, second } = await prepare(env);
   const details = env.openDetails();
   assert.match(details.displayHtml, /Select a change in the tree/);
-  assert.equal(stripOf(details).count, '0 of 4 reviewed');
+  assert.equal(stripOf(details).count, '0 of 1 looked at');
   env.tick(first, true);
   env.tick(second, true);
-  assert.equal(stripOf(details).count, '2 of 4 reviewed');
-  assert.match(details.webview.html, /<progress max="4" value="0" data-progress-meter>/, 'the stored document is the render, not the patches');
+  assert.equal(stripOf(details).count, '1 of 1 looked at');
+  assert.match(details.webview.html, /<progress max="1" value="0" data-progress-meter>/, 'the stored document is the render, not the patches');
   const page = createPage(details.webview.html);
   await details.send(page.sent[0]);
   for (const message of details.posted) page.receive(message);
-  assert.equal(page.nodes.get('[data-progress-meter]').getAttribute('value'), '2');
-  assert.equal(page.nodes.get('[data-progress-meter]').getAttribute('max'), '4');
+  assert.equal(page.nodes.get('[data-progress-meter]').getAttribute('value'), '1');
+  assert.equal(page.nodes.get('[data-progress-meter]').getAttribute('max'), '1');
 }));
 
 test('the progress patch is token checked, and the ready handshake restores a missed strip update', () => withEnv(async env => {
-  const { first, user } = await prepare(env);
+  const { first } = await prepare(env);
   const details = env.openDetails();
   env.select([first]);
   const page = createPage(details.webview.html);
   const count = page.nodes.get('[data-progress-count]');
-  env.tick(user, true); // never reaches `page`, as before its script started
+  env.tick(first, true); // never reaches `page`, as before its script started
   const before = details.posted.length;
   await details.send(page.sent[0]);
   const resent = details.posted.slice(before).find(m => m.type === 'progress');
   assert.ok(resent, 'ready re-sends the current strip');
   page.receive({ ...resent, token: 'obsolete', model: { ...resent.model, countText: 'wrong' } });
-  assert.equal(count.textContent, '0 of 4 reviewed');
-  page.receive({ ...resent, model: { ...resent.model, reviewed: 9 } });
-  assert.equal(count.textContent, '0 of 4 reviewed', 'an impossible model is ignored');
+  assert.equal(count.textContent, '0 of 1 looked at');
+  page.receive({ ...resent, model: { ...resent.model, looked: 9 } });
+  assert.equal(count.textContent, '0 of 1 looked at', 'an impossible model is ignored');
   page.receive(resent);
-  assert.equal(count.textContent, '1 of 4 reviewed');
+  assert.equal(count.textContent, '1 of 1 looked at');
   assert.equal(page.nodes.get('[data-progress-meter]').getAttribute('value'), '1');
 }));
 

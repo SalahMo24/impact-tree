@@ -203,7 +203,7 @@ function renderReviewFileItem(vscode, n, view) {
   ].filter(Boolean).join('  ·  ');
   item.tooltip = new vscode.MarkdownString([
     ...pathTreeMarkdown(n.relPath), ...(n.status ? ['', `_${n.status}_`] : []), '',
-    `${rows.length} change${rows.length === 1 ? '' : 's'}, ${attentionCountText(attention.length)}, ${left.length} left to review`,
+    `${rows.length} change${rows.length === 1 ? '' : 's'}, ${attentionCountText(attention.length)}, ${rows.length - left.length} marked reviewed`,
     ...(viewed ? ['', `_${viewed.tooltip}_`] : []),
   ].join('\n'));
   // The failed note makes Retry available through the context value (package.json `when`).
@@ -235,7 +235,7 @@ function renderFolderItem(vscode, n, view) {
   item.description = attention.length ? attentionCountText(attention.length) : '';
   item.tooltip = new vscode.MarkdownString([
     `**${n.relPath}/**`, '',
-    `${files}, ${rows.length} change${rows.length === 1 ? '' : 's'}, ${attentionCountText(attention.length)}, ${left.length} left to review`,
+    `${files}, ${rows.length} change${rows.length === 1 ? '' : 's'}, ${attentionCountText(attention.length)}, ${rows.length - left.length} marked reviewed`,
   ].join('\n'));
   item.contextValue = 'folder';
   applyCheckbox(vscode, item, n, view);
@@ -475,6 +475,20 @@ function renderSpacerItem(vscode) {
 }
 
 /**
+ * The calm state's container: "Browse all N changes", collapsed, holding the file rows. It
+ * has no checkbox and no commands; the files under it keep theirs.
+ * @param {any} vscode
+ * @param {TreeRow} n A `browse` row.
+ */
+function renderBrowseItem(vscode, n) {
+  const item = new vscode.TreeItem(n.label, n.expanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
+  item.iconPath = new vscode.ThemeIcon(n.icon || 'list-flat');
+  item.tooltip = 'Nothing here needs attention. Open it to read the changes anyway; each can still be marked reviewed.';
+  item.contextValue = 'browse';
+  return item;
+}
+
+/**
  * Renders one row as a TreeItem. Every expandable row starts collapsed, except a file row
  * the provider marks `expanded`.
  * @param {any} vscode The vscode module (or a stand-in with the same constructors).
@@ -487,6 +501,7 @@ function renderTreeItem(vscode, n, view) {
   if (n.type === 'reviewFile') return renderReviewFileItem(vscode, n, view);
   if (n.type === 'file') return renderFileItem(vscode, n, view);
   if (n.type === 'spacer') return renderSpacerItem(vscode);
+  if (n.type === 'browse') return renderBrowseItem(vscode, n);
   const collapsible = n.type === 'message' || n.cycle
     ? vscode.TreeItemCollapsibleState.None
     : vscode.TreeItemCollapsibleState.Collapsed;

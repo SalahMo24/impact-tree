@@ -4,6 +4,7 @@
 // no timers). Each test names one behaviour.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { rootFiles } = require('./root-files');
 const baseVscode = require('./vscode-stub');
 const { createTreeProvider } = require('../src/views/changes/tree-provider');
 const { renderTreeItem } = require('../src/views/changes/tree-item-renderer');
@@ -89,7 +90,7 @@ function setup(result, { github = {}, target = TARGET, maxQueuedWrites } = {}) {
   const views = {
     provider, fake, repaints, review, make, sync: () => sync,
     get presentations() { return presentations; },
-    files: async () => (await provider.getChildren()).filter((r) => r.type === 'reviewFile' || r.type === 'file'),
+    files: async () => (await rootFiles(provider)).filter((r) => r.type === 'reviewFile' || r.type === 'file'),
     file: async (relPath) => (await views.files()).find((f) => f.relPath === relPath),
     rows: async (relPath) => provider.changeRowsOf(relPath),
     item: (row) => provider.getTreeItem(row),

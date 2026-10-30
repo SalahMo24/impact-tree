@@ -160,7 +160,7 @@ test('the document has a strict CSP, a nonce on every script and style, and noth
   const result = resultOf({ allChanged: [c], otherFiles: [{ path: 'n.md', status: 'added' }], tierA: true });
   const files = rowsOf(result);
   for (const row of [null, files[0], files[0].rows[0], files[1]]) {
-    const html = render(row, result, progressPresentation({ total: 2, left: 1, attention: 1 }));
+    const html = render(row, result, progressPresentation({ total: 2, left: 1, attention: 1, attentionTotal: 1 }));
     const csp = /<meta http-equiv="Content-Security-Policy" content="([^"]*)">/.exec(html);
     assert.ok(csp, 'a CSP meta tag');
     assert.equal(csp[1], `default-src 'none'; style-src ${CSP_SOURCE} 'nonce-${NONCE}'; script-src 'nonce-${NONCE}';`);
@@ -181,23 +181,32 @@ test('colours come only from theme variables', () => {
   assert.match(css, /var\(--vscode-button-background\)/);
 });
 
-test('the progress strip shows the reviewed count and attention, and drives a <progress> element; no source line or percentage', () => {
-  const html = render(null, null, progressPresentation({ line: 'PR #15 against main', total: 8, left: 5, attention: 2 }));
-  assert.equal(textOf(html), '3 of 8 reviewed 2 need attention 3 of 8 reviewed Select a change in the tree, or put the cursor in a changed function.');
-  assert.match(html, /<progress max="8" value="3" data-progress-meter>/);
+test('the progress strip shows how many rows that need attention were looked at, and drives a <progress> element; no source line or percentage', () => {
+  const html = render(null, null, progressPresentation({ line: 'PR #15 against main', total: 8, left: 5, attention: 2, attentionTotal: 5 }));
+  assert.equal(textOf(html), '3 of 5 looked at 2 need attention 3 of 5 looked at Select a change in the tree, or put the cursor in a changed function.');
+  assert.match(html, /<progress max="5" value="3" data-progress-meter>/);
   assert.match(html, /<span class="lv0" data-progress-attention>2 need attention<\/span>/);
   assert.doesNotMatch(html, /PR #15|%</);
-  const done = render(null, null, progressPresentation({ total: 2, left: 0, attention: 0 }));
+  const done = render(null, null, progressPresentation({ total: 2, left: 0, attention: 0, attentionTotal: 2 }));
   assert.match(done, /<span class="lv2" data-progress-attention>nothing needs attention<\/span>/);
-  assert.match(textOf(done), /^2 of 2 reviewed nothing needs attention/);
+  assert.match(textOf(done), /^2 of 2 looked at nothing needs attention/);
   assert.match(/<style[^>]*>([\s\S]*?)<\/style>/.exec(html)[1], /\.progress\s*\{[^}]*position: sticky; top: 0/);
-  assert.deepEqual(progressPresentation({ total: 4, left: 1, attention: 1 }),
-    { reviewed: 3, total: 4, countText: '3 of 4 reviewed', attentionText: '1 needs attention', attentionClass: 'lv0' });
+  assert.deepEqual(progressPresentation({ total: 4, left: 1, attention: 1, attentionTotal: 2 }),
+    { looked: 1, max: 2, countText: '1 of 2 looked at', attentionText: '1 needs attention', attentionClass: 'lv0' });
+});
+
+test('with nothing that needs attention the strip says how many changes there are and the meter is full', () => {
+  assert.deepEqual(progressPresentation({ total: 107, left: 107, attention: 0, attentionTotal: 0 }),
+    { looked: 107, max: 107, countText: '107 changes', attentionText: 'nothing needs attention', attentionClass: 'lv2' });
+  assert.equal(progressPresentation({ total: 1, left: 1, attention: 0, attentionTotal: 0 }).countText, '1 change');
+  const html = render(null, null, progressPresentation({ total: 3, left: 3, attention: 0, attentionTotal: 0 }));
+  assert.equal(textOf(html), '3 changes nothing needs attention 3 changes Select a change in the tree, or put the cursor in a changed function.');
+  assert.match(html, /<progress max="3" value="3" data-progress-meter>/);
 });
 
 test('there is no strip without counting rows', () => {
   assert.equal(progressPresentation(null), null);
-  assert.equal(progressPresentation({ total: 0, left: 0, attention: 0 }), null);
+  assert.equal(progressPresentation({ total: 0, left: 0, attention: 0, attentionTotal: 0 }), null);
   assert.doesNotMatch(withoutScript(render(null, null)), /<progress|data-progress/);
 });
 
@@ -237,17 +246,19 @@ test('the page script sends only the checkout click, with its render token; othe
 
 test('the page script patches the progress strip as text, only for its own token and a well-formed model', () => {
   const page = runScript(render(null, null));
-  const model = progressPresentation({ total: 5, left: 2, attention: 0 });
+  const model = progressPresentation({ total: 5, left: 2, attention: 0, attentionTotal: 3 });
   page.receive({ type: 'progress', token: 'other', model });
   page.receive({ type: 'origin', token: NONCE, text: 'at cursor, line 3' });
   page.receive({ type: 'review', token: NONCE, model: { id: 'x', reviewed: true, buttonText: 'b', summaryText: null } });
-  page.receive({ type: 'progress', token: NONCE, model: { ...model, reviewed: 9 } });
+  page.receive({ type: 'progress', token: NONCE, model: { ...model, looked: 9 } });
+  page.receive({ type: 'progress', token: NONCE, model: { ...model, max: 0 } });
+  page.receive({ type: 'progress', token: NONCE, model: { countText: '3 of 5 reviewed', attentionText: 'x', attentionClass: 'lv2', reviewed: 3, total: 5 } });
   assert.equal(page.node('[data-progress-count]').textContent, '', 'a foreign token, an old message type or a bad model changes nothing');
   page.receive({ type: 'progress', token: NONCE, model });
-  assert.equal(page.node('[data-progress-count]').textContent, '3 of 5 reviewed');
+  assert.equal(page.node('[data-progress-count]').textContent, '3 of 3 looked at');
   assert.equal(page.node('[data-progress-attention]').textContent, 'nothing needs attention');
   assert.equal(page.node('[data-progress-attention]').attrs.class, 'lv2');
-  assert.deepEqual(page.node('[data-progress-meter]').attrs, { max: '5', value: '3' });
+  assert.deepEqual(page.node('[data-progress-meter]').attrs, { max: '3', value: '3' });
 });
 
 test('listCallerRows lists callers grouped by file one by one, test callers included', () => {

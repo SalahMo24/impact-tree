@@ -110,13 +110,16 @@ test('a tick patches the progress strip without reloading the page', () => withE
   const { a } = await rowsOf(env);
   env.select([a[1]]);
   const loads = details.loads;
+  const before = details.posted.length;
   env.tick(a[1], true);
+  assert.equal(details.posted.length, before, '`reach` does not need attention: the strip does not move');
+  env.tick(a[0], true);
   assert.equal(details.loads, loads, 'not reloaded');
   assert.equal(details.posted.at(-1).type, 'progress');
-  assert.equal(details.posted.at(-1).model.countText, '1 of 4 reviewed');
-  assert.equal(stripTextOf(details), '1 of 4 reviewed 1 needs attention 1 of 4 reviewed');
+  assert.equal(details.posted.at(-1).model.countText, '1 of 1 looked at');
+  assert.equal(stripTextOf(details), '1 of 1 looked at nothing needs attention 1 of 1 looked at');
   const posted = details.posted.length;
-  env.tick(a[1], true);
+  env.tick(a[0], true);
   assert.equal(details.posted.length, posted, 'the same counts post nothing');
 }));
 
@@ -165,13 +168,13 @@ test('the strip shows the counts of a pull request preview, with nothing selecte
   await env.preview(pull(7));
   const details = env.openDetails();
   assert.equal(textOf(details), NOT_FOLLOWED);
-  assert.equal(stripTextOf(details), '0 of 4 reviewed 1 needs attention 0 of 4 reviewed', 'no source line and no percentage');
+  assert.equal(stripTextOf(details), '0 of 1 looked at 1 needs attention 0 of 1 looked at', 'no source line and no percentage');
 }));
 
 test('the strip of a local review shows the same counts', () => withEnv(async (env) => {
   useResult(env);
   await env.refresh();
-  assert.equal(stripTextOf(env.openDetails()), '0 of 4 reviewed 1 needs attention 0 of 4 reviewed');
+  assert.equal(stripTextOf(env.openDetails()), '0 of 1 looked at 1 needs attention 0 of 1 looked at');
 }));
 
 test('in a preview only the pull request\'s head side is followed', () => withEnv(async (env) => {
@@ -439,3 +442,25 @@ test('selecting a folder of the tree layout changes nothing in Details', () => w
   assert.equal(details.displayHtml, shown, 'the previous row stays shown');
   assert.deepEqual(env.seen.revealed, []);
 }, { settings: { fileListLayout: 'tree' } }));
+
+test('with nothing to flag the strip counts the changes, and selecting the "Browse all" row changes nothing in Details', () => withEnv(async (env) => {
+  const a = path.join(env.dir, 'a.ts'), b = path.join(env.dir, 'b.ts');
+  const body = [{ id: 'body', label: 'body' }];
+  const one = { ...finding('one', a, 10), startLine: 10, endLine: 12, kinds: body, throwsAdded: [] };
+  const two = { ...finding('two', b, 5), startLine: 5, endLine: 6, kinds: body, throwsAdded: [] };
+  env.hooks.localResult = (o) => ({ ...localResult(o), allChanged: [one, two], findings: [], fileStatus: { 'a.ts': 'modified', 'b.ts': 'modified' } });
+  await env.refresh();
+  const details = env.openDetails();
+  assert.equal(stripTextOf(details), '2 changes nothing needs attention 2 changes');
+  const posted = details.posted.length;
+  const [, browse] = await env.tree().getChildren();
+  assert.equal(browse.type, 'browse');
+  const [fileA] = await env.tree().getChildren(browse);
+  const [oneRow] = (await env.tree().getChildren(fileA)).filter((r) => r.type !== 'spacer');
+  env.select([oneRow]);
+  const shown = details.displayHtml;
+  env.select([browse]);
+  assert.equal(details.displayHtml, shown, 'the previous row stays shown');
+  env.tick(oneRow, true);
+  assert.equal(details.posted.length, posted, 'a quiet row reviewed leaves the strip as it was');
+}));

@@ -7,6 +7,7 @@ const vscode = require('./vscode-stub');
 const { createTreeProvider } = require('../src/views/changes/tree-provider');
 const { createReviewState } = require('../src/session/review-state');
 const { buildReviewSummary } = require('../src/views/changes/review-tree-model');
+const { rootFiles } = require('./root-files');
 
 const { Checked, Unchecked } = vscode.TreeItemCheckboxState;
 const { Expanded, Collapsed, None } = vscode.TreeItemCollapsibleState;
@@ -62,7 +63,7 @@ function viewOf(result, { review = memoryReview(), state = {}, deps = {}, resolv
     resolver, review, ...deps,
   });
   const item = (row) => provider.getTreeItem(row);
-  const files = async () => (await provider.getChildren()).filter((r) => r.type === 'reviewFile' || r.type === 'file');
+  const files = async () => (await rootFiles(provider)).filter((r) => r.type === 'reviewFile' || r.type === 'file');
   const fileAt = async (relPath) => (await files()).find((f) => f.relPath === relPath);
   return { provider, review, item, files, fileAt };
 }
@@ -113,7 +114,7 @@ test('caller, caller-file, message and tests rows have no checkbox', async () =>
   const lone = change('src/a.ts', 'lone', 30, { callerState: 'resolved', callers: [callerOf('src/other.ts', 'other', true)] });
   const { provider, item } = viewOf(resultOf({ allChanged: [holder, lone], fileStatus: { 'src/a.ts': 'modified' } }),
     { resolver: { incomingWithStatus: async () => ({ callers: [callerOf('src/deep.ts', 'deep', false)], complete: true }) } });
-  const [file] = await provider.getChildren();
+  const [file] = await rootFiles(provider);
   const [holderRow, loneRow] = await provider.getChildren(file);
   const under = [...await provider.getChildren(holderRow), ...await provider.getChildren(loneRow)];
   assert.deepEqual(under.map((r) => r.type), ['callerFile', 'message', 'message', 'caller', 'message']);
@@ -144,7 +145,7 @@ test('a tick stored by the old tree on a top-level change shows ticked in the ne
     getState: () => ({ result: resultOf({ allChanged: [target], fileStatus: { 'a.ts': 'modified' } }), rel: (f) => f.replace(`${root}/`, '') }),
     resolver: {}, review,
   });
-  const [fileRow] = await provider.getChildren();
+  const [fileRow] = await rootFiles(provider);
   const [row] = await provider.getChildren(fileRow);
   assert.equal(row.label, 'target');
   assert.equal(provider.getTreeItem(row).checkboxState, Checked);
@@ -171,7 +172,7 @@ test('the file row shows the unreviewed attention count as words, done/total, th
   assert.equal(item(a).label, 'a.ts');
   assert.equal(item(a).description, '2 need attention  ·  0/4  ·  src');
   assert.match(item(a).tooltip.value, /```\nsrc\/\n└─ a\.ts\n```/, 'the path is drawn as a folder tree');
-  assert.match(item(a).tooltip.value, /4 changes, 2 need attention, 4 left to review/);
+  assert.match(item(a).tooltip.value, /4 changes, 2 need attention, 0 marked reviewed/);
   const [bad, gone] = await provider.getChildren(a);
   provider.setChecked(bad, true);
   assert.equal(item(a).description, '1 needs attention  ·  1/4  ·  src', 'singular once one is left');
@@ -179,17 +180,19 @@ test('the file row shows the unreviewed attention count as words, done/total, th
   assert.equal(item(a).description, '2/4  ·  src', 'no attention left, no count');
 });
 
-test('the summary counts unreviewed attention rows and what is left, and follows the ticks', async () => {
+test('the summary counts unreviewed attention rows and how many were looked at, and follows the ticks', async () => {
   const { provider, fileAt } = viewOf(sampleResult(), { state: { source: { kind: 'local' } } });
   assert.deepEqual(provider.summarize(), {
-    message: 'Branch + uncommitted · 2 need attention · 6 of 6 left',
-    badge: { value: 6, tooltip: '6 of 6 left to review' },
+    message: 'Branch + uncommitted · 2 need attention · 0 of 2 looked at',
+    badge: { value: 2, tooltip: '2 of 2 need attention still to look at' },
   });
   provider.setChecked(await fileAt('src/a.ts'), true);
-  assert.equal(provider.summarize().message, 'Branch + uncommitted · 0 need attention · 2 of 6 left');
+  assert.deepEqual(provider.summarize(), { message: 'Branch + uncommitted · 0 need attention · 2 of 2 looked at', badge: undefined },
+    'ticking the file looks at both rows that need attention; no badge once none is left');
   provider.setChecked(await fileAt('src/b.ts'), true);
   provider.setChecked(await fileAt('notes.md'), true);
-  assert.deepEqual(provider.summarize(), { message: 'Branch + uncommitted · 0 need attention · 0 of 6 left', badge: undefined });
+  assert.deepEqual(provider.summarize(), { message: 'Branch + uncommitted · 0 need attention · 2 of 2 looked at', badge: undefined },
+    'ticking the quiet rows changes nothing: only the rows that need attention are counted');
 });
 
 test('there is no summary without a result, or while a placeholder is shown', () => {
@@ -203,17 +206,29 @@ test('there is no summary without a result, or while a placeholder is shown', ()
 });
 
 test('the summary names the PR for a preview or a checkout, and the mode for a local review', () => {
-  const counts = { attention: 3, left: 70, total: 71 };
+  const counts = { attention: 3, attentionTotal: 5, left: 70, total: 71 };
   const result = resultOf({ base: { ref: 'main', sha: 'x' } });
-  assert.equal(buildReviewSummary(result, { kind: 'pr', pr: { number: 15 } }, counts).message, 'PR #15 · 3 need attention · 70 of 71 left');
-  assert.equal(buildReviewSummary(result, { kind: 'checkout', pr: { number: 9 }, sha: 'abc' }, counts).message, 'PR #9 · 3 need attention · 70 of 71 left');
-  assert.equal(buildReviewSummary(result, { kind: 'local' }, counts).message, 'Branch + uncommitted · 3 need attention · 70 of 71 left');
-  assert.equal(buildReviewSummary(result, null, counts).message, 'Branch + uncommitted · 3 need attention · 70 of 71 left');
+  assert.equal(buildReviewSummary(result, { kind: 'pr', pr: { number: 15 } }, counts).message, 'PR #15 · 3 need attention · 2 of 5 looked at');
+  assert.equal(buildReviewSummary(result, { kind: 'checkout', pr: { number: 9 }, sha: 'abc' }, counts).message, 'PR #9 · 3 need attention · 2 of 5 looked at');
+  assert.equal(buildReviewSummary(result, { kind: 'local' }, counts).message, 'Branch + uncommitted · 3 need attention · 2 of 5 looked at');
+  assert.equal(buildReviewSummary(result, null, counts).message, 'Branch + uncommitted · 3 need attention · 2 of 5 looked at');
   const fellBack = resultOf({ mode: 'branch', requestedMode: 'pr', base: { ref: 'origin/main', sha: 'x' } });
-  assert.equal(buildReviewSummary(fellBack, { kind: 'local' }, { attention: 1, left: 1, total: 1 }).message,
-    'Branch + uncommitted (requested Branch vs base) · 1 needs attention · 1 of 1 left', 'a fallback mode says what was asked for');
-  assert.deepEqual(buildReviewSummary(result, null, { attention: 0, left: 1, total: 2 }).badge, { value: 1, tooltip: '1 of 2 left to review' });
-  assert.equal(buildReviewSummary(result, null, { attention: 0, left: 0, total: 2 }).badge, undefined, 'nothing left, no badge');
+  assert.equal(buildReviewSummary(fellBack, { kind: 'local' }, { attention: 1, attentionTotal: 1, left: 1, total: 1 }).message,
+    'Branch + uncommitted (requested Branch vs base) · 1 needs attention · 0 of 1 looked at', 'a fallback mode says what was asked for');
+  assert.deepEqual(buildReviewSummary(result, null, counts).badge, { value: 3, tooltip: '3 of 5 need attention still to look at' });
+  assert.equal(buildReviewSummary(result, null, { attention: 0, attentionTotal: 5, left: 60, total: 71 }).badge, undefined,
+    'every row that needs attention was looked at: no badge, though rows are left');
+  assert.equal(buildReviewSummary(result, null, { attention: 0, attentionTotal: 5, left: 60, total: 71 }).message,
+    'Branch + uncommitted · 0 need attention · 5 of 5 looked at');
+});
+
+test('a review with nothing that needs attention says so, counts its changes and has no badge', () => {
+  const result = resultOf({ base: { ref: 'main', sha: 'x' } });
+  const calm = (total, left) => buildReviewSummary(result, { kind: 'pr', pr: { number: 27095 } }, { attention: 0, attentionTotal: 0, left, total });
+  assert.deepEqual(calm(107, 107), { message: 'PR #27095 · 107 changes · nothing needs attention', badge: undefined });
+  assert.equal(calm(1, 0).message, 'PR #27095 · 1 change · nothing needs attention', 'singular, and the same once everything is ticked');
+  assert.equal(buildReviewSummary(result, null, { attention: 0, attentionTotal: 0, left: 2, total: 2 }, 'unreviewed', ' · 1 unresolved thread').message,
+    'Branch + uncommitted · 2 changes · nothing needs attention · 1 unresolved thread · filter: unreviewed', 'the threads and the filter keep their place');
 });
 
 // ---- filters, ids, parents and the walk -------------------------------------------------
@@ -275,11 +290,11 @@ test('turning one filter on turns the other off, and the active one again return
 
 test('the summary message names the active filter', () => {
   const { provider } = viewOf(sampleResult(), { state: { source: { kind: 'local' } } });
-  assert.equal(provider.summarize().message, 'Branch + uncommitted · 2 need attention · 6 of 6 left');
+  assert.equal(provider.summarize().message, 'Branch + uncommitted · 2 need attention · 0 of 2 looked at');
   provider.toggleFilter('attention');
-  assert.equal(provider.summarize().message, 'Branch + uncommitted · 2 need attention · 6 of 6 left · filter: needs attention');
+  assert.equal(provider.summarize().message, 'Branch + uncommitted · 2 need attention · 0 of 2 looked at · filter: needs attention');
   provider.toggleFilter('unreviewed');
-  assert.equal(provider.summarize().message, 'Branch + uncommitted · 2 need attention · 6 of 6 left · filter: unreviewed');
+  assert.equal(provider.summarize().message, 'Branch + uncommitted · 2 need attention · 0 of 2 looked at · filter: unreviewed');
 });
 
 test('when a filter leaves nothing the root is one message row, after any notices', async () => {
@@ -306,8 +321,9 @@ test('getParent: a file has none, a counting row has its file, a caller has the 
   const { provider } = viewOf(resultOf({ allChanged: [holder], outside: [{ file: '/r/src/a.ts', relPath: 'src/a.ts', ranges: [[1, 2]] }],
     fileStatus: { 'src/a.ts': 'modified' } }),
   { resolver: { incomingWithStatus: async () => ({ callers: [callerOf('src/deep.ts', 'deep', false)], complete: true }) } });
-  const [file] = await provider.getChildren();
-  assert.equal(provider.getParent(file), undefined);
+  const [file] = await rootFiles(provider);
+  assert.equal(provider.getParent(file).type, 'browse', 'nothing here needs attention: the file sits in the calm state\'s container');
+  assert.equal(provider.getParent(provider.getParent(file)), undefined);
   const [change1, outsideRow] = await provider.getChildren(file);
   assert.equal(provider.getParent(change1).relPath, 'src/a.ts');
   assert.equal(provider.getParent(outsideRow).relPath, 'src/a.ts');
@@ -407,7 +423,7 @@ test('the previous unreviewed row follows the filter and the ticks, and is null 
 
 test('the counts of a shown review, and none while a placeholder is shown', async () => {
   const { provider } = viewOf(sampleResult());
-  assert.deepEqual(provider.reviewCounts(), { total: 6, left: 6, attention: 2 });
+  assert.deepEqual(provider.reviewCounts(), { total: 6, left: 6, attention: 2, attentionTotal: 2 });
   const none = createTreeProvider(vscode, { getState: () => null, resolver: {} });
   assert.equal(none.reviewCounts(), null);
   assert.equal(none.nextUnreviewed(null), null);
@@ -453,7 +469,7 @@ test('a folder\'s checkbox ticks every counting row under it, and reads ticked o
   const [src] = await provider.getChildren();
   assert.equal(item(src).checkboxState, Unchecked);
   assert.equal(item(src).description, '2 need attention', 'the stale change and the deleted symbol');
-  assert.match(item(src).tooltip.value, /3 files, 6 changes, 2 need attention, 6 left to review/);
+  assert.match(item(src).tooltip.value, /3 files, 6 changes, 2 need attention, 0 marked reviewed/);
   provider.setChecked(src, true);
   assert.equal(review.size(), 6, 'the four rows of a.ts, b.ts\'s one and engine/c.ts\'s one');
   assert.equal(item(src).checkboxState, Checked);
@@ -532,4 +548,172 @@ test('next unreviewed walks the flat order whatever the layout, and a row is rev
   assert.equal(last.label, 'notes.md', 'the flat order ends with the root file, whatever the folders');
   const counts = provider.reviewCounts();
   assert.deepEqual([counts.total, counts.left], [7, 7], 'counts read the flat rows: six rows and notes.md');
+});
+
+// ---- the calm state (gate G14): nothing needs attention ------------------------------------
+// src/a.ts holds a quiet change with a caller and a quiet change; src/engine/c.ts one quiet
+// change; notes.md has no call graph: 4 counting rows, none of which needs attention.
+function calmResult(extra = {}) {
+  const holder = change('src/a.ts', 'Holder.body', 20, { callerState: 'resolved', callers: [callerOf('src/user.ts', 'reader', true)] });
+  const lone = change('src/a.ts', 'lone', 40);
+  const engine = change('src/engine/c.ts', 'deep', 3);
+  return resultOf({
+    allChanged: [holder, lone, engine], otherFiles: [{ path: 'notes.md', status: 'added' }],
+    fileStatus: { 'src/a.ts': 'modified', 'src/engine/c.ts': 'modified', 'notes.md': 'added' }, ...extra,
+  });
+}
+const calmView = (extra = {}, opts = {}) => viewOf(calmResult(extra), opts);
+
+test('a review with nothing to flag opens on a calm row and one collapsed container holding the files', async () => {
+  const { provider, item } = calmView();
+  const roots = await provider.getChildren();
+  assert.deepEqual(roots.map((r) => [r.type, r.label]), [['message', 'Nothing to flag'], ['browse', 'Browse all 4 changes']]);
+  const calm = item(roots[0]);
+  assert.equal(calm.description, 'every caller updated, or a body-only change');
+  assert.equal(calm.iconPath.id, 'pass');
+  const browse = item(roots[1]);
+  assert.equal(browse.collapsibleState, Collapsed);
+  assert.equal(browse.iconPath.id, 'list-flat');
+  assert.equal(browse.checkboxState, undefined, 'the container has no checkbox: the files keep theirs');
+  assert.equal(browse.id, 'browse:all');
+  assert.equal(browse.contextValue, 'browse');
+  const files = await provider.getChildren(roots[1]);
+  assert.deepEqual(files.map((r) => r.relPath), ['src/a.ts', 'src/engine/c.ts', 'notes.md']);
+  assert.deepEqual(files, provider.fileRows(), 'the canonical file rows, not copies');
+  assert.equal(provider.summarize().message, 'Branch + uncommitted · 4 changes · nothing needs attention');
+  assert.equal(provider.summarize().badge, undefined);
+});
+
+test('the container says "1 change" for one', async () => {
+  const { provider } = viewOf(resultOf({ allChanged: [change('src/a.ts', 'only', 5)], fileStatus: { 'src/a.ts': 'modified' } }));
+  assert.deepEqual((await provider.getChildren()).map((r) => r.label), ['Nothing to flag', 'Browse all 1 change']);
+});
+
+test('the calm row hedges for a preview, and for an analysis that left something out', async () => {
+  const labels = async (extra) => (await calmView(extra).provider.getChildren()).filter((r) => r.type === 'message').map((r) => [r.label, r.desc]);
+  const preview = await labels({ tierA: true, changedFileCount: 3 });
+  assert.deepEqual(preview.at(-1), ['Nothing to flag in what was searched', 'check out and analyse for the full picture']);
+  const searched = ['Nothing to flag in what was searched', 'some callers or files could not be searched'];
+  assert.deepEqual((await labels({ warnings: ['gopls did not answer'] })).at(-1), searched);
+  const incomplete = change('src/a.ts', 'Holder.body', 20, { callerState: 'unknown', callersComplete: false, callersIncompleteReason: 'query-failed' });
+  assert.deepEqual((await labels({ allChanged: [incomplete] })).at(-1), searched, 'a change whose caller search did not finish');
+  assert.ok(!(await labels({ tierA: true })).some(([label]) => label === 'Nothing to flag'), 'never bare without the evidence');
+});
+
+test('anything that needs attention keeps the plain list: no calm row, no container', async () => {
+  const { provider } = viewOf(sampleResult());
+  assert.deepEqual((await provider.getChildren()).map((r) => r.type), ['reviewFile', 'reviewFile', 'file']);
+  const extra = { allChanged: [...calmResult().allChanged, stale('src/b.ts', 'bad', 5)],
+    fileStatus: { 'src/a.ts': 'modified', 'src/engine/c.ts': 'modified', 'src/b.ts': 'modified', 'notes.md': 'added' } };
+  const withBad = calmView(extra);
+  assert.ok((await withBad.provider.getChildren()).every((r) => r.type !== 'browse' && r.label !== 'Nothing to flag'));
+});
+
+test('getParent: a file sits under the container, a counting row under its file, and the container has none', async () => {
+  const { provider } = calmView();
+  const [, browse] = await provider.getChildren();
+  const [a, c, notes] = await provider.getChildren(browse);
+  for (const file of [a, c, notes]) assert.equal(provider.getParent(file), browse, file.relPath);
+  assert.equal(provider.getParent(browse), undefined, 'the sidebar puts it under the review\'s host');
+  const [holder] = await provider.getChildren(a);
+  assert.equal(provider.getParent(holder), a);
+  // a reveal climbs the whole chain: change, file, container, host
+  const chain = [];
+  for (let row = holder; row; row = provider.getParent(row)) chain.push(row.type);
+  assert.deepEqual(chain, ['finding', 'reviewFile', 'browse']);
+});
+
+test('the sidebar finds the container\'s parent through its host when the review tree has none', async () => {
+  const { createReviewSidebar } = require('../src/views/sidebar/review-sidebar');
+  const { provider } = calmView();
+  const sidebar = createReviewSidebar(vscode, { tree: provider, getHost: () => ({ kind: 'local', mode: 'branch' }) });
+  sidebar.setSources({ onDidChangeTreeData: () => ({ dispose() {} }), getTreeItem: (n) => new vscode.TreeItem(n.label),
+    getChildren: async (n) => (n ? [] : [{ type: 'mode', label: 'Branch', args: ['branch'] }]) });
+  const host = await sidebar.hostRow();
+  const rows = await sidebar.getChildren(host);
+  const browse = rows.find((r) => r.type === 'browse');
+  assert.ok(browse, 'the container is among the review rows');
+  assert.equal(sidebar.getParent(browse), host);
+  const [a] = await sidebar.getChildren(browse);
+  assert.equal(sidebar.getParent(a), browse);
+});
+
+test('ticks, counts, the walk and line lookup see the files through the container', async () => {
+  const { provider, review, item } = calmView();
+  const [, browse] = await provider.getChildren();
+  const [a, c] = await provider.getChildren(browse);
+  assert.deepEqual(provider.reviewCounts(), { total: 4, left: 4, attention: 0, attentionTotal: 0 });
+  provider.setChecked(a, true);
+  assert.equal(item(a).checkboxState, Checked);
+  assert.equal(review.size(), 2);
+  assert.deepEqual(provider.reviewCounts(), { total: 4, left: 2, attention: 0, attentionTotal: 0 }, 'quiet rows are not counted against the reviewer, so only `left` moves');
+  assert.equal(provider.summarize().message, 'Branch + uncommitted · 4 changes · nothing needs attention', 'and the message does not move');
+  assert.equal(provider.nextUnreviewed(null).label, 'deep');
+  assert.equal(provider.previousUnreviewed(null).label, 'notes.md');
+  assert.equal(provider.nextUnreviewed(a).label, 'deep');
+  assert.equal(provider.rowAtLine('src/engine/c.ts', 4).label, 'deep');
+  assert.equal(provider.rowById('file:src/engine/c.ts'), c);
+  assert.deepEqual(provider.changeRowsOf('src/a.ts').map((r) => r.label), ['Holder.body', 'lone']);
+  provider.clearReviewed();
+  assert.equal(provider.reviewCounts().left, 4);
+  assert.equal(item(a).checkboxState, Unchecked);
+});
+
+test('a tick repaints its file, not the root: the calm state does not move', async () => {
+  const delivering = { ...vscode, EventEmitter: class {
+    constructor() { const listeners = []; this.event = (l) => { listeners.push(l); return { dispose() {} }; }; this.fire = (v) => { for (const l of listeners) l(v); }; this.dispose = () => { listeners.length = 0; }; }
+  } };
+  const result = calmResult();
+  const provider = createTreeProvider(delivering, {
+    getState: () => ({ result, rowDetail: 'hover', rel: (f) => f.replace('/r/', ''), absPath: (p) => `/r/${p}` }),
+    resolver: {}, review: memoryReview(),
+  });
+  const fired = [];
+  provider.onDidChangeTreeData((row) => fired.push(row === undefined ? 'root' : `${row.type}:${row.label}`));
+  const [, browse] = await provider.getChildren();
+  const [a] = await provider.getChildren(browse);
+  provider.setChecked(a, true);
+  assert.deepEqual(fired, ['reviewFile:a.ts']);
+});
+
+test('the filters: needs attention shows its empty row, unreviewed lists the files without the container', async () => {
+  const { provider } = calmView();
+  provider.toggleFilter('attention');
+  assert.deepEqual((await provider.getChildren()).map((r) => [r.type, r.label]), [['message', 'Nothing needs attention']]);
+  provider.toggleFilter('unreviewed');
+  assert.deepEqual((await provider.getChildren()).map((r) => r.type), ['reviewFile', 'reviewFile', 'file'], 'no calm row and no container off the filter all');
+  provider.toggleFilter('unreviewed');
+  assert.deepEqual((await provider.getChildren()).map((r) => r.type), ['message', 'browse']);
+});
+
+test('the tree layout: the folders sit under the container, a file under its folder, a root file under the container', async () => {
+  const { provider, item } = treeView(calmResult());
+  const roots = await provider.getChildren();
+  assert.deepEqual(roots.map((r) => r.type), ['message', 'browse']);
+  const top = await provider.getChildren(roots[1]);
+  assert.deepEqual(top.map((r) => [r.type, r.label]), [['folder', 'src'], ['file', 'notes.md']]);
+  assert.equal(provider.getParent(top[0]), roots[1]);
+  assert.equal(provider.getParent(top[1]), roots[1]);
+  const [a, engine] = await provider.getChildren(top[0]);
+  assert.equal(provider.getParent(a), top[0], 'inside a folder the folder is the parent');
+  assert.equal(provider.getParent(engine), top[0]);
+  assert.equal(item(top[0]).checkboxState, Unchecked);
+  provider.setChecked(top[0], true);
+  assert.equal(item(top[0]).checkboxState, Checked, 'a folder under the container still ticks every row under it');
+  assert.equal(provider.reviewCounts().left, 1, 'only notes.md is left');
+});
+
+test('a read without the calm state forgets the container: no stale parent', async () => {
+  const shown = { value: calmResult() };
+  const provider = createTreeProvider(vscode, {
+    getState: () => ({ result: shown.value, rowDetail: 'hover', rel: (f) => f.replace('/r/', ''), absPath: (p) => `/r/${p}` }),
+    resolver: {}, review: memoryReview(),
+  });
+  const [, browse] = await provider.getChildren();
+  const [a] = await provider.getChildren(browse);
+  assert.equal(provider.getParent(a), browse);
+  shown.value = resultOf({ allChanged: [stale('src/a.ts', 'bad', 5)], fileStatus: { 'src/a.ts': 'modified' } });
+  const [file] = await provider.getChildren();
+  assert.equal(file.type, 'reviewFile');
+  assert.equal(provider.getParent(file), undefined);
 });

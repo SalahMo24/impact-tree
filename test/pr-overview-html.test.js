@@ -43,7 +43,7 @@ const pendingThreads = () => [
 
 // A change row needing attention, as the tree hands it out.
 const attentionRow = (label, relPath, pos) => ({ type: 'finding', label, pos, finding: { relPath } });
-const NOTHING_LEFT = { attentionLeft: [], counts: { total: 4, left: 0 } };
+const NOTHING_LEFT = { attentionLeft: [], counts: { total: 4, left: 0, attention: 0, attentionTotal: 2 } };
 const panel = (over = {}) => ({ ...NOTHING_LEFT, draft: '', error: null, busy: null, ...over });
 
 const html = (state, over) => buildPullRequestHtml(pageModelOf(state, panel(over)), { nonce: NONCE, cspSource: 'vscode-webview://test' });
@@ -86,7 +86,7 @@ test('no inline style or event-handler attributes in any state; the CSP names th
     { kind: 'failed', target: TARGET, error: new Error('boom'), previous: reviewModel() },
   ];
   for (const state of states) {
-    const doc = html(state, { attentionLeft: [attentionRow('bad', 'a.ts', 1)], counts: { total: 3, left: 2 } });
+    const doc = html(state, { attentionLeft: [attentionRow('bad', 'a.ts', 1)], counts: { total: 3, left: 2, attention: 1, attentionTotal: 1 } });
     assert.ok(!/\sstyle=/.test(doc), `${state.kind}: no style= attribute`);
     assert.ok(!/\son\w+=/.test(doc), `${state.kind}: no on…= attribute`);
     assert.match(doc, new RegExp(`script-src 'nonce-${NONCE}'`));
@@ -172,7 +172,7 @@ test('a pending review: Submit Review, Cancel review, and its comments listed, e
 
 test('own pull request: Approve and Request Changes disabled with the reason, and no approve check', () => {
   const doc = html(ready(reviewModel({ own: true, threads: [thread(1)] })),
-    { draft: 'summary', attentionLeft: [attentionRow('bad', 'a.ts', 1)], counts: { total: 2, left: 2 } });
+    { draft: 'summary', attentionLeft: [attentionRow('bad', 'a.ts', 1)], counts: { total: 2, left: 2, attention: 1, attentionTotal: 1 } });
   assert.ok(isDisabled(doc, 'approve'));
   assert.ok(isDisabled(doc, 'requestChanges'), 'even with a summary');
   assert.ok(!isDisabled(doc, 'comment'));
@@ -180,7 +180,7 @@ test('own pull request: Approve and Request Changes disabled with the reason, an
   assert.equal(tagOf(doc, 'check'), null);
 });
 
-test('the approve check lists unreviewed attention rows in order, unresolved threads and rows left; Approve waits for the box', () => {
+test('the approve check lists unreviewed attention rows in order and unresolved threads, and says how many were looked at; Approve waits for the box', () => {
   const threads = [
     thread(1),                                                                         // unresolved, posted
     thread(2, { isResolved: true }),                                                   // resolved
@@ -188,9 +188,9 @@ test('the approve check lists unreviewed attention rows in order, unresolved thr
     thread(4, {}, [comment(4), comment(5, { pending: true, mine: true })]),            // posted, with a pending reply
   ];
   const rows = [attentionRow('bad', 'src/a.ts', 10), { type: 'outside', label: 'Outside functions', relPath: 'src/b.ts', ranges: [[1, 2]] }];
-  const doc = html(ready(reviewModel({ threads, pending: PENDING_TWO })), { attentionLeft: rows, counts: { total: 9, left: 5 } });
+  const doc = html(ready(reviewModel({ threads, pending: PENDING_TWO })), { attentionLeft: rows, counts: { total: 9, left: 5, attention: 2, attentionTotal: 3 } });
   const text = textOf(doc);
-  assert.match(text, /Before you approve: 2 need attention and are not reviewed: bad src\/a\.ts , Outside functions src\/b\.ts 2 threads are unresolved 5 of 9 rows are not reviewed Approve anyway/);
+  assert.match(text, /Before you approve: 2 need attention and are not reviewed: bad src\/a\.ts , Outside functions src\/b\.ts 2 threads are unresolved 1 of 3 looked at Approve anyway/);
   assert.deepEqual([...doc.matchAll(/data-act="revealRow" data-row="([^"]*)"/g)].map((m) => m[1]),
     ['finding:src/a.ts:bad:10', 'outside:src/b.ts:Outside functions:']);
   assert.ok(isDisabled(doc, 'approve'));
@@ -200,14 +200,18 @@ test('the approve check lists unreviewed attention rows in order, unresolved thr
 });
 
 test('the approve check: only threads, only rows, or the tree not showing the review', () => {
+  // NOTHING_LEFT: two rows needed attention and both were looked at, so only the thread stands against approving
   const onlyThread = textOf(html(ready(reviewModel({ threads: [thread(1)] }))));
-  assert.match(onlyThread, /Before you approve: 1 thread is unresolved 0 of 4 rows are not reviewed/);
-  const onlyRow = textOf(html(ready(), { attentionLeft: [attentionRow('bad', 'a.ts', 1)], counts: { total: 4, left: 1 } }));
-  assert.match(onlyRow, /1 needs attention and is not reviewed: bad a\.ts 1 of 4 rows are not reviewed/);
+  assert.match(onlyThread, /Before you approve: 1 thread is unresolved 2 of 2 looked at/);
+  const calm = textOf(html(ready(reviewModel({ threads: [thread(1)] })), { attentionLeft: [], counts: { total: 107, left: 107, attention: 0, attentionTotal: 0 } }));
+  assert.match(calm, /Before you approve: 1 thread is unresolved Approve anyway/, 'nothing needed attention: no count of looked-at rows, and no count of rows left');
+  const onlyRow = textOf(html(ready(), { attentionLeft: [attentionRow('bad', 'a.ts', 1)], counts: { total: 4, left: 1, attention: 1, attentionTotal: 1 } }));
+  assert.match(onlyRow, /1 needs attention and is not reviewed: bad a\.ts 0 of 1 looked at/);
+  assert.doesNotMatch(onlyRow, /rows are not reviewed|left/);
   // While the tree shows no review (it is analysing), what is left is unknown, not "nothing".
   const unknown = html(ready(), { attentionLeft: null, counts: null });
   assert.match(textOf(unknown), /The tree is not showing this review, so which changes are left is not known\./);
-  assert.ok(!/rows are not reviewed/.test(textOf(unknown)));
+  assert.ok(!/looked at/.test(textOf(unknown)));
   assert.ok(isDisabled(unknown, 'approve'));
 });
 
@@ -326,7 +330,7 @@ test('page: a draft from the extension fills the summary; one with another token
 });
 
 test('page: links and buttons send reveal, retry and discard messages', () => {
-  const p = page(ready(reviewModel({ pending: PENDING_TWO, threads: pendingThreads() })), { attentionLeft: [attentionRow('bad', 'a.ts', 3)], counts: { total: 2, left: 1 } });
+  const p = page(ready(reviewModel({ pending: PENDING_TWO, threads: pendingThreads() })), { attentionLeft: [attentionRow('bad', 'a.ts', 3)], counts: { total: 2, left: 1, attention: 1, attentionTotal: 1 } });
   p.click(p.all('[data-act="revealThread"]')[1]);
   assert.deepEqual(lastSent(p), { type: 'revealThread', threadId: 'T_2', token: NONCE });
   p.click(p.all('[data-act="revealRow"]')[0]);
@@ -341,7 +345,7 @@ test('page: links and buttons send reveal, retry and discard messages', () => {
 
 test('webview state recovers typing whose IPC message was overtaken by a repaint', () => {
   const state = { value: null };
-  const model = pageModelOf(ready(), { attentionLeft: [], counts: { total: 1, left: 0 }, draft: '', error: null, busy: null });
+  const model = pageModelOf(ready(), { attentionLeft: [], counts: { total: 1, left: 0, attention: 0, attentionTotal: 0 }, draft: '', error: null, busy: null });
   const doc = buildPullRequestHtml(model, { nonce: NONCE, cspSource: 'vscode-webview://test', draftKey: 'draft-one' });
   const first = createFormPage(doc, undefined, state);
   first.type('summary', 'latest text');

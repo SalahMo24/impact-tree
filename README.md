@@ -253,7 +253,12 @@ until you mark it reviewed, and its tooltip and Details say why.
   `impactTree.fileListLayout`) folds them into their folders, with folders and files still
   ordered worst first at every level and a folder ranked by its worst file. Track progress
   by marking changes reviewed, and filter for what needs attention (callers not updated, or
-  callers to check by hand), unreviewed changes, or unresolved conversations.
+  callers to check by hand), unreviewed changes, or unresolved conversations. Progress
+  counts only the changes that need attention: the view reads `2 need attention · 3 of 5
+  looked at`, and the status bar and Details say the same. A review where nothing needs
+  attention says `nothing needs attention` and keeps its files in one collapsed
+  **Browse all** row (`Nothing to flag in what was searched` when the analysis was
+  incomplete, such as a Preview); any change can still be marked reviewed.
   Previous/Next unreviewed (`⇧⌥N` / `⌥N`) and the legend are also in the view's `…` menu.
 - For a GitHub PR, add review comments (in the diff, or **Comment on this call** on a
   caller row, which names the caller when its call is outside the diff), reply to or resolve conversations, and

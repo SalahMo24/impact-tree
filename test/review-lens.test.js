@@ -226,7 +226,7 @@ test('the lens ticks its change on and off, and its title follows', () => withEn
   assert.equal(env.isTicked(bad), true);
   assert.deepEqual(titles().slice(0, 3), ['1 of 1 caller not updated', 'Show callers', '✓ Reviewed'], 'the lens stays');
   assert.deepEqual(tick().arguments, ['finding:a.ts:bad:10', false, env.tree().reviewVersion()], 'and now unticks');
-  assert.equal(env.seen.statusBar.text.split(' ')[1], '4', 'the view repainted');
+  assert.match(env.seen.statusBar.text, /^\$\(checklist\) 1 needs attention · 1 of 2 looked at · /, 'the view repainted: `bad` is looked at, `lost` is not');
   await env.run(tick().command, ...tick().arguments);
   assert.equal(env.isTicked(bad), false);
   assert.equal(titles()[2], 'Mark reviewed');

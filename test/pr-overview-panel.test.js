@@ -57,7 +57,7 @@ function fakeStore(initial) {
 function fakeProvider() {
   const listeners = [];
   const provider = {
-    attention: [], counts: { total: 3, left: 0 },
+    attention: [], counts: { total: 3, left: 0, attention: 0, attentionTotal: 1 },
     attentionLeft: () => provider.attention, reviewCounts: () => provider.counts,
     onDidChangeReview(l) { listeners.push(l); return { dispose() {} }; },
     onDidChangePresentation(l) { listeners.push(l); return { dispose() {} }; },
@@ -237,7 +237,7 @@ test('the page\'s own buttons reach the store through the real script', async ()
 test('the approve check refuses Approve without "Approve anyway" and does not call the store', async () => {
   const env = setup(ready(reviewModel({ threads: [thread(1)] })));
   env.provider.attention = [{ type: 'finding', label: 'bad', pos: 3, finding: { relPath: 'a.ts' } }];
-  env.provider.counts = { total: 3, left: 1 };
+  env.provider.counts = { total: 3, left: 1, attention: 1, attentionTotal: 1 };
   env.open();
   await env.send({ type: 'submit', event: 'APPROVE', body: 'ok', approveAnyway: false });
   assert.deepEqual(env.store.calls.submit, []);
@@ -251,14 +251,14 @@ test('the approve check refuses Approve without "Approve anyway" and does not ca
 test('the check follows the tree: once the rows are reviewed and no thread is open, Approve needs no box', async () => {
   const env = setup();
   env.provider.attention = [{ type: 'finding', label: 'bad', pos: 3, finding: { relPath: 'a.ts' } }];
-  env.provider.counts = { total: 3, left: 1 };
+  env.provider.counts = { total: 3, left: 1, attention: 1, attentionTotal: 1 };
   env.open();
   assert.ok(env.page().el('approve').hasAttribute('disabled'));
   const loads = env.panel().loads;
   env.provider.fire();
   assert.equal(env.panel().loads, loads, 'a tick that changes nothing shown does not repaint');
   env.provider.attention = [];
-  env.provider.counts = { total: 3, left: 0 };
+  env.provider.counts = { total: 3, left: 0, attention: 0, attentionTotal: 1 };
   env.provider.fire();
   assert.equal(env.page().el('check'), null);
   assert.ok(!env.page().el('approve').hasAttribute('disabled'));
@@ -605,7 +605,7 @@ test('a pending comment jumps to its thread through the comment controller\'s re
 test('an attention row in the check goes to the row in the tree; Retry refreshes the store', async () => {
   const env = setup({ kind: 'failed', target: TARGET, error: new Error('boom'), previous: reviewModel() });
   env.provider.attention = [{ type: 'finding', label: 'bad', pos: 3, finding: { relPath: 'a.ts' } }];
-  env.provider.counts = { total: 3, left: 1 };
+  env.provider.counts = { total: 3, left: 1, attention: 1, attentionTotal: 1 };
   env.open();
   env.page().click(env.page().all('[data-act="revealRow"]')[0]);
   await settle();

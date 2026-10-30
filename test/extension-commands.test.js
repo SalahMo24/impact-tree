@@ -230,17 +230,23 @@ test('of two checkouts whose dialogs are both open, the one confirmed first proc
 
 test('the view message and badge follow a new result and every tick', () => withEnv(async (env) => {
   const a = path.join(env.dir, 'a.ts');
-  env.hooks.localResult = (o) => localResult(o, { findings: [finding('one', a, 5), finding('two', a, 40)] });
+  // `one` has a caller not updated, so it needs attention; `two` does not
+  const site = { start: 22, end: 25 };
+  const user = { file: path.join(env.dir, 'b.ts'), pos: 7, label: 'user', test: false, callSites: [site], sites: 1,
+    callSiteUpdates: { updated: [], untouched: [site], unknown: [] } };
+  env.hooks.localResult = (o) => localResult(o, { findings: [{ ...finding('one', a, 5), staleCallers: 1, callers: [user] }, finding('two', a, 40)] });
   assert.equal(env.view().message, undefined, 'nothing is shown before an analysis');
   await env.refresh();
-  assert.equal(env.view().message, 'Branch vs base · 0 need attention · 2 of 2 left');
-  assert.deepEqual(env.view().badge, { value: 2, tooltip: '2 of 2 left to review' });
+  assert.equal(env.view().message, 'Branch vs base · 1 needs attention · 0 of 1 looked at');
+  assert.deepEqual(env.view().badge, { value: 1, tooltip: '1 of 1 need attention still to look at' });
   const [file] = (await env.tree().getChildren()).filter((r) => r.type === 'reviewFile');
+  env.tick((await env.changeRows())[1], true);
+  assert.equal(env.view().message, 'Branch vs base · 1 needs attention · 0 of 1 looked at', 'reviewing the quiet change moves nothing');
   env.tick(file, true);
-  assert.equal(env.view().message, 'Branch vs base · 0 need attention · 0 of 2 left');
+  assert.equal(env.view().message, 'Branch vs base · 0 need attention · 1 of 1 looked at');
   assert.equal(env.view().badge, undefined);
-  env.tick((await env.changeRows())[1], false);
-  assert.deepEqual(env.view().badge, { value: 1, tooltip: '1 of 2 left to review' });
+  env.tick((await env.changeRows())[0], false);
+  assert.deepEqual(env.view().badge, { value: 1, tooltip: '1 of 1 need attention still to look at' });
   assert.equal(env.isTicked(file), false, 'unticking a change unticks its file');
 }));
 

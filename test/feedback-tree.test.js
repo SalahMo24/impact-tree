@@ -4,6 +4,7 @@
 // directly; the rest through the real activate(), with drafts stored in workspace state.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { rootFiles } = require('./root-files');
 const path = require('path');
 const fs = require('fs');
 const { localResult, finding, previewResult, pull, withEnv } = require('./extension-env');
@@ -74,7 +75,7 @@ test('the group and its rows: first above everything, open, with Edit/Delete row
   await env.refresh();
   const roots = await env.tree().getChildren();
   assert.equal(roots[0].type, 'feedbackGroup');
-  assert.ok(roots.slice(1).some((r) => r.type === 'reviewFile'), 'the review follows');
+  assert.ok((await rootFiles(env.tree())).some((r) => r.type === 'reviewFile'), 'the review follows (its files sit in the calm state\'s container: nothing here needs attention)');
   const group = env.tree().getTreeItem(roots[0]);
   assert.deepEqual([group.label, group.description, group.id, group.collapsibleState], ['Feedback to send', '2 drafts', 'feedback:group', env.vscode.TreeItemCollapsibleState.Expanded]);
   const children = await env.tree().getChildren(roots[0]);
@@ -156,7 +157,7 @@ test('Details of a local review offers no feedback, and the old 💬 messages st
   useResult(env);
   await env.refresh();
   const details = env.openDetails();
-  const [file] = (await env.tree().getChildren()).filter((r) => r.type === 'reviewFile');
+  const [file] = (await rootFiles(env.tree())).filter((r) => r.type === 'reviewFile');
   const [bad] = (await env.tree().getChildren(file)).filter((r) => r.type === 'finding');
   for (const row of [bad, file]) {
     env.select([row]);
@@ -174,7 +175,7 @@ test('Details of a Preview offers no feedback, and its 💬 messages start none'
   useResult(env, { tierA: true });
   await env.preview(pull(7));
   const details = env.openDetails();
-  const files = (await env.tree().getChildren()).filter((r) => r.type === 'reviewFile');
+  const files = (await rootFiles(env.tree())).filter((r) => r.type === 'reviewFile');
   const [bad] = (await env.tree().getChildren(files[0])).filter((r) => r.type === 'finding');
   env.select([bad]);
   assert.doesNotMatch(textOf(details), /Feedback on this/);

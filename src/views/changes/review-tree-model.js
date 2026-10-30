@@ -231,11 +231,13 @@ function buildTestsRow(change, result) {
 
 /**
  * The rows a reviewer ticks: the change, deleted and outside rows of every `reviewFile`,
- * and every `file` row. Caller and tests rows never count.
+ * and every `file` row. Caller and tests rows never count. A `browse` row (the calm
+ * state's container, which the provider adds around the file rows) stands for its files.
  * @param {TreeRow[]} files The rows from `buildFileRows`.
  * @returns {TreeRow[]}
  */
-const collectCountingRows = (files) => files.flatMap((f) => (f.type === 'reviewFile' ? f.rows : [f]));
+const collectCountingRows = (files) => files.flatMap((f) => (f.type === 'reviewFile' ? f.rows
+  : f.type === 'browse' ? collectCountingRows(f.files) : [f]));
 
 // The row types that are counting rows: one checkbox each, ticked on their own.
 const COUNTING_TYPES = new Set(['finding', 'deleted', 'outside', 'file']);
@@ -257,7 +259,7 @@ const buildSpacerRow = (file) => ({ type: 'spacer', label: '', relPath: file.rel
  * @param {TreeRow} row
  * @returns {TreeRow[]}
  */
-const collectTickTargets = (row) => (row.type === 'folder' ? collectCountingRows(row.files)
+const collectTickTargets = (row) => (row.type === 'folder' || row.type === 'browse' ? collectCountingRows(row.files)
   : row.type === 'reviewFile' ? row.rows : COUNTING_TYPES.has(row.type) ? [row] : []);
 
 /**
@@ -270,16 +272,47 @@ const collectTickTargets = (row) => (row.type === 'folder' ? collectCountingRows
 const needsAttention = (row) => (row.type === 'file' ? Boolean(row.notAnalysed) : models.classifyRowVerdict(row).level <= 1);
 
 /**
- * How far a review has got.
+ * How far a review has got: `total` is every counting row and `left` the unreviewed ones;
+ * `attentionTotal` the rows that need attention, reviewed or not; `attention` the
+ * unreviewed ones among them. So `attentionTotal - attention` is how many have been
+ * looked at.
+ * @typedef {{ total: number, left: number, attention: number, attentionTotal: number }} ReviewCounts
+ */
+
+/**
+ * The counts of a review. One definition of done (docs/UX_PLAN.md, gate G14): the review is
+ * done when every row that needs attention has been looked at, so progress counts those
+ * rows. Every other row can still be marked reviewed, but it is not counted against the
+ * reviewer.
  * @param {TreeRow[]} files The rows from `buildFileRows`.
  * @param {(row: TreeRow) => boolean} isReviewed Whether a counting row is ticked.
- * @returns {{ total: number, left: number, attention: number }} `attention` counts the
- *   unreviewed rows that need attention.
+ * @returns {ReviewCounts}
  */
 function countReview(files, isReviewed) {
   const rows = collectCountingRows(files);
   const left = rows.filter((r) => !isReviewed(r));
-  return { total: rows.length, left: left.length, attention: left.filter(needsAttention).length };
+  const flagged = rows.filter(needsAttention);
+  return { total: rows.length, left: left.length, attention: left.filter(needsAttention).length, attentionTotal: flagged.length };
+}
+
+/**
+ * The progress of a review in words, for the view message, the Details strip, the status
+ * bar and the approve check, so they cannot disagree.
+ * @param {ReviewCounts} counts From `countReview`.
+ * @returns {{ looked: number, attentionTotal: number, lookedAtText: string|null, calmText: string, summaryText: string }}
+ *   `lookedAtText` is `3 of 5 looked at`, null when nothing needs attention; `calmText` is
+ *   `107 changes` (`1 change`), what a review with nothing to look at says instead;
+ *   `summaryText` is the two parts the view message and the status bar share:
+ *   `2 need attention · 3 of 5 looked at`, or `107 changes · nothing needs attention`.
+ */
+function describeProgress({ total, attention, attentionTotal }) {
+  const looked = attentionTotal - attention;
+  const lookedAtText = attentionTotal > 0 ? `${looked} of ${attentionTotal} looked at` : null;
+  const calmText = `${total} change${total === 1 ? '' : 's'}`;
+  return {
+    looked, attentionTotal, lookedAtText, calmText,
+    summaryText: lookedAtText === null ? `${calmText} · nothing needs attention` : `${models.attentionCountText(attention)} · ${lookedAtText}`,
+  };
 }
 
 /**
@@ -472,24 +505,66 @@ const describeReviewSource = (result, source) => `${describeReviewSubject(result
 
 /**
  * The view's message and badge for a shown result: what is reviewed, how many unreviewed
- * rows need attention, and how many are left; the base is named by the Details progress
- * strip. The review is named by `describeReviewSubject`.
+ * rows need attention, and how many of the rows that need attention have been looked at
+ * (`PR #15 · 2 need attention · 3 of 5 looked at`). A review where nothing needs attention
+ * says so (`PR #15 · 107 changes · nothing needs attention`) and has no badge. The base is
+ * named by the Details progress strip. The review is named by `describeReviewSubject`.
  * @param {any} result
  * @param {{ kind: string, pr?: { number: number } }|null|undefined} source The session's source.
- * @param {{ total: number, left: number, attention: number }} counts From `countReview`.
+ * @param {ReviewCounts} counts From `countReview`.
  * @param {ReviewFilter} [filter] The active filter; the message names it when it narrows the tree.
  * @param {string} [threads] What the review threads add before the filter's name
  *   (`threadsMessageSuffix`); nothing by default.
  * @returns {{ message: string, badge: { value: number, tooltip: string }|undefined }} No
- *   badge once nothing is left.
+ *   badge once no row that needs attention is left.
  */
-function buildReviewSummary(result, source, { total, left, attention }, filter = 'all', threads = '') {
+function buildReviewSummary(result, source, counts, filter = 'all', threads = '') {
   const what = describeReviewSubject(result, source);
   const named = filter === 'all' ? '' : ` · filter: ${FILTER_LABELS[filter]}`;
+  const { attention, attentionTotal } = counts;
   return {
-    message: `${what} · ${models.attentionCountText(attention)} · ${left} of ${total} left${threads}${named}`,
-    badge: left > 0 ? { value: left, tooltip: `${left} of ${total} left to review` } : undefined,
+    message: `${what} · ${describeProgress(counts).summaryText}${threads}${named}`,
+    badge: attention > 0 ? { value: attention, tooltip: `${attention} of ${attentionTotal} need attention still to look at` } : undefined,
   };
+}
+
+/**
+ * Whether the analysis behind a result leaves out evidence, so that "nothing to flag" would
+ * say more than it knows (CODING_STYLE section 1). Incomplete means any of: a PR preview
+ * (`result.tierA`: only the PR's own files are searched); callers still resolving
+ * (`result.callersPending`); a change whose caller search did not finish
+ * (`allChanged[].callersComplete === false`, the flag behind the "More callers may be
+ * missing" row); a file that was not analysed (`otherFiles[].notAnalysed`); a component
+ * that could not be analysed (`result.unanalysable`); or an analysis warning
+ * (`result.warnings`).
+ * @param {any} result
+ * @returns {boolean}
+ */
+const isAnalysisIncomplete = (result) => Boolean(result.tierA) || Boolean(result.callersPending)
+  || (result.allChanged || []).some((/** @type {any} */ c) => c.callersComplete === false)
+  || (result.otherFiles || []).some((/** @type {any} */ f) => f.notAnalysed)
+  || (result.unanalysable || []).length > 0 || (result.warnings || []).length > 0;
+
+/**
+ * The calm state of the review tree: when no counting row needs attention, a message row
+ * saying so, and a collapsed container for the file rows. It hedges when the analysis was
+ * incomplete, and never says "Nothing to flag" bare when evidence is missing.
+ * @param {any} result
+ * @param {ReviewCounts} counts From `countReview`.
+ * @returns {{ calm: TreeRow, browse: TreeRow }|null} Null when something needs attention
+ *   or there is no file row; `browse` has no `children` yet, the provider sets them.
+ */
+function buildCalmRows(result, counts) {
+  if (counts.attentionTotal > 0 || counts.total === 0) return null;
+  const incomplete = isAnalysisIncomplete(result);
+  /** @type {TreeRow} */
+  const calm = !incomplete
+    ? { type: 'message', icon: 'pass', label: 'Nothing to flag', desc: 'every caller updated, or a body-only change' }
+    : { type: 'message', icon: 'info', label: 'Nothing to flag in what was searched',
+      desc: result.tierA ? 'check out and analyse for the full picture'
+        : result.callersPending ? 'callers are still being resolved' : 'some callers or files could not be searched' };
+  const browse = { type: 'browse', label: `Browse all ${describeProgress(counts).calmText}`, icon: 'list-flat', expanded: false };
+  return { calm, browse };
 }
 
 /**
@@ -517,6 +592,6 @@ function findRowAtLine(files, relPath, line) {
 const span = (row) => row.finding.endLine - row.finding.startLine;
 
 module.exports = {
-  buildFileRows, buildImpactRows, collectCountingRows, collectTickTargets, needsAttention, countReview, listAttentionLeft, describeReviewSource, buildReviewSummary,
+  buildFileRows, buildImpactRows, collectCountingRows, collectTickTargets, needsAttention, countReview, describeProgress, isAnalysisIncomplete, buildCalmRows, listAttentionLeft, describeReviewSource, buildReviewSummary,
   findRowAtLine, filterFileRows, toggleFilter, findNextUnreviewed, findPreviousUnreviewed, treeItemId, buildEmptyFilterRow, buildSpacerRow,
 };

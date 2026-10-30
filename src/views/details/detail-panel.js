@@ -159,8 +159,9 @@ function createDetailPanel(vscode, { provider, view, getState, log, checkoutAndA
   function onSelection(e) {
     const picked = e.selection[0];
     // A cleared selection says nothing about what to explain, and a spacer or a folder (tree
-    // layout) has nothing of its own to show: the panel stays on the row it had.
-    if (!picked || picked.type === 'spacer' || picked.type === 'folder') return;
+    // layout) or the calm state's "Browse all" row has nothing of its own to show: the panel
+    // stays on the row it had.
+    if (!picked || picked.type === 'spacer' || picked.type === 'folder' || picked.type === 'browse') return;
     if (revealedFromCursor !== null && treeItemId(picked) === revealedFromCursor) return;
     revealedFromCursor = null;
     const owner = ownerOf(picked);

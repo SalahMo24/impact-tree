@@ -2,6 +2,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const { classifyRowVerdict, stateNameOf, toneOf, LEVEL_TONES, previewLimitsNote, attentionCountText } = require('../changes/tree-row-models');
+const { describeProgress } = require('../changes/review-tree-model');
 
 // The detail panel's whole document: the review's progress, and the row shown in the tree
 // with the reason it needs a look. Pure: the caller supplies the nonce and the webview's
@@ -77,14 +78,14 @@ const postMessage = (message) => vscode.postMessage({ ...message, token });
 const setText = (selector, text) => { const el = document.querySelector(selector); if (el) el.textContent = text; };
 const patchProgress = (m) => {
   const ok = m && typeof m.countText === 'string' && typeof m.attentionText === 'string'
-    && Number.isSafeInteger(m.reviewed) && Number.isSafeInteger(m.total)
-    && m.reviewed >= 0 && m.total > 0 && m.reviewed <= m.total && (m.attentionClass === 'lv0' || m.attentionClass === 'lv2');
+    && Number.isSafeInteger(m.looked) && Number.isSafeInteger(m.max)
+    && m.looked >= 0 && m.max > 0 && m.looked <= m.max && (m.attentionClass === 'lv0' || m.attentionClass === 'lv2');
   if (!ok) return;
   setText('[data-progress-count]', m.countText);
   const attention = document.querySelector('[data-progress-attention]');
   if (attention) { attention.textContent = m.attentionText; attention.setAttribute('class', m.attentionClass); }
   const meter = document.querySelector('[data-progress-meter]');
-  if (meter) { meter.setAttribute('max', String(m.total)); meter.setAttribute('value', String(m.reviewed)); meter.textContent = m.countText; }
+  if (meter) { meter.setAttribute('max', String(m.max)); meter.setAttribute('value', String(m.looked)); meter.textContent = m.countText; }
 };
 window.addEventListener('message', (event) => {
   const data = event.data;
@@ -102,17 +103,21 @@ postMessage({ type: 'ready' });
 /**
  * The review's progress strip, as text and numbers. Pure, shared by the initial HTML and
  * its later patches, so the page never formats anything itself.
- * @typedef {{ reviewed: number, total: number, countText: string, attentionText: string,
+ * `looked` and `max` are the meter's value and maximum: the rows that need attention that have
+ * been looked at, and all of them; with none that need attention the meter is full
+ * (`max` is the number of changes, `looked` the same).
+ * @typedef {{ looked: number, max: number, countText: string, attentionText: string,
  *   attentionClass: 'lv0'|'lv2' }} ProgressPresentation
- * @param {{ total: number, left: number, attention: number }|null} progress The counts from `countReview`.
+ * @param {import('../changes/review-tree-model').ReviewCounts|null} progress The counts from `countReview`.
  * @returns {ProgressPresentation|null} Null when there is nothing to count.
  */
 function progressPresentation(progress) {
   if (!progress || progress.total <= 0) return null;
-  const reviewed = progress.total - progress.left;
+  const shown = describeProgress(progress);
+  const calm = progress.attentionTotal === 0;
   return {
-    reviewed, total: progress.total,
-    countText: `${reviewed} of ${progress.total} reviewed`,
+    looked: calm ? progress.total : shown.looked, max: calm ? progress.total : progress.attentionTotal,
+    countText: shown.lookedAtText ?? shown.calmText,
     attentionText: progress.attention ? attentionCountText(progress.attention) : 'nothing needs attention',
     attentionClass: progress.attention ? 'lv0' : 'lv2',
   };
@@ -123,7 +128,7 @@ function progressHtml(model) {
   if (!model) return '';
   return `<div class="progress"><div class="nums"><span data-progress-count>${escapeHtml(model.countText)}</span>`
     + `<span class="${model.attentionClass}" data-progress-attention>${escapeHtml(model.attentionText)}</span></div>`
-    + `<progress max="${model.total}" value="${model.reviewed}" data-progress-meter>${escapeHtml(model.countText)}</progress></div>`;
+    + `<progress max="${model.max}" value="${model.looked}" data-progress-meter>${escapeHtml(model.countText)}</progress></div>`;
 }
 
 /**

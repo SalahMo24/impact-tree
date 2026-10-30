@@ -55,7 +55,7 @@ test('a not-analysed file row is amber level 1 and counts toward attention; a pl
   assert.deepEqual(rows.map((r) => r.relPath), ['a.go', 'README.md'], 'the not-analysed file sorts first');
   assert.equal(tree.needsAttention(go), true);
   assert.equal(tree.needsAttention(doc), false);
-  assert.deepEqual(tree.countReview(rows, () => false), { total: 2, left: 2, attention: 1 });
+  assert.deepEqual(tree.countReview(rows, () => false), { total: 2, left: 2, attention: 1, attentionTotal: 1 });
   assert.deepEqual(tree.listAttentionLeft(rows, () => false).map((r) => r.relPath), ['a.go']);
   assert.deepEqual(tree.listAttentionLeft(rows, (r) => r.relPath === 'a.go').map((r) => r.relPath), [], 'reviewing it clears it');
   assert.deepEqual(tree.filterFileRows(rows, 'attention', () => false).map((e) => e.file.relPath), ['a.go']);

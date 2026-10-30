@@ -4,6 +4,7 @@
 // reach is unknown, with the reason, on the change row's tooltip and its tests row.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { rootFiles } = require('./root-files');
 const vscode = require('./vscode-stub');
 const { createTreeProvider } = require('../src/views/changes/tree-provider');
 
@@ -29,7 +30,7 @@ async function rowsOf(result, rowDetail = 'inline') {
     getState: () => ({ result, rowDetail, rel: (f) => f.replace('/repo/', '') }),
     resolver: { incomingWithStatus: async () => ({ callers: [], complete: true }) }, review: null,
   });
-  const file = (await provider.getChildren()).find((r) => r.type === 'reviewFile');
+  const file = (await rootFiles(provider)).find((r) => r.type === 'reviewFile');
   const out = {};
   for (const row of (await provider.getChildren(file)).filter((r) => r.type !== 'spacer')) {
     const tests = (await provider.getChildren(row)).at(-1);
