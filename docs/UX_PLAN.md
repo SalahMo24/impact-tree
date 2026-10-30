@@ -606,7 +606,7 @@ above moved onto that row. The review tab (U1) and the agent's behaviour review 
 
 **Part L (proposed 2026-10-30; G13 and G14 decided the same day; L1 merged as PR #108,
 L2 as #109, L5 as #110 and L3 as #111, all 2026-10-30; L4 revised and L6 proposed the same
-day after a second screenshot; L4 no longer waits for W1 and runs next, then L6; G15 and
+day after a second screenshot; L4 merged as PR #112 (2026-10-30); L6 next; G15 and
 G16 decided as proposed the same day; the editor walk on the t3code PR is the owner's next check).** L1–L3 and L5 fix what the screenshot study found and
 touch only the sidebar's shape and words, so they can run next, before W1, once G13 and
 G14 are decided; L4 waits for W1. If v1 ships first, L1–L3 go in the first release after
