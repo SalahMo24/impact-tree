@@ -267,8 +267,14 @@ function buildTestsRow(change, result) {
  * @param {TreeRow[]} files The rows from `buildFileRows`.
  * @returns {TreeRow[]}
  */
-const collectCountingRows = (files) => files.flatMap((f) => (f.type === 'reviewFile' ? f.rows
+const collectCountingRows = (files) => files.flatMap((f) => (f.type === 'reviewFile' || f.type === GROUP_CARD || f.type === GROUP_OTHERS ? f.rows
   : f.type === 'browse' ? collectCountingRows(f.files) : [f]));
+
+// The By card order's groups (card-order.js): a card, and the container of the rows no card
+// holds. Each holds the counting rows it stands for in `rows`, so a walk and a count read
+// them as they read a `reviewFile`.
+const GROUP_CARD = 'card';
+const GROUP_OTHERS = 'others';
 
 // The row types that are counting rows: one checkbox each, ticked on their own.
 const COUNTING_TYPES = new Set(['finding', 'deleted', 'outside', 'file']);
@@ -294,13 +300,41 @@ const collectTickTargets = (row) => (row.type === 'browse' ? collectCountingRows
   : row.type === 'reviewFile' ? row.rows : COUNTING_TYPES.has(row.type) ? [row] : []);
 
 /**
- * Whether a counting row needs attention: a verdict at level 0 or 1. A file without a call
- * graph has no verdict and does not, unless it was not analysed: nothing was established
- * about it, so it needs a look (amber, "check by hand").
+ * The ids of the changes the agent named in `attention`, the one set the views read beside
+ * the engine's verdicts (gate G15). Empty with no agent result, or while the engine's
+ * cards are shown. A change id is `relPath#namePos`.
+ * @typedef {ReadonlySet<string>} AgentAttention
+ */
+
+/** @type {AgentAttention} */
+const NO_AGENT_ATTENTION = new Set();
+
+/**
+ * The change id (`relPath#namePos`, the id the agent's result and the cards use) of a change
+ * row, or of a deleted row that knows its position.
+ * @param {TreeRow} row
+ * @returns {string|null} Null for any other row.
+ */
+function changeIdOf(row) {
+  if (row.finding) return `${row.finding.relPath}#${row.finding.namePos}`;
+  return row.type === 'deleted' && row.namePos != null ? `${row.relPath}#${row.namePos}` : null;
+}
+
+/**
+ * Whether a counting row needs attention (gate G15, the one definition): the engine gives it
+ * a verdict at level 0 or 1, or the agent named its change in `attention`. A file without a
+ * call graph has no verdict and does not, unless it was not analysed: nothing was
+ * established about it, so it needs a look (amber, "check by hand").
  * @param {TreeRow} row A counting row.
+ * @param {AgentAttention} [agentAttention] The change ids the agent named.
  * @returns {boolean}
  */
-const needsAttention = (row) => (row.type === 'file' ? Boolean(row.notAnalysed) : models.classifyRowVerdict(row).level <= 1);
+function needsAttention(row, agentAttention = NO_AGENT_ATTENTION) {
+  if (row.type === 'file') return Boolean(row.notAnalysed);
+  if (models.classifyRowVerdict(row).level <= 1) return true;
+  const id = changeIdOf(row);
+  return id !== null && (agentAttention.has(id) || (row.type === 'deleted' && agentAttention.has(`${id}!deleted`)));
+}
 
 /**
  * How far a review has got: `total` is every counting row and `left` the unreviewed ones;
@@ -317,13 +351,14 @@ const needsAttention = (row) => (row.type === 'file' ? Boolean(row.notAnalysed) 
  * reviewer.
  * @param {TreeRow[]} files The rows from `buildFileRows`.
  * @param {(row: TreeRow) => boolean} isReviewed Whether a counting row is ticked.
+ * @param {AgentAttention} [agentAttention] The change ids the agent named.
  * @returns {ReviewCounts}
  */
-function countReview(files, isReviewed) {
+function countReview(files, isReviewed, agentAttention = NO_AGENT_ATTENTION) {
   const rows = collectCountingRows(files);
   const left = rows.filter((r) => !isReviewed(r));
-  const flagged = rows.filter(needsAttention);
-  return { total: rows.length, left: left.length, attention: left.filter(needsAttention).length, attentionTotal: flagged.length };
+  const flagged = rows.filter((r) => needsAttention(r, agentAttention));
+  return { total: rows.length, left: left.length, attention: left.filter((r) => needsAttention(r, agentAttention)).length, attentionTotal: flagged.length };
 }
 
 /**
@@ -351,9 +386,11 @@ function describeProgress({ total, attention, attentionTotal }) {
  * `buildFileRows` gives, whatever the filter). These are what the approve check lists.
  * @param {TreeRow[]} files The rows from `buildFileRows`.
  * @param {(row: TreeRow) => boolean} isReviewed Whether a counting row is ticked.
+ * @param {AgentAttention} [agentAttention] The change ids the agent named.
  * @returns {TreeRow[]}
  */
-const listAttentionLeft = (files, isReviewed) => collectCountingRows(files).filter((r) => !isReviewed(r) && needsAttention(r));
+const listAttentionLeft = (files, isReviewed, agentAttention = NO_AGENT_ATTENTION) => collectCountingRows(files)
+  .filter((r) => !isReviewed(r) && needsAttention(r, agentAttention));
 
 /**
  * The filters of the change view: everything, only the unreviewed rows that need
@@ -389,10 +426,11 @@ const toggleFilter = (current, name) => (current === name ? 'all' : name);
  * @param {ReviewFilter} filter
  * @param {(row: TreeRow) => boolean} isReviewed
  * @param {OpenThreadsOf} openThreadsOf
+ * @param {AgentAttention} [agentAttention] The change ids the agent named.
  * @returns {boolean}
  */
-function passesFilter(row, filter, isReviewed, openThreadsOf) {
-  if (filter === 'attention') return needsAttention(row) && !isReviewed(row);
+function passesFilter(row, filter, isReviewed, openThreadsOf, agentAttention = NO_AGENT_ATTENTION) {
+  if (filter === 'attention') return needsAttention(row, agentAttention) && !isReviewed(row);
   if (filter === 'unreviewed') return !isReviewed(row);
   if (filter === 'threads') return (openThreadsOf(row) ?? 0) > 0;
   return true;
@@ -410,11 +448,12 @@ function passesFilter(row, filter, isReviewed, openThreadsOf) {
  * @param {ReviewFilter} filter
  * @param {(row: TreeRow) => boolean} isReviewed Whether a counting row is ticked.
  * @param {OpenThreadsOf} [openThreadsOf] Read only by the `threads` filter.
+ * @param {AgentAttention} [agentAttention] The change ids the agent named; read by the `attention` filter.
  * @returns {Array<{ file: TreeRow, rows: TreeRow[] }>}
  */
-function filterFileRows(files, filter, isReviewed, openThreadsOf = NO_THREAD_COUNTS) {
+function filterFileRows(files, filter, isReviewed, openThreadsOf = NO_THREAD_COUNTS, agentAttention = NO_AGENT_ATTENTION) {
   return files
-    .map((file) => ({ file, rows: collectCountingRows([file]).filter((r) => passesFilter(r, filter, isReviewed, openThreadsOf)) }))
+    .map((file) => ({ file, rows: collectCountingRows([file]).filter((r) => passesFilter(r, filter, isReviewed, openThreadsOf, agentAttention)) }))
     .filter((e) => e.rows.length > 0 || (filter === 'threads' && (openThreadsOf(e.file) ?? 0) > 0));
 }
 
@@ -450,8 +489,8 @@ function buildEmptyFilterRow(filter, threads = 'ready') {
 
 /**
  * The id a row has in the tree view, which keeps a row's expansion across a refresh and
- * lets the view reveal it. Only folder rows, file rows, counting rows and a file's spacer
- * have one: caller, caller-file and tests rows can repeat under several parents, and an id
+ * lets the view reveal it. Only folder rows, file rows, counting rows, a file's spacer and
+ * the By card order's groups have one: caller, caller-file and tests rows can repeat under several parents, and an id
  * is unique in a tree.
  * @param {TreeRow} row
  * @returns {string|undefined}
@@ -460,6 +499,8 @@ function treeItemId(row) {
   if (row.type === 'folder') return `folder:${row.relPath}`;
   if (row.type === 'reviewFile') return `file:${row.relPath}`;
   if (row.type === 'spacer') return `spacer:${row.relPath}`;
+  if (row.type === GROUP_CARD) return `card:${row.cardId}`;
+  if (row.type === GROUP_OTHERS) return 'others:all';
   if (!COUNTING_TYPES.has(row.type)) return undefined;
   const relPath = row.relPath ?? row.finding?.relPath;
   // a deleted symbol has no position, so its key stands in
@@ -471,7 +512,7 @@ function treeItemId(row) {
  * applied. The walk wraps once to the top, so it may end at `after` itself when that is the
  * only row left. A row the filter hides still marks the place to start from.
  * @param {TreeRow[]} files The rows from `buildFileRows`.
- * @param {{ after?: TreeRow|null, isReviewed: (row: TreeRow) => boolean, filter: ReviewFilter, openThreadsOf?: OpenThreadsOf }} opts
+ * @param {{ after?: TreeRow|null, isReviewed: (row: TreeRow) => boolean, filter: ReviewFilter, openThreadsOf?: OpenThreadsOf, agentAttention?: AgentAttention }} opts
  *   `after` is a counting row or a file row; a file row stands just before its own rows.
  *   Without it, or when it is not among `files`, the walk starts at the top.
  * @returns {TreeRow|null} Null when no row is left.
@@ -486,7 +527,7 @@ function findNextUnreviewed(files, opts) {
  * applied: `findNextUnreviewed` walked backwards. It wraps once to the bottom, so it may
  * end at `after` itself when that is the only row left.
  * @param {TreeRow[]} files The rows from `buildFileRows`.
- * @param {{ after?: TreeRow|null, isReviewed: (row: TreeRow) => boolean, filter: ReviewFilter, openThreadsOf?: OpenThreadsOf }} opts
+ * @param {{ after?: TreeRow|null, isReviewed: (row: TreeRow) => boolean, filter: ReviewFilter, openThreadsOf?: OpenThreadsOf, agentAttention?: AgentAttention }} opts
  *   As for `findNextUnreviewed`. A file row stands just before its own rows, so the walk
  *   from it starts at the row above the file. Without `after`, the walk starts at the bottom.
  * @returns {TreeRow|null} Null when no row is left.
@@ -502,13 +543,13 @@ function findPreviousUnreviewed(files, opts) {
  * What both walks share: the rows in display order, the unreviewed ones the filter shows,
  * and the index of the row the walk starts from.
  * @param {TreeRow[]} files
- * @param {{ after?: TreeRow|null, isReviewed: (row: TreeRow) => boolean, filter: ReviewFilter, openThreadsOf?: OpenThreadsOf }} opts
+ * @param {{ after?: TreeRow|null, isReviewed: (row: TreeRow) => boolean, filter: ReviewFilter, openThreadsOf?: OpenThreadsOf, agentAttention?: AgentAttention }} opts
  * @returns {{ order: TreeRow[], shown: Set<TreeRow>, here: number }} `here` is -1 without a usable start.
  */
-function walkOf(files, { after = null, isReviewed, filter, openThreadsOf = NO_THREAD_COUNTS }) {
+function walkOf(files, { after = null, isReviewed, filter, openThreadsOf = NO_THREAD_COUNTS, agentAttention = NO_AGENT_ATTENTION }) {
   /** @type {TreeRow[]} */
-  const order = files.flatMap((f) => (f.type === 'reviewFile' ? [f, ...f.rows] : [f]));
-  const shown = new Set(filterFileRows(files, filter, isReviewed, openThreadsOf).flatMap((e) => e.rows).filter((r) => !isReviewed(r)));
+  const order = files.flatMap((f) => (f.type === 'reviewFile' || f.type === GROUP_CARD || f.type === GROUP_OTHERS ? [f, ...f.rows] : [f]));
+  const shown = new Set(filterFileRows(files, filter, isReviewed, openThreadsOf, agentAttention).flatMap((e) => e.rows).filter((r) => !isReviewed(r)));
   const here = after ? order.findIndex((r) => treeItemId(r) === treeItemId(after)) : -1;
   return { order, shown, here };
 }
@@ -623,6 +664,6 @@ function findRowAtLine(files, relPath, line) {
 const span = (row) => row.finding.endLine - row.finding.startLine;
 
 module.exports = {
-  buildFileRows, buildImpactRows, collectCountingRows, collectTickTargets, needsAttention, countReview, describeProgress, isAnalysisIncomplete, buildCalmRows, listAttentionLeft, describeReviewSource, buildReviewSummary,
+  buildFileRows, buildImpactRows, collectCountingRows, collectTickTargets, needsAttention, changeIdOf, NO_AGENT_ATTENTION, GROUP_CARD, GROUP_OTHERS, countReview, describeProgress, isAnalysisIncomplete, buildCalmRows, listAttentionLeft, describeReviewSource, buildReviewSummary,
   findRowAtLine, filterFileRows, toggleFilter, findNextUnreviewed, findPreviousUnreviewed, treeItemId, buildEmptyFilterRow, buildSpacerRow,
 };

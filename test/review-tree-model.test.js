@@ -739,3 +739,47 @@ test('the walk, line lookup and filters read the file rows, with or without the 
   assert.deepEqual(shownLabels(model.filterFileRows(rows, 'attention', isReviewed)), [], 'no row needs attention');
   assert.deepEqual(shownLabels(model.filterFileRows(rows, 'unreviewed', isReviewed)), [['c.js', ['c']], ['n.md', ['n.md']]]);
 });
+
+// ---- the one attention set (gate G15) ----
+
+test('needsAttention: the engine flags it (level 0 or 1) or the agent named it; a file row only when not analysed', () => {
+  const quiet = change('src/q.ts', 'quiet');
+  const gone = deleted('src/q.ts', 'gone', 40);
+  const { rows } = build(resultOf({ allChanged: [quiet], deleted: [gone], otherFiles: [{ path: 'notes.md', status: 'added' }, { path: 'x.kt', status: 'added', notAnalysed: { language: 'Kotlin', reason: 'no provider' } }] }));
+  const file = rows.find((r) => r.relPath === 'src/q.ts');
+  const [row] = file.rows.filter((r) => r.type === 'finding');
+  const deletedRow = file.rows.find((r) => r.type === 'deleted');
+  const id = model.changeIdOf(row);
+  assert.equal(id, `src/q.ts#${quiet.namePos}`);
+  assert.equal(model.needsAttention(row), false, 'quiet for the engine');
+  assert.equal(model.needsAttention(row, new Set()), false);
+  assert.equal(model.needsAttention(row, new Set([id])), true, 'named by the agent');
+  assert.equal(model.needsAttention(row, new Set(['src/other.ts#1'])), false, 'another change');
+  assert.equal(model.needsAttention(deletedRow), true, 'a deleted symbol is amber for the engine');
+  assert.equal(model.changeIdOf(deletedRow), `src/q.ts#${gone.namePos}`);
+  assert.equal(model.needsAttention(rows.find((r) => r.relPath === 'notes.md'), new Set(['notes.md'])), false);
+  assert.equal(model.needsAttention(rows.find((r) => r.relPath === 'x.kt')), true, 'not analysed');
+});
+
+test('counts, lists, filters, walks and the calm state all read the same attention set', () => {
+  const [a, b, c] = [change('src/a.ts', 'a'), change('src/b.ts', 'b'), change('src/c.ts', 'c')];
+  const result = resultOf({ allChanged: [a, b, c] });
+  const { rows } = build(result);
+  const ticked = new Set();
+  const isReviewed = (r) => ticked.has(r);
+  const named = new Set([`src/b.ts#${b.namePos}`]);
+  assert.deepEqual(model.countReview(rows, isReviewed), { total: 3, left: 3, attention: 0, attentionTotal: 0 });
+  assert.deepEqual(model.countReview(rows, isReviewed, named), { total: 3, left: 3, attention: 1, attentionTotal: 1 });
+  assert.deepEqual(model.listAttentionLeft(rows, isReviewed, named).map((r) => r.label), ['b']);
+  assert.deepEqual(model.filterFileRows(rows, 'attention', isReviewed, undefined, named).map((e) => e.file.relPath), ['src/b.ts']);
+  assert.deepEqual(model.filterFileRows(rows, 'attention', isReviewed).map((e) => e.file.relPath), [], 'without the set, nothing is flagged');
+  // the walk under the attention filter lands on the agent-named quiet change
+  assert.equal(model.findNextUnreviewed(rows, { after: null, isReviewed, filter: 'attention', agentAttention: named }).label, 'b');
+  assert.equal(model.findPreviousUnreviewed(rows, { after: null, isReviewed, filter: 'attention', agentAttention: named }).label, 'b');
+  // the calm state is not offered while the agent flagged something
+  assert.notEqual(model.buildCalmRows(result, model.countReview(rows, isReviewed)), null);
+  assert.equal(model.buildCalmRows(result, model.countReview(rows, isReviewed, named)), null);
+  // once the named change is looked at, the review is done
+  ticked.add(rows.find((f) => f.relPath === 'src/b.ts').rows[0]);
+  assert.deepEqual(model.countReview(rows, isReviewed, named), { total: 3, left: 2, attention: 0, attentionTotal: 1 });
+});

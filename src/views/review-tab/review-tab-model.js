@@ -10,9 +10,10 @@
 //
 // Cards are the agent's when its result fits these cards (src/agent/agent-cards.js), else the
 // engine's. The board's columns:
-// - Needs your attention: a card holding a change the agent named in `attention`; with no
-//   agent result, a change the engine marks red or amber (level 0 or 1). Such a change is
-//   `attention` itself, so the page can point at it.
+// - Needs your attention: a card holding a change that needs attention: the engine marks it
+//   red or amber (level 0 or 1; a deleted symbol always) or the agent named it in `attention`
+//   (the tree's one set, gate G15). Such a change is `attention` itself, so the page can
+//   point at it.
 // - Behaviour changes: a card with a change the agent calls changed, may-change or new;
 //   with no agent result, every other card ("Other changes").
 // - No behaviour change: the rest (agent result only).
@@ -118,7 +119,8 @@ function reviewTabModel({ result, cards, agentPayload = null, title = '', hunkOf
     const entries = ((paths[id] && paths[id].entries) || []).map((/** @type {any} */ e) => `${e.type === 'public-api' ? 'public API' : e.type}: ${e.name}`);
     changes[id] = {
       id, name: c ? c.label : d ? `−${d.label}` : id, file: c ? c.relPath : d ? (d.relPath || d.file) : '', line: c ? c.startLine : null, deleted: !c,
-      attention: agent ? attentionIds.has(id) : !!c && verdict.level <= 1,
+      // The one attention set of the tree (gate G15): the engine flags it (level 0 or 1; a deleted symbol is always flagged) or the agent named it.
+      attention: attentionIds.has(id) || (c ? verdict.level <= 1 : !!d),
       kind: b ? b.kind : null, what: b ? b.what : null, before: (b && b.before) || null, after: (b && b.after) || null, when: (b && b.when) || null,
       affects: (b && b.affects) || [], verdict: { text: verdict.text, level: verdict.level },
       hunk: c ? hunkLines(hunkOf(c), c.startLine, c.endLine) : null,

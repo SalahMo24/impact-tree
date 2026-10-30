@@ -46,9 +46,10 @@ test('no agent result: the engine\'s cards, two columns, red and amber changes n
   assert.equal(m.cards.length, f.cards.clusters.length + f.cards.sweeps.length);
   assert.equal(m.columns.reduce((n, c) => n + c.cards.length, 0), m.cards.length, 'every card in exactly one column');
   for (const c of m.cards) {
-    const attention = c.changes.some((id) => m.changes[id].verdict.level <= 1 && !m.changes[id].deleted);
-    assert.equal(c.column, attention ? 'attention' : 'changes', c.title);
-    for (const id of c.changes) assert.equal(m.changes[id].attention, m.changes[id].verdict.level <= 1 && !m.changes[id].deleted, id);
+    // the tree's one set (G15): red or amber, and a deleted symbol is always amber there
+    const flagged = (id) => m.changes[id].verdict.level <= 1 || m.changes[id].deleted;
+    assert.equal(c.column, c.changes.some(flagged) ? 'attention' : 'changes', c.title);
+    for (const id of c.changes) assert.equal(m.changes[id].attention, flagged(id), id);
     assert.ok(c.changes.every((id, i) => i === 0 || m.changes[id].attention <= m.changes[c.changes[i - 1]].attention), 'attention first');
     assert.ok(c.chips.length <= MAX_CHIPS);
     assert.match(c.sentence, /^\d+ changes? in \d+ files?$/);
@@ -71,8 +72,12 @@ test('with the agent\'s result: its cards in its order, three columns, its summa
   assert.deepEqual(k3.chips[0], { text: '1 changed', tone: 'warning' });
   assert.ok(k3.chips.slice(1).every((c) => c.tone === 'plain' && /^public API: /.test(c.text)), 'then where it is reached from');
   assert.deepEqual(k3.changes.slice(0, 2), [byId(f, 'K3').members[0], byId(f, 'K3').members[1]], 'changed, then same, then the rest');
-  assert.equal(m.cards.find((c) => c.title === 'T K5').column, 'changes');
-  assert.equal(m.cards.find((c) => c.title === 'T K6').column, 'none');
+  // The attention set is the tree's, with a result too (G15): a change the engine flags is attention beside the agent's own.
+  const flaggedInCard = (title) => m.cards.find((c) => c.title === title).changes.some((id) => m.changes[id].verdict.level <= 1 || m.changes[id].deleted);
+  assert.equal(m.cards.find((c) => c.title === 'T K5').column, flaggedInCard('T K5') ? 'attention' : 'changes');
+  assert.equal(flaggedInCard('T K5'), true, 'K5 holds a change the engine flags, though the agent did not name it');
+  assert.equal(m.cards.find((c) => c.title === 'T K6').column, flaggedInCard('T K6') ? 'attention' : 'none');
+  assert.ok(m.cards.every((c) => (c.column === 'attention') === c.changes.some((id) => m.changes[id].attention)), 'a card is in the attention column exactly when a change in it needs attention');
   // A result for other cards is not used: back to the engine's.
   assert.equal(reviewTabModel({ result: f.result, cards: f.cards, agentPayload: { cards: [] } }).agent, false);
 });
@@ -141,7 +146,7 @@ test('the document reads as one page: cards grouped under their columns, ⚠ onl
   assert.match(html, /No behaviour change · 0<\/div><div class="muted">None<\/div>/);
   assert.equal((html.match(/Reject empty saves/g) || []).length, 2, 'the card title in the nav and as the heading, nowhere else');
   assert.equal((html.match(/>rejects empty input</g) || []).length, 1, 'the change\'s line on its row only, not again in the context');
-  assert.equal((html.match(/⚠/g) || []).length, 2, 'the nav entry and the attention change; a changed kind is a word');
+  assert.equal((html.match(/⚠/g) || []).length, 3, 'the nav entry, the attention change and the deleted symbol (always flagged, as in the tree); a changed kind is a word');
   assert.ok(html.includes(`⚠ ${ATTENTION_WORD}</span><span class="chip warning" title="Your agent's reading">Changed</span><span class="chip verdict lv0" title="Impact Tree's verdict">`));
   assert.ok(html.includes('<span class="chip" title="Your agent\'s reading">New</span>'));
   assert.ok(html.includes('<h4>Your agent</h4><dl><dt>Before</dt><dd>saved anything</dd>') && html.includes('<h4>Impact Tree</h4><dl><dt>Verdict</dt>'));
