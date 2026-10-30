@@ -59,9 +59,9 @@ function createAgentConnect(vscode, deps) {
     return all;
   }
 
-  // ---- the VS Code / Copilot provider: registered only while the setting is on and the API exists
+  // ---- the VS Code / Copilot provider: registered while the window is open and the API exists
 
-  /** Follow `impactTree.agents.enabled`. @param {boolean} on */
+  /** Register (on) or remove (off) the provider. @param {boolean} on */
   function syncProvider(on) {
     const hasApi = Boolean(vscode.lm && typeof vscode.lm.registerMcpServerDefinitionProvider === 'function');
     if (on && hasApi && !providerReg) {
@@ -152,10 +152,10 @@ function createAgentConnect(vscode, deps) {
       else vscode.window.showInformationMessage('Impact Tree: Cursor was asked to add Impact Tree. Confirm in Cursor, then check its MCP settings.');
       return;
     }
-    // VS Code / Copilot: nothing runs; the provider offers the server while the setting is on.
+    // VS Code / Copilot: nothing runs; the provider offers the server while the window is open.
     syncProvider(true);
     if (changeEmitter) changeEmitter.fire();
-    vscode.window.showInformationMessage('Impact Tree: it is now offered to Copilot as an MCP server (shown in "MCP: List Servers"; VS Code asks you to trust it before it starts). It stays offered while "impactTree.agents.enabled" is on.');
+    vscode.window.showInformationMessage('Impact Tree: it is now offered to Copilot as an MCP server (shown in "MCP: List Servers"; VS Code asks you to trust it before it starts).');
   }
 
   async function disconnect() {
@@ -164,7 +164,7 @@ function createAgentConnect(vscode, deps) {
     if (!pick) { vscode.window.showInformationMessage('Impact Tree: no agent is connected.'); return; }
     const id = /** @type {ac.ConnectAgentId} */ (pick.id);
     if (id === 'cursor') { vscode.window.showInformationMessage('Impact Tree: remove "impact-tree" in Cursor\'s settings under Tools & MCP. Impact Tree does not edit Cursor\'s configuration.'); return; }
-    if (id === 'vscode') { vscode.window.showInformationMessage('Impact Tree: Copilot is offered the server only while "impactTree.agents.enabled" is on; turn that setting off to stop.'); return; }
+    if (id === 'vscode') { vscode.window.showInformationMessage('Impact Tree: Impact Tree is offered to Copilot as an MCP server while this window is open. To stop Copilot using it, run "MCP: List Servers", choose Impact Tree and stop or disable it.'); return; }
     const args = id === 'claude' ? ac.claudeRemoveArgs() : ac.codexRemoveArgs();
     if (!await confirm(`Disconnect Impact Tree from ${ac.CLI_NAMES[id]}?`, `This runs:\n\n${ac.displayCommand(id, args)}`, 'Disconnect')) return;
     if (await runChecked(id, args, id)) await report(id, 'Disconnected:');

@@ -130,7 +130,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     return { dispose: () => analysisListeners.delete(listener) };
   }
 
-  // ---- cards (impactTree.cards.enabled) ----
+  // ---- cards ----
   // Listeners told that `session.state.cards`, `hintsPending` or `cardsError` changed. Cards
   // arrive after the result, so they have their own event: notifyAnalysisChanged would make
   // the PR review store and the comment controllers re-sync for a change of cards alone.
@@ -150,9 +150,6 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     cardsListeners.add(listener);
     return { dispose: () => cardsListeners.delete(listener) };
   }
-
-  /** @returns {boolean} Whether the Cards view is switched on. Off means no extra option and no extra work. */
-  const cardsEnabled = () => vscode.workspace.getConfiguration('impactTree').get('cards.enabled', false) === true;
 
   // The merge-hint search running in the background for the shown result, if any. Owner: this
   // session. It outlives the run that started it (a run's own signal aborts when the run is
@@ -638,8 +635,6 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     }
     const tStart = clock.now();
     const report = (m) => { if (!run.signal.aborted && progress) progress.report({ message: m }); };
-    // Read once per run: the cards of this run follow the setting as it was when the run began.
-    const withCards = cardsEnabled();
     // vscode.commands.executeCommand takes no cancellation token, so the language
     // server cannot be told to stop. The signal stops new queries; one already sent
     // finishes in the server and its answer is dropped with the cancelled run.
@@ -664,7 +659,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
       deferTestReach: !(session.state && session.state.wantTestReach), // only one section needs it
       concurrency: cfg.get('concurrency', 8),
       onDirty: 'fallback',                   // never blank the view because a file is edited
-      ...(withCards ? { impactPaths: true } : {}),   // the entry points the cards show
+      impactPaths: true,                     // the entry points the cards show
       makeResolver: () => session.resolver,
       // The same services the resolver asks: server-backed languages (Go) read their
       // symbols through them, under the same request cap and deadlines.
@@ -688,12 +683,10 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     const stale = result.findings.reduce((n, f) => n + f.staleCallers, 0);
     vscode.window.setStatusBarMessage(
       `Impact Tree: ${result.findings.length} finding(s), ${stale} caller(s) not updated, base ${result.base.ref}`, 8000);
-    if (withCards) {
-      await publishCards(run, {
-        result, report, hintsOptions: { repo, head: 'HEAD' },
-        gatherFacts: (signal) => require('../engine/cards').gatherLocalCardFacts({ repo, base: result.base.sha, head: 'HEAD', signal }),
-      });
-    }
+    await publishCards(run, {
+      result, report, hintsOptions: { repo, head: 'HEAD' },
+      gatherFacts: (signal) => require('../engine/cards').gatherLocalCardFacts({ repo, base: result.base.sha, head: 'HEAD', signal }),
+    });
     const unanswered = result.allChanged.filter((c) => c.callersRetryable).length;
     if (retry) log(`caller retry: ${unanswered} search(es) still did not finish`);
     else if (unanswered) void scheduleCallerRetry(run, source, mode, result, unanswered);
@@ -906,7 +899,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     beginAnalysisRun, beginAnalysingStage, completeAnalysisRun, failAnalysisRun, releaseAnalysisRunResources,
     isCurrentAnalysis, getAnalysisId, beginCheckout, endCheckout, checkoutInProgress, isBusy, getPhase,
     prewarmInBackground, dispose, treeResolver, onDidChangeAnalysis,
-    onDidChangeCards, cardsEnabled, publishCards,
+    onDidChangeCards, publishCards,
   });
   const { ensureReady, ensureResolver, isIndexing, indexingServer } = createReadiness(vscode, session, { log, getScratchDir, clock });
   session.ensureReady = ensureReady;

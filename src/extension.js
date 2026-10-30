@@ -27,7 +27,7 @@ const { createAgentBridge } = require('./agent/agent-bridge');
 const { createAgentConnect } = require('./agent/agent-connect-commands');
 const { createAgentCardsState } = require('./agent/agent-cards-state');
 const { createAnalyseWithAgent } = require('./agent/agent-analyse');
-const { chooseAgent } = require('./feedback/feedback-send');
+const { chooseAgent, chooseReviewAgent } = require('./feedback/feedback-send');
 const { createSnapshotStoreGetter } = require('./storage/snapshot-storage');
 const { createPrActions } = require('./session/pr-actions');
 const { createPullRequestReviewStore, reviewTargetOf } = require('./github/pr-review-store');
@@ -120,8 +120,8 @@ function activate(context, { clock = realClock } = {}) {
   const provider = createTreeProvider(vscode, {
     getAgentNotes: () => agentNotesNow(),
     getAgentReview: () => agentReviewNow(),
-    // The engine's cards of the shown review: none while cards are off or not yet built.
-    getCards: () => (owned.cardsEnabled() && owned.state && owned.state.cards) || null,
+    // The engine's cards of the shown review: none until they are built.
+    getCards: () => (owned.state && owned.state.cards) || null,
     // Read on each root read; anything but `cards` is the Files order (the default).
     getOrder: () => (vscode.workspace.getConfiguration('impactTree').get('reviewOrder', 'files') === 'cards' ? 'cards' : 'files'),
     getRepoStatus: () => repoStatus,
@@ -171,7 +171,7 @@ function activate(context, { clock = realClock } = {}) {
     if (host) await Promise.resolve(view.reveal(host, { select: false, focus: false, expand: true })).then(undefined, (e) => log(`review: could not show the reviewed row: ${e && e.message}`));
   };
   context.subscriptions.push(owned.onDidChangeAnalysis(() => { void revealHost(); }));
-  // The agent's part of the review (set below, with the bridge): null while agents are off.
+  // The agent's part of the review (set below, with the bridge): null until then.
   /** @type {() => { waiting: { askedAt: number }|null, showEngine: boolean, results: Array<{ kind: string, key: string, payload: unknown, storedAt: number }> }|null} */
   let agentSource = () => null;
   /** @type {(changeId: string) => any} */
@@ -423,8 +423,8 @@ function activate(context, { clock = realClock } = {}) {
   // the settings editor or another window repaints the same way.
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
     if (e.affectsConfiguration('impactTree.fileListLayout')) provider.refresh('layout');
-    // The order the review is drawn in, and whether there are cards to draw it by.
-    if (e.affectsConfiguration('impactTree.reviewOrder') || e.affectsConfiguration('impactTree.cards.enabled')) provider.refresh('order');
+    // The order the review is drawn in.
+    if (e.affectsConfiguration('impactTree.reviewOrder')) provider.refresh('order');
   }));
   context.subscriptions.push(owned.onDidChangeCards(() => provider.refresh('order')));
   // A change of the GitHub remote setting moves the pull request list (and the review
@@ -436,31 +436,22 @@ function activate(context, { clock = realClock } = {}) {
     loadPrs().catch((err) => log(`github: reloading pull requests failed: ${err && err.message}`));
   }));
 
-  // The bridge to the user's own agent (impactTree.agents.enabled, off by default): nothing
-  // listens and no lock file exists unless the setting is on. Follows the setting; stopped with the window.
+  // The bridge to the user's own agent: a local socket in a private temporary folder, guarded
+  // by a token, started with the window and stopped with it. Nothing leaves the machine.
   const agentBridge = createAgentBridge(vscode, { session: owned, workspaceState: context.workspaceState, log });
   const agentConnect = createAgentConnect(vscode, { context, log });
-  const syncAgentBridge = () => {
-    const on = vscode.workspace.getConfiguration('impactTree').get('agents.enabled', false) === true;
-    (on ? agentBridge.start() : agentBridge.stop()).catch((e) => log(`agent bridge: ${e && e.message}`));
-    // The launcher and the Copilot provider follow the same setting.
-    if (on) agentConnect.prepareLauncher();
-    agentConnect.syncProvider(on);
-  };
   context.subscriptions.push(agentBridge, agentConnect, vscode.commands.registerCommand('impactTree.connectAgent', () => agentConnect.connect()),
-    vscode.commands.registerCommand('impactTree.disconnectAgent', () => agentConnect.disconnect()), vscode.workspace.onDidChangeConfiguration((e) => {
-    if (e.affectsConfiguration('impactTree.agents.enabled')) syncAgentBridge();
-  }));
-  syncAgentBridge();
+    vscode.commands.registerCommand('impactTree.disconnectAgent', () => agentConnect.disconnect()),
+    vscode.commands.registerCommand('impactTree.chooseAgent', () => chooseReviewAgent(vscode)));
+  agentBridge.start().catch((e) => log(`agent bridge: ${e && e.message}`));
+  // The launcher and the Copilot provider are offered for as long as the window is open.
+  agentConnect.prepareLauncher();
+  agentConnect.syncProvider(true);
 
   // "Analyse with my agent" and the agent's cards in the review. The waiting state and the
   // shown head live in memory only; results live in the bridge's workspace state.
   const agentCards = createAgentCardsState();
-  const agentsOn = () => vscode.workspace.getConfiguration('impactTree').get('agents.enabled', false) === true;
-  agentSource = () => {
-    if (!agentsOn()) return null;
-    return { waiting: agentCards.waiting, showEngine: agentCards.showEngine, results: agentCards.head ? agentBridge.resultsFor(agentCards.head) : [] };
-  };
+  agentSource = () => ({ waiting: agentCards.waiting, showEngine: agentCards.showEngine, results: agentCards.head ? agentBridge.resultsFor(agentCards.head) : [] });
   // What the agent said about the changes: the latest result for the shown head, unless the
   // engine's cards are shown. Built once per stored result.
   // One value per stored result, shown state and engine cards, so what the tree compares to
@@ -471,7 +462,7 @@ function activate(context, { clock = realClock } = {}) {
   agentReviewNow = () => {
     const src = agentSource();
     if (!src) return NO_AGENT_REVIEW;
-    const cards = (owned.cardsEnabled() && owned.state && owned.state.cards) || null;
+    const cards = (owned.state && owned.state.cards) || null;
     const latest = latestCardsResult(src.results);
     const key = latest ? latest.key : null;
     if (!reviewFor || reviewFor.key !== key || reviewFor.showEngine !== src.showEngine || reviewFor.cards !== cards) {
@@ -483,23 +474,25 @@ function activate(context, { clock = realClock } = {}) {
   agentChangeOf = (id) => { const notes = agentNotesNow(); return notes ? notes.change(id) : null; };
   // The review tab (U1): the board and the card-by-card review, in an editor tab.
   const reviewTab = createReviewTab(vscode, {
-    getState: () => owned.state, enabled: () => owned.cardsEnabled(), repoRoot: () => { try { return session.repoRoot(); } catch { return null; } }, log,
+    getState: () => owned.state, repoRoot: () => { try { return session.repoRoot(); } catch { return null; } }, log,
     agentPayload: () => { const src = agentSource(); if (!src || src.showEngine) return null; const latest = latestCardsResult(src.results); return latest ? latest.payload : null; },
   });
   context.subscriptions.push(...reviewTab.disposables, vscode.commands.registerCommand('impactTree.openReview', () => reviewTab.open()),
-    owned.onDidChangeAnalysis(() => reviewTab.refresh()), owned.onDidChangeCards(() => reviewTab.refresh()),
-    vscode.workspace.onDidChangeConfiguration((e) => { if (e.affectsConfiguration('impactTree.cards.enabled')) reviewTab.refresh(); }));
+    owned.onDidChangeAnalysis(() => reviewTab.refresh()), owned.onDidChangeCards(() => reviewTab.refresh()));
   // Everything that shows the agent's result: Details, the review rows and lenses, the review tab, the menus.
   const agentRedraw = () => { details.refresh(); provider.agentChanged(); reviewTab.refresh(); publishContext(); };
   // The head of the review shown is read from the repository, so it arrives after the analysis does.
   let headRead = 0;
+  const agentShowsAnything = () => { const src = agentSource(); return Boolean(src && (src.waiting || src.results.length)); };
   const syncAgentHead = async () => {
     const mine = ++headRead;
     let head = null;
-    if (agentsOn()) {
-      try { const ctx = await agentBridge.context(); head = ctx ? ctx.head : null; } catch (e) { log(`agent: could not read the head: ${e && e.message}`); }
-    }
-    if (mine === headRead && agentCards.headChanged(head)) agentRedraw();
+    try { const ctx = await agentBridge.context(); head = ctx ? ctx.head : null; } catch (e) { log(`agent: could not read the head: ${e && e.message}`); }
+    if (mine !== headRead) return;
+    // Redraw only when the agent shows something for the old head or the new one: the bridge
+    // reads the head after every analysis, and a review the agent never saw looks the same.
+    const before = agentShowsAnything();
+    if (agentCards.headChanged(head) && (before || agentShowsAnything())) agentRedraw();
   };
   const analyseWithAgent = createAnalyseWithAgent(vscode, {
     session: owned, bridge: agentBridge, state: agentCards, chooseAgent, log, redraw: agentRedraw,
@@ -513,13 +506,7 @@ function activate(context, { clock = realClock } = {}) {
     vscode.commands.registerCommand('impactTree.undoAgentResult', (key) => analyseWithAgent.undo(typeof key === 'string' ? key : agentReviewNow().resultKey)),
     agentBridge.onDidStoreResult((e) => { agentCards.stored(e); agentRedraw(); }),
     agentBridge.onDidRemoveResult(() => agentRedraw()),
-    owned.onDidChangeAnalysis(() => { void syncAgentHead(); }), owned.onDidChangeCards(() => { void syncAgentHead(); }),
-    vscode.workspace.onDidChangeConfiguration((e) => {
-      if (!e.affectsConfiguration('impactTree.agents.enabled')) return;
-      agentCards.reset();
-      void syncAgentHead();
-      agentRedraw();
-    }));
+    owned.onDidChangeAnalysis(() => { void syncAgentHead(); }), owned.onDidChangeCards(() => { void syncAgentHead(); }));
   void syncAgentHead();
 
   publishContext();

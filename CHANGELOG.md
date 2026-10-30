@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Your agent's review is a main feature**: `impactTree.cards.enabled` and
+  `impactTree.agents.enabled` are gone. Cards, the By card order, the review tab, **Connect
+  my agent…** and **Analyse with my agent** are always there, and the local bridge your agent
+  talks to starts with the window. Each analysis now also runs the entry-point search for the
+  cards (a few seconds on the largest pull requests).
+- **Choose my agent…** switches the agent that reviews with you (the reviewed row's `…` menu
+  or the command palette): the current one is marked, the pick is saved in `impactTree.agent`
+  and used by **Analyse with my agent** and **Send feedback**; **Ask each time** asks again.
+
 - **Java** (`.java`), in the editor through Red Hat's Language Support for Java (jdtls),
   and in the PR preview and the CLI from the text. Changed methods and constructors are
   keyed by their parameter types, so each overload is its own row and an overload whose
@@ -22,13 +31,13 @@
   mode under Local changes), and the separate Changes view is gone. The reviewed row holds
   the review's controls and, in its hover, the review's notices; clicking it still offers
   preview, check out or open on GitHub. Pull request rows no longer have a hover.
-- **Review tab** (experimental, with `impactTree.cards.enabled`): **Open review** shows the
+- **Review tab**: **Open review** shows the
   cards, grouped under Needs your attention, Behaviour changes and No behaviour change, the
   chosen card's changes with their diff hunks cut to the function, and the chosen change's
   context (your agent's before / after / when and who it affects; Impact Tree's verdict,
   callers and entry points) in a column that follows the scroll. ⚠ marks only the changes
   to look at first; `j` / `k` and `n` / `p` move between changes and cards. Read-only for now.
-- **Analyse with my agent** (experimental, with `impactTree.agents.enabled`): **Connect my
+- **Analyse with my agent**: **Connect my
   agent…** registers Impact Tree's MCP server with Claude Code, Codex, Cursor or VS Code /
   Copilot; the agent gets the review's facts with the prompt and answers in one
   `submit_cards` call with cards in reading order and a behaviour review of each change

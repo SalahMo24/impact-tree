@@ -556,7 +556,7 @@ test('not in a repository: the server starts, lists its tools, and every tool re
     const r = (await until(n)).result;
     assert.equal(r.isError, true, t.name);
     assert.ok(r.content[0].text.startsWith('start your agent inside a git repository (this folder is not one): /not/a/repo. Also tried: '), t.name);
-    assert.match(r.content[0].text, /does not share its workspace folders.*no editor window has Impact Tree's agents setting.*call select_repository/, t.name);
+    assert.match(r.content[0].text, /does not share its workspace folders.*no editor window has Impact Tree open.*call select_repository/, t.name);
   }
   assert.equal(prepared, 0);
   input.end(); await server.closed;
@@ -579,7 +579,7 @@ test('findRepoFor: the agent\'s one workspace repository, else the one editor wi
     (e) => e instanceof ToolError && /several git repositories; call select_repository with the repository to review \(one of: \/w\/cli, \/w\/hono\); do not change the MCP configuration/.test(e.message));
   // No roots from the agent: the editor window decides; one that is no longer a repository is skipped.
   assert.deepEqual(await findRepoFor({ cwd: '/home', sdk: sdkWithRoots(null), toplevel, editorRepos: () => [{ repo: '/e/one', askedAt: null }, { repo: '/gone', askedAt: null }] }),
-    { repo: '/e/one', from: 'the editor window with Impact Tree\'s agents setting on' });
+    { repo: '/e/one', from: 'the only editor window with Impact Tree open' });
   assert.deepEqual((await findRepoFor({ cwd: '/home', sdk: sdkWithRoots(['https://x/y']), toplevel, editorRepos: () => [{ repo: '/e/two', askedAt: null }] })).repo, '/e/two');
   await assert.rejects(findRepoFor({ cwd: '/home', sdk: null, toplevel, editorRepos: () => [{ repo: '/e/one', askedAt: null }, { repo: '/e/two', askedAt: null }] }),
     (e) => e instanceof ToolError && /more than one editor window .*call select_repository .*one of: \/e\/one, \/e\/two/.test(e.message));

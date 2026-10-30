@@ -193,7 +193,7 @@ test('the panel: one tab; hunks once the diff arrives; opening a change or calle
   let release; const diffDone = new Promise((r) => { release = r; });
   let diffReads = 0;
   const tab = createReviewTab(vscode, {
-    getState: () => ({ result: SMALL.result, cards: SMALL.cards, rel: (f) => f.replace('/r/', '') }), enabled: () => true, agentPayload: () => AGENT,
+    getState: () => ({ result: SMALL.result, cards: SMALL.cards, rel: (f) => f.replace('/r/', '') }), agentPayload: () => AGENT,
     repoRoot: () => '/r', log: () => {}, readText: () => 'a\nb\nc\nd\n',
     diffText: async () => { diffReads++; await diffDone; return HUNK; },
   });
@@ -223,12 +223,11 @@ test('the panel: one tab; hunks once the diff arrives; opening a change or calle
 });
 
 test('the panel says why there is nothing to show', () => {
-  const page = (state, on = true) => {
+  const page = (state) => {
     const { vscode, panels } = fakeVscode();
-    createReviewTab(vscode, { getState: () => state, enabled: () => on, agentPayload: () => null, repoRoot: () => null, log: () => {} }).open();
+    createReviewTab(vscode, { getState: () => state, agentPayload: () => null, repoRoot: () => null, log: () => {} }).open();
     return panels[0].webview.html;
   };
-  assert.match(page(null, false), /Turn on Impact Tree cards/);
   assert.match(page(null), /Review a branch or a pull request first/);
   assert.match(page({ result: SMALL.result, cards: null }), /Cards are built when the analysis finishes/);
   assert.match(page({ result: { ...SMALL.result, tierA: true }, cards: SMALL.cards }), /preview: no diffs here/);

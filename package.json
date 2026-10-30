@@ -396,6 +396,12 @@
         "category": "Impact Tree"
       },
       {
+        "command": "impactTree.chooseAgent",
+        "title": "Choose my agent…",
+        "category": "Impact Tree",
+        "icon": "$(hubot)"
+      },
+      {
         "command": "impactTree.openReview",
         "title": "Open review",
         "category": "Impact Tree",
@@ -500,10 +506,6 @@
       ],
       "commandPalette": [
         {
-          "command": "impactTree.analyseWithAgent",
-          "when": "config.impactTree.agents.enabled && config.impactTree.cards.enabled"
-        },
-        {
           "command": "impactTree.cancelAgentWaiting",
           "when": "false"
         },
@@ -514,14 +516,6 @@
         {
           "command": "impactTree.undoAgentResult",
           "when": "false"
-        },
-        {
-          "command": "impactTree.connectAgent",
-          "when": "config.impactTree.agents.enabled"
-        },
-        {
-          "command": "impactTree.disconnectAgent",
-          "when": "config.impactTree.agents.enabled"
         },
         {
           "command": "impactTree.retryViewedSync",
@@ -722,10 +716,6 @@
         {
           "command": "impactTree.feedback.openRoundFile",
           "when": "false"
-        },
-        {
-          "command": "impactTree.openReview",
-          "when": "config.impactTree.cards.enabled"
         },
         {
           "command": "impactTree.showPicker",
@@ -968,7 +958,7 @@
         },
         {
           "command": "impactTree.openReview",
-          "when": "view == impactTree.sources && viewItem == reviewHost && config.impactTree.cards.enabled",
+          "when": "view == impactTree.sources && viewItem == reviewHost",
           "group": "inline@1"
         },
         {
@@ -1068,12 +1058,12 @@
         },
         {
           "command": "impactTree.analyseWithAgent",
-          "when": "view == impactTree.sources && viewItem == reviewHost && config.impactTree.agents.enabled && impactTree.hasCards",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.hasCards",
           "group": "inline@8"
         },
         {
           "command": "impactTree.analyseWithAgent",
-          "when": "view == impactTree.sources && viewItem == reviewHost && config.impactTree.agents.enabled && impactTree.hasCards",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.hasCards",
           "group": "1_mode@4"
         },
         {
@@ -1090,6 +1080,11 @@
           "command": "impactTree.showAgentCards",
           "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.hasAgentResult && impactTree.agentShowsEngine",
           "group": "1_mode@6"
+        },
+        {
+          "command": "impactTree.chooseAgent",
+          "when": "view == impactTree.sources && viewItem == reviewHost",
+          "group": "1_mode@7"
         },
         {
           "command": "impactTree.cancelAgentWaiting",
@@ -1241,16 +1236,6 @@
           ],
           "description": "Where a change row's verdict and change kinds are shown."
         },
-        "impactTree.cards.enabled": {
-          "type": "boolean",
-          "default": false,
-          "description": "Group the changes of a review into related cards, with the entry points each card reaches and which cards may belong together. Turning it on adds the By card order to the Review view (impactTree.reviewOrder) and the review tab, adds the entry-point search to each analysis (a few seconds on the largest pull requests) and, for a local review, reads the repository's history to find which cards may belong together. Takes effect from the next analysis (Refresh)."
-        },
-        "impactTree.agents.enabled": {
-          "type": "boolean",
-          "default": false,
-          "description": "Let your own coding agent (connected through Impact Tree's MCP server) learn which review this window shows and hand back results (card titles and summaries, callers it found), which are kept in this workspace. While on, the window listens on a local socket in a private temporary folder, guarded by a token; nothing leaves your machine. Only reviews of a checked-out branch take part; a pull request preview does not."
-        },
         "impactTree.fileListLayout": {
           "type": "string",
           "enum": [
@@ -1304,7 +1289,7 @@
             "Copy the prompt to the clipboard",
             "Only save the feedback file"
           ],
-          "description": "Where Send feedback hands a feedback round, and where Analyse with my agent hands its prompt. \"Send feedback to…\" always asks."
+          "description": "The agent that reviews with you: where \"Analyse with my agent\" hands its prompt and where \"Send feedback\" hands a feedback round. Switch it with \"Impact Tree: Choose my agent…\" (also on the reviewed row's menu). \"Send feedback to…\" always asks."
         },
         "impactTree.reviewOrder": {
           "type": "string",
@@ -1316,7 +1301,7 @@
           "scope": "resource",
           "enumDescriptions": [
             "Changes under the files they are in, worst file first",
-            "Changes under the card they belong to (needs impactTree.cards.enabled): cards that hold a change that needs attention first, then the changes no card holds under Other changes"
+            "Changes under the card they belong to: cards that hold a change that needs attention first, then the changes no card holds under Other changes"
           ],
           "description": "How the review lists its changes: by file or by card. Also toggled from the reviewed row (Order by card / Order by file). Kept for this workspace; a review without cards is listed by file."
         }

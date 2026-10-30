@@ -1,6 +1,6 @@
 'use strict';
-// impactTree.agents.enabled in the extension: off by default and then nothing listens and no
-// lock file exists; turning it on starts the bridge, turning it off or deactivating stops it.
+// The bridge to the user's agent in the extension: started with the window, with no setting to
+// turn it on; deactivating stops it and removes its lock file.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
@@ -21,17 +21,15 @@ async function inOwnTmp(fn) {
 }
 const locks = (dir) => (fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.json')) : []);
 
-test('the setting is off by default and declared in the manifest', () => {
-  const prop = require('../package.json').contributes.configuration.properties['impactTree.agents.enabled'];
-  assert.equal(prop.default, false);
-  assert.equal(prop.type, 'boolean');
+test('no setting gates the agents or the cards any more', () => {
+  const props = require('../package.json').contributes.configuration.properties;
+  assert.equal(props['impactTree.agents.enabled'], undefined);
+  assert.equal(props['impactTree.cards.enabled'], undefined);
 });
 
-test('off: no lock file; on: the bridge answers with the review shown; off again: gone', () => inOwnTmp((dir) => withEnv(async (env) => {
-  assert.equal(fs.existsSync(dir), false, 'default off: not even the folder');
+test('the bridge starts with the window and answers with the review shown', () => inOwnTmp((dir) => withEnv(async (env) => {
   env.hooks.localResult = (o) => localResult(o);
   await env.refresh();
-  env.changeSetting('agents.enabled', true);
   await until(() => locks(dir).length === 1);
   const client = await connectBridge({ repo: env.dir, lockDir: dir });
   assert.ok(client);
@@ -40,13 +38,11 @@ test('off: no lock file; on: the bridge answers with the review shown; off again
   assert.equal(ctx.head, head);
   assert.equal(ctx.repo, fs.realpathSync(env.dir));
   client.close();
-  env.changeSetting('agents.enabled', false);
-  await until(() => locks(dir).length === 0);
-  assert.equal(await connectBridge({ repo: env.dir, lockDir: dir }), null);
 })));
 
 test('deactivating stops a running bridge', () => inOwnTmp((dir) => withEnv(async (env) => {
   await until(() => locks(dir).length === 1);
   env.dispose();
   await until(() => locks(dir).length === 0);
-}, { settings: { 'agents.enabled': true } })));
+  assert.equal(await connectBridge({ repo: env.dir, lockDir: dir }), null);
+})));

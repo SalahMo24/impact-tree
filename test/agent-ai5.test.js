@@ -139,10 +139,6 @@ test('the toggle is in memory, flips, and a new result shows the agent cards aga
   assert.equal(s.showEngine, true);
   s.stored({ kind: 'cards', head: 'h' });
   assert.equal(s.showEngine, false);
-  s.toggle();
-  s.asked('h', 1);
-  assert.equal(s.reset(), true);
-  assert.deepEqual([s.showEngine, s.waiting], [false, null]);
 });
 
 // ---- the command ----
@@ -252,14 +248,15 @@ test('cancel waiting redraws once; undo asks the bridge to remove that key for t
 
 // ---- the review tree shows the agent part: test/review-order-cards.test.js ----
 
-test('the manifest wires the command into the reviewed row and the palette behind the setting', () => {
+test('the manifest wires the command into the reviewed row and the palette, with no setting in front', () => {
   const pkg = require('../package.json');
   const menus = pkg.contributes.menus;
   const host = menus['view/item/context'].filter((m) => m.command === 'impactTree.analyseWithAgent');
   assert.deepEqual(host.map((m) => m.group).sort(), ['1_mode@4', 'inline@8']);
-  for (const m of host) assert.equal(m.when, 'view == impactTree.sources && viewItem == reviewHost && config.impactTree.agents.enabled && impactTree.hasCards');
+  for (const m of host) assert.equal(m.when, 'view == impactTree.sources && viewItem == reviewHost && impactTree.hasCards');
   assert.equal(menus['view/title'].some((m) => m.command === 'impactTree.analyseWithAgent'), false, 'not a title action: the Cards view is gone');
-  assert.match(menus.commandPalette.find((m) => m.command === 'impactTree.analyseWithAgent').when, /config\.impactTree\.agents\.enabled/);
+  assert.equal(menus.commandPalette.some((m) => m.command === 'impactTree.analyseWithAgent'), false, 'in the palette, never hidden');
+  assert.equal(JSON.stringify(pkg.contributes).includes('agents.enabled') || JSON.stringify(pkg.contributes).includes('cards.enabled'), false);
   const cmd = pkg.contributes.commands.find((c) => c.command === 'impactTree.analyseWithAgent');
   assert.equal(cmd.title, 'Analyse with my agent');
   assert.equal(cmd.icon, '$(sparkle)');

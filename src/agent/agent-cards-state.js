@@ -43,8 +43,6 @@ function createAgentCardsState() {
     },
     /** @returns {boolean} */
     toggle() { showEngine = !showEngine; return true; },
-    /** Everything forgotten (the agents setting went off). @returns {boolean} */
-    reset() { const was = waiting !== null || showEngine; waiting = null; showEngine = false; return was; },
   };
 }
 

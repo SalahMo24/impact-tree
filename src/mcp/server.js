@@ -258,7 +258,7 @@ const chooseWithTool = (repos) => `call select_repository with the repository to
 /**
  * The repository to analyse when the server started outside any (Cursor starts its servers
  * in the home folder), in this order: the agent's one workspace repository; the one editor
- * window with Impact Tree's agents setting on; among several, the window where the user last
+ * window with Impact Tree open; among several, the window where the user last
  * pressed "Analyse with my agent" in the past 30 minutes. Otherwise an error that tells the
  * agent to call `select_repository`, never a guess.
  * @param {{ cwd: string, sdk: any, toplevel?: (cwd: string) => string|null,
@@ -275,14 +275,14 @@ async function findRepoFor({ cwd, sdk, toplevel = repoToplevel, editorRepos, now
   if (fromRoots.repos.length > 1) throw new ToolError(`the agent's workspace has several git repositories; ${chooseWithTool(fromRoots.repos)}`);
   const listEditors = editorRepos || (() => require('./bridge-client').liveEditorRepos());
   const editors = listEditors().filter((e) => toplevel(e.repo) === e.repo);
-  if (editors.length === 1) return { repo: editors[0].repo, from: 'the editor window with Impact Tree\'s agents setting on' };
+  if (editors.length === 1) return { repo: editors[0].repo, from: 'the only editor window with Impact Tree open' };
   if (editors.length > 1) {
     const asked = editors.filter((e) => e.askedAt !== null && now() - e.askedAt >= 0 && now() - e.askedAt <= ASKED_RECENTLY_MS)
       .sort((a, b) => /** @type {number} */ (b.askedAt) - /** @type {number} */ (a.askedAt));
     if (asked.length) return { repo: asked[0].repo, from: 'the editor window where "Analyse with my agent" was pressed last' };
-    throw new ToolError(`more than one editor window has Impact Tree's agents setting on; ${chooseWithTool(editors.map((e) => e.repo))}`);
+    throw new ToolError(`more than one editor window has Impact Tree open; ${chooseWithTool(editors.map((e) => e.repo))}`);
   }
-  throw new ToolError(`${notRepoMessage(cwd)}. Also tried: ${fromRoots.note}; no editor window has Impact Tree's agents setting (impactTree.agents.enabled) on. `
+  throw new ToolError(`${notRepoMessage(cwd)}. Also tried: ${fromRoots.note}; no editor window has Impact Tree open. `
     + `If you know the repository, ${chooseWithTool([])}`);
 }
 
