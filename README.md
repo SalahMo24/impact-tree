@@ -11,7 +11,7 @@ and nothing about *how the changes relate* — or which callers you forgot to up
 
 > **Status: early.** Local change review, GitHub PR browsing, no-checkout previews,
 > review progress, and GitHub review comments are implemented. Detailed change analysis
-> supports TypeScript and JavaScript everywhere, and Go and Python in the editor; see
+> supports TypeScript and JavaScript everywhere, and Go, Python and Java in the editor; see
 > [Languages](#languages) and [Limitations](#limitations).
 
 ## What it shows
@@ -57,9 +57,10 @@ silently-omitted optional parameter outranks a signature break that `tsc` alread
 | TypeScript, JavaScript | Analysed: the bundled TypeScript compiler finds changes, the editor's language server finds callers | Analysed from the PR's own files only (syntax) | Analysed with its own TypeScript language service |
 | Go | Analysed through the [Go extension](https://marketplace.visualstudio.com/items?itemName=golang.go)'s language server, gopls | Changed functions and signature kinds from the PR's text; callers from **syntax only**, in the PR's own Go files and changed tests (check out the PR to find them all) | Changed functions and signature kinds from the text; callers from **syntax only**, across the Go module(s) the changed files are in |
 | Python | Analysed through the editor's Python language server, Pyright ([Pylance](https://marketplace.visualstudio.com/items?itemName=ms-python.vscode-pylance) in VS Code, Cursor's Python extension in Cursor) | Changed functions and signature kinds from the PR's text; callers from **syntax only**, in the PR's own files and changed tests (check out the PR to find them all) | Changed functions and signature kinds from the text; callers from **syntax only**, across the repository's Python files |
-| Java, Kotlin, C#, Ruby, Rust, PHP, Swift, C, C++, Scala | Listed as "*Language* · not analysed yet" | Same | Same |
+| Java | Analysed through Red Hat's [Language Support for Java](https://marketplace.visualstudio.com/items?itemName=redhat.java) (Eclipse JDT LS, "jdtls") | Changed methods and signature kinds from the PR's text; callers from **syntax only**, in the PR's own Java files and changed tests (check out the PR to find them all) | Changed methods and signature kinds from the text; callers from **syntax only**, across the repository's Java files |
+| Kotlin, C#, Ruby, Rust, PHP, Swift, C, C++, Scala | Listed as "*Language* · not analysed yet" | Same | Same |
 
-A file that was not analysed never reads as having no impact. A Go or Python file Impact
+A file that was not analysed never reads as having no impact. A Go, Python or Java file Impact
 Tree could not analyse (its language server gave no answer, for example) is amber, counts toward **needs attention**
 until you mark it reviewed, and its tooltip and Details say why.
 
@@ -163,6 +164,69 @@ until you mark it reviewed, and its tooltip and Details say why.
   pydantic #13070, recall 96.8%, and every caller listed that Jedi's reference search
   missed is a real call (Jedi's own `goto` confirms all 456 sites).
 
+### Java
+
+- **Needs Language Support for Java by Red Hat** (`redhat.java`, which bundles its own Java
+  runtime). Without it, Java files are listed as not analysed with a note to install it.
+  The first review waits for it ("Waiting for the Java language server (jdtls)… N s"); a
+  project's first import, with its Maven or Gradle dependencies, can take over a minute.
+- **Changed methods** are the methods and constructors of every class, interface, enum and
+  record, nested types included, keyed by their parameter types (`Gson.toJson(Object,
+  Appendable)`; generics erased, so `getAdapter(TypeToken<T>)` is `getAdapter(TypeToken)`),
+  so each overload is its own row. When one overload of a name disappears from a file and
+  one appears, they read as one signature change and keep the review tick. An enum
+  constant's body and an anonymous class in a field are keyed by that member; anonymous and
+  local classes and lambdas inside a method are part of its body. Editing only a method's
+  Javadoc does not mark it changed.
+- **Signatures** compare parameters (varargs and arrays as written), the return type, type
+  parameters and `throws`. A new type in `throws`, or a new `throw new X(…)` in the method's
+  own body (not in its lambdas or anonymous classes), is a new throw path. Reduced
+  visibility, or `static` added or removed, is **access changed**: old callers stop
+  compiling. Widening access is no change.
+- **Read as incomplete, never "all callers updated":** a method that overrides or implements
+  another (jdtls lists the supertype method's callers with its own, so the list is too
+  wide), or that is overridden in the workspace; a method used through a method reference
+  (`Foo::bar`); a no-argument constructor of a class that is not final (a subclass's
+  implicit `super()` is not a listed call); `@Bean`/`@Provides`/`@Produces` factory methods;
+  members of a class processed by Lombok, AutoValue or another annotation processor (the
+  generated members are not read); an empty answer for an overridable method (VS Code turns
+  a failed call-hierarchy request into an empty one); and any answer taken while the
+  language server is still importing the project, after a build file changed, or while it
+  reports a broken build path (it lists no calls in a project that targets Java 6 or older).
+  A dependency-injected class's constructor with no caller reads as built by the container.
+- **Not followed:** reflection (`Method.invoke`, `Class.forName`), objects built or called
+  by a dependency-injection container, and an override in a named class written without
+  `@Override` (other than `equals`, `hashCode`, `toString`).
+- **Old versions of a file** are read through a temporary copy in the extension's storage,
+  removed as soon as jdtls has answered.
+- **Measured** on 12 merged google/gson pull requests (224 changed methods): every changed
+  method found with no extras, every signature change classified, no change shown as fine
+  while a caller was not updated, and every caller `javac` resolves that Impact Tree does
+  not list sits on an answer marked incomplete (overall recall 94.1%). Most extra callers
+  are jdtls listing a supertype method's callers for an override, on answers already marked
+  incomplete. See [the verification report](test/lsp-harness/J6-REPORT.md).
+- **The first answers after the language server starts** read incomplete until it has
+  settled: 30 s after it reports ready with no project import, or, when a build file
+  changed since its last import, until it re-imports the project.
+- **Without the language server** (the no-checkout PR preview, the CLI): changed, added and
+  deleted methods and their signature kinds are read from the text with the same keys as in
+  the editor (on 12 gson pull requests, 224 of 224 changed methods as the JDK's own parser
+  finds them, every kind right). Callers come from a **syntax index**: the PR's own Java
+  files and changed tests in the preview, every Java file of the repository in the CLI
+  (`target/`, `build/`, `out/` and generated sources left out; at most 3000 files / 64 MiB,
+  then the changed packages and the files that mention a changed name). A call is matched
+  through imports (single-type, on-demand and static) and the package, on `this`, `super`
+  and inherited methods within the index, on static `T.m(`, constructors (`new T(`,
+  `this(`, `super(`, enum constants), and on receivers whose type is written: parameters,
+  fields, locals (`var x = new T(…)`, casts, `instanceof T x`), and a method's declared
+  return type. Overloads are matched by the number of arguments; when several match, each
+  is listed and the answer says so. Every answer stays incomplete and says why ("syntax
+  only"), never "no callers". Not resolved: calls through an interface or an override,
+  untyped lambda parameters, `var x = f()`, type parameters and array elements. In the
+  preview, files outside the PR are not read. Checked against `javac`'s own resolution
+  within the indexed files on the 12 pull requests: 100% precision and 99.2% recall in
+  the CLI and in the preview, every miss on an answer marked incomplete.
+
 ## Review workflow
 
 - Open **Impact Tree** in the Activity Bar. The **Review** view lists local change
@@ -173,7 +237,8 @@ until you mark it reviewed, and its tooltip and Details say why.
 - Preview a GitHub pull request without a checkout, or check out its branch for
   analysis using the editor's language server. A no-checkout preview searches the
   files supplied by the PR and cannot establish callers outside those files; it analyses
-  TypeScript, JavaScript, Python and Go (Python and Go callers from syntax only).
+  TypeScript, JavaScript, Python, Go and Java (Python, Go and Java callers from syntax
+  only).
 - Pick a mode or a pull request: its review opens **under that row** in the Review view, as
   the GitHub Pull Requests extension nests a pull request's files. The reviewed row carries
   the review's controls (Open review, the tree/list toggle, Show only needs attention,
@@ -321,9 +386,10 @@ repo they were captured against, so they are gitignored. Regenerate locally with
 
 ## Limitations
 
-1. **TypeScript, JavaScript, Go and Python only.** Go and Python are analysed in the
-   editor, with its language server for each; previews and the CLI read them from their
-   text, with callers from syntax only. Throw analysis is TypeScript, JavaScript and Python (`raise`). See
+1. **TypeScript, JavaScript, Go, Python and Java only.** Go, Python and Java are analysed
+   in the editor, with its language server for each; previews and the CLI read them from
+   their text, with callers from syntax only. Throw analysis is TypeScript, JavaScript,
+   Python (`raise`) and Java (`throws`, `throw new`). See
    [Languages](#languages).
 2. **Cross-service edges do not exist statically.** HTTP, queue and workflow boundaries
    cannot be resolved, and shared type names are not call edges.
@@ -341,7 +407,6 @@ repo they were captured against, so they are gitignored. Regenerate locally with
 
 ## Roadmap
 
-- Java as a language provider (see `docs/MULTI_LANGUAGE_PLAN.md`).
 - Add filters for untested blast radius and changes crossing project boundaries.
 - Export the impact tree as a PR comment.
 
