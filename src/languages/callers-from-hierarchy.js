@@ -32,15 +32,48 @@ const reasonOf =(e) => (e && typeof e === 'object' && 'message' in e ? String(e.
 const isRetryable = (e) => !!e && typeof e === 'object' && 'retryable' in e && e.retryable === true;
 
 /**
+ * A first-come queue that lets at most `limit` caller queries run at once; the others wait
+ * (queued, never dropped or failed) until one settles. Used for a language whose server fails
+ * under parallel caller queries (Java: `EditorCallerExtras.queryGate`). The queue lives as
+ * long as its owner (one per language's extras, so per resolver); a query that rejects frees
+ * its slot like one that resolves. A slot is held until the query settles; the services bound
+ * that with their per-command deadlines, so a hung server cannot hold a slot forever.
+ * @param {number} limit A positive integer.
+ * @returns {<T>(run: () => Promise<T>) => Promise<T>}
+ */
+function createQueryGate(limit) {
+  if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError(`createQueryGate needs a positive integer limit, got ${limit}`);
+  let running = 0;
+  /** @type {Array<() => void>} */
+  const waiting = [];
+  return async (run) => {
+    if (running >= limit) await new Promise((resolve) => { waiting.push(() => resolve(undefined)); });
+    else running++;
+    try {
+      return await run();
+    } finally {
+      const next = waiting.shift();
+      if (next) next(); // the slot passes to the next query, so `running` stays
+      else running--;
+    }
+  };
+}
+
+/**
  * Asks for the incoming calls at `pos`: one `prepareCallHierarchy` and the `incomingCalls`
  * of its first item, run as one caller query when the services schedule those. A rejection
- * is kept as the reason, never read as "no callers".
+ * is kept as the reason, never read as "no callers". `retryRejected` (a language's
+ * `EditorCallerExtras.retryRejected`): a rejection that is not already retryable and whose
+ * reason it accepts is asked once more, and that second answer is kept, whatever it is.
+ * `gate` (a language's `EditorCallerExtras.queryGate`): each attempt runs through it, so
+ * at most its limit of this language's queries are in flight; absent: no extra limit.
  * @param {LanguageServices} services
  * @param {DocRef} doc
  * @param {number} pos UTF-16 offset of the symbol's name.
+ * @param {{ retryRejected?: ((reason: string) => boolean)|null, gate?: (<T>(run: () => Promise<T>) => Promise<T>)|null }} [options]
  * @returns {Promise<HierarchyQuery>}
  */
-async function queryHierarchy(services, doc, pos) {
+async function queryHierarchy(services, doc, pos, { retryRejected = null, gate = null } = {}) {
   /** @param {LanguageServices} scope @returns {Promise<HierarchyQuery>} */
   const run = async (scope) => {
     const items = await scope.prepareCallHierarchy(doc, pos);
@@ -50,8 +83,15 @@ async function queryHierarchy(services, doc, pos) {
     if (!Array.isArray(rows)) return { ready: false, reason: NO_INCOMING_RESULT, retryable: false };
     return { ready: true, rows };
   };
+  const send = () => (services.callerQuery ? services.callerQuery(run) : run(services));
+  const ask = () => (gate ? gate(send) : send());
   try {
-    return await (services.callerQuery ? services.callerQuery(run) : run(services));
+    return await ask();
+  } catch (e) {
+    if (!retryRejected || isRetryable(e) || !retryRejected(reasonOf(e))) return { ready: false, reason: reasonOf(e), retryable: isRetryable(e) };
+  }
+  try {
+    return await ask();
   } catch (e) {
     return { ready: false, reason: reasonOf(e), retryable: isRetryable(e) };
   }
@@ -325,6 +365,6 @@ async function applyCallerExtras(hierarchy, { extras, query, file, pos, withTest
 }
 
 module.exports = {
-  callersFromHierarchy, queryHierarchy, callerRows, answerOf, referenceVerdict, applyCallerExtras, mergeCallerRows,
+  callersFromHierarchy, queryHierarchy, createQueryGate, callerRows, answerOf, referenceVerdict, applyCallerExtras, mergeCallerRows,
   MAX_CALLER_TARGETS, NO_INCOMING_RESULT,
 };

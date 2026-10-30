@@ -67,6 +67,8 @@ const log = (m) => { if (out) out.appendLine(`[${new Date().toISOString().slice(
 function activate(context, { clock = realClock } = {}) {
   const now = () => clock.now();
   const review = createReviewState(context.workspaceState, { log, now });
+  // Java's record of the build files at the last import seen (src/languages/java/server-status.js).
+  require('./languages/java/server-status').setEditorJavaBuildFileStore(context.workspaceState);
   // The disposable holds its own reference: deactivate() drops the module's before the
   // editor disposes the subscriptions.
   const documents = createPrDocuments();

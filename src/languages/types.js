@@ -282,6 +282,14 @@
  * @property {(file: string, pos: number) => Promise<string|null>} unseenUsers Asked before
  *   "none": the reason the answer is unknown after all, or null. Never rejects.
  * @property {() => void} clear A new analysis starts: drop what was learnt.
+ * @property {(reason: string) => boolean} [retryRejected] For a caller query the server
+ *   rejected (not already retryable): whether to ask it once more at once, because the
+ *   language knows that rejection is transient (Java: jdtls' `-32603 Internal error` under
+ *   concurrent queries, J6). One more attempt, its answer kept. Absent: never asked again.
+ * @property {<T>(run: () => Promise<T>) => Promise<T>} [queryGate] Every call-hierarchy query
+ *   of this language runs through it (`queryHierarchy`'s `gate`), retries included, so the
+ *   language can cap its own parallel caller queries below the analysis' concurrency (Java:
+ *   JAVA_CALLER_QUERY_LIMIT). Absent: only the analysis' concurrency applies.
  * @property {(reason: string, file: string, pos: number) => string|null} [explainIncomplete]
  *   For a query the server did not answer (a rejection, no item, no incoming-call result)
  *   at `pos` in `file`: the reason to show instead of the server's, when the language knows
@@ -355,7 +363,7 @@
  *   needsServer: boolean,
  *   prepare: (ctx: PrepareContext) => Promise<PreparedLanguage>,
  *   prepareSyntactic?: (ctx: PrepareContext) => Promise<PreparedLanguage>,
- *   editorCallers?: (options: { ts: any, services: any, repoRoot: string|null, trace: (message: string) => void, filterInherited: boolean, onWarmupRetry: () => void, clock?: import('../engine/clock').Clock }) => EditorCallerExtras,
+ *   editorCallers?: (options: { ts: any, services: any, repoRoot: string|null, trace: (message: string) => void, filterInherited: boolean, onWarmupRetry: () => void, clock?: import('../engine/clock').Clock, javaServerStatus?: import('./java/server-status').JavaServerStatus|null }) => EditorCallerExtras,
  *   warmUpTarget?: (ctx: WarmUpContext) => Promise<{ file: string, pos: number }|null>,
  *   serverLabel?: string,
  * }} LanguageProvider

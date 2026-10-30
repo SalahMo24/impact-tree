@@ -309,6 +309,45 @@ test('-32603: a rejected incomingCalls is incomplete with the error, never empty
   assert.deepEqual([state.state, state.complete], ['unknown', false]);
 });
 
+test('-32603 (J6): asked once more through Java\'s retryRejected; a second rejection stays incomplete; other errors are not retried', async () => {
+  const { extras } = extrasOver(targets);
+  const retryRejected = extras.retryRejected ?? null;
+  const file = T;
+  const pos = targets[T].indexOf('plain(');
+  const rows = [someCaller()];
+  /** @param {Array<Error|null>} script @returns {{ services: any, asked: () => number }} */
+  const over = (script) => {
+    let n = 0;
+    return {
+      asked: () => n,
+      services: {
+        async prepareCallHierarchy() { return [{}]; },
+        async incomingCalls() { const e = script[n++]; if (e) throw e; return rows; },
+      },
+    };
+  };
+  const internal = () => new Error('LSP callHierarchy/incomingCalls failed: Internal error. (code -32603)');
+  const once = over([internal(), null]);
+  assert.deepEqual(await queryHierarchy(once.services, { file, side: 'head' }, pos, { retryRejected }), { ready: true, rows });
+  assert.equal(once.asked(), 2);
+  const twice = over([internal(), internal(), null]);
+  const failed = await queryHierarchy(twice.services, { file, side: 'head' }, pos, { retryRejected });
+  assert.deepEqual([failed.ready, twice.asked()], [false, 2]);
+  assert.match(String(failed.reason), /-32603/);
+  // VS Code's command reports the message alone.
+  assert.equal((await queryHierarchy(over([new Error('Internal error.'), null]).services, { file, side: 'head' }, pos, { retryRejected })).ready, true);
+  const other = over([new Error('LSP callHierarchy/incomingCalls failed: Invalid params (code -32602)'), null]);
+  assert.equal((await queryHierarchy(other.services, { file, side: 'head' }, pos, { retryRejected })).ready, false);
+  assert.equal(other.asked(), 1);
+  const retryable = over([Object.assign(internal(), { retryable: true }), null]);
+  assert.deepEqual(await queryHierarchy(retryable.services, { file, side: 'head' }, pos, { retryRejected }), { ready: false, reason: internal().message, retryable: true });
+  assert.equal(retryable.asked(), 1);
+  // Without the option (every other language): never asked again.
+  const plain = over([internal(), null]);
+  assert.equal((await queryHierarchy(plain.services, { file, side: 'head' }, pos)).ready, false);
+  assert.equal(plain.asked(), 1);
+});
+
 test('the target\'s file unreadable: incomplete', async () => {
   const { extras } = extrasOver({});
   const applied = /** @type {any} */ (await applyCallerExtras({ ready: true, rows: [someCaller()] }, { extras, query: extras.query('/r/src/Gone.java', 5), file: '/r/src/Gone.java', pos: 5, withTests: true }));
