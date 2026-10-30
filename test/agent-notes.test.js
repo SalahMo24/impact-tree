@@ -118,19 +118,12 @@ test('no notes, or notes taken away: the rows are the engine\'s, byte for byte',
   assert.equal(textOf(after.tooltip), textOf(before.tooltip));
 });
 
-test('lenses: the agent\'s line first for changed and may-change, at any engine level; none for new or same', async () => {
+test('lenses: the engine\'s alone; the agent\'s note is a comment thread beside the line, not a lens (L6, G16)', async () => {
   const { provider } = providerWith(agentNotes(PAYLOAD));
   const rows = await rowsOf(provider);
-  const notes = agentNotes({ changes: [PAYLOAD.changes[0], { id: 'src/jwt.ts#300', kind: 'may-change', what: 'x'.repeat(150) }] });
-  const plan = lensPlan(rows, () => false, agentNotes(PAYLOAD).change);
+  // verify is at level 0 and has a note; sign is new and fine and has a note: no lens for it.
+  const plan = lensPlan(rows, () => false);
   assert.deepEqual(plan.map((e) => [e.id, lensTitles(e)]), [[treeItemId(rows[0]), {
-    agent: '⚠ rejects tokens whose header is not {alg, typ:"JWT"}', verdict: '1 of 1 caller not updated', callers: 'Show callers', tick: 'Mark reviewed' }]],
-  'sign is new and fine: no lens');
-  // A fine change the agent says may change gets a lens of its own, the line cut to 100 characters; no verdict.
-  const [, maybe] = lensPlan(rows, () => false, notes.change);
-  assert.equal(maybe.verdict, null);
-  assert.equal(lensTitles(maybe).agent.length, 100);
-  assert.ok(lensTitles(maybe).agent.startsWith('? xxx') && lensTitles(maybe).agent.endsWith('…'));
-  // Without notes, only the engine's lenses, as before.
-  assert.deepEqual(lensPlan(rows, () => false).map((e) => lensTitles(e).agent), [null]);
+    verdict: '1 of 1 caller not updated', callers: 'Show callers', tick: 'Mark reviewed' }]],
+  'the verdict, the callers and the mark; no agent line, and a fine change the agent described has no lens');
 });

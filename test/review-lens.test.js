@@ -47,8 +47,8 @@ test('a deleted row, an outside row and a file row get no lens, whatever their l
 
 test('a lens says the verdict, offers the callers only when there are some, and tells the reviewed mark', () => {
   const [lv0, lv1] = lensPlan(LEVELS, never);
-  assert.deepEqual(lensTitles(lv0), { agent: null, verdict: '1 of 3 callers not updated', callers: 'Show callers', tick: 'Mark reviewed' });
-  assert.deepEqual(lensTitles(lv1), { agent: null, verdict: 'callers unknown', callers: null, tick: 'Mark reviewed' }, 'no callers, no peek');
+  assert.deepEqual(lensTitles(lv0), { verdict: '1 of 3 callers not updated', callers: 'Show callers', tick: 'Mark reviewed' });
+  assert.deepEqual(lensTitles(lv1), { verdict: 'callers unknown', callers: null, tick: 'Mark reviewed' }, 'no callers, no peek');
   assert.equal(lv0.hasCallers, true);
   assert.equal(lv1.hasCallers, false);
 });
