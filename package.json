@@ -289,6 +289,26 @@
         "icon": "$(close)"
       },
       {
+        "command": "impactTree.agent.markReviewed",
+        "title": "Mark reviewed",
+        "icon": "$(check)"
+      },
+      {
+        "command": "impactTree.agent.markNotReviewed",
+        "title": "Mark not reviewed",
+        "icon": "$(pass-filled)"
+      },
+      {
+        "command": "impactTree.agent.replyNextRound",
+        "title": "Reply in next round",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "impactTree.agent.postToPr",
+        "title": "Post to the PR…",
+        "icon": "$(git-pull-request)"
+      },
+      {
         "command": "impactTree.review.suggestChange",
         "title": "Suggest change",
         "category": "Impact Tree",
@@ -616,6 +636,22 @@
           "when": "false"
         },
         {
+          "command": "impactTree.agent.markReviewed",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.agent.markNotReviewed",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.agent.replyNextRound",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.agent.postToPr",
+          "when": "false"
+        },
+        {
           "command": "impactTree.review.suggestChange",
           "when": "impactTree.canSuggestChange"
         },
@@ -764,6 +800,26 @@
           "command": "impactTree.review.suggestChange",
           "group": "inline@2",
           "when": "commentController == impactTree.review && commentThreadIsEmpty"
+        },
+        {
+          "command": "impactTree.agent.markReviewed",
+          "group": "inline@1",
+          "when": "commentController == impactTree.agent && commentThread =~ /\\bnotReviewed\\b/"
+        },
+        {
+          "command": "impactTree.agent.markNotReviewed",
+          "group": "inline@1",
+          "when": "commentController == impactTree.agent && commentThread =~ /\\breviewed\\b/"
+        },
+        {
+          "command": "impactTree.agent.replyNextRound",
+          "group": "inline@2",
+          "when": "commentController == impactTree.agent && commentThread =~ /\\bcanReply\\b/"
+        },
+        {
+          "command": "impactTree.agent.postToPr",
+          "group": "inline@3",
+          "when": "commentController == impactTree.agent && commentThread =~ /\\bcanPost\\b/"
         }
       ],
       "comments/comment/title": [

@@ -11,8 +11,9 @@ const { createReviewTab } = require('./views/review-tab/review-tab-panel');
 const { createReviewSidebar, emptyReviewRow } = require('./views/sidebar/review-sidebar');
 const { viewStateOf } = require('./views/changes/view-state');
 const { createReviewNavigation } = require('./diff-editor/review-navigation');
-const { createDetailPanel } = require('./views/details/detail-panel');
+const { createDetailPanel, headRelPath } = require('./views/details/detail-panel');
 const { createCallerComment } = require('./diff-editor/caller-comment');
+const { createAgentThreads } = require('./diff-editor/agent-threads');
 const { createReviewLens } = require('./diff-editor/review-lens');
 const { readLineOfOffset, offsetToPosition } = require('./engine/textpos');
 const { createDecorationProvider } = require('./diff-editor/decorations');
@@ -346,6 +347,31 @@ function activate(context, { clock = realClock } = {}) {
   context.subscriptions.push(createCallerComment(vscode, {
     provider, getState: () => owned.state, lineOf: readLineOfOffset,
     reviewComments: () => reviewComments, feedbackComments: () => feedbackComments,
+  }));
+
+  // The agent's notes beside the code: a read-only thread per change it described, in the
+  // head side of the review diff (L6). It follows the agent's result, the analysis, the
+  // checks and the pull request's state; disposed with the window. Its actions start a
+  // feedback draft or a GitHub draft, which the reviewer edits and sends; it sends nothing.
+  context.subscriptions.push(createAgentThreads(vscode, {
+    provider, log,
+    getAgentReview: () => agentReviewNow(),
+    // The head side of a file the shown review covers, for a local review and a preview alike.
+    whereIs: (uri) => {
+      const state = owned.state;
+      const relPath = state && state.result ? headRelPath(uri, state) : null;
+      return relPath ? { path: relPath, side: 'RIGHT' } : null;
+    },
+    isReviewed: provider.isReviewed,
+    setReviewed: (row, on) => provider.setChecked(row, on),
+    canStartFeedback: () => feedbackComments.available(),
+    startFeedbackDraft: (row) => feedbackComments.commentOnRow(row),
+    canPostToPr: () => provider.threadsView().status === 'ready',
+    startReviewDraft: (row, text) => reviewComments.commentOnRowWith(row, text),
+    events: [
+      owned.onDidChangeAnalysis, owned.onDidChangeCards, reviewStore.onDidChange, provider.onDidChangeReview,
+      (listener) => provider.onDidChangePresentation((e) => { if (e.reason === 'analysis') listener(); }),
+    ],
   }));
 
   const sources = createSourcesProvider(vscode, {

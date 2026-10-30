@@ -34,7 +34,7 @@ test('editor commands refresh the selected PR, preserve preview documents, and r
       createStatusBarItem: () => ({ show() {}, hide() {}, dispose() {} }),
       createTreeView: () => ({ dispose() {}, onDidChangeCheckboxState: (fn) => { tickListener = fn; return disposable(); },
         onDidChangeSelection: disposable, onDidChangeVisibility: disposable, reveal: async () => {} }),
-      registerWebviewViewProvider: disposable, onDidChangeTextEditorSelection: disposable, onDidChangeActiveTextEditor: disposable,
+      registerWebviewViewProvider: disposable, onDidChangeTextEditorSelection: disposable, onDidChangeActiveTextEditor: disposable, onDidChangeVisibleTextEditors: disposable,
       withProgress: async (_, fn) => fn({ report() {} }),
       showQuickPick: async () => quickPick,
       showWarningMessage: async () => undefined,

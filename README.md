@@ -318,8 +318,7 @@ Off by default; turn on `impactTree.cards.enabled` and `impactTree.agents.enable
   `submit_cards` call: cards in reading order and, for each change, whether its behaviour
   changed, may change, is new or is the same, with before / after / when and what it
   affects, plus at most five changes that need your attention.
-- The agent's one-line note shows on the change rows and in the diff's CodeLens, after the
-  engine's own text, and a change row's icon is the agent's own: a pencil for changed, a
+- The agent's one-line note shows on the change rows, after the engine's own text, and a change row's icon is the agent's own: a pencil for changed, a
   question mark for may change, a plus for new, none for same behaviour. The changes the agent
   names in `attention` need attention beside the ones the engine flags (callers not updated,
   or to check by hand): one set orders the cards and feeds the badge, the status bar,
@@ -329,6 +328,17 @@ Off by default; turn on `impactTree.cards.enabled` and `impactTree.agents.enable
   the `…` menu offers **Undo agent result** and **Show engine cards** / **Show agent cards**;
   the first line of the agent's summary is in the reviewed row's hover and all of it on the
   review tab. A result for another state of the branch is a notice in the hover and is not used.
+- **The agent's notes beside the code.** In the review diff, each change the agent described
+  has a read-only comment on its first line, under *Impact Tree: your agent's notes* in the
+  Comments panel: what the agent said (changed, may change, new or same behaviour; before,
+  after, when), the callers it says are affected (a caller Impact Tree finds is a link that
+  opens the call), the engine's own sentence about the change in italics, and who wrote it.
+  The note is open when the change needs attention and closed otherwise. Its buttons are
+  **Mark reviewed**, **Reply in next round** (a feedback draft on that line, in a local review
+  or a checked-out pull request) and, for a pull request under review, **Post to the PR…**,
+  which opens a GitHub comment holding the note's text for you to edit and send. Nothing is
+  sent by itself. The notes go with the result: **Undo agent result**, **Show engine cards**
+  or a result for another state of the branch removes them.
 - Results are kept in this workspace. The window listens on a local socket in a private
   temporary folder, guarded by a token; nothing leaves your machine. Only a checked-out
   branch takes part, not a pull request preview. The MCP server restarts itself when the

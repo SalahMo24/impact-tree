@@ -159,6 +159,7 @@ const SUITE = [
   { file: 'test/card-facts.test.js', tier: 'quick' },
   { file: 'test/mcp-supervisor.test.js', tier: 'quick' },
   { file: 'test/agent-notes.test.js', tier: 'quick' },
+  { file: 'test/agent-threads.test.js', tier: 'quick' },  // 0.8s
   { file: 'test/review-tab.test.js', tier: 'quick' },
   { file: 'test/review-sidebar.test.js', tier: 'quick' },
   { file: 'test/review-menus.test.js', tier: 'quick' },  // 0.1s
