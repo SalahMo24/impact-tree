@@ -82,7 +82,7 @@ function registerCommands(vscode, {
 
     vscode.commands.registerCommand('impactTree.computeTestReach', async () => {
       if (session.isTierA()) {
-        vscode.window.showInformationMessage('Test reachability requires local analysis. The PR preview is unchanged.');
+        vscode.window.showInformationMessage('Finding the tests that cover this review needs a local analysis. The PR preview is unchanged.');
         return;
       }
       await session.refreshWithTestReach();

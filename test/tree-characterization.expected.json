@@ -1368,7 +1368,7 @@
       "status": "added",
       "tooltip": "src/open.ts:10"
      },
-     "description": "reaches 1 caller  ·  no test",
+     "description": "called from 1 place  ·  no test",
      "icon": "__file__",
      "label": "createOpen",
      "resourceUri": "uri:file:///repo/src/open.ts#100",
@@ -1450,7 +1450,7 @@
       "status": "added",
       "tooltip": "src/open.ts:20"
      },
-     "description": "in createOpen  ·  reaches 1 caller  ·  no test",
+     "description": "in createOpen  ·  called from 1 place  ·  no test",
      "icon": "__file__",
      "label": "uriFor",
      "resourceUri": "uri:file:///repo/src/open.ts#200",
@@ -1593,7 +1593,7 @@
       "status": "modified",
       "tooltip": "src/ready.ts:3"
      },
-     "description": "reaches 1 caller  ·  no test",
+     "description": "called from 1 place  ·  no test",
      "icon": "__file__",
      "label": "READY",
      "resourceUri": "uri:file:///repo/src/ready.ts#30",
@@ -1710,7 +1710,7 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "reaches 1 caller  ·  no test",
+     "description": "called from 1 place  ·  no test",
      "icon": "__file__",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
@@ -3240,7 +3240,7 @@
       "status": "added",
       "tooltip": "src/open.ts:10"
      },
-     "description": "reaches 1 caller  ·  no test",
+     "description": "called from 1 place  ·  no test",
      "icon": "symbol-function",
      "label": "createOpen",
      "resourceUri": "uri:file:///repo/src/open.ts#100",
@@ -3321,7 +3321,7 @@
       "status": "added",
       "tooltip": "src/open.ts:20"
      },
-     "description": "in createOpen  ·  reaches 1 caller  ·  no test",
+     "description": "in createOpen  ·  called from 1 place  ·  no test",
      "icon": "symbol-method",
      "label": "uriFor",
      "resourceUri": "uri:file:///repo/src/open.ts#200",
@@ -3461,7 +3461,7 @@
       "status": "modified",
       "tooltip": "src/ready.ts:3"
      },
-     "description": "reaches 1 caller  ·  no test",
+     "description": "called from 1 place  ·  no test",
      "icon": "symbol-variable",
      "label": "READY",
      "resourceUri": "uri:file:///repo/src/ready.ts#30",
@@ -3576,7 +3576,7 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "reaches 1 caller  ·  no test",
+     "description": "called from 1 place  ·  no test",
      "icon": "symbol-function",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
@@ -4247,18 +4247,18 @@
     }
    },
    {
-    "at": "/2:store.ts/0:Store.save/3:Compute test reachability",
+    "at": "/2:store.ts/0:Store.save/3:Find the tests that cover this",
     "item": {
      "collapsible": 0,
      "command": {
       "command": "impactTree.computeTestReach",
-      "title": "Compute test reachability"
+      "title": "Find the tests that cover this"
      },
      "decoration": null,
-     "description": "extra caller queries — run on demand",
+     "description": "searches the callers again — on demand",
      "icon": "play",
-     "label": "Compute test reachability",
-     "tooltip": "Compute test reachability"
+     "label": "Find the tests that cover this",
+     "tooltip": "Find the tests that cover this"
     }
    },
    {
@@ -4391,18 +4391,18 @@
     }
    },
    {
-    "at": "/2:store.ts/1:Store.load/2:Compute test reachability",
+    "at": "/2:store.ts/1:Store.load/2:Find the tests that cover this",
     "item": {
      "collapsible": 0,
      "command": {
       "command": "impactTree.computeTestReach",
-      "title": "Compute test reachability"
+      "title": "Find the tests that cover this"
      },
      "decoration": null,
-     "description": "extra caller queries — run on demand",
+     "description": "searches the callers again — on demand",
      "icon": "play",
-     "label": "Compute test reachability",
-     "tooltip": "Compute test reachability"
+     "label": "Find the tests that cover this",
+     "tooltip": "Find the tests that cover this"
     }
    },
    {
@@ -4432,18 +4432,18 @@
     }
    },
    {
-    "at": "/2:store.ts/2:Store.inner/0:Compute test reachability",
+    "at": "/2:store.ts/2:Store.inner/0:Find the tests that cover this",
     "item": {
      "collapsible": 0,
      "command": {
       "command": "impactTree.computeTestReach",
-      "title": "Compute test reachability"
+      "title": "Find the tests that cover this"
      },
      "decoration": null,
-     "description": "extra caller queries — run on demand",
+     "description": "searches the callers again — on demand",
      "icon": "play",
-     "label": "Compute test reachability",
-     "tooltip": "Compute test reachability"
+     "label": "Find the tests that cover this",
+     "tooltip": "Find the tests that cover this"
     }
    },
    {
@@ -4918,18 +4918,18 @@
     }
    },
    {
-    "at": "/3:big.ts/0:Big/1:Compute test reachability",
+    "at": "/3:big.ts/0:Big/1:Find the tests that cover this",
     "item": {
      "collapsible": 0,
      "command": {
       "command": "impactTree.computeTestReach",
-      "title": "Compute test reachability"
+      "title": "Find the tests that cover this"
      },
      "decoration": null,
-     "description": "extra caller queries — run on demand",
+     "description": "searches the callers again — on demand",
      "icon": "play",
-     "label": "Compute test reachability",
-     "tooltip": "Compute test reachability"
+     "label": "Find the tests that cover this",
+     "tooltip": "Find the tests that cover this"
     }
    },
    {
@@ -4993,18 +4993,18 @@
     }
    },
    {
-    "at": "/4:util.ts/0:helper/0:Compute test reachability",
+    "at": "/4:util.ts/0:helper/0:Find the tests that cover this",
     "item": {
      "collapsible": 0,
      "command": {
       "command": "impactTree.computeTestReach",
-      "title": "Compute test reachability"
+      "title": "Find the tests that cover this"
      },
      "decoration": null,
-     "description": "extra caller queries — run on demand",
+     "description": "searches the callers again — on demand",
      "icon": "play",
-     "label": "Compute test reachability",
-     "tooltip": "Compute test reachability"
+     "label": "Find the tests that cover this",
+     "tooltip": "Find the tests that cover this"
     }
    },
    {
@@ -5067,18 +5067,18 @@
     }
    },
    {
-    "at": "/5:util.ts/0:helper/0:Compute test reachability",
+    "at": "/5:util.ts/0:helper/0:Find the tests that cover this",
     "item": {
      "collapsible": 0,
      "command": {
       "command": "impactTree.computeTestReach",
-      "title": "Compute test reachability"
+      "title": "Find the tests that cover this"
      },
      "decoration": null,
-     "description": "extra caller queries — run on demand",
+     "description": "searches the callers again — on demand",
      "icon": "play",
-     "label": "Compute test reachability",
-     "tooltip": "Compute test reachability"
+     "label": "Find the tests that cover this",
+     "tooltip": "Find the tests that cover this"
     }
    },
    {
@@ -5131,7 +5131,7 @@
       "status": "added",
       "tooltip": "src/open.ts:10"
      },
-     "description": "reaches 1 caller",
+     "description": "called from 1 place",
      "icon": "symbol-function",
      "label": "createOpen",
      "resourceUri": "uri:file:///repo/src/open.ts#100",
@@ -5187,18 +5187,18 @@
     }
    },
    {
-    "at": "/6:open.ts/0:createOpen/1:Compute test reachability",
+    "at": "/6:open.ts/0:createOpen/1:Find the tests that cover this",
     "item": {
      "collapsible": 0,
      "command": {
       "command": "impactTree.computeTestReach",
-      "title": "Compute test reachability"
+      "title": "Find the tests that cover this"
      },
      "decoration": null,
-     "description": "extra caller queries — run on demand",
+     "description": "searches the callers again — on demand",
      "icon": "play",
-     "label": "Compute test reachability",
-     "tooltip": "Compute test reachability"
+     "label": "Find the tests that cover this",
+     "tooltip": "Find the tests that cover this"
     }
    },
    {
@@ -5217,7 +5217,7 @@
       "status": "added",
       "tooltip": "src/open.ts:20"
      },
-     "description": "in createOpen  ·  reaches 1 caller",
+     "description": "in createOpen  ·  called from 1 place",
      "icon": "symbol-method",
      "label": "uriFor",
      "resourceUri": "uri:file:///repo/src/open.ts#200",
@@ -5263,18 +5263,18 @@
     }
    },
    {
-    "at": "/6:open.ts/1:createOpen.uriFor/1:Compute test reachability",
+    "at": "/6:open.ts/1:createOpen.uriFor/1:Find the tests that cover this",
     "item": {
      "collapsible": 0,
      "command": {
       "command": "impactTree.computeTestReach",
-      "title": "Compute test reachability"
+      "title": "Find the tests that cover this"
      },
      "decoration": null,
-     "description": "extra caller queries — run on demand",
+     "description": "searches the callers again — on demand",
      "icon": "play",
-     "label": "Compute test reachability",
-     "tooltip": "Compute test reachability"
+     "label": "Find the tests that cover this",
+     "tooltip": "Find the tests that cover this"
     }
    },
    {
@@ -5303,18 +5303,18 @@
     }
    },
    {
-    "at": "/6:open.ts/2:sameUri/0:Compute test reachability",
+    "at": "/6:open.ts/2:sameUri/0:Find the tests that cover this",
     "item": {
      "collapsible": 0,
      "command": {
       "command": "impactTree.computeTestReach",
-      "title": "Compute test reachability"
+      "title": "Find the tests that cover this"
      },
      "decoration": null,
-     "description": "extra caller queries — run on demand",
+     "description": "searches the callers again — on demand",
      "icon": "play",
-     "label": "Compute test reachability",
-     "tooltip": "Compute test reachability"
+     "label": "Find the tests that cover this",
+     "tooltip": "Find the tests that cover this"
     }
    },
    {
@@ -5367,7 +5367,7 @@
       "status": "modified",
       "tooltip": "src/ready.ts:3"
      },
-     "description": "reaches 1 caller",
+     "description": "called from 1 place",
      "icon": "symbol-variable",
      "label": "READY",
      "resourceUri": "uri:file:///repo/src/ready.ts#30",
@@ -5423,18 +5423,18 @@
     }
    },
    {
-    "at": "/7:ready.ts/0:READY/1:Compute test reachability",
+    "at": "/7:ready.ts/0:READY/1:Find the tests that cover this",
     "item": {
      "collapsible": 0,
      "command": {
       "command": "impactTree.computeTestReach",
-      "title": "Compute test reachability"
+      "title": "Find the tests that cover this"
      },
      "decoration": null,
-     "description": "extra caller queries — run on demand",
+     "description": "searches the callers again — on demand",
      "icon": "play",
-     "label": "Compute test reachability",
-     "tooltip": "Compute test reachability"
+     "label": "Find the tests that cover this",
+     "tooltip": "Find the tests that cover this"
     }
    },
    {
@@ -5487,7 +5487,7 @@
       "status": "modified",
       "tooltip": "src/use.ts"
      },
-     "description": "reaches 1 caller",
+     "description": "called from 1 place",
      "icon": "symbol-function",
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
@@ -5567,18 +5567,18 @@
     }
    },
    {
-    "at": "/8:use.ts/0:useB/1:Compute test reachability",
+    "at": "/8:use.ts/0:useB/1:Find the tests that cover this",
     "item": {
      "collapsible": 0,
      "command": {
       "command": "impactTree.computeTestReach",
-      "title": "Compute test reachability"
+      "title": "Find the tests that cover this"
      },
      "decoration": null,
-     "description": "extra caller queries — run on demand",
+     "description": "searches the callers again — on demand",
      "icon": "play",
-     "label": "Compute test reachability",
-     "tooltip": "Compute test reachability"
+     "label": "Find the tests that cover this",
+     "tooltip": "Find the tests that cover this"
     }
    },
    {
@@ -5972,7 +5972,7 @@
       "status": "modified",
       "tooltip": "src/service.ts:30"
      },
-     "description": "reaches 1 caller",
+     "description": "called from 1 place",
      "icon": "symbol-method",
      "label": "idle",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#300",
@@ -6585,7 +6585,7 @@
       "status": "modified",
       "tooltip": "src/service.ts:30"
      },
-     "description": "reaches 1 caller",
+     "description": "called from 1 place",
      "icon": "symbol-method",
      "label": "idle",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#300",
@@ -6990,7 +6990,7 @@
       "status": "modified",
       "tooltip": "src/read.ts:4"
      },
-     "description": "reaches 1 caller",
+     "description": "called from 1 place",
      "icon": "symbol-function",
      "label": "read",
      "resourceUri": "uri:file:///repo/src/read.ts#40",
@@ -7309,7 +7309,7 @@
       "status": "modified",
       "tooltip": "src/read.ts:4"
      },
-     "description": "reaches 1 caller",
+     "description": "called from 1 place",
      "icon": "symbol-function",
      "label": "read",
      "resourceUri": "uri:file:///repo/src/read.ts#40",
@@ -7629,7 +7629,7 @@
       "status": "modified",
       "tooltip": "src/read.ts:4"
      },
-     "description": "reaches 1 caller",
+     "description": "called from 1 place",
      "icon": "symbol-function",
      "label": "read",
      "resourceUri": "uri:impacttree-pr:///src/read.ts?side=head&revision=7%3Aheadsha%3Abasesha#40",

@@ -28,7 +28,7 @@ const MAX_SOURCE_LINES = 400;
 const MAX_SEARCH_HITS = 200;
 // Deadline for one `impact_paths` call. Unit: ms.
 const QUERY_DEADLINE_MS = 10000;
-// Caller rows shown by get_card's merge hints and seams. Unit: items.
+// Caller rows shown by get_card's cards that may belong together and seams. Unit: items.
 // list_cards with detail: members and entry points listed per card (more: get_card). Unit: items.
 const MAX_DETAIL_MEMBERS = 40;
 const MAX_DETAIL_ENTRIES = 8;
@@ -124,10 +124,10 @@ function addCardTools(tools, env) {
   tools.push({
     name: 'list_cards', title: 'List cluster cards', annotations: READ_ONLY,
     description: 'The PR\'s changes grouped into cards (and repeated-edit sweeps). Per card: id, label, member count, caller stats, entry-point types its changes reach, and a seam summary. '
-      + 'With detail: true, also each card\'s members (id, name, file, change kinds), its entry points, the cards it has seams with, and its merge hints: usually enough to title, summarise and merge every card without get_card. Paged.',
+      + 'With detail: true, also each card\'s members (id, name, file, change kinds), its entry points, the cards it has seams with, and the cards that may belong together (mergeHints): usually enough to title, summarise and merge every card without get_card. Paged.',
     inputSchema: z.object({
       ...pageShape,
-      detail: z.boolean().optional().describe('Add members, entry points, seams and merge hints to each card (fewer calls than get_card per card).'),
+      detail: z.boolean().optional().describe('Add members, entry points, seams and the cards that may belong together (mergeHints) to each card (fewer calls than get_card per card).'),
     }).strict(),
     run: async (args) => {
       const items = env.allCards.map((c) => {
@@ -157,7 +157,7 @@ function addCardTools(tools, env) {
 
   tools.push({
     name: 'get_card', title: 'Get one card', annotations: READ_ONLY,
-    description: 'One card: its members (names, kinds, files, lines), impact facts (entry points, path ends, top paths, completeness), seams with other cards, and merge hints with their evidence. Members page with page/pageSize.',
+    description: 'One card: its members (names, kinds, files, lines), impact facts (entry points, path ends, top paths, completeness), seams with other cards, and the cards that may belong together (mergeHints) with their evidence. Members page with page/pageSize.',
     inputSchema: z.object({ id: z.string().min(1).max(100).describe('Card id from list_cards, such as K3.'), ...pageShape }).strict(),
     run: async (args) => {
       const c = env.cardById.get(String(args.id));

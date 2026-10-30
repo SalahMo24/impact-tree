@@ -82,7 +82,7 @@ test('3. computeTestReach during a run produces a result with test reachability 
       if (order === 'older ends first') { first.release(); await running; second.release(); await reach; } else { second.release(); await reach; first.release(); await running; }
       const [row] = await env.changeRows();
       const testsRow = (await env.tree().getChildren(row)).at(-1);
-      assert.notEqual(testsRow.label, 'Compute test reachability', 'the shown result has its test reach computed');
+      assert.notEqual(testsRow.label, 'Find the tests that cover this', 'the shown result has its test reach computed');
     }));
   }
 });

@@ -179,7 +179,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
   }
 
   /**
-   * Builds the cards of `result` and publishes them, then finds the merge hints in the
+   * Builds the cards of `result` and publishes them, then finds which cards may belong together in the
    * background and publishes the cards again with them. Called from a run that has published
    * `result`, before the run is released: the facts are gathered under the run's signal. A
    * failure becomes a note on the view (`cardsError`), never a rejection; the shown result is
@@ -226,8 +226,8 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
       publishCardsState(result, { cards: withHints, hintsPending: false, cardsError: null });
     } catch (e) {
       if (isAnalysisCancelled(e) || !live()) return;
-      log(`cards: merge hints failed: ${e && e.stack ? e.stack : e}`);
-      publishCardsState(result, { cards, hintsPending: false, cardsError: `merge hints could not be found: ${e && e.message ? e.message : e}` });
+      log(`cards: grouping the cards failed: ${e && e.stack ? e.stack : e}`);
+      publishCardsState(result, { cards, hintsPending: false, cardsError: `which cards may belong together could not be found: ${e && e.message ? e.message : e}` });
     } finally {
       if (hintsController === controller) hintsController = null;
     }

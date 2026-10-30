@@ -90,7 +90,7 @@ test('an unknown symbol with no reason recorded still says the search did not fi
 test('before the walk runs, every tests row offers to run it and no row reads "no test"', async () => {
   const rows = await rowsOf(resultOf([change('a', 'not-computed'), change('b', 'not-computed')]));
   for (const r of Object.values(rows)) {
-    assert.equal(r.tests.label, 'Compute test reachability');
+    assert.equal(r.tests.label, 'Find the tests that cover this');
     assert.equal(r.testsItem.command.command, 'impactTree.computeTestReach');
     assert.doesNotMatch(r.item.description, /no test/);
   }

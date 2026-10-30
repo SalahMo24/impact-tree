@@ -79,7 +79,7 @@ test('on: the local analysis asks for impact paths; cards appear when it ends, m
   assert.deepEqual(env.seen.cardsCalls.map((c) => c[0]), ['gatherLocal', 'build', 'hints']);
   assert.deepEqual(env.seen.cardsCalls[1][1], { from: 'local' }, 'the cards are built from the facts');
 
-  assert.deepEqual(await labels(env), ['Merge hints loading…', 'K1 · card K1', 'K2 · card K2']);
+  assert.deepEqual(await labels(env), ['Grouping cards…', 'card K1', 'card K2']);
   assert.deepEqual(hintsOf(await card(env, 'K1')), [], 'no hints yet');
 
   const options = env.seen.cardsCalls[2][1];
@@ -89,8 +89,8 @@ test('on: the local analysis asks for impact paths; cards appear when it ends, m
 
   hold.release();
   await flush();
-  assert.deepEqual(await labels(env), ['K1 · card K1', 'K2 · card K2']);
-  assert.deepEqual(hintsOf(await card(env, 'K1')), ['May belong with K2: token Shared']);
+  assert.deepEqual(await labels(env), ['card K1', 'card K2']);
+  assert.deepEqual(hintsOf(await card(env, 'K1')), ['May belong with card K2: token Shared']);
   assert.deepEqual(env.seen.errors, []);
 }));
 
@@ -108,10 +108,10 @@ test('hints of a replaced analysis never appear', async (t) => {
     first.release();
     await flush();
     assert.deepEqual(hintsOf(await card(env, 'K1')), [], 'the older answer was dropped');
-    assert.equal((await labels(env))[0], 'Merge hints loading…', 'and did not end the newer wait');
+    assert.equal((await labels(env))[0], 'Grouping cards…', 'and did not end the newer wait');
     second.release();
     await flush();
-    assert.deepEqual(hintsOf(await card(env, 'K1')), ['May belong with K2: token Shared']);
+    assert.deepEqual(hintsOf(await card(env, 'K1')), ['May belong with card K2: token Shared']);
   }));
   await t.test('a checkout starts', () => withCards(async (env) => {
     const engine = env.hooks.cardsEngine = fakeEngine(env);
@@ -152,7 +152,7 @@ test('a failure of the merge hints is a note on the view; the cards stay and not
     await flush();
   } finally { process.off('unhandledRejection', onUnhandled); }
   assert.deepEqual(unhandled, []);
-  assert.deepEqual(await labels(env), ['Cards are incomplete: merge hints could not be found: git grep timed out', 'K1 · card K1', 'K2 · card K2']);
+  assert.deepEqual(await labels(env), ['Cards are incomplete: which cards may belong together could not be found: git grep timed out', 'card K1', 'card K2']);
   assert.deepEqual(env.seen.errors, [], 'no popup: the review itself is fine');
   assert.equal((await env.changeRows()).length, 4, 'the Changes view is untouched');
 }));
@@ -191,10 +191,10 @@ test('a preview asks for impact paths and builds its cards from the pull request
   assert.equal(options.head, 'head-of-7');
   const top = await labels(env);
   assert.match(top[0], /^Preview — cards see the PR's own files only/);
-  assert.ok(top.includes('K1 · card K1'));
+  assert.ok(top.includes('card K1'));
   hold.release();
   await flush();
-  assert.deepEqual(hintsOf(await card(env, 'K1')), ['May belong with K2: token Shared']);
+  assert.deepEqual(hintsOf(await card(env, 'K1')), ['May belong with card K2: token Shared']);
   assert.deepEqual(env.seen.errors, []);
 }));
 
@@ -230,7 +230,7 @@ test('the view follows the analysis: a new run clears the old cards at once', ()
   engine.hints.next().release();
   await env.refresh();
   await flush();
-  assert.ok((await labels(env)).includes('K1 · card K1'));
+  assert.ok((await labels(env)).includes('card K1'));
   const running = engine.hints.next();
   const held = env.holds.analyze.next();
   const next = env.refresh();
@@ -240,5 +240,5 @@ test('the view follows the analysis: a new run clears the old cards at once', ()
   await next;
   running.release();
   await flush();
-  assert.ok((await labels(env)).includes('K1 · card K1'));
+  assert.ok((await labels(env)).includes('card K1'));
 }));
