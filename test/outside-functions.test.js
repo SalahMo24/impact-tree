@@ -4,6 +4,7 @@
 // content-based review identity.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { rootFiles } = require('./root-files');
 const fs = require('fs');
 const path = require('path');
 const vscode = require('./vscode-stub');
@@ -138,7 +139,7 @@ const viewOf = (outside, review = null) => {
     getState: () => ({ result, rowDetail: 'hover', rel: (f) => f.replace('/repo/', '') }),
     resolver: { incomingWithStatus: async () => ({ callers: [], complete: true }) }, review,
   });
-  const fileRow = async (relPath) => (await provider.getChildren()).find((r) => r.relPath === relPath);
+  const fileRow = async (relPath) => (await rootFiles(provider)).find((r) => r.relPath === relPath);
   return { provider, fileRow };
 };
 const OUT_A = { file: '/repo/src/a.ts', relPath: 'src/a.ts', ranges: [[1, 4], [22, 22]] };
@@ -171,7 +172,8 @@ test('a file whose only change is outside functions is a file row holding it, an
   assert.equal(file.type, 'reviewFile');
   const [row] = await provider.getChildren(file);
   assert.equal(provider.getTreeItem(row).description, 'line 3');
-  assert.match(provider.summarize().message, / 4 of 4 left$/, '3 symbols + 1 outside row');
+  assert.match(provider.summarize().message, / · 4 changes · nothing needs attention$/, '3 symbols + 1 outside row');
+  assert.equal(provider.reviewCounts().total, 4);
 });
 
 test('ticking the file ticks its "Outside functions" row, and unticking the row unticks the file', async () => {
@@ -185,7 +187,7 @@ test('ticking the file ticks its "Outside functions" row, and unticking the row 
   assert.equal(provider.getTreeItem(outsideRow).checkboxState, vscode.TreeItemCheckboxState.Checked);
   provider.setChecked(outsideRow, false);
   assert.equal(provider.getTreeItem(file).checkboxState, vscode.TreeItemCheckboxState.Unchecked);
-  assert.match(provider.summarize().message, / 2 of 4 left$/, 'the outside row and solo');
+  assert.equal(provider.reviewCounts().left, 2, 'the outside row and solo');
 });
 
 // ---- identity ----------------------------------------------------------------------

@@ -40,7 +40,7 @@ test('local rows and diff commands are usable during warm-up; ticks survive fina
   const run = env.refresh();
   await warm.reached;
   // The first index is being built: the counts stay, and the elapsed time follows them.
-  assert.match(env.view().message, /^Branch vs base · 1 needs attention · 1 of 1 left · Indexing the workspace, first run only — usually 10–35 s… 0 s$/);
+  assert.match(env.view().message, /^Branch vs base · 1 needs attention · 0 of 1 looked at · Indexing the workspace, first run only — usually 10–35 s… 0 s$/);
   assert.ok((await env.tree().getChildren()).some(row => row.label === 'Resolving callers…'));
   const [row] = await env.changeRows();
   env.tick(row, true);

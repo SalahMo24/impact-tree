@@ -42,7 +42,7 @@ test('1. a newer refresh replaces an older one, whose late result, decorations a
       await olderRun;
 
       assert.deepEqual((await env.changeRows()).map((n) => n.label), ['newer']);
-      assert.match(messageOf(env), /^Branch vs base · 0 need attention /);
+      assert.match(messageOf(env), /^Branch vs base · 1 change · nothing needs attention/);
       assert.equal(decorationAt(env, older[0].file, older[0].namePos), undefined, 'no decoration of the older result');
       assert.notEqual(decorationAt(env, newer.file, newer.namePos), undefined);
       assert.deepEqual(env.seen.errors, []);
