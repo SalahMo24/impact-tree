@@ -561,7 +561,8 @@ function buildCalmRows(result, counts) {
   const calm = !incomplete
     ? { type: 'message', icon: 'pass', label: 'Nothing to flag', desc: 'every caller updated, or a body-only change' }
     : { type: 'message', icon: 'info', label: 'Nothing to flag in what was searched',
-      desc: result.tierA ? 'check out and analyse for the full picture' : 'some callers or files could not be searched' };
+      desc: result.tierA ? 'check out and analyse for the full picture'
+        : result.callersPending ? 'callers are still being resolved' : 'some callers or files could not be searched' };
   const browse = { type: 'browse', label: `Browse all ${describeProgress(counts).calmText}`, icon: 'list-flat', expanded: false };
   return { calm, browse };
 }

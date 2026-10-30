@@ -698,7 +698,7 @@ test('the calm row hedges when the analysis was incomplete, naming what to do', 
   assert.deepEqual(hedge({ tierA: true }), { type: 'message', icon: 'info', label: 'Nothing to flag in what was searched', desc: 'check out and analyse for the full picture' });
   const searched = { type: 'message', icon: 'info', label: 'Nothing to flag in what was searched', desc: 'some callers or files could not be searched' };
   assert.deepEqual(hedge({ warnings: ['gopls did not answer'] }), searched, 'a warning');
-  assert.deepEqual(hedge({ callersPending: true }), searched, 'callers still resolving');
+  assert.deepEqual(hedge({ callersPending: true }), { ...searched, desc: 'callers are still being resolved' }, 'callers still resolving: not "could not be searched" yet');
   assert.deepEqual(hedge({ unanalysable: [{ component: 'web', count: 3 }] }), searched, 'a component that could not be analysed');
   assert.deepEqual(calmOf(resultOf({ allChanged: [quiet('a.js', 'a'), change('b.js', 'b', { callersComplete: false })] })).calm.calm, searched,
     'a change whose caller search did not finish');
