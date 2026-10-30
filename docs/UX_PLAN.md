@@ -69,6 +69,34 @@ Found in the code; each has a task below.
    Only the top 6 roots get a blast radius (`analyze.js:614`), which no surface says. (P3)
 7. **A silent slow first run.** The first index takes 10–34 s (`README.md:98`) behind
    "Preparing…". (P3)
+8. **The review starts eight rows deep.** With a pull request open, the first change sits
+   under Pull requests → a group → the PR → three folder rows → the file → the symbol.
+   `review-sidebar.js` nests the review under its source by design (2026-10-29); in the
+   tree layout `folder-tree.js` compacts only single-child chains, so `apps` stays its own
+   row above `server/src` whenever `apps` has a second child. In a 300 px sidebar the
+   indentation takes half the width and every label truncates. (L1, L3)
+9. **Two definitions of done.** The view's message reads "0 need attention · 107 of 107
+   left": `countReview` (`review-tree-model.js:279`) counts every counting row as work,
+   while attention counts only ⛔ and ?. A clean PR is a 107-item chore. The filter starts
+   at `all` (`tree-provider.js:255`). (L2)
+10. **Mechanics shown as rows.** "Compute test reachability · extra caller queries — run on
+    demand" (`tree-row-models.js:530`), "Outside functions lines 1–19, 30–111", "no call
+    graph" on every file without one (`tree-item-renderer.js:273`), "Merge hints loading…"
+    (`cards-view-model.js:580`) sit among the findings at the same weight, with icons, so
+    a reader cannot tell a finding from a file from a button. (L3)
+11. **Six signals per row.** Checkbox, file icon, label, description, an inline Show
+    callers icon, the git badge letter, and colour. Folder rows repeat the checkbox and
+    the attention colour (`tree-item-renderer.js:217`), so one signal is drawn three times
+    down a path. (L3)
+12. **Internal names.** "K1 · commandLabel and 2 related", "merge hints", "call graph",
+    "test reachability", "reaches 1 caller", "extra caller queries", "Everyone else 1000".
+    G8 unifies synonyms; it does not replace jargon. (L5)
+13. **Three panels in one sidebar.** Review, Cards (with `impactTree.cards.enabled`) and
+    Details split the height in thirds. Details, kept small by the minimal pass, shows a
+    name and a path for a quiet row while the tree it serves is squeezed to a few rows. (L4)
+
+Items 8–13 were found 2026-10-30 on a screenshot of t3code PR #27095 (107 changes, none
+needing attention, cards and agents on). Part L below has their tasks.
 
 ## Gates (owner decisions)
 
@@ -107,6 +135,17 @@ Numbered after `RELEASE_PLAN.md`'s G1–G7.
   new one each time?
 - **G3 / G4 from `RELEASE_PLAN.md`**: decided 2026-10-20. No per-agent turn hook; feedback
   rounds with a snapshot checkpoint and a feedback file per round instead (Part F).
+- **G13. Where the review lives once it is open (L1).** The nesting decided 2026-10-29 stays
+  the model. Proposal: while a review is shown, the view's root is one row **Choose what
+  to review…** (the picker, opened on click) and the host row, expanded; the Pull requests
+  and Local changes groups are not drawn above it. Alternative: a second view, **Review**,
+  under a **Start** picker view that collapses itself when a review opens. Either way, in
+  list layout a change row is at depth 2 (file, change) and a caller at depth 3.
+- **G14. What "left" counts (L2).** Proposal: progress counts the rows that need attention
+  (⛔ and ?); the message, badge and Details strip say "3 need attention · 1 looked at",
+  or "107 changes · nothing needs attention" when there are none; ticking stays on every
+  row for reviewers who read everything, but is not counted against them. Alternative:
+  keep counting every row and start the filter at **Needs attention** instead of all.
 
 ## Part P: plain first run (confusion fixes)
 
@@ -359,6 +398,92 @@ submitted review (or last mark-reviewed); when the PR has moved, a **Since your 
 review** filter shows only changes whose content changed since then, the summary
 says "3 changes since your review on Oct 14", and rows reviewed before and unchanged stay
 reviewed. Tested with two heads of a fixture repo.
+## Part L: layout and hierarchy
+
+The screenshot study (items 8–13 above) says the sidebar's problem is not the words but
+the shape: navigation and content in one tree, every row counted as work, mechanics drawn
+as findings, and three panels sharing one column. P1–P5 fix the words and the hidden
+features; nothing in the plan fixes the shape. Rule for this part, after the minimal
+pass of 2026-10-24: a feature is foreground only if it is a finding; everything the
+engine did, did not do, or can do on demand is background (a hover, a description, the
+`…` menu), and Details gets no new buttons.
+
+### L1. The review at the top (gate G13)
+
+Acceptance: as G13 decides. With the proposal: while a review is shown, the root of the
+Review view is **Choose what to review…** (a row; its click, and the host's `…` menu
+entry, draw the picker again without discarding the review) and the host row, expanded,
+whose label names the review ("PR #27095 · feat: ADHD mode answers…", "Branch vs base")
+and whose description keeps the counts; the groups above the host are not drawn; a
+change is at depth 2 in list layout; reveal, ticks, filters, Next unreviewed and the
+title-bar actions on the host row work unchanged (the characterization snapshot changes
+only above the host, each difference explained); `review-sidebar.js` tests cover no
+review, review shown, picker reopened, and a PR that is not in the list.
+
+### L2. One definition of done (gate G14)
+
+Acceptance: as G14 decides. With the proposal: `countReview` returns attention counts as
+the progress, the message reads "<subject> · 3 need attention · 1 looked at" or
+"<subject> · 107 changes · nothing needs attention", the badge counts attention rows
+left, and the Details strip shows the same numbers; the pre-approve check lists the same
+rows as before. When nothing needs attention the tree shows one calm row first, "Nothing
+to flag: every caller updated, or a body-only change", with the files under a collapsed
+**Browse all 107 changes** row below it, and the submit action enabled; a preview or an
+incomplete analysis says so in that row instead ("Nothing to flag in what was searched;
+check out and analyse for the full picture"), never "nothing to flag" on missing evidence
+(`CODING_STYLE.md` §1).
+
+### L3. Findings foreground, mechanics background
+
+Acceptance:
+- **Compute test reachability** leaves the tree: it is an entry in the host row's `…`
+  menu and, while not computed, an inline ▷ on the host row with that tooltip. A finding
+  whose tests were not searched says so in its tooltip only.
+- **Outside functions** is renamed **Top-level changes** (L5) and drawn last under its
+  file with no icon; a file whose only change rows are top-level has no child rows, and
+  the file row is the counting row (its tick, decoration and diff open unchanged).
+- **no call graph** is dropped: a file with nothing to analyse (Markdown, JSON, a test
+  config) is a file row with its git badge and nothing else. **not analysed** stays for a
+  file of a supported language that could not be analysed, with the reason in its tooltip.
+- Folder rows carry no checkbox and no attention colour; their description is the
+  attention count ("3") or nothing. The list layout stays the default.
+- At most one inline action and one badge per row kind: Show callers on a change row,
+  Retry on a failed viewed-sync row, the git badge on a file row; a test over the renderer
+  counts them.
+- Notices (preview limits, warnings, files not analysed, "Merge hints loading…") are
+  never rows among the files: the host row's hover and description carry them, and the
+  Cards view's title carries its spinner.
+
+### L4. Two panels, not three
+
+Acceptance: the Cards view is folded into the Review view as a second order of the same
+tree, **By card**, under the order toggle W1 adds (**Path** / **Files** / **By card**),
+with the card's entry points and merge hints in the card row's hover; the Cards view and
+`impactTree.openReview`'s title-bar place go away; agent results (`impactTree.agents.enabled`)
+decorate the card rows they describe. The sidebar then holds Review and Details, and the
+Review view is the taller one on first open (contributed with its initial size where the
+VS Code API allows it, else documented as a one-time drag). Not before W1; if W1 stays
+after v1, L4 does too, and until then `impactTree.cards.enabled` stays off by default,
+which it is.
+
+### L5. Words a reviewer knows (extends G8)
+
+Acceptance: as P1 (one vocabulary; the grep test fails on a retired string), with these
+rows added to the G8 table:
+
+| Today | Proposed |
+| --- | --- |
+| reaches N callers | called from N places |
+| no call graph | (nothing; see L3) |
+| Outside functions · lines 1–19, 30–111 | Top-level changes · lines 1–19, 30–111 |
+| Compute test reachability · extra caller queries — run on demand | Find the tests that cover this |
+| Merge hints loading… / Merge hints are incomplete | Grouping cards… / Some cards may belong together (hover) |
+| K1 · commandLabel and 2 related | commandLabel + 2 related (the number only in Path order, W2) |
+| Everyone else · 1000 | Everyone else · first 1000 |
+| 107 of 107 left | as G14 |
+
+Owner check: U8's usability walk, repeated after L1–L3 with the one question "what do you
+look at first?", on the same t3code PR.
 
 ## Order, and changes to `RELEASE_PLAN.md`
 
@@ -396,6 +521,11 @@ used only Details' progress bar. So:
 the review nests under the pull request or mode it came from, and the title-bar controls
 above moved onto that row. The review tab (U1) and the agent's behaviour review are behind
 `impactTree.cards.enabled` and `impactTree.agents.enabled`.
+
+**Part L (proposed 2026-10-30).** L1–L3 and L5 fix what the screenshot study found and
+touch only the sidebar's shape and words, so they can run next, before W1, once G13 and
+G14 are decided; L4 waits for W1. If v1 ships first, L1–L3 go in the first release after
+it, ahead of W1–W2.
 
 If the owner agrees, `RELEASE_PLAN.md` gets a short note pointing here and its U section
 is updated to say which tasks moved; nothing in C or R changes.
