@@ -11,9 +11,10 @@ const { realClock } = require('../engine/clock');
 // editor's provider commands (`vscode.prepareCallHierarchy`, …), so any language whose
 // extension provides them is answered by the server already running, incrementally and
 // with no second program. Everything about talking to a server that is the same for every
-// language lives here: the outstanding-request cap, per-command deadlines, the cold phase
-// while the server loads its projects, retries until it is up, and warm-up. What to ask and
-// how to read the answer for a language is the provider's.
+// language lives here: the outstanding-request cap, the prepared-hierarchy budget (VS Code
+// keeps only 10 prepared models), per-command deadlines, the cold phase while the server
+// loads its projects, retries until it is up, and warm-up. What to ask and how to read the
+// answer for a language is the provider's.
 //
 // Deliberately never calls vscode.workspace.openTextDocument. Doing so forces the
 // editor to sync the document to the extension host, which Cursor rejects for many
@@ -64,6 +65,26 @@ const RETRYABLE = /timed out|outstanding requests/;
  * rather than queue without bound behind a stalled server.
  */
 const MAX_OUTSTANDING_REQUESTS = 32;
+
+/**
+ * Budget: call hierarchies prepared and not yet asked for their incoming calls. Unit:
+ * `vscode.prepareCallHierarchy` requests. Owner: these services; enforced in
+ * `prepareItems` before a prepare is sent. Why: VS Code keeps the models behind prepared
+ * items in one cache of 10 (`_executePrepareCallHierarchy` disposes the oldest while it
+ * holds more than 10, whoever prepared them) and answers `vscode.provideIncomingCalls` of
+ * an evicted item with `[]`, which would read as "no callers". A slot is taken before the
+ * prepare is sent and held until the incoming-calls request of one of its items is sent
+ * (requests reach the editor in the order they are sent, so that item's model is looked up
+ * before any later prepare lands), or, when the caller gets no item (none listed, a
+ * rejection, our deadline passed first), until the server answers the prepare: a late
+ * answer still adds a model. So at most 8 of our models are waiting when one is asked,
+ * leaving 2 for other extensions. 8 is also the default caller concurrency
+ * (`impactTree.concurrency`), so by default nothing waits. Exhaustion: the prepare waits,
+ * first come first served, within its own deadline; past it, it rejects "timed out",
+ * retryable. A caller given items must ask the incoming calls of one of them (the shared
+ * `queryHierarchy` does), or the slot stays taken.
+ */
+const MAX_PREPARED_HIERARCHIES = 8;
 
 /**
  * Budget: the longest base-side text written to a temporary file to be asked about
@@ -274,15 +295,83 @@ function createVscodeServices({
   // Never negative: time may pass between checking what is left and waiting for it.
   const sleep = (/** @type {number} */ ms) => clock.sleep(Math.max(0, ms));
 
-  /** @param {string} name @param {unknown[]} args */
-  async function requestProvider(name, args) {
+  /**
+   * @param {string} name @param {unknown[]} args
+   * @param {() => void} [onSent] Called once the command is sent (synchronously after it).
+   */
+  async function requestProvider(name, args, onSent) {
     if (providerRequests >= MAX_OUTSTANDING_REQUESTS) {
       throw new ServiceError(`language server has ${MAX_OUTSTANDING_REQUESTS} outstanding requests — retry when it responds`, { retryable: true });
     }
     providerRequests++;
-    try { return await vscode.commands.executeCommand(name, ...args); }
-    finally { providerRequests--; }
+    try {
+      const answer = vscode.commands.executeCommand(name, ...args);
+      if (onSent) onSent();
+      return await answer;
+    } finally { providerRequests--; }
   }
+
+  // Prepared call hierarchies (see MAX_PREPARED_HIERARCHIES). Owner: these services.
+  // `preparedSlots`: slots taken; `slotWaiters`: prepares waiting for one, first come
+  // first served; `slotOfItem`: the release of the slot an item's prepare holds, until
+  // its incoming calls are sent. A release is idempotent.
+  let preparedSlots = 0;
+  /** @type {Array<() => void>} */
+  const slotWaiters = [];
+  /** @type {WeakMap<object, () => void>} */
+  const slotOfItem = new WeakMap();
+  /** @returns {Promise<() => void>} */
+  function takeSlot() {
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      const next = slotWaiters.shift();
+      if (next) next(); // the slot passes on, so `preparedSlots` stays
+      else preparedSlots--;
+    };
+    if (preparedSlots < MAX_PREPARED_HIERARCHIES) { preparedSlots++; return Promise.resolve(release); }
+    return new Promise((resolve) => { slotWaiters.push(() => resolve(release)); });
+  }
+
+  /**
+   * `vscode.prepareCallHierarchy` at `at` within `timeoutMs`, waiting for a prepared-
+   * hierarchy slot first (the wait counts toward the deadline). Items it returns hold the
+   * slot until `incomingCallsWithin` sends one of their incoming calls; otherwise the slot
+   * is released when the server answers.
+   * @param {{ uri: unknown, position: unknown }} at @param {number} timeoutMs
+   * @param {string} [label] Names the command in a timeout's reason.
+   */
+  async function prepareItems(at, timeoutMs, label = 'vscode.prepareCallHierarchy') {
+    let expired = false;
+    /** The slot the listed items hold, once they are listed. @type {{ release: (() => void)|null }} */
+    const held = { release: null };
+    const start = async () => {
+      const release = await takeSlot();
+      if (expired) { release(); throw new ServiceError(`${label} timed out`, { retryable: true }); }
+      let items;
+      try { items = await requestProvider('vscode.prepareCallHierarchy', [at.uri, at.position]); }
+      catch (e) { release(); throw e; }
+      if (expired || !Array.isArray(items) || !items.length) { release(); return items; }
+      for (const item of items) if (isObject(item)) slotOfItem.set(item, release);
+      held.release = release;
+      return items;
+    };
+    try { return await withDeadline(start, timeoutMs, label, clock); }
+    catch (e) {
+      expired = true;
+      if (held.release) held.release(); // the items came after all, but to no one
+      throw asServiceError(e);
+    }
+  }
+
+  /** Releases the slot of a prepare whose items' incoming calls will not be asked. */
+  const releaseItems = (/** @type {unknown[]} */ items) => {
+    for (const item of items) {
+      const release = isObject(item) ? slotOfItem.get(item) : undefined;
+      if (release) release();
+    }
+  };
 
   /**
    * One provider command within `timeoutMs`.
@@ -392,7 +481,13 @@ function createVscodeServices({
    * @param {unknown} item @param {number} timeoutMs
    */
   async function incomingCallsWithin(item, timeoutMs) {
-    const calls = await ask('vscode.provideIncomingCalls', [item], timeoutMs);
+    const release = isObject(item) ? slotOfItem.get(item) : undefined;
+    let calls;
+    try {
+      calls = await withDeadline(() => requestProvider('vscode.provideIncomingCalls', [item], release), timeoutMs, 'vscode.provideIncomingCalls', clock);
+    } catch (e) { throw asServiceError(e); }
+    // Refused before it was sent (the request cap) or timed out first: the item is done.
+    finally { if (release) release(); }
     if (!Array.isArray(calls)) return null;
     callersReady = true;
     return toCallerRows(calls);
@@ -411,7 +506,7 @@ function createVscodeServices({
       const at = editorPosition(doc, pos);
       const maxAttempts = serverWarm ? 1 : retries + 1;
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const items = await ask('vscode.prepareCallHierarchy', [at.uri, at.position], queryTimeoutMs);
+        const items = await prepareItems(at, queryTimeoutMs);
         if (Array.isArray(items) && items.length) { serverWarm = true; return items; }
         if (serverWarm) break;           // the server is up: no hierarchy item for this symbol
         onRetry();
@@ -443,7 +538,7 @@ function createVscodeServices({
         if (unserved(doc)) return null;
         const at = editorPosition(doc, pos);
         for (let attempt = 1; left() > 0; attempt++) {
-          const items = await ask('vscode.prepareCallHierarchy', [at.uri, at.position], left());
+          const items = await prepareItems(at, left());
           if (Array.isArray(items) && items.length) { serverWarm = true; return items; }
           if (serverWarm) return [];
           onRetry();
@@ -672,14 +767,17 @@ function createVscodeServices({
       if (!p) return false;
       const at = { uri: vscode.Uri.file(doc.file), position: new vscode.Position(p.line, p.character) };
       try {
-        const items = await withDeadline(() => requestProvider('vscode.prepareCallHierarchy', [at.uri, at.position]), left(), 'language-server warm-up', clock);
+        const items = await prepareItems(at, left(), 'language-server warm-up');
         if (Array.isArray(items) && items.length && left() > 0) {
           serverWarm = true;
-          await withDeadline(() => requestProvider('vscode.provideIncomingCalls', [items[0]]), left(), 'language-server warm-up', clock);
+          const sent = () => releaseItems(items);
+          try { await withDeadline(() => requestProvider('vscode.provideIncomingCalls', [items[0]], sent), left(), 'language-server warm-up', clock); }
+          finally { sent(); }
           callersReady = true;
           trace(`language server warm after ${clock.now() - started}ms`);
           return true;
         }
+        if (Array.isArray(items)) releaseItems(items);
       } catch { /* server still starting */ }
       attempt++;
       if (left() > 0) await sleep(Math.min(250 * attempt, 2000, left()));
@@ -707,5 +805,5 @@ function createVscodeServices({
 }
 
 module.exports = {
-  createVscodeServices, sweepBaseCopies, ServiceError, MAX_OUTSTANDING_REQUESTS, MAX_BASE_TEXT_CHARS, STALE_BASE_COPY_MS,
+  createVscodeServices, sweepBaseCopies, ServiceError, MAX_OUTSTANDING_REQUESTS, MAX_PREPARED_HIERARCHIES, MAX_BASE_TEXT_CHARS, STALE_BASE_COPY_MS,
 };

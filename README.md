@@ -174,7 +174,7 @@ until you mark it reviewed, and its tooltip and Details say why.
   record, nested types included, keyed by their parameter types (`Gson.toJson(Object,
   Appendable)`; generics erased, so `getAdapter(TypeToken<T>)` is `getAdapter(TypeToken)`),
   so each overload is its own row. When one overload of a name disappears from a file and
-  one appears, they read as one signature change and keep the review tick. An enum
+  one appears, they read as one signature change, and a reviewed row stays reviewed. An enum
   constant's body and an anonymous class in a field are keyed by that member; anonymous and
   local classes and lambdas inside a method are part of its body. Editing only a method's
   Javadoc does not mark it changed.

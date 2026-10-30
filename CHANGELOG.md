@@ -5,7 +5,7 @@
 - **Java** (`.java`), in the editor through Red Hat's Language Support for Java (jdtls),
   and in the PR preview and the CLI from the text. Changed methods and constructors are
   keyed by their parameter types, so each overload is its own row and an overload whose
-  parameter list changed keeps its review tick; signatures compare parameters, return
+  parameter list changed stays reviewed; signatures compare parameters, return
   types, type parameters and `throws`, a new `throws` type or `throw new` is a new throw
   path, and reduced visibility or a `static` change is the new **access changed** kind.
   Callers read as incomplete, never as "all callers updated", for overrides, overridable

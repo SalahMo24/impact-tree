@@ -62,7 +62,9 @@ function createQueryGate(limit) {
 /**
  * Asks for the incoming calls at `pos`: one `prepareCallHierarchy` and the `incomingCalls`
  * of its first item, run as one caller query when the services schedule those. A rejection
- * is kept as the reason, never read as "no callers". `retryRejected` (a language's
+ * is kept as the reason, never read as "no callers". The incoming calls are always asked
+ * when an item is listed, which the editor's prepared-hierarchy budget relies on; a retried
+ * attempt prepares and asks again as one pair. `retryRejected` (a language's
  * `EditorCallerExtras.retryRejected`): a rejection that is not already retryable and whose
  * reason it accepts is asked once more, and that second answer is kept, whatever it is.
  * `gate` (a language's `EditorCallerExtras.queryGate`): each attempt runs through it, so
