@@ -757,6 +757,25 @@ Order: J0 → (owner: J-D3 confirmed) → J1 → J2 ∥ J3 → J4 → J5 → J6;
 the header parser), J8 after J7; J9 last. J7/J8 can run while J4–J6 do (different files).
 Each step is merged before the next one that depends on it starts.
 
+**Done (2026-10-30).** J0–J8 merged or in review; J9 is the docs. Measured on the 12-PR gson
+corpus (owner-approved: 10 picked plus #2950 and #2944):
+- Without a server (J7, J8): changed methods 224/224 against the JDK Tree API, kinds 90/90;
+  syntax-index callers against `javac` (`-proc:none`) 100% precision and 99.2% recall in
+  both the CLI and the preview, every miss on an answer marked incomplete.
+- Editor (J6, four passes, `test/lsp-harness/J6-REPORT.md`): 224/224, kinds 90/90, 0 callers
+  `javac` resolves missed on an answer marked complete; recall 94.1%, extra callers mostly
+  jdtls' override over-reports on incomplete answers. Found on the way: jdtls lists no calls
+  in a project at Java 6 or older (broken build path, read from its diagnostics); VS Code
+  turns a failed call-hierarchy request, or an evicted prepared item, into `[]` (Java guards
+  an empty answer for overridable methods; Go/Python in `fix/prepared-hierarchy-budget`);
+  answers read incomplete while jdtls imports, after a build-file change until it
+  re-imports, and for 30 s after ready on a clean start (jdtls sends no import event after
+  ready then); Java caller queries are capped at 2 in parallel (-32603 fell from 3–6% to
+  0.6%) with one retry.
+- Left open: J-D4's `final`-on-an-overridden-method rule (no type hierarchy in the services);
+  a per-language "first import can take over a minute" waiting note; same-arity overload
+  listings in the syntax index (5890 on #1700; a literal-type tie-break would cut them).
+
 ### Verification plan (agreed)
 
 Times are estimates on this machine until J0 measures jdtls; J0 replaces the jdtls rows

@@ -5,6 +5,7 @@
  * and their signature kinds with oracle (a), the JDK's own parser, which shares no code with
  * the engine's Java reading. A development script, not part of `npm test`:
  *
+ *   node test/lsp-harness/java-verify.js [--repo <dedicated gson clone>] [<PR number>…]
  *   node test/lsp-harness/java-verify.js --syntactic [--repo <gson clone>] [<PR number>…]
  *   node test/lsp-harness/java-verify.js --syntactic --callers [--preview] [--repo <gson clone>] [<PR number>…]
  *
@@ -17,7 +18,7 @@
  * (`git diff`, `git show <sha>:<path>`), so Java goes through `javaProvider.prepareSyntactic`
  * (the text outline, `collectJavaSymbols`, J3's parser, the shared matching). Nothing is
  * checked out and nothing of gson runs; the clone stays where it is. Without `--syntactic`
- * (the editor's jdtls path) this script stops: J6 adds that mode (a `pipelineFor` branch).
+ * (J6, the editor's jdtls path): see "the editor mode" below; results in J6-REPORT.md.
  *
  * Compared, over the PR's changed main (non-test) Java files, as the preview diffs them:
  * - Functions: rows `<path>#<key>|added|changed|removed`. Precision = ours that the oracle
@@ -218,8 +219,6 @@ async function syntacticPipeline(repo, pr) {
     pr: { number: pr.number, headSha: pr.head, mergeBaseSha: pr.base, baseRef: 'base' },
   });
 }
-
-// J6: `editorPipeline(repo, pr)` (jdtls through test/lsp-harness/jdtls-services.js) goes here.
 
 function pipelineRows(result) {
   const java = (x) => isJava(x.relPath);
@@ -484,16 +483,289 @@ async function callersMain(repo, corpus, preview) {
   process.exitCode = pass ? 0 : 1;
 }
 
+// ---- the editor mode (J6): jdtls, one server for the run ------------------------------------
+//
+// The editor's path: `analyze()` in `pr` mode over a checkout at the PR's head (base-side
+// symbols through the harness's temporary copies, G2's), `javaProvider.prepareFromServerSymbols`
+// on jdtls' documentSymbol answers, callers from the call hierarchy with Java's caller extras
+// (J4) applied by `applyCallerExtras`, as the editor's resolver applies them
+// (./harness-languages.js), at the editor's default concurrency (8). One jdtls for the whole
+// run, its `-data` under java-tools/jdtls-data/gson-verify (kept between runs); between PRs the
+// checkout moves (`git checkout --detach <head>` in the dedicated clone gson-verify, never
+// `gson` itself), one `workspace/didChangeWatchedFiles` names every file that differs, the open
+// documents are closed, and the run waits until jdtls has reported no progress for QUIET_MS.
+// Callers are compared with oracle (b) (the head tree's javac attribution, J8's cache), over
+// every file of the tree; a site of ours matches an oracle call in the same file whose offset
+// lies in our call range (jdtls' ranges are the call expressions).
+
+const DEFAULT_EDITOR_REPO = path.join(os.homedir(), 'Projects/impact-tree-test-repos/gson-verify');
+const JDTLS_DATA = path.join(os.homedir(), 'Projects/impact-tree-scratchpad/java-tools/jdtls-data/gson-verify');
+const QUIET_MS = 2000;
+const EDITOR_RUN_DEADLINE_MS = 15 * 60 * 1000;
+
+/** jdtls with every incomingCalls counted: `{ queries, failures: [{ message, label }] }`. */
+function countingJdtls(jdtls) {
+  const stats = { queries: 0, failures: [] };
+  const wrapped = {
+    ...jdtls,
+    async incomingCalls(item) {
+      stats.queries++;
+      try {
+        return await jdtls.incomingCalls(item);
+      } catch (e) {
+        stats.failures.push({ message: String(e.message).slice(0, 120), label: item && item.name });
+        throw e;
+      }
+    },
+  };
+  return { jdtls: wrapped, stats };
+}
+
+/** Moves the checkout to `sha` and tells jdtls which files changed. */
+async function switchTo(server, repo, sha) {
+  const from = git(repo, 'rev-parse', 'HEAD').trim();
+  if (git(repo, 'status', '--porcelain', '--untracked-files=no').trim()) throw new Error(`${repo} has uncommitted changes`);
+  if (from === sha) return { files: 0, quietMs: 0 };
+  const changed = git(repo, 'diff', '--name-only', '--no-renames', from, sha).split('\n').filter(Boolean);
+  git(repo, 'checkout', '-q', '--detach', sha);
+  if (git(repo, 'rev-parse', 'HEAD').trim() !== sha) throw new Error(`${repo} is not at ${sha}`);
+  const { pathToFileURL } = require('url');
+  server.closeAll();
+  // The editor's build-file watcher (src/languages/java/server-status.js) sees the checkout.
+  if (server.buildFilesChanged && changed.some((p) => /(^|\/)(pom\.xml|build\.gradle(\.kts)?|settings\.gradle(\.kts)?)$/.test(p))) server.buildFilesChanged();
+  server.client.notify('workspace/didChangeWatchedFiles', {
+    changes: changed.map((p) => ({ uri: pathToFileURL(path.join(repo, p)).toString(), type: fs.existsSync(path.join(repo, p)) ? 2 : 3 })),
+  });
+  return { files: changed.length, quietMs: await server.waitQuiet({ quietMs: QUIET_MS, minMs: QUIET_MS }) };
+}
+
+async function editorPipeline(server, repo, pr) {
+  const { analyze } = require('../../src/engine/analyze');
+  const { languageServicesOver, createHierarchyResolver } = require('./harness-languages');
+  const { javaProvider } = require('../../src/languages/java/provider');
+  const services = languageServicesOver(server, { repoRoot: repo });
+  return analyze(repo, {
+    mode: 'pr', base: pr.base, allowLocalBase: true, skipForest: true, deferTestReach: true, depth: 1,
+    ...(process.env.J6_CONCURRENCY ? { concurrency: Number(process.env.J6_CONCURRENCY) } : {}),
+    languageServices: services,
+    makeResolver: ({ language }) => {
+      const extras = language === 'java' && javaProvider.editorCallers
+        ? javaProvider.editorCallers({ ts: null, services, repoRoot: repo, trace: () => {}, filterInherited: false, onWarmupRetry: () => {}, javaServerStatus: server.javaServerStatus || null })
+        : null;
+      return createHierarchyResolver(services, { extras });
+    },
+  });
+}
+
+/** The head lines the PR touched, per file (`git diff -U0`). */
+function touchedLines(repo, pr) {
+  const out = new Map();
+  let file = null;
+  for (const line of git(repo, 'diff', '-U0', '--no-renames', pr.base, pr.head).split('\n')) {
+    if (line.startsWith('+++ ')) {
+      file = line.startsWith('+++ b/') ? line.slice(6) : null;
+      if (file) out.set(file, new Set());
+      continue;
+    }
+    const m = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(line);
+    if (!m || !file) continue;
+    const start = Number(m[1]);
+    const count = m[2] === undefined ? 1 : Number(m[2]);
+    for (let l = start; l < start + count; l++) out.get(file).add(l);
+  }
+  return out;
+}
+
+function editorCallerCheck(repo, pr, result, oracle) {
+  const { classifyChangeVerdict, toneOf } = require('../../src/views/changes/tree-row-models');
+  const { OVERRIDES_REASON } = require('../../src/languages/java/editor-extras');
+  const { isTestPath } = require('../../src/languages');
+  const rel = (abs) => path.relative(repo, abs).split(path.sep).join('/');
+  const texts = new Map();
+  const textOf = (file) => {
+    if (!texts.has(file)) { try { texts.set(file, git(repo, 'show', `${pr.head}:${file}`)); } catch { texts.set(file, ''); } }
+    return texts.get(file);
+  };
+  const lineAt = (file, pos) => textOf(file).slice(0, pos).split('\n').length;
+  const codeAt = (file, pos) => { const t = textOf(file); return t.slice(t.lastIndexOf('\n', pos - 1) + 1, t.indexOf('\n', pos)).trim().slice(0, 110); };
+  const where = (file, pos) => `${file}:${lineAt(file, pos)}: ${codeAt(file, pos)}`;
+  const callsByFile = new Map();
+  const skippedByFile = new Map();
+  const push = (m, k, v) => { if (!m.has(k)) m.set(k, []); m.get(k).push(v); };
+  for (const r of oracle.calls) push(callsByFile, r.call.file, r);
+  for (const u of [...oracle.unattributed, ...oracle.excluded]) push(skippedByFile, u.file, u.pos);
+  const touched = touchedLines(repo, pr);
+  const errorFiles = new Set(oracle.errors.map((e) => e.file));
+  // Why jdtls may not see a module's calls of the workspace's code: no pom (no project), or a
+  // pom that builds against another gson version (its calls resolve into that jar).
+  const showAt = (p) => { try { return git(repo, 'show', `${pr.head}:${p}`); } catch { return null; } };
+  const rootPom = showAt('pom.xml') || '';
+  const workspaceVersion = (/<artifactId>gson-parent<\/artifactId>\s*<version>([^<]+)<\/version>/.exec(rootPom) || [])[1] || '?';
+  const outsideByModule = new Map();
+  const outsideProject = (file) => {
+    const module = file.split('/')[0];
+    if (!outsideByModule.has(module)) {
+      const pom = showAt(`${module}/pom.xml`);
+      let why = null;
+      if (pom === null) why = `outside the project: ${module} has no pom.xml at this commit`;
+      else {
+        const dep = /<groupId>com\.google\.code\.gson<\/groupId>\s*<artifactId>gson<\/artifactId>\s*<version>([^<]+)<\/version>/.exec(pom);
+        const v = dep ? dep[1].trim() : null;
+        if (v && !/^\$\{project\.(parent\.)?version\}$/.test(v) && v !== workspaceVersion) why = `outside the project: ${module} builds against gson ${v}, not the workspace's ${workspaceVersion}`;
+        else if (!new RegExp(`<module>${module}</module>`).test(rootPom)) why = `${module} is not a module of the root pom`;
+      }
+      outsideByModule.set(module, why);
+    }
+    return outsideByModule.get(module);
+  };
+  // The lines of the call at `pos`: from its line to its closing parenthesis (strings and chars
+  // skipped), so a multi-line call updated on a later line counts as updated.
+  const callLines = (file, pos) => {
+    const t = textOf(file);
+    let i = t.indexOf('(', pos);
+    let depth = 0;
+    for (; i >= 0 && i < t.length; i++) {
+      const ch = t[i];
+      if (ch === '"' || ch === "'") { for (i++; i < t.length && t[i] !== ch; i++) if (t[i] === '\\') i++; continue; }
+      if (ch === '(') depth++;
+      if (ch === ')' && --depth === 0) break;
+    }
+    const first = lineAt(file, pos);
+    const last = i > 0 ? lineAt(file, i) : first;
+    return Array.from({ length: last - first + 1 }, (_, k) => first + k);
+  };
+  const out = { targets: 0, tp: 0, fp: [], fn: [], notIncomplete: [], outsideOnComplete: [], fine: [], states: {}, rows: [] };
+  const rows = result.allChanged.filter((c) => isJava(c.relPath) && !isTestPath(c.relPath));
+  for (const c of rows) {
+    out.targets++;
+    out.states[c.callerState] = (out.states[c.callerState] || 0) + 1;
+    const reason = c.callersComplete ? '' : String(c.callersIncompleteReason || '');
+    const isTarget = (r) => r.target.file === c.relPath && r.target.pos === c.namePos;
+    const theirs = oracle.calls.filter(isTarget);
+    const matched = new Set();
+    let tp = 0;
+    for (const caller of c.callers) {
+      const file = rel(caller.file);
+      for (const s of caller.callSites || []) {
+        // An implicit `super()` (a class or constructor without an explicit one): javac reports
+        // it at the constructor's or class's position, jdtls' range is the declaration's name;
+        // they meet on the line.
+        const implicitSuper = (r) => r.name === 'super' && !textOf(file).startsWith('super', r.call.pos) && lineAt(file, r.call.pos) === lineAt(file, s.start);
+        const inRange = (callsByFile.get(file) || []).filter((r) => (r.call.pos >= s.start && r.call.pos < s.end) || implicitSuper(r));
+        const hit = inRange.find((r) => isTarget(r) && !matched.has(`${r.call.file}#${r.call.pos}`));
+        if (hit) { tp++; matched.add(`${hit.call.file}#${hit.call.pos}`); continue; }
+        // javac could not attribute a call in the range: left out on both sides, as J8.
+        if ((skippedByFile.get(file) || []).some((p) => p >= s.start && p < s.end)) continue;
+        // Not javac's target here: name what javac resolved the site's call to.
+        const other = inRange[0];
+        const overReport = reason.includes(OVERRIDES_REASON);
+        const state = `answer ${reason ? 'incomplete' : 'COMPLETE'}`;
+        const verdict = overReport ? `jdtls over-report on an override: javac resolved it to ${other ? `${other.target.file}#${other.target.pos}` : 'a method outside the tree (the JDK\'s), so oracle (b) lists no call'}; answer incomplete (overrides)`
+          : codeAt(file, s.start).startsWith('@') ? `an annotation element set in an annotation (a use, not an invocation: javac records no call); ${state}`
+            : other ? `javac resolved it to ${other.target.file}#${other.target.pos}${errorFiles.has(file) ? ' with errors in this file (javac artefact)' : ''}; ${state}`
+              : `no call javac attributes in the range${errorFiles.has(file) ? ' (errors in this file)' : ''}; ${state}`;
+        out.fp.push({ overReport, text: `#${pr.number} ${c.relPath}#${c.key} <- ${where(file, s.start)} [${verdict}]` });
+      }
+    }
+    out.tp += tp;
+    for (const r of theirs.filter((x) => !matched.has(`${x.call.file}#${x.call.pos}`))) {
+      const labels = [
+        r.dispatch ? 'dispatch' : null,
+        r.name === 'super' && !textOf(r.call.file).startsWith('super', r.call.pos) ? 'implicit super()' : null,
+        c.callerState === 'unknown' ? 'failed or unknown query' : null,
+        outsideProject(r.call.file),
+        errorFiles.has(r.call.file) ? 'javac errors in this file' : null,
+      ].filter(Boolean);
+      const line = `#${pr.number} ${c.relPath}#${c.key} <- ${where(r.call.file, r.call.pos)} [${labels.join(', ') || 'unlabelled'}] on an incomplete answer: ${reason ? `yes (${reason.slice(0, 80)})` : 'NO'}`;
+      out.fn.push(line);
+      // A call jdtls cannot see (outside its projects) is reported with its label, apart.
+      if (!reason) (outsideProject(r.call.file) ? out.outsideOnComplete : out.notIncomplete).push(line);
+    }
+    // Shown as fine while javac knows a non-test caller whose call line the PR did not touch.
+    const notUpdated = theirs.filter((r) => !isTestPath(r.call.file) && !callLines(r.call.file, r.call.pos).some((l) => (touched.get(r.call.file) || new Set()).has(l)));
+    const verdict = classifyChangeVerdict(c);
+    const fine = toneOf(verdict) === null;
+    const risky = c.kinds.some((k) => k.id !== 'body');
+    if (risky && fine && notUpdated.length) {
+      out.fine.push(`#${pr.number} ${c.relPath}#${c.key} [${c.kinds.map((k) => k.id)}] "${verdict.text}"; ${notUpdated.slice(0, 3).map((r) => where(r.call.file, r.call.pos)).join('; ')}`);
+    }
+    out.rows.push({ key: c.key, state: c.callerState, complete: c.callersComplete, reason: reason.slice(0, 60), ours: c.callers.reduce((n, x) => n + (x.callSites || []).length, 0), oracle: theirs.length, tp, risky, fine, notUpdated: notUpdated.length });
+  }
+  return out;
+}
+
+async function editorMain(repo, corpus) {
+  const { createJdtlsServices } = require('./jdtls-services');
+  const t0 = Date.now();
+  const hash = crypto.createHash('sha256').update(fs.readFileSync(MEMBERS)).digest('hex').slice(0, 12);
+  if (git(repo, 'status', '--porcelain', '--untracked-files=no').trim()) throw new Error(`${repo} has uncommitted changes`);
+  const server = createJdtlsServices({ repo, dataDir: JDTLS_DATA, scratchDir: path.join(os.tmpdir(), 'it-java-verify-base') });
+  const { jdtls, stats } = countingJdtls(server);
+  const killTimer = setTimeout(() => { console.error('overall deadline hit, killing jdtls'); server.client.proc.kill('SIGKILL'); }, EDITOR_RUN_DEADLINE_MS);
+  const T = { tp: 0, ours: 0, oracle: 0, kindsOk: 0, kinds: 0, headers: 0, headersOk: 0, extra: [], missed: [], wrongKinds: [], ctp: 0, cfp: [], cfn: [], notIncomplete: [], outsideOnComplete: [], fine: [], targets: 0, states: {} };
+  try {
+    git(repo, 'checkout', '-q', '--detach', corpus[0].head);
+    await server.start();
+    console.log(`jdtls ready in ${((Date.now() - t0) / 1000).toFixed(1)} s (-data ${JDTLS_DATA}); status: ${server.javaServerStatus.busyReason() || 'not busy'}; import events ${JSON.stringify(server.importEvents)}`);
+    console.log('PR      switch  quiet   ours  oracle  precision  recall   kinds | targets  c.tp  c.fp  c.fn  c.prec  c.recall | oracles  pipeline');
+    for (const pr of corpus) {
+      const sw = await switchTo(server, repo, pr.head);
+      const o0 = Date.now();
+      const oa = await oracleFor(repo, pr, hash);
+      const ob = callersOracle(repo, pr);
+      const oMs = Date.now() - o0;
+      const p0 = Date.now();
+      const result = await editorPipeline(jdtls, repo, pr);
+      const pMs = Date.now() - p0;
+      const cmp = comparePr(pipelineRows(result), oracleRows(oa));
+      const ok = cmp.kinds.filter((k) => k.ok).length;
+      const headers = cmp.kinds.filter((k) => k.expected.some((id) => id !== 'body'));
+      T.tp += cmp.tp; T.ours += cmp.ours; T.oracle += cmp.oracle; T.kindsOk += ok; T.kinds += cmp.kinds.length;
+      T.headers += headers.length; T.headersOk += headers.filter((k) => k.ok).length;
+      T.extra.push(...cmp.extra.map((r) => `#${pr.number} ${r.id} at ${r.line}`));
+      T.missed.push(...cmp.missed.map((r) => `#${pr.number} ${r.id} at ${r.line}`));
+      T.wrongKinds.push(...cmp.kinds.filter((k) => !k.ok).map((k) => `#${pr.number} ${k.id} at ${k.line}: ours [${k.ours}] expected [${k.expected}]${k.header ? ` (${k.header})` : ''}`));
+      const cc = editorCallerCheck(repo, pr, result, ob);
+      T.targets += cc.targets; T.ctp += cc.tp; T.cfp.push(...cc.fp); T.cfn.push(...cc.fn); T.notIncomplete.push(...cc.notIncomplete); T.outsideOnComplete.push(...cc.outsideOnComplete); T.fine.push(...cc.fine);
+      for (const [k, n] of Object.entries(cc.states)) T.states[k] = (T.states[k] || 0) + n;
+      const notAnalysed = (result.unanalysable || []).length;
+      console.log(`#${String(pr.number).padEnd(6)} ${String(sw.files).padStart(6)} ${`${(sw.quietMs / 1000).toFixed(1)}s`.padStart(6)} ${String(cmp.ours).padStart(5)} ${String(cmp.oracle).padStart(7)}  ${pct(cmp.tp, cmp.ours).padStart(9)} ${pct(cmp.tp, cmp.oracle).padStart(7)}  ${`${ok}/${cmp.kinds.length}`.padStart(6)} | ${String(cc.targets).padStart(7)} ${String(cc.tp).padStart(5)} ${String(cc.fp.length).padStart(5)} ${String(cc.fn.length).padStart(5)}  ${pct(cc.tp, cc.tp + cc.fp.length).padStart(6)}  ${pct(cc.tp, cc.tp + cc.fn.length).padStart(7)} | ${`${(oMs / 1000).toFixed(1)}s${oa.cached && ob.cached ? ' c' : ''}`.padStart(7)}  ${(pMs / 1000).toFixed(1)}s ${JSON.stringify(cc.states)}${notAnalysed ? ` (${notAnalysed} not analysed)` : ''}`);
+      if (process.env.J6_ROWS) for (const r of cc.rows) console.log(`    ${JSON.stringify(r)}`);
+      // J6 pass 3: the import-end events seen so far (ms from ServiceReady) and the status now.
+      if (pr === corpus[0] && server.importEvents) console.log(`  import events ${JSON.stringify(server.importEvents)}; status now: ${server.javaServerStatus.busyReason() || 'not busy'}`);
+    }
+  } finally {
+    clearTimeout(killTimer);
+    await server.close().catch((e) => console.error(`closing jdtls: ${e.message}`));
+  }
+  console.log(`functions: ${T.ours} ours / ${T.oracle} oracle, precision ${pct(T.tp, T.ours)}, recall ${pct(T.tp, T.oracle)}; kinds ${T.kindsOk}/${T.kinds} (header changes ${T.headersOk}/${T.headers})`);
+  console.log(`callers: targets ${T.targets} ${JSON.stringify(T.states)}, TP ${T.ctp}, FP ${T.cfp.length} (${T.cfp.filter((f) => f.overReport).length} over-reports on an override), FN ${T.cfn.length}; precision ${pct(T.ctp, T.ctp + T.cfp.length)}, recall ${pct(T.ctp, T.ctp + T.cfn.length)}`);
+  console.log(`incomingCalls: ${stats.queries} queries, ${stats.failures.length} failed (${pct(stats.failures.length, stats.queries)}); default-project callers skipped ${server.skippedCallers()}`);
+  const tally = new Map();
+  for (const f of stats.failures) tally.set(`${f.message} [${f.label}]`, (tally.get(`${f.message} [${f.label}]`) || 0) + 1);
+  const list = (title, xs) => { console.log(`${title}: ${xs.length}`); for (const x of xs) console.log(`  ${x}`); };
+  list('incomingCalls failures by message', [...tally].map(([m, n]) => `${n}  ${m}`));
+  list('function rows extra (ours, not the oracle\'s)', T.extra);
+  list('function rows missed', T.missed);
+  list('kinds wrong', T.wrongKinds);
+  list('caller false positives', T.cfp.map((f) => f.text));
+  list('caller misses', T.cfn);
+  list('misses on a complete answer (must be 0)', T.notIncomplete);
+  list('misses on a complete answer in a module outside jdtls\' view of the workspace (reported apart)', T.outsideOnComplete);
+  list('shown as fine with a non-updated caller javac knows (must be 0)', T.fine);
+  console.log(`import-end events (200/100, ms from ServiceReady): ${JSON.stringify(server.importEvents)}; record ${server.recordFile}`);
+  console.log(`caches ${CACHE_ROOT}, ${CALLERS_CACHE}; jdtls -data ${JDTLS_DATA}; wall time ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+  const pass = T.extra.length === 0 && T.tp >= 0.98 * T.oracle && T.wrongKinds.length === 0 && T.notIncomplete.length === 0 && T.fine.length === 0;
+  process.exitCode = pass ? 0 : 1;
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const opt = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
   const repo = opt('--repo') || DEFAULT_REPO;
-  if (!args.includes('--syntactic')) {
-    console.error('usage: node test/lsp-harness/java-verify.js --syntactic [--repo <gson clone>] [<PR number>…]\n(the editor mode, with jdtls, is J6\'s)');
-    process.exit(2);
-  }
   const only = args.filter((a, i) => /^\d+$/.test(a) && args[i - 1] !== '--repo').map(Number);
   const corpus = JSON.parse(fs.readFileSync(CORPUS, 'utf8')).filter((p) => !only.length || only.includes(p.number));
+  if (!args.includes('--syntactic')) return editorMain(opt('--repo') || DEFAULT_EDITOR_REPO, corpus);
   if (args.includes('--callers')) return callersMain(repo, corpus, args.includes('--preview'));
   const hash = crypto.createHash('sha256').update(fs.readFileSync(MEMBERS)).digest('hex').slice(0, 12);
   const t0 = Date.now();
