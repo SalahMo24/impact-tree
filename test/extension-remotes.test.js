@@ -161,6 +161,9 @@ test('a repository with no GitHub remote keeps origin as the base remote and say
     await env.refresh();
     assert.deepEqual(env.seen.analyzeRemotes, ['origin']);
     const sources = env.sources();
+    // A review is shown, so the view is the review alone: ask for the groups (review-sidebar.js).
+    await sources.getChildren();
+    sources.showPicker();
     const [, prs] = await sources.getChildren();
     const [row] = await sources.getChildren(prs);
     assert.match(row.label, /No GitHub remote/);

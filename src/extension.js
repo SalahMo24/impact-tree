@@ -148,7 +148,9 @@ function activate(context, { clock = realClock } = {}) {
   });
   const view = vscode.window.createTreeView('impactTree.sources',
     { treeDataProvider: sidebar, showCollapseAll: true, manageCheckboxStateManually: true });
-  context.subscriptions.push(view, sidebar, sidebar.followTree());
+  context.subscriptions.push(view, sidebar, sidebar.followTree(),
+    // Review something else…: the groups above the review again (review-sidebar.js).
+    vscode.commands.registerCommand('impactTree.showPicker', () => sidebar.showPicker()));
   // A new review opens its row, even inside a group the reviewer had closed; a refresh of the
   // same review (callers retried, a new result) leaves the view where the reviewer is.
   let revealedFor = '';

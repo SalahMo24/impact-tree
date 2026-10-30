@@ -145,6 +145,11 @@
         "icon": "$(list-flat)"
       },
       {
+        "command": "impactTree.showPicker",
+        "title": "Impact Tree: Review something else…",
+        "icon": "$(arrow-left)"
+      },
+      {
         "command": "impactTree.selectMode",
         "title": "Impact Tree: Choose what to review",
         "icon": "$(git-compare)"
@@ -685,6 +690,10 @@
         {
           "command": "impactTree.openReview",
           "when": "config.impactTree.cards.enabled"
+        },
+        {
+          "command": "impactTree.showPicker",
+          "when": "impactTree.hasReview"
         }
       ],
       "editor/context": [
@@ -835,6 +844,11 @@
           "command": "impactTree.viewAsList",
           "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.fileListLayout == tree",
           "group": "inline@2"
+        },
+        {
+          "command": "impactTree.showPicker",
+          "when": "view == impactTree.sources && viewItem == reviewHost",
+          "group": "1_mode@0"
         },
         {
           "command": "impactTree.selectMode",

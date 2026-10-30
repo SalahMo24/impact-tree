@@ -13,11 +13,22 @@
 // (package.json, `viewItem == reviewHost`). The review's summary stays the view's message. A
 // pull request missing from the list (not loaded, or not open) is shown as its own row
 // above the groups. Other pull request rows have no hover.
+//
+// While a review is shown, the view's root is the review alone (docs/UX_PLAN.md L1, gate
+// G13): one row, "Review something else…", and the host row, expanded; the Local changes
+// and Pull requests groups are not drawn above it, so a change row sits two levels deep
+// instead of eight. That row (or the host's menu entry) brings the groups back, with the
+// host open inside them; the next review of a different source hides them again, while a
+// refresh of the same review (callers retried, a new result) leaves the view as it is.
 
 const { MODE_LABELS } = require('../changes/tree-row-models');
 
 /** @typedef {import('../changes/tree-row-models').TreeRow} TreeRow */
 /** @typedef {{ kind: 'pr', number: number, title?: string } | { kind: 'local', mode: string }} Host */
+
+/** The row above the review that draws the groups again (its command is registered by extension.js). */
+const BACK_ROW = Object.freeze({ type: 'picker', label: 'Review something else…', icon: 'arrow-left',
+  desc: 'pull requests and local changes', command: 'impactTree.showPicker' });
 
 /** Whether a root row of the review tree is a notice that belongs in the host's hover. @param {TreeRow} row */
 const isNotice = (row) => row.type === 'message' && (row.notice === 'warning' || row.notice === 'unanalysable');
@@ -45,8 +56,17 @@ function createReviewSidebar(vscode, { tree, getHost, emptyRow = () => null }) {
   let host = null;
   /** The review tree's notices, read when the host's children are. @type {TreeRow[]} */
   let notices = [];
+  /** Whether the groups are drawn above the review (after Review something else…); a new review clears it. */
+  let pickerShown = false;
+  /** What the last root read reviewed, so a new review hides the groups and a refresh of the same one does not. */
+  let hostKey = '';
 
   const reset = () => { cache = new Map(); parentOf = new WeakMap(); fromSources = new WeakSet(); host = null; };
+
+  /** Whether the root is the review alone: a host is shown and the groups were not asked for. */
+  const scoped = () => host !== null && !pickerShown;
+  /** @param {Host|null} h @returns {string} */
+  const keyOf = (h) => (h ? (h.kind === 'pr' ? `pr:${h.number}` : `local:${h.mode}`) : '');
 
   /** Whether a sources row is the host. @param {any} n @param {Host|null} h */
   const isHost = (n, h) => !!h && ((h.kind === 'pr' && n.type === 'pr' && n.args && n.args[0] && n.args[0].number === h.number)
@@ -100,10 +120,25 @@ function createReviewSidebar(vscode, { tree, getHost, emptyRow = () => null }) {
 
   // Read afresh each time the root is read (a refresh of either side): the repository, the
   // pull request list and the reviewed row may all have changed.
-  async function rootRows() { reset(); host = await findHost(); return sourceRows(null); }
+  async function rootRows() {
+    reset();
+    const key = keyOf(getHost());
+    if (key !== hostKey) { hostKey = key; pickerShown = false; }
+    host = await findHost();
+    const roots = await sourceRows(null);
+    return scoped() ? [BACK_ROW, host] : roots;
+  }
 
   /** @param {any} node */
   function getTreeItem(node) {
+    if (node === BACK_ROW) {
+      const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
+      item.iconPath = new vscode.ThemeIcon(node.icon);
+      item.description = node.desc;
+      item.tooltip = 'Show the pull requests and the local modes again. The review stays open under its row.';
+      item.command = { command: node.command, title: node.label };
+      return item;
+    }
     if (!fromSources.has(node)) return tree.getTreeItem(node);
     const item = sources.getTreeItem(node);
     if (node.type === 'pr') item.tooltip = '';     // no hover on pull request rows
@@ -135,9 +170,23 @@ function createReviewSidebar(vscode, { tree, getHost, emptyRow = () => null }) {
     },
     /** The host row, once the root is read (it is read now if it was not). @returns {Promise<any>} */
     async hostRow() { if (!cache.has('')) await rootRows(); return host; },
+    /**
+     * Draws the Local changes and Pull requests groups above the review again (Review
+     * something else…), with the host open inside them. Nothing happens while they are
+     * already drawn or no review is shown. The next review of another source hides them.
+     */
+    showPicker() {
+      if (pickerShown || !cache.has('') || host === null) return;
+      pickerShown = true;
+      reset();
+      changed.fire(undefined);
+    },
+    /** Whether the last root read drew the review alone (Review something else… and the host). */
+    isScoped: () => scoped(),
     /** @param {any} [node] */
     async getChildren(node) {
       if (!node) return rootRows();
+      if (node === BACK_ROW) return [];
       if (node === host) return reviewRows();
       if (fromSources.has(node)) return sourceRows(node);
       return tree.getChildren(node);
@@ -145,6 +194,7 @@ function createReviewSidebar(vscode, { tree, getHost, emptyRow = () => null }) {
     getTreeItem,
     /** @param {any} node */
     getParent(node) {
+      if (node === BACK_ROW || (node === host && scoped())) return undefined;
       if (fromSources.has(node)) return parentOf.get(node);
       const up = tree.getParent(node);
       return up || host || undefined;

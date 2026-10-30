@@ -240,7 +240,10 @@ until you mark it reviewed, and its tooltip and Details say why.
   TypeScript, JavaScript, Python, Go and Java (Python, Go and Java callers from syntax
   only).
 - Pick a mode or a pull request: its review opens **under that row** in the Review view, as
-  the GitHub Pull Requests extension nests a pull request's files. The reviewed row carries
+  the GitHub Pull Requests extension nests a pull request's files. While a review is open the
+  view shows that row alone, with **Review something else…** above it to bring the pull
+  requests and local modes back (the next review of another source hides them again); so a
+  change sits two levels deep, not eight. The reviewed row carries
   the review's controls (Open review, the tree/list toggle, Show only needs attention,
   Refresh, Submit review or Send feedback; the rest in its right-click menu), and its hover
   lists the review's notices, such as a fetched base or files not analysed. Clicking it
