@@ -9,7 +9,7 @@
 //
 // The host is the row the shown review came from: the pull request being previewed or
 // checked out, or the active mode under Local changes. It opens, carries the review's
-// notices (warnings, files not analysed) in its hover, and holds the review's controls
+// notices (warnings, files not analysed, a preview's limits) in its hover, and holds the review's controls
 // (package.json, `viewItem == reviewHost`). The review's summary stays the view's message. A
 // pull request missing from the list (not loaded, or not open) is shown as its own row
 // above the groups. Other pull request rows have no hover.
@@ -31,7 +31,7 @@ const BACK_ROW = Object.freeze({ type: 'picker', label: 'Review something else�
   desc: 'pull requests and local changes', command: 'impactTree.showPicker' });
 
 /** Whether a root row of the review tree is a notice that belongs in the host's hover. @param {TreeRow} row */
-const isNotice = (row) => row.type === 'message' && (row.notice === 'warning' || row.notice === 'unanalysable');
+const isNotice = (row) => row.type === 'message' && (row.notice === 'warning' || row.notice === 'unanalysable' || row.notice === 'preview');
 
 /**
  * @param {any} vscode
@@ -146,6 +146,9 @@ function createReviewSidebar(vscode, { tree, getHost, emptyRow = () => null }) {
     item.collapsibleState = vscode.TreeItemCollapsibleState.Expanded;
     item.contextValue = 'reviewHost';
     item.tooltip = notices.length ? notices.map((n) => `${n.label}${n.desc ? ` — ${n.desc}` : ''}`).join('\n') : '';
+    // A preview says so on the host's row; its limits are in the hover above. Asked of the
+    // tree, not read from the notices, which are only known once the host's children are.
+    if (typeof tree.isPreview === 'function' && tree.isPreview()) item.description = [item.description, 'preview'].filter(Boolean).join('  ·  ');
     // Clicking it still offers the pull request's choices (preview, check out, open on
     // GitHub), so a preview can be followed by a checkout from the same row.
     return item;

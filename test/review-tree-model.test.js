@@ -51,17 +51,31 @@ const labelsOf = (file) => file.rows.map((r) => r.label);
 const outside = (relPath, ranges) => ({ file: `/r/${relPath}`, relPath, ranges });
 const deleted = (relPath, label, startLine) => ({ label, key: label.replace('.', '>'), relPath, file: `/r/${relPath}`, namePos: startLine, startLine });
 
-test('a file with only outside lines is a call-graph file with one quiet row', () => {
-  const { rows } = build(resultOf({ outside: [outside('src/consts.js', [[1, 3], [9, 9]])] }));
+test('a file with only top-level lines is one quiet counting row: the file row, with no child', () => {
+  const { rows, decorations } = build(resultOf({ outside: [outside('src/consts.js', [[1, 3], [9, 9]])] }));
   assert.equal(rows.length, 1);
   const [file] = rows;
-  assert.equal(file.type, 'reviewFile');
+  assert.equal(file.type, 'file');
   assert.equal(file.relPath, 'src/consts.js');
   assert.equal(file.status, 'modified');
   assert.equal(file.file, '/r/src/consts.js');
   assert.equal(file.level, 4);
   assert.equal(file.attention, 0);
-  assert.deepEqual(file.rows.map((r) => r.type), ['outside']);
+  assert.equal(file.rows, undefined, 'no child rows');
+  assert.deepEqual(file.ranges, [[1, 3], [9, 9]]);
+  assert.equal(file.desc, 'lines 1–3, 9');
+  assert.deepEqual(model.collectCountingRows(rows), [file], 'it is the counting row');
+  assert.deepEqual(model.collectTickTargets(file), [file]);
+  assert.equal(model.needsAttention(file), false);
+  assert.deepEqual(model.countReview(rows, () => false), { total: 1, left: 1, attention: 0, attentionTotal: 0 });
+  assert.equal(model.findRowAtLine(rows, 'src/consts.js', 2), file);
+  assert.deepEqual(decorations.map((d) => d.uri), ['uri:/r/src/consts.js'], 'the file\'s decoration only, none for a top-level row it does not have');
+});
+
+test('a file with top-level lines and a change keeps both as rows of a call-graph file', () => {
+  const { rows } = build(resultOf({ allChanged: [change('src/a.js', 'a')], outside: [outside('src/a.js', [[1, 1]])] }));
+  assert.equal(rows[0].type, 'reviewFile');
+  assert.deepEqual(rows[0].rows.map((r) => r.type), ['finding', 'outside']);
 });
 
 test('a file without a call graph is a file row of level 5 and its own counting row', () => {
@@ -152,7 +166,7 @@ test('rows sort by level, then outside rows after the others of their level, the
     outside: [outside('src/m.js', [[1, 2]])],
   }));
   // level 0; level 1 by line (deleted at 40, unknown at 70); level 3 by line; level 4 with outside last
-  assert.deepEqual(labelsOf(rows[0]), ['stale', 'gone', 'unknown', 'bodyEarly', 'bodyLate', 'quietLate', 'Outside functions']);
+  assert.deepEqual(labelsOf(rows[0]), ['stale', 'gone', 'unknown', 'bodyEarly', 'bodyLate', 'quietLate', 'Top-level changes']);
 });
 
 test('rows of equal level, kind and line keep their input order', () => {
@@ -165,7 +179,7 @@ test('rows of equal level, kind and line keep their input order', () => {
 test('an outside row comes after rows of its level even on an earlier line', () => {
   const late = change('src/m.js', 'late', { startLine: 50 });
   const { rows } = build(resultOf({ allChanged: [late], outside: [outside('src/m.js', [[2, 4]])] }));
-  assert.deepEqual(labelsOf(rows[0]), ['late', 'Outside functions']);
+  assert.deepEqual(labelsOf(rows[0]), ['late', 'Top-level changes']);
 });
 
 // ---- order of files ---------------------------------------------------------------------
@@ -201,7 +215,8 @@ test('files equal in everything else sort by path, and file rows sort by path la
 test('a file with an outside row has the level of its worst row and counts the outside row', () => {
   const result = resultOf({ allChanged: [unknown1('a.js', 'u')], outside: [outside('a.js', [[1, 1]]), outside('b.js', [[1, 1]])] });
   const { rows } = build(result);
-  assert.deepEqual(rows.map((r) => [r.relPath, r.level, r.rows.length]), [['a.js', 1, 2], ['b.js', 4, 1]]);
+  assert.deepEqual(rows.map((r) => [r.relPath, r.type, r.level, (r.rows || []).length]), [['a.js', 'reviewFile', 1, 2], ['b.js', 'file', 4, 0]]);
+  assert.equal(model.collectCountingRows(rows).length, 3, 'a.js counts its change and its top-level row, b.js counts itself');
 });
 
 // ---- the whole model --------------------------------------------------------------------
@@ -232,7 +247,7 @@ test('counting rows are the changes, deleted and outside rows of call-graph file
   const { rows } = build(result);
   const counting = model.collectCountingRows(rows);
   assert.deepEqual(counting.map((r) => `${r.type}:${r.label}`).sort(),
-    ['deleted:gone', 'file:c.md', 'finding:a', 'finding:a.b', 'finding:b', 'outside:Outside functions']);
+    ['deleted:gone', 'file:c.md', 'finding:a', 'finding:a.b', 'finding:b', 'outside:Top-level changes']);
 });
 
 test('callers and tests rows never count', () => {
@@ -319,21 +334,13 @@ test('an unknown test reach is not reported as untested, and says why', () => {
   assert.equal(testsRows(odd)[0].label, 'Test reach unknown', 'a state the result does not define is not an answer');
 });
 
-test('when test reach was not computed the row offers to compute it', () => {
-  const { rows } = impactOf(change('src/a.js', 'a', { testState: 'not-computed' }), { testReachComputed: false });
-  const tests = testsRows(rows);
-  assert.equal(tests.length, 1);
-  assert.equal(tests[0].command, 'impactTree.computeTestReach');
-});
-
-test('a PR preview states that tests are not searched, and offers no command that would refuse', () => {
-  for (const testState of ['not-computed', 'unknown', undefined]) {
-    const { rows } = impactOf(change('src/a.js', 'a', { testState }), { tierA: true, testReachComputed: false });
-    const tests = testsRows(rows);
-    assert.equal(tests.length, 1);
-    assert.equal(tests[0].label, 'Tests are not searched in a PR preview');
-    assert.equal(tests[0].command, undefined);
-    assert.match(tests[0].tooltip, /Check out the PR/);
+test('when test reach was not computed there is no tests row: the command is on the review\'s row', () => {
+  for (const tierA of [false, true]) {
+    for (const testState of ['not-computed', 'unknown', undefined]) {
+      const { rows } = impactOf(change('src/a.js', 'a', { testState }), { tierA, testReachComputed: false });
+      assert.deepEqual(testsRows(rows), [], `tierA=${tierA} ${testState}`);
+      assert.ok(!rows.some((r) => r.command === 'impactTree.computeTestReach'), 'no row runs the walk');
+    }
   }
 });
 
@@ -369,8 +376,8 @@ test('findRowAtLine finds the innermost change, then an outside range, then the 
   assert.equal(labelAt(50), 'Outer');
   assert.equal(labelAt(10), 'Outer', 'the first line is inside');
   assert.equal(labelAt(60), 'Outer', 'the last line is inside');
-  assert.equal(labelAt(2), 'Outside functions');
-  assert.equal(labelAt(81), 'Outside functions');
+  assert.equal(labelAt(2), 'Top-level changes');
+  assert.equal(labelAt(81), 'Top-level changes');
   assert.equal(model.findRowAtLine(rows, 'src/s.js', 70).type, 'reviewFile', 'between functions it is the file row');
   assert.equal(model.findRowAtLine(rows, 'src/s.js', 0).type, 'reviewFile');
 });
@@ -403,7 +410,7 @@ const shownLabels = (entries) => entries.map((e) => [e.file.relPath, e.rows.map(
 test('no filter keeps every file with every counting row, in display order', () => {
   const { rows, isReviewed } = walkRows();
   assert.deepEqual(shownLabels(model.filterFileRows(rows, 'all', isReviewed)), [
-    ['a.js', ['bad', 'mid', 'low', 'Outside functions']], ['b.js', ['unk']], ['c.js', ['q']], ['n.md', ['n.md']],
+    ['a.js', ['bad', 'mid', 'low', 'Top-level changes']], ['b.js', ['unk']], ['c.js', ['q']], ['n.md', ['n.md']],
   ]);
 });
 
@@ -418,7 +425,7 @@ test('"attention" keeps the unticked rows at level 1 or worse, and the files tha
 
 test('"unreviewed" keeps the unticked counting rows, and a file row without a call graph while it is unticked', () => {
   const { rows, row, ticked, isReviewed } = walkRows();
-  ticked.add(row('a.js', 'mid')); ticked.add(row('a.js', 'Outside functions')); ticked.add(row('c.js', 'q'));
+  ticked.add(row('a.js', 'mid')); ticked.add(row('a.js', 'Top-level changes')); ticked.add(row('c.js', 'q'));
   assert.deepEqual(shownLabels(model.filterFileRows(rows, 'unreviewed', isReviewed)), [['a.js', ['bad', 'low']], ['b.js', ['unk']], ['n.md', ['n.md']]]);
   ticked.add(row('n.md')); ticked.add(row('a.js', 'bad')); ticked.add(row('a.js', 'low'));
   assert.deepEqual(shownLabels(model.filterFileRows(rows, 'unreviewed', isReviewed)), [['b.js', ['unk']]]);
@@ -460,7 +467,7 @@ test('the next unreviewed row starts at the top, then follows display order', ()
   const next = (after, filter = 'all') => model.findNextUnreviewed(rows, { after, isReviewed, filter });
   assert.equal(next(null), row('a.js', 'bad'));
   assert.equal(next(row('a.js', 'bad')), row('a.js', 'mid'));
-  assert.equal(next(row('a.js', 'Outside functions')), row('b.js', 'unk'), 'across a file boundary');
+  assert.equal(next(row('a.js', 'Top-level changes')), row('b.js', 'unk'), 'across a file boundary');
   assert.equal(next(row('c.js', 'q')), row('n.md'), 'a file without a call graph is a row to visit');
   ticked.add(row('a.js', 'mid'));
   assert.equal(next(row('a.js', 'bad')), row('a.js', 'low'), 'ticked rows are skipped');
@@ -503,7 +510,7 @@ test('with a filter the walk visits only the rows it shows, and starts from a hi
   assert.equal(next(row('a.js', 'mid'), 'attention'), row('b.js', 'unk'), 'a hidden selection starts from its own place');
   assert.equal(next(row('c.js', 'q'), 'attention'), row('a.js', 'bad'), 'its whole file is hidden: nothing after it, so it wraps');
   ticked.add(row('a.js', 'low'));
-  assert.equal(next(row('a.js', 'mid'), 'unreviewed'), row('a.js', 'Outside functions'));
+  assert.equal(next(row('a.js', 'mid'), 'unreviewed'), row('a.js', 'Top-level changes'));
   ticked.add(row('b.js', 'unk'));
   assert.equal(next(row('b.js', 'unk'), 'unreviewed'), row('c.js', 'q'), 'a ticked selection is hidden by the filter but still marks the place');
 });
@@ -521,7 +528,7 @@ test('the previous unreviewed row starts at the bottom, then walks up in display
   const prev = (after, filter = 'all') => model.findPreviousUnreviewed(rows, { after, isReviewed, filter });
   assert.equal(prev(null), row('n.md'), 'the last row of the review');
   assert.equal(prev(row('n.md')), row('c.js', 'q'));
-  assert.equal(prev(row('b.js', 'unk')), row('a.js', 'Outside functions'), 'across a file boundary, never onto a spacer');
+  assert.equal(prev(row('b.js', 'unk')), row('a.js', 'Top-level changes'), 'across a file boundary, never onto a spacer');
   assert.equal(prev(row('a.js', 'mid')), row('a.js', 'bad'));
   ticked.add(row('a.js', 'mid'));
   assert.equal(prev(row('a.js', 'low')), row('a.js', 'bad'), 'ticked rows are skipped');
@@ -541,7 +548,7 @@ test('the backward walk wraps once, and ends at the starting row when it is the 
 test('the backward walk: a file row stands before its rows, nothing left is null, an empty review is null', () => {
   const { rows, row, ticked, isReviewed } = walkRows();
   const prev = (after) => model.findPreviousUnreviewed(rows, { after, isReviewed, filter: 'all' });
-  assert.equal(prev(rows[1]), row('a.js', 'Outside functions'), 'selecting a file goes to the row above it');
+  assert.equal(prev(rows[1]), row('a.js', 'Top-level changes'), 'selecting a file goes to the row above it');
   assert.equal(prev(rows[0]), row('n.md'), 'above the first file it wraps');
   for (const f of rows) for (const r of f.rows || [f]) ticked.add(r);
   for (const filter of ['all', 'attention', 'unreviewed']) {

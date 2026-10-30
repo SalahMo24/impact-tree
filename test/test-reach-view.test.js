@@ -34,7 +34,7 @@ async function rowsOf(result, rowDetail = 'inline') {
   const out = {};
   for (const row of (await provider.getChildren(file)).filter((r) => r.type !== 'spacer')) {
     const tests = (await provider.getChildren(row)).at(-1);
-    out[row.label] = { item: provider.getTreeItem(row), tests, testsItem: provider.getTreeItem(tests) };
+    out[row.label] = { item: provider.getTreeItem(row), tests, testsItem: tests ? provider.getTreeItem(tests) : undefined };
   }
   return out;
 }
@@ -77,8 +77,9 @@ test('no test marker before the walk runs, or in a PR preview', async () => {
   assert.equal(deferred.a.item.description, 'no callers');
   const preview = await rowsOf(resultOf([change('b', 'unknown', 'x')], { tierA: true, testReachComputed: false }), 'hover');
   assert.equal(preview.b.item.description, 'no callers');
-  assert.equal(preview.b.tests.label, 'Tests are not searched in a PR preview');
-  assert.equal(preview.b.testsItem.command, undefined);
+  assert.equal(preview.b.tests, undefined, 'no tests row: what was not searched is said in the hover only');
+  assert.match(preview.b.item.tooltip.value, /Tests are not searched in a PR preview/);
+  assert.doesNotMatch(preview.b.item.description, /tests|preview/i);
 });
 
 test('an unknown symbol with no reason recorded still says the search did not finish', async () => {
@@ -87,12 +88,12 @@ test('an unknown symbol with no reason recorded still says the search did not fi
   assert.match(rows.bare.testsItem.description, /did not finish/);
 });
 
-test('before the walk runs, every tests row offers to run it and no row reads "no test"', async () => {
+test('before the walk runs, no row offers to run it and no row reads "no test"; the hover says the tests were not searched', async () => {
   const rows = await rowsOf(resultOf([change('a', 'not-computed'), change('b', 'not-computed')]));
   for (const r of Object.values(rows)) {
-    assert.equal(r.tests.label, 'Find the tests that cover this');
-    assert.equal(r.testsItem.command.command, 'impactTree.computeTestReach');
-    assert.doesNotMatch(r.item.description, /no test/);
+    assert.equal(r.tests, undefined, 'the compute row is no longer in the tree');
+    assert.doesNotMatch(r.item.description, /no test|tests/);
+    assert.match(r.item.tooltip.value, /Tests are not searched yet.*Find the tests that cover this review/);
   }
 });
 

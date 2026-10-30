@@ -716,7 +716,7 @@
     }
    },
    {
-    "at": "/2:store.ts/4:Outside functions",
+    "at": "/2:store.ts/4:Top-level changes",
     "item": {
      "checkbox": 0,
      "collapsible": 0,
@@ -733,11 +733,10 @@
       "tooltip": "src/store.ts"
      },
      "description": "lines 1–2, deleted before line 41",
-     "icon": "symbol-namespace",
-     "label": "Outside functions",
+     "label": "Top-level changes",
      "resourceUri": "uri:file:///repo/src/store.ts#outside",
      "tooltip": {
-      "markdown": "**Outside functions** — `src/store.ts`\n\nlines 1–2, deleted before line 41\n\n_Changed lines in no function: imports, constants, types, fields and the like._"
+      "markdown": "**Top-level changes** — `src/store.ts`\n\nlines 1–2, deleted before line 41\n\n_Changed lines in no function: imports, constants, types, fields and the like._"
      }
     }
    },
@@ -1824,11 +1823,11 @@
       "status": "renamed",
       "tooltip": "config/x/y.json"
      },
-     "description": "no call graph  ·  x",
+     "description": "x",
      "label": "y.json",
      "resourceUri": "uri:file:///repo/config/x/y.json",
      "tooltip": {
-      "markdown": "```\nconfig/\n└─ x/\n   └─ y.json\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
+      "markdown": "```\nconfig/\n└─ x/\n   └─ y.json\n```\n\n_renamed_\n\n_A file without analysed code: read the diff and mark it reviewed._"
      }
     }
    },
@@ -1848,11 +1847,11 @@
       "status": "modified",
       "tooltip": "docs/a.md"
      },
-     "description": "no call graph  ·  docs",
+     "description": "docs",
      "label": "a.md",
      "resourceUri": "uri:file:///repo/docs/a.md",
      "tooltip": {
-      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
+      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_A file without analysed code: read the diff and mark it reviewed._"
      }
     }
    },
@@ -1872,11 +1871,11 @@
       "status": "modified",
       "tooltip": "README.md"
      },
-     "description": "no call graph",
+     "description": "",
      "label": "README.md",
      "resourceUri": "uri:file:///repo/README.md",
      "tooltip": {
-      "markdown": "```\nREADME.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
+      "markdown": "```\nREADME.md\n```\n\n_modified_\n\n_A file without analysed code: read the diff and mark it reviewed._"
      }
     }
    },
@@ -2597,7 +2596,7 @@
     }
    },
    {
-    "at": "/2:store.ts/4:Outside functions",
+    "at": "/2:store.ts/4:Top-level changes",
     "item": {
      "collapsible": 0,
      "command": {
@@ -2613,11 +2612,10 @@
       "tooltip": "src/store.ts"
      },
      "description": "lines 1–2, deleted before line 41",
-     "icon": "symbol-namespace",
-     "label": "Outside functions",
+     "label": "Top-level changes",
      "resourceUri": "uri:file:///repo/src/store.ts#outside",
      "tooltip": {
-      "markdown": "**Outside functions** — `src/store.ts`\n\nlines 1–2, deleted before line 41\n\n_Changed lines in no function: imports, constants, types, fields and the like._"
+      "markdown": "**Top-level changes** — `src/store.ts`\n\nlines 1–2, deleted before line 41\n\n_Changed lines in no function: imports, constants, types, fields and the like._"
      }
     }
    },
@@ -3689,11 +3687,11 @@
       "status": "renamed",
       "tooltip": "config/x/y.json"
      },
-     "description": "no call graph  ·  x",
+     "description": "x",
      "label": "y.json",
      "resourceUri": "uri:file:///repo/config/x/y.json",
      "tooltip": {
-      "markdown": "```\nconfig/\n└─ x/\n   └─ y.json\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
+      "markdown": "```\nconfig/\n└─ x/\n   └─ y.json\n```\n\n_renamed_\n\n_A file without analysed code: read the diff and mark it reviewed._"
      }
     }
    },
@@ -3712,11 +3710,11 @@
       "status": "modified",
       "tooltip": "docs/a.md"
      },
-     "description": "no call graph  ·  docs",
+     "description": "docs",
      "label": "a.md",
      "resourceUri": "uri:file:///repo/docs/a.md",
      "tooltip": {
-      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
+      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_A file without analysed code: read the diff and mark it reviewed._"
      }
     }
    },
@@ -3735,11 +3733,11 @@
       "status": "modified",
       "tooltip": "README.md"
      },
-     "description": "no call graph",
+     "description": "",
      "label": "README.md",
      "resourceUri": "uri:file:///repo/README.md",
      "tooltip": {
-      "markdown": "```\nREADME.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
+      "markdown": "```\nREADME.md\n```\n\n_modified_\n\n_A file without analysed code: read the diff and mark it reviewed._"
      }
     }
    },
@@ -3945,7 +3943,7 @@
      "label": "save",
      "resourceUri": "uri:file:///repo/src/store.ts#100",
      "tooltip": {
-      "markdown": "**Store.save**\n\nThe parameter, and 2 of 3 callers were not changed on the call line. Check that they still work.\n\n**param**\n\n`src/store.ts:10`  ·  component `(root)`\n\n---\n\nbase: `save(a)`\n\nhead: `save(a, b)`\n\n---\n\n+ throw `Error`\n\n---\n\n**2 call site(s) not updated:**\n- useB\n- main\n\n1 of them were edited — just not on the call line\n\n_score 9_"
+      "markdown": "**Store.save**\n\nThe parameter, and 2 of 3 callers were not changed on the call line. Check that they still work.\n\n_Tests are not searched yet: it searches the callers again, on demand. Use \"Find the tests that cover this review\" on the review's row._\n\n**param**\n\n`src/store.ts:10`  ·  component `(root)`\n\n---\n\nbase: `save(a)`\n\nhead: `save(a, b)`\n\n---\n\n+ throw `Error`\n\n---\n\n**2 call site(s) not updated:**\n- useB\n- main\n\n1 of them were edited — just not on the call line\n\n_score 9_"
      }
     }
    },
@@ -4247,21 +4245,6 @@
     }
    },
    {
-    "at": "/2:store.ts/0:Store.save/3:Find the tests that cover this",
-    "item": {
-     "collapsible": 0,
-     "command": {
-      "command": "impactTree.computeTestReach",
-      "title": "Find the tests that cover this"
-     },
-     "decoration": null,
-     "description": "searches the callers again — on demand",
-     "icon": "play",
-     "label": "Find the tests that cover this",
-     "tooltip": "Find the tests that cover this"
-    }
-   },
-   {
     "at": "/2:store.ts/1:Store.load",
     "item": {
      "collapsible": 1,
@@ -4283,7 +4266,7 @@
      "label": "load",
      "resourceUri": "uri:file:///repo/src/store.ts#300",
      "tooltip": {
-      "markdown": "**Store.load**\n\nThe optional param, and the callers found so far are updated, but more may be missing: the search reported \"query-failed\". Check its users by hand.\n\n_caller search incomplete: query-failed_\n\n**optional param**\n\n`src/store.ts:30`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**Store.load**\n\nThe optional param, and the callers found so far are updated, but more may be missing: the search reported \"query-failed\". Check its users by hand.\n\n_Tests are not searched yet: it searches the callers again, on demand. Use \"Find the tests that cover this review\" on the review's row._\n\n_caller search incomplete: query-failed_\n\n**optional param**\n\n`src/store.ts:30`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -4391,21 +4374,6 @@
     }
    },
    {
-    "at": "/2:store.ts/1:Store.load/2:Find the tests that cover this",
-    "item": {
-     "collapsible": 0,
-     "command": {
-      "command": "impactTree.computeTestReach",
-      "title": "Find the tests that cover this"
-     },
-     "decoration": null,
-     "description": "searches the callers again — on demand",
-     "icon": "play",
-     "label": "Find the tests that cover this",
-     "tooltip": "Find the tests that cover this"
-    }
-   },
-   {
     "at": "/2:store.ts/2:Store.inner",
     "item": {
      "collapsible": 1,
@@ -4427,23 +4395,8 @@
      "label": "inner",
      "resourceUri": "uri:file:///repo/src/store.ts#500",
      "tooltip": {
-      "markdown": "**Store.inner**\n\nThe signature, but its callers could not be found: the search did not say why. Check its users by hand.\n\n**sig**\n\n`src/store.ts:50`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**Store.inner**\n\nThe signature, but its callers could not be found: the search did not say why. Check its users by hand.\n\n_Tests are not searched yet: it searches the callers again, on demand. Use \"Find the tests that cover this review\" on the review's row._\n\n**sig**\n\n`src/store.ts:50`  ·  component `(root)`\n\n_score 1_"
      }
-    }
-   },
-   {
-    "at": "/2:store.ts/2:Store.inner/0:Find the tests that cover this",
-    "item": {
-     "collapsible": 0,
-     "command": {
-      "command": "impactTree.computeTestReach",
-      "title": "Find the tests that cover this"
-     },
-     "decoration": null,
-     "description": "searches the callers again — on demand",
-     "icon": "play",
-     "label": "Find the tests that cover this",
-     "tooltip": "Find the tests that cover this"
     }
    },
    {
@@ -4473,7 +4426,7 @@
     }
    },
    {
-    "at": "/2:store.ts/4:Outside functions",
+    "at": "/2:store.ts/4:Top-level changes",
     "item": {
      "collapsible": 0,
      "command": {
@@ -4489,11 +4442,10 @@
       "tooltip": "src/store.ts"
      },
      "description": "lines 1–2, deleted before line 41",
-     "icon": "symbol-namespace",
-     "label": "Outside functions",
+     "label": "Top-level changes",
      "resourceUri": "uri:file:///repo/src/store.ts#outside",
      "tooltip": {
-      "markdown": "**Outside functions** — `src/store.ts`\n\nlines 1–2, deleted before line 41\n\n_Changed lines in no function: imports, constants, types, fields and the like._"
+      "markdown": "**Top-level changes** — `src/store.ts`\n\nlines 1–2, deleted before line 41\n\n_Changed lines in no function: imports, constants, types, fields and the like._"
      }
     }
    },
@@ -4553,7 +4505,7 @@
      "label": "Big",
      "resourceUri": "uri:file:///repo/src/big.ts#10",
      "tooltip": {
-      "markdown": "**Big**\n\nThe signature, and 11 of 11 callers were not changed on the call line. Check that they still work.\n\n**sig**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
+      "markdown": "**Big**\n\nThe signature, and 11 of 11 callers were not changed on the call line. Check that they still work.\n\n_Tests are not searched yet: it searches the callers again, on demand. Use \"Find the tests that cover this review\" on the review's row._\n\n**sig**\n\n`src/big.ts:1`  ·  component `(root)`\n\n---\n\n**11 call site(s) not updated:**\n- caller0\n- caller1\n- caller2\n- caller3\n- caller4\n- caller5\n- caller6\n- caller7\n- caller8\n- caller9\n- …and 1 more\n\n_score 1_"
      }
     }
    },
@@ -4918,21 +4870,6 @@
     }
    },
    {
-    "at": "/3:big.ts/0:Big/1:Find the tests that cover this",
-    "item": {
-     "collapsible": 0,
-     "command": {
-      "command": "impactTree.computeTestReach",
-      "title": "Find the tests that cover this"
-     },
-     "decoration": null,
-     "description": "searches the callers again — on demand",
-     "icon": "play",
-     "label": "Find the tests that cover this",
-     "tooltip": "Find the tests that cover this"
-    }
-   },
-   {
     "at": "/3:big.ts/1:",
     "item": {
      "collapsible": 0,
@@ -4988,23 +4925,8 @@
      "label": "helper  ‹api›",
      "resourceUri": "uri:file:///repo/src/api/util.ts#50",
      "tooltip": {
-      "markdown": "**helper**\n\nThe signature, but its callers could not be found: it is built by a DI container, so its callers are not visible. Check its users by hand.\n\n**sig**\n\n`src/api/util.ts:5`  ·  component `api`\n\n_score 1_"
+      "markdown": "**helper**\n\nThe signature, but its callers could not be found: it is built by a DI container, so its callers are not visible. Check its users by hand.\n\n_Tests are not searched yet: it searches the callers again, on demand. Use \"Find the tests that cover this review\" on the review's row._\n\n**sig**\n\n`src/api/util.ts:5`  ·  component `api`\n\n_score 1_"
      }
-    }
-   },
-   {
-    "at": "/4:util.ts/0:helper/0:Find the tests that cover this",
-    "item": {
-     "collapsible": 0,
-     "command": {
-      "command": "impactTree.computeTestReach",
-      "title": "Find the tests that cover this"
-     },
-     "decoration": null,
-     "description": "searches the callers again — on demand",
-     "icon": "play",
-     "label": "Find the tests that cover this",
-     "tooltip": "Find the tests that cover this"
     }
    },
    {
@@ -5062,23 +4984,8 @@
      "label": "helper  ‹web›",
      "resourceUri": "uri:file:///repo/src/web/util.ts#50",
      "tooltip": {
-      "markdown": "**helper**\n\nThe signature. Nothing calls it in the code searched.\n\n**sig**\n\n`src/web/util.ts:5`  ·  component `web`\n\n_score 1_"
+      "markdown": "**helper**\n\nThe signature. Nothing calls it in the code searched.\n\n_Tests are not searched yet: it searches the callers again, on demand. Use \"Find the tests that cover this review\" on the review's row._\n\n**sig**\n\n`src/web/util.ts:5`  ·  component `web`\n\n_score 1_"
      }
-    }
-   },
-   {
-    "at": "/5:util.ts/0:helper/0:Find the tests that cover this",
-    "item": {
-     "collapsible": 0,
-     "command": {
-      "command": "impactTree.computeTestReach",
-      "title": "Find the tests that cover this"
-     },
-     "decoration": null,
-     "description": "searches the callers again — on demand",
-     "icon": "play",
-     "label": "Find the tests that cover this",
-     "tooltip": "Find the tests that cover this"
     }
    },
    {
@@ -5136,7 +5043,7 @@
      "label": "createOpen",
      "resourceUri": "uri:file:///repo/src/open.ts#100",
      "tooltip": {
-      "markdown": "**createOpen**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/open.ts:10`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**createOpen**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_Tests are not searched yet: it searches the callers again, on demand. Use \"Find the tests that cover this review\" on the review's row._\n\n`src/open.ts:10`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -5187,21 +5094,6 @@
     }
    },
    {
-    "at": "/6:open.ts/0:createOpen/1:Find the tests that cover this",
-    "item": {
-     "collapsible": 0,
-     "command": {
-      "command": "impactTree.computeTestReach",
-      "title": "Find the tests that cover this"
-     },
-     "decoration": null,
-     "description": "searches the callers again — on demand",
-     "icon": "play",
-     "label": "Find the tests that cover this",
-     "tooltip": "Find the tests that cover this"
-    }
-   },
-   {
     "at": "/6:open.ts/1:createOpen.uriFor",
     "item": {
      "collapsible": 1,
@@ -5222,7 +5114,7 @@
      "label": "uriFor",
      "resourceUri": "uri:file:///repo/src/open.ts#200",
      "tooltip": {
-      "markdown": "**createOpen.uriFor**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/open.ts:20`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**createOpen.uriFor**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_Tests are not searched yet: it searches the callers again, on demand. Use \"Find the tests that cover this review\" on the review's row._\n\n`src/open.ts:20`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -5263,21 +5155,6 @@
     }
    },
    {
-    "at": "/6:open.ts/1:createOpen.uriFor/1:Find the tests that cover this",
-    "item": {
-     "collapsible": 0,
-     "command": {
-      "command": "impactTree.computeTestReach",
-      "title": "Find the tests that cover this"
-     },
-     "decoration": null,
-     "description": "searches the callers again — on demand",
-     "icon": "play",
-     "label": "Find the tests that cover this",
-     "tooltip": "Find the tests that cover this"
-    }
-   },
-   {
     "at": "/6:open.ts/2:sameUri",
     "item": {
      "collapsible": 1,
@@ -5298,23 +5175,8 @@
      "label": "sameUri",
      "resourceUri": "uri:file:///repo/src/open.ts#600",
      "tooltip": {
-      "markdown": "**sameUri**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n`src/open.ts:60`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**sameUri**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n_Tests are not searched yet: it searches the callers again, on demand. Use \"Find the tests that cover this review\" on the review's row._\n\n`src/open.ts:60`  ·  component `(root)`\n\n_score 1_"
      }
-    }
-   },
-   {
-    "at": "/6:open.ts/2:sameUri/0:Find the tests that cover this",
-    "item": {
-     "collapsible": 0,
-     "command": {
-      "command": "impactTree.computeTestReach",
-      "title": "Find the tests that cover this"
-     },
-     "decoration": null,
-     "description": "searches the callers again — on demand",
-     "icon": "play",
-     "label": "Find the tests that cover this",
-     "tooltip": "Find the tests that cover this"
     }
    },
    {
@@ -5372,7 +5234,7 @@
      "label": "READY",
      "resourceUri": "uri:file:///repo/src/ready.ts#30",
      "tooltip": {
-      "markdown": "**READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**READY**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_Tests are not searched yet: it searches the callers again, on demand. Use \"Find the tests that cover this review\" on the review's row._\n\n`src/ready.ts:3`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -5420,21 +5282,6 @@
      "icon": "warning",
      "label": "Callers could not be loaded",
      "tooltip": "tsserver crashed"
-    }
-   },
-   {
-    "at": "/7:ready.ts/0:READY/1:Find the tests that cover this",
-    "item": {
-     "collapsible": 0,
-     "command": {
-      "command": "impactTree.computeTestReach",
-      "title": "Find the tests that cover this"
-     },
-     "decoration": null,
-     "description": "searches the callers again — on demand",
-     "icon": "play",
-     "label": "Find the tests that cover this",
-     "tooltip": "Find the tests that cover this"
     }
    },
    {
@@ -5492,7 +5339,7 @@
      "label": "useB",
      "resourceUri": "uri:file:///repo/src/use.ts#80",
      "tooltip": {
-      "markdown": "**useB**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/use.ts:8`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**useB**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_Tests are not searched yet: it searches the callers again, on demand. Use \"Find the tests that cover this review\" on the review's row._\n\n`src/use.ts:8`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -5567,21 +5414,6 @@
     }
    },
    {
-    "at": "/8:use.ts/0:useB/1:Find the tests that cover this",
-    "item": {
-     "collapsible": 0,
-     "command": {
-      "command": "impactTree.computeTestReach",
-      "title": "Find the tests that cover this"
-     },
-     "decoration": null,
-     "description": "searches the callers again — on demand",
-     "icon": "play",
-     "label": "Find the tests that cover this",
-     "tooltip": "Find the tests that cover this"
-    }
-   },
-   {
     "at": "/8:use.ts/1:",
     "item": {
      "collapsible": 0,
@@ -5605,11 +5437,11 @@
       "status": "renamed",
       "tooltip": "config/x/y.json"
      },
-     "description": "no call graph  ·  x",
+     "description": "x",
      "label": "y.json",
      "resourceUri": "uri:file:///repo/config/x/y.json",
      "tooltip": {
-      "markdown": "```\nconfig/\n└─ x/\n   └─ y.json\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
+      "markdown": "```\nconfig/\n└─ x/\n   └─ y.json\n```\n\n_renamed_\n\n_A file without analysed code: read the diff and mark it reviewed._"
      }
     }
    },
@@ -5628,11 +5460,11 @@
       "status": "modified",
       "tooltip": "docs/a.md"
      },
-     "description": "no call graph  ·  docs",
+     "description": "docs",
      "label": "a.md",
      "resourceUri": "uri:file:///repo/docs/a.md",
      "tooltip": {
-      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
+      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_A file without analysed code: read the diff and mark it reviewed._"
      }
     }
    },
@@ -5651,11 +5483,11 @@
       "status": "modified",
       "tooltip": "README.md"
      },
-     "description": "no call graph",
+     "description": "",
      "label": "README.md",
      "resourceUri": "uri:file:///repo/README.md",
      "tooltip": {
-      "markdown": "```\nREADME.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
+      "markdown": "```\nREADME.md\n```\n\n_modified_\n\n_A file without analysed code: read the diff and mark it reviewed._"
      }
     }
    },
@@ -5783,7 +5615,7 @@
      "label": "run",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#120",
      "tooltip": {
-      "markdown": "**Service.run**\n\nThe parameter, and 1 of 2 callers was not changed on the call line. Check that it still works.\n\n**param**\n\n`src/service.ts:12`  ·  component `(root)`\n\n---\n\n**1 call site(s) not updated:**\n- Caller.go\n\n_score 1_"
+      "markdown": "**Service.run**\n\nThe parameter, and 1 of 2 callers was not changed on the call line. Check that it still works.\n\n_Tests are not searched in a PR preview. A preview reads only the pull request's own files; check out the PR to see which tests reach this change._\n\n**param**\n\n`src/service.ts:12`  ·  component `(root)`\n\n---\n\n**1 call site(s) not updated:**\n- Caller.go\n\n_score 1_"
      }
     }
    },
@@ -5946,16 +5778,6 @@
     }
    },
    {
-    "at": "/1:service.ts/0:Service.run/1:Tests are not searched in a PR preview",
-    "item": {
-     "collapsible": 0,
-     "decoration": null,
-     "icon": "beaker",
-     "label": "Tests are not searched in a PR preview",
-     "tooltip": "A preview reads only the pull request's own files. Check out the PR to see which tests reach this change."
-    }
-   },
-   {
     "at": "/1:service.ts/1:Service.idle",
     "item": {
      "checkbox": 0,
@@ -5977,7 +5799,7 @@
      "label": "idle",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#300",
      "tooltip": {
-      "markdown": "**Service.idle**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/service.ts:30`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**Service.idle**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_Tests are not searched in a PR preview. A preview reads only the pull request's own files; check out the PR to see which tests reach this change._\n\n`src/service.ts:30`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -6071,16 +5893,6 @@
      "icon": "warning",
      "label": "More callers may be missing",
      "tooltip": "this resolver does not report whether its caller search finished"
-    }
-   },
-   {
-    "at": "/1:service.ts/1:Service.idle/1:Tests are not searched in a PR preview",
-    "item": {
-     "collapsible": 0,
-     "decoration": null,
-     "icon": "beaker",
-     "label": "Tests are not searched in a PR preview",
-     "tooltip": "A preview reads only the pull request's own files. Check out the PR to see which tests reach this change."
     }
    },
    {
@@ -6202,18 +6014,8 @@
      "label": "stop",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha#60",
      "tooltip": {
-      "markdown": "**Caller.stop**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n`src/caller.ts:6`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**Caller.stop**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n_Tests are not searched in a PR preview. A preview reads only the pull request's own files; check out the PR to see which tests reach this change._\n\n`src/caller.ts:6`  ·  component `(root)`\n\n_score 1_"
      }
-    }
-   },
-   {
-    "at": "/3:caller.ts/0:Caller.stop/0:Tests are not searched in a PR preview",
-    "item": {
-     "collapsible": 0,
-     "decoration": null,
-     "icon": "beaker",
-     "label": "Tests are not searched in a PR preview",
-     "tooltip": "A preview reads only the pull request's own files. Check out the PR to see which tests reach this change."
     }
    },
    {
@@ -6241,12 +6043,12 @@
       "status": "added",
       "tooltip": "docs/new.md"
      },
-     "description": "no call graph  ·  docs",
+     "description": "docs",
      "icon": "__file__",
      "label": "new.md",
      "resourceUri": "uri:impacttree-pr:///docs/new.md?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "```\ndocs/\n└─ new.md\n```\n\n_added_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
+      "markdown": "```\ndocs/\n└─ new.md\n```\n\n_added_\n\n_A file without analysed code: read the diff and mark it reviewed._"
      }
     }
    },
@@ -6266,12 +6068,12 @@
       "status": "renamed",
       "tooltip": "docs/sub/moved.md"
      },
-     "description": "no call graph  ·  sub",
+     "description": "sub",
      "icon": "__file__",
      "label": "moved.md",
      "resourceUri": "uri:impacttree-pr:///docs/sub/moved.md?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "```\ndocs/\n└─ sub/\n   └─ moved.md\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
+      "markdown": "```\ndocs/\n└─ sub/\n   └─ moved.md\n```\n\n_renamed_\n\n_A file without analysed code: read the diff and mark it reviewed._"
      }
     }
    },
@@ -6397,7 +6199,7 @@
      "label": "run",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#120",
      "tooltip": {
-      "markdown": "**Service.run**\n\nThe parameter, and 1 of 2 callers was not changed on the call line. Check that it still works.\n\n**param**\n\n`src/service.ts:12`  ·  component `(root)`\n\n---\n\n**1 call site(s) not updated:**\n- Caller.go\n\n_score 1_"
+      "markdown": "**Service.run**\n\nThe parameter, and 1 of 2 callers was not changed on the call line. Check that it still works.\n\n_Tests are not searched in a PR preview. A preview reads only the pull request's own files; check out the PR to see which tests reach this change._\n\n**param**\n\n`src/service.ts:12`  ·  component `(root)`\n\n---\n\n**1 call site(s) not updated:**\n- Caller.go\n\n_score 1_"
      }
     }
    },
@@ -6560,16 +6362,6 @@
     }
    },
    {
-    "at": "/1:service.ts/0:Service.run/1:Tests are not searched in a PR preview",
-    "item": {
-     "collapsible": 0,
-     "decoration": null,
-     "icon": "beaker",
-     "label": "Tests are not searched in a PR preview",
-     "tooltip": "A preview reads only the pull request's own files. Check out the PR to see which tests reach this change."
-    }
-   },
-   {
     "at": "/1:service.ts/1:Service.idle",
     "item": {
      "collapsible": 1,
@@ -6590,7 +6382,7 @@
      "label": "idle",
      "resourceUri": "uri:impacttree-pr:///src/service.ts?side=head&revision=7%3Aheadsha%3Abasesha#300",
      "tooltip": {
-      "markdown": "**Service.idle**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/service.ts:30`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**Service.idle**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_Tests are not searched in a PR preview. A preview reads only the pull request's own files; check out the PR to see which tests reach this change._\n\n`src/service.ts:30`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -6684,16 +6476,6 @@
      "icon": "warning",
      "label": "More callers may be missing",
      "tooltip": "this resolver does not report whether its caller search finished"
-    }
-   },
-   {
-    "at": "/1:service.ts/1:Service.idle/1:Tests are not searched in a PR preview",
-    "item": {
-     "collapsible": 0,
-     "decoration": null,
-     "icon": "beaker",
-     "label": "Tests are not searched in a PR preview",
-     "tooltip": "A preview reads only the pull request's own files. Check out the PR to see which tests reach this change."
     }
    },
    {
@@ -6811,18 +6593,8 @@
      "label": "stop",
      "resourceUri": "uri:impacttree-pr:///src/caller.ts?side=head&revision=7%3Aheadsha%3Abasesha#60",
      "tooltip": {
-      "markdown": "**Caller.stop**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n`src/caller.ts:6`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**Caller.stop**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n_Tests are not searched in a PR preview. A preview reads only the pull request's own files; check out the PR to see which tests reach this change._\n\n`src/caller.ts:6`  ·  component `(root)`\n\n_score 1_"
      }
-    }
-   },
-   {
-    "at": "/3:caller.ts/0:Caller.stop/0:Tests are not searched in a PR preview",
-    "item": {
-     "collapsible": 0,
-     "decoration": null,
-     "icon": "beaker",
-     "label": "Tests are not searched in a PR preview",
-     "tooltip": "A preview reads only the pull request's own files. Check out the PR to see which tests reach this change."
     }
    },
    {
@@ -6849,12 +6621,12 @@
       "status": "added",
       "tooltip": "docs/new.md"
      },
-     "description": "no call graph  ·  docs",
+     "description": "docs",
      "icon": "__file__",
      "label": "new.md",
      "resourceUri": "uri:impacttree-pr:///docs/new.md?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "```\ndocs/\n└─ new.md\n```\n\n_added_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
+      "markdown": "```\ndocs/\n└─ new.md\n```\n\n_added_\n\n_A file without analysed code: read the diff and mark it reviewed._"
      }
     }
    },
@@ -6873,12 +6645,12 @@
       "status": "renamed",
       "tooltip": "docs/sub/moved.md"
      },
-     "description": "no call graph  ·  sub",
+     "description": "sub",
      "icon": "__file__",
      "label": "moved.md",
      "resourceUri": "uri:impacttree-pr:///docs/sub/moved.md?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "```\ndocs/\n└─ sub/\n   └─ moved.md\n```\n\n_renamed_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
+      "markdown": "```\ndocs/\n└─ sub/\n   └─ moved.md\n```\n\n_renamed_\n\n_A file without analysed code: read the diff and mark it reviewed._"
      }
     }
    },
@@ -7183,11 +6955,11 @@
       "status": "modified",
       "tooltip": "docs/a.md"
      },
-     "description": "no call graph  ·  docs",
+     "description": "docs",
      "label": "a.md",
      "resourceUri": "uri:file:///repo/docs/a.md",
      "tooltip": {
-      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
+      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_A file without analysed code: read the diff and mark it reviewed._"
      }
     }
    },
@@ -7502,11 +7274,11 @@
       "status": "modified",
       "tooltip": "docs/a.md"
      },
-     "description": "no call graph  ·  docs",
+     "description": "docs",
      "label": "a.md",
      "resourceUri": "uri:file:///repo/docs/a.md",
      "tooltip": {
-      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
+      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_A file without analysed code: read the diff and mark it reviewed._"
      }
     }
    },
@@ -7634,7 +7406,7 @@
      "label": "read",
      "resourceUri": "uri:impacttree-pr:///src/read.ts?side=head&revision=7%3Aheadsha%3Abasesha#40",
      "tooltip": {
-      "markdown": "**read**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n`src/read.ts:4`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**read**\n\nOnly the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on.\n\n_Tests are not searched in a PR preview. A preview reads only the pull request's own files; check out the PR to see which tests reach this change._\n\n`src/read.ts:4`  ·  component `(root)`\n\n_score 1_"
      }
     }
    },
@@ -7685,16 +7457,6 @@
     }
    },
    {
-    "at": "/2:Browse all 4 changes/0:read.ts/0:read/1:Tests are not searched in a PR preview",
-    "item": {
-     "collapsible": 0,
-     "decoration": null,
-     "icon": "beaker",
-     "label": "Tests are not searched in a PR preview",
-     "tooltip": "A preview reads only the pull request's own files. Check out the PR to see which tests reach this change."
-    }
-   },
-   {
     "at": "/2:Browse all 4 changes/0:read.ts/1:write",
     "item": {
      "collapsible": 1,
@@ -7715,18 +7477,8 @@
      "label": "write",
      "resourceUri": "uri:impacttree-pr:///src/read.ts?side=head&revision=7%3Aheadsha%3Abasesha#240",
      "tooltip": {
-      "markdown": "**write**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n`src/read.ts:24`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**write**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n_Tests are not searched in a PR preview. A preview reads only the pull request's own files; check out the PR to see which tests reach this change._\n\n`src/read.ts:24`  ·  component `(root)`\n\n_score 1_"
      }
-    }
-   },
-   {
-    "at": "/2:Browse all 4 changes/0:read.ts/1:write/0:Tests are not searched in a PR preview",
-    "item": {
-     "collapsible": 0,
-     "decoration": null,
-     "icon": "beaker",
-     "label": "Tests are not searched in a PR preview",
-     "tooltip": "A preview reads only the pull request's own files. Check out the PR to see which tests reach this change."
     }
    },
    {
@@ -7784,18 +7536,8 @@
      "label": "alone",
      "resourceUri": "uri:impacttree-pr:///src/alone.ts?side=head&revision=7%3Aheadsha%3Abasesha#30",
      "tooltip": {
-      "markdown": "**alone**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n`src/alone.ts:3`  ·  component `(root)`\n\n_score 1_"
+      "markdown": "**alone**\n\nOnly the body changed, and nothing calls it in the code searched.\n\n_Tests are not searched in a PR preview. A preview reads only the pull request's own files; check out the PR to see which tests reach this change._\n\n`src/alone.ts:3`  ·  component `(root)`\n\n_score 1_"
      }
-    }
-   },
-   {
-    "at": "/2:Browse all 4 changes/1:alone.ts/0:alone/0:Tests are not searched in a PR preview",
-    "item": {
-     "collapsible": 0,
-     "decoration": null,
-     "icon": "beaker",
-     "label": "Tests are not searched in a PR preview",
-     "tooltip": "A preview reads only the pull request's own files. Check out the PR to see which tests reach this change."
     }
    },
    {
@@ -7822,12 +7564,12 @@
       "status": "modified",
       "tooltip": "docs/a.md"
      },
-     "description": "no call graph  ·  docs",
+     "description": "docs",
      "icon": "__file__",
      "label": "a.md",
      "resourceUri": "uri:impacttree-pr:///docs/a.md?side=head&revision=7%3Aheadsha%3Abasesha",
      "tooltip": {
-      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_No call graph (tests, config, docs): read the diff and mark the file reviewed._"
+      "markdown": "```\ndocs/\n└─ a.md\n```\n\n_modified_\n\n_A file without analysed code: read the diff and mark it reviewed._"
      }
     }
    },

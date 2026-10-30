@@ -187,12 +187,12 @@ test('the approve check lists unreviewed attention rows in order and unresolved 
     thread(3, {}, [comment(3, { pending: true, mine: true })]),                        // only a pending comment: not open yet
     thread(4, {}, [comment(4), comment(5, { pending: true, mine: true })]),            // posted, with a pending reply
   ];
-  const rows = [attentionRow('bad', 'src/a.ts', 10), { type: 'outside', label: 'Outside functions', relPath: 'src/b.ts', ranges: [[1, 2]] }];
+  const rows = [attentionRow('bad', 'src/a.ts', 10), { type: 'outside', label: 'Top-level changes', relPath: 'src/b.ts', ranges: [[1, 2]] }];
   const doc = html(ready(reviewModel({ threads, pending: PENDING_TWO })), { attentionLeft: rows, counts: { total: 9, left: 5, attention: 2, attentionTotal: 3 } });
   const text = textOf(doc);
-  assert.match(text, /Before you approve: 2 need attention and are not reviewed: bad src\/a\.ts , Outside functions src\/b\.ts 2 threads are unresolved 1 of 3 looked at Approve anyway/);
+  assert.match(text, /Before you approve: 2 need attention and are not reviewed: bad src\/a\.ts , Top-level changes src\/b\.ts 2 threads are unresolved 1 of 3 looked at Approve anyway/);
   assert.deepEqual([...doc.matchAll(/data-act="revealRow" data-row="([^"]*)"/g)].map((m) => m[1]),
-    ['finding:src/a.ts:bad:10', 'outside:src/b.ts:Outside functions:']);
+    ['finding:src/a.ts:bad:10', 'outside:src/b.ts:Top-level changes:']);
   assert.ok(isDisabled(doc, 'approve'));
   assert.match(text, /Check “Approve anyway” to approve/);
   assert.match(tagOf(doc, 'anyway'), /type="checkbox"/);

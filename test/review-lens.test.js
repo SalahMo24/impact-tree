@@ -38,7 +38,7 @@ test('only changes at level 0 and 1 get a lens, on the first line of the change'
 test('a deleted row, an outside row and a file row get no lens, whatever their level', () => {
   const rows = [
     { type: 'deleted', label: 'gone', relPath: 'a.ts', key: 'k' },
-    { type: 'outside', label: 'Outside functions', relPath: 'a.ts', ranges: [[1, 2]] },
+    { type: 'outside', label: 'Top-level changes', relPath: 'a.ts', ranges: [[1, 2]] },
     { type: 'file', label: 'notes.md', relPath: 'notes.md' },
     LEVELS[0],
   ];

@@ -6,7 +6,7 @@ const models = require('./tree-row-models');
 const { groupCallerRowsByFile } = require('./tree-grouping');
 
 // The file-first review tree as data: one row per changed file, each holding the changes,
-// deleted symbols and "outside functions" lines of that file, worst first. Pure: nothing
+// deleted symbols and "top-level changes" lines of that file, worst first. Pure: nothing
 // here reads session state, registers a decoration or touches the editor, and no input
 // is modified. Rows come from the builders of tree-row-models, so a change, deleted,
 // outside or plain file row has exactly the fields the review identity reads, and a tick
@@ -15,7 +15,9 @@ const { groupCallerRowsByFile } = require('./tree-grouping');
 //
 // A file with a call graph is a `reviewFile` row. It has no review identity of its own:
 // its checkbox is derived from its rows. A file without one is a `file` row, which is its
-// own counting row.
+// own counting row. So is a file whose only change is its top-level lines: one counting
+// row under one file row would say the same thing twice, so the `file` row carries the
+// lines (`ranges`, `desc`) and is the counting row.
 
 /** @typedef {import('./tree-row-models').TreeRow} TreeRow */
 /** @typedef {import('./tree-row-models').DecorationRequest} DecorationRequest */
@@ -94,6 +96,30 @@ function buildReviewFileRow(result, relPath, entries, uriOf) {
 }
 
 /**
+ * The `file` row of a path whose only change row is one top-level ("outside") row. It is
+ * that row's counting row: it keeps its `file`, `ranges` and `desc`, and the review
+ * identity reads it as the top-level row (a tick stored under the row stays a tick), but
+ * it has no child row. Its verdict level is the top-level row's (4).
+ * @param {any} result
+ * @param {string} relPath
+ * @param {{ row: TreeRow, level: number }} entry The path's one top-level entry.
+ * @param {ResourceUriOf} uriOf
+ * @returns {{ file: TreeRow, decoration: DecorationRequest }}
+ */
+function buildTopLevelFileRow(result, relPath, entry, uriOf) {
+  const { row } = entry;
+  const uri = uriOf(row.file, null);
+  const status = models.getFileStatus(result, relPath);
+  return {
+    file: {
+      type: 'file', label: path.basename(relPath), relPath, status: String(status), absPath: row.file, file: row.file,
+      ranges: row.ranges, desc: row.desc, level: entry.level, attention: 0, decorationUri: uri,
+    },
+    decoration: { uri, status, tooltip: relPath },
+  };
+}
+
+/**
  * The paths the result reports as changed: those git lists and the files without a call
  * graph, without repeats.
  * @param {any} result
@@ -157,9 +183,16 @@ function buildFileRows(result, { uriOf, absPath = null }) {
   /** @type {TreeRow[]} */
   const files = [];
   for (const [relPath, entries] of byPath) {
-    const made = buildReviewFileRow(result, relPath, entries.slice().sort(compareEntries), uriOf);
+    const sorted = entries.slice().sort(compareEntries);
+    const alone = sorted.length === 1 && sorted[0].isOutside;
+    const made = alone ? buildTopLevelFileRow(result, relPath, sorted[0], uriOf) : buildReviewFileRow(result, relPath, sorted, uriOf);
     files.push(made.file);
     decorations.push(made.decoration);
+    // A file that is only its top-level lines has no row for them, so no decoration for one.
+    if (alone) {
+      const dropped = sorted[0].row.decorationUri;
+      for (let i = decorations.length - 1; i >= 0; i--) if (decorations[i].uri === dropped) decorations.splice(i, 1);
+    }
   }
   const others = new Map((result.otherFiles || []).map((/** @type {any} */ f) => [f.path, f]));
   const leaves = collectChangedPaths(result).filter((p) => !byPath.has(p))
@@ -177,7 +210,7 @@ function buildFileRows(result, { uriOf, absPath = null }) {
 
 /**
  * The rows under a change row: its direct callers, the row closing an unfinished caller
- * search, and one tests row. The callers are the ones the result holds, which already
+ * search, and one tests row once the tests were searched. The callers are the ones the result holds, which already
  * carry their call state, so these rows agree with the verdict's "N of M callers".
  * @param {TreeRow} changeRow A row from `buildFileRows`.
  * @param {{ result: any, uriOf: ResourceUriOf, rel?: ((file: string) => string)|null }} opts
@@ -197,25 +230,23 @@ function buildImpactRows(changeRow, { result, uriOf, rel = null }) {
   if (change.callersComplete === false) {
     rows.push(models.buildIncompleteCallersRow(change.callersIncompleteReason || 'the caller search did not finish', rows.length > 0));
   }
-  rows.push(buildTestsRow(change, result));
+  const tests = buildTestsRow(change, result);
+  if (tests) rows.push(tests);
   return { rows, decorations: built.decorations };
 }
 
 /**
- * The one row saying what is known about tests reaching a change. A state the result
- * does not define is not an answer, so it reads as unknown. A PR preview searches only the
- * test files the PR changed, so it never reads as untested; one with no result to search
- * says tests are not searched and offers no command.
+ * The one row saying what is known about tests reaching a change, once they were searched.
+ * A state the result does not define is not an answer, so it reads as unknown. A change
+ * whose tests were not searched (a PR preview, or before test reach is computed) has no
+ * row: what was not done is said in the change's hover (`describeTestReach`), and the
+ * command to do it is on the review's row.
  * @param {any} change
  * @param {any} result
- * @returns {TreeRow}
+ * @returns {TreeRow|null} Null when the tests were not searched.
  */
 function buildTestsRow(change, result) {
-  if (!result.testReachComputed) {
-    if (!result.tierA) return models.buildComputeTestReachRow();
-    return { type: 'message', icon: 'beaker', label: 'Tests are not searched in a PR preview',
-      tooltip: 'A preview reads only the pull request\'s own files. Check out the PR to see which tests reach this change.' };
-  }
+  if (!result.testReachComputed) return null;
   const state = change.testState;
   if (state === 'covered') {
     const tests = change.tests || [];
@@ -253,13 +284,13 @@ const buildSpacerRow = (file) => ({ type: 'spacer', label: '', relPath: file.rel
 
 /**
  * The counting rows a checkbox on `row` stands for. A `reviewFile`'s checkbox is derived
- * from its rows, so it stands for all of them; a `folder` row's (tree layout) from every
- * file under it; a counting row stands for itself; any other row (a caller, a message, a
- * tests row) has no checkbox and stands for nothing.
+ * from its rows, so it stands for all of them; a counting row stands for itself; any
+ * other row (a folder of the tree layout, a caller, a message, a tests row) has no checkbox
+ * and stands for nothing.
  * @param {TreeRow} row
  * @returns {TreeRow[]}
  */
-const collectTickTargets = (row) => (row.type === 'folder' || row.type === 'browse' ? collectCountingRows(row.files)
+const collectTickTargets = (row) => (row.type === 'browse' ? collectCountingRows(row.files)
   : row.type === 'reviewFile' ? row.rows : COUNTING_TYPES.has(row.type) ? [row] : []);
 
 /**

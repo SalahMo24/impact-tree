@@ -179,10 +179,29 @@ test('refreshes: a review row repaints alone; a whole refresh of either side rea
 test('notices and the empty rows', () => {
   assert.equal(isNotice({ type: 'message', notice: 'warning', label: 'x' }), true);
   assert.equal(isNotice({ type: 'message', notice: 'unanalysable', label: 'x' }), true);
+  assert.equal(isNotice({ type: 'message', notice: 'preview', label: 'x' }), true);
   assert.equal(isNotice({ type: 'message', label: 'Resolving callers…' }), false);
   const nothing = emptyReviewRow('nothingChanged', { result: { requestedMode: 'pr', base: { ref: 'origin/main' } } });
   assert.match(nothing.label, /^Nothing changed in .+ mode against origin\/main$/);
   assert.equal(nothing.command, 'impactTree.selectMode');
   assert.match(emptyReviewRow('noTypeScript', {}).tooltip, /npm install/);
   assert.equal(emptyReviewRow('shown', {}), null);
+});
+
+test('a preview says so on the reviewed row, and its limits are in the row\'s hover, not among the files', async () => {
+  const limits = { type: 'message', icon: 'eye', notice: 'preview', label: 'Preview — PR files only (3 file(s))', desc: 'Preview: callers outside this PR and tests are not searched.' };
+  const tree = fakeTree([limits, { type: 'message', label: 'Resolving callers…', icon: 'loading~spin' }, FILE]);
+  tree.isPreview = () => true;
+  const { sidebar, groups } = await sidebarWith({ kind: 'pr', number: 2 }, { tree });
+  const [, two] = await sidebar.getChildren(groups[1]);
+  const rows = await sidebar.getChildren(two);
+  assert.deepEqual(rows.map((r) => r.label), ['Resolving callers…', 'a.ts'], 'the progress row stays, the limits left the tree');
+  const item = sidebar.getTreeItem(two);
+  assert.equal(item.description, 'someone  ·  preview');
+  assert.match(item.tooltip, /^Preview — PR files only \(3 file\(s\)\) — Preview: callers outside this PR/);
+  // A review that is not a preview, or a tree that cannot say, adds nothing.
+  tree.isPreview = () => false;
+  assert.equal(sidebar.getTreeItem(two).description, 'someone');
+  delete tree.isPreview;
+  assert.equal(sidebar.getTreeItem(two).description, 'someone');
 });

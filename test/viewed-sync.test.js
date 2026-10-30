@@ -435,7 +435,7 @@ test('the viewed note sits after progress and before the folder; a file without 
   assert.equal(renderTreeItem(vscode, fileRow, { rowDetail: 'hover', iconMode: 'symbol', checkedOf: () => false }).description, '0/1  ·  src');
   const plain = { type: 'file', label: 'notes.md', relPath: 'docs/notes.md', status: 'added', absPath: '/r/docs/notes.md' };
   const failed = renderTreeItem(vscode, plain, view('failed'));
-  assert.equal(failed.description, 'no call graph  ·  Viewed on GitHub not synced  ·  docs');
+  assert.equal(failed.description, 'Viewed on GitHub not synced  ·  docs');
   assert.equal(failed.contextValue, 'fileViewedFailed');
 });
 

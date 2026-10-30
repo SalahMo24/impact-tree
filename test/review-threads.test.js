@@ -100,7 +100,7 @@ test('a thread belongs to the innermost change holding its line, else the outsid
   const ids = (label) => (byRow.get(a.rows.find((r) => r.label === label)) || []).map((t) => t.id);
   assert.deepEqual(ids('Holder.inner'), ['T_1', 'T_9', 'T_10']);
   assert.deepEqual(ids('Holder'), ['T_2', 'T_3'], 'both boundary lines are inside');
-  assert.deepEqual(ids('Outside functions'), ['T_5', 'T_11']);
+  assert.deepEqual(ids('Top-level changes'), ['T_5', 'T_11']);
   assert.deepEqual(byRow.get(a).map((t) => t.id), THREADS.map((t) => t.id), 'the file row has every thread of its path');
   const notes = files.find((f) => f.relPath === 'notes.md');
   assert.deepEqual([...assignFileThreads(notes, [thread(20, { path: 'notes.md', fileLevel: true, line: null })]).keys()], [notes]);
@@ -171,10 +171,10 @@ test('rows show their counts: file rows after the attention count, change and ou
   // the state in words, then the counts
   assert.match(v.describe(await v.rowAt('src/a.ts', 'Holder.inner')), /^in Holder  ·  [^·]+  ·  💬 1  ·  ✎ 1$/);
   assert.match(v.describe(await v.rowAt('src/a.ts', 'Holder')), /^[^·]+  ·  💬 2$/);
-  const outside = await v.rowAt('src/a.ts', 'Outside functions');
+  const outside = await v.rowAt('src/a.ts', 'Top-level changes');
   assert.equal(v.describe(outside), `${outside.desc}  ·  💬 2  ·  ✎ 1`);
   assert.equal(v.describe(await v.fileAt('src/b.ts')), '0/1  ·  src', 'no threads: no counts');
-  assert.equal(v.describe(await v.fileAt('notes.md')), '💬 1  ·  no call graph');
+  assert.equal(v.describe(await v.fileAt('notes.md')), '💬 1');
 });
 
 test('loading and failed threads show no counts, never zeros', async () => {

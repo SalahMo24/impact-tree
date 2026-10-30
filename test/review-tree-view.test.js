@@ -75,7 +75,7 @@ test('ticking a call-graph file ticks exactly its counting rows, and nothing els
   provider.setChecked(a, true);
   const rows = (await provider.getChildren(a)).filter((r) => r.type !== 'spacer');
   assert.deepEqual(rows.map((r) => [r.type, r.label]),
-    [['finding', 'bad'], ['deleted', 'gone'], ['finding', 'Holder.body'], ['outside', 'Outside functions']]);
+    [['finding', 'bad'], ['deleted', 'gone'], ['finding', 'Holder.body'], ['outside', 'Top-level changes']]);
   assert.ok(rows.every((r) => item(r).checkboxState === Checked), 'every row of the file');
   assert.equal(review.size(), rows.length, 'and only them: no caller, no other file');
   assert.equal(item(a).checkboxState, Checked);
@@ -245,7 +245,7 @@ async function shown(provider) {
 test('the filter starts on all, and "needs attention" hides every row that does not', async () => {
   const { provider, fileAt } = viewOf(sampleResult());
   assert.equal(provider.getFilter(), 'all');
-  assert.deepEqual(await shown(provider), [['src/a.ts', ['bad', 'gone', 'Holder.body', 'Outside functions']], ['src/b.ts', ['quiet']], ['notes.md', []]]);
+  assert.deepEqual(await shown(provider), [['src/a.ts', ['bad', 'gone', 'Holder.body', 'Top-level changes']], ['src/b.ts', ['quiet']], ['notes.md', []]]);
   provider.toggleFilter('attention');
   assert.equal(provider.getFilter(), 'attention');
   assert.deepEqual(await shown(provider), [['src/a.ts', ['bad', 'gone']]], 'b.ts and notes.md have no row that needs attention');
@@ -256,11 +256,11 @@ test('the filter starts on all, and "needs attention" hides every row that does 
 test('"unreviewed" hides ticked rows and files whose rows are all ticked, and keeps an unticked file row', async () => {
   const { provider, fileAt } = viewOf(sampleResult());
   provider.toggleFilter('unreviewed');
-  assert.deepEqual(await shown(provider), [['src/a.ts', ['bad', 'gone', 'Holder.body', 'Outside functions']], ['src/b.ts', ['quiet']], ['notes.md', []]]);
+  assert.deepEqual(await shown(provider), [['src/a.ts', ['bad', 'gone', 'Holder.body', 'Top-level changes']], ['src/b.ts', ['quiet']], ['notes.md', []]]);
   const [bad] = await provider.getChildren(await fileAt('src/a.ts'));
   provider.setChecked(bad, true);
   provider.setChecked(await fileAt('src/b.ts'), true);
-  assert.deepEqual(await shown(provider), [['src/a.ts', ['gone', 'Holder.body', 'Outside functions']], ['notes.md', []]]);
+  assert.deepEqual(await shown(provider), [['src/a.ts', ['gone', 'Holder.body', 'Top-level changes']], ['notes.md', []]]);
   provider.setChecked(await fileAt('notes.md'), true);
   assert.deepEqual((await shown(provider)).map(([f]) => f), ['src/a.ts']);
 });
@@ -448,7 +448,8 @@ test('in the tree layout the root holds folders and root files, ranked, with the
   assert.equal(item(src).collapsibleState, Expanded, 'the worst folder starts open');
   assert.equal(item(src).iconPath, vscode.ThemeIcon.Folder);
   assert.equal(item(src).id, 'folder:src');
-  assert.equal(item(src).resourceUri.fsPath, '/r/src', 'the folder resource, for the icon theme');
+  assert.equal(item(src).resourceUri, undefined, 'a folder has no resource: no git badge, no colour');
+  assert.equal(item(src).checkboxState, undefined, 'and no checkbox');
   const children = await provider.getChildren(src);
   assert.deepEqual(children.map((r) => [r.type, r.label]), [['reviewFile', 'a.ts'], ['reviewFile', 'b.ts'], ['folder', 'engine']],
     'a.ts (needs attention) first; b.ts and engine/ hold one quiet row each, so the path decides');
@@ -464,20 +465,21 @@ test('in the tree layout the root holds folders and root files, ranked, with the
   assert.equal(item(children[0]).description, '2 need attention  ·  0/4', 'a file under a folder does not repeat the folder');
 });
 
-test('a folder\'s checkbox ticks every counting row under it, and reads ticked only when all are', async () => {
+test('a folder has no checkbox and ticking is refused; ticking its files one by one updates its count', async () => {
   const { provider, review, item } = treeView(treeResult());
   const [src] = await provider.getChildren();
-  assert.equal(item(src).checkboxState, Unchecked);
+  assert.equal(item(src).checkboxState, undefined);
   assert.equal(item(src).description, '2 need attention', 'the stale change and the deleted symbol');
   assert.match(item(src).tooltip.value, /3 files, 6 changes, 2 need attention, 0 marked reviewed/);
   provider.setChecked(src, true);
-  assert.equal(review.size(), 6, 'the four rows of a.ts, b.ts\'s one and engine/c.ts\'s one');
-  assert.equal(item(src).checkboxState, Checked);
-  assert.equal(item(src).description, '');
+  assert.equal(review.size(), 0, 'a tick addressed to a folder does nothing');
   const [a] = await provider.getChildren(src);
+  provider.setChecked(a, true);
+  assert.equal(review.size(), 4, 'the four rows of a.ts');
+  assert.equal(item(src).description, '', 'its attention count follows the files');
+  assert.match(item(src).tooltip.value, /4 marked reviewed/);
   const [bad] = await provider.getChildren(a);
   provider.setChecked(bad, false);
-  assert.equal(item(src).checkboxState, Unchecked, 'one unticked row unticks the folder');
   assert.equal(item(a).checkboxState, Unchecked);
   assert.equal(item(src).description, '1 needs attention');
 });
@@ -697,9 +699,9 @@ test('the tree layout: the folders sit under the container, a file under its fol
   const [a, engine] = await provider.getChildren(top[0]);
   assert.equal(provider.getParent(a), top[0], 'inside a folder the folder is the parent');
   assert.equal(provider.getParent(engine), top[0]);
-  assert.equal(item(top[0]).checkboxState, Unchecked);
-  provider.setChecked(top[0], true);
-  assert.equal(item(top[0]).checkboxState, Checked, 'a folder under the container still ticks every row under it');
+  assert.equal(item(top[0]).checkboxState, undefined, 'a folder under the container has no checkbox either');
+  const [c] = await provider.getChildren(engine);
+  provider.setCheckedBatch([{ row: a, on: true }, { row: c, on: true }]);
   assert.equal(provider.reviewCounts().left, 1, 'only notes.md is left');
 });
 
@@ -716,4 +718,45 @@ test('a read without the calm state forgets the container: no stale parent', asy
   const [file] = await provider.getChildren();
   assert.equal(file.type, 'reviewFile');
   assert.equal(provider.getParent(file), undefined);
+});
+
+// ---- a file whose only change is its top-level lines (L3) ---------------------------------
+test('a file with only top-level lines is one row: no children, its own tick, decoration and diff', async () => {
+  const result = resultOf({
+    allChanged: [change('src/b.ts', 'quiet', 5)], outside: [{ file: '/r/src/consts.ts', relPath: 'src/consts.ts', ranges: [[1, 3], [9.5, 9.5]] }],
+    fileStatus: { 'src/b.ts': 'modified', 'src/consts.ts': 'modified' },
+  });
+  const { provider, review, item, fileAt } = viewOf(result);
+  const consts = await fileAt('src/consts.ts');
+  assert.equal(consts.type, 'file');
+  assert.deepEqual(await provider.getChildren(consts), [], 'no child row');
+  const shown = item(consts);
+  assert.equal(shown.collapsibleState, None);
+  assert.equal(shown.description, 'lines 1–3, deleted before line 10  ·  src');
+  assert.equal(shown.resourceUri.fsPath, '/r/src/consts.ts', 'the file\'s own resource, for its git badge');
+  assert.deepEqual([shown.command.command, shown.command.arguments[0]], ['impactTree.openFile', consts], 'it opens the diff, at the first range');
+  assert.equal(shown.checkboxState, Unchecked);
+  assert.match(shown.tooltip.value, /Top-level changes/);
+  assert.deepEqual(provider.rowAtLine('src/consts.ts', 2), consts);
+  provider.setChecked(consts, true);
+  assert.equal(review.size(), 1);
+  assert.equal(item(consts).checkboxState, Checked);
+  const counts = provider.reviewCounts();
+  assert.deepEqual([counts.total, counts.left], [2, 1], 'one counting row for the file, not two');
+  assert.equal(provider.nextUnreviewed(consts).label, 'quiet');
+});
+
+test('a top-level-only file keeps the identity its top-level row had, so a stored tick still holds', () => {
+  const { createReviewIdentity } = require('../src/session/review-identity');
+  const { ts, root } = require('./bug-regressions-helpers');
+  const base = "import { a } from './a';\nexport const limit = 1;\n";
+  const head = "import { b } from './a';\nexport const limit = 1;\n";
+  const identity = createReviewIdentity(ts, root, {
+    headText: (p) => (p === 'a.ts' ? head : null), baseText: (p) => (p === 'a.ts' ? base : null), fileRevision: (p) => `rev:${p}`,
+  });
+  const row = { type: 'outside', file: `${root}/a.ts`, relPath: 'a.ts', ranges: [[1, 1]] };
+  const fileRow = { type: 'file', file: row.file, absPath: row.file, relPath: 'a.ts', ranges: row.ranges };
+  assert.match(identity(row), /^a\.ts#outside:/);
+  assert.equal(identity(fileRow), identity(row));
+  assert.equal(identity({ type: 'file', relPath: 'a.ts', absPath: row.file }), 'file:a.ts:rev:a.ts', 'a file without ranges is still identified by its content');
 });

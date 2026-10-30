@@ -124,7 +124,10 @@ function createReviewIdentity(ts, repo, { headText, baseText, fileRevision, reco
   const outsideId = (entry) => `${entry.rel}#outside:${entry.outsideHash}`;
 
   return (n) => {
-    if (n.type === 'file') {
+    // A file whose only change is its top-level lines is one counting row (`ranges` set): it
+    // is identified as that row was, so a tick stored under it stays a tick.
+    const topLevel = n.type === 'outside' || (n.type === 'file' && Array.isArray(n.ranges));
+    if (n.type === 'file' && !topLevel) {
       const token = n.relPath ? fileRevision(n.relPath) : null;
       return token == null ? null : `file:${n.relPath}:${token}`;
     }
@@ -132,11 +135,11 @@ function createReviewIdentity(ts, repo, { headText, baseText, fileRevision, reco
     if (!file) return null;
     const entry = read(file);
     if (entry.wholeFile) {
-      if (n.type === 'outside') return `${entry.rel}#outside:${entry.wholeFile}`;
+      if (topLevel) return `${entry.rel}#outside:${entry.wholeFile}`;
       if (n.type === 'deleted') return `deleted:${entry.rel}#${n.key || n.label}:${entry.wholeFile}`;
       return `${entry.rel}#@${n.label}:${entry.wholeFile}`;
     }
-    if (n.type === 'outside') return outsideId(entry);
+    if (topLevel) return outsideId(entry);
     if (n.type === 'deleted') {
       const key = n.key || n.label;
       return `deleted:${entry.rel}#${key}:${entry.baseSliceHash.get(key) || hash(null)}`;

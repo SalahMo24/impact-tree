@@ -69,6 +69,9 @@ const threadParts = (row, view) => describeThreadCounts(view.threadCountsOf ? vi
  * @typedef {'changed'|'syncing'|'failed'} ViewedNote
  */
 
+/** What the top-level changes of a file are, for the hover of the row that holds them. */
+const TOP_LEVEL_TOOLTIP = 'Top-level changes: changed lines in no function (imports, constants, types, fields and the like). Read the diff and mark the file reviewed.';
+
 const VIEWED_TEXT = Object.freeze({ changed: '👁 changed', syncing: '👁 …', failed: 'Viewed on GitHub not synced' });
 const VIEWED_TOOLTIP = Object.freeze({
   changed: 'This file changed after you marked it Viewed on GitHub, so GitHub cleared that mark. Mark the remaining rows reviewed to set it again.',
@@ -214,17 +217,17 @@ function renderReviewFileItem(vscode, n, view) {
 }
 
 /**
- * A folder of the tree layout. Its checkbox is ticked when every file under it is; its
- * description is the count of rows under it that still need attention, nothing when
- * none; how many are done and how many files it holds are in the tooltip.
+ * A folder of the tree layout: a place to find files, not a finding. It has no checkbox
+ * (the files under it keep theirs) and no resource, so neither a git badge nor a colour
+ * reaches it. Its description is the count of rows under it that still need attention,
+ * nothing when none; how many are done and how many files it holds are in the tooltip.
  * @param {any} vscode
  * @param {TreeRow} n A `folder` row.
  * @param {TreeView} view
  */
 function renderFolderItem(vscode, n, view) {
   const open = n.expanded ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed;
-  const item = n.decorationUri ? new vscode.TreeItem(n.decorationUri, open) : new vscode.TreeItem(n.label, open);
-  item.label = n.label;
+  const item = new vscode.TreeItem(n.label, open);
   item.iconPath = vscode.ThemeIcon.Folder;
   const rows = collectCountingRows(n.files);
   const left = rows.filter((r) => !view.checkedOf(r));
@@ -238,12 +241,12 @@ function renderFolderItem(vscode, n, view) {
     `${files}, ${rows.length} change${rows.length === 1 ? '' : 's'}, ${attentionCountText(attention.length)}, ${rows.length - left.length} marked reviewed`,
   ].join('\n'));
   item.contextValue = 'folder';
-  applyCheckbox(vscode, item, n, view);
   return item;
 }
 
 /**
- * A changed file without a call graph: its own counting row.
+ * A changed file without a call graph, or whose only change is its top-level lines: its
+ * own counting row.
  * @param {any} vscode
  * @param {TreeRow} n
  * @param {TreeView} view
@@ -270,13 +273,16 @@ function renderFileItem(vscode, n, view) {
   // A file of a language no provider analyses yet (Kotlin, C#…) names it, so it does not
   // read like a docs or config file. It stays quiet: that is expected, not a failure.
   const unsupported = notAnalysed ? null : unsupportedLanguageOf(n.relPath);
-  const kind = notAnalysed ? NOT_ANALYSED_DESC : unsupported ? `${unsupported}  ·  not analysed yet` : 'no call graph';
+  // A file with nothing to analyse says nothing here: its git badge and its folder are enough.
+  // One whose only change is its top-level lines (`ranges`) names them, as its own row would.
+  const kind = notAnalysed ? NOT_ANALYSED_DESC : unsupported ? `${unsupported}  ·  not analysed yet` : n.ranges ? n.desc : null;
   item.description = [...threadParts(n, view), kind, viewed && viewed.text, folderNote(n, view)].filter(Boolean).join('  ·  ');
   item.tooltip = new vscode.MarkdownString([
     ...pathTreeMarkdown(n.relPath), '', `_${n.status}_`, '',
     notAnalysed ? `_${notAnalysedText(notAnalysed)}. Read the diff by hand and mark the file reviewed._`
       : unsupported ? `_${unsupported} files are not analysed yet: read the diff and mark the file reviewed._`
-        : '_No call graph (tests, config, docs): read the diff and mark the file reviewed._',
+        : n.ranges ? `_${TOP_LEVEL_TOOLTIP}_`
+          : '_A file without analysed code: read the diff and mark it reviewed._',
     ...(viewed ? ['', `_${viewed.tooltip}_`] : []),
   ].join('\n'));
   if (viewed && viewed.note === 'failed') item.contextValue = 'fileViewedFailed';
@@ -320,9 +326,9 @@ function renderPlainItem(vscode, item, n, view) {
       item.collapsibleState = vscode.TreeItemCollapsibleState.None;
       // The file row it sits under names the file.
       item.description = [n.desc, ...threadParts(n, view)].filter(Boolean).join('  ·  ');
-      item.iconPath = new vscode.ThemeIcon('symbol-namespace');
+      // No icon of its own: the row is the last under its file, and its words say what it is.
       item.tooltip = new vscode.MarkdownString([
-        `**Outside functions** — \`${n.relPath}\``, '', n.desc, '',
+        `**Top-level changes** — \`${n.relPath}\``, '', n.desc, '',
         '_Changed lines in no function: imports, constants, types, fields and the like._',
       ].join('\n'));
       item.contextValue = 'outside';
@@ -350,6 +356,7 @@ function buildChangeTooltipLines(n, st, kinds) {
     st.sentence,
     ...(n.reachReason ? ['', `_test reachability unknown: ${n.reachReason}_`] : []),
     ...(n.scopeNote ? ['', `_${n.scopeNote}_`] : []),
+    ...(n.notSearched ? ['', `_${n.notSearched}_`] : []),
     ...(f.callersComplete === false && f.callersIncompleteReason ? ['', `_caller search incomplete: ${f.callersIncompleteReason}_`] : []),
     ...(kinds.length ? ['', `**${kinds.join(', ')}**`] : []),
     '',

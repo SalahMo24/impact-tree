@@ -101,7 +101,7 @@ test('a deleted symbol is amber with its sentence; an outside row is fine and sa
   const gone = render(findRow(result, 'gone'), result);
   assert.match(textOf(gone), /^gone src\/a\.ts · deleted This symbol was removed\. Its former callers were not searched/);
   assert.match(gone, /class="verdict"/);
-  assert.equal(textOf(render(findRow(result, 'Outside functions'), result)), 'Outside functions src/a.ts');
+  assert.equal(textOf(render(findRow(result, 'Top-level changes'), result)), 'Top-level changes src/a.ts');
 });
 
 test('a file row shows its name, path and status only', () => {
