@@ -10,6 +10,10 @@
 - **Choose my agent…** switches the agent that reviews with you (the reviewed row's `…` menu
   or the command palette): the current one is marked, the pick is saved in `impactTree.agent`
   and used by **Analyse with my agent** and **Send feedback**; **Ask each time** asks again.
+- **Analyse with my agent** checks first that the chosen agent has Impact Tree's MCP server
+  (Claude Code, Codex, Cursor). One that does not is offered **Connect and send**, which shows
+  the command and connects it before the prompt goes out, or **Send anyway**. Before, Claude
+  Code could get the prompt with no `submit_cards` tool to answer with.
 
 - **Java** (`.java`), in the editor through Red Hat's Language Support for Java (jdtls),
   and in the PR preview and the CLI from the text. Changed methods and constructors are

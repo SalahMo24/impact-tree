@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const ac = require('../src/agent/agent-connect');
-const { createAgentConnect } = require('../src/agent/agent-connect-commands');
+const { createAgentConnect, connectIdFor } = require('../src/agent/agent-connect-commands');
 const { planHandOff, handOff, choicesFor, MAX_URI_PROMPT_CHARS } = require('../src/agent/agent-handoff');
 
 const PATH_RT = /** @type {ac.Runtime} */ ({ command: '/usr/bin/node', env: {}, kind: 'path' });
@@ -175,7 +175,7 @@ function harness(o = {}) {
     ...(o.api ? { lm: { registerMcpServerDefinitionProvider: (/** @type {string} */ id, /** @type {any} */ p) => { const r = { id, p, disposed: false, dispose() { r.disposed = true; } }; registered.push(r); return r; } } } : {}),
     window: {
       showQuickPick: async (/** @type {any[]} */ items) => items.find((i) => i.id === o.pick),
-      showWarningMessage: async (/** @type {string} */ m, /** @type {any} */ opts, /** @type {string} */ button) => { if (!opts) { messages.push(m); return undefined; } modals.push({ m, detail: opts.detail, button }); return o.modal === undefined ? undefined : o.modal; },
+      showWarningMessage: async (/** @type {string} */ m, /** @type {any} */ opts, /** @type {string} */ button) => { if (!opts) { messages.push(m); return undefined; } modals.push({ m, detail: opts.detail, button }); return Array.isArray(o.modal) ? o.modal.shift() : o.modal; },
       showInformationMessage: async (/** @type {string} */ m) => { messages.push(m); },
       showErrorMessage: async (/** @type {string} */ m) => { messages.push(m); },
     },
@@ -336,4 +336,45 @@ test('hand-off: Claude Code (VS Code) link, listed only with the extension, long
   assert.equal(opened.length, 1, 'no link for a long prompt');
   assert.deepEqual(clip, [long]);
   assert.match(msg, /too long for a link/);
+});
+
+// ---- the check before "Analyse with my agent" hands a prompt over
+
+test('connectIdFor: the configuration each hand-off route reads', () => {
+  assert.equal(connectIdFor('claude', 'Visual Studio Code'), 'claude');
+  assert.equal(connectIdFor('claude-vscode', 'Cursor'), 'claude');
+  assert.equal(connectIdFor('codex', 'Cursor'), 'codex');
+  assert.equal(connectIdFor('cursor-chat', 'Cursor'), 'cursor');
+  assert.equal(connectIdFor('chat', 'Cursor'), 'cursor');
+  assert.equal(connectIdFor('chat', 'Visual Studio Code'), 'vscode');
+  assert.equal(connectIdFor('clipboard', 'Cursor'), null);
+});
+
+test('a connected agent, or a route with no agent, is sent to with no question', async () => {
+  const h = connectHarness({ claudeConnected: true }, ['claude', 'node']);
+  try {
+    assert.equal(await h.ctl.ensureConnected('claude'), true);
+    assert.equal(await h.ctl.ensureConnected('clipboard'), true);
+    assert.deepEqual(h.modals, []);
+  } finally { h.cleanup(); }
+});
+
+test('Claude Code not connected: Connect and send shows the command, adds the server, then sends', async () => {
+  const h = connectHarness({ claudeConnected: false, modal: ['Connect and send', 'Connect'] }, ['claude', 'node']);
+  try {
+    assert.equal(await h.ctl.ensureConnected('claude'), true);
+    assert.match(h.modals[0].m, /Claude Code cannot send its cards back/);
+    assert.match(h.modals[1].detail, /claude mcp add --scope user impact-tree/);
+    assert.equal(h.calls.filter((c) => /^claude mcp add /.test(c)).length, 1);
+  } finally { h.cleanup(); }
+});
+
+test('Claude Code not connected: Send anyway sends, dismissing sends nothing, a cancelled connect sends nothing', async () => {
+  for (const [modal, expected] of [[['Send anyway'], true], [[undefined], false], [['Connect and send', undefined], false]]) {
+    const h = connectHarness({ claudeConnected: false, modal }, ['claude', 'node']);
+    try {
+      assert.equal(await h.ctl.ensureConnected('claude-vscode'), expected, String(modal));
+      assert.deepEqual(h.calls.filter((c) => /mcp add/.test(c)), []);
+    } finally { h.cleanup(); }
+  }
 });
