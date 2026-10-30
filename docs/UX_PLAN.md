@@ -524,8 +524,8 @@ the review nests under the pull request or mode it came from, and the title-bar 
 above moved onto that row. The review tab (U1) and the agent's behaviour review are behind
 `impactTree.cards.enabled` and `impactTree.agents.enabled`.
 
-**Part L (proposed 2026-10-30; G13 and G14 decided the same day, implementation started
-with L1 and L2).** L1–L3 and L5 fix what the screenshot study found and
+**Part L (proposed 2026-10-30; G13 and G14 decided the same day; L1 merged as PR #108 and
+L2 as PR #109 the same day, L3 and L5 in progress, L4 waits for W1).** L1–L3 and L5 fix what the screenshot study found and
 touch only the sidebar's shape and words, so they can run next, before W1, once G13 and
 G14 are decided; L4 waits for W1. If v1 ships first, L1–L3 go in the first release after
 it, ahead of W1–W2.
