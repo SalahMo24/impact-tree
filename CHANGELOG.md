@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **Java** (`.java`), in the editor through Red Hat's Language Support for Java (jdtls),
+  and in the PR preview and the CLI from the text. Changed methods and constructors are
+  keyed by their parameter types, so each overload is its own row and an overload whose
+  parameter list changed keeps its review tick; signatures compare parameters, return
+  types, type parameters and `throws`, a new `throws` type or `throw new` is a new throw
+  path, and reduced visibility or a `static` change is the new **access changed** kind.
+  Callers read as incomplete, never as "all callers updated", for overrides, overridable
+  methods, method references, Lombok and other generated members, dependency-injection
+  factories, while jdtls imports the project or reports a broken build path, and when VS
+  Code turns a failed request into an empty answer. Without jdtls, callers come from a
+  syntax index (the PR's files in the preview, the repository in the CLI). Checked on 12
+  google/gson pull requests against the JDK's parser and `javac`: 224 of 224 changed
+  methods, every kind right; syntax-only callers 100% precision and 99.2% recall.
+  In the editor, on the same pull requests: 224 of 224 changed methods, and every caller
+  `javac` finds that is not listed sits on an answer marked incomplete. Java files are no longer listed as "not analysed yet".
+
 - **One Review view**: the review opens under the row it came from (the pull request, or the
   mode under Local changes), and the separate Changes view is gone. The reviewed row holds
   the review's controls and, in its hover, the review's notices; clicking it still offers

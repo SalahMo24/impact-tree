@@ -267,7 +267,7 @@ function renderFileItem(vscode, n, view) {
     const tone = /** @type {import('./tree-row-models').IconTone} */ (LEVEL_TONES[1]);
     item.iconPath = new vscode.ThemeIcon(tone.fileIcon, new vscode.ThemeColor(tone.color));
   }
-  // A file of a language no provider analyses yet (Python, Java…) names it, so it does not
+  // A file of a language no provider analyses yet (Kotlin, C#…) names it, so it does not
   // read like a docs or config file. It stays quiet: that is expected, not a failure.
   const unsupported = notAnalysed ? null : unsupportedLanguageOf(n.relPath);
   const kind = notAnalysed ? NOT_ANALYSED_DESC : unsupported ? `${unsupported}  ·  not analysed yet` : 'no call graph';
