@@ -72,7 +72,8 @@ test('the renderer shows "not analysed" in amber with the reason in the tooltip'
   assert.equal(go.iconPath.color.id, AMBER.color);
   assert.match(go.tooltip.value, /Go: not analysed — the Go language server gave no symbols/);
   const doc = renderTreeItem(vscode, rowFor(result, 'README.md'), view);
-  assert.match(doc.description, /^no call graph/);
+  assert.doesNotMatch(doc.description || '', /call graph|not analysed/, 'a file with nothing to analyse says nothing');
+  assert.match(doc.tooltip.value, /A file without analysed code/);
   assert.notEqual(doc.iconPath && doc.iconPath.color && doc.iconPath.color.id, AMBER.color);
 });
 

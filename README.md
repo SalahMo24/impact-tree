@@ -245,13 +245,18 @@ until you mark it reviewed, and its tooltip and Details say why.
   requests and local modes back (the next review of another source hides them again); so a
   change sits two levels deep, not eight. The reviewed row carries
   the review's controls (Open review, the tree/list toggle, Show only needs attention,
-  Refresh, Submit review or Send feedback; the rest in its right-click menu), and its hover
-  lists the review's notices, such as a fetched base or files not analysed. Clicking it
+  Refresh, **Find the tests that cover this review** until that search has run, Submit
+  review or Send feedback; the rest in its right-click menu), and its hover
+  lists the review's notices, such as a fetched base, files not analysed or a Preview's
+  limits (a Preview says `preview` on the row). A change whose tests were not searched says
+  so in its hover, not in a row of its own. Clicking it
   again still offers preview, check out or open on GitHub. Other pull request rows have no
   hover. **Details** below shows your review progress and, for a change that needs a look,
   why. Changed files are listed worst first; **View as tree** (or
   `impactTree.fileListLayout`) folds them into their folders, with folders and files still
-  ordered worst first at every level and a folder ranked by its worst file. Track progress
+  ordered worst first at every level and a folder ranked by its worst file (a folder has no
+  checkbox; its files keep theirs). Changed lines in no function are a **Top-level changes**
+  row, last under their file; a file with nothing else is that one row. Track progress
   by marking changes reviewed, and filter for what needs attention (callers not updated, or
   callers to check by hand), unreviewed changes, or unresolved conversations. Progress
   counts only the changes that need attention: the view reads `2 need attention · 3 of 5

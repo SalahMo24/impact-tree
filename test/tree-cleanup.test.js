@@ -65,11 +65,11 @@ test('change rows take a symbol-kind icon in symbol mode and the file glyph in f
   assert.equal(icon('file', row('run', {})), vscode.ThemeIcon.File.id);
 });
 
-test('outside rows are a namespace and deleted rows a trash can, in either mode', () => {
-  const outside = { type: 'outside', label: 'Outside functions', relPath: 'a.ts', ranges: [[1, 2]], desc: 'lines 1–2', status: 'modified' };
+test('top-level rows have no icon of their own and deleted rows a trash can, in either mode', () => {
+  const outside = { type: 'outside', label: 'Top-level changes', relPath: 'a.ts', ranges: [[1, 2]], desc: 'lines 1–2', status: 'modified' };
   const deleted = { type: 'deleted', label: 'gone', name: 'gone', relPath: 'a.ts', file: '/r/a.ts', key: 'gone' };
   for (const mode of ['symbol', 'file']) {
-    assert.equal(renderWith(mode, outside).iconPath.id, 'symbol-namespace');
+    assert.equal(renderWith(mode, outside).iconPath, undefined);
     assert.equal(renderWith(mode, deleted).iconPath.id, 'trash');
   }
 });
@@ -178,15 +178,18 @@ test('a file row reads attention, progress, then the last folder segment; the pa
   assert.equal(item(await fileAt('root.ts')).description, '0/1', 'no folder at the repo root');
 });
 
-test('a file without a call graph reads "no call graph", then the last folder segment', async () => {
+test('a file with nothing to analyse reads only its last folder segment, and says what it is in the tooltip', async () => {
   const { fileAt, item } = viewOf(resultOf({
     otherFiles: [{ path: 'docs/sub/guide.md', status: 'added' }, { path: 'README.md', status: 'modified' }],
     fileStatus: { 'docs/sub/guide.md': 'added', 'README.md': 'modified' },
   }));
   const guide = item(await fileAt('docs/sub/guide.md'));
-  assert.equal(guide.description, 'no call graph  ·  sub');
+  assert.equal(guide.description, 'sub');
+  assert.doesNotMatch(guide.description, /call graph/);
+  assert.match(guide.tooltip.value, /A file without analysed code: read the diff and mark it reviewed\./);
+  assert.doesNotMatch(guide.tooltip.value, /call graph/);
   assert.match(guide.tooltip.value, /docs\/\n└─ sub\/\n   └─ guide\.md/, 'the path, drawn as a folder tree');
-  assert.equal(item(await fileAt('README.md')).description, 'no call graph');
+  assert.equal(item(await fileAt('README.md')).description, '', 'nothing but the git badge');
 });
 
 // ---- 4. "in Container" only when it tells changes apart ---------------------------------
@@ -400,16 +403,17 @@ test('a level-1 state is never uncoloured, in either icon mode', () => {
   }
 });
 
-test('a deleted row keeps the trash icon in amber; an outside row is uncoloured', () => {
+test('a deleted row keeps the trash icon in amber; a top-level row has no icon', () => {
   const deleted = { type: 'deleted', label: 'Store.old', name: 'old', key: 'k', relPath: 'src/a.ts', file: '/r/src/a.ts' };
   for (const mode of ['symbol', 'file']) {
     const item = renderRow(mode, deleted);
     assert.deepEqual([item.iconPath.id, item.iconPath.color.id, item.description], ['trash', WARNING, 'deleted'], mode);
     assert.doesNotMatch(item.tooltip.value.split('\n')[0], STATE_GLYPHS);
   }
-  const outside = renderRow('symbol', { type: 'outside', label: 'Outside functions', relPath: 'src/a.ts', file: '/r/src/a.ts', ranges: [[1, 4]], desc: 'lines 1–4' });
-  assert.equal(outside.iconPath.color, undefined);
+  const outside = renderRow('symbol', { type: 'outside', label: 'Top-level changes', relPath: 'src/a.ts', file: '/r/src/a.ts', ranges: [[1, 4]], desc: 'lines 1–4' });
+  assert.equal(outside.iconPath, undefined);
   assert.equal(outside.description, 'lines 1–4');
+  assert.match(outside.tooltip.value, /^\*\*Top-level changes\*\*/);
 });
 
 test('caller rows say the call state in words; only a caller changed elsewhere is amber', () => {

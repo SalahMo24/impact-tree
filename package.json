@@ -201,7 +201,8 @@
       },
       {
         "command": "impactTree.computeTestReach",
-        "title": "Impact Tree: Find the tests that cover this review"
+        "title": "Impact Tree: Find the tests that cover this review",
+        "icon": "$(beaker)"
       },
       {
         "command": "impactTree.clearReviewed",
@@ -844,6 +845,16 @@
           "command": "impactTree.viewAsList",
           "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.fileListLayout == tree",
           "group": "inline@2"
+        },
+        {
+          "command": "impactTree.computeTestReach",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.state == shown && !impactTree.testReachComputed",
+          "group": "inline@7"
+        },
+        {
+          "command": "impactTree.computeTestReach",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.state == shown && !impactTree.testReachComputed",
+          "group": "1_mode@3"
         },
         {
           "command": "impactTree.showPicker",

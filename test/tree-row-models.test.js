@@ -253,6 +253,34 @@ test('an incomplete caller list says whether anything was found', () => {
     { type: 'message', icon: 'warning', label: 'Callers could not be loaded', desc: 'refresh to retry', tooltip: 'why' });
 });
 
-test('the deferred-walk row runs the walk', () => {
-  assert.equal(models.buildComputeTestReachRow().command, 'impactTree.computeTestReach');
+test('the tree has no row that runs the deferred walk: it is a command on the review row', () => {
+  assert.equal(models.buildComputeTestReachRow, undefined);
+});
+
+test('a change whose tests were not searched says so in its tooltip words, not in a row or a description', () => {
+  const change = { testState: 'not-computed' };
+  const local = models.buildChangeRows([{ ...change, file: '/r/a.ts', relPath: 'a.ts', namePos: 1, startLine: 1, label: 'a' }], { result: { testReachComputed: false }, uriOf: (f, p) => `${f}#${p}` }).rows[0];
+  assert.match(local.notSearched, /Tests are not searched yet.*Find the tests that cover this review/);
+  assert.equal(local.scopeNote, null);
+  assert.equal(local.reachReason, null);
+  const preview = models.buildChangeRows([{ ...change, file: '/r/a.ts', relPath: 'a.ts', namePos: 1, startLine: 1, label: 'a' }], { result: { testReachComputed: false, tierA: true }, uriOf: (f, p) => `${f}#${p}` }).rows[0];
+  assert.match(preview.notSearched, /not searched in a PR preview/);
+  const searched = models.buildChangeRows([{ testState: 'uncovered', file: '/r/a.ts', relPath: 'a.ts', namePos: 1, startLine: 1, label: 'a' }], { result: { testReachComputed: true, reachDepth: 2 }, uriOf: (f, p) => `${f}#${p}` }).rows[0];
+  assert.equal(searched.notSearched, null);
+});
+
+test('every message the root read emits for the whole review is a notice, except the progress row', () => {
+  const rows = models.buildNoticeRows({
+    callersPending: true, tierA: true, changedFileCount: 3, warnings: ['fetched origin/main'], unanalysable: [{ component: 'web', count: 2 }],
+    otherFiles: [], callersScope: [],
+  });
+  assert.deepEqual(rows.map((r) => [r.label, r.notice]), [
+    ['Resolving callers…', undefined],
+    ['Preview — PR files only (3 file(s))', 'preview'],
+    ['fetched origin/main', 'warning'],
+    ["2 file(s) in 'web' not analysed", 'unanalysable'],
+  ]);
+  const progress = rows.filter((r) => !r.notice);
+  assert.equal(progress.length, 1, 'one progress row');
+  assert.match(progress[0].icon, /loading/);
 });

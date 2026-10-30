@@ -219,7 +219,10 @@ function activate(context, { clock = realClock } = {}) {
   const publishContext = () => {
     const keys = { ...contextKeysOf({ repo: repoStatus, phase: owned.getPhase(), busy: owned.isBusy(), state: owned.state }),
       // F3 hangs the title bar's Send feedback on it.
-      'impactTree.hasFeedbackDrafts': feedbackDrafts.list().length > 0 };
+      'impactTree.hasFeedbackDrafts': feedbackDrafts.list().length > 0,
+      // L3 hangs the review row's "Find the tests that cover this review" on it: false until
+      // the walk ran, and with no result.
+      'impactTree.testReachComputed': Boolean(owned.state && owned.state.result && owned.state.result.testReachComputed) };
     for (const [key, value] of Object.entries(keys)) {
       if (contextSent.get(key) === value) continue;
       contextSent.set(key, value);

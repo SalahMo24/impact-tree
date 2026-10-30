@@ -144,14 +144,15 @@ const viewOf = (outside, review = null) => {
 };
 const OUT_A = { file: '/repo/src/a.ts', relPath: 'src/a.ts', ranges: [[1, 4], [22, 22]] };
 
-test('"Outside functions" is the last row of its file and opens at the first range', async () => {
+test('"Top-level changes" is the last row of its file and opens at the first range', async () => {
   const { provider, fileRow } = viewOf([OUT_A]);
   const file = await fileRow('src/a.ts');
   const rows = (await provider.getChildren(file)).filter((r) => r.type !== 'spacer');
-  assert.deepEqual(rows.map((r) => r.label), ['one', 'two', 'Outside functions']);
+  assert.deepEqual(rows.map((r) => r.label), ['one', 'two', 'Top-level changes']);
   const item = provider.getTreeItem(rows[2]);
   assert.equal(item.description, 'lines 1–4, 22', 'its file row names the file');
   assert.equal(item.collapsibleState, vscode.TreeItemCollapsibleState.None, 'no expansion, so no callers');
+  assert.equal(item.iconPath, undefined, 'no icon of its own');
   assert.deepEqual(await provider.getChildren(rows[2]), []);
   assert.equal(item.command.command, 'impactTree.openFile');
   assert.deepEqual(item.command.arguments[0].ranges[0], [1, 4]);
@@ -166,17 +167,17 @@ test('a pure deletion reads as the line it was removed before', async () => {
   assert.equal(models.describeOutsideRanges([[1, 1], [6.5, 6.5], [9, 12]]), 'lines 1, 9–12, deleted before line 7');
 });
 
-test('a file whose only change is outside functions is a file row holding it, and the review counts it', async () => {
+test('a file whose only change is top-level is one row, with its lines on it, and the review counts it once', async () => {
   const { provider, fileRow } = viewOf([{ file: '/repo/src/c.ts', relPath: 'src/c.ts', ranges: [[3, 3]] }]);
   const file = await fileRow('src/c.ts');
-  assert.equal(file.type, 'reviewFile');
-  const [row] = await provider.getChildren(file);
-  assert.equal(provider.getTreeItem(row).description, 'line 3');
+  assert.equal(file.type, 'file');
+  assert.deepEqual(await provider.getChildren(file), [], 'no child row');
+  assert.equal(provider.getTreeItem(file).description, 'line 3  ·  src');
   assert.match(provider.summarize().message, / · 4 changes · nothing needs attention$/, '3 symbols + 1 outside row');
   assert.equal(provider.reviewCounts().total, 4);
 });
 
-test('ticking the file ticks its "Outside functions" row, and unticking the row unticks the file', async () => {
+test('ticking the file ticks its "Top-level changes" row, and unticking the row unticks the file', async () => {
   const store = new Map();
   const review = createReviewState({ get: (k) => store.get(k), update: (k, v) => store.set(k, v) });
   const { provider, fileRow } = viewOf([OUT_A], review);

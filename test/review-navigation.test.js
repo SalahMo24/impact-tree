@@ -192,6 +192,9 @@ test('next unreviewed from a file\'s spacer goes on after that file, never onto 
 
 test('a selected caller or tests row counts as the change it sits under', () => withEnv(async (env) => {
   useResult(env);
+  // a tests row exists once the tests were searched
+  const base = env.hooks.localResult;
+  env.hooks.localResult = (o) => ({ ...base(o), testReachComputed: true });
   await env.refresh();
   const { rows } = await rowsOf(env);
   const [under, tests] = await env.tree().getChildren(rows[0]);
@@ -274,8 +277,15 @@ test('package.json contributes the commands, the keybinding and the palette gate
   const host = contributes.menus['view/item/context'].filter((m) => m.when.startsWith(HOST));
   const groupOf = (id) => host.filter((m) => m.command === id).map((m) => m.group);
   assert.deepEqual(host.filter((m) => m.group.startsWith('inline')).map((m) => m.command).sort(),
-    ['impactTree.filterAttention', 'impactTree.filterAttentionOn', 'impactTree.openReview', 'impactTree.refresh', 'impactTree.sendFeedback',
+    ['impactTree.computeTestReach', 'impactTree.filterAttention', 'impactTree.filterAttentionOn', 'impactTree.openReview', 'impactTree.refresh', 'impactTree.sendFeedback',
       'impactTree.submitReview', 'impactTree.submitReviewUnavailable', 'impactTree.viewAsList', 'impactTree.viewAsTree']);
+  // Finding the tests is a mode of the review, not a row: inline and in the menu, only while no
+  // review's tests were searched (L3).
+  const reach = host.filter((m) => m.command === 'impactTree.computeTestReach');
+  assert.deepEqual(reach.map((m) => m.group).sort(), ['1_mode@3', 'inline@7']);
+  for (const m of reach) assert.equal(m.when, `${HOST} && impactTree.state == shown && !impactTree.testReachComputed`);
+  const reachCommand = contributes.commands.find((c) => c.command === 'impactTree.computeTestReach');
+  assert.deepEqual([reachCommand.title, reachCommand.icon], ['Impact Tree: Find the tests that cover this review', '$(beaker)']);
   // one of the two layout icons shows, by the setting
   assert.equal(host.find((m) => m.command === 'impactTree.viewAsTree').when, `${HOST} && impactTree.fileListLayout != tree`);
   assert.equal(host.find((m) => m.command === 'impactTree.viewAsList').when, `${HOST} && impactTree.fileListLayout == tree`);

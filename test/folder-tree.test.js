@@ -79,9 +79,10 @@ test('between equal levels, more attention, then more files or rows, then the pa
   assert.equal(compareRanked(quiet, busy) > 0, true);
 });
 
-test('the folder uri comes from the callback, per folder path', () => {
-  const { folders } = fold([reviewFile('src/engine/a.js', 2), reviewFile('src/b.js', 2)], { folderUriOf: (dir) => `dir:${dir}` });
-  assert.deepEqual(folders.map((f) => f.decorationUri).sort(), ['dir:src', 'dir:src/engine']);
+test('a folder row carries no resource, so no git badge or colour reaches it', () => {
+  const { folders } = fold([reviewFile('src/engine/a.js', 2), reviewFile('src/b.js', 2)]);
+  assert.equal(folders.length, 2);
+  for (const f of folders) assert.equal('decorationUri' in f, false, f.relPath);
 });
 
 test('backslash paths fold like slash paths', () => {

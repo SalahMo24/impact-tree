@@ -266,13 +266,13 @@ function createTreeProvider(vscode, {
   // handed to consumers are borrowed: only this provider may change their UI metadata.
   /** @type {{ analysisId: number, result: any, rows: TreeRow[], decorations: DecorationRequest[], parents: WeakMap<TreeRow, TreeRow>, childIds: WeakMap<TreeRow, string> }|null} */
   let built = null;
-  // The folding of the last root read: the folder rows handed out (so a tick on one is
-  // accepted) and the folder each folder or file row sits under. Owner: this provider.
+  // The folding of the last root read: the folder each folder or file row sits under. A
+  // folder has no checkbox, so no tick is addressed to one. Owner: this provider.
   // Replaced whole on every root read, so a flat read leaves no folder parent behind and a
   // reveal in the flat list never climbs into a folder of an earlier tree read. Garbage
   // with the provider.
-  /** @type {{ folders: Set<TreeRow>, parents: WeakMap<TreeRow, TreeRow> }} */
-  let folded = { folders: new Set(), parents: new WeakMap() };
+  /** @type {{ parents: WeakMap<TreeRow, TreeRow> }} */
+  let folded = { parents: new WeakMap() };
   // The calm state's container (gate G14) of the last root read: the "Browse all N changes"
   // row, and the rows it holds (the file rows, or their root folders in the tree layout),
   // each of which has it as its parent. It exists only while the filter is `all` and
@@ -398,7 +398,7 @@ function createTreeProvider(vscode, {
     shownRoots = kept;
     // These rows are provider-owned. Keep the canonical objects so getParent,
     // actions and subsequent reads all refer to the same file, including the first.
-    const files = layoutRows(st, kept);
+    const files = layoutRows(kept);
     // Only the worst path starts open, so the first thing on screen is the thing to look at.
     markFirstPathOpen(files);
     const notices = models.buildNoticeRows(st.result);
@@ -430,20 +430,18 @@ function createTreeProvider(vscode, {
   /**
    * The root rows for the file rows the filter kept: the rows themselves in the flat
    * layout, or their folders in the tree layout. Records the folding (`folded`) either way.
-   * @param {ProviderState} state
    * @param {TreeRow[]} kept
    * @returns {TreeRow[]}
    */
-  function layoutRows(state, kept) {
+  function layoutRows(kept) {
     if (getLayout() !== 'tree') {
-      folded = { folders: new Set(), parents: new WeakMap() };
+      folded = { parents: new WeakMap() };
       return kept;
     }
-    const folderUriOf = (/** @type {string} */ dir) => (state.absPath ? uriFor(state.absPath(dir), null) : null);
-    const made = foldFileRows(kept, { folderUriOf });
+    const made = foldFileRows(kept);
     const parents = new WeakMap();
     for (const folder of made.folders) for (const child of folder.children) parents.set(child, folder);
-    folded = { folders: new Set(made.folders), parents };
+    folded = { parents };
     return made.rows;
   }
 
@@ -561,7 +559,7 @@ function createTreeProvider(vscode, {
     if (disposed || !state || !review) return;
     const current = builtFor(state);
     const rootsBefore = reviewTree.filterFileRows(current.rows, filter, isReviewed, openThreadsOf).map((e) => e.file);
-    const canonical = new Set([...current.rows.flatMap((file) => [file, ...(file.rows || [])]), ...folded.folders]);
+    const canonical = new Set(current.rows.flatMap((file) => [file, ...(file.rows || [])]));
     /** @type {Map<TreeRow, boolean>} */
     const requested = new Map();
     for (const { row, on } of changes) {
@@ -795,6 +793,11 @@ function createTreeProvider(vscode, {
      * @returns {number|null}
      */
     reviewVersion: () => (shownState() ? getAnalysisId() : null),
+    /** @returns {boolean} Whether the shown review is a PR preview (`result.tierA`). */
+    isPreview() {
+      const state = shownState();
+      return Boolean(state && state.result.tierA);
+    },
     /** @returns {import('./review-tree-model').ReviewFilter} */
     getFilter: () => filter,
     /** @returns {'flat'|'tree'} The layout the next root read uses. */

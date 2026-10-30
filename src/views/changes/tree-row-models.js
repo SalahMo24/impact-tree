@@ -30,7 +30,7 @@ const { MODE_LABELS, modeLabel } = require('../../engine/mode-labels');
 const STATE_NAMES = Object.freeze({
   levels: Object.freeze(['Callers not updated', 'Callers unknown', 'Callers updated', 'Reaches callers', 'No callers']),
   deleted: 'Deleted',
-  outside: 'Outside functions',
+  outside: 'Top-level changes',
 });
 
 /**
@@ -209,7 +209,7 @@ const classifyDeletedVerdict = () => ({ level: 1, text: 'deleted',
   sentence: 'This symbol was removed. Its former callers were not searched, so check that nothing still uses it, including dynamic users.' });
 
 /**
- * The verdict of an "outside functions" row: always level 4, with its line ranges as text.
+ * The verdict of a "Top-level changes" row: always level 4, with its line ranges as text.
  * @param {Array<[number, number]>} ranges The changed line ranges outside every callable.
  * @returns {Verdict}
  */
@@ -370,8 +370,9 @@ function previewLimitsNote(result) {
 }
 
 /**
- * The rows above the changed files: the preview notice, then one row per analysis
- * warning and per component that could not be analysed.
+ * The rows above the changed files: the progress row while callers resolve, then the
+ * notices (`notice` set): the preview's limits, one per analysis warning and per component
+ * that could not be analysed.
  * @param {any} r The result.
  * @returns {TreeRow[]}
  */
@@ -385,7 +386,7 @@ function buildNoticeRows(r) {
   // worse than useless, so it is stated on the face of it.
   if (r.tierA) {
     rows.push({
-      type: 'message', icon: 'eye',
+      type: 'message', icon: 'eye', notice: 'preview',
       label: `Preview — PR files only (${r.changedFileCount} file(s))`,
       desc: previewLimitsNote(r),
       tooltip: 'Built from the pull request\'s own files via the GitHub API.\n'
@@ -394,7 +395,9 @@ function buildNoticeRows(r) {
         + 'Use "Check out and analyse" on the PR for the complete tree.',
     });
   }
-  // `notice` rows go in the review's host row hover (review-sidebar.js), not in the tree.
+  // `notice` rows (the preview's limits, warnings, components not analysed) go in the
+  // review's host row hover (review-sidebar.js), not in the tree among the files. Only
+  // "Resolving callers…" stays a row: it is progress, and it goes when the work does.
   for (const w of r.warnings) rows.push({ type: 'message', label: w, icon: 'warning', notice: 'warning' });
   for (const u of r.unanalysable) {
     rows.push({ type: 'message', icon: 'circle-slash', notice: 'unanalysable',
@@ -405,20 +408,33 @@ function buildNoticeRows(r) {
 
 /**
  * What a change's row says about tests reaching it, beyond its tests row: why the walk is
- * unknown, or how far a walk that found no test went. A walk that failed or was cut short
- * proves nothing, so it never reads as untested. Both are null when no walk ran: in a PR
- * preview with nothing to search, or before test reach is computed.
+ * unknown, how far a walk that found no test went, or that no walk ran. A walk that failed
+ * or was cut short proves nothing, so it never reads as untested. `notSearched` is the
+ * words for a change whose tests were not looked for (a PR preview, or before test reach
+ * is computed); they go in the row's tooltip only. It is never an answer of "no test".
  * @param {any} change
  * @param {any} result
- * @returns {{ reachReason: string|null, scopeNote: string|null }}
+ * @returns {{ reachReason: string|null, scopeNote: string|null, notSearched: string|null }}
  */
 function describeTestReach(change, result) {
-  if (!result.testReachComputed) return { reachReason: null, scopeNote: null };
+  if (!result.testReachComputed) return { reachReason: null, scopeNote: null, notSearched: describeTestsNotSearched(result) };
   return {
     reachReason: change.testState === 'unknown' ? change.testReachIncompleteReason || 'the test search did not finish' : null,
     scopeNote: change.testState === 'uncovered' ? buildReachScopeNote(result) : null,
+    notSearched: null,
   };
 }
+
+/**
+ * Why a change's tests were not searched, for its hover. A PR preview reads only the pull
+ * request's own files, so it cannot be asked to; a local review runs the walk on demand,
+ * from the review's row.
+ * @param {any} result
+ * @returns {string}
+ */
+const describeTestsNotSearched = (result) => (result.tierA
+  ? 'Tests are not searched in a PR preview. A preview reads only the pull request\'s own files; check out the PR to see which tests reach this change.'
+  : 'Tests are not searched yet: it searches the callers again, on demand. Use "Find the tests that cover this review" on the review\'s row.');
 
 /**
  * One row per changed symbol, with the decoration each should carry. `ambiguous` marks a
@@ -446,7 +462,7 @@ function buildChangeRows(changes, { result, uriOf }) {
 }
 
 /**
- * The changed lines of an "Outside functions" row in words: `lines 1–4, 22`, and for a pure
+ * The changed lines of a "Top-level changes" row in words: `lines 1–4, 22`, and for a pure
  * deletion, the gap marker `N - 0.5`, `deleted before line N`.
  * Every range is named: the row is the only place these lines are listed, so none is
  * summarised away.
@@ -461,7 +477,7 @@ function describeOutsideRanges(ranges) {
 }
 
 /**
- * One "Outside functions" row per file whose changed lines include some outside every
+ * One "Top-level changes" row per file whose changed lines include some outside every
  * callable, with the decoration it should carry. It has no callers and no expansion.
  * @param {any[]} outside `result.outside`.
  * @param {{ result: any, uriOf: ResourceUriOf }} opts
@@ -477,7 +493,7 @@ function buildOutsideRows(outside, { result, uriOf }) {
     const status = getFileStatus(result, o.relPath);
     decorations.push({ uri, status, tooltip: o.relPath, tint: false });
     return {
-      type: 'outside', label: 'Outside functions', file: o.file, relPath: o.relPath, ranges: o.ranges,
+      type: 'outside', label: 'Top-level changes', file: o.file, relPath: o.relPath, ranges: o.ranges,
       status, desc: describeOutsideRanges(o.ranges), decorationUri: uri,
     };
   });
@@ -525,10 +541,6 @@ function buildFileLeafRows(files, { absPath, uriOf }) {
   }).sort((a, b) => a.relPath.localeCompare(b.relPath));
   return { rows, decorations };
 }
-
-/** @returns {TreeRow} The row that runs the deferred test-reach walk when clicked. */
-const buildComputeTestReachRow = () => ({ type: 'message', label: 'Find the tests that cover this', icon: 'play',
-  desc: 'searches the callers again — on demand', command: 'impactTree.computeTestReach' });
 
 /**
  * The callers a review shows: those in paths the review excludes (untracked files in a
@@ -605,6 +617,6 @@ module.exports = {
   classifyChangeVerdict, classifyDeletedVerdict, classifyOutsideVerdict, classifyRowVerdict, classifyWorstRowVerdict, getFileStatus,
   buildReachScopeNote, buildPlaceholderRows, buildNoticeRows, PREVIEW_LIMITS_NOTE, previewLimitsNote, NOT_ANALYSED_DESC, notAnalysedText, MODE_LABELS, attentionCountText,
   buildChangeRows, buildDeletedRows, buildFileLeafRows, buildOutsideRows, describeOutsideRanges,
-  buildComputeTestReachRow, dropExcludedCallers, collectAncestry, buildCallerRows,
+  dropExcludedCallers, collectAncestry, buildCallerRows,
   buildIncompleteCallersRow,
 };

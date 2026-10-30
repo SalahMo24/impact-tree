@@ -159,7 +159,9 @@ const check = (name, cond, extra = '') => {
     changeNodes.length === (result.allChanged || []).length && new Set(changeNodes.map((n) => `${n.file}#${n.pos}`)).size === changeNodes.length,
     `${changeNodes.length} rows, ${(result.allChanged || []).length} changed`);
   check('deleted symbols rendered', deletedNodes.length === result.deleted.length, `${deletedNodes.length}`);
-  check('outside-functions rows rendered', outsideNodes.length === (result.outside || []).length, `${outsideNodes.length}`);
+  // a file with nothing but top-level lines is its own counting row (a `file` row with the ranges)
+  const topLevelFiles = fileRows.filter((f) => f.type === 'file' && f.ranges);
+  check('top-level rows rendered', outsideNodes.length + topLevelFiles.length === (result.outside || []).length, `${outsideNodes.length}+${topLevelFiles.length}`);
   const noGraph = fileRows.filter((f) => f.type === 'file');
   check('every file without a call graph is a file row',
     (result.otherFiles || []).every((o) => noGraph.some((f) => f.relPath === o.path)), `${noGraph.length}`);
@@ -275,7 +277,9 @@ const check = (name, cond, extra = '') => {
   const impact = await provider.getChildren(expandable);
   check('a change\'s callers come from the result: no query', resolver.stats().incomingCalls === before);
   const testsRow = impact[impact.length - 1];
-  check('the last row says what is known of tests', testsRow.type === 'message' && /test/i.test(testsRow.label), testsRow.label);
+  // Tests that were not searched are not a row (the hover says so); searched ones end the list.
+  check('the last row says what is known of tests, once they were searched',
+    result.testReachComputed ? testsRow.type === 'message' && /test/i.test(testsRow.label) : !(testsRow.type === 'message' && /test/i.test(testsRow.label)), testsRow && testsRow.label);
   check('a "may be missing" row iff the caller search did not finish',
     impact.some((k) => k.type === 'message' && /may be missing|could not be loaded/.test(k.label)) === (expandable.finding.callersComplete === false));
   const callerKids = impact.flatMap((k) => (k.type === 'callerFile' ? k.callers : k.type === 'caller' ? [k] : []));

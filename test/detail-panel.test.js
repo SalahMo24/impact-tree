@@ -209,6 +209,9 @@ test('selecting a file\'s spacer changes nothing in Details', () => withEnv(asyn
 
 test('a tree selection shows that row; a caller or tests row shows its change', () => withEnv(async (env) => {
   useResult(env);
+  // a tests row exists once the tests were searched
+  const base = env.hooks.localResult;
+  env.hooks.localResult = (o) => ({ ...base(o), testReachComputed: true });
   await env.refresh();
   const details = env.openDetails();
   const { files, a } = await rowsOf(env);

@@ -181,7 +181,7 @@ function headHtml(row) {
     const c = row.finding;
     return `<h3>${escapeHtml(c.label)}</h3><div class="where">${escapeHtml(c.relPath)}:${c.startLine}–${c.endLine}</div>`;
   }
-  if (row.type === 'outside') return `<h3>Outside functions</h3><div class="where">${escapeHtml(row.relPath)}</div>`;
+  if (row.type === 'outside') return `<h3>Top-level changes</h3><div class="where">${escapeHtml(row.relPath)}</div>`;
   const status = row.type === 'deleted' ? 'deleted' : row.status ?? 'changed';
   return `<h3>${escapeHtml(row.label)}</h3><div class="where">${escapeHtml(row.relPath)} · ${escapeHtml(status)}</div>`;
 }

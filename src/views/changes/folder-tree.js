@@ -14,6 +14,9 @@
 // is the answer to gate G1 of docs/FILE_FIRST_REVIEW_PLAN.md: nesting was removed because
 // an alphabetical tree hid the ranking; a ranked tree does not.
 //
+// A folder is a place to find files, not a finding: it carries no resource, so no git badge
+// or colour, and no checkbox (the renderer gives it none); its files keep theirs.
+//
 // A folder with no file of its own and one child folder is drawn as one row named with
 // both (`src/engine`), as the Explorer's compact folders are, so a deep path is not a
 // ladder of single rows.
@@ -84,12 +87,11 @@ function compactFolders(root) {
  * The folder row of a node, its children ordered, and every folder row made under it.
  * Recursive over the folder depth, which is bounded by the longest path given.
  * @param {TrieNode} node
- * @param {(dir: string) => any} folderUriOf
  * @param {TreeRow[]} made Every folder row built, appended to.
  * @returns {TreeRow}
  */
-function toFolderRow(node, folderUriOf, made) {
-  const folders = [...node.folders.values()].map((child) => toFolderRow(child, folderUriOf, made));
+function toFolderRow(node, made) {
+  const folders = [...node.folders.values()].map((child) => toFolderRow(child, made));
   const files = [...node.files, ...folders.flatMap((f) => f.files)];
   const row = {
     type: 'folder', label: node.name, relPath: node.dir,
@@ -98,7 +100,6 @@ function toFolderRow(node, folderUriOf, made) {
     level: Math.min(...files.map((f) => f.level)),
     attention: files.reduce((n, f) => n + (f.attention || 0), 0),
     fileCount: files.length,
-    decorationUri: folderUriOf(node.dir),
     expanded: false,
   };
   made.push(row);
@@ -109,14 +110,12 @@ function toFolderRow(node, folderUriOf, made) {
  * The file rows folded into folders.
  * @param {TreeRow[]} files `reviewFile` and `file` rows, each with a `relPath` and a
  *   `level`; the rows are kept as they are and placed by their path.
- * @param {{ folderUriOf?: (dir: string) => any }} [opts] `folderUriOf` gives a folder row's
- *   resource (for the icon theme's folder icons); none by default.
  * @returns {{ rows: TreeRow[], folders: TreeRow[] }} `rows` are the root: folder rows and
  *   the files at the repository root, ordered; `folders` every folder row, root first in
  *   no particular order. A folder row has `children` (ordered folder and file rows),
  *   `files` (every file under it), `level`, `attention` and `fileCount`.
  */
-function foldFileRows(files, { folderUriOf = () => null } = {}) {
+function foldFileRows(files) {
   const root = newNode();
   for (const file of files) {
     let node = root;
@@ -133,7 +132,7 @@ function foldFileRows(files, { folderUriOf = () => null } = {}) {
   compactFolders(root);
   /** @type {TreeRow[]} */
   const folders = [];
-  const top = [...root.folders.values()].map((child) => toFolderRow(child, folderUriOf, folders));
+  const top = [...root.folders.values()].map((child) => toFolderRow(child, folders));
   return { rows: [...top, ...root.files].sort(compareRanked), folders };
 }
 
