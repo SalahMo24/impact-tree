@@ -296,7 +296,16 @@ until you mark it reviewed, and its tooltip and Details say why.
 Off by default; turn on `impactTree.cards.enabled` and `impactTree.agents.enabled`.
 
 - **Cards** group a review's changes into related cards, with the entry points each card
-  reaches. **Open review** (on the reviewed row, or the Cards view) opens the **review tab**:
+  reaches. The Review view lists them in the **By card** order: **Order by card** (the layers
+  icon on the reviewed row, next to View as tree; `impactTree.reviewOrder`, kept for the
+  workspace) draws one row per card, a sparkle for your agent's card and layers for the engine's.
+  A card row reads `4 changes · 2 need attention`; cards that hold a change that needs
+  attention come first, then the larger ones, sweeps last; under a card its changes, worst
+  first, each drawn once (a change in two cards sits under the first). The files no card
+  touches, and the changes the cards left out, are under **Other changes**. Reviewed marks, filters,
+  Next/Previous unreviewed and the counts are the same in both orders; **Order by file**
+  goes back. The sidebar holds the Review and Details views only. **Open review** (on the
+  reviewed row) opens the **review tab**:
   the cards listed to the left under Needs your attention, Behaviour changes and No
   behaviour change; the chosen card's changes in the middle, each with its diff hunk (cut to
   the function's lines) and ⚠ on the ones to look at first; and the chosen change's context
@@ -310,8 +319,16 @@ Off by default; turn on `impactTree.cards.enabled` and `impactTree.agents.enable
   changed, may change, is new or is the same, with before / after / when and what it
   affects, plus at most five changes that need your attention.
 - The agent's one-line note shows on the change rows and in the diff's CodeLens, after the
-  engine's own text; the engine's order and counts do not change. **Undo the agent's
-  result** goes back to the engine's cards.
+  engine's own text, and a change row's icon is the agent's own: a pencil for changed, a
+  question mark for may change, a plus for new, none for same behaviour. The changes the agent
+  names in `attention` need attention beside the ones the engine flags (callers not updated,
+  or to check by hand): one set orders the cards and feeds the badge, the status bar,
+  Details, the approve check and the review tab's Needs your attention column. **Analyse with
+  my agent** is a sparkle on the reviewed row (and in its `…` menu); while your agent works the
+  review shows `Waiting for your agent… (asked 14:58)` with a cancel button. With a result,
+  the `…` menu offers **Undo agent result** and **Show engine cards** / **Show agent cards**;
+  the first line of the agent's summary is in the reviewed row's hover and all of it on the
+  review tab. A result for another state of the branch is a notice in the hover and is not used.
 - Results are kept in this workspace. The window listens on a local socket in a private
   temporary folder, guarded by a token; nothing leaves your machine. Only a checked-out
   branch takes part, not a pull request preview. The MCP server restarts itself when the
@@ -352,7 +369,8 @@ checkpoint, from a recorded SHA).
 | `impactTree.tierA.maxFiles` | `300` | maximum files fetched for a no-checkout PR preview |
 | `impactTree.openPullRequestTab` | `true` | open the pull request tab when you preview or check out a PR from the list |
 | `impactTree.agent` | `ask` | where **Send feedback** hands a round: `claude`, `codex`, `chat`, `clipboard`, `save`, or `ask` |
-| `impactTree.cards.enabled` | `false` | the Cards view, the review tab and the entry-point search (experimental) |
+| `impactTree.reviewOrder` | `files` | list the review by `files` or by `cards` (needs `impactTree.cards.enabled`; a review without cards is listed by file); also **Order by card** / **Order by file** on the reviewed row |
+| `impactTree.cards.enabled` | `false` | cards: the By card order, the review tab and the entry-point search (experimental) |
 | `impactTree.agents.enabled` | `false` | let your connected coding agent read the shown review and hand back cards (experimental) |
 
 ## Performance

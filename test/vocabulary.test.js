@@ -358,7 +358,7 @@ test('README.md: no retired term', () => {
 // bar, commands and quick picks, notifications, the CodeLens and the CLI. Modules that only
 // write the output channel (viewed-sync, resolver-vscode, ...) are not listed.
 const SOURCES = [
-  'views/changes/tree-row-models', 'views/changes/tree-item-renderer', 'views/changes/tree-provider', 'views/changes/tree-grouping', 'views/changes/review-tree-model', 'views/sidebar/sources-provider', 'views/cards/cards-view-model', 'views/cards/cards-provider', 'mcp/tools',
+  'views/changes/tree-row-models', 'views/changes/tree-item-renderer', 'views/changes/tree-provider', 'views/changes/tree-grouping', 'views/changes/review-tree-model', 'views/sidebar/sources-provider', 'views/changes/card-order', 'agent/agent-review', 'mcp/tools',
   'views/details/detail-panel-html', 'views/details/detail-panel', 'views/pr-tab/pr-overview-html', 'views/pr-tab/pr-overview-panel', 'session/pr-actions', 'github/pr-review-data',
   'diff-editor/review-navigation', 'diff-editor/review-lens', 'diff-editor/review-open', 'diff-editor/open-review', 'session/commands', 'session/session', 'cli', 'cli/cli-format',
   'views/changes/view-state', 'views/changes/path-tree', 'diff-editor/decorations', 'extension', 'session/readiness', 'views/changes/review-threads', 'diff-editor/review-comments',

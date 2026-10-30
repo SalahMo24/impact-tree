@@ -58,12 +58,6 @@
           "contextualTitle": "Impact Tree"
         },
         {
-          "id": "impactTree.cards",
-          "name": "Cards",
-          "contextualTitle": "Impact Tree",
-          "when": "config.impactTree.cards.enabled"
-        },
-        {
           "type": "webview",
           "id": "impactTree.details",
           "name": "Details",
@@ -142,6 +136,16 @@
       {
         "command": "impactTree.viewAsList",
         "title": "Impact Tree: View as list",
+        "icon": "$(list-flat)"
+      },
+      {
+        "command": "impactTree.orderByCards",
+        "title": "Impact Tree: Order by card",
+        "icon": "$(layers)"
+      },
+      {
+        "command": "impactTree.orderByFiles",
+        "title": "Impact Tree: Order by file",
         "icon": "$(list-flat)"
       },
       {
@@ -391,12 +395,17 @@
       },
       {
         "command": "impactTree.toggleAgentCards",
-        "title": "Show engine cards or agent cards",
+        "title": "Show engine cards",
+        "category": "Impact Tree"
+      },
+      {
+        "command": "impactTree.showAgentCards",
+        "title": "Show agent cards",
         "category": "Impact Tree"
       },
       {
         "command": "impactTree.undoAgentResult",
-        "title": "Undo the agent's result",
+        "title": "Undo agent result",
         "category": "Impact Tree"
       },
       {
@@ -443,16 +452,6 @@
     ],
     "menus": {
       "view/title": [
-        {
-          "command": "impactTree.openReview",
-          "when": "view == impactTree.cards && config.impactTree.cards.enabled",
-          "group": "navigation@0"
-        },
-        {
-          "command": "impactTree.analyseWithAgent",
-          "when": "view == impactTree.cards && config.impactTree.agents.enabled",
-          "group": "navigation@1"
-        },
         {
           "command": "impactTree.previousUnreviewed",
           "when": "view == impactTree.sources",
@@ -695,6 +694,10 @@
         {
           "command": "impactTree.showPicker",
           "when": "impactTree.hasReview"
+        },
+        {
+          "command": "impactTree.showAgentCards",
+          "when": "false"
         }
       ],
       "editor/context": [
@@ -838,12 +841,12 @@
         },
         {
           "command": "impactTree.viewAsTree",
-          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.fileListLayout != tree",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.fileListLayout != tree && impactTree.reviewOrder != cards",
           "group": "inline@2"
         },
         {
           "command": "impactTree.viewAsList",
-          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.fileListLayout == tree",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.fileListLayout == tree && impactTree.reviewOrder != cards",
           "group": "inline@2"
         },
         {
@@ -988,8 +991,53 @@
           "group": "navigation@1"
         },
         {
+          "command": "impactTree.orderByCards",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.hasCards && impactTree.reviewOrder != cards",
+          "group": "inline@2"
+        },
+        {
+          "command": "impactTree.orderByFiles",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.reviewOrder == cards",
+          "group": "inline@2"
+        },
+        {
+          "command": "impactTree.orderByCards",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.hasCards && impactTree.reviewOrder != cards",
+          "group": "0_order@1"
+        },
+        {
+          "command": "impactTree.orderByFiles",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.reviewOrder == cards",
+          "group": "0_order@1"
+        },
+        {
+          "command": "impactTree.analyseWithAgent",
+          "when": "view == impactTree.sources && viewItem == reviewHost && config.impactTree.agents.enabled && impactTree.hasCards",
+          "group": "inline@8"
+        },
+        {
+          "command": "impactTree.analyseWithAgent",
+          "when": "view == impactTree.sources && viewItem == reviewHost && config.impactTree.agents.enabled && impactTree.hasCards",
+          "group": "1_mode@4"
+        },
+        {
+          "command": "impactTree.undoAgentResult",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.hasAgentResult",
+          "group": "1_mode@5"
+        },
+        {
+          "command": "impactTree.toggleAgentCards",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.hasAgentResult && !impactTree.agentShowsEngine",
+          "group": "1_mode@6"
+        },
+        {
+          "command": "impactTree.showAgentCards",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.hasAgentResult && impactTree.agentShowsEngine",
+          "group": "1_mode@6"
+        },
+        {
           "command": "impactTree.cancelAgentWaiting",
-          "when": "view == impactTree.cards && viewItem == agentWaiting",
+          "when": "view == impactTree.sources && viewItem == agentWaiting",
           "group": "inline"
         }
       ],
@@ -1140,7 +1188,7 @@
         "impactTree.cards.enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Show a Cards view that groups the changes of a review into related cards, with the entry points each card reaches and which cards may belong together. Turning it on adds the entry-point search to each analysis (a few seconds on the largest pull requests) and, for a local review, reads the repository's history to find which cards may belong together. Takes effect from the next analysis (Refresh)."
+          "description": "Group the changes of a review into related cards, with the entry points each card reaches and which cards may belong together. Turning it on adds the By card order to the Review view (impactTree.reviewOrder) and the review tab, adds the entry-point search to each analysis (a few seconds on the largest pull requests) and, for a local review, reads the repository's history to find which cards may belong together. Takes effect from the next analysis (Refresh)."
         },
         "impactTree.agents.enabled": {
           "type": "boolean",
@@ -1201,6 +1249,20 @@
             "Only save the feedback file"
           ],
           "description": "Where Send feedback hands a feedback round, and where Analyse with my agent hands its prompt. \"Send feedback to…\" always asks."
+        },
+        "impactTree.reviewOrder": {
+          "type": "string",
+          "enum": [
+            "files",
+            "cards"
+          ],
+          "default": "files",
+          "scope": "resource",
+          "enumDescriptions": [
+            "Changes under the files they are in, worst file first",
+            "Changes under the card they belong to (needs impactTree.cards.enabled): cards that hold a change that needs attention first, then the changes no card holds under Other changes"
+          ],
+          "description": "How the review lists its changes: by file or by card. Also toggled from the reviewed row (Order by card / Order by file). Kept for this workspace; a review without cards is listed by file."
         }
       }
     }

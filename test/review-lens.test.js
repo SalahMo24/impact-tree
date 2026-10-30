@@ -465,7 +465,7 @@ test('the contributions: a keybinding in a review editor, a context menu on chan
     ['impactTree.feedback.openRoundFile', 'view == impactTree.sources && viewItem == feedbackRound', 'inline@1'],
     ['impactTree.feedback.openRoundFile', 'view == impactTree.sources && viewItem == feedbackRound', 'navigation@1'],
     // the Cards view's "Waiting for your agent…" row: Cancel waiting (AI5)
-    ['impactTree.cancelAgentWaiting', 'view == impactTree.cards && viewItem == agentWaiting', 'inline'],
+    ['impactTree.cancelAgentWaiting', 'view == impactTree.sources && viewItem == agentWaiting', 'inline'],
   ]);
   assert.equal(contributes.menus.commandPalette.find((m) => m.command === 'impactTree.retryViewedSync').when, 'false');
   const declared = new Set(contributes.commands.map((c) => c.command));
