@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 — 2026-10-31
+
+First release on the VS Code Marketplace and Open VSX.
 
 - **Your agent's review is a main feature**: `impactTree.cards.enabled` and
   `impactTree.agents.enabled` are gone. Cards, the By card order, the review tab, **Connect

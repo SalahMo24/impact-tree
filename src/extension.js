@@ -48,9 +48,9 @@ const { createAutoCleanup, createCleanupCommand } = require('./storage/storage-c
 const { realClock } = require('./engine/clock');
 const { createTelemetry } = require('./telemetry/telemetry');
 
-// Bumped whenever extension-side behaviour changes, so the exthost log proves which
-// build is actually loaded instead of us inferring it from timestamps.
-const BUILD = '0.1.0+targeted-review-updates';
+// The packaged version, so the exthost log proves which build is actually loaded instead
+// of us inferring it from timestamps.
+const BUILD = require('../package.json').version;
 
 let session = null;
 let prDocuments = null;

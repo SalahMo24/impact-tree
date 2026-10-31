@@ -351,17 +351,31 @@ reviews of a checked-out branch take part; a pull request preview does not.
   branch takes part, not a pull request preview. The MCP server restarts itself when the
   extension's code changes.
 
-## Install (from source)
+## Install
+
+- **VS Code**: install [Impact Tree from the Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=SalahMo24.impact-tree),
+  or search for "Impact Tree" in the Extensions view.
+- **Cursor, Windsurf, VSCodium**: install [Impact Tree from Open VSX](https://open-vsx.org/extension/SalahMo24/impact-tree),
+  or search for "Impact Tree" in the Extensions view.
+- **From the command line**: `code --install-extension SalahMo24.impact-tree` (or `cursor`
+  in place of `code`).
+
+Open a git repository and choose **Impact Tree** in the activity bar.
+
+### From source
 
 ```bash
 git clone https://github.com/SalahMo24/impact-tree
 cd impact-tree
 npm ci
-ln -s "$PWD" ~/.vscode/extensions/SalahMo24.impact-tree-0.1.0
+ln -s "$PWD" ~/.vscode/extensions/SalahMo24.impact-tree-dev
 # or ~/.cursor/extensions/... for Cursor
 ```
 
-Restart the editor, open a git repository, and run **Impact Tree: Refresh**.
+Restart the editor, open a git repository, and run **Impact Tree: Refresh**. A source install
+sends no usage data: the telemetry key is only added when the extension is packaged.
+
+To build a `.vsix` yourself, run `npm run package`.
 
 ## CLI
 
