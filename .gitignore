@@ -20,6 +20,9 @@ test/fixtures/*
 PLAN.md
 ACCEPTANCE.md
 .env
+# The PostHog key, written when packaging (scripts/write-telemetry-key.js); it ships in the
+# .vsix but stays out of the repository.
+src/telemetry/telemetry-key.js
 
 docs/distribution-checklist.md
 docs/CODE_DESIGN_PROPOSAL.md

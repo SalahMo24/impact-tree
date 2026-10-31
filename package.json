@@ -15,6 +15,7 @@
   ],
   "main": "./src/extension.js",
   "scripts": {
+    "vscode:prepublish": "node scripts/write-telemetry-key.js",
     "analyze": "node --max-old-space-size=8192 src/cli.js",
     "test": "node test/run.js",
     "test:quick": "node test/run.js --tier quick",
