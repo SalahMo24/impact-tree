@@ -7,6 +7,8 @@ const { classifyCallSiteUpdates } = require('../engine/call-sites');
 const { readLineOfOffset } = require('../engine/textpos');
 const { AnalysisCancelledError, isAnalysisCancelled, throwIfCancelled } = require('../engine/cancellation');
 const { realClock } = require('../engine/clock');
+const { NO_TELEMETRY } = require('../telemetry/telemetry');
+const { analysisFinishedProps } = require('../telemetry/telemetry-events');
 
 // A run that is cancelled stops waiting for `promise` and rejects with the cancellation
 // error. The work behind `promise` is not stopped: it belongs to whoever started it.
@@ -45,7 +47,7 @@ function untilCancelled(signal, promise) {
  * @param {*} vscode
  * @param {{ log: (m: string) => void, review: object, checkpoint?: string, indexingTickMs?: number, callerRetryWaitMs?: number,
  *   getObjectDirs?: () => string[], getTempDir?: () => string|undefined, getScratchDir?: () => string|null,
- *   clock?: import('../engine/clock').Clock }} opts
+ *   clock?: import('../engine/clock').Clock, telemetry?: ReturnType<typeof import('../telemetry/telemetry').createTelemetry> }} opts
  *   `checkpoint` is the review checkpoint restored from the workspace. `indexingTickMs` is
  *   how often the first-index elapsed time is refreshed; tests shorten it. `callerRetryWaitMs`
  *   bounds the wait for the language server before timed-out caller searches are retried
@@ -60,7 +62,7 @@ function untilCancelled(signal, promise) {
  *   the logged durations, and is handed to the resolver and the cross-file caller pool.
  */
 function createSession(vscode, { log: logToChannel, review, checkpoint, indexingTickMs = 1000, callerRetryWaitMs = 120000,
-  getObjectDirs = () => [], getTempDir = () => undefined, getScratchDir = () => null, clock = realClock }) {
+  getObjectDirs = () => [], getTempDir = () => undefined, getScratchDir = () => null, clock = realClock, telemetry = NO_TELEMETRY }) {
   if (!Number.isSafeInteger(callerRetryWaitMs) || callerRetryWaitMs < 1 || callerRetryWaitMs > 120000) throw new RangeError('callerRetryWaitMs must be 1..120000');
   // Required here rather than at module load: tests intercept analyze/git per activate.
   const { analyze } = require('../engine/analyze');
@@ -79,6 +81,8 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     resolverOverride: null,
     readyPromise: null,
     review,
+    // Anonymous usage events and error reports (src/telemetry/telemetry.js); pr-actions reads it too.
+    telemetry,
     decorate: null,
     provider: null,
     previewPullRequest: null,
@@ -208,6 +212,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     } catch (e) {
       if (isAnalysisCancelled(e) || !live()) return;
       log(`cards failed: ${e && e.stack ? e.stack : e}`);
+      telemetry.error('cards', e);
       publishCardsState(result, { cards: null, hintsPending: false, cardsError: e && e.message ? e.message : String(e) });
     }
   }
@@ -384,6 +389,8 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     }
     session.state = { ...session.state, result: null, error: viewError, problem: null };
     log(`${logLabel} ${error.stack || error.message}`);
+    const source = session.state && session.state.source;
+    telemetry.error('analysis', error, { source: source ? source.kind : 'unknown' });
     vscode.window.showErrorMessage(`Impact Tree: ${error.message}`);
     return true;
   }
@@ -679,6 +686,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     const expansionResolver = withModuleCallers(session.resolver, result.moduleCallers);
     if (!completeAnalysisRun(run, { result, repo, expansionResolver })) return;
     logLocalRun(result, repo, tStart);
+    if (!retry) telemetry.event('analysis.finished', analysisFinishedProps(result, { source: source.kind, durationMs: clock.now() - tStart }));
     configureLocalReview(source, repo, result, base);
     const stale = result.findings.reduce((n, f) => n + f.staleCallers, 0);
     vscode.window.setStatusBarMessage(

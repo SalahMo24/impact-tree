@@ -29,3 +29,4 @@ node_modules/zod/**/*.d.ts
 node_modules/zod/**/*.d.mts
 node_modules/zod/**/*.d.cts
 node_modules/zod/src/**
+scripts/**

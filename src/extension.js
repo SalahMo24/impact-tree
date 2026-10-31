@@ -46,6 +46,7 @@ const { createFeedbackRoundView } = require('./feedback/feedback-round-view');
 const { createSendFeedback } = require('./feedback/feedback-send');
 const { createAutoCleanup, createCleanupCommand } = require('./storage/storage-cleanup-run');
 const { realClock } = require('./engine/clock');
+const { createTelemetry } = require('./telemetry/telemetry');
 
 // Bumped whenever extension-side behaviour changes, so the exthost log proves which
 // build is actually loaded instead of us inferring it from timestamps.
@@ -54,8 +55,14 @@ const BUILD = '0.1.0+targeted-review-updates';
 let session = null;
 let prDocuments = null;
 let out = null;
-// wall-clock: display — the time of day prefixed to each log line
-const log = (m) => { if (out) out.appendLine(`[${new Date().toISOString().slice(11, 19)}] ${m}`); };
+// The channel is a log channel: the editor adds the timestamp and level, and "Developer: Set
+// Log Level…" filters it. A channel without `info` (an older editor) gets the time prefixed.
+const log = (m) => {
+  if (!out) return;
+  if (typeof out.info === 'function') out.info(m);
+  // wall-clock: display — the time of day prefixed to each log line
+  else out.appendLine(`[${new Date().toISOString().slice(11, 19)}] ${m}`);
+};
 
 /**
  * @param {*} context The editor's ExtensionContext.
@@ -74,9 +81,13 @@ function activate(context, { clock = realClock } = {}) {
   const documents = createPrDocuments();
   prDocuments = documents;
   context.subscriptions.push({ dispose: () => documents.clear() });
-  out = vscode.window.createOutputChannel('Impact Tree');
+  out = vscode.window.createOutputChannel('Impact Tree', { log: true });
   context.subscriptions.push(out);
   log(`activated  build=${BUILD}  resolver=vscode-callhierarchy  openTextDocument=never`);
+  // Anonymous usage events and error reports; the editor's telemetry setting turns them off.
+  const telemetry = createTelemetry(vscode, { context, log, clock });
+  context.subscriptions.push(telemetry);
+  telemetry.event('activated');
 
   // Local, so the closures below keep this activation's session after deactivate().
   // Snapshot checkpoints live in the extension's per-workspace storage, never in .git. Without a
@@ -90,7 +101,7 @@ function activate(context, { clock = realClock } = {}) {
   const getScratchDir = () => (context.storageUri
     ? path.join(context.storageUri.fsPath, 'impact-tree-base-documents')
     : path.join(os.tmpdir(), 'impact-tree-base-documents'));
-  const owned = createSession(vscode, { log, review, checkpoint: context.workspaceState.get('impactTree.checkpoint'), getObjectDirs, getTempDir, getScratchDir, clock });
+  const owned = createSession(vscode, { log, review, checkpoint: context.workspaceState.get('impactTree.checkpoint'), getObjectDirs, getTempDir, getScratchDir, clock, telemetry });
   session = owned;
   getSnapshotStore();   // creates the store and sweeps leftover temporary files in the background
   // The last sent round's read-back (F4); created below, once the tree exists.
@@ -438,7 +449,7 @@ function activate(context, { clock = realClock } = {}) {
 
   // The bridge to the user's own agent: a local socket in a private temporary folder, guarded
   // by a token, started with the window and stopped with it. Nothing leaves the machine.
-  const agentBridge = createAgentBridge(vscode, { session: owned, workspaceState: context.workspaceState, log });
+  const agentBridge = createAgentBridge(vscode, { session: owned, workspaceState: context.workspaceState, log, telemetry });
   const agentConnect = createAgentConnect(vscode, { context, log });
   context.subscriptions.push(agentBridge, agentConnect, vscode.commands.registerCommand('impactTree.connectAgent', () => agentConnect.connect()),
     vscode.commands.registerCommand('impactTree.disconnectAgent', () => agentConnect.disconnect()),
@@ -495,7 +506,7 @@ function activate(context, { clock = realClock } = {}) {
     if (agentCards.headChanged(head) && (before || agentShowsAnything())) agentRedraw();
   };
   const analyseWithAgent = createAnalyseWithAgent(vscode, {
-    session: owned, bridge: agentBridge, state: agentCards, chooseAgent, ensureConnected: (id) => agentConnect.ensureConnected(id), log, redraw: agentRedraw,
+    session: owned, bridge: agentBridge, state: agentCards, chooseAgent, ensureConnected: (id) => agentConnect.ensureConnected(id), log, telemetry, redraw: agentRedraw,
   });
   context.subscriptions.push(
     vscode.commands.registerCommand('impactTree.analyseWithAgent', () => analyseWithAgent.run()),
@@ -570,7 +581,7 @@ function activate(context, { clock = realClock } = {}) {
   // Send feedback (F3): the round file, its snapshot as the checkpoint, the hand-off.
   const sendFeedback = createSendFeedback(vscode, {
     drafts: feedbackDrafts, getSnapshotStore, session: owned, workspaceState: context.workspaceState, log,
-    afterSend: () => { refreshRound(); autoCleanup(); }, now,
+    afterSend: () => { refreshRound(); autoCleanup(); }, now, telemetry,
   });
   context.subscriptions.push(
     vscode.commands.registerCommand('impactTree.sendFeedback', () => sendFeedback()),

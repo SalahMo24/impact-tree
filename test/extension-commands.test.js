@@ -282,3 +282,16 @@ test('checkbox refreshes preserve diff commands and diagnostics report the edito
   await assert.rejects(env.run('impactTree.openChange', row), (error) => error === failure);
   assert.match(env.seen.log.at(-1), /failed diff: editor refused the diff/);
 }));
+
+test('telemetry: activation, a failed preview and a finished one, with no PR text or path in any event', () => withEnv(async (env) => {
+  let attempt = 0;
+  env.hooks.remoteResult = (pr) => { if (++attempt === 1) throw new Error('The PR "secret" changed'); return previewResult(pr); };
+  await env.openPullRequest(pull(7), 'preview');
+  await env.refresh();
+  const names = env.seen.telemetry.map((t) => t.name);
+  assert.deepEqual(names, ['activated', '$exception', 'analysis.finished']);
+  assert.deepEqual(env.seen.telemetry[1].data, { source: 'pr', where: 'analysis' });
+  assert.equal(env.seen.telemetry[2].data.source, 'pr');
+  assert.ok(env.seen.log.some((m) => m.startsWith('telemetry (not sent): analysis.finished')), 'a build without a key only logs the event');
+  assert.ok(!JSON.stringify(env.seen.telemetry.map((t) => t.data)).includes('secret'));
+}));

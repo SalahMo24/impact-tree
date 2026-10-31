@@ -388,6 +388,27 @@ checkpoint, from a recorded SHA).
 | `impactTree.agent` | `ask` | the agent that reviews with you, used by **Analyse with my agent** and **Send feedback**: `claude`, `claude-vscode`, `codex`, `cursor-chat`, `chat`, `clipboard`, `save`, or `ask`; switch it with **Choose my agent…** |
 | `impactTree.reviewOrder` | `files` | list the review by `files` or by `cards` (a review without cards is listed by file); also **Order by card** / **Order by file** on the reviewed row |
 
+## Logs and telemetry
+
+**Logs.** **Impact Tree: Show Log** opens the extension's log. It stays on your machine. Use
+**Developer: Set Log Level…** to show more or less, and paste it into a bug report when asked.
+
+**Telemetry.** To find out what breaks and which features are used, Impact Tree sends anonymous
+usage events and error reports to PostHog. It follows the editor's telemetry setting: set
+`telemetry.telemetryLevel` to `off` to send nothing, or `error` to send error reports only.
+
+What is sent:
+
+- the event name (`activated`, `analysis.finished`, `agent.handoff`, `agent.submitted`, `feedback.sent`, or an error report);
+- counts and timings: changed files and symbols, findings, callers not updated, warnings, how long an analysis took, changed symbols per language;
+- the mode (`pr`, `checkpoint`…), the kind of review (local, checked-out PR, preview), and which agent (`claude-vscode`, `chat`…);
+- for an error: its type (for example `TypeError`), where in Impact Tree it happened, and the stack frames inside Impact Tree's own files;
+- the extension, editor and OS versions, and the editor's anonymous machine id.
+
+What is never sent: your code, file or folder names, symbol names, repository, branch or pull
+request names, error messages, or anything an agent writes. [`telemetry.json`](telemetry.json)
+lists every event and property.
+
 ## Performance
 
 Caller resolution needs the language server's project index. That build dominates

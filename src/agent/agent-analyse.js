@@ -15,6 +15,7 @@ const { buildCardFacts, factsFileText, splitDiff } = require('../engine/card-fac
 const { execFile } = require('child_process');
 const { writeFactsFile } = require('./agent-facts-file');
 const { realClock } = require('../engine/clock');
+const { NO_TELEMETRY } = require('../telemetry/telemetry');
 
 /**
  * @param {any} vscode
@@ -22,13 +23,13 @@ const { realClock } = require('../engine/clock');
  *   state: ReturnType<typeof import('./agent-cards-state').createAgentCardsState>,
  *   chooseAgent: (vscode: any, forceAsk: boolean, opts: { title: string, exclude: string[] }) => Promise<{ id: import('./agent-handoff').AgentChoiceId, label: string }|null>,
  *   ensureConnected?: (id: import('./agent-handoff').AgentChoiceId) => Promise<boolean>,
- *   log: (m: string) => void, redraw: () => void, clock?: import('../engine/clock').Clock,
+ *   log: (m: string) => void, telemetry?: { event: (name: string, props?: Record<string, unknown>) => void }, redraw: () => void, clock?: import('../engine/clock').Clock,
  *   writeFacts?: typeof writeFactsFile, diffText?: typeof gitDiffText }} deps
  *   `ensureConnected`: checks the agent can reach submit_cards (and offers to connect it); false: send nothing.
  *   Omitted: no check. `redraw`: refresh the Cards view. `writeFacts`: writes facts too long for the prompt; `diffText`: the review's
  *   whole diff, for the hunks in the facts (both injectable for tests).
  */
-function createAnalyseWithAgent(vscode, { session, bridge, state, chooseAgent, ensureConnected = async () => true, log, redraw, clock = realClock, writeFacts = writeFactsFile, diffText = gitDiffText }) {
+function createAnalyseWithAgent(vscode, { session, bridge, state, chooseAgent, ensureConnected = async () => true, log, telemetry = NO_TELEMETRY, redraw, clock = realClock, writeFacts = writeFactsFile, diffText = gitDiffText }) {
   // Only one hand-off at a time: the picker and the hand-off can take a while.
   let running = false;
 
@@ -86,10 +87,12 @@ function createAnalyseWithAgent(vscode, { session, bridge, state, chooseAgent, e
         sentence = await handOff(vscode, choice.id, { prompt, repoRoot: ctx.repo });
       } catch (e) {
         log(`agent: hand-off to ${choice.id} failed: ${e && /** @type {any} */ (e).message}`);
+        telemetry.event('agent.handoff', { agent: choice.id, ok: false });
         void vscode.window.showErrorMessage(`Impact Tree: it could not be sent to ${choice.label} (${e && /** @type {any} */ (e).message}).`);
         return;
       }
       log(`agent: asked ${choice.id} to refine the cards`);
+      telemetry.event('agent.handoff', { agent: choice.id, ok: true });
       // Several windows may have agents on: the server picks the one that asked last.
       bridge.markAsked();
       if (state.asked(ctx.head, clock.now())) redraw();
