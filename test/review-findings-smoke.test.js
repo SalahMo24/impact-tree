@@ -65,7 +65,9 @@ test('checkout waits for replaced runs even after the newest run finishes', () =
   const checkout = env.openPullRequest(pull(7), 'analyse');
   try {
     await flush(); await flush();
-    assert.deepEqual(env.git.calls, [], 'git must wait for every outstanding analysis');
+    // The agent bridge reads HEAD on its own (`rev-parse HEAD`); that is not part of the checkout.
+    const checkoutCalls = env.git.calls.filter((a) => !(a[0] === 'rev-parse' && a[1] === 'HEAD'));
+    assert.deepEqual(checkoutCalls, [], 'git must wait for every outstanding analysis');
   } finally {
     held.release();
     await older;

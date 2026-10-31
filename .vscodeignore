@@ -30,3 +30,11 @@ node_modules/zod/**/*.d.mts
 node_modules/zod/**/*.d.cts
 node_modules/zod/src/**
 scripts/**
+# Local agent worktrees: full copies of the repository, never part of the extension.
+.claude/**
+# Development-only files. The README's links to docs/ point at GitHub on the store page.
+docs/**
+scripts/**
+eslint-local/**
+eslint.config.js
+jsconfig.json
