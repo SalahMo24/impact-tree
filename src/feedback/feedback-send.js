@@ -38,6 +38,7 @@ const errorText = (e) => (e instanceof Error ? e.message : String(e));
  *   log: (m: string) => void,
  *   afterSend?: () => void,
  *   now?: () => number,
+ *   telemetry?: { event: (name: string, props?: Record<string, unknown>) => void },
  * }} SendDeps
  * `now` dates the round, in epoch milliseconds; omitted: Date.now.
  */
@@ -110,12 +111,15 @@ async function send(vscode, deps, o) {
   await drafts.clear();
 
   let handedOff;
+  let handOffOk = true;
   try {
     handedOff = await handOff(vscode, choice.id, { prompt: promptFor({ relPath: sent.relPath }), repoRoot: repo });
   } catch (e) {
     log(`feedback: hand-off to ${choice.id} failed: ${errorText(e)}`);
     handedOff = `It could not be sent to ${choice.label} (${errorText(e)}); the file is saved.`;
+    handOffOk = false;
   }
+  if (deps.telemetry) deps.telemetry.event('feedback.sent', { agent: choice.id, items: items.length, round: sent.round, ok: handOffOk });
   const checkpointText = sent.checkpointSha
     ? ' Checkpoint set, so the next review shows only what changed since.'
     : ' No checkpoint was recorded (this window has no storage folder), so the next review cannot show what changed since.';

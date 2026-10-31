@@ -38,6 +38,7 @@ function previewFilesOf(result) {
  *   sources: object, prDocuments: object }} opts `githubRemote` is the remote of the GitHub
  *   repository, read when a checkout starts.
  */
+const { analysisFinishedProps } = require('../telemetry/telemetry-events');
 function createPrActions(vscode, session, { log, gh, repoSlug, githubRemote, sources, prDocuments }) {
 
   const { analyzeRemote } = require('../engine/analyze-remote');
@@ -110,6 +111,8 @@ function createPrActions(vscode, session, { log, gh, repoSlug, githubRemote, sou
             // wall-clock: log-only — the duration logged
             + `in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
           result.warnings.forEach((w) => log(`  warn: ${w}`));
+          // wall-clock: log-only — the duration reported
+          if (session.telemetry) session.telemetry.event('analysis.finished', analysisFinishedProps(result, { source: 'pr', durationMs: Date.now() - t0 }));
           const st = result.resolver ? result.resolver.stats() : {};
           if (st.indexedFiles != null) {
             log(`  indexed ${st.indexedFiles} PR file(s); ${st.unknownTarget || 0} symbol(s) not in the index`);

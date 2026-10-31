@@ -1,0 +1,47 @@
+{
+  "events": {
+    "activated": {
+      "owner": "SalahMo24",
+      "comment": "The extension started in a window. No properties beyond the editor's common ones."
+    },
+    "analysis.finished": {
+      "owner": "SalahMo24",
+      "comment": "A review finished. Counts only: no file, symbol or repository names.",
+      "source": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "local, checkout or pr (a preview)." },
+      "mode": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The diff mode, such as pr or checkpoint." },
+      "files": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Changed files.", "isMeasurement": true },
+      "symbols": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Changed symbols.", "isMeasurement": true },
+      "findings": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Findings shown.", "isMeasurement": true },
+      "staleCallers": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Callers not updated.", "isMeasurement": true },
+      "warnings": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Warnings the analysis raised.", "isMeasurement": true },
+      "durationMs": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "How long the analysis took.", "isMeasurement": true },
+      "lang.*": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Changed symbols per language: ts, js, go, py, java or other.", "isMeasurement": true }
+    },
+    "agent.handoff": {
+      "owner": "SalahMo24",
+      "comment": "Analyse with my agent handed the review to an agent.",
+      "agent": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Which agent, from the extension's fixed list." },
+      "ok": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Whether the hand-off worked." }
+    },
+    "agent.submitted": {
+      "owner": "SalahMo24",
+      "comment": "An agent sent a result back. Never its content.",
+      "kind": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The kind of result, from the extension's fixed list." },
+      "stored": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Whether the result was accepted." }
+    },
+    "feedback.sent": {
+      "owner": "SalahMo24",
+      "comment": "A feedback round was saved and handed to an agent. Never its text.",
+      "agent": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Which agent, from the extension's fixed list." },
+      "items": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Feedback items in the round.", "isMeasurement": true },
+      "round": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The round number.", "isMeasurement": true },
+      "ok": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Whether the hand-off worked." }
+    },
+    "$exception": {
+      "owner": "SalahMo24",
+      "comment": "An error. Its type, where it happened and Impact Tree's own stack frames; never the error message.",
+      "where": { "classification": "CallstackOrException", "purpose": "PerformanceAndHealth", "comment": "analysis, cards, or unhandled." },
+      "source": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "For an analysis error: local, checkout or pr." }
+    }
+  }
+}

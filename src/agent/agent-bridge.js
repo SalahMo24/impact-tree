@@ -16,6 +16,7 @@ const path = require('path');
 const crypto = require('crypto');
 const P = require('../mcp/bridge-protocol');
 const { realClock } = require('../engine/clock');
+const { NO_TELEMETRY } = require('../telemetry/telemetry');
 // Built by the MCP server's branch (AI3a); required on first use, so the editor loads without it.
 const AGENT_RESULTS = '../engine/agent-results';
 
@@ -33,13 +34,13 @@ const MAX_ID_LENGTH = 64;
 /**
  * @param {any} vscode
  * @param {{ session: any, workspaceState: { get: (k: string) => any, update: (k: string, v: any) => PromiseLike<void> },
- *   log: (m: string) => void, lockDir?: string, validator?: Validator, readHead?: (repo: string) => Promise<string|null>,
+ *   log: (m: string) => void, telemetry?: { event: (name: string, props?: Record<string, unknown>) => void }, lockDir?: string, validator?: Validator, readHead?: (repo: string) => Promise<string|null>,
  *   clock?: import('../engine/clock').Clock, idleTimeoutMs?: number }} deps
  *   `lockDir`, `validator`, `readHead`, `clock`, `idleTimeoutMs`: seams for tests. The validator defaults to
  *   src/engine/agent-results.js `validateSubmission`, required on first use. `readHead` reads the
  *   repository's HEAD commit, the head of a checkout review (default: `git rev-parse HEAD`).
  */
-function createAgentBridge(vscode, { session, workspaceState, log, lockDir = P.defaultLockDir(), validator, readHead = defaultReadHead,
+function createAgentBridge(vscode, { session, workspaceState, log, telemetry = NO_TELEMETRY, lockDir = P.defaultLockDir(), validator, readHead = defaultReadHead,
   clock = realClock, idleTimeoutMs = IDLE_TIMEOUT_MS }) {
   const emitter = new vscode.EventEmitter();
   const removedEmitter = new vscode.EventEmitter();
@@ -158,6 +159,7 @@ function createAgentBridge(vscode, { session, workspaceState, log, lockDir = P.d
     const answer = await submitChecked(params);
     const outcome = answer.stored ? (answer.reason === 'already stored' ? 'already stored' : 'stored') : `refused: ${answer.reason || 'not accepted'}`;
     log(`agent: ${kind} submitted — ${outcome}`);
+    telemetry.event('agent.submitted', { kind, stored: !!answer.stored });
     return answer;
   }
 

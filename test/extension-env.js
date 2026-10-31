@@ -243,7 +243,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   // `executed` the commands run through `executeCommand`, with their arguments.
   // `statusBars` every status bar item created, in order (`statusBar` is the first, the
   // review progress); `panels` every webview panel created, in order.
-  const seen = { warnings: [], errors: [], infos: [], log: [], status: [], modals: 0, analyze: [], remote: [], remoteSlugs: [], analyzeRemotes: [],
+  const seen = { warnings: [], errors: [], infos: [], log: [], telemetry: [], status: [], modals: 0, analyze: [], remote: [], remoteSlugs: [], analyzeRemotes: [],
     signals: [], remoteImpactPaths: [], cardsCalls: [], progress: [], callerQueries: [], warmUps: [], warmUpAt: [], servicesAsked: [], analyzeOptions: [], contexts: {}, revealed: [], statusBar: null, statusBars: [], panels: [], executed: [],
     focus: 'editor', focusedRow: null, editorSpaces: 0 };
   // `fetchRemotes`: the remote each `fetch` named, in step with `fetches`.
@@ -278,7 +278,9 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
     languages: { registerCodeLensProvider: (selector, provider) => { captured.lenses = { selector, provider }; return disposable(); } },
     authentication: { getSession: async () => authSession },
     window: {
-      createOutputChannel: () => ({ appendLine: (m) => seen.log.push(m), dispose() {}, show() {} }),
+      // A log channel, as the extension asks for: every level lands in seen.log.
+      createOutputChannel: () => ({ appendLine: (m) => seen.log.push(m), info: (m) => seen.log.push(m), warn: (m) => seen.log.push(m),
+        error: (m) => seen.log.push(m), debug: (m) => seen.log.push(m), trace: (m) => seen.log.push(m), dispose() {}, show() {} }),
       registerFileDecorationProvider: (provider) => { captured.decorations = provider; return disposable(); },
       // The view object is kept, so a test reads the message and badge the extension sets on it.
       createTreeView: (id, options) => {
@@ -345,7 +347,13 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
         if (hooks.onCommand) await hooks.onCommand(name, ...args);
         return [];
       } },
-    env: { openExternal: async () => {} },
+    env: { openExternal: async () => {}, machineId: 'test-machine',
+      // Telemetry as the editor runs it with telemetry on: each event lands in seen.telemetry.
+      createTelemetryLogger: (sender) => ({
+        logUsage: (name, data) => { seen.telemetry.push({ name, data }); sender.sendEventData(`SalahMo24.impact-tree/${name}`, data); },
+        logError: (error, data) => { seen.telemetry.push({ name: '$exception', error, data }); sender.sendErrorData(error, data); },
+        dispose() {},
+      }) },
     comments: comments.api,
     workspace: { workspaceFolders: [{ uri: baseStub.Uri.file(dir) }], getConfiguration: () => cfg, onDidChangeWorkspaceFolders: disposable,
       onDidChangeConfiguration: (listener) => { configListeners.push(listener); return disposable(); },
@@ -457,7 +465,7 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
   const reload = () => { for (const n of ['../src/extension', '../src/session/resolver-vscode']) delete require.cache[require.resolve(n)]; };
   reload();
   const extension = require('../src/extension');
-  const context = { subscriptions: [], workspaceState: { get: (k) => memento.get(k), update: async (k, v) => { memento.set(k, v); } } };
+  const context = { extensionMode: 3, subscriptions: [], workspaceState: { get: (k) => memento.get(k), update: async (k, v) => { memento.set(k, v); } } };
   extension.activate(context, clock ? { clock } : undefined);
 
   const run = (name, ...args) => commands.get(name)(...args);
