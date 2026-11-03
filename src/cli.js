@@ -39,7 +39,9 @@ ${Object.entries(MODES).map(([k, v]) => `                         ${k.padEnd(11)
 }
 
 const rankedRoots = Number(arg('roots', 6));
-const repo = path.resolve(arg('repo', process.cwd()));
+// A subfolder resolves to its repository's top folder: git's paths are relative to it.
+const repoArg = path.resolve(arg('repo', process.cwd()));
+const repo = require('./session/repo-root').gitToplevel(repoArg) || repoArg;
 // wall-clock: log-only — the CLI's elapsed time, printed at the end
 const t0 = Date.now();
 

@@ -26,6 +26,7 @@ const path = require('node:path');
 const SUITE = [
   { file: 'test/loading.test.js', tier: 'full' },  // 6.5s
   { file: 'test/language-registry.test.js', tier: 'quick' },  // 0.1s
+  { file: 'test/repo-root.test.js', tier: 'quick' },
   { file: 'test/typescript-provider.test.js', tier: 'full' },  // 8.2s
   { file: 'test/go-rules.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/python-rules.test.js', tier: 'quick' },  // 0.1s
