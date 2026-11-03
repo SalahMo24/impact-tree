@@ -235,10 +235,14 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     }
   }
 
+  const resolveRepoRoot = require('./repo-root').cachedRepoRoot();
+  const folderPaths = () => (vscode.workspace.workspaceFolders || []).map((/** @type {any} */ w) => w.uri.fsPath);
+
+  // The repository's top folder, not the workspace folder: see repo-root.js.
   function repoRoot() {
-    const f = vscode.workspace.workspaceFolders;
-    if (!f || !f.length) throw new Error('Impact Tree: no workspace folder open');
-    return f[0].uri.fsPath;
+    const root = resolveRepoRoot(folderPaths());
+    if (!root) throw new Error('Impact Tree: no workspace folder open');
+    return root;
   }
 
   /**
@@ -248,10 +252,9 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
    */
   let repoStatusCache = { stamp: null, value: null };
   function repoStatus() {
-    const folders = vscode.workspace.workspaceFolders;
-    if (!folders || !folders.length) return 'noFolder';
+    const folder = resolveRepoRoot(folderPaths());
+    if (!folder) return 'noFolder';
     const { makeGit, repoStamp } = require('../engine/git');
-    const folder = folders[0].uri.fsPath;
     const stamp = `${folder}|${repoStamp(folder)}`;
     if (repoStatusCache.stamp === stamp) return repoStatusCache.value;
     const inside = makeGit(folder).tryRaw(['rev-parse', '--is-inside-work-tree']);
