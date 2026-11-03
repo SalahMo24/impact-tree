@@ -47,6 +47,7 @@ const { createSendFeedback } = require('./feedback/feedback-send');
 const { createAutoCleanup, createCleanupCommand } = require('./storage/storage-cleanup-run');
 const { realClock } = require('./engine/clock');
 const { createTelemetry } = require('./telemetry/telemetry');
+const { createStarPrompt } = require('./session/star-prompt');
 
 // The packaged version, so the exthost log proves which build is actually loaded instead
 // of us inferring it from timestamps.
@@ -101,7 +102,9 @@ function activate(context, { clock = realClock } = {}) {
   const getScratchDir = () => (context.storageUri
     ? path.join(context.storageUri.fsPath, 'impact-tree-base-documents')
     : path.join(os.tmpdir(), 'impact-tree-base-documents'));
-  const owned = createSession(vscode, { log, review, checkpoint: context.workspaceState.get('impactTree.checkpoint'), getObjectDirs, getTempDir, getScratchDir, clock, telemetry });
+  const owned = createSession(vscode, { log, review, checkpoint: context.workspaceState.get('impactTree.checkpoint'), getObjectDirs, getTempDir, getScratchDir, clock, telemetry,
+    // After the second review, asks once for a GitHub star.
+    onReviewFinished: createStarPrompt(vscode, { globalState: context.globalState, log, telemetry }).reviewFinished });
   session = owned;
   getSnapshotStore();   // creates the store and sweeps leftover temporary files in the background
   // The last sent round's read-back (F4); created below, once the tree exists.

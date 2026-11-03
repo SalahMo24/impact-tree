@@ -113,6 +113,7 @@ function createPrActions(vscode, session, { log, gh, repoSlug, githubRemote, sou
           result.warnings.forEach((w) => log(`  warn: ${w}`));
           // wall-clock: log-only — the duration reported
           if (session.telemetry) session.telemetry.event('analysis.finished', analysisFinishedProps(result, { source: 'pr', durationMs: Date.now() - t0 }));
+          if (session.onReviewFinished) session.onReviewFinished(`v2:${repo}:pr:${pr.number}`);
           const st = result.resolver ? result.resolver.stats() : {};
           if (st.indexedFiles != null) {
             log(`  indexed ${st.indexedFiles} PR file(s); ${st.unknownTarget || 0} symbol(s) not in the index`);

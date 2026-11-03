@@ -62,7 +62,8 @@ function untilCancelled(signal, promise) {
  *   the logged durations, and is handed to the resolver and the cross-file caller pool.
  */
 function createSession(vscode, { log: logToChannel, review, checkpoint, indexingTickMs = 1000, callerRetryWaitMs = 120000,
-  getObjectDirs = () => [], getTempDir = () => undefined, getScratchDir = () => null, clock = realClock, telemetry = NO_TELEMETRY }) {
+  getObjectDirs = () => [], getTempDir = () => undefined, getScratchDir = () => null, clock = realClock, telemetry = NO_TELEMETRY,
+  onReviewFinished = () => {} }) {
   if (!Number.isSafeInteger(callerRetryWaitMs) || callerRetryWaitMs < 1 || callerRetryWaitMs > 120000) throw new RangeError('callerRetryWaitMs must be 1..120000');
   // Required here rather than at module load: tests intercept analyze/git per activate.
   const { analyze } = require('../engine/analyze');
@@ -83,6 +84,8 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     review,
     // Anonymous usage events and error reports (src/telemetry/telemetry.js); pr-actions reads it too.
     telemetry,
+    // Called with the review key once a review's analysis has finished (src/session/star-prompt.js).
+    onReviewFinished,
     decorate: null,
     provider: null,
     previewPullRequest: null,
@@ -516,8 +519,9 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     }
   }
 
+  // Returns the review key, or null without review state.
   function configureLocalReview(source, repo, result, base) {
-    if (!review) return;
+    if (!review) return null;
     const { makeGit } = require('../engine/git');
     const { createReviewIdentity, localRevisions } = require('./review-identity');
     // A review without TypeScript or JavaScript files does not load the compiler here; the
@@ -527,6 +531,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     const identity = createReviewIdentity(ts, repo, localRevisions(repo, result, makeGit(repo, { objectDirs: getObjectDirs() })));
     const { key, replaces, branch } = reviewKeys(source, repo, result, base);
     review.configure(key, identity, { migrateFrom: replaces, branch });
+    return key;
   }
 
   // Which review the result belongs to, and the key it replaces. A checked-out PR is
@@ -690,7 +695,8 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     if (!completeAnalysisRun(run, { result, repo, expansionResolver })) return;
     logLocalRun(result, repo, tStart);
     if (!retry) telemetry.event('analysis.finished', analysisFinishedProps(result, { source: source.kind, durationMs: clock.now() - tStart }));
-    configureLocalReview(source, repo, result, base);
+    const reviewKey = configureLocalReview(source, repo, result, base);
+    if (!retry && reviewKey) onReviewFinished(reviewKey);
     const stale = result.findings.reduce((n, f) => n + f.staleCallers, 0);
     vscode.window.setStatusBarMessage(
       `Impact Tree: ${result.findings.length} finding(s), ${stale} caller(s) not updated, base ${result.base.ref}`, 8000);

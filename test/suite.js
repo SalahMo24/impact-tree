@@ -117,6 +117,7 @@ const SUITE = [
   { file: 'test/review-comments.test.js', tier: 'quick' },  // 1.2s
   { file: 'test/suggestions.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/feedback-drafts.test.js', tier: 'quick' },  // 0.2s
+  { file: 'test/star-prompt.test.js', tier: 'quick' },
   { file: 'test/feedback-comments.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/feedback-tree.test.js', tier: 'quick' },  // 4.5s
   { file: 'test/review-threads.test.js', tier: 'quick' },  // 0.2s
