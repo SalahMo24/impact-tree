@@ -37,6 +37,11 @@
       "round": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The round number.", "isMeasurement": true },
       "ok": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Whether the hand-off worked." }
     },
+    "starPrompt.answered": {
+      "owner": "SalahMo24",
+      "comment": "The one-time request to star the repository on GitHub was answered or closed.",
+      "answer": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "star, no, or dismissed." }
+    },
     "$exception": {
       "owner": "SalahMo24",
       "comment": "An error. Its type, where it happened and Impact Tree's own stack frames; never the error message.",

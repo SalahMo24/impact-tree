@@ -231,6 +231,10 @@ until you mark it reviewed, and its tooltip and Details say why.
 
 - Open **Impact Tree** in the Activity Bar. The **Review** view lists local change
   modes and, after signing in to GitHub, open pull requests for the workspace repository.
+- **Search pull requests…** (the search button on the Review view, the first row under
+  **Pull requests**, or `⇧⌥P`) finds a PR by `#number`, title, or author, including PRs in
+  collapsed groups, with the ones you opened recently first. A number that is not in the
+  loaded list (closed, merged, or past the first 100 open PRs) can be looked up on GitHub.
 - Review local changes in **Branch vs base**, **Branch + uncommitted**, **Uncommitted
   (agent)**, or **Since checkpoint** mode. **Uncommitted (agent)** is useful for reviewing
   edits made by a coding agent.
@@ -244,9 +248,9 @@ until you mark it reviewed, and its tooltip and Details say why.
   view shows that row alone, with **Review something else…** above it to bring the pull
   requests and local modes back (the next review of another source hides them again); so a
   change sits two levels deep, not eight. The reviewed row carries
-  the review's controls (Open review, the tree/list toggle, Show only needs attention,
-  Refresh, **Find the tests that cover this review** until that search has run, Submit
-  review or Send feedback; the rest in its right-click menu), and its hover
+  the review's controls (Open review, the agent button, Refresh, **Find the tests that
+  cover this review** until that search has run, Submit review or Send feedback; Show only
+  needs attention and the rest in its `…` menu), and its hover
   lists the review's notices, such as a fetched base, files not analysed or a Preview's
   limits (a Preview says `preview` on the row). A change whose tests were not searched says
   so in its hover, not in a row of its own. Clicking it
@@ -414,9 +418,10 @@ usage events and error reports to PostHog. It follows the editor's telemetry set
 
 What is sent:
 
-- the event name (`activated`, `analysis.finished`, `agent.handoff`, `agent.submitted`, `feedback.sent`, or an error report);
+- the event name (`activated`, `analysis.finished`, `agent.handoff`, `agent.submitted`, `feedback.sent`, `starPrompt.answered`, or an error report);
 - counts and timings: changed files and symbols, findings, callers not updated, warnings, how long an analysis took, changed symbols per language;
 - the mode (`pr`, `checkpoint`…), the kind of review (local, checked-out PR, preview), and which agent (`claude-vscode`, `chat`…);
+- for the GitHub star request: whether you chose star, no thanks, or closed it;
 - for an error: its type (for example `TypeError`), where in Impact Tree it happened, and the stack frames inside Impact Tree's own files;
 - the extension, editor and OS versions, and the editor's anonymous machine id.
 
