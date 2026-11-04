@@ -252,12 +252,11 @@ until you mark it reviewed, and its tooltip and Details say why.
   so in its hover, not in a row of its own. Clicking it
   again still offers preview, check out or open on GitHub. Other pull request rows have no
   hover. **Details** below shows your review progress and, for a change that needs a look,
-  why. Changed files are listed worst first; **View as tree** (or
-  `impactTree.fileListLayout`) folds them into their folders, with folders and files still
+  why. Changed files are shown in their folders, with folders and files
   ordered worst first at every level and a folder ranked by its worst file (a folder has no
   checkbox; its files keep theirs). Changed lines in no function are a **Top-level changes**
   row, last under their file; a file with nothing else is that one row. Track progress
-  by marking changes reviewed, and filter for what needs attention (callers not updated, or
+  by marking changes reviewed, and filter (the reviewed row's `…` menu) for what needs attention (callers not updated, or
   callers to check by hand), unreviewed changes, or unresolved conversations. Progress
   counts only the changes that need attention: the view reads `2 need attention · 3 of 5
   looked at`, and the status bar and Details say the same. A review where nothing needs
@@ -299,7 +298,7 @@ reviews of a checked-out branch take part; a pull request preview does not.
 
 - **Cards** group a review's changes into related cards, with the entry points each card
   reaches. The Review view lists them in the **By card** order: **Order by card** (the layers
-  icon on the reviewed row, next to View as tree; `impactTree.reviewOrder`, kept for the
+  icon on the reviewed row; `impactTree.reviewOrder`, kept for the
   workspace) draws one row per card, a sparkle for your agent's card and layers for the engine's.
   A card row reads `4 changes · 2 need attention`; cards that hold a change that needs
   attention come first, then the larger ones, sweeps last; under a card its changes, worst
@@ -320,10 +319,12 @@ reviews of a checked-out branch take part; a pull request preview does not.
   `submit_cards` call: cards in reading order and, for each change, whether its behaviour
   changed, may change, is new or is the same, with before / after / when and what it
   affects, plus at most five changes that need your attention.
-- **Choose my agent…** (the reviewed row's `…` menu, or the command palette) switches the
-  agent that reviews with you: Claude Code or Codex in a terminal, Claude Code's VS Code
-  panel, Cursor's chat, the editor's chat, the clipboard, or **Ask each time**. The current
-  one is marked; the pick is saved in `impactTree.agent` and used by **Analyse with my agent**
+- **Choose my agent…** (the agent button on the reviewed row, its `…` menu, or the command
+  palette) switches the agent that reviews with you. The button shows the current agent's
+  icon (Claude Code, Codex, Cursor, Copilot, a clipboard for no agent). The picker groups
+  the choices by agent, with how the prompt reaches it under each: Claude Code in a terminal
+  or its VS Code panel, Codex in a terminal, Cursor's chat, the editor's chat, copying the
+  prompt, or **Ask each time**. The current one is marked; the pick is saved in `impactTree.agent` and used by **Analyse with my agent**
   and **Send feedback**.
 - The agent's one-line note shows on the change rows, after the engine's own text, and a change row's icon is the agent's own: a pencil for changed, a
   question mark for may change, a plus for new, none for same behaviour. The changes the agent

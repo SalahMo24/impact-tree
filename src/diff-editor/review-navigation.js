@@ -107,11 +107,6 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
 
   /** @param {'attention'|'unreviewed'|'threads'} name */
   const toggle = (name) => () => provider.toggleFilter(name);
-  // The layout is a setting, as the GitHub Pull Requests extension's is, so it is the same
-  // in every window and the extension's own configuration listener repaints the view.
-  /** @param {'flat'|'tree'} layout */
-  const setLayout = (layout) => () => vscode.workspace.getConfiguration('impactTree')
-    .update('fileListLayout', layout, vscode.ConfigurationTarget.Global);
   // The order is a workspace setting (`impactTree.reviewOrder`): the review is the same rows
   // in either, so it follows the workspace; the extension's configuration listener repaints.
   /** @param {'files'|'cards'} order */
@@ -121,7 +116,6 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
   return {
     disposables: [
       bar,
-      on('impactTree.viewAsTree', setLayout('tree')), on('impactTree.viewAsList', setLayout('flat')),
       on('impactTree.orderByCards', setOrder('cards')), on('impactTree.orderByFiles', setOrder('files')),
       // Each filter is two commands, one per state of its title icon: a command contribution
       // cannot show on/off by itself, so package.json shows the one that matches the filter.
@@ -135,7 +129,6 @@ function createReviewNavigation(vscode, { provider, view, platform = process.pla
     update() {
       const counts = provider.reviewCounts();
       setContext('impactTree.filter', provider.getFilter());
-      setContext('impactTree.fileListLayout', provider.getLayout());
       // The order the view draws (`cards` only while the review has cards), and whether it has any.
       setContext('impactTree.reviewOrder', provider.getOrder());
       setContext('impactTree.hasCards', provider.hasCards());

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Agent button** on the reviewed row: it shows the current agent's icon (Claude Code,
+  Codex, Cursor, Copilot, or a clipboard when prompts are only copied) and opens **Choose my
+  agent…**. The picker now groups the choices by agent, with how the prompt reaches it
+  (terminal, panel, chat, clipboard) under each.
+- Changed files are always shown in their folders: **View as tree** / **View as list** and
+  the `impactTree.fileListLayout` setting are gone.
+- **Show only needs attention** moved from the reviewed row's buttons to its `…` menu.
+
 ## 1.0.0 — 2026-10-31
 
 First release on the VS Code Marketplace and Open VSX.

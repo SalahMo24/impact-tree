@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 const path = require('path');
 const { localResult, finding, withEnv } = require('./extension-env');
 const { nextKeyHint, statusBarText } = require('../src/diff-editor/review-navigation');
+const { AGENT_BUTTONS } = require('../src/agent/agent-handoff');
 
 const SITE = { start: 22, end: 25 };
 const caller = (file) => ({ file, pos: 7, label: 'user', test: false, callSites: [SITE], sites: 1,
@@ -257,7 +258,7 @@ test('next unreviewed with no review shown does nothing', () => withEnv(async (e
 
 test('package.json contributes the commands, the keybinding and the palette gates', () => withEnv(async (env) => {
   const { contributes } = require('../package.json');
-  const mine = ['filterAttention', 'filterAttentionOn', 'filterUnreviewed', 'filterUnreviewedOn', 'filterThreads', 'filterThreadsOn', 'nextUnreviewed', 'previousUnreviewed', 'viewAsTree', 'viewAsList']
+  const mine = ['filterAttention', 'filterAttentionOn', 'filterUnreviewed', 'filterUnreviewedOn', 'filterThreads', 'filterThreadsOn', 'nextUnreviewed', 'previousUnreviewed']
     .map((c) => `impactTree.${c}`);
   for (const id of mine) {
     assert.ok(contributes.commands.some((c) => c.command === id && c.icon), `${id} is contributed with an icon`);
@@ -271,21 +272,24 @@ test('package.json contributes the commands, the keybinding and the palette gate
   assert.equal(contributes.commands.find((c) => c.command === 'impactTree.nextUnreviewed').title, 'Impact Tree: Go to next unreviewed change');
   assert.equal(env.seen.statusBar.tooltip, 'Go to the next unreviewed change');
   // The review's controls are on the reviewed row of the Review view (review-sidebar.js): inline
-  // the review tab, the layout toggle, the attention filter, refresh and the submit actions
-  // ("Submit review…" for a PR, Send feedback with drafts); the rest in its context menu.
+  // the review tab, the order, refresh, the submit actions ("Submit review…" for a PR, Send
+  // feedback with drafts), Analyse and the agent button; the rest in its context menu.
+  // Changed files are always in their folders, so there is no layout toggle.
   const HOST = 'view == impactTree.sources && viewItem == reviewHost';
   const host = contributes.menus['view/item/context'].filter((m) => m.when.startsWith(HOST));
   const groupOf = (id) => host.filter((m) => m.command === id).map((m) => m.group);
   assert.deepEqual(host.filter((m) => m.group.startsWith('inline')).map((m) => m.command).sort(),
-    ['impactTree.analyseWithAgent', 'impactTree.computeTestReach', 'impactTree.filterAttention', 'impactTree.filterAttentionOn', 'impactTree.openReview', 'impactTree.orderByCards', 'impactTree.orderByFiles',
-      'impactTree.refresh', 'impactTree.sendFeedback', 'impactTree.submitReview', 'impactTree.submitReviewUnavailable', 'impactTree.viewAsList', 'impactTree.viewAsTree']);
+    ['impactTree.analyseWithAgent', 'impactTree.chooseAgent', ...AGENT_BUTTONS.map((id) => `impactTree.chooseAgent.${id}`), 'impactTree.computeTestReach',
+      'impactTree.openReview', 'impactTree.orderByCards', 'impactTree.orderByFiles',
+      'impactTree.refresh', 'impactTree.sendFeedback', 'impactTree.submitReview', 'impactTree.submitReviewUnavailable'].sort());
+  assert.equal(contributes.commands.some((c) => /^impactTree\.viewAs/.test(c.command)), false, 'no layout toggle');
+  assert.equal('impactTree.fileListLayout' in contributes.configuration.properties, false, 'no layout setting');
   // L4: the order next to the layout toggle (one of the two shows, by the order the view draws; By card only with cards;
   // the layout toggle is the Files order's), the agent's entries behind the setting and a result, the housekeeping in the menu.
   assert.equal(host.find((m) => m.command === 'impactTree.orderByCards').when, `${HOST} && impactTree.hasCards && impactTree.reviewOrder != cards`);
   assert.equal(host.find((m) => m.command === 'impactTree.orderByFiles').when, `${HOST} && impactTree.reviewOrder == cards`);
   assert.deepEqual(groupOf('impactTree.orderByCards').sort(), ['0_order@1', 'inline@2']);
   assert.deepEqual(groupOf('impactTree.orderByFiles').sort(), ['0_order@1', 'inline@2']);
-  assert.match(host.find((m) => m.command === 'impactTree.viewAsTree').when, /&& impactTree\.reviewOrder != cards$/);
   assert.deepEqual(groupOf('impactTree.analyseWithAgent').sort(), ['1_mode@4', 'inline@8']);
   assert.deepEqual(groupOf('impactTree.undoAgentResult'), ['1_mode@5']);
   assert.deepEqual([...groupOf('impactTree.toggleAgentCards'), ...groupOf('impactTree.showAgentCards')], ['1_mode@6', '1_mode@6']);
@@ -300,21 +304,17 @@ test('package.json contributes the commands, the keybinding and the palette gate
   for (const m of reach) assert.equal(m.when, `${HOST} && impactTree.state == shown && !impactTree.testReachComputed`);
   const reachCommand = contributes.commands.find((c) => c.command === 'impactTree.computeTestReach');
   assert.deepEqual([reachCommand.title, reachCommand.icon], ['Impact Tree: Find the tests that cover this review', '$(beaker)']);
-  // one of the two layout icons shows, by the setting
-  assert.equal(host.find((m) => m.command === 'impactTree.viewAsTree').when, `${HOST} && impactTree.fileListLayout != tree && impactTree.reviewOrder != cards`);
-  assert.equal(host.find((m) => m.command === 'impactTree.viewAsList').when, `${HOST} && impactTree.fileListLayout == tree && impactTree.reviewOrder != cards`);
   // Send feedback shows only with drafts; holding ⌥ turns it into "Send feedback to…".
   assert.equal(host.find((m) => m.command === 'impactTree.sendFeedback').when, `${HOST} && impactTree.hasFeedbackDrafts`);
   assert.equal(host.find((m) => m.command === 'impactTree.sendFeedback').alt, 'impactTree.sendFeedbackTo');
   const order = (id) => Number(host.find((m) => m.command === id).group.split('@')[1]);
-  assert.ok(order('impactTree.openReview') < order('impactTree.viewAsTree') && order('impactTree.viewAsTree') < order('impactTree.refresh')
-    && order('impactTree.refresh') < order('impactTree.submitReview'), 'review tab, layout, filter, refresh, then submit');
-  assert.equal(order('impactTree.viewAsList'), order('impactTree.viewAsTree'), 'the two layout icons take the same slot');
+  assert.ok(order('impactTree.openReview') < order('impactTree.orderByCards') && order('impactTree.orderByCards') < order('impactTree.refresh')
+    && order('impactTree.refresh') < order('impactTree.submitReview'), 'review tab, order, refresh, then submit');
   // context menu: filters, then previous/next, then mode, help (legend first), progress
-  assert.deepEqual(['filterUnreviewed', 'filterUnreviewedOn', 'filterThreads', 'filterThreadsOn',
+  assert.deepEqual(['filterAttention', 'filterAttentionOn', 'filterUnreviewed', 'filterUnreviewedOn', 'filterThreads', 'filterThreadsOn',
     'previousUnreviewed', 'nextUnreviewed', 'selectMode', 'setCheckpoint', 'showLegend', 'showLog', 'clearReviewed', 'cleanUpStoredData']
     .map((c) => groupOf(`impactTree.${c}`)[0]),
-  ['0_filter@2', '0_filter@2', '0_filter@3', '0_filter@3', '0_go@1', '0_go@2', '1_mode@1', '1_mode@2', '2_help@1', '2_help@2', '3_progress@1', '3_progress@2']);
+  ['0_filter@1', '0_filter@1', '0_filter@2', '0_filter@2', '0_filter@3', '0_filter@3', '0_go@1', '0_go@2', '1_mode@1', '1_mode@2', '2_help@1', '2_help@2', '3_progress@1', '3_progress@2']);
   // The view's own title keeps what works without a review row: previous/next, help, and the PR list's refresh.
   assert.deepEqual(contributes.menus['view/title'].filter((m) => m.when === 'view == impactTree.sources').map((m) => m.command).sort(),
     ['impactTree.nextUnreviewed', 'impactTree.previousUnreviewed', 'impactTree.refreshPullRequests', 'impactTree.showLegend', 'impactTree.showLog']);
@@ -372,24 +372,11 @@ test('going to a row by its tree id reveals it as next unreviewed does; an unkno
 // The entry of a review control: on the reviewed row of the Review view.
 const title0 = (contributes, id) => contributes.menus['view/item/context'].find((m) => m.command === id && /viewItem == reviewHost/.test(m.when));
 
-test('View as tree writes the layout setting; the setting folds the view and sets the context key', () => withEnv(async (env) => {
+test('changed files are always shown in their folders', () => withEnv(async (env) => {
   useResult(env);
   await env.refresh();
-  assert.equal(env.seen.contexts['impactTree.fileListLayout'], 'flat');
-  assert.deepEqual((await env.tree().getChildren()).map((r) => r.type), ['reviewFile', 'reviewFile', 'file']);
-  const updates = [];
-  env.vscode.workspace.getConfiguration('impactTree').update = async (name, value, target) => { updates.push([name, value, target]); };
-  await env.run('impactTree.viewAsTree');
-  assert.deepEqual(updates, [['fileListLayout', 'tree', 1]], 'the command only writes the setting, for every window');
-  env.changeSetting('fileListLayout', 'tree');
-  assert.equal(env.seen.contexts['impactTree.fileListLayout'], 'tree');
-  const roots = await env.tree().getChildren();
-  assert.deepEqual(roots.map((r) => [r.type, r.label]), [['reviewFile', 'a.ts'], ['reviewFile', 'b.ts'], ['file', 'notes.md']],
-    'every file is at the repository root here, so the tree has no folder to show');
-  await env.run('impactTree.viewAsList');
-  assert.deepEqual(updates.at(-1), ['fileListLayout', 'flat', 1]);
-  env.changeSetting('fileListLayout', 'flat');
-  assert.equal(env.seen.contexts['impactTree.fileListLayout'], 'flat');
+  assert.equal('impactTree.fileListLayout' in env.seen.contexts, false, 'no layout context key');
+  assert.equal(env.tree().getLayout(), 'tree');
 }));
 
 // ---- nothing needs attention (gate G14) ------------------------------------------------
