@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.3 — 2026-11-04
 
 - **Search pull requests…** (the search button on the Review view, the first row under
   Pull requests, or `Shift+Alt+P`): find an open PR by `#number`, title, or author,
@@ -13,6 +13,18 @@
 - Changed files are always shown in their folders: **View as tree** / **View as list** and
   the `impactTree.fileListLayout` setting are gone.
 - **Show only needs attention** moved from the reviewed row's buttons to its `…` menu.
+- After your second review, a notification asks once whether you'd star Impact Tree on
+  GitHub. Either answer ends it for good; closing it asks again after five more reviews.
+
+## 1.0.2 — 2026-11-03
+
+No user-facing changes.
+
+## 1.0.1 — 2026-11-03
+
+- **Fixed:** a `.code-workspace` or dev container that opened a subfolder of the repository
+  showed every changed function as deleted. Impact Tree now analyses the repository's top
+  folder, and the CLI's `--repo` does the same.
 
 ## 1.0.0 — 2026-10-31
 
