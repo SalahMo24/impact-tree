@@ -28,6 +28,7 @@ const { createAgentConnect } = require('./agent/agent-connect-commands');
 const { createAgentCardsState } = require('./agent/agent-cards-state');
 const { createAnalyseWithAgent } = require('./agent/agent-analyse');
 const { chooseAgent, chooseReviewAgent } = require('./feedback/feedback-send');
+const { AGENT_BUTTONS, agentButtonFor } = require('./agent/agent-handoff');
 const { createSnapshotStoreGetter } = require('./storage/snapshot-storage');
 const { createPrActions } = require('./session/pr-actions');
 const { createPullRequestReviewStore, reviewTargetOf } = require('./github/pr-review-store');
@@ -152,7 +153,8 @@ function activate(context, { clock = realClock } = {}) {
     getFeedbackDrafts: () => feedbackDrafts.list(),
     getFeedbackRound: () => (feedbackRound ? feedbackRound.current() : null),
     // Read on each root read; a value that is not `tree` is the flat list (the default).
-    getLayout: () => (vscode.workspace.getConfiguration('impactTree').get('fileListLayout', 'flat') === 'tree' ? 'tree' : 'flat'),
+    // Changed files are always shown in their folders.
+    getLayout: () => 'tree',
   });
   session.provider = provider;
   context.subscriptions.push(provider, decorate);
@@ -232,7 +234,9 @@ function activate(context, { clock = realClock } = {}) {
       // L4 hangs the review row's agent entries on these: a stored result for the shown head, and
       // whether the engine's cards are shown although there is one.
       'impactTree.hasAgentResult': agentReviewNow().hasResult,
-      'impactTree.agentShowsEngine': agentReviewNow().showEngine };
+      'impactTree.agentShowsEngine': agentReviewNow().showEngine,
+      // The reviewed row's agent button: which agent's icon it shows (package.json).
+      'impactTree.agentButton': agentButtonFor(vscode.workspace.getConfiguration('impactTree').get('agent', 'ask'), vscode.env && vscode.env.appName) };
     for (const [key, value] of Object.entries(keys)) {
       if (contextSent.get(key) === value) continue;
       contextSent.set(key, value);
@@ -433,11 +437,9 @@ function activate(context, { clock = realClock } = {}) {
     }
   };
 
-  // The layout toggle writes the setting; the view follows it here, so a change made in
-  // the settings editor or another window repaints the same way.
+  // The order the review is drawn in follows its setting, so a change made in the settings
+  // editor or another window repaints the same way.
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
-    if (e.affectsConfiguration('impactTree.fileListLayout')) provider.refresh('layout');
-    // The order the review is drawn in.
     if (e.affectsConfiguration('impactTree.reviewOrder')) provider.refresh('order');
   }));
   context.subscriptions.push(owned.onDidChangeCards(() => provider.refresh('order')));
@@ -456,7 +458,9 @@ function activate(context, { clock = realClock } = {}) {
   const agentConnect = createAgentConnect(vscode, { context, log });
   context.subscriptions.push(agentBridge, agentConnect, vscode.commands.registerCommand('impactTree.connectAgent', () => agentConnect.connect()),
     vscode.commands.registerCommand('impactTree.disconnectAgent', () => agentConnect.disconnect()),
-    vscode.commands.registerCommand('impactTree.chooseAgent', () => chooseReviewAgent(vscode)));
+    vscode.commands.registerCommand('impactTree.chooseAgent', () => chooseReviewAgent(vscode)),
+    ...AGENT_BUTTONS.map((id) => vscode.commands.registerCommand(`impactTree.chooseAgent.${id}`, () => chooseReviewAgent(vscode))),
+    vscode.workspace.onDidChangeConfiguration((e) => { if (e.affectsConfiguration('impactTree.agent')) publishContext(); }));
   agentBridge.start().catch((e) => log(`agent bridge: ${e && e.message}`));
   // The launcher and the Copilot provider are offered for as long as the window is open.
   agentConnect.prepareLauncher();

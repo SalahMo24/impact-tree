@@ -131,16 +131,6 @@
         "icon": "$(arrow-up)"
       },
       {
-        "command": "impactTree.viewAsTree",
-        "title": "Impact Tree: View as tree",
-        "icon": "$(list-tree)"
-      },
-      {
-        "command": "impactTree.viewAsList",
-        "title": "Impact Tree: View as list",
-        "icon": "$(list-flat)"
-      },
-      {
         "command": "impactTree.orderByCards",
         "title": "Impact Tree: Order by card",
         "icon": "$(layers)"
@@ -402,6 +392,56 @@
         "title": "Choose my agent…",
         "category": "Impact Tree",
         "icon": "$(hubot)"
+      },
+      {
+        "command": "impactTree.chooseAgent.claude",
+        "title": "Your agent: Claude Code in a terminal. Choose another…",
+        "icon": {
+          "light": "images/agents/claude.svg",
+          "dark": "images/agents/claude.svg"
+        }
+      },
+      {
+        "command": "impactTree.chooseAgent.claude-vscode",
+        "title": "Your agent: Claude Code in its panel. Choose another…",
+        "icon": {
+          "light": "images/agents/claude.svg",
+          "dark": "images/agents/claude.svg"
+        }
+      },
+      {
+        "command": "impactTree.chooseAgent.codex",
+        "title": "Your agent: Codex in a terminal. Choose another…",
+        "icon": {
+          "light": "images/agents/codex.svg",
+          "dark": "images/agents/codex.svg"
+        }
+      },
+      {
+        "command": "impactTree.chooseAgent.cursor-chat",
+        "title": "Your agent: Cursor chat. Choose another…",
+        "icon": {
+          "light": "images/agents/cursor-light.svg",
+          "dark": "images/agents/cursor-dark.svg"
+        }
+      },
+      {
+        "command": "impactTree.chooseAgent.chat-cursor",
+        "title": "Your agent: Cursor chat (editor chat). Choose another…",
+        "icon": {
+          "light": "images/agents/cursor-light.svg",
+          "dark": "images/agents/cursor-dark.svg"
+        }
+      },
+      {
+        "command": "impactTree.chooseAgent.chat-copilot",
+        "title": "Your agent: Copilot chat. Choose another…",
+        "icon": "$(copilot)"
+      },
+      {
+        "command": "impactTree.chooseAgent.clipboard",
+        "title": "Your agent: no agent; prompts are copied. Choose another…",
+        "icon": "$(copy)"
       },
       {
         "command": "impactTree.openReview",
@@ -726,6 +766,34 @@
         {
           "command": "impactTree.showAgentCards",
           "when": "false"
+        },
+        {
+          "command": "impactTree.chooseAgent.claude",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.chooseAgent.claude-vscode",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.chooseAgent.codex",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.chooseAgent.cursor-chat",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.chooseAgent.chat-cursor",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.chooseAgent.chat-copilot",
+          "when": "false"
+        },
+        {
+          "command": "impactTree.chooseAgent.clipboard",
+          "when": "false"
         }
       ],
       "editor/context": [
@@ -850,12 +918,12 @@
         {
           "command": "impactTree.filterAttention",
           "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.filter != attention",
-          "group": "inline@3"
+          "group": "0_filter@1"
         },
         {
           "command": "impactTree.filterAttentionOn",
           "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.filter == attention",
-          "group": "inline@3"
+          "group": "0_filter@1"
         },
         {
           "command": "impactTree.filterUnreviewed",
@@ -886,16 +954,6 @@
           "command": "impactTree.nextUnreviewed",
           "when": "view == impactTree.sources && viewItem == reviewHost",
           "group": "0_go@2"
-        },
-        {
-          "command": "impactTree.viewAsTree",
-          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.fileListLayout != tree && impactTree.reviewOrder != cards",
-          "group": "inline@2"
-        },
-        {
-          "command": "impactTree.viewAsList",
-          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.fileListLayout == tree && impactTree.reviewOrder != cards",
-          "group": "inline@2"
         },
         {
           "command": "impactTree.computeTestReach",
@@ -1062,6 +1120,46 @@
           "command": "impactTree.analyseWithAgent",
           "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.hasCards",
           "group": "inline@8"
+        },
+        {
+          "command": "impactTree.chooseAgent",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.agentButton == ask",
+          "group": "inline@9"
+        },
+        {
+          "command": "impactTree.chooseAgent.claude",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.agentButton == claude",
+          "group": "inline@9"
+        },
+        {
+          "command": "impactTree.chooseAgent.claude-vscode",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.agentButton == claude-vscode",
+          "group": "inline@9"
+        },
+        {
+          "command": "impactTree.chooseAgent.codex",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.agentButton == codex",
+          "group": "inline@9"
+        },
+        {
+          "command": "impactTree.chooseAgent.cursor-chat",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.agentButton == cursor-chat",
+          "group": "inline@9"
+        },
+        {
+          "command": "impactTree.chooseAgent.chat-cursor",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.agentButton == chat-cursor",
+          "group": "inline@9"
+        },
+        {
+          "command": "impactTree.chooseAgent.chat-copilot",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.agentButton == chat-copilot",
+          "group": "inline@9"
+        },
+        {
+          "command": "impactTree.chooseAgent.clipboard",
+          "when": "view == impactTree.sources && viewItem == reviewHost && impactTree.agentButton == clipboard",
+          "group": "inline@9"
         },
         {
           "command": "impactTree.analyseWithAgent",
@@ -1237,19 +1335,6 @@
             "A change row also shows the verdict in words and the change kinds (denser, truncates in narrow sidebars)"
           ],
           "description": "Where a change row's verdict and change kinds are shown."
-        },
-        "impactTree.fileListLayout": {
-          "type": "string",
-          "enum": [
-            "flat",
-            "tree"
-          ],
-          "default": "flat",
-          "enumDescriptions": [
-            "One row per changed file, worst first",
-            "Changed files in their folders, as in the GitHub Pull Requests extension; folders and files are still ordered worst first at every level, and a folder is ranked by its worst file"
-          ],
-          "description": "How the Changes view lays out the changed files. Also toggled from the view's title bar (View as tree / View as list)."
         },
         "impactTree.prewarm": {
           "type": "boolean",

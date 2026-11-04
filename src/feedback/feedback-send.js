@@ -211,30 +211,68 @@ async function availableChoices(vscode) {
 const ASK_EACH_TIME = 'ask';
 
 /**
- * "Choose my agent…": always shows the picker, the current agent marked, and saves the pick
- * in the user's `impactTree.agent` setting. "Analyse with my agent" and "Send feedback" then
- * use it; "Ask each time" makes them ask. "Only save the feedback file" is not offered: it
- * reviews nothing (it stays available in the setting and in "Send feedback to…").
+ * How "Choose my agent…" names each route: the agent it belongs to (the picker's group) and
+ * how the prompt reaches it. The editor chat is Cursor's in Cursor, Copilot's elsewhere.
+ * @param {string} id @param {boolean} inCursor
+ * @returns {{ agent: string, label: string, name: string }}
+ */
+function routeOf(id, inCursor) {
+  switch (id) {
+    case 'claude': return { agent: 'Claude Code', label: '$(terminal) In a terminal', name: 'Claude Code in a terminal' };
+    case 'claude-vscode': return { agent: 'Claude Code', label: '$(window) In the Claude Code panel', name: "Claude Code's panel" };
+    case 'codex': return { agent: 'Codex', label: '$(terminal) In a terminal', name: 'Codex in a terminal' };
+    case 'cursor-chat': return { agent: 'Cursor', label: '$(link-external) Cursor chat', name: 'Cursor chat' };
+    case 'chat': return inCursor
+      ? { agent: 'Cursor', label: '$(comment-discussion) Editor chat', name: "Cursor's editor chat" }
+      : { agent: 'Copilot', label: '$(comment-discussion) Copilot chat', name: 'Copilot chat' };
+    case 'clipboard': return { agent: 'No agent', label: '$(copy) Copy the prompt', name: 'Copy prompt' };
+    default: return { agent: 'No agent', label: '$(question) Ask each time', name: 'Ask each time' };
+  }
+}
+
+/** The picker's groups, in order. */
+const AGENT_GROUPS = Object.freeze(['Claude Code', 'Codex', 'Cursor', 'Copilot', 'No agent']);
+
+/**
+ * "Choose my agent…" (also the agent button on the reviewed row): always shows the picker,
+ * grouped by agent with how the prompt reaches it under each, the current route marked, and
+ * saves the pick in the user's `impactTree.agent` setting. "Analyse with my agent" and "Send
+ * feedback" then use it; "Ask each time" makes them ask. "Only save the feedback file" is not
+ * offered: it reviews nothing (it stays available in the setting and in "Send feedback to…").
  * @param {any} vscode
  * @returns {Promise<string|null>} The id saved, or null when the picker was dismissed.
  */
 async function chooseReviewAgent(vscode) {
   const cfg = vscode.workspace.getConfiguration('impactTree');
   const saved = cfg.get('agent', ASK_EACH_TIME);
-  const choices = (await availableChoices(vscode)).filter((c) => c.id !== 'save');
-  const items = [...choices, { id: ASK_EACH_TIME, label: 'Ask each time', description: 'pick an agent on every hand-off' }]
-    .map((c) => ({ label: c.label, description: c.id === saved ? `${c.description ? `${c.description} · ` : ''}current` : c.description, id: c.id }));
+  const inCursor = isCursor(vscode.env && vscode.env.appName);
+  const choices = [...(await availableChoices(vscode)).filter((c) => c.id !== 'save'),
+    { id: ASK_EACH_TIME, label: 'Ask each time', description: 'pick an agent on every hand-off' }];
+  const separator = (vscode.QuickPickItemKind && vscode.QuickPickItemKind.Separator) || -1;
+  /** @type {any[]} */
+  const items = [];
+  for (const group of AGENT_GROUPS) {
+    const mine = choices.filter((c) => routeOf(c.id, inCursor).agent === group);
+    if (!mine.length) continue;
+    items.push({ label: group, kind: separator });
+    for (const c of mine) {
+      items.push({ label: routeOf(c.id, inCursor).label, id: c.id,
+        description: c.id === saved ? `${c.description ? `${c.description} · ` : ''}current` : c.description });
+    }
+  }
   // A saved agent this editor cannot reach (its CLI is gone) is still named, so the reviewer sees why it is not used.
   const unreachable = saved !== ASK_EACH_TIME && saved !== 'save' && !choices.some((c) => c.id === saved);
   const pick = await vscode.window.showQuickPick(items, {
     title: 'Impact Tree: Choose the agent that reviews with you',
     placeHolder: unreachable ? `"${saved}" is saved but not available here; choose another` : 'Used by "Analyse with my agent" and "Send feedback"',
   });
-  if (!pick) return null;
+  if (!pick || !pick.id) return null;
   await cfg.update('agent', pick.id, vscode.ConfigurationTarget.Global);
   vscode.window.showInformationMessage(pick.id === ASK_EACH_TIME
     ? 'Impact Tree: you will be asked which agent to use each time.'
-    : `Impact Tree: ${pick.label} now reviews with you.`);
+    : pick.id === 'clipboard'
+      ? 'Impact Tree: no agent is started; prompts are copied to the clipboard to paste into any agent.'
+      : `Impact Tree: ${routeOf(pick.id, inCursor).name} now reviews with you.`);
   return pick.id;
 }
 

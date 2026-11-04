@@ -99,6 +99,22 @@ function choicesFor({ cliFound, chatAvailable, claudeExtension = false, inCursor
 }
 
 /**
+ * The agent button on the reviewed row: one command per route, each with its agent's icon, so
+ * the button shows who reviews with you and how. `ask` (and `save` or an unknown value) is
+ * the plain "Choose my agent…" button. The editor chat is Cursor's in Cursor, Copilot's elsewhere.
+ */
+const AGENT_BUTTONS = Object.freeze(['claude', 'claude-vscode', 'codex', 'cursor-chat', 'chat-cursor', 'chat-copilot', 'clipboard']);
+
+/**
+ * @param {unknown} saved The `impactTree.agent` setting. @param {unknown} appName `vscode.env.appName`.
+ * @returns {string} One of AGENT_BUTTONS, or `ask`.
+ */
+function agentButtonFor(saved, appName) {
+  if (saved === 'chat') return isCursor(appName) ? 'chat-cursor' : 'chat-copilot';
+  return typeof saved === 'string' && AGENT_BUTTONS.includes(saved) ? saved : 'ask';
+}
+
+/**
  * What a hand-off does, as data.
  * @param {AgentChoiceId} id
  * @param {{ prompt: string, platform: string }} o
@@ -184,4 +200,4 @@ function fitsHandOff(id, prompt, platform = process.platform) {
 }
 
 module.exports = {
-  fitsHandOff, isCursor, MAX_CURSOR_URL_CHARS, choicesFor, planHandOff, handOff, onPath, isExecutable, MAX_URI_PROMPT_CHARS, CLAUDE_EXTENSION_ID, CHAT_COMMAND, AGENT_SETTING_VALUES };
+  AGENT_BUTTONS, agentButtonFor, fitsHandOff, isCursor, MAX_CURSOR_URL_CHARS, choicesFor, planHandOff, handOff, onPath, isExecutable, MAX_URI_PROMPT_CHARS, CLAUDE_EXTENSION_ID, CHAT_COMMAND, AGENT_SETTING_VALUES };

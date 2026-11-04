@@ -4,6 +4,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { chooseAgent, chooseReviewAgent } = require('../src/feedback/feedback-send');
+const { AGENT_BUTTONS, agentButtonFor } = require('../src/agent/agent-handoff');
 
 /** A vscode with one setting, a scripted picker and recorded messages. */
 function fakeVscode({ saved = 'ask', pick = (items) => items[0], commands = [] } = {}) {
@@ -42,7 +43,7 @@ test('a pick is saved for the user and the next hand-off uses it without asking'
   const { vscode, settings, shown } = fakeVscode({ pick: (items) => items.find((i) => i.id === 'clipboard') });
   assert.equal(await chooseReviewAgent(vscode), 'clipboard');
   assert.deepEqual(shown.updates, [['agent', 'clipboard', 1]]);
-  assert.match(shown.messages[0], /Copy prompt now reviews with you/);
+  assert.match(shown.messages[0], /no agent is started; prompts are copied/);
   const choice = await chooseAgent(vscode, false, { title: 'Analyse with…', exclude: ['save'] });
   assert.equal(choice.id, 'clipboard');
   assert.equal(shown.pickers.length, 1, 'no second picker');
@@ -69,4 +70,39 @@ test('the manifest offers the switch in the palette and on the reviewed row', ()
   assert.equal(cmd.title, 'Choose my agent…');
   assert.equal(pkg.contributes.menus.commandPalette.some((m) => m.command === 'impactTree.chooseAgent'), false, 'never hidden from the palette');
   assert.ok(pkg.contributes.menus['view/item/context'].some((m) => m.command === 'impactTree.chooseAgent' && /viewItem == reviewHost/.test(m.when)));
+});
+
+test('the switch groups the routes under their agent', async () => {
+  const { vscode, shown } = fakeVscode({ pick: () => undefined, commands: ['workbench.action.chat.open'] });
+  vscode.QuickPickItemKind = { Separator: -1 };
+  await chooseReviewAgent(vscode);
+  const rows = shown.pickers[0].items.map((i) => (i.kind === -1 ? `# ${i.label}` : i.id));
+  assert.deepEqual(rows, ['# Claude Code', 'claude', '# Codex', 'codex', '# Copilot', 'chat', '# No agent', 'clipboard', 'ask']);
+  assert.equal(shown.pickers[0].items.find((i) => i.id === 'claude').label, '$(terminal) In a terminal');
+});
+
+test('in Cursor, the editor chat sits under Cursor and a pick names the route', async () => {
+  const { vscode, shown } = fakeVscode({ pick: (items) => items.find((i) => i.id === 'chat'), commands: ['workbench.action.chat.open'] });
+  vscode.env.appName = 'Cursor';
+  vscode.QuickPickItemKind = { Separator: -1 };
+  assert.equal(await chooseReviewAgent(vscode), 'chat');
+  const rows = shown.pickers[0].items.map((i) => (i.kind === -1 ? `# ${i.label}` : i.id));
+  assert.deepEqual(rows.slice(rows.indexOf('# Cursor'), rows.indexOf('# No agent')), ['# Cursor', 'cursor-chat', 'chat']);
+  assert.match(shown.messages[0], /Cursor's editor chat now reviews with you/);
+});
+
+test('the agent button shows the saved agent, with one command and icon per route', () => {
+  assert.equal(agentButtonFor('claude', 'Visual Studio Code'), 'claude');
+  assert.equal(agentButtonFor('chat', 'Cursor'), 'chat-cursor');
+  assert.equal(agentButtonFor('chat', 'Visual Studio Code'), 'chat-copilot');
+  for (const v of ['ask', 'save', 'nonsense', undefined]) assert.equal(agentButtonFor(v, 'Visual Studio Code'), 'ask');
+  const { contributes } = require('../package.json');
+  const inline = contributes.menus['view/item/context'].filter((m) => m.group === 'inline@9');
+  assert.deepEqual(inline.map((m) => m.command).sort(), ['impactTree.chooseAgent', ...AGENT_BUTTONS.map((id) => `impactTree.chooseAgent.${id}`)].sort());
+  for (const id of AGENT_BUTTONS) {
+    const cmd = contributes.commands.find((c) => c.command === `impactTree.chooseAgent.${id}`);
+    assert.ok(cmd && cmd.icon, `${id} has an icon`);
+    if (typeof cmd.icon === 'object') for (const p of [cmd.icon.light, cmd.icon.dark]) assert.ok(require('fs').existsSync(require('path').join(__dirname, '..', p)), p);
+    assert.ok(contributes.menus.commandPalette.some((m) => m.command === cmd.command && m.when === 'false'), `${id} is hidden from the palette`);
+  }
 });
