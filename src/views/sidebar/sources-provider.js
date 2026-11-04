@@ -130,6 +130,10 @@ function createSourcesProvider(vscode, {
           type: 'group', key, label, icon, expanded, desc: capped ? `first ${prs.length}` : String(prRows.length), children: [...notes, ...prRows],
         });
         const out = [
+          // The way into a long list: the picker filters every loaded PR, the collapsed
+          // groups included, and finds one by number that is not loaded.
+          N({ type: 'search', label: 'Search pull requests…', icon: 'search',
+            desc: 'by #number, title, or author', command: 'impactTree.searchPullRequests' }),
           group('pr-requested', 'Review requested', 'eye', true,
             requested.map(({ pr, via }) => prRow(pr, via)), teamWarnings),
           group('pr-mine', 'Yours', 'account', true, mine.map((p) => prRow(p))),

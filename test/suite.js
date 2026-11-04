@@ -87,6 +87,8 @@ const SUITE = [
   { file: 'test/extension-remotes.test.js', tier: 'full' },  // 11.5s
   { file: 'test/sources.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/pr-groups.test.js', tier: 'quick' },  // 0.1s
+  { file: 'test/pr-search.test.js', tier: 'quick' },
+  { file: 'test/pr-search-command.test.js', tier: 'quick' },
   { file: 'test/tier-a-view.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/tree-grouping.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/tree-characterization.test.js', tier: 'quick' },  // 0.2s

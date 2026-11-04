@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Search pull requests…** (the search button on the Review view, the first row under
+  Pull requests, or `Shift+Alt+P`): find an open PR by `#number`, title, or author,
+  including PRs in collapsed groups. Recently opened PRs come first. A number that is not in
+  the loaded list (closed, merged, or past the first 100) can be looked up on GitHub.
 - **Agent button** on the reviewed row: it shows the current agent's icon (Claude Code,
   Codex, Cursor, Copilot, or a clipboard when prompts are only copied) and opens **Choose my
   agent…**. The picker now groups the choices by agent, with how the prompt reaches it

@@ -39,6 +39,7 @@ const { createReviewComments } = require('./diff-editor/review-comments');
 const { createPullRequestPanel } = require('./views/pr-tab/pr-overview-panel');
 const { registerContentProviders } = require('./diff-editor/content-providers');
 const { registerCommands } = require('./session/commands');
+const { registerPullRequestSearch } = require('./session/pr-search-command');
 const { contextKeysOf } = require('./views/changes/view-state');
 const { createFeedbackDrafts } = require('./feedback/feedback-drafts');
 const { createFeedbackComments } = require('./feedback/feedback-comments');
@@ -639,9 +640,15 @@ function activate(context, { clock = realClock } = {}) {
     (sess) => { if (sess) loadPrs(); else sources.refresh(); },
     (e) => { log(`github: sign-in failed: ${e.message}`); sources.refresh(); });
 
+  const prSearch = registerPullRequestSearch(vscode, {
+    gh, repoSlug, getPrs: () => prs, getPrsTruncated: () => prsTruncated, isLoadingPrs: () => loadingPrs,
+    getTeams: () => team, onDidChangePrs: sources.onDidChangeTreeData, workspaceState: context.workspaceState, log,
+  });
   context.subscriptions.push(
+    ...prSearch.disposables,
     ...registerCommands(vscode, {
       BUILD, session, openReview, sources, gh, loadPrs, context, log, out, getSnapshotStore,
+      onPullRequestOpened: prSearch.recordOpened,
     }),
     ...registerContentProviders(vscode, { prDocuments, repoRoot: () => session.repoRoot(), gh, repoSlug, log, getObjectDirs }),
   );

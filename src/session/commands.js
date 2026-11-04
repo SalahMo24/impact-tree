@@ -9,6 +9,7 @@
  */
 function registerCommands(vscode, {
   BUILD, session, openReview, sources, gh, loadPrs, context, log, out, getSnapshotStore = () => null,
+  onPullRequestOpened = () => {},
 }) {
   const { MODES } = require('../engine/analyze');
   return [
@@ -58,8 +59,10 @@ function registerCommands(vscode, {
           detail: `checks out PR #${pr.number} (${pr.headRef}) into a detached HEAD, then builds the impact tree against ${pr.baseRef}`,
           id: 'analyse' },
         { label: '$(link-external) Open on GitHub', detail: pr.url, id: 'open' },
-      ], { title: `#${pr.number}  ${pr.title}` });
+      // A PR found by number may be closed or merged; say so before anything runs.
+      ], { title: `#${pr.number}  ${pr.title}${pr.state && pr.state !== 'open' ? `  (${pr.state})` : ''}` });
       if (!pick) return;
+      onPullRequestOpened(pr);
       if (pick.id === 'open') { await vscode.env.openExternal(vscode.Uri.parse(pr.url)); return; }
       // The Pull Request tab opens with the review it shows, before the analysis ends. It
       // reads the same data the review loads anyway, so a preview costs no extra request.
