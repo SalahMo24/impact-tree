@@ -339,7 +339,7 @@ test('the sources view warns when the open-PR list was truncated, and only then'
   const rows = async (truncated) => createSourcesProvider(vscodeStub, {
     modes: {}, getMode: () => 'pr', getRepoSlug: () => SLUG, github: { isSignedIn: () => true, account: () => 'me' },
     getPrs: () => list, getPrsTruncated: () => truncated, getPrError: () => null, isLoadingPrs: () => false,
-  }).getChildren({ key: 'prs' });
+  }).getChildren({ key: 'prs' }).then((r) => r.filter((row) => row.type !== 'search'));
   const full = await rows(true);
   assert.equal(full.length, 4, 'the three PR groups, then one warning');
   assert.equal(full[3].icon, 'warning');

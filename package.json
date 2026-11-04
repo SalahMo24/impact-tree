@@ -223,6 +223,12 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "impactTree.searchPullRequests",
+        "title": "Search pull requests…",
+        "category": "Impact Tree",
+        "icon": "$(search)"
+      },
+      {
         "command": "impactTree.openPullRequest",
         "title": "Open pull request",
         "category": "Impact Tree"
@@ -520,6 +526,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "impactTree.searchPullRequests",
+          "when": "view == impactTree.sources",
+          "group": "navigation@0"
+        },
         {
           "command": "impactTree.previousUnreviewed",
           "when": "view == impactTree.sources",
@@ -1250,6 +1261,10 @@
         "command": "impactTree.showCallers",
         "key": "shift+alt+c",
         "when": "editorTextFocus && impactTree.hasReview"
+      },
+      {
+        "command": "impactTree.searchPullRequests",
+        "key": "shift+alt+p"
       }
     ],
     "configuration": {

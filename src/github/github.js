@@ -25,6 +25,8 @@ const {
  * @property {string} html_url
  * @property {string} updated_at
  * @property {boolean} [draft]
+ * @property {string} [state] 'open' or 'closed'.
+ * @property {string | null} [merged_at]
  * @property {RawUser | null} [user] Null or absent for a deleted user.
  * @property {RawBranch} head
  * @property {RawBranch} base
@@ -364,6 +366,8 @@ function createGitHub(vscode, { log = () => {}, fetch: fetchImpl, limits: overri
       baseRepo: p.base && p.base.repo && p.base.repo.full_name,
       baseSha: p.base && p.base.sha,
       draft: !!p.draft,
+      // 'open', 'closed' or 'merged'. Only a PR looked up by number can be other than open.
+      state: p.state === 'closed' ? (p.merged_at ? 'merged' : 'closed') : 'open',
       url: p.html_url,
       updatedAt: p.updated_at,
       // A PR from a fork cannot be checked out from `origin` alone; the view has to say

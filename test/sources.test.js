@@ -108,7 +108,12 @@ function build(over = {}) {
   ];
   const teams = { teams: [{ id: 7, name: 'backend', parentId: null }], truncated: false, error: null };
   const grouped = build({ getPrs: () => list, getTeams: () => teams });
-  const groups = await grouped.getChildren(prsNode);
+  const prChildren = await grouped.getChildren(prsNode);
+  check('the first row searches every loaded PR',
+    prChildren[0].type === 'search' && prChildren[0].command === 'impactTree.searchPullRequests', prChildren[0].label);
+  // The groups, without the search row above them.
+  const groupsOf = (rows) => rows.filter((r) => r.type !== 'search');
+  const groups = groupsOf(prChildren);
   check('three groups in order: requested, yours, everyone else',
     groups.map((g) => g.key).join() === 'pr-requested,pr-mine,pr-others', groups.map((g) => g.key).join());
   check('each group counts its PRs', groups.map((g) => g.desc).join() === '2,1,2', groups.map((g) => g.desc).join());
@@ -130,14 +135,14 @@ function build(over = {}) {
   check('clicking a PR passes the whole PR object',
     rows[0].command === 'impactTree.openPullRequest' && rows[0].args[0].number === 12);
 
-  const none = await build({ getPrs: () => [list[0]], getTeams: () => teams }).getChildren(prsNode);
+  const none = groupsOf(await build({ getPrs: () => [list[0]], getTeams: () => teams }).getChildren(prsNode));
   check('empty groups stay visible with a zero count',
     none.length === 3 && none[0].desc === '0' && none[1].desc === '0' && none[2].desc === '1',
     none.map((g) => `${g.key}=${g.desc}`).join());
 
   const failedTeams = build({ getPrs: () => list,
     getTeams: () => ({ teams: [], truncated: false, error: 'GitHub answered 403 for /user/teams' }) });
-  const [reqFailed] = await failedTeams.getChildren(prsNode);
+  const [reqFailed] = groupsOf(await failedTeams.getChildren(prsNode));
   const reqFailedRows = await failedTeams.getChildren(reqFailed);
   check('a failed team lookup is said inside "requested", not passed off as nothing waiting',
     reqFailedRows[0].icon === 'warning' && /403/.test(reqFailedRows[0].desc), reqFailedRows[0].label);
@@ -147,11 +152,11 @@ function build(over = {}) {
     `${reqFailed.desc}: ${reqFailedRows.map((r) => r.label).join(' | ')}`);
 
   const cutTeams = build({ getPrs: () => list, getTeams: () => ({ ...teams, truncated: true }) });
-  const cutRows = await cutTeams.getChildren((await cutTeams.getChildren(prsNode))[0]);
+  const cutRows = await cutTeams.getChildren(groupsOf(await cutTeams.getChildren(prsNode))[0]);
   check('a truncated team list is said too', cutRows[0].icon === 'warning' && /first 1 teams/.test(cutRows[0].label),
     cutRows[0].label);
 
-  const capped = await build({ getPrs: () => list, getPrsTruncated: () => true }).getChildren(prsNode);
+  const capped = groupsOf(await build({ getPrs: () => list, getPrsTruncated: () => true }).getChildren(prsNode));
   check('a capped PR list is still said, after the groups',
     capped.length === 4 && capped[3].icon === 'warning' && /first 5/.test(capped[3].label), capped[3] && capped[3].label);
 
@@ -162,7 +167,7 @@ function build(over = {}) {
   check('a collapsed PR group renders collapsed',
     p.getTreeItem(groups[2]).collapsibleState === vscodeStub.TreeItemCollapsibleState.Collapsed);
   const avatarUrl = 'https://avatars.githubusercontent.com/u/1?v=4&s=32';
-  const withAvatar = await build({ getPrs: () => [{ ...list[0], authorAvatarUrl: avatarUrl }] }).getChildren(prsNode);
+  const withAvatar = groupsOf(await build({ getPrs: () => [{ ...list[0], authorAvatarUrl: avatarUrl }] }).getChildren(prsNode));
   const [avatarRow] = await build().getChildren(withAvatar[2]);
   check('a PR row shows its author\'s avatar', p.getTreeItem(avatarRow).iconPath.uri === avatarUrl,
     JSON.stringify(p.getTreeItem(avatarRow).iconPath));
