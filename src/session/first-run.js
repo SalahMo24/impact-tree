@@ -1,21 +1,22 @@
 // @ts-check
 'use strict';
 
-// The window's first review runs by itself. When the extension starts in a repository whose
-// branch is ahead of its base, the branch is reviewed with no mode to pick: the Review view
-// then shows that review alone, the worst row is selected with its explanation in Details,
+// The window's first review runs by itself, the first time the Review view is opened. Not
+// when the window opens: a review then would spin in every window and pull the sidebar to
+// Impact Tree, whether or not the reader came for it. Once the view is on screen and the
+// repository's branch is ahead of its base, the branch is reviewed with no mode to pick: the
+// view shows that review alone, the worst row is selected with its explanation in Details,
 // and the first time ever a one-line hint says what red means. A detached HEAD ahead of the
 // base (a checked-out pull request) counts. Nothing runs on a branch with no commits of its
-// own or an unknown base: the view's picker is the way in there. The `impactTree.analyseOnStartup` setting turns this off (`never`) or widens it to
-// every window (`always`); its old boolean values still mean what they did.
+// own or an unknown base: the view's picker is the way in there. The `impactTree.analyseOnStartup`
+// setting turns this off (`never`) or widens it to every repository (`always`); its old boolean
+// values still mean what they did.
 
 const { resolveBase } = require('../engine/git');
 
 /** Global state: the hint was shown once, on the first result ever. */
 const HINTED_KEY = 'impactTree.firstRun.hinted';
 const HINT = 'Red: a caller wasn\'t updated. Start there.';
-/** Delay before the branch is checked, so activation stays quick. Unit: ms. */
-const START_DELAY_MS = 1500;
 /** Selecting the worst row races the tree's repaint for the result: tries, and the gap between them. Unit: tries, ms. */
 const SELECT_TRIES = 3;
 const SELECT_RETRY_MS = 300;
@@ -82,7 +83,8 @@ function decideAutoReview({ policy, repoStatus, held, ahead }) {
  *   provider: { nextUnreviewed: (after: null) => any, reviewCounts: () => { attention: number }|null,
  *     onDidChangePresentation: (l: (e: { reason: string }) => void) => { dispose(): void } },
  *   rowId: (row: any) => string|null|undefined,
- *   view: { reveal: (row: any, o: object) => PromiseLike<void>|void, selection: readonly any[] },
+ *   view: { reveal: (row: any, o: object) => PromiseLike<void>|void, selection: readonly any[], visible: boolean,
+ *     onDidChangeVisibility: (l: (e: { visible: boolean }) => void) => { dispose(): void } },
  *   treeRead: () => Promise<unknown>,
  *   globalState: { get: (k: string) => unknown, update: (k: string, v: unknown) => PromiseLike<void> }|null,
  *   makeGit: (repo: string) => any, log: (m: string) => void,
@@ -94,7 +96,8 @@ function decideAutoReview({ policy, repoStatus, held, ahead }) {
 function createFirstRun(vscode, { session, provider, view, treeRead, rowId, globalState, makeGit, log, clock, telemetry }) {
   /** @type {{ dispose(): void }|null} */
   let waiting = null;
-  let timer = /** @type {any} */ (null);
+  /** The visibility watch, until the view is first shown. @type {{ dispose(): void }|null} */
+  let watching = null;
 
   /** Whether the view's selection is `row` (by tree id: a repaint rebuilds the row objects). @param {any} row */
   const selected = (row) => {
@@ -155,15 +158,22 @@ function createFirstRun(vscode, { session, provider, view, treeRead, rowId, glob
   }
 
   return {
-    /** Checks the branch after a short delay, so activation stays quick. */
-    schedule() { timer = clock.setTimeout(() => { timer = null; start(); }, START_DELAY_MS); },
+    /** Starts when the Review view is first on screen: now if it is, else when it becomes so. */
+    schedule() {
+      if (view.visible) { start(); return; }
+      watching = view.onDidChangeVisibility((e) => {
+        if (!e || !e.visible) return;
+        if (watching) { watching.dispose(); watching = null; }
+        start();
+      });
+    },
     start,
     dispose() {
-      if (timer !== null) clock.clearTimeout(timer);
+      if (watching) watching.dispose();
       if (waiting) waiting.dispose();
-      timer = null; waiting = null;
+      watching = null; waiting = null;
     },
   };
 }
 
-module.exports = { createFirstRun, decideAutoReview, branchAheadOfBase, startupPolicy, HINT, HINTED_KEY, START_DELAY_MS };
+module.exports = { createFirstRun, decideAutoReview, branchAheadOfBase, startupPolicy, HINT, HINTED_KEY };

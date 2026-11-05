@@ -47,7 +47,7 @@ test('the decision: never, no repo and a held review stop it; branch asks git, a
   assert.deepEqual(decideAutoReview({ policy: 'branch', repoStatus: 'ok', held: false, ahead: ahead('not-ahead') }), { run: false, reason: 'not-ahead' });
 });
 
-function setup({ setting, ahead = '2\n', attention = 1, hinted = false, held = false, dropFirst = false } = {}) {
+function setup({ setting, ahead = '2\n', attention = 1, hinted = false, held = false, dropFirst = false, visible = false } = {}) {
   const seen = { refreshed: 0, revealed: [], messages: [], events: [], timers: [] };
   const listeners = new Set();
   const session = {
@@ -60,27 +60,36 @@ function setup({ setting, ahead = '2\n', attention = 1, hinted = false, held = f
     onDidChangePresentation: (l) => { listeners.add(l); return { dispose: () => listeners.delete(l) }; } };
   // The first reveal is lost to a repaint (`dropFirst`); the next one sticks.
   let drops = dropFirst ? 1 : 0;
-  const view = { selection: [], reveal: async (row, o) => { seen.revealed.push([row.label, o]); view.selection = drops-- > 0 ? [] : [{ label: row.label }]; } };
+  const visibility = [];
+  const view = { visible, selection: [], reveal: async (row, o) => { seen.revealed.push([row.label, o]); view.selection = drops-- > 0 ? [] : [{ label: row.label }]; },
+    onDidChangeVisibility: (l) => { visibility.push(l); return { dispose() { visibility.splice(visibility.indexOf(l), 1); } }; } };
   const values = new Map(hinted ? [[HINTED_KEY, true]] : []);
   const vscode = {
     workspace: { getConfiguration: () => ({ get: (k, d) => (k === 'analyseOnStartup' ? setting : d) }) },
     window: { showInformationMessage: async (m) => { seen.messages.push(m); } },
   };
-  const clock = { setTimeout: (f, ms) => { seen.timers.push(ms); if (ms !== 1500) f(); return f; }, clearTimeout: () => {} };
+  const clock = { setTimeout: (f, ms) => { seen.timers.push(ms); f(); return f; }, clearTimeout: () => {} };
   const makeGit = () => fakeGit({ 'rev-list': ahead, revParse: () => 'b'.repeat(40) });
   const firstRun = createFirstRun(vscode, { session, provider, view, treeRead: async () => { seen.treeReads = (seen.treeReads || 0) + 1; }, rowId: (r) => `id:${r.label}`, globalState: { get: (k) => values.get(k), update: async (k, v) => { values.set(k, v); } },
     makeGit, log: () => {}, clock, telemetry: { event: (n, p) => seen.events.push(`${n}:${p.reason}`) } });
   /** The tree repainted for `result` (reason `analysis`), or for something else. */
   const finish = (result, reason = 'analysis') => { session.state = { result }; for (const l of [...listeners]) l({ reason }); };
-  return { firstRun, seen, finish, values, listeners };
+  /** The view came on screen (or left it). */
+  const show = (on = true) => { view.visible = on; for (const l of [...visibility]) l({ visible: on }); };
+  return { firstRun, seen, finish, values, listeners, show, visibility };
 }
 const settle = () => new Promise((r) => setImmediate(r));
 
 test('a branch ahead of its base is reviewed by itself; the worst row is selected and the hint shown once', async () => {
   const t = setup();
   t.firstRun.schedule();
-  assert.deepEqual(t.seen.timers, [1500]);
-  t.firstRun.start();
+  assert.equal(t.seen.refreshed, 0, 'nothing runs while the view is not on screen');
+  t.show(false);
+  assert.equal(t.seen.refreshed, 0);
+  t.show(true);
+  assert.equal(t.seen.refreshed, 1, 'the view came on screen');
+  assert.equal(t.visibility.length, 0, 'watched once');
+  t.show(true);
   assert.equal(t.seen.refreshed, 1);
   assert.deepEqual(t.seen.events, ['startup.review:ahead']);
   t.finish({ callersPending: true });            // the prepared result: wait for the callers
@@ -105,6 +114,17 @@ test('a selection lost to the repaint is made again', async () => {
   for (let i = 0; i < 4; i++) await settle();
   assert.deepEqual(t.seen.revealed.map(([l]) => l), ['lockRow', 'lockRow']);
   assert.deepEqual(t.seen.timers, [300]);
+});
+
+test('a view already on screen starts at once; disposing before it shows starts nothing', () => {
+  const shown = setup({ visible: true });
+  shown.firstRun.schedule();
+  assert.equal(shown.seen.refreshed, 1);
+  const gone = setup();
+  gone.firstRun.schedule();
+  gone.firstRun.dispose();
+  gone.show(true);
+  assert.equal(gone.seen.refreshed, 0);
 });
 
 test('the hint is not repeated, and not shown when nothing needs attention', async () => {

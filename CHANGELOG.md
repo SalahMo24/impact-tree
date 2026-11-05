@@ -2,10 +2,10 @@
 
 ## Unreleased
 
-- **The branch is reviewed by itself.** When a window opens on a branch that has commits
-  its base does not, the review starts with nothing to pick, the change that most needs a
-  look is selected with its explanation in Details, and the first time ever a hint says what
-  red means. `impactTree.analyseOnStartup` is now `branch` (the default), `always` or
+- **The branch is reviewed by itself** the first time you open the Review view in a window,
+  when the branch has commits its base does not: the review starts with nothing to pick, the
+  change that most needs a look is selected with its explanation in Details, and the first
+  time ever a hint says what red means. Nothing runs, and nothing moves, before you open the view. `impactTree.analyseOnStartup` is now `branch` (the default), `always` or
   `never`; its old `true` and `false` still mean always and never.
 - **Details maps what is here** when no change is shown. While nothing is reviewed: what you
   can review (this branch, a pull request, your agent's edits), what the colours mean, and

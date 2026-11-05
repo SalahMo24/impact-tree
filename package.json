@@ -1317,11 +1317,11 @@
           ],
           "default": "branch",
           "enumDescriptions": [
-            "When the branch has commits its base does not: review it as soon as the window opens, and select the worst change",
-            "Every window, whatever the branch",
+            "When the branch has commits its base does not: review it the first time the Review view is opened in a window, and select the worst change",
+            "Every repository, whatever the branch, the first time the Review view is opened",
             "Never by itself; pick what to review in the Review view"
           ],
-          "description": "Whether a review starts by itself when the window opens. The old values true and false mean always and never."
+          "description": "Whether a review starts by itself the first time the Review view is opened in a window. Nothing runs before the view is on screen. The old values true and false mean always and never."
         },
         "impactTree.alwaysDiffCallers": {
           "type": "boolean",
