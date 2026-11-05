@@ -70,12 +70,12 @@
     "viewsWelcome": [
       {
         "view": "impactTree.sources",
-        "contents": "No folder is open. Open a repository to review its changes and pull requests.\n[Open Folder](command:workbench.action.files.openFolder)\nNew to Impact Tree? Try it on a sample pull request, no setup needed.\n[Try the demo](command:impactTree.tryDemo)",
+        "contents": "No folder is open. Open a repository to review its changes and pull requests.\n[Open Folder](command:workbench.action.files.openFolder)",
         "when": "impactTree.state == noFolder"
       },
       {
         "view": "impactTree.sources",
-        "contents": "This folder is not a git repository, so there is nothing to compare.\n[Initialize Repository](command:git.init)\nAlready a repository? [Refresh](command:impactTree.refresh)\nNew to Impact Tree? Try it on a sample pull request, no setup needed.\n[Try the demo](command:impactTree.tryDemo)",
+        "contents": "This folder is not a git repository, so there is nothing to compare.\n[Initialize Repository](command:git.init)\nAlready a repository? [Refresh](command:impactTree.refresh)",
         "when": "impactTree.state == noGit"
       }
     ],
@@ -516,11 +516,6 @@
         "title": "Open feedback file",
         "category": "Impact Tree",
         "icon": "$(go-to-file)"
-      },
-      {
-        "command": "impactTree.tryDemo",
-        "title": "Impact Tree: Try the demo",
-        "icon": "$(mortar-board)"
       }
     ],
     "mcpServerDefinitionProviders": [
@@ -560,11 +555,6 @@
           "command": "impactTree.showLegend",
           "when": "view == impactTree.sources",
           "group": "2_help@1"
-        },
-        {
-          "command": "impactTree.tryDemo",
-          "when": "view == impactTree.sources",
-          "group": "2_help@0.5"
         }
       ],
       "commandPalette": [

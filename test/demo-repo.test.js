@@ -9,7 +9,7 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { requireTypeScript } = require('./find-typescript');
-const { buildDemoRepo, isDemoRepo, demoPaths, demoBuildId, DEMO_BRANCH } = require('../src/demo/demo-repo');
+const { buildDemoRepo, isDemoRepo, demoPaths, demoBuildId, DEMO_BRANCH } = require('../scripts/demo-repo');
 
 requireTypeScript('demo repository');
 const { analyze } = require('../src/engine/analyze');

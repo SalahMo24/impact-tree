@@ -121,7 +121,6 @@ const SUITE = [
   { file: 'test/feedback-drafts.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/star-prompt.test.js', tier: 'quick' },
   { file: 'test/demo-repo.test.js', tier: 'quick' },  // 2s
-  { file: 'test/demo-commands.test.js', tier: 'quick' },
   { file: 'test/first-run.test.js', tier: 'quick' },
   { file: 'test/feedback-comments.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/feedback-tree.test.js', tier: 'quick' },  // 4.5s

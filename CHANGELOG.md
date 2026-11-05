@@ -7,9 +7,6 @@
   look is selected with its explanation in Details, and the first time ever a hint says what
   red means. `impactTree.analyseOnStartup` is now `branch` (the default), `always` or
   `never`; its old `true` and `false` still mean always and never.
-- **Try the demo**: opens a small sample repository in a new window with one change to
-  review and a caller left behind on purpose. It needs no GitHub account and works offline;
-  the review starts by itself. Offered in the Review view and on the empty-window screens.
 
 ## 1.0.3 — 2026-11-04
 

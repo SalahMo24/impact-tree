@@ -19,8 +19,6 @@ function createSourcesProvider(vscode, {
   // Why no GitHub remote was chosen: `none` when no remote points at github.com, else the
   // choice is unclear or the setting is wrong. Null when the remote is fine.
   getRemoteProblem = () => null,
-  // Whether to offer the demo (src/demo/demo-commands.js): everywhere but inside it.
-  offerDemo = () => false,
 }) {
   const _emitter = new vscode.EventEmitter();
   const N = (o) => o;
@@ -58,9 +56,6 @@ function createSourcesProvider(vscode, {
             desc: modes[getMode()] ? modes[getMode()].label : getMode() }),
           N({ type: 'group', key: 'prs', label: 'Pull requests', icon: 'github', expanded: true,
             desc: slug ? `${slug.owner}/${slug.repo}` : 'no github remote' }),
-          ...(offerDemo() ? [N({ type: 'demo', label: 'New here? Try the demo', icon: 'mortar-board',
-            desc: 'a sample pull request with a bug to find', command: 'impactTree.tryDemo',
-            tooltip: 'Opens a small sample repository in a new window, with one change to review. Takes about two minutes.' })] : []),
         ];
       }
 
