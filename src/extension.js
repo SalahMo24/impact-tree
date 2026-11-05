@@ -21,6 +21,8 @@ const { createReviewState } = require('./session/review-state');
 const { createGitHub } = require('./github/github');
 const { parseRemoteList, chooseGitHubRemote, describeRemoteProblem, baseRemoteOf } = require('./github/github-remote');
 const { createSourcesProvider } = require('./views/sidebar/sources-provider');
+const { createDemo } = require('./demo/demo-commands');
+const { createFirstRun } = require('./session/first-run');
 const { createPrDocuments } = require('./diff-editor/pr-documents');
 const { createSession } = require('./session/session');
 const { createAgentBridge } = require('./agent/agent-bridge');
@@ -252,7 +254,7 @@ function activate(context, { clock = realClock } = {}) {
     provider.refresh();
     sources.refresh();
   };
-  context.subscriptions.push(provider.onDidChangePresentation(publishContext),
+  context.subscriptions.push(provider.onDidChangePresentation(publishContext), provider.onDidChangeReview(publishContext),
     owned.onDidChangeAnalysis(() => { recheckRepo(); publishContext(); }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => { recheckRepo(); publishContext(); }));
   context.subscriptions.push(view.onDidChangeCheckboxState((e) => {
@@ -393,7 +395,11 @@ function activate(context, { clock = realClock } = {}) {
     ],
   }));
 
+  // Try the demo (src/demo/demo-commands.js): the sample repository, offered in the Review view.
+  const demo = createDemo(vscode, { context, log, telemetry, refresh: () => session.refresh() });
+  context.subscriptions.push(...demo.disposables);
   const sources = createSourcesProvider(vscode, {
+    offerDemo: demo.offerDemo,
     getRepoStatus: () => repoStatus,
     modes: MODES,
     getMode: () => vscode.workspace.getConfiguration('impactTree').get('mode', 'pr'),
@@ -660,7 +666,12 @@ function activate(context, { clock = realClock } = {}) {
     }, 2000);
     context.subscriptions.push({ dispose: () => clock.clearTimeout(timer) });
   }
-  if (vscode.workspace.getConfiguration('impactTree').get('analyseOnStartup', false)) session.refresh();
+  // The branch is reviewed by itself when it is ahead of its base (src/session/first-run.js),
+  // the demo's included.
+  const firstRun = createFirstRun(vscode, { session: owned, provider, view, treeRead: () => sidebar.hostRow(), rowId: require('./views/changes/review-tree-model').treeItemId, globalState: context.globalState || null, makeGit: require('./engine/git').makeGit, log, clock, telemetry });
+  context.subscriptions.push(firstRun);
+  demo.onActivated().catch((e) => log(`demo: ${e && e.message}`));
+  firstRun.schedule();
 }
 
 function deactivate() {

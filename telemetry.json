@@ -42,6 +42,21 @@
       "comment": "The one-time request to star the repository on GitHub was answered or closed.",
       "answer": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "star, no, or dismissed." }
     },
+    "demo.started": {
+      "owner": "SalahMo24",
+      "comment": "Try the demo built the demo repository, or could not.",
+      "ok": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "true when the repository was built." }
+    },
+    "demo.opened": {
+      "owner": "SalahMo24",
+      "comment": "A window opened on the demo repository and started its review. No properties beyond the editor's common ones."
+    },
+    "startup.review": {
+      "owner": "SalahMo24",
+      "comment": "Whether a review started by itself when the window opened, and why or why not.",
+      "ran": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "true when the branch was reviewed by itself." },
+      "reason": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "ahead, always, never, not-ahead, no-base, no-repo or held." }
+    },
     "$exception": {
       "owner": "SalahMo24",
       "comment": "An error. Its type, where it happened and Impact Tree's own stack frames; never the error message.",

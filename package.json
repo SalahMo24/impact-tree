@@ -70,12 +70,12 @@
     "viewsWelcome": [
       {
         "view": "impactTree.sources",
-        "contents": "No folder is open. Open a repository to review its changes and pull requests.\n[Open Folder](command:workbench.action.files.openFolder)",
+        "contents": "No folder is open. Open a repository to review its changes and pull requests.\n[Open Folder](command:workbench.action.files.openFolder)\nNew to Impact Tree? Try it on a sample pull request, no setup needed.\n[Try the demo](command:impactTree.tryDemo)",
         "when": "impactTree.state == noFolder"
       },
       {
         "view": "impactTree.sources",
-        "contents": "This folder is not a git repository, so there is nothing to compare.\n[Initialize Repository](command:git.init)\nAlready a repository? [Refresh](command:impactTree.refresh)",
+        "contents": "This folder is not a git repository, so there is nothing to compare.\n[Initialize Repository](command:git.init)\nAlready a repository? [Refresh](command:impactTree.refresh)\nNew to Impact Tree? Try it on a sample pull request, no setup needed.\n[Try the demo](command:impactTree.tryDemo)",
         "when": "impactTree.state == noGit"
       }
     ],
@@ -516,6 +516,11 @@
         "title": "Open feedback file",
         "category": "Impact Tree",
         "icon": "$(go-to-file)"
+      },
+      {
+        "command": "impactTree.tryDemo",
+        "title": "Impact Tree: Try the demo",
+        "icon": "$(mortar-board)"
       }
     ],
     "mcpServerDefinitionProviders": [
@@ -555,6 +560,11 @@
           "command": "impactTree.showLegend",
           "when": "view == impactTree.sources",
           "group": "2_help@1"
+        },
+        {
+          "command": "impactTree.tryDemo",
+          "when": "view == impactTree.sources",
+          "group": "2_help@0.5"
         }
       ],
       "commandPalette": [
@@ -1309,9 +1319,19 @@
           "description": "How many caller levels the test-reachability walk follows upward from a changed symbol, 1 to 6. A test further up than this is not looked for, so \"no test reaches\" means no test within this many levels. A value outside the range is replaced with 2 (or 6 when too large) and a warning is shown."
         },
         "impactTree.analyseOnStartup": {
-          "type": "boolean",
-          "default": false,
-          "description": "Analyse as soon as the window opens"
+          "type": "string",
+          "enum": [
+            "branch",
+            "always",
+            "never"
+          ],
+          "default": "branch",
+          "enumDescriptions": [
+            "When the branch has commits its base does not: review it as soon as the window opens, and select the worst change",
+            "Every window, whatever the branch",
+            "Never by itself; pick what to review in the Review view"
+          ],
+          "description": "Whether a review starts by itself when the window opens. The old values true and false mean always and never."
         },
         "impactTree.alwaysDiffCallers": {
           "type": "boolean",
