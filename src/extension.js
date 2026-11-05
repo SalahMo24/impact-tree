@@ -201,7 +201,9 @@ function activate(context, { clock = realClock } = {}) {
   let reviewComments = null;
   let feedbackComments = null;
   const details = createDetailPanel(vscode, { provider, view, getState: () => owned.state, log,
-    checkoutAndAnalyse: (pr) => session.checkoutAndAnalyse(pr), agentChange: (id) => agentChangeOf(id) });
+    checkoutAndAnalyse: (pr) => session.checkoutAndAnalyse(pr), agentChange: (id) => agentChangeOf(id),
+    // What the panel says with no row follows the view's state: the map while nothing is reviewed.
+    viewState: () => viewStateOf({ repo: repoStatus, phase: owned.getPhase(), busy: owned.isBusy(), state: owned.state }) });
   context.subscriptions.push(...details.disposables);
   // Counts follow presentation and progress events, independently of tree repaint scope.
   const showSummary = () => {

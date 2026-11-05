@@ -7,6 +7,10 @@
   look is selected with its explanation in Details, and the first time ever a hint says what
   red means. `impactTree.analyseOnStartup` is now `branch` (the default), `always` or
   `never`; its old `true` and `false` still mean always and never.
+- **Details maps what is here** when no change is shown. While nothing is reviewed: what you
+  can review (this branch, a pull request, your agent's edits), what the colours mean, and
+  what your agent adds, each with a link that runs it. Inside a review: the next change
+  (`Alt+N`), the order by card and your agent's notes when the review has cards.
 
 ## 1.0.3 — 2026-11-04
 
