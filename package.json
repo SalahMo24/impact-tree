@@ -1311,17 +1311,17 @@
         "impactTree.analyseOnStartup": {
           "type": "string",
           "enum": [
-            "branch",
+            "once",
             "always",
             "never"
           ],
-          "default": "branch",
+          "default": "once",
           "enumDescriptions": [
-            "When the branch has commits its base does not: review it the first time the Review view is opened in a window, and select the worst change",
-            "Every repository, whatever the branch, the first time the Review view is opened",
+            "Once ever: the first time the Review view is opened after install, when the branch has commits its base does not, review it and select the worst change. After that, pick what to review",
+            "Every window: review the branch the first time the Review view is opened in it",
             "Never by itself; pick what to review in the Review view"
           ],
-          "description": "Whether a review starts by itself the first time the Review view is opened in a window. Nothing runs before the view is on screen. The old values true and false mean always and never."
+          "description": "Whether a review starts by itself when the Review view is opened. Nothing runs before the view is on screen. The old values true and false mean always and never."
         },
         "impactTree.alwaysDiffCallers": {
           "type": "boolean",

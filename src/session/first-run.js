@@ -1,29 +1,32 @@
 // @ts-check
 'use strict';
 
-// The window's first review runs by itself, the first time the Review view is opened. Not
-// when the window opens: a review then would spin in every window and pull the sidebar to
-// Impact Tree, whether or not the reader came for it. Once the view is on screen and the
-// repository's branch is ahead of its base, the branch is reviewed with no mode to pick: the
-// view shows that review alone, the worst row is selected with its explanation in Details,
-// and the first time ever a one-line hint says what red means. A detached HEAD ahead of the
-// base (a checked-out pull request) counts. Nothing runs on a branch with no commits of its
-// own or an unknown base: the view's picker is the way in there. The `impactTree.analyseOnStartup`
-// setting turns this off (`never`) or widens it to every repository (`always`); its old boolean
+// The first review runs by itself, once: the first time ever the Review view is opened
+// after install, in a repository whose branch is ahead of its base, the branch is reviewed
+// with no mode to pick. The view shows that review alone, the worst row is selected with its
+// explanation in Details, and a one-line hint says what red means. A detached HEAD ahead of
+// the base (a checked-out pull request) counts. From then on, opening the view does nothing
+// by itself: the reader picks what to review. Not on every window, and not on every visit:
+// a review that started whenever the extension came into view was a hijack, not a welcome.
+// Nothing runs before the view is on screen, and nothing runs on a branch with no commits of
+// its own or an unknown base (that first visit is not used up). The `impactTree.analyseOnStartup`
+// setting turns this off (`never`) or makes it every window (`always`); its old boolean
 // values still mean what they did.
 
 const { resolveBase } = require('../engine/git');
 
 /** Global state: the hint was shown once, on the first result ever. */
 const HINTED_KEY = 'impactTree.firstRun.hinted';
+/** Global state: the one review by itself has run (policy `once`). */
+const DONE_KEY = 'impactTree.firstRun.done';
 const HINT = 'Red: a caller wasn\'t updated. Start there.';
 /** Selecting the worst row races the tree's repaint for the result: tries, and the gap between them. Unit: tries, ms. */
 const SELECT_TRIES = 3;
 const SELECT_RETRY_MS = 300;
 
 /**
- * @typedef {'branch'|'always'|'never'} Policy
- * @typedef {{ run: boolean, reason: 'ahead'|'always'|'never'|'not-ahead'|'no-base'|'no-repo'|'held' }} Decision
+ * @typedef {'once'|'always'|'never'} Policy
+ * @typedef {{ run: boolean, reason: 'ahead'|'always'|'never'|'done'|'not-ahead'|'no-base'|'no-repo'|'held' }} Decision
  */
 
 /**
@@ -35,7 +38,7 @@ const SELECT_RETRY_MS = 300;
 function startupPolicy(raw) {
   if (raw === true || raw === 'always') return 'always';
   if (raw === false || raw === 'never') return 'never';
-  return 'branch';
+  return 'once';
 }
 
 /**
@@ -62,12 +65,14 @@ function branchAheadOfBase(git, { base, remote }) {
 
 /**
  * Whether to review by itself now.
- * @param {{ policy: Policy, repoStatus: string, held: boolean, ahead: () => ReturnType<typeof branchAheadOfBase> }} o
- *   `held`: a review is already shown or running. `ahead` is asked only when it decides.
+ * @param {{ policy: Policy, done: boolean, repoStatus: string, held: boolean, ahead: () => ReturnType<typeof branchAheadOfBase> }} o
+ *   `done`: the one review by itself has run before. `held`: a review is already shown or
+ *   running. `ahead` is asked only when it decides.
  * @returns {Decision}
  */
-function decideAutoReview({ policy, repoStatus, held, ahead }) {
+function decideAutoReview({ policy, done, repoStatus, held, ahead }) {
   if (policy === 'never') return { run: false, reason: 'never' };
+  if (policy === 'once' && done) return { run: false, reason: 'done' };
   if (repoStatus !== 'ok') return { run: false, reason: 'no-repo' };
   if (held) return { run: false, reason: 'held' };
   if (policy === 'always') return { run: true, reason: 'always' };
@@ -133,8 +138,11 @@ function createFirstRun(vscode, { session, provider, view, treeRead, rowId, glob
   /** The decision and, when it says so, the run. */
   function start() {
     const cfg = vscode.workspace.getConfiguration('impactTree');
+    const policy = startupPolicy(cfg.get('analyseOnStartup'));
     const decision = decideAutoReview({
-      policy: startupPolicy(cfg.get('analyseOnStartup')),
+      policy,
+      // Without global state (some test hosts) the one run cannot be remembered, so it never runs.
+      done: !globalState || globalState.get(DONE_KEY) === true,
       repoStatus: session.repoStatus(),
       held: Boolean(session.state && (session.state.result || session.state.error)) || session.isBusy(),
       ahead: () => {
@@ -151,6 +159,7 @@ function createFirstRun(vscode, { session, provider, view, treeRead, rowId, glob
     if (telemetry) telemetry.event('startup.review', { ran: decision.run, reason: decision.reason });
     if (!decision.run) { log(`first run: not reviewing by itself (${decision.reason})`); return; }
     log(`first run: reviewing the branch by itself (${decision.reason})`);
+    if (policy === 'once' && globalState) void Promise.resolve(globalState.update(DONE_KEY, true)).then(undefined, (e) => log(`first run: could not remember the run: ${e && e.message}`));
     // The result lands as a presentation change of the tree (reason `analysis`); the
     // session's own analysis event fires when a run begins, not when it finishes.
     waiting = provider.onDidChangePresentation((e) => { if (e && e.reason === 'analysis') onResult(); });
@@ -176,4 +185,4 @@ function createFirstRun(vscode, { session, provider, view, treeRead, rowId, glob
   };
 }
 
-module.exports = { createFirstRun, decideAutoReview, branchAheadOfBase, startupPolicy, HINT, HINTED_KEY };
+module.exports = { createFirstRun, decideAutoReview, branchAheadOfBase, startupPolicy, HINT, HINTED_KEY, DONE_KEY };

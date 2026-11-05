@@ -3,16 +3,17 @@
 // selects afterwards, and the one-time hint.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createFirstRun, decideAutoReview, branchAheadOfBase, startupPolicy, HINT, HINTED_KEY } = require('../src/session/first-run');
+const { createFirstRun, decideAutoReview, branchAheadOfBase, startupPolicy, HINT, HINTED_KEY, DONE_KEY } = require('../src/session/first-run');
 
 test('the setting: new words and the old booleans', () => {
-  assert.equal(startupPolicy(undefined), 'branch');
-  assert.equal(startupPolicy('branch'), 'branch');
+  assert.equal(startupPolicy(undefined), 'once');
+  assert.equal(startupPolicy('once'), 'once');
+  assert.equal(startupPolicy('branch'), 'once');
   assert.equal(startupPolicy('always'), 'always');
   assert.equal(startupPolicy(true), 'always');
   assert.equal(startupPolicy('never'), 'never');
   assert.equal(startupPolicy(false), 'never');
-  assert.equal(startupPolicy('junk'), 'branch');
+  assert.equal(startupPolicy('junk'), 'once');
 });
 
 /** A git whose answers are scripted by command. */
@@ -37,17 +38,19 @@ test('branch ahead of base: counts commits, and reads failures as unknown', () =
 test('the decision: never, no repo and a held review stop it; branch asks git, always does not', () => {
   let asked = 0;
   const ahead = (reason) => () => { asked++; return { ahead: reason === 'ahead' ? 1 : 0, reason }; };
-  assert.deepEqual(decideAutoReview({ policy: 'never', repoStatus: 'ok', held: false, ahead: ahead('ahead') }), { run: false, reason: 'never' });
-  assert.deepEqual(decideAutoReview({ policy: 'branch', repoStatus: 'noGit', held: false, ahead: ahead('ahead') }), { run: false, reason: 'no-repo' });
-  assert.deepEqual(decideAutoReview({ policy: 'branch', repoStatus: 'ok', held: true, ahead: ahead('ahead') }), { run: false, reason: 'held' });
+  assert.deepEqual(decideAutoReview({ policy: 'never', done: false, repoStatus: 'ok', held: false, ahead: ahead('ahead') }), { run: false, reason: 'never' });
+  assert.deepEqual(decideAutoReview({ policy: 'once', done: false, repoStatus: 'noGit', held: false, ahead: ahead('ahead') }), { run: false, reason: 'no-repo' });
+  assert.deepEqual(decideAutoReview({ policy: 'once', done: false, repoStatus: 'ok', held: true, ahead: ahead('ahead') }), { run: false, reason: 'held' });
   assert.equal(asked, 0);
-  assert.deepEqual(decideAutoReview({ policy: 'always', repoStatus: 'ok', held: false, ahead: ahead('not-ahead') }), { run: true, reason: 'always' });
+  assert.deepEqual(decideAutoReview({ policy: 'always', done: false, repoStatus: 'ok', held: false, ahead: ahead('not-ahead') }), { run: true, reason: 'always' });
   assert.equal(asked, 0);
-  assert.deepEqual(decideAutoReview({ policy: 'branch', repoStatus: 'ok', held: false, ahead: ahead('ahead') }), { run: true, reason: 'ahead' });
-  assert.deepEqual(decideAutoReview({ policy: 'branch', repoStatus: 'ok', held: false, ahead: ahead('not-ahead') }), { run: false, reason: 'not-ahead' });
+  assert.deepEqual(decideAutoReview({ policy: 'once', done: false, repoStatus: 'ok', held: false, ahead: ahead('ahead') }), { run: true, reason: 'ahead' });
+  assert.deepEqual(decideAutoReview({ policy: 'once', done: false, repoStatus: 'ok', held: false, ahead: ahead('not-ahead') }), { run: false, reason: 'not-ahead' });
+  assert.deepEqual(decideAutoReview({ policy: 'once', done: true, repoStatus: 'ok', held: false, ahead: ahead('ahead') }), { run: false, reason: 'done' });
+  assert.deepEqual(decideAutoReview({ policy: 'always', done: true, repoStatus: 'ok', held: false, ahead: ahead('ahead') }), { run: true, reason: 'always' });
 });
 
-function setup({ setting, ahead = '2\n', attention = 1, hinted = false, held = false, dropFirst = false, visible = false } = {}) {
+function setup({ setting, ahead = '2\n', attention = 1, hinted = false, done = false, held = false, dropFirst = false, visible = false } = {}) {
   const seen = { refreshed: 0, revealed: [], messages: [], events: [], timers: [] };
   const listeners = new Set();
   const session = {
@@ -63,7 +66,7 @@ function setup({ setting, ahead = '2\n', attention = 1, hinted = false, held = f
   const visibility = [];
   const view = { visible, selection: [], reveal: async (row, o) => { seen.revealed.push([row.label, o]); view.selection = drops-- > 0 ? [] : [{ label: row.label }]; },
     onDidChangeVisibility: (l) => { visibility.push(l); return { dispose() { visibility.splice(visibility.indexOf(l), 1); } }; } };
-  const values = new Map(hinted ? [[HINTED_KEY, true]] : []);
+  const values = new Map([...(hinted ? [[HINTED_KEY, true]] : []), ...(done ? [[DONE_KEY, true]] : [])]);
   const vscode = {
     workspace: { getConfiguration: () => ({ get: (k, d) => (k === 'analyseOnStartup' ? setting : d) }) },
     window: { showInformationMessage: async (m) => { seen.messages.push(m); } },
@@ -88,6 +91,7 @@ test('a branch ahead of its base is reviewed by itself; the worst row is selecte
   assert.equal(t.seen.refreshed, 0);
   t.show(true);
   assert.equal(t.seen.refreshed, 1, 'the view came on screen');
+  assert.equal(t.values.get(DONE_KEY), true, 'remembered across windows');
   assert.equal(t.visibility.length, 0, 'watched once');
   t.show(true);
   assert.equal(t.seen.refreshed, 1);
@@ -114,6 +118,19 @@ test('a selection lost to the repaint is made again', async () => {
   for (let i = 0; i < 4; i++) await settle();
   assert.deepEqual(t.seen.revealed.map(([l]) => l), ['lockRow', 'lockRow']);
   assert.deepEqual(t.seen.timers, [300]);
+});
+
+test('once ever: a later window does nothing by itself, and a first visit with nothing to review is not used up', () => {
+  const later = setup({ done: true, visible: true });
+  later.firstRun.schedule();
+  assert.equal(later.seen.refreshed, 0);
+  assert.deepEqual(later.seen.events, ['startup.review:done']);
+  const even = setup({ ahead: '0\n', visible: true });
+  even.firstRun.schedule();
+  assert.equal(even.values.get(DONE_KEY), undefined);
+  const always = setup({ setting: 'always', done: true, visible: true });
+  always.firstRun.schedule();
+  assert.equal(always.seen.refreshed, 1);
 });
 
 test('a view already on screen starts at once; disposing before it shows starts nothing', () => {

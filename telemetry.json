@@ -46,7 +46,7 @@
       "owner": "SalahMo24",
       "comment": "Whether a review started by itself when the window opened, and why or why not.",
       "ran": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "true when the branch was reviewed by itself." },
-      "reason": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "ahead, always, never, not-ahead, no-base, no-repo or held." }
+      "reason": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "ahead, always, never, done, not-ahead, no-base, no-repo or held." }
     },
     "$exception": {
       "owner": "SalahMo24",
