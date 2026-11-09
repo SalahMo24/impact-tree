@@ -34,6 +34,7 @@ const { validateSubmission, cardIds } = require('../engine/agent-results');
  * @property {string} [before]
  * @property {string} [after]
  * @property {string} [when]
+ * @property {string} [shape] A pseudocode diff of the control flow: lines starting with ' ', '+' or '-'.
  * @property {Array<{ name: string, how: string }>} [affects]
  */
 

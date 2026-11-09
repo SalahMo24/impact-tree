@@ -264,10 +264,14 @@ test('package.json contributes the commands, the keybinding and the palette gate
     assert.ok(contributes.commands.some((c) => c.command === id && c.icon), `${id} is contributed with an icon`);
     assert.doesNotThrow(() => env.run(id), `${id} is registered`);
   }
-  // the review lens adds its own, ⇧⌥C for the callers peek (test/review-lens.test.js)
-  assert.deepEqual(contributes.keybindings.filter((k) => k.command !== 'impactTree.showCallers'),
+  // the review lens adds its own, ⇧⌥C for the callers peek (test/review-lens.test.js),
+  // and the pull request search has ⇧⌥P
+  const others = ['impactTree.showCallers', 'impactTree.searchPullRequests'];
+  assert.deepEqual(contributes.keybindings.filter((k) => !others.includes(k.command)),
     [{ command: 'impactTree.nextUnreviewed', key: 'alt+n', when: 'impactTree.hasReview' },
       { command: 'impactTree.previousUnreviewed', key: 'shift+alt+n', when: 'impactTree.hasReview' }]);
+  assert.deepEqual(contributes.keybindings.filter((k) => k.command === 'impactTree.searchPullRequests'),
+    [{ command: 'impactTree.searchPullRequests', key: 'shift+alt+p' }]);
   assert.equal(contributes.commands.find((c) => c.command === 'impactTree.previousUnreviewed').title, 'Impact Tree: Go to previous unreviewed change');
   assert.equal(contributes.commands.find((c) => c.command === 'impactTree.nextUnreviewed').title, 'Impact Tree: Go to next unreviewed change');
   assert.equal(env.seen.statusBar.tooltip, 'Go to the next unreviewed change');
@@ -315,9 +319,9 @@ test('package.json contributes the commands, the keybinding and the palette gate
     'previousUnreviewed', 'nextUnreviewed', 'selectMode', 'setCheckpoint', 'showLegend', 'showLog', 'clearReviewed', 'cleanUpStoredData']
     .map((c) => groupOf(`impactTree.${c}`)[0]),
   ['0_filter@1', '0_filter@1', '0_filter@2', '0_filter@2', '0_filter@3', '0_filter@3', '0_go@1', '0_go@2', '1_mode@1', '1_mode@2', '2_help@1', '2_help@2', '3_progress@1', '3_progress@2']);
-  // The view's own title keeps what works without a review row: previous/next, help, and the PR list's refresh.
+  // The view's own title keeps what works without a review row: previous/next, help, and the PR list's search and refresh.
   assert.deepEqual(contributes.menus['view/title'].filter((m) => m.when === 'view == impactTree.sources').map((m) => m.command).sort(),
-    ['impactTree.nextUnreviewed', 'impactTree.previousUnreviewed', 'impactTree.refreshPullRequests', 'impactTree.showLegend', 'impactTree.showLog']);
+    ['impactTree.nextUnreviewed', 'impactTree.previousUnreviewed', 'impactTree.refreshPullRequests', 'impactTree.searchPullRequests', 'impactTree.showLegend', 'impactTree.showLog']);
   assert.ok(!JSON.stringify(contributes).includes('impactTree.changes'), 'the Changes view is gone');
   const palette = Object.fromEntries(contributes.menus.commandPalette.map((m) => [m.command, m.when]));
   for (const id of ['impactTree.filterAttention', 'impactTree.filterUnreviewed', 'impactTree.nextUnreviewed', 'impactTree.previousUnreviewed']) assert.equal(palette[id], 'impactTree.hasReview', id);

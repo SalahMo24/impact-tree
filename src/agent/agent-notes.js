@@ -13,7 +13,7 @@ const MARK = Object.freeze({ changed: '⚠', 'may-change': '?', new: '+', same: 
 const WORD = Object.freeze({ changed: 'Changed', 'may-change': 'May change', new: 'New', same: 'Same behaviour, new way' });
 
 /**
- * @typedef {{ id: string, kind: 'changed'|'may-change'|'same'|'new', what: string, before?: string, after?: string, when?: string,
+ * @typedef {{ id: string, kind: 'changed'|'may-change'|'same'|'new', what: string, before?: string, after?: string, when?: string, shape?: string,
  *   affects?: Array<{ name: string, how: string }> }} AgentChange
  * @typedef {{ change: (id: string) => AgentChange|null, how: (changeId: string, callerLabel: string) => string|null }} AgentNotes
  */
