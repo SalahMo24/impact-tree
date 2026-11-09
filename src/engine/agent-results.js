@@ -45,6 +45,13 @@ const BEHAVIOUR_KINDS = ['changed', 'may-change', 'same', 'new'];
 const MAX_WHAT_CHARS = 200;
 // Before, after, when, and how one caller is affected. Unit: UTF-16 code units.
 const MAX_DETAIL_CHARS = 400;
+// The pseudocode diff of a change's control flow (`shape`). The prompt asks for 60 characters a
+// line; 80 leaves room before refusing. Units: lines, UTF-16 code units.
+const MAX_SHAPE_LINES = 8;
+const MAX_SHAPE_LINE_CHARS = 80;
+const MAX_SHAPE_CHARS = MAX_SHAPE_LINES * (MAX_SHAPE_LINE_CHARS + 1);
+// Operators that show a shape line is code, not pseudocode in words.
+const SHAPE_CODE = /&&|\|\||[=!]==|=>|[{};]/;
 // Callers and entry points named as affected per change. Unit: items.
 const MAX_AFFECTS = 10;
 // Changes in "needs your attention". Unit: ids.
@@ -225,11 +232,17 @@ function checkBehaviour(answer, { required, aliases, known, errors, dropped }) {
       const what = typeof c.what === 'string' ? c.what.trim() : '';
       if (!what) errors.push(`${where}: empty what`);
       else if (what.length > MAX_WHAT_CHARS) errors.push(`${where}: what is longer than ${MAX_WHAT_CHARS} characters; keep it to one line`);
-      const before = optionalText(c.before, `${where}.before`, MAX_DETAIL_CHARS, errors);
-      const after = optionalText(c.after, `${where}.after`, MAX_DETAIL_CHARS, errors);
-      const when = optionalText(c.when, `${where}.when`, MAX_DETAIL_CHARS, errors);
+      const shape = checkShape(c.shape, `${where}.shape`, errors);
+      let before = optionalText(c.before, `${where}.before`, MAX_DETAIL_CHARS, errors);
+      let after = optionalText(c.after, `${where}.after`, MAX_DETAIL_CHARS, errors);
+      let when = optionalText(c.when, `${where}.when`, MAX_DETAIL_CHARS, errors);
+      if (shape && (before || after || when)) {
+        // The shape says what before, after and when say, in less space: one of the two is shown.
+        dropped.push(`${where}: before, after and when are not shown when there is a shape`);
+        before = after = when = undefined;
+      }
       const affects = checkAffects(c.affects, where, known(id), errors, dropped);
-      out.changes.push({ id, kind: c.kind, what, ...(before ? { before } : {}), ...(after ? { after } : {}), ...(when ? { when } : {}), ...(affects.length ? { affects } : {}) });
+      out.changes.push({ id, kind: c.kind, what, ...(before ? { before } : {}), ...(after ? { after } : {}), ...(when ? { when } : {}), ...(shape ? { shape } : {}), ...(affects.length ? { affects } : {}) });
     });
   }
   if (answer.attention !== undefined) {
@@ -244,6 +257,36 @@ function checkBehaviour(answer, { required, aliases, known, errors, dropped }) {
     });
   }
   return out;
+}
+
+/**
+ * A pseudocode diff of the change's control flow: a few short lines in words, not code, each
+ * starting with ' ', '+' or '-' (as in a unified diff), with at least one '+' or '-'. Leading spaces are the indent and
+ * are kept; trailing blank lines and spaces are dropped.
+ * @param {unknown} v @param {string} where @param {string[]} errors
+ * @returns {string|undefined}
+ */
+function checkShape(v, where, errors) {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== 'string') { errors.push(`${where} must be a string`); return undefined; }
+  if (v.length > MAX_SHAPE_CHARS) { errors.push(`${where} is longer than ${MAX_SHAPE_CHARS} characters`); return undefined; }
+  const lines = v.replace(/\r\n?/g, '\n').split('\n').map((l) => l.replace(/\s+$/, ''));
+  while (lines.length && !lines[0]) lines.shift();
+  while (lines.length && !lines[lines.length - 1]) lines.pop();
+  if (!lines.length) return undefined;
+  if (lines.length > MAX_SHAPE_LINES) { errors.push(`${where} has ${lines.length} lines; keep it to ${MAX_SHAPE_LINES}`); return undefined; }
+  const bad = lines.findIndex((l) => l !== '' && !/^[ +-]/.test(l));
+  if (bad >= 0) { errors.push(`${where}: line ${bad + 1} must start with a space, + or -`); return undefined; }
+  const long = lines.findIndex((l) => l.length > MAX_SHAPE_LINE_CHARS);
+  if (long >= 0) { errors.push(`${where}: line ${long + 1} is longer than ${MAX_SHAPE_LINE_CHARS} characters; write plain words, not code, and split the step`); return undefined; }
+  const code = lines.findIndex((l) => SHAPE_CODE.test(l));
+  if (code >= 0) { errors.push(`${where}: line ${code + 1} reads as code (${JSON.stringify(SHAPE_CODE.exec(lines[code])?.[0])}); say it in words, one condition a line: if, or, and, else, return`); return undefined; }
+  // A line removed and added back as it was is unchanged: one context line, not a pair.
+  for (let i = 0; i + 1 < lines.length; i++) {
+    if (lines[i][0] === '-' && lines[i + 1] === `+${lines[i].slice(1)}`) lines.splice(i, 2, ` ${lines[i].slice(1)}`);
+  }
+  if (!lines.some((l) => /^[+-]/.test(l))) { errors.push(`${where} needs at least one line starting with + or -`); return undefined; }
+  return lines.join('\n');
 }
 
 /**

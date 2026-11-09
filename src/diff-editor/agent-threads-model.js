@@ -71,8 +71,19 @@ function noteParts(c) {
 }
 
 /**
- * The markdown body of the note: kind and what; before, after and when as short paragraphs
- * when given; the callers it affects (a name the engine knows is a link that opens the call
+ * The agent's pseudocode diff as a fenced `diff` block. The fence is longer than any run of
+ * backticks in the text, so nothing in it can close the block early.
+ * @param {string} shape @returns {string}
+ */
+function shapeBlock(shape) {
+  const longest = Math.max(0, ...(shape.match(/`+/g) || []).map((r) => r.length));
+  const fence = '`'.repeat(Math.max(3, longest + 1));
+  return `${fence}diff\n${shape}\n${fence}`;
+}
+
+/**
+ * The markdown body of the note: kind and what; the pseudocode diff as a `diff` block, or
+ * before, after and when as short paragraphs, when given; the callers it affects (a name the engine knows is a link that opens the call
  * site); the engine's verdict in italics; and who wrote it. Nothing the agent did not say is
  * added; the engine's sentence and the closing line are the engine's and the extension's own.
  * @param {AgentChange} c
@@ -89,6 +100,7 @@ function noteMarkdown(c, { verdict, callers }) {
   });
   return [
     `**${head}** — ${escapeNote(c.what)}`,
+    ...(c.shape ? [shapeBlock(c.shape)] : []),
     ...details.map(([label, text]) => `**${label}:** ${escapeNote(text)}`),
     ...(affects.length ? [['**Affects:**', ...affects].join('\n')] : []),
     `_${escapeNote(verdict)}_`,
@@ -108,6 +120,7 @@ function notePlainText(c) {
   const affects = (c.affects || []).map((a) => `- ${oneLine(a.name)} — ${oneLine(a.how)}`);
   return [
     `${head} — ${oneLine(c.what)}`,
+    ...(c.shape ? [c.shape] : []),
     ...details.map(([label, text]) => `${label}: ${oneLine(text)}`),
     ...(affects.length ? [['Affects:', ...affects].join('\n')] : []),
   ].join('\n\n');

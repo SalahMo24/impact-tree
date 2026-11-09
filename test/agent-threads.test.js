@@ -174,6 +174,15 @@ test('the plain text for the pull request is the note without the two closing li
   assert.equal(notePlainText(PAYLOAD.changes[2]), 'New — takes a stream');
 });
 
+test('a shape is a diff block right under the headline; backticks in it cannot close the block', () => {
+  const c = { id: 'a.ts#1', kind: 'changed', what: 'w', shape: ' save(x)\n+  if x is empty\n+    throw EmptyInput' };
+  const parts = noteMarkdown(c, { verdict: 'v', callers: [] }).split('\n\n');
+  assert.deepEqual(parts.slice(0, 3), ['**Changed** — w', '```diff\n save(x)\n+  if x is empty\n+    throw EmptyInput\n```', '_v_']);
+  const fenced = noteMarkdown({ ...c, shape: '+```\n+[x](command:foo)' }, { verdict: 'v', callers: [] });
+  assert.ok(fenced.includes('````diff\n+```\n+[x](command:foo)\n````'), 'the fence is longer than any run of backticks inside');
+  assert.equal(notePlainText(c), 'Changed — w\n\n save(x)\n+  if x is empty\n+    throw EmptyInput');
+});
+
 // ---- expansion ---------------------------------------------------------------------------
 
 test('a thread is expanded when its change needs attention and collapsed otherwise; a mark does not change it', () => {

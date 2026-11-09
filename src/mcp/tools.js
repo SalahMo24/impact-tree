@@ -343,6 +343,7 @@ function cardsAnswerSchema() {
       before: z.string().optional().describe('What it did.'),
       after: z.string().optional().describe('What it does now.'),
       when: z.string().optional().describe('The inputs or conditions where the outcome differs.'),
+      shape: z.string().optional().describe('When the control flow changed, in place of before/after/when: a pseudocode diff in plain words, at most 8 lines of 60 characters, each starting with a space, + or -.'),
       affects: z.array(z.object({ name: z.string().describe('A caller or entry point of this change from the facts.'), how: z.string().describe('How it is affected.') })).optional(),
     })).optional().describe('What each change does to behaviour; one entry per change you describe.'),
     cards: z.array(z.object({
