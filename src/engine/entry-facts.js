@@ -19,22 +19,48 @@ const MAX_FILES_READ = 4000;
 // Largest file read for facts. Unit: bytes. A larger file is skipped.
 const MAX_FILE_BYTES = 1024 * 1024;
 
+// Cache: the facts of a repository on disk, reused while nothing they came from changed.
+// Reading them costs a second or more on a large repository (t3code: 4000 files read,
+// 0.9–1.8 s, on the extension host's thread), and every run and caller retry asked again.
+// Owner: this module, one per process; the extension host keeps it for the window, the
+// CLI exits after one analysis. Key: the repository path and the languages asked for.
+// Validity: the `git ls-files` listing is the same text, and every file that was read
+// (or skipped for its size) has the same size and modification time, checked with one
+// stat each. A preview (`readRel`) reads another revision than the disk and is never
+// cached. Bound: MAX_CACHED_REPOS entries, the least recently used dropped. Disposal:
+// `_clearEntryFactsCache` (tests).
+const MAX_CACHED_REPOS = 4;
+/** @type {Map<string, { listing: string, reads: Array<{ rel: string, size: number, mtimeMs: number }>, facts: import('./entry-points').EntryFacts, notes: string[] }>} */
+const factsCache = new Map();
+
 /**
  * @param {{ repo: string, git: { tryRaw: (args: string[]) => string|null }, languages: Set<string>,
  *   readRel?: (relPath: string) => string|null }} input
  *   `languages`: which of 'ts', 'go', 'python' the analysis has changed functions in.
  *   `readRel`: reads a file by repository-relative path (another revision than the disk,
  *   such as a preview's head); default: the file on disk.
- * @returns {{ facts: import('./entry-points').EntryFacts, notes: string[] }}
+ * @returns {{ facts: import('./entry-points').EntryFacts, notes: string[] }} The facts are
+ *   shared with later calls that hit the cache: read them, do not change them.
  */
 function gatherEntryFacts({ repo, git, languages, readRel }) {
   const notes = [];
   const out = git.tryRaw(['ls-files', '--cached', '-z']);
   if (out == null) return { facts: {}, notes: ['entry-point facts not gathered: git could not list the files'] };
+  const cacheKey = readRel ? null : `${repo}\0${[...languages].sort().join(',')}`;
+  if (cacheKey !== null) {
+    const hit = factsCache.get(cacheKey);
+    if (hit && hit.listing === out && hit.reads.every((r) => sameOnDisk(path.join(repo, r.rel), r))) {
+      factsCache.delete(cacheKey);
+      factsCache.set(cacheKey, hit);   // most recently used last
+      return { facts: hit.facts, notes: hit.notes.slice() };
+    }
+  }
   const listed = out.split('\0').filter(Boolean).slice(0, MAX_LISTED);
   const listedSet = new Set(listed);
   let reads = 0;
   let skipped = 0;
+  /** @type {Array<{ rel: string, size: number, mtimeMs: number }>} */
+  const seen = [];
   const read = (/** @type {string} */ rel) => {
     if (reads >= MAX_FILES_READ) { skipped++; return null; }
     if (readRel) {
@@ -45,7 +71,9 @@ function gatherEntryFacts({ repo, git, languages, readRel }) {
     }
     try {
       const abs = path.join(repo, rel);
-      if (fs.statSync(abs).size > MAX_FILE_BYTES) { skipped++; return null; }
+      const st = fs.statSync(abs);
+      seen.push({ rel, size: st.size, mtimeMs: st.mtimeMs });
+      if (st.size > MAX_FILE_BYTES) { skipped++; return null; }
       reads++;
       return fs.readFileSync(abs, 'utf8');
     } catch { return null; }
@@ -56,7 +84,19 @@ function gatherEntryFacts({ repo, git, languages, readRel }) {
   if (languages.has('python')) facts.pyPublic = pythonFacts(listed, listedSet, read);
   if (languages.has('go')) facts.goCommandPrefix = goFacts(listed, read);
   if (skipped) notes.push(`entry-point facts are partial: ${skipped} file(s) not read (over ${MAX_FILES_READ} files or ${MAX_FILE_BYTES / 1024} KB per file)`);
+  if (cacheKey !== null) {
+    factsCache.set(cacheKey, { listing: out, reads: seen, facts, notes: notes.slice() });
+    while (factsCache.size > MAX_CACHED_REPOS) factsCache.delete(/** @type {string} */ (factsCache.keys().next().value));
+  }
   return { facts, notes };
+}
+
+/** @param {string} abs @param {{ size: number, mtimeMs: number }} was */
+function sameOnDisk(abs, was) {
+  try {
+    const st = fs.statSync(abs);
+    return st.size === was.size && st.mtimeMs === was.mtimeMs;
+  } catch { return false; }
 }
 
 const isNodeModules = (/** @type {string} */ p) => /(?:^|\/)node_modules\//.test(p);
@@ -362,4 +402,4 @@ function funcBody(text, name) {
   return next === -1 ? text.slice(m.index) : text.slice(m.index, m.index + m[0].length + next);
 }
 
-module.exports = { gatherEntryFacts, reExportsOf, sourceOfTarget, MAX_FILES_READ };
+module.exports = { gatherEntryFacts, reExportsOf, sourceOfTarget, MAX_FILES_READ, _clearEntryFactsCache: () => factsCache.clear() };

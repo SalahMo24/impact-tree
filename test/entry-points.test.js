@@ -175,6 +175,47 @@ test('Python: special methods of a public class are entries; a private class\'s 
   assert.equal(declarationEntry({ language: 'python', text, pos: text.lastIndexOf('__anext__'), label: '_Iter.__anext__', relPath: 'httpx/_content.py', facts }), null);
 });
 
+test('facts: a repository\'s facts are reused while its listing and the files read are unchanged', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { gatherEntryFacts, _clearEntryFactsCache } = require('../src/engine/entry-facts');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'entry-facts-cache-'));
+  const write = (rel, text) => { fs.mkdirSync(path.join(dir, path.dirname(rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), text); };
+  try {
+    _clearEntryFactsCache();
+    write('package.json', '{"name":"p","main":"dist/index.js"}');
+    write('src/index.ts', 'export { a } from "./a";\n');
+    write('src/a.ts', 'export function a() {}\n');
+    let listing = ['package.json', 'src/index.ts', 'src/a.ts'].join('\0');
+    const git = { tryRaw: () => listing };
+    const first = gatherEntryFacts({ repo: dir, git, languages: new Set(['ts']) });
+    assert.deepEqual([...first.facts.tsPublic.get('src/a.ts')], ['a']);
+    // Nothing changed: the same facts object, without reading again.
+    const again = gatherEntryFacts({ repo: dir, git, languages: new Set(['ts']) });
+    assert.equal(again.facts, first.facts);
+    assert.notEqual(again.notes, first.notes, 'the notes are the caller\'s own copy');
+    // Another language set is another entry.
+    assert.notEqual(gatherEntryFacts({ repo: dir, git, languages: new Set(['ts', 'go']) }).facts, first.facts);
+    // A file that was read changed (same size, later mtime): read again, new facts.
+    write('src/index.ts', 'export { b } from "./a";\n');
+    fs.utimesSync(path.join(dir, 'src/index.ts'), new Date(), new Date(Date.now() + 5000));
+    const edited = gatherEntryFacts({ repo: dir, git, languages: new Set(['ts']) });
+    assert.notEqual(edited.facts, first.facts);
+    assert.deepEqual([...edited.facts.tsPublic.get('src/a.ts')], ['b']);
+    // The listing changed (a file added): read again.
+    write('src/c.ts', 'export function c() {}\n');
+    listing += '\0src/c.ts';
+    assert.notEqual(gatherEntryFacts({ repo: dir, git, languages: new Set(['ts']) }).facts, edited.facts);
+    // A preview reads another revision than the disk and is never served from the cache.
+    const preview = gatherEntryFacts({ repo: dir, git, languages: new Set(['ts']), readRel: (rel) => fs.readFileSync(path.join(dir, rel), 'utf8') });
+    assert.notEqual(gatherEntryFacts({ repo: dir, git, languages: new Set(['ts']), readRel: (rel) => fs.readFileSync(path.join(dir, rel), 'utf8') }).facts, preview.facts);
+  } finally {
+    _clearEntryFactsCache();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('facts: __all__ names reached through `from .x import *` and TYPE_CHECKING imports', () => {
   const fs = require('fs');
   const os = require('os');
