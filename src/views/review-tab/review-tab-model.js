@@ -33,12 +33,19 @@ const KINDS = ['changed', 'may-change', 'new', 'same'];
  * @typedef {{ id: string, n: number, title: string, sentence: string, chips: Chip[], attention: boolean, column: string, changes: string[], why: string|null }} CardModel
  * @typedef {{ label: string, file: string, line: number|null, state: string, test: boolean, index: number }} CallerModel
  * @typedef {{ id: string, name: string, file: string, line: number|null, deleted: boolean, attention: boolean, kind: string|null, what: string|null,
- *   before: string|null, after: string|null, when: string|null, affects: Array<{ name: string, how: string }>,
+ *   before: string|null, after: string|null, when: string|null, shape: string|null, affects: Array<{ name: string, how: string }>,
+ *   calls: { added: string[], removed: string[], more: number }|null,
  *   verdict: { text: string, level: number }, hunk: { lines: Array<{ t: string, s: string }>, more: number }|null,
  *   callers: CallerModel[], callersMore: number, callersComplete: boolean, entries: string[], entriesMore: number }} ChangeModel
  * @typedef {{ title: string, preview: boolean, counts: { changes: number, cards: number }, agent: boolean, summary: string|null,
  *   note: string|null, columns: Array<{ id: string, label: string, cards: string[] }>, cards: CardModel[], changes: Record<string, ChangeModel> }} TabModel
  */
+
+/**
+ * The calls to show, or null when none were gained or lost.
+ * @param {{ added: string[], removed: string[], addedMore: number, removedMore: number }|null} d
+ */
+const callsModel = (d) => (d && (d.added.length || d.removed.length) ? { added: d.added, removed: d.removed, more: d.addedMore + d.removedMore } : null);
 
 /** @param {number} n @param {string} one @param {string} [many] */
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -86,11 +93,13 @@ function hunkLines(text, start, end) {
  * @param {unknown} [input.agentPayload] The latest stored agent `cards` result for the shown head, or null.
  * @param {string} [input.title] The review's name: "PR #4284 feat: …" or the branch.
  * @param {(change: any) => string|null} [input.hunkOf] The diff hunk text of a changed function, or null.
+ * @param {(change: any) => { added: string[], removed: string[], addedMore: number, removedMore: number }|null} [input.callsOf]
+ *   The calls a changed function gained and lost (engine/call-diff.js), or null.
  * @param {(file: string, pos: number) => number|null} [input.lineAt] 1-based line of an offset in a file.
  * @param {(file: string) => string} [input.rel] Repository-relative path of an absolute file.
  * @returns {TabModel}
  */
-function reviewTabModel({ result, cards, agentPayload = null, title = '', hunkOf = () => null, lineAt = () => null, rel = (f) => f }) {
+function reviewTabModel({ result, cards, agentPayload = null, title = '', hunkOf = () => null, callsOf = () => null, lineAt = () => null, rel = (f) => f }) {
   const preview = result.tierA === true;
   /** @type {Map<string, any>} */
   const changed = new Map();
@@ -122,6 +131,7 @@ function reviewTabModel({ result, cards, agentPayload = null, title = '', hunkOf
       // The one attention set of the tree (gate G15): the engine flags it (level 0 or 1; a deleted symbol is always flagged) or the agent named it.
       attention: attentionIds.has(id) || (c ? verdict.level <= 1 : !!d),
       kind: b ? b.kind : null, what: b ? b.what : null, before: (b && b.before) || null, after: (b && b.after) || null, when: (b && b.when) || null,
+      shape: (b && b.shape) || null, calls: c ? callsModel(callsOf(c)) : null,
       affects: (b && b.affects) || [], verdict: { text: verdict.text, level: verdict.level },
       hunk: c ? hunkLines(hunkOf(c), c.startLine, c.endLine) : null,
       callers: callers.slice(0, MAX_CALLERS).map((/** @type {any} */ x, /** @type {number} */ index) => ({

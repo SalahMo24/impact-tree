@@ -17,7 +17,7 @@
 // length-capped: it is data the prompt marks as data. Pure apart from `readText` (line numbers
 // of call sites), which is injectable.
 
-const { makeEnv, impactOf, nameOf, seamsOf, hunkFor } = require('./card-env');
+const { makeEnv, impactOf, nameOf, seamsOf, hunkFor, callsFor } = require('./card-env');
 
 /** A member as id, name, file and kinds only: the smallest form. @param {import('./card-env').CardEnv} env @param {string} id */
 const shortRow = (env, id) => {
@@ -94,8 +94,21 @@ function memberFacts(env, id, callerCap, diffs) {
       list: callers.slice(0, callerCap).map((r) => `${one(r.x.label, 80)} ${one(env.rel(r.x.file), 200)}:${env.lineAt(r.x.file, r.x.pos) ?? '?'} ${r.state}${r.test ? ' (test)' : ''}`),
     },
     tests: c.testState || null,
+    ...callsFacts(env, c),
     diff: diffs.has(id) ? diffs.get(id) : 'omitted',
   };
+}
+
+/**
+ * The calls the function gained and lost, when either list is not empty.
+ * @param {import('./card-env').CardEnv} env @param {any} c
+ * @returns {{ calls?: { added: string[], removed: string[], more?: number } }}
+ */
+function callsFacts(env, c) {
+  const d = callsFor(env, c, env.readText);
+  if (!d || (!d.added.length && !d.removed.length)) return {};
+  const more = d.addedMore + d.removedMore;
+  return { calls: { added: d.added.map((n) => one(n, 80)), removed: d.removed.map((n) => one(n, 80)), ...(more ? { more } : {}) } };
 }
 
 /**

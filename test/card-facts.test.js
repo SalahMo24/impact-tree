@@ -168,3 +168,14 @@ test('the facts file: under .impact-tree/cards, ignored by git, replacing the ea
     fs.rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test('facts: the calls a changed function gained and lost, by name; none listed when the diff is not known', () => {
+  const input = fixture();
+  const head = ['', '', 'add(path) {', '  check(path);', '  retry(() => this.store(path));', '}', '', '', ''].join('\n');
+  input.readText = (abs) => (abs === '/r/src/router.ts' ? head : TEXT);
+  input.diffOf = (rel) => (rel === 'src/router.ts'
+    ? 'diff --git a/src/router.ts b/src/router.ts\n@@ -3,4 +3,4 @@\n add(path) {\n   check(path);\n-  this.store(path); audit(path);\n+  retry(() => this.store(path));\n }\n' : null);
+  const members = buildCardFacts(input, REVIEW).facts.cards[0].members;
+  assert.deepEqual(members.find((m) => m.id === 'src/router.ts#10').calls, { added: ['retry'], removed: ['audit'] });
+  assert.equal(members.find((m) => m.id === 'src/x.ts#5').calls, undefined, 'no diff for that file');
+});

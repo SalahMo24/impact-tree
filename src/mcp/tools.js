@@ -20,7 +20,7 @@ const {
   validateSubmission, checkEvidence, isRelativePath, lineStarts, escapeRe, MAX_LINE, IDENTIFIER,
   BEHAVIOUR_KINDS, MAX_WHAT_CHARS, MAX_ATTENTION,
 } = require('../engine/agent-results');
-const { makeEnv, impactOf, seamsOf, nameOf, hunkFor } = require('../engine/card-env');
+const { makeEnv, impactOf, seamsOf, nameOf, hunkFor, callsFor } = require('../engine/card-env');
 
 // Lines one get_source call returns at most. Unit: lines.
 const MAX_SOURCE_LINES = 400;
@@ -179,7 +179,7 @@ function addCardTools(tools, env) {
 
   tools.push({
     name: 'get_change', title: 'Get one changed function', annotations: READ_ONLY,
-    description: 'One changed (or deleted) function by id (relPath#offset, from get_card): before/after signatures, change kinds, added throws, the diff hunk of that function, its callers with call-site update state, tests reaching it, and its impact paths.',
+    description: 'One changed (or deleted) function by id (relPath#offset, from get_card): before/after signatures, change kinds, added throws, the diff hunk of that function, the calls it gained and lost (by name), its callers with call-site update state, tests reaching it, and its impact paths.',
     inputSchema: z.object({ id: z.string().min(1).max(2000).describe('Change id such as src/a.ts#1234.') }).strict(),
     run: async (args) => getChange(env, String(args.id)),
   });
@@ -200,6 +200,7 @@ function getChange(env, id) {
     baseSig: c.baseSig ?? null, headSig: c.headSig ?? null,
     kinds: (c.kinds || []).map((/** @type {any} */ k) => ({ id: k.id, label: k.label })), throwsAdded: c.throwsAdded || [],
     hunk: hunk.text, hunkComplete: hunk.complete,
+    calls: callsFor(env, c, env.readText),
     callerState: c.callerState, callers,
     tests: { state: c.testState, found: c.tests || [], incompleteReason: c.testReachIncompleteReason || null },
     impactPaths: env.paths[id] || null,

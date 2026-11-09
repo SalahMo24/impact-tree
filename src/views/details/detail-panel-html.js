@@ -48,6 +48,10 @@ h3 { font-family: var(--vscode-editor-font-family); font-size: 13px; font-weight
 .agent dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 2px 8px; }
 .agent dt { color: var(--vscode-descriptionForeground); }
 .agent dd { margin: 0; }
+.agent pre.shape { font-family: var(--vscode-editor-font-family); font-size: 12px; background: var(--vscode-textCodeBlock-background); border-radius: 3px; padding: 3px 0; margin: 0 0 4px; overflow-x: auto; }
+.agent pre.shape span { display: block; padding: 0 6px; white-space: pre; }
+.agent pre.shape .add { background: var(--vscode-diffEditor-insertedLineBackground); }
+.agent pre.shape .del { background: var(--vscode-diffEditor-removedLineBackground); }
 .agent .by { color: var(--vscode-descriptionForeground); font-size: 11px; margin-top: 4px; }
 .verdict { margin: 10px 0; padding: 7px 9px; border-left: 3px solid var(--vscode-editorWarning-foreground); background: var(--vscode-textBlockQuote-background); }
 .verdict.lv0 { border-left-color: var(--vscode-editorError-foreground); }
@@ -203,7 +207,7 @@ const KIND_WORDS = { changed: 'Changed', 'may-change': 'May change', new: 'New',
 
 /**
  * What the user's agent says the change does to behaviour, when it said something.
- * @param {{ kind: string, what: string, before?: string, after?: string, when?: string, affects?: Array<{ name: string, how: string }> }|null} b
+ * @param {{ kind: string, what: string, before?: string, after?: string, when?: string, shape?: string, affects?: Array<{ name: string, how: string }> }|null} b
  * @returns {string}
  */
 function agentHtml(b) {
@@ -214,7 +218,9 @@ function agentHtml(b) {
   (Array.isArray(b.affects) ? b.affects : []).forEach((a, i) => {
     rows.push(`<dt>${i ? '' : 'Affects'}</dt><dd><b>${escapeHtml(a.name)}</b> — ${escapeHtml(a.how)}</dd>`);
   });
-  return `<div class="agent"><div class="what">${escapeHtml(word)}: ${escapeHtml(b.what)}</div>${rows.length ? `<dl>${rows.join('')}</dl>` : ''}<div class="by">Written by your agent</div></div>`;
+  const shape = typeof b.shape === 'string' && b.shape
+    ? `<pre class="shape">${b.shape.split('\n').map((l) => `<span class="${l[0] === '+' ? 'add' : l[0] === '-' ? 'del' : ''}">${escapeHtml(l)}</span>`).join('')}</pre>` : '';
+  return `<div class="agent"><div class="what">${escapeHtml(word)}: ${escapeHtml(b.what)}</div>${shape}${rows.length ? `<dl>${rows.join('')}</dl>` : ''}<div class="by">Written by your agent</div></div>`;
 }
 
 /**

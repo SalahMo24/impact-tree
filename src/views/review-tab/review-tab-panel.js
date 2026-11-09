@@ -7,7 +7,7 @@ const { execFile } = require('child_process');
 const { reviewTabModel } = require('./review-tab-model');
 const { buildReviewTabHtml } = require('./review-tab-html');
 const { splitDiff } = require('../../engine/card-facts');
-const { hunkFor } = require('../../engine/card-env');
+const { hunkFor, callsFor } = require('../../engine/card-env');
 const { lineStarts, lineOf } = require('../../engine/agent-results');
 
 // The review tab (U1): one editor tab per window with the review's overview board and its
@@ -106,7 +106,7 @@ function createReviewTab(vscode, { getState, agentPayload, repoRoot, log, diffTe
     };
     const model = reviewTabModel({
       result, cards: state.cards, agentPayload: agentPayload(), title: titleOf(state),
-      hunkOf: (c) => (diffOf ? hunkFor(env, c).text : null), lineAt, rel: state.rel || ((/** @type {string} */ f) => f),
+      hunkOf: (c) => (diffOf ? hunkFor(env, c).text : null), callsOf: (c) => (diffOf ? callsFor(env, c, readText) : null), lineAt, rel: state.rel || ((/** @type {string} */ f) => f),
     });
     shown = {
       changed: new Map((result.allChanged || []).map((/** @type {any} */ c) => [`${c.relPath}#${c.namePos}`, c])),
