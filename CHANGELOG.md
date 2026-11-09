@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.4 — 2026-11-09
 
 - **Faster reviews.** The findings and their callers show as soon as they are resolved; the
   search for the entry points the cards use runs after them instead of before, and no longer
