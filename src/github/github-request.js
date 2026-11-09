@@ -23,9 +23,11 @@ const { realClock } = require('../engine/clock');
  * - `maxJsonBytes`: bytes, default 10 MiB. The response to any JSON API call, including
  *   GraphQL queries and the response to a write (POST/PUT/PATCH/DELETE); enforced and
  *   exhausted the same way as `maxFileBytes`. `requestTimeoutMs` covers writes and
- *   GraphQL too. Requests are never retried: a read fails with the typed error and a
- *   write must not be sent twice, so the caller decides. A rate limit rejects at once
- *   with `GitHubRateLimitError`; the extension never sleeps until the reset.
+ *   GraphQL too. A request is sent again only when its connection failed before any
+ *   response (`CONNECTION_RETRIES`), and only a GET: a write must not be sent twice. Any
+ *   other failure rejects with its typed error at once, so the caller decides. A rate
+ *   limit rejects at once with `GitHubRateLimitError`; the extension never sleeps until
+ *   the reset.
  * - `maxPullRequestPages`: pages of 100, default 10 (1,000 pull requests). Enforced by
  *   `listOpenPullRequests`. Exhaustion: the list is returned truncated, and says so
  *   only when one more page proves that there were more.
@@ -40,6 +42,54 @@ const DEFAULT_LIMITS = Object.freeze({
   maxPullRequestPages: 10,
   maxTeamPages: 3,
 });
+
+/**
+ * Connection failures sent again. Unit: further attempts after the first, for one GET whose
+ * connection failed before a response. Default 1. Owner: `fetchBounded`, under the same
+ * `requestTimeoutMs` deadline (no extra time). Exhaustion: the call rejects with
+ * `GitHubNetworkError` naming the cause. Why one: the preview's own measurements show a
+ * refused connection in the editor host coming and going within seconds; a second
+ * attempt recovers that, and a host that is offline fails the second time just as fast.
+ */
+const CONNECTION_RETRIES = 1;
+
+/**
+ * The connection to GitHub failed before any response: a refused or reset connection, a
+ * name that did not resolve, or a connection that was not made in time. `fetch` reports
+ * these as a bare "fetch failed"; the cause (its `code` or message) is kept here so the
+ * log names the network error.
+ */
+class GitHubNetworkError extends Error {
+  /** @param {string} endpoint @param {unknown} cause */
+  constructor(endpoint, cause) {
+    super(`GitHub could not be reached for ${endpoint}: ${describeCause(cause)}`);
+    this.name = 'GitHubNetworkError';
+    this.cause = cause;
+  }
+}
+
+/** @param {unknown} error @returns {string} The network cause of a failed fetch, as a short phrase. */
+function describeCause(error) {
+  const e = /** @type {{ cause?: unknown, code?: unknown, message?: unknown }|null} */ (error && typeof error === 'object' ? error : null);
+  const inner = e && e.cause && typeof e.cause === 'object' ? /** @type {{ code?: unknown, message?: unknown }} */ (e.cause) : null;
+  const code = (inner && typeof inner.code === 'string' && inner.code) || (e && typeof e.code === 'string' && e.code) || null;
+  const message = (inner && typeof inner.message === 'string' && inner.message) || (e && typeof e.message === 'string' && e.message) || 'fetch failed';
+  return code && !message.includes(code) ? `${code} (${message})` : message;
+}
+
+/**
+ * Whether `fetch` rejected because no connection could be made or it broke before the
+ * response: a `TypeError` (what the fetch standard throws for a network error), or an
+ * error carrying a system error code. An abort, a deadline or a response with a status
+ * is not one.
+ * @param {unknown} error
+ */
+function isConnectionFailure(error) {
+  if (!error || typeof error !== 'object') return false;
+  const e = /** @type {{ name?: unknown, code?: unknown }} */ (error);
+  if (e.name === 'AbortError') return false;
+  return error instanceof TypeError || e.name === 'TypeError' || typeof e.code === 'string';
+}
 
 /** The request outlived its deadline. */
 class GitHubTimeoutError extends Error {
@@ -215,7 +265,20 @@ async function fetchBounded(fetchImpl, url, init, bounds) {
   /** @type {ReadableStreamDefaultReader<Uint8Array>|null} */
   let reader = null;
   try {
-    const res = await until(fetchImpl(url, { ...init, signal: controller.signal }));
+    let res;
+    // A GET whose connection failed before any response is sent once more, within the same
+    // deadline (`CONNECTION_RETRIES`); the second failure names the network cause.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        res = await until(fetchImpl(url, { ...init, signal: controller.signal }));
+        break;
+      } catch (error) {
+        if (cause) throw cause;
+        if (!isConnectionFailure(error)) throw error;
+        const retriable = (init.method === undefined || init.method === 'GET') && attempt < CONNECTION_RETRIES;
+        if (!retriable) throw new GitHubNetworkError(endpoint, error);
+      }
+    }
     if (cause) throw cause;
     if (res.status === 401) throw new GitHubAuthError(res.status);
     if (passStatuses.includes(res.status)) return { status: res.status, contentType: '', text: null };
@@ -256,8 +319,8 @@ async function fetchBounded(fetchImpl, url, init, bounds) {
 }
 
 module.exports = {
-  DEFAULT_LIMITS, fetchBounded,
-  GitHubTimeoutError, GitHubCancelledError, GitHubResponseTooLargeError,
+  DEFAULT_LIMITS, CONNECTION_RETRIES, fetchBounded,
+  GitHubNetworkError, GitHubTimeoutError, GitHubCancelledError, GitHubResponseTooLargeError,
   GitHubAuthError, GitHubHttpError, GitHubResponseError,
   GitHubRateLimitError, GitHubGraphQLError,
 };

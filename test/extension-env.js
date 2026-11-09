@@ -223,7 +223,10 @@ const repoTemplates = new Map();
 // activation's timers and deadlines move only when the test advances it.
 function createEnv({ prewarm = false, changedSource = false, memento = new Map(), signIn = null, graphql = null, settings = {},
   remotes = [['origin', 'https://github.com/example/repo.git']], authSession = null, fetch = null, clock = null } = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-ext-commands-'));
+  // The real path: on macOS the temporary folder is a symlink (/var → /private/var), and the
+  // session analyses git's top folder, which git reports resolved. The paths the tests
+  // build from `dir` must be the ones the session uses.
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-ext-commands-')));
   const sh = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
   const templateKey = JSON.stringify([changedSource, remotes]);
   if (repoTemplates.has(templateKey)) {
@@ -409,9 +412,11 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
       return { ...originalLoad.call(this, name, parent, ...rest), analyze: async (_repo, o) => {
         seen.analyze.push({ mode: o.mode, base: o.base });
         seen.analyzeRemotes.push(o.remote);
-        seen.analyzeOptions.push({ fetch: o.fetch, early: typeof o.onPrepared === 'function', impactPaths: o.impactPaths });
+        seen.analyzeOptions.push({ fetch: o.fetch, early: typeof o.onPrepared === 'function', resolved: typeof o.onResolved === 'function', impactPaths: o.impactPaths });
         seen.signals.push(o.signal);
         if (hooks.localPrepared) await o.onPrepared(hooks.localPrepared(o));
+        // The callers resolved, before the entry-point walk (analyze's onResolved).
+        if (hooks.localResolved && o.onResolved) await o.onResolved(hooks.localResolved(o));
         await holds.analyze.enter(() => undefined);
         return hooks.localResult(o, seen.analyze.length);
       } };

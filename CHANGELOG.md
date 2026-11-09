@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- **Faster reviews.** The findings and their callers show as soon as they are resolved; the
+  search for the entry points the cards use runs after them instead of before, and no longer
+  asks the language server again for callers it has just answered (or just timed out on).
+  On a 26-file pull request the result landed in 23–40 s; the callers alone take 3–6 s once
+  the server is warm. The repository facts that search reads (about a second on a large
+  monorepo) are kept between runs while the files are unchanged, and the log says how long
+  the walk took.
+- **Previews recover from a lost connection.** A request whose connection failed is sent
+  once more, the log names the network error instead of "fetch failed", and once GitHub
+  cannot be reached the optional configuration files are not asked for one by one.
+- Activation loads half as many files: the Pull Request tab's markdown libraries load when
+  the tab first renders.
+- **Fixed:** opening a new review in the By card order could fail to reveal the reviewed row
+  ("The path argument must be of type string").
+
 ## 1.0.3 — 2026-11-04
 
 - **Search pull requests…** (the search button on the Review view, the first row under

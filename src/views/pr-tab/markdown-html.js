@@ -1,7 +1,11 @@
 // @ts-check
 'use strict';
-const MarkdownIt = require('markdown-it');
-const sanitizeHtml = require('sanitize-html');
+// markdown-it and sanitize-html (which brings postcss, some 50 files) are loaded on the
+// first render, not with the extension: they serve only the Pull Request tab, and they were
+// a third of the modules activation read for a window that may never open it.
+/** @typedef {import('sanitize-html').Tag} SanitizeTag */
+/** @typedef {import('sanitize-html').Transformer} SanitizeTransformer */
+/** @typedef {import('sanitize-html').IOptions} SanitizeOptions */
 
 // GitHub-flavoured markdown from a pull request (its description, review bodies and
 // comments) as HTML for the Pull Request tab. Pure: text in, HTML out.
@@ -94,7 +98,7 @@ const ALLOWED_CLASSES = {
 /**
  * An image: the element when GitHub hosts it (its size kept when given in pixels), a link
  * reading `[image: alt]` for another safe source, plain text for an unsafe one.
- * @param {Record<string, string>} attribs @returns {sanitizeHtml.Tag}
+ * @param {Record<string, string>} attribs @returns {SanitizeTag}
  */
 const imageOf = (attribs) => {
   const src = String(attribs.src || '').trim();
@@ -110,7 +114,7 @@ const imageOf = (attribs) => {
 };
 
 /** An `align="…"` attribute as the matching class; the attribute itself never survives. */
-/** @type {sanitizeHtml.Transformer} */
+/** @type {SanitizeTransformer} */
 const alignAsClass = (tagName, attribs) => {
   const cls = ALIGN_CLASS[/** @type {keyof typeof ALIGN_CLASS} */ (String(attribs.align || '').toLowerCase())];
   const out = { ...attribs };
@@ -119,7 +123,7 @@ const alignAsClass = (tagName, attribs) => {
   return { tagName, attribs: out };
 };
 
-/** @type {sanitizeHtml.IOptions} */
+/** @type {SanitizeOptions} */
 const SANITIZE = {
   allowedTags: ALLOWED_TAGS,
   allowedAttributes: ALLOWED_ATTRIBUTES,
@@ -143,11 +147,24 @@ const SANITIZE = {
 };
 
 /**
- * The renderer, configured once. `env.refsBase` (per render) is the repository URL that
- * `#123` links against, or null for none.
+ * The renderer and the sanitizer, configured once, on the first render. `env.refsBase`
+ * (per render) is the repository URL that `#123` links against, or null for none.
+ * @type {{ md: ReturnType<typeof makeMarkdown>, sanitizeHtml: typeof import('sanitize-html') }|null}
  */
-const md = new MarkdownIt({ html: true, linkify: true, breaks: true, typographer: false });
-md.validateLink = (/** @type {string} */ url) => SAFE_URL.test(url.trim());
+let engines = null;
+function loadEngines() {
+  if (engines) return engines;
+  const md = makeMarkdown();
+  configureRenderer(md);
+  engines = { md, sanitizeHtml: require('sanitize-html') };
+  return engines;
+}
+function makeMarkdown() {
+  const MarkdownIt = require('markdown-it');
+  const md = new MarkdownIt({ html: true, linkify: true, breaks: true, typographer: false });
+  md.validateLink = (/** @type {string} */ url) => SAFE_URL.test(url.trim());
+  return md;
+}
 
 // A table cell's alignment as a class, never an inline style.
 /** @type {import('markdown-it').RendererRule} */
@@ -161,6 +178,9 @@ const alignedCell = (tokens, idx, options, env, self) => {
   }
   return self.renderToken(tokens, idx, options);
 };
+
+/** The rules this tab adds to a fresh renderer. @param {ReturnType<typeof makeMarkdown>} md */
+function configureRenderer(md) {
 md.renderer.rules.td_open = alignedCell;
 md.renderer.rules.th_open = alignedCell;
 
@@ -211,6 +231,7 @@ md.core.ruler.push('issue_refs', (state) => {
     block.children = out;
   }
 });
+}
 
 /** @param {import('markdown-it').StateCore} state @param {string} content @returns {import('markdown-it').Token} */
 function textToken(state, content) {
@@ -237,6 +258,7 @@ const plainVoidTags = (html) => html.replace(/<(br|hr|input|img)(\s[^<>]*)? \/>/
 function renderMarkdown(text, { refsBase = null } = {}) {
   const whole = String(text);
   const cut = whole.length > MAX_MARKDOWN_CHARS;
+  const { md, sanitizeHtml } = loadEngines();
   // Trimmed: a dropped HTML comment at the top would otherwise leave a blank line.
   const html = plainVoidTags(sanitizeHtml(md.render(cut ? whole.slice(0, MAX_MARKDOWN_CHARS) : whole, { refsBase }), SANITIZE)).trimStart();
   return cut ? `${html}<p class="note">… the rest of this text (${whole.length - MAX_MARKDOWN_CHARS} more characters) is not shown.</p>` : html;

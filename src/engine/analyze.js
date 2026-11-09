@@ -337,6 +337,9 @@ async function prepareLanguages(byLanguage, shared, { warnings, unanalysable, no
  *   the project.
  * @param {(result: object) => Promise<void>|void} [opts.onPrepared] Publishes a detached
  *   snapshot of changed rows before caller queries. Coverage is explicitly pending.
+ * @param {(result: object) => Promise<void>|void} [opts.onResolved] With `impactPaths`
+ *   only: publishes a detached snapshot once every caller is resolved and before the
+ *   entry-point walk, which has no `impactPaths` yet. The callers in it are final.
  * @param {import('../languages/types').LanguageServices} [opts.languageServices] The
  *   environment's language servers, passed to every language's `prepare` as
  *   `ctx.hooks.services`. Languages that need a server (Go) read their symbols through it;
@@ -520,6 +523,10 @@ async function analyze(repo, opts = {}) {
     }
     // Impact paths (opts.impactPaths): off unless asked, so the result is otherwise unchanged.
     impactWalker = opts.impactPaths ? createImpactWalkerFor(repo, git, plans, opts.impactPaths, signal, warnings) : null;
+    // The walks wait until every component's callers are resolved, so `onResolved` can
+    // publish the findings first; each unit's resolver is then disposed after its walk.
+    /** @type {Array<{ resolver: any, changed: any[], scopeNote?: string, component: any }>} */
+    const walks = [];
     for (const { comp, changed, deleted, resolver, scopeNote } of plans) {
       throwIfCancelled(signal);
       const changedKeys = changedSymbolKeys(changed);
@@ -578,16 +585,15 @@ async function analyze(repo, opts = {}) {
         report({ phase: 'resolve', component: comp, done: ++done, total: changed.length, label: c.label });
       }, { signal });
 
-      // Every changed function, not only the roots: walked before the resolver is disposed.
-      if (impactWalker) await impactWalker.walk(resolver, changed, { scopeNote });
-
       // Blast radius is only computed for roots we will actually show: at depth 4 with
       // 90-node closures it was the single largest cost in the run (234s -> see README).
       const ranked = seedRoots(changed).sort((a, b) => b.score - a.score);
       const roots = [];
       if (opts.skipForest) {
-        components.push({ component: comp, changed, deleted, roots: ranked, forest: [], stats: resolver.stats ? resolver.stats() : {} });
-        if (!keep && resolver.dispose) resolver.dispose();
+        const component = { component: comp, changed, deleted, roots: ranked, forest: [], stats: resolver.stats ? resolver.stats() : {} };
+        components.push(component);
+        if (impactWalker) walks.push({ resolver, changed, scopeNote, component });
+        else if (!keep && resolver.dispose) resolver.dispose();
         continue;
       }
       for (let i = 0; i < ranked.length; i++) {
@@ -613,8 +619,33 @@ async function analyze(repo, opts = {}) {
         }));
       }
 
-      components.push({ component: comp, changed, deleted, roots, forest, stats: resolver.stats ? resolver.stats() : {} });
-      if (!keep && resolver.dispose) resolver.dispose();
+      const component = { component: comp, changed, deleted, roots, forest, stats: resolver.stats ? resolver.stats() : {} };
+      components.push(component);
+      if (impactWalker) walks.push({ resolver, changed, scopeNote, component });
+      else if (!keep && resolver.dispose) resolver.dispose();
+    }
+
+    if (impactWalker) {
+      try {
+        // The callers are final here; only the entry points are still to come. A caller
+        // that shows them (the editor) publishes this snapshot and keeps the walk going.
+        if (opts.onResolved) {
+          await opts.onResolved(require('./pending-analysis').snapshot(makeResult(components, false)));
+          throwIfCancelled(signal);
+        }
+        let walked = 0;
+        for (const { resolver, changed, scopeNote, component } of walks) {
+          throwIfCancelled(signal);
+          report({ phase: 'impact', component: component.component, done: walked, total: walks.length });
+          // Every changed function, not only the roots: walked before the resolver is disposed.
+          await impactWalker.walk(resolver, changed, { scopeNote });
+          // The walk's queries count in the unit's stats, as they did when it ran inline.
+          component.stats = resolver.stats ? resolver.stats() : {};
+          walked++;
+        }
+      } finally {
+        if (!keep) for (const { resolver } of walks) if (resolver.dispose) resolver.dispose();
+      }
     }
 
   } catch (e) {

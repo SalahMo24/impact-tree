@@ -185,6 +185,46 @@ test('editor distinguishes no references, callbacks, failed queries, and unsuppo
   } finally { Module._load=original; delete require.cache[require.resolve('../src/session/resolver-vscode')]; fs.rmSync(dir,{recursive:true,force:true}); }
 });
 
+test('a production-only caller query is answered from the all-callers one, finished or not', async () => {
+  const Module = require('module'), originalLoad = Module._load;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-resolver-'));
+  const file = path.join(dir, 'source.ts'); fs.writeFileSync(file, 'function caller() { target(); }');
+  const testFile = path.join(dir, 'source.test.ts'); fs.writeFileSync(testFile, 'function spec() { target(); }');
+  const broken = path.join(dir, 'broken.ts'); fs.writeFileSync(broken, 'function other() { target(); }');
+  let provided = 0;
+  const call = (uri, name) => ({ from: { uri: { fsPath: uri }, name, selectionRange: { start: { line: 0, character: 9 } } }, fromRanges: [{ start: { line: 0, character: 20 }, end: { line: 0, character: 26 } }] });
+  try {
+    const stub = { ...require('./vscode-stub'), Position: class {}, commands: { executeCommand: async (name, uri) => {
+      if (uri && uri.fsPath === broken) throw new Error('server down');
+      if (name === 'vscode.prepareCallHierarchy') return [{}];
+      if (name === 'vscode.provideIncomingCalls') { provided++; return [call(file, 'caller'), call(testFile, 'spec')]; }
+      return [];
+    } } };
+    Module._load = function (name, ...args) { return name === 'vscode' ? stub : originalLoad.call(this, name, ...args); };
+    delete require.cache[require.resolve('../src/session/resolver-vscode')];
+    const resolver = require('../src/session/resolver-vscode').createVscodeResolver({ repoRoot: dir, retries: 0 });
+    const all = await resolver.incomingWithStatus(file, 0);
+    assert.deepEqual(all.callers.map((c) => [c.label, c.test]), [['caller', false], ['spec', true]]);
+    // The walk asks without tests: the same answer minus the test caller, and no second round trip.
+    const production = await resolver.incomingWithStatus(file, 0, false);
+    assert.deepEqual(production, { callers: all.callers.filter((c) => !c.test), complete: true });
+    assert.equal(provided, 1, 'the provider answered once for both scopes');
+    assert.equal(resolver.stats().cacheHits, 1);
+    // A query that did not finish is not asked again either: it ends the same way, at once.
+    const failed = await resolver.incomingWithStatus(broken, 0);
+    assert.equal(failed.complete, false);
+    const calls = resolver.stats().incomingCalls;
+    const failedProduction = await resolver.incomingWithStatus(broken, 0, false);
+    assert.equal(failedProduction.complete, false);
+    assert.equal(failedProduction.reason, failed.reason);
+    assert.equal(resolver.stats().incomingCalls, calls, 'the failed query was not repeated');
+    // A production-only query of its own is still made and cached under its own scope.
+    const fresh = await resolver.incomingWithStatus(testFile, 0, false);
+    assert.equal(fresh.complete, true);
+    assert.equal(provided, 2);
+  } finally { Module._load = originalLoad; delete require.cache[require.resolve('../src/session/resolver-vscode')]; fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('a finding with no callers found is not shown as updated', () => {
   const provider = createTreeProvider(require('./vscode-stub'), { getState: () => ({ rowDetail: 'hover' }), resolver: {} });
   const finding = (callerState) => ({ type: 'finding', label: 'target', name: 'target', file: '/review/t.ts', pos: 1,

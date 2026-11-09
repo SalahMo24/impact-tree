@@ -106,7 +106,12 @@ function viewedNote(view, relPath, allTicked) {
  * @param {TreeView} view
  * @returns {string|null}
  */
-const folderNote = (row, view) => (view.layout === 'tree' ? null : lastFolder(row.relPath));
+// A row the By card order groups may stand for a finding (its path is the finding's); one
+// with no path at all (a notice) has no folder.
+const folderNote = (row, view) => {
+  const relPath = row.relPath ?? row.finding?.relPath;
+  return view.layout === 'tree' || !relPath ? null : lastFolder(relPath);
+};
 
 /**
  * The file a row names at its end in the By card order, where the row is not under its

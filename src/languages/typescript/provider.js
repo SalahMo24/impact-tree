@@ -309,9 +309,11 @@ async function prepareSyntactic(ctx) {
         const config = /** @type {any} */ (require('../../engine/remote-config'));
         const paths = sources.map((source) => source.path);
         remote.onProgress({ phase: 'index', message: `indexing ${sources.length} file(s)` });
+        // One fuse for both: after GitHub could not be reached, neither keeps asking.
+        const fuse = config.createConnectionFuse(ctx.warnings);
         const [moduleOptions, packages] = await Promise.all([
-          config.remoteOptions(remote.ts, remote.gh, remote.slug, remote.headSha, ctx.repo, paths, ctx.warnings, ctx.signal),
-          config.remotePackages(remote.gh, remote.slug, remote.headSha, ctx.repo, paths, ctx.warnings, ctx.signal),
+          config.remoteOptions(remote.ts, remote.gh, remote.slug, remote.headSha, ctx.repo, paths, ctx.warnings, ctx.signal, fuse),
+          config.remotePackages(remote.gh, remote.slug, remote.headSha, ctx.repo, paths, ctx.warnings, ctx.signal, fuse),
         ]);
         throwIfCancelled(ctx.signal);
         /** @type {import('../types').SyntacticIndex} */

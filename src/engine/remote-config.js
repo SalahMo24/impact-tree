@@ -2,15 +2,42 @@
 const path = require('path');
 const { throwIfCancelled, isAnalysisCancelled } = require('./cancellation');
 
+// The configuration is optional: a preview's callers come from the PR's files whether
+// or not a tsconfig or package.json was read. So once GitHub could not be reached (a
+// connection failure or a request past its deadline), the remaining configuration files
+// are not asked for: each would wait for the same failure, and the walk up a file's
+// folders asks for one per level. One warning says how many were skipped. Owner: the
+// preview that created it, shared by `remoteOptions` and `remotePackages` so the second
+// does not pay again for what the first learnt; each makes its own when given none.
+function createConnectionFuse(warnings) {
+  let lost = null;
+  let skipped = 0;
+  return {
+    /** @param {string} rel @param {() => Promise<string|null>} fetchOnce @returns {Promise<string|null>} */
+    async fetch(rel, fetchOnce) {
+      if (lost) { skipped++; return null; }
+      try { return await fetchOnce(); } catch (e) {
+        if (!isAnalysisCancelled(e) && (e.name === 'GitHubNetworkError' || e.name === 'GitHubTimeoutError')) lost = e;
+        throw e;
+      }
+    },
+    /** Adds the one warning for the files not asked for; nothing when none was skipped. */
+    note() {
+      if (skipped) warnings.push(`${skipped} configuration file(s) not fetched after GitHub could not be reached (${lost.message})`);
+      skipped = 0;
+    },
+  };
+}
+
 // Read only configuration from the pinned PR head. Callers still come exclusively
 // from PR files; a local checkout's tsconfig must never influence a remote preview.
-async function remoteOptions(ts, gh, slug, headSha, root, files, warnings, signal) {
+async function remoteOptions(ts, gh, slug, headSha, root, files, warnings, signal, fuse = createConnectionFuse(warnings)) {
   const cache = new Map(), configs = new Map();
   const load = (rel) => {
     throwIfCancelled(signal);
     if (!cache.has(rel)) cache.set(rel, (async () => {
       let text;
-      try { text = await gh.fileAtRef(slug, rel, headSha, { signal }); }
+      try { text = await fuse.fetch(rel, () => gh.fileAtRef(slug, rel, headSha, { signal })); }
       catch (e) { if (isAnalysisCancelled(e)) throw e; warnings.push(`${rel}: configuration unavailable — ${e.message}`); return null; }
       throwIfCancelled(signal);
       if (text == null) return null;
@@ -66,13 +93,14 @@ async function remoteOptions(ts, gh, slug, headSha, root, files, warnings, signa
       }
     }
   }));
+  fuse.note();
   return options;
 }
-module.exports = { remoteOptions };
+module.exports = { remoteOptions, createConnectionFuse };
 
 // Ancestors of available PR sources are enough to identify packages containing those
 // sources. Metadata is read at the same pinned head, never from the local checkout.
-async function remotePackages(gh, slug, headSha, root, files, warnings, signal) {
+async function remotePackages(gh, slug, headSha, root, files, warnings, signal, fuse = createConnectionFuse(warnings)) {
   const paths = new Set();
   for (const file of files) {
     let dir = path.posix.dirname(file);
@@ -89,7 +117,7 @@ async function remotePackages(gh, slug, headSha, root, files, warnings, signal) 
       throwIfCancelled(signal);
       const file = entries[cursor++];
       try {
-        const text = await gh.fileAtRef(slug, file, headSha, { signal });
+        const text = await fuse.fetch(file, () => gh.fileAtRef(slug, file, headSha, { signal }));
         throwIfCancelled(signal);
         if (text == null) continue;
         const data = JSON.parse(text);
@@ -98,6 +126,7 @@ async function remotePackages(gh, slug, headSha, root, files, warnings, signal) 
       } catch (e) { if (isAnalysisCancelled(e)) throw e; warnings.push(`${file}: package metadata unavailable — ${e.message}`); }
     }
   }));
+  fuse.note();
   return packages;
 }
 module.exports.remotePackages = remotePackages;
