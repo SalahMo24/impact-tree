@@ -50,13 +50,26 @@ function agentNotes(payload) {
 const rowLine = (c) => `${MARK[c.kind]} ${c.what}`;
 
 /**
- * The tooltip section of a change: kind and line, then before / after / when / affects.
+ * The agent's pseudocode diff as a fenced `diff` block. The fence is longer than any run of
+ * backticks in the text, so nothing in it can close the block early.
+ * @param {string} shape @returns {string}
+ */
+function shapeBlock(shape) {
+  const longest = Math.max(0, ...(shape.match(/`+/g) || []).map((r) => r.length));
+  const fence = '`'.repeat(Math.max(3, longest + 1));
+  return `${fence}diff\n${shape}\n${fence}`;
+}
+
+/**
+ * The tooltip section of a change: kind and line, then the pseudocode or before / after /
+ * when, then affects.
  * @param {AgentChange} c @param {(s: string) => string} [esc] Escapes text for markdown.
  * @returns {string[]} Markdown lines.
  */
 function tooltipLines(c, esc = (s) => s) {
   return [
     `**Your agent — ${WORD[c.kind]}:** ${esc(c.what)}`,
+    ...(c.shape ? ['', shapeBlock(c.shape)] : []),
     ...(c.before ? ['', `Before: ${esc(c.before)}`] : []),
     ...(c.after ? ['', `After: ${esc(c.after)}`] : []),
     ...(c.when ? ['', `When: ${esc(c.when)}`] : []),
@@ -76,4 +89,4 @@ function callerChangeId(key, rel) {
   return `${rel ? rel(file) : file}#${key.slice(at + 1)}`;
 }
 
-module.exports = { agentNotes, rowLine, tooltipLines, callerChangeId, sameName, MARK, WORD };
+module.exports = { agentNotes, rowLine, tooltipLines, callerChangeId, sameName, shapeBlock, MARK, WORD };

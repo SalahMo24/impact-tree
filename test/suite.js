@@ -159,6 +159,7 @@ const SUITE = [
   { file: 'test/github-commits.test.js', tier: 'quick' },
   { file: 'test/repeated-edits.test.js', tier: 'quick' },
   { file: 'test/agent-results.test.js', tier: 'quick' },
+  { file: 'test/call-diff.test.js', tier: 'quick' },
   { file: 'test/review-order-cards.test.js', tier: 'quick' },
   { file: 'test/agent-ai5.test.js', tier: 'quick' },
   { file: 'test/choose-agent.test.js', tier: 'quick' },  // 0.1s

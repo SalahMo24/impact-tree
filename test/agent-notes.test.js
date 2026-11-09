@@ -127,3 +127,7 @@ test('lenses: the engine\'s alone; the agent\'s note is a comment thread beside 
     verdict: '1 of 1 caller not updated', callers: 'Show callers', tick: 'Mark reviewed' }]],
   'the verdict, the callers and the mark; no agent line, and a fine change the agent described has no lens');
 });
+
+test('the tooltip shows the pseudocode as a diff block under the line', () => {
+  assert.deepEqual(tooltipLines({ id: 'a#1', kind: 'changed', what: 'w', shape: ' a\n+  b' }), ['**Your agent — Changed:** w', '', '```diff\n a\n+  b\n```']);
+});

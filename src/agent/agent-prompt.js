@@ -12,7 +12,7 @@
 const MAX_PROMPT_CHARS = 4000;
 /** Longest facts text put in the prompt itself; longer facts go to a file. Unit: characters. */
 const MAX_INLINE_FACTS_CHARS = 20000;
-const MAX_PATH_CHARS = 400;
+const MAX_PATH_CHARS = 300;
 const MAX_REF_CHARS = 100;
 
 /** @param {unknown} v @param {number} max @returns {string} `v` as one line of printable text, cut to `max`. */
@@ -46,13 +46,13 @@ function buildCardsPrompt(ctx, facts = {}) {
     `Repository folder: ${oneLine(ctx.repo, MAX_PATH_CHARS)}`,
     `Review: base ${base}, head ${oneLine(ctx.head, 40).slice(0, 12)}${pr}`,
     '',
-    `${where} They come from Impact Tree's analysis of this review: every card, each changed function's diff, signature change, added throws and callers (with whether each call site was updated), and the entry points it reaches. Work from them, do not guess, and do not read them again through the tools.`
+    `${where} They come from Impact Tree's analysis of this review: every card, each changed function's diff, signature change, added throws, calls gained and lost, and callers (with whether each call site was updated), and the entry points it reaches. Work from them, do not guess, and do not read them again through the tools.`
       + (facts.cut ? ' Some diffs or callers were left out to keep them short (a diff says "omitted"); `get_change` has them for a change whose behaviour you cannot tell without them.' : ' A diff that says "omitted" is in `get_change`, if you need it.'),
     '',
     '1. For each changed function whose behaviour changed, may change or is new, add to `changes`:',
     '   - kind: `changed` (the same input now gives a different result, side effect or error), `may-change` (some inputs or conditions can now end differently), `new` (added behaviour). `same` (the behaviour kept, done another way) only when worth saying.',
     '   - what: one line, at most 120 characters, on what differs.',
-    '   - shape, when the control flow changed: a pseudocode diff of the changed steps and their parent, in plain words (if, else, return), not code. One condition a line: "a or b" is two lines, the second starting with or, to mark only the changed part. At most 8 lines of 60 characters, each starting with a space, + or -; indent for nesting.',
+    '   - shape, when the control flow changed: a pseudocode diff of the changed steps and their parent (for a new function that branches: its outline, every line +), in plain words (if, else, return), not code. One condition a line: "a or b" is two lines, the second starting with or, to mark only the changed part. At most 8 lines of 60 characters, each starting with a space, + or -; indent for nesting.',
     '   - before, after, when: one short sentence each; only without a shape.',
     '   - affects: the callers and entry points from the facts that feel it, each with one short sentence on how. Callers whose call site is "unchanged" come first.',
     '   Skip changes with nothing to say (formatting, comments, tests that follow the code).',

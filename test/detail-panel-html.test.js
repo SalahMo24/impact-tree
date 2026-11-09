@@ -284,3 +284,11 @@ test('what the user\'s agent said a change does: kind and line, before / after /
     'Holder.bad src/a.ts:10–19 Same behaviour, new way: Same result Written by your agent');
   assert.equal(textOf(buildDetailHtml(row, { result, nonce: NONCE, cspSource: CSP_SOURCE, agentChange: null })), 'Holder.bad src/a.ts:10–19');
 });
+
+test('the agent\'s pseudocode diff shows under its line, each line marked added, removed or kept', () => {
+  const bad = change('src/a.ts', 'Holder.bad', 10);
+  const result = resultOf({ allChanged: [bad] });
+  const html = buildDetailHtml(findRow(result, 'Holder.bad'), { result, nonce: NONCE, cspSource: CSP_SOURCE,
+    agentChange: { kind: 'changed', what: 'Checks the path', shape: ' add(path)\n+  if path has <cr>\n-  store it' } });
+  assert.match(html, /<div class="what">Changed: Checks the path<\/div><pre class="shape"><span class=""> add\(path\)<\/span><span class="add">\+  if path has &lt;cr&gt;<\/span><span class="del">-  store it<\/span><\/pre>/);
+});

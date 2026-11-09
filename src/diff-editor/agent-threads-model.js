@@ -8,7 +8,7 @@
 // cannot form a link, an image, a command link or HTML. The only links are the ones made
 // here, to callers the engine knows.
 
-const { WORD, sameName } = require('../agent/agent-notes');
+const { WORD, sameName, shapeBlock } = require('../agent/agent-notes');
 
 /** The command a caller name in a note opens. */
 const OPEN_CALLER_COMMAND = 'impactTree.openCaller';
@@ -68,17 +68,6 @@ function noteParts(c) {
     head: WORD[c.kind],
     details: /** @type {Array<[string, string]>} */ (given.filter(([, text]) => typeof text === 'string' && text !== '')),
   };
-}
-
-/**
- * The agent's pseudocode diff as a fenced `diff` block. The fence is longer than any run of
- * backticks in the text, so nothing in it can close the block early.
- * @param {string} shape @returns {string}
- */
-function shapeBlock(shape) {
-  const longest = Math.max(0, ...(shape.match(/`+/g) || []).map((r) => r.length));
-  const fence = '`'.repeat(Math.max(3, longest + 1));
-  return `${fence}diff\n${shape}\n${fence}`;
 }
 
 /**
