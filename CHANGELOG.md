@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.5 — 2026-11-10
+
+- **Quieter agent notes in the review diff.** A note now flags only what needs a look: it no
+  longer ends with "Written by your agent" (the comment's author already says so), the
+  engine's sentence is added only when it warns (a caller may break, or the risk is
+  unknown), and a change your agent calls "same behaviour, new way" gets no note in the diff.
+  It still shows in the tree and in Details.
+- **Agents can say which model they are.** `submit_cards` and `submit_callers` take an
+  optional `model`, and the hand-off prompt asks for it.
+- **Telemetry covers feature use** (anonymous, and off when the editor's telemetry is off):
+  the first run of each Impact Tree command in a window, the settings that switch features on
+  or off, and, when an agent sends a result, which agent app and model family sent it and
+  counts of what it holds. Names come from a fixed list, so nothing your agent writes is sent.
+  The README's Telemetry section and `telemetry.json` list everything.
+
 ## 1.0.4 — 2026-11-09
 
 - **Faster reviews.** The findings and their callers show as soon as they are resolved; the
