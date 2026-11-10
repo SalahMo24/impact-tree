@@ -60,7 +60,7 @@ function buildCardsPrompt(ctx, facts = {}) {
     '3. `summary`: one paragraph on what the pull request changes in behaviour.',
     '4. Cards: give every card a concrete title (at most 80 characters) and a one-sentence summary of what it changes. Merge cards that belong to one feature and say why in `reason`. Put every change id in exactly one card, using only ids in the facts. List the cards in reading order: a card the others build on first.',
     '5. Keep it short: one line each, no confidence levels or scores.',
-    `6. Save with one call to the \`submit_cards\` tool of the \`impact-tree\` MCP server (in Cursor, in Agent mode), with \`${stamp}\` exactly as written here and \`answer\` holding summary, attention, changes and cards. Make no other impact-tree call unless the facts lack something you need.`,
+    `6. Save with one call to the \`submit_cards\` tool of the \`impact-tree\` MCP server (in Cursor, in Agent mode), with \`${stamp}\` exactly as written here, \`model\` set to your model id (such as claude-opus-5-5), and \`answer\` holding summary, attention, changes and cards. Make no other impact-tree call unless the facts lack something you need.`,
     '7. If it returns errors, fix them and submit again. If it says the review changed, stop and tell the user. Then reply with a 3-line summary.',
     '',
     'If a tool says it cannot tell which repository to analyse, call `select_repository` with the repository folder above. Do not edit any configuration file.',

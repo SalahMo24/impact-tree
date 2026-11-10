@@ -87,7 +87,8 @@ const locShape = {
  * @param {string[]} [ctx.notes] Analysis-wide limits to report (startup caps).
  * @param {import('./code-source').CodeSource} [ctx.source] Code at the PR head and base, for
  *   get_source, list_files and search_code; without it those tools say they are not available.
- * @param {(kind: 'cards'|'callers', normalised: any) => Promise<{ stored: boolean, reason?: string, errors?: string[] }>} [ctx.forward]
+ * @param {(kind: 'cards'|'callers', normalised: any, agent?: { model?: string }) => Promise<{ stored: boolean, reason?: string, errors?: string[] }>} [ctx.forward]
+ *   `agent.model`: the model the agent says it is, for the editor's usage counts only.
  *   Hands a checked submission to the editor; absent when no editor is connected.
  * @param {AbortSignal} [ctx.signal] Stops a running `impact_paths` walk.
  */
@@ -465,18 +466,22 @@ function addCodeTools(tools, env) {
 // ---------------------------------------------------------------------------------------
 // Write-back
 
+/** Longest model id a submission may name. Unit: characters. */
+const MAX_MODEL_CHARS = 80;
+
 /**
  * Check a submission and hand it to the editor.
  * @param {Env} env @param {'cards'|'callers'} kind @param {unknown} payload
+ * @param {unknown} [model] The model the agent named, passed on for the editor's usage counts; never checked or stored.
  * @returns {Promise<{ stored: boolean, reason?: string, notShown?: string[] }>}
  *   `notShown`: parts left out instead of refused (an "affects" name not in the facts); nothing to fix.
  * @throws {ToolError} listing what to fix, when the submission or the editor rejects it
  */
-async function submit(env, kind, payload) {
+async function submit(env, kind, payload, model) {
   const check = validateSubmission(kind, payload, submissionContext(env));
   if (!check.ok) throw new ToolError(`submit_${kind} rejected; fix these and submit again:\n- ${check.errors.join('\n- ')}`);
   if (!env.ctx.forward) return { stored: false, reason: NO_EDITOR_REASON, ...(check.dropped ? { notShown: check.dropped } : {}) };
-  const sent = await env.ctx.forward(kind, check.normalised);
+  const sent = await env.ctx.forward(kind, check.normalised, typeof model === 'string' ? { model } : {});
   if (sent.errors && sent.errors.length) throw new ToolError(`the editor rejected the ${kind} submission:\n- ${sent.errors.join('\n- ')}`);
   return { stored: sent.stored === true, ...(sent.reason ? { reason: sent.reason } : {}), ...(check.dropped ? { notShown: check.dropped } : {}) };
 }
@@ -491,15 +496,17 @@ function addSubmitTools(tools, env) {
         head: z.string().regex(/^[0-9a-f]{7,64}$/i).describe('The head commit the facts were for, as the prompt gives it.'),
         base: z.string().regex(/^[0-9a-f]{7,64}$/i).describe('The base commit the facts were for, as the prompt gives it.'),
       }).strict().optional().describe('The review your cards are for, from the prompt. With it, a server whose analysis is older analyses that review first and then checks and saves your cards; a review that is no longer the one the editor shows is refused.'),
+      model: z.string().max(MAX_MODEL_CHARS).optional().describe('Your model id, such as claude-opus-5-5 or gpt-5.1-codex. Only counted, by family, in the editor\'s anonymous usage events.'),
       answer: cardsAnswerSchema(),
     }).strict(),
-    run: async (args) => submit(env, 'cards', args.answer),
+    run: async (args) => submit(env, 'cards', args.answer, args.model),
   });
 
   tools.push({
     name: 'submit_callers', title: 'Submit callers of a function', annotations: WRITE_BACK,
     description: 'Submit the callers you found for one function (a change id from get_card, or file + line + name). Every caller\'s file must exist at the PR head and its line (±1) must mention the function, as check_evidence checks. On errors nothing is saved. Returns stored and, when not stored, the reason.',
     inputSchema: z.object({
+      model: z.string().max(MAX_MODEL_CHARS).optional().describe('Your model id, such as claude-opus-5-5 or gpt-5.1-codex. Only counted, by family, in the editor\'s anonymous usage events.'),
       answer: z.object({
         function: z.union([
           z.string().describe('Change id such as src/a.ts#1234.'),
@@ -514,7 +521,7 @@ function addSubmitTools(tools, env) {
         })),
       }),
     }).strict(),
-    run: async (args) => submit(env, 'callers', args.answer),
+    run: async (args) => submit(env, 'callers', args.answer, args.model),
   });
 }
 

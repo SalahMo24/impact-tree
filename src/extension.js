@@ -2,7 +2,12 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const vscode = require('vscode');
+const { withCommandUsage, settingsProps, enumSettingsOf } = require('./telemetry/usage');
+// The editor API, with each of our commands reporting its first run in a window
+// (`command.used`) once telemetry exists.
+/** @type {((command: string) => void)|null} */
+let reportCommand = null;
+const vscode = withCommandUsage(require('vscode'), () => reportCommand);
 const { MODES } = require('./engine/analyze');
 const { createTreeProvider } = require('./views/changes/tree-provider');
 const { latestCardsResult } = require('./agent/agent-cards');
@@ -90,7 +95,9 @@ function activate(context, { clock = realClock } = {}) {
   // Anonymous usage events and error reports; the editor's telemetry setting turns them off.
   const telemetry = createTelemetry(vscode, { context, log, clock });
   context.subscriptions.push(telemetry);
-  telemetry.event('activated');
+  // The settings that turn features on and off, so usage can be read against them.
+  telemetry.event('activated', settingsProps(vscode.workspace.getConfiguration('impactTree'), enumSettingsOf(require('../package.json'))));
+  reportCommand = (command) => telemetry.event('command.used', { command });
 
   // Local, so the closures below keep this activation's session after deactivate().
   // Snapshot checkpoints live in the extension's per-workspace storage, never in .git. Without a
@@ -455,7 +462,9 @@ function activate(context, { clock = realClock } = {}) {
 
   // The bridge to the user's own agent: a local socket in a private temporary folder, guarded
   // by a token, started with the window and stopped with it. Nothing leaves the machine.
-  const agentBridge = createAgentBridge(vscode, { session: owned, workspaceState: context.workspaceState, log, telemetry });
+  // `asked` reads the hand-off state made below; a submission only comes after activation.
+  const agentBridge = createAgentBridge(vscode, { session: owned, workspaceState: context.workspaceState, log, telemetry,
+    asked: () => agentCards.waiting !== null });
   const agentConnect = createAgentConnect(vscode, { context, log });
   context.subscriptions.push(agentBridge, agentConnect, vscode.commands.registerCommand('impactTree.connectAgent', () => agentConnect.connect()),
     vscode.commands.registerCommand('impactTree.disconnectAgent', () => agentConnect.disconnect()),
@@ -664,6 +673,7 @@ function activate(context, { clock = realClock } = {}) {
 }
 
 function deactivate() {
+  reportCommand = null;
   if (session) session.dispose();
   session = null;
   if (prDocuments) prDocuments.clear();

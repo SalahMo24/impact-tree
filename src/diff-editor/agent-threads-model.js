@@ -13,9 +13,6 @@ const { WORD, sameName, shapeBlock } = require('../agent/agent-notes');
 /** The command a caller name in a note opens. */
 const OPEN_CALLER_COMMAND = 'impactTree.openCaller';
 
-/** The closing line of every note: who wrote it and where the facts come from. */
-const WRITTEN_BY = 'Written by your agent; the facts come from the engine.';
-
 /** @typedef {import('../agent/agent-notes').AgentChange} AgentChange */
 
 /**
@@ -73,11 +70,12 @@ function noteParts(c) {
 /**
  * The markdown body of the note: kind and what; the pseudocode diff as a `diff` block, or
  * before, after and when as short paragraphs, when given; the callers it affects (a name the engine knows is a link that opens the call
- * site); the engine's verdict in italics; and who wrote it. Nothing the agent did not say is
- * added; the engine's sentence and the closing line are the engine's and the extension's own.
+ * site); and the engine's warning in italics, when it has one. Nothing the agent did not say
+ * is added. No line says who wrote it: the comment's author does.
  * @param {AgentChange} c
- * @param {{ verdict: string, callers: ReadonlyArray<{ label: string, file: string, pos: number, callSites?: Array<{ start: number, end: number }> }> }} facts
- *   `verdict` is the engine's sentence about the change; `callers` its direct callers.
+ * @param {{ verdict?: string|null, callers: ReadonlyArray<{ label: string, file: string, pos: number, callSites?: Array<{ start: number, end: number }> }> }} facts
+ *   `verdict` is the engine's sentence about the change, only when it warns the reviewer
+ *   (null for a safe change, so the note carries no reassurance); `callers` its direct callers.
  * @returns {string}
  */
 function noteMarkdown(c, { verdict, callers }) {
@@ -92,15 +90,14 @@ function noteMarkdown(c, { verdict, callers }) {
     ...(c.shape ? [shapeBlock(c.shape)] : []),
     ...details.map(([label, text]) => `**${label}:** ${escapeNote(text)}`),
     ...(affects.length ? [['**Affects:**', ...affects].join('\n')] : []),
-    `_${escapeNote(verdict)}_`,
-    `_${WRITTEN_BY}_`,
+    ...(verdict ? [`_${escapeNote(verdict)}_`] : []),
   ].join('\n\n');
 }
 
 /**
  * The note as plain text, for a comment the reviewer edits before sending: the kind line,
- * before, after and when, and the callers it affects. Not the two closing lines, which are
- * about this view and not about the change.
+ * before, after and when, and the callers it affects. Not the engine's warning, which is
+ * about this view's facts and not the agent's words.
  * @param {AgentChange} c
  * @returns {string}
  */
@@ -115,4 +112,4 @@ function notePlainText(c) {
   ].join('\n\n');
 }
 
-module.exports = { noteMarkdown, notePlainText, callerNamed, escapeNote, OPEN_CALLER_COMMAND, WRITTEN_BY };
+module.exports = { noteMarkdown, notePlainText, callerNamed, escapeNote, OPEN_CALLER_COMMAND };

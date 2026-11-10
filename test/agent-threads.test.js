@@ -37,7 +37,8 @@ const ROWS = { 'a.ts': [BAD, REACH, QUIET], 'b.ts': [OTHER] };
 const PAYLOAD = { cards: [], changes: [
   { id: 'a.ts#100', kind: 'changed', what: 'rejects tokens whose header is not {alg, typ:"JWT"}', before: 'any header', after: 'JwtHeaderInvalid',
     when: 'typ is missing', affects: [{ name: 'user (middleware)', how: 'now answers 401 for a bad header' }, { name: 'cron job', how: 'logs a warning' }] },
-  { id: 'a.ts#500', kind: 'same', what: 'reads the file in one call' },
+  { id: 'a.ts#500', kind: 'may-change', what: 'reads the file in one call' },
+  { id: 'a.ts#700', kind: 'same', what: 'uses the shared helper' },
   { id: 'b.ts#50', kind: 'new', what: 'takes a stream' },
   { id: 'gone.ts#1', kind: 'changed', what: 'a change this review does not have' },
 ] };
@@ -112,8 +113,8 @@ test('the controller is "Impact Tree: your agent\'s notes", offers no commenting
 
 test('one thread per change the agent described, at its start line on the head document, and none elsewhere', () => {
   const env = setup({ docs: ['file:a.ts', 'file:b.ts', 'impacttree-base:a.ts', 'impacttree-base:b.ts', 'file:README.md'] });
-  assert.deepEqual(env.on('file:a.ts').map((t) => [t.range.start.line, t.range.end.line, t.label]), [[9, 9, 'Changed'], [49, 49, 'Same behaviour, new way']],
-    '`quiet` has no note, and a note for a change the review does not have is not drawn');
+  assert.deepEqual(env.on('file:a.ts').map((t) => [t.range.start.line, t.range.end.line, t.label]), [[9, 9, 'Changed'], [49, 49, 'May change']],
+    '`quiet`\'s note says "same behaviour", which is safe, so it has no thread; a note for a change the review does not have is not drawn');
   assert.deepEqual(env.on('file:b.ts').map((t) => [t.range.start.line, t.label]), [[4, 'New']], 'another file has its own');
   assert.deepEqual(env.on('impacttree-base:a.ts'), [], 'none on the base side');
   assert.deepEqual(env.on('impacttree-base:b.ts'), []);
@@ -134,22 +135,18 @@ test('a changed note with its callers, characterised: the engine\'s caller is a 
     '**When:** typ is missing',
     `**Affects:**\n- [user (middleware)](${link}) — now answers 401 for a bad header\n- cron job — logs a warning`,
     '_The signature, and 1 of 1 caller was not changed on the call line. Check that it still works._',
-    '_Written by your agent; the facts come from the engine._',
-  ].join('\n\n'));
+  ].join('\n\n'), 'the engine\'s warning is kept; no line says who wrote it (the author does)');
   assert.ok(link.startsWith('command:impactTree.openCaller?%5B%7B'), 'the argument is one encoded array');
   assert.deepEqual(bad.comments[0].body.isTrusted, { enabledCommands: ['impactTree.openCaller'] }, 'only that command may run from the note');
   assert.equal(bad.comments[0].body.supportHtml, false);
   assert.equal(bad.label, 'Changed');
 });
 
-test('a same-behaviour note says only what the agent said, then the engine\'s sentence and who wrote it', () => {
+test('a note on a change the engine finds safe says only what the agent said: no reassurance from the engine', () => {
   const env = setup();
   const [, reach] = env.on('file:a.ts');
-  const [head, ...rest] = bodyOf(reach).split('\n\n');
-  assert.equal(head, '**Same behaviour, new way** — reads the file in one call');
-  assert.equal(rest.length, 2, 'no before, after, when or affects: nothing the agent did not say is added');
-  assert.equal(rest[0], '_Only the body changed: the signature is the same, so callers still compile. 1 of 1 caller is unchanged, which is expected; check it still gets the behaviour it relies on._');
-  assert.equal(rest[1], '_Written by your agent; the facts come from the engine._');
+  assert.equal(bodyOf(reach), '**May change** — reads the file in one call',
+    'the engine\'s "only the body changed… callers still compile" is not repeated, and no "written by" line');
 });
 
 test('the agent\'s text stays text: no link, image, code, HTML or command link comes from it', () => {
@@ -163,7 +160,7 @@ test('the agent\'s text stays text: no link, image, code, HTML or command link c
   assert.match(link, /\[user \(a\)\]\(command:impactTree\.openCaller\?[^()\s]*\)/, 'a bracket in a caller name does not end the link; parentheses in its argument are encoded');
 });
 
-test('the plain text for the pull request is the note without the two closing lines', () => {
+test('the plain text for the pull request is the note without the engine\'s warning', () => {
   assert.equal(notePlainText(PAYLOAD.changes[0]), [
     'Changed — rejects tokens whose header is not {alg, typ:"JWT"}',
     'Before: any header',
@@ -171,7 +168,7 @@ test('the plain text for the pull request is the note without the two closing li
     'When: typ is missing',
     'Affects:\n- user (middleware) — now answers 401 for a bad header\n- cron job — logs a warning',
   ].join('\n\n'));
-  assert.equal(notePlainText(PAYLOAD.changes[2]), 'New — takes a stream');
+  assert.equal(notePlainText(PAYLOAD.changes[3]), 'New — takes a stream');
 });
 
 test('a shape is a diff block right under the headline; backticks in it cannot close the block', () => {
