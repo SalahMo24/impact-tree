@@ -4,7 +4,7 @@
   "displayName": "Impact Tree",
   "icon": "images/icon.png",
   "description": "Review a diff as an inverted call graph — see what each change affects and which callers weren't updated. TypeScript, JavaScript, Go and Python.",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "private": true,
   "engines": {
     "vscode": "^1.84.0"
