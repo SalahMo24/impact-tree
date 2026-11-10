@@ -372,11 +372,12 @@ test('submit_cards with an editor: checked, forwarded with the head and base, st
   const c = connect({ connectBridge: b.connectBridge });
   await c.handshake();
   const answer = { summary: ' whole PR ', cards: [{ title: ' Save and run ', members: [c.f.ids[0], 'deno_dist/a.ts#9', c.f.ids[1]], reason: 'both change together' }] };
-  const r = await c.call('submit_cards', { answer });
+  const r = await c.call('submit_cards', { answer, model: 'claude-opus-5-5' });
   assert.equal(r.isError, undefined);
   assert.deepEqual(r.structuredContent, { stored: true });
   assert.equal(b.seen.submits.length, 1);
-  assert.deepEqual(b.seen.submits[0].meta, { head: 'headsha', base: 'basesha' });
+  assert.deepEqual(b.seen.submits[0].meta, { head: 'headsha', base: 'basesha', agent: { client: 't', model: 'claude-opus-5-5', toolCalls: 1 } },
+    'with who sent it, for the editor\'s usage counts: the MCP client\'s name, the model the agent named and its tool calls');
   assert.equal(b.seen.submits[0].kind, 'cards');
   assert.equal(b.seen.submits[0].payload.cards[0].title, 'Save and run', 'the normalised payload is forwarded');
   assert.equal(b.seen.submits[0].payload.summary, 'whole PR');
@@ -743,7 +744,7 @@ test('one pass: after the review moved, a submit stamped with the new review ana
   assert.equal(r.isError, undefined, JSON.stringify(r));
   assert.deepEqual(r.structuredContent, { stored: true });
   assert.deepEqual([s.state().prepared, s.state().disposed], [2, 1]);
-  assert.deepEqual(b.seen.submits[0].meta, { head: SHA2, base: 'basesha' });
+  assert.deepEqual(b.seen.submits[0].meta, { head: SHA2, base: 'basesha', agent: { client: 't', model: null, toolCalls: 2 } });
   await s.close();
 });
 

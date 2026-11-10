@@ -17,6 +17,7 @@ const crypto = require('crypto');
 const P = require('../mcp/bridge-protocol');
 const { realClock } = require('../engine/clock');
 const { NO_TELEMETRY } = require('../telemetry/telemetry');
+const { clientFamily, modelProps, cardsAnswerCounts } = require('../telemetry/usage');
 // Built by the MCP server's branch (AI3a); required on first use, so the editor loads without it.
 const AGENT_RESULTS = '../engine/agent-results';
 
@@ -35,13 +36,15 @@ const MAX_ID_LENGTH = 64;
  * @param {any} vscode
  * @param {{ session: any, workspaceState: { get: (k: string) => any, update: (k: string, v: any) => PromiseLike<void> },
  *   log: (m: string) => void, telemetry?: { event: (name: string, props?: Record<string, unknown>) => void }, lockDir?: string, validator?: Validator, readHead?: (repo: string) => Promise<string|null>,
- *   clock?: import('../engine/clock').Clock, idleTimeoutMs?: number }} deps
+ *   clock?: import('../engine/clock').Clock, idleTimeoutMs?: number, asked?: () => boolean }} deps
+ *   `asked`: whether the user handed this review to an agent from the editor and is waiting for
+ *   it (usage counts only).
  *   `lockDir`, `validator`, `readHead`, `clock`, `idleTimeoutMs`: seams for tests. The validator defaults to
  *   src/engine/agent-results.js `validateSubmission`, required on first use. `readHead` reads the
  *   repository's HEAD commit, the head of a checkout review (default: `git rev-parse HEAD`).
  */
 function createAgentBridge(vscode, { session, workspaceState, log, telemetry = NO_TELEMETRY, lockDir = P.defaultLockDir(), validator, readHead = defaultReadHead,
-  clock = realClock, idleTimeoutMs = IDLE_TIMEOUT_MS }) {
+  clock = realClock, idleTimeoutMs = IDLE_TIMEOUT_MS, asked = () => false }) {
   const emitter = new vscode.EventEmitter();
   const removedEmitter = new vscode.EventEmitter();
   /** @type {{ server: net.Server, sockets: Set<net.Socket>, lockFile: string, socketPath: string, token: string, repo: string, startedAt: number } | null} */
@@ -156,11 +159,28 @@ function createAgentBridge(vscode, { session, workspaceState, log, telemetry = N
    */
   async function submit(params) {
     const kind = params && typeof params === 'object' && P.KINDS.includes(/** @type {any} */ (params).kind) ? /** @type {any} */ (params).kind : 'result';
+    // Read before the result is stored: storing it ends the wait.
+    const handedOver = !!asked();
     const answer = await submitChecked(params);
     const outcome = answer.stored ? (answer.reason === 'already stored' ? 'already stored' : 'stored') : `refused: ${answer.reason || 'not accepted'}`;
     log(`agent: ${kind} submitted — ${outcome}`);
-    telemetry.event('agent.submitted', { kind, stored: !!answer.stored });
+    telemetry.event('agent.submitted', { kind, stored: !!answer.stored, ...agentUsage(params, kind), handedOver });
     return answer;
+  }
+
+  /**
+   * What a submission says about how the agent was used, as fixed words and counts: the MCP
+   * client and model family, the tools it called, and what a cards answer holds. Never the text.
+   * @param {unknown} params @param {string} kind
+   */
+  function agentUsage(params, kind) {
+    const p = /** @type {any} */ (params) || {};
+    const agent = p.meta && typeof p.meta.agent === 'object' && p.meta.agent ? p.meta.agent : {};
+    return {
+      client: clientFamily(agent.client), ...modelProps(agent.model),
+      ...(Number.isSafeInteger(agent.toolCalls) ? { toolCalls: agent.toolCalls } : {}),
+      ...(kind === 'cards' ? cardsAnswerCounts(p.payload) : {}),
+    };
   }
 
   /** @param {unknown} params @returns {Promise<{ stored: boolean, reason?: string, errors?: string[] }>} */

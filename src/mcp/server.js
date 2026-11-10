@@ -384,6 +384,8 @@ function startServer(config) {
   const findRepo = config.findRepo || findRepoFor;
   /** @type {any} */
   let sdk = null;
+  /** Tool calls the agent made in this server, for the editor's usage counts. */
+  let toolCalls = 0;
   const doPrepare = config.prepare || prepare;
   const input = config.input || process.stdin;
   const output = config.output || process.stdout;
@@ -454,7 +456,7 @@ function startServer(config) {
     preparedFor = { head: headSha, editorBase: editorBase || null };
     return createImpactTools({
       ...prepared.ctx, signal: abort.signal,
-      forward: bridge ? (kind, normalised) => forwardToEditor(kind, normalised, { head: headSha, base: baseSha }) : undefined,
+      forward: bridge ? (kind, normalised, agent = {}) => forwardToEditor(kind, normalised, { head: headSha, base: baseSha, ...agentMeta(agent) }) : undefined,
     });
   }
   /** The review the editor shows, when one is connected. @returns {Promise<import('./bridge-client').BridgeContext|null>} */
@@ -505,6 +507,7 @@ function startServer(config) {
    * @param {string} name @param {any} args
    */
   async function invoke(name, args) {
+    toolCalls += 1;
     /** @type {{ notice: string|null, ctx: any }} */
     let checked;
     try {
@@ -559,7 +562,18 @@ function startServer(config) {
   }
 
   /**
-   * @param {'cards'|'callers'} kind @param {any} normalised @param {{ head: string, base: string }} meta
+   * Who sent a submission, for the editor's usage counts: the MCP client's name, the model the
+   * agent named, and how many tools it called in this server so far. The editor maps the
+   * names to fixed words before anything is sent.
+   * @param {{ model?: string }} agent
+   */
+  function agentMeta(agent) {
+    const info = sdk && sdk.server && typeof sdk.server.getClientVersion === 'function' ? sdk.server.getClientVersion() : null;
+    return { agent: { client: info && typeof info.name === 'string' ? info.name.slice(0, 80) : null, model: agent.model || null, toolCalls } };
+  }
+
+  /**
+   * @param {'cards'|'callers'} kind @param {any} normalised @param {{ head: string, base: string, agent?: { client: string|null, model: string|null, toolCalls: number } }} meta
    * @returns {Promise<{ stored: boolean, reason?: string, errors?: string[] }>}
    */
   async function forwardToEditor(kind, normalised, meta) {

@@ -418,15 +418,18 @@ usage events and error reports to PostHog. It follows the editor's telemetry set
 
 What is sent:
 
-- the event name (`activated`, `analysis.finished`, `agent.handoff`, `agent.submitted`, `feedback.sent`, `starPrompt.answered`, or an error report);
+- the event name (`activated`, `command.used`, `analysis.finished`, `agent.handoff`, `agent.submitted`, `feedback.sent`, `starPrompt.answered`, or an error report);
+- which Impact Tree commands you run: the first run of each command in a window, by its id;
+- your Impact Tree settings that switch features on or off (for example the review order); for free-text settings such as the GitHub remote, only whether one is set;
 - counts and timings: changed files and symbols, findings, callers not updated, warnings, how long an analysis took, changed symbols per language;
 - the mode (`pr`, `checkpoint`…), the kind of review (local, checked-out PR, preview), and which agent (`claude-vscode`, `chat`…);
+- when an agent sends a result: which agent app sent it (`claude-code`, `cursor`…), its model family and version (`claude-opus` 5.5, `gpt` 5.1…) as the agent reports it, how many Impact Tree tools it called, and counts of what the answer holds (notes, pseudocode diffs, cards). An agent or model not on Impact Tree's list is sent as `other`;
 - for the GitHub star request: whether you chose star, no thanks, or closed it;
 - for an error: its type (for example `TypeError`), where in Impact Tree it happened, and the stack frames inside Impact Tree's own files;
 - the extension, editor and OS versions, and the editor's anonymous machine id.
 
 What is never sent: your code, file or folder names, symbol names, repository, branch or pull
-request names, error messages, or anything an agent writes. [`telemetry.json`](telemetry.json)
+request names, error messages, or anything an agent writes (a model it names is sent only as its family and version). [`telemetry.json`](telemetry.json)
 lists every event and property.
 
 ## Performance

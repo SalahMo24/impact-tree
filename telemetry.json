@@ -2,7 +2,13 @@
   "events": {
     "activated": {
       "owner": "SalahMo24",
-      "comment": "The extension started in a window. No properties beyond the editor's common ones."
+      "comment": "The extension started in a window, with the settings that turn features on and off.",
+      "set.*": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Each impactTree enum setting as one of its own values (or other), each boolean setting, reachDepth, and whether githubRemote and baseBranch are set (never their text)." }
+    },
+    "command.used": {
+      "owner": "SalahMo24",
+      "comment": "The first run of one of our commands in a window; later runs in that window are not sent.",
+      "command": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The command's id without the impactTree. prefix, from the extension's own list." }
     },
     "analysis.finished": {
       "owner": "SalahMo24",
@@ -27,7 +33,20 @@
       "owner": "SalahMo24",
       "comment": "An agent sent a result back. Never its content.",
       "kind": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The kind of result, from the extension's fixed list." },
-      "stored": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Whether the result was accepted." }
+      "stored": { "classification": "SystemMetaData", "purpose": "PerformanceAndHealth", "comment": "Whether the result was accepted." },
+      "client": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The MCP client that sent it, as a word from a fixed list (claude-code, cursor, codex, …), other or unknown." },
+      "model": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The model the agent says it is, as a family from a fixed list (claude-opus, gpt, gemini, …), other or unknown. Never the id as written." },
+      "modelVersion": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "The first version number in the model id, digits and dots only (5.5)." },
+      "toolCalls": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Impact Tree tools the agent called before it submitted.", "isMeasurement": true },
+      "handedOver": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Whether the user handed the review over from the editor (Analyse with my agent) and was waiting for it." },
+      "notes": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Cards answers: changes the agent described.", "isMeasurement": true },
+      "changed": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Cards answers: notes of kind changed.", "isMeasurement": true },
+      "mayChange": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Cards answers: notes of kind may-change.", "isMeasurement": true },
+      "same": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Cards answers: notes of kind same.", "isMeasurement": true },
+      "new": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Cards answers: notes of kind new.", "isMeasurement": true },
+      "shapes": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Cards answers: notes with a pseudocode diff.", "isMeasurement": true },
+      "attention": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Cards answers: changes in needs your attention.", "isMeasurement": true },
+      "cards": { "classification": "SystemMetaData", "purpose": "FeatureInsight", "comment": "Cards answers: cards in it.", "isMeasurement": true }
     },
     "feedback.sent": {
       "owner": "SalahMo24",
