@@ -18,6 +18,7 @@
     "vscode:prepublish": "node scripts/write-telemetry-key.js",
     "package": "node scripts/package.js",
     "analyze": "node --max-old-space-size=8192 src/cli.js",
+    "demo:build": "node scripts/demo-repo.js",
     "test": "node test/run.js",
     "test:quick": "node test/run.js --tier quick",
     "test:serial": "node test/run.js --serial",

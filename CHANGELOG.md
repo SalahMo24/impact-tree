@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Details shows what you can review** while nothing is reviewed: this branch, a pull
+  request, or your agent's edits, what the colours mean, and connecting your agent, each with
+  a link that runs it. Nothing reviews by itself; you pick what to review.
+- **The README leads with the problem** (the caller a change left behind), what you can
+  review, and what your agent adds; the reference follows.
+
 ## 1.0.5 — 2026-11-10
 
 - **Quieter agent notes in the review diff.** A note now flags only what needs a look: it no

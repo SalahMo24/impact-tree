@@ -2,17 +2,87 @@
 
 ![Impact Tree icon](images/icon.png)
 
-Review a diff as an **inverted call graph**: changes rooted at the deepest changed
-symbol and expanded *upward* through their callers, so the blast radius of a change is
-on screen instead of in your head.
+**You changed a function. Which callers did you forget?**
 
-Ordinary review tools sort changed files alphabetically. That tells you *what* changed
-and nothing about *how the changes relate* — or which callers you forgot to update.
+A diff shows what changed. It doesn't show what the change *does to the code that calls it*,
+and the compiler is no help when a function starts throwing or a new parameter is optional.
+Impact Tree turns the diff inside out: every change is listed with its callers under it,
+and a caller that was left behind is red.
 
-> **Status: early.** Local change review, GitHub PR browsing, no-checkout previews,
-> review progress, and GitHub review comments are implemented. Detailed change analysis
-> supports TypeScript and JavaScript everywhere, and Go, Python and Java in the editor; see
-> [Languages](#languages) and [Limitations](#limitations).
+<!-- GIF: images/readme/first-review.gif — the lockRow change in GitHub's diff (looks fine),
+     then the Review view: lockRow red, "2 of 5 callers not updated", renameRow amber. ~20 s.
+     Uncomment once the file is committed; the store page shows a broken image until then.
+![A branch reviewed in Impact Tree: the change that can break callers is red, with the callers it left behind](images/readme/first-review.gif)
+-->
+
+```
+ [TS]  lockRow          2 of 5 callers not updated        <- red: review this first
+ [TS]    ├ saveSnapshot   call updated
+ [TS]    ├ appendEntry    not changed
+ [TS]    └ renameRow      changed, but not at the call    <- amber: edited, but not here
+ [🧪]    └ lockRow.test   test
+```
+
+In the example, `lockRow` gets a timeout and now throws. Of its five callers (two are
+tests), `saveSnapshot` was updated to catch it; `appendEntry` and `renameRow` were not, and
+`renameRow` was *edited in the same pull request*, just not on the line that matters. GitHub
+lists these files alphabetically.
+
+Impact Tree is a workbench for a human reviewing code, not a bot that posts findings. It
+runs in VS Code and Cursor, on TypeScript, JavaScript, Go, Python and Java.
+
+## What you can review
+
+<!-- Three screenshots, side by side or stacked: images/readme/pull-request.png,
+     images/readme/local-branch.png, images/readme/agent-edits.png -->
+
+- **A pull request.** Sign in to GitHub and the open pull requests are listed. Preview one
+  without checking it out, or check it out for the full analysis with your editor's language
+  server. Comment, reply, resolve and submit the review from the pull request tab.
+- **Your own branch**, before you open the pull request: the commits against the base, with
+  or without your uncommitted edits.
+- **What your coding agent just changed.** The **Uncommitted (agent)** mode reviews the
+  working tree the way you'd review a teammate's pull request, and **Since checkpoint**
+  reviews everything since a point you marked.
+
+Mark changes reviewed as you go; the review counts only what needs attention, so `2 need
+attention · 3 of 5 looked at` is the definition of done.
+
+## Bring your agent
+
+<!-- Screenshot: images/readme/agent-cards.png — the review ordered by card, with the
+     agent's note beside a change in the diff. -->
+
+The callers are facts. What a change *means* is a question for whoever reads the code, and
+your agent can read a lot of it fast. Impact Tree gives Claude Code, Codex, Cursor or
+Copilot the review's facts through a local MCP server and asks for one thing back:
+
+- **Cards**: the changes grouped by what they do together, with the entry points each card
+  reaches, so a 40-file pull request reads as five things instead of forty.
+- **A note beside each change**, in the diff: what changed in behaviour, before and after,
+  and who it affects. The notes are for you; nothing is posted anywhere.
+- **Feedback rounds**: write what you want changed, send it to the agent, and the next
+  review shows what it did about each item.
+
+## Install
+
+- **VS Code**: [Impact Tree on the Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=SalahMo24.impact-tree),
+  or search for "Impact Tree" in the Extensions view.
+- **Cursor, Windsurf, VSCodium**: [Impact Tree on Open VSX](https://open-vsx.org/extension/SalahMo24/impact-tree).
+- **Command line**: `code --install-extension SalahMo24.impact-tree` (`cursor` in place of
+  `code` for Cursor).
+
+Open a repository and pick **Impact Tree** in the activity bar. The Review view lists what
+you can review: your branch, in four modes, and the repository's open pull requests. Nothing
+runs until you pick one; Details beside it says what each is for.
+
+TypeScript and JavaScript are analysed everywhere. Go, Python and Java use your editor's
+language server (gopls, Pyright, Red Hat's Java); see [Languages](#languages) for what each
+one establishes and where its evidence ends.
+
+---
+
+# Reference
 
 ## What it shows
 
@@ -356,18 +426,7 @@ reviews of a checked-out branch take part; a pull request preview does not.
   branch takes part, not a pull request preview. The MCP server restarts itself when the
   extension's code changes.
 
-## Install
-
-- **VS Code**: install [Impact Tree from the Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=SalahMo24.impact-tree),
-  or search for "Impact Tree" in the Extensions view.
-- **Cursor, Windsurf, VSCodium**: install [Impact Tree from Open VSX](https://open-vsx.org/extension/SalahMo24/impact-tree),
-  or search for "Impact Tree" in the Extensions view.
-- **From the command line**: `code --install-extension SalahMo24.impact-tree` (or `cursor`
-  in place of `code`).
-
-Open a git repository and choose **Impact Tree** in the activity bar.
-
-### From source
+## From source
 
 ```bash
 git clone https://github.com/SalahMo24/impact-tree

@@ -11,6 +11,11 @@ const { describeProgress } = require('../changes/review-tree-model');
 // Kept deliberately small. Everything else a row offers (callers, tests, threads, feedback,
 // marking it reviewed, next unreviewed) is in the tree, its context menu or the diff.
 //
+// With no row shown, the panel is where a reader learns what is here (`mapHtml`): while
+// nothing is reviewed, what can be reviewed, what the colours mean and what the agent adds;
+// inside a review, the hint alone. Each line is one sentence with a link that runs the
+// real command. Not a tour: an index, in the place the reader is already looking.
+//
 // Safety: every value that comes from a result (labels, paths, reasons) goes through
 // `escapeHtml`. The CSP allows nothing remote, and the one style and the one script are
 // allowed by a nonce. Nothing uses an inline `style=` or `on…=` attribute, which that CSP
@@ -19,6 +24,37 @@ const { describeProgress } = require('../changes/review-tree-model');
 /** @typedef {import('../changes/tree-row-models').TreeRow} TreeRow */
 
 const NO_ROW_HINT = 'Select a change in the tree, or put the cursor in a changed function.';
+const NO_REPO_HINT = 'Open a git repository to review its changes.';
+
+/**
+ * What the panel says with no row. `view` is the Review view's state (view-state.js).
+ * @typedef {{ view: string }} MapModel
+ */
+
+/** A line of the map: the sentence, with its link. @param {string} text @param {string} act @param {string} label */
+const line = (text, act, label) => `<li>${text} <button class="link" data-act="${act}">${label}</button></li>`;
+
+/**
+ * The map for `model`, or '' when the view's state has nothing to add to the hint.
+ * @param {MapModel|null} model
+ * @returns {string}
+ */
+function mapHtml(model) {
+  if (!model) return '';
+  if (model.view === 'noFolder' || model.view === 'noGit') return `<p class="where">${NO_REPO_HINT}</p>`;
+  if (model.view === 'idle' || model.view === 'nothingChanged') {
+    return '<div class="map"><h4>What you can review</h4><ul>'
+      + line('This branch against its base, as a pull request would be.', 'reviewBranch', 'Review this branch')
+      + line('A pull request from GitHub, previewed with no checkout, or checked out.', 'pullRequests', 'Find a pull request')
+      + line('What your coding agent just changed: the uncommitted edits, reviewed like a teammate\'s.', 'agentEdits', 'Review the agent\'s edits')
+      + '</ul><h4>Reading a review</h4><ul>'
+      + line('Red: a caller wasn\'t updated, look there first. Amber: check by hand. No colour: fine.', 'legend', 'Legend')
+      + '</ul><h4>Your agent</h4><ul>'
+      + line('Cards that group the changes, notes beside the code, and feedback rounds.', 'connectAgent', 'Connect my agent')
+      + '</ul></div>';
+  }
+  return '';
+}
 
 /** @type {Record<string, string>} */
 const ENTITIES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -65,6 +101,11 @@ h3 { font-family: var(--vscode-editor-font-family); font-size: 13px; font-weight
 .progress progress::-webkit-progress-bar { background: var(--vscode-widget-border, var(--vscode-panel-border)); }
 .progress progress::-webkit-progress-value { background: var(--vscode-testing-iconPassed); }
 .actions { margin-top: 12px; }
+.map h4 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--vscode-descriptionForeground); margin: 12px 0 4px; }
+.map ul { list-style: none; margin: 0; padding: 0; }
+.map li { margin: 0 0 6px; }
+button.link { color: var(--vscode-textLink-foreground); background: none; padding: 0; margin: 0; border-radius: 0; }
+button.link:hover { background: none; text-decoration: underline; }
 button { font: inherit; border: 0; border-radius: 2px; padding: 4px 10px; margin: 0 6px 6px 0; cursor: pointer;
   color: var(--vscode-button-foreground); background: var(--vscode-button-background); }
 button:hover { background: var(--vscode-button-hoverBackground); }
@@ -99,7 +140,8 @@ document.addEventListener('click', (event) => {
   const el = event.target instanceof Element ? event.target.closest('[data-act]') : null;
   if (!el) return;
   event.preventDefault();
-  if (el.getAttribute('data-act') === 'checkout') postMessage({ type: 'checkoutAndAnalyse' });
+  const act = el.getAttribute('data-act');
+  postMessage(act === 'checkout' ? { type: 'checkoutAndAnalyse' } : { type: 'act', act });
 });
 postMessage({ type: 'ready' });
 `;
@@ -191,14 +233,19 @@ function headHtml(row) {
 }
 
 /**
- * The body for one row, or the hint when there is none.
+ * The body for one row; with none, the hint and the map (`mapHtml`), or the map alone when
+ * there is nothing to select.
  * @param {TreeRow|null} row
  * @param {any} result
  * @param {any} [agentChange] What the agent says the row's change does, or null.
+ * @param {MapModel|null} [map]
  * @returns {string}
  */
-function bodyHtml(row, result, agentChange = null) {
-  if (!row) return `<p class="where">${NO_ROW_HINT}</p>`;
+function bodyHtml(row, result, agentChange = null, map = null) {
+  if (!row) {
+    const nothingToSelect = !!map && map.view !== 'shown' && map.view !== 'busy';
+    return (nothingToSelect && mapHtml(map)) || `<p class="where">${NO_ROW_HINT}</p>${mapHtml(map)}`;
+  }
   const isFile = row.type === 'reviewFile' || row.type === 'file';
   return headHtml(row) + agentHtml(agentChange) + (isFile ? notAnalysedHtml(row) : verdictHtml(row)) + previewLimitsHtml(result);
 }
@@ -228,20 +275,21 @@ function agentHtml(b) {
  * @param {TreeRow|null} row A counting row (`finding`, `deleted`, `outside`, `file`) or a
  *   `reviewFile` row; null shows a hint. A caller or tests row is shown as the change it
  *   sits under, which the caller resolves.
- * @param {{ result: any, nonce: string, cspSource: string, progress?: ProgressPresentation|null, agentChange?: any }} opts
+ * @param {{ result: any, nonce: string, cspSource: string, progress?: ProgressPresentation|null, agentChange?: any, map?: MapModel|null }} opts
  *   `result` is the shown result. `nonce` is base64 and fresh per document; `cspSource` is
- *   the webview's. `progress` is the strip above the row; none when absent or null.
+ *   the webview's. `progress` is the strip above the row; none when absent or null. `map`
+ *   is what the panel says with no row (`mapHtml`); none shows the hint alone.
  * @returns {string} The whole HTML document.
  */
-function buildDetailHtml(row, { result, nonce, cspSource, progress = null, agentChange = null }) {
+function buildDetailHtml(row, { result, nonce, cspSource, progress = null, agentChange = null, map = null }) {
   assert.match(nonce, /^[A-Za-z0-9+/=]+$/, 'the nonce must be base64 so it cannot break out of the CSP');
   const csp = `default-src 'none'; style-src ${escapeHtml(cspSource)} 'nonce-${nonce}'; script-src 'nonce-${nonce}';`;
   return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'
     + `<meta http-equiv="Content-Security-Policy" content="${csp}">`
     + '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
     + `<style nonce="${nonce}">${STYLE}</style></head>`
-    + `<body>${progressHtml(progress)}${bodyHtml(row, result, agentChange)}`
+    + `<body>${progressHtml(progress)}${bodyHtml(row, result, agentChange, map)}`
     + `<script nonce="${nonce}">${script(nonce)}</script></body></html>`;
 }
 
-module.exports = { progressPresentation, buildDetailHtml, listCallerRows, escapeHtml };
+module.exports = { progressPresentation, buildDetailHtml, mapHtml, listCallerRows, escapeHtml };

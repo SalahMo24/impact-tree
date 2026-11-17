@@ -14,6 +14,8 @@ const SITE = { start: 22, end: 25 };
 const caller = (file) => ({ file, pos: 7, label: 'user', test: false, callSites: [SITE], sites: 1,
   callSiteUpdates: { updated: [], untouched: [SITE], unknown: [] } });
 const NOT_FOLLOWED = 'Select a change in the tree, or put the cursor in a changed function.';
+// With no row the panel also maps the ways on (detail-panel-html.js `mapHtml`); the hint comes first.
+const assertHint = (details, msg) => assert.ok(textOf(details).startsWith(NOT_FOLLOWED), msg ? `${msg}: ${textOf(details)}` : textOf(details));
 
 // a.ts: `bad` (lines 10–12, a signature change with a caller not updated) and `reach`
 // (lines 50–52, body only); b.ts: `quiet` and the caller; notes.md has no call graph.
@@ -54,7 +56,7 @@ test('the view is a webview under the Review view, with scripts on and no local 
   assert.deepEqual(views[1], { type: 'webview', id: 'impactTree.details', name: 'Details', contextualTitle: 'Impact Tree' });
   const details = env.openDetails();
   assert.deepEqual(details.webview.options, { enableScripts: true, localResourceRoots: [] });
-  assert.equal(textOf(details), NOT_FOLLOWED, 'nothing selected yet');
+  assertHint(details, 'nothing selected yet');
   assert.match(details.webview.html, /style-src vscode-webview:\/\/test 'nonce-/, 'the webview\'s own CSP source');
 }));
 
@@ -151,14 +153,14 @@ test('a cursor in any other editor, on the base side or in a file the review doe
     Uri.from({ scheme: 'impacttree-pr', path: 'a.ts', query: 'side=head&revision=7%3Ah%3Am' }),
   ]) {
     env.moveCursor(uri, 11);
-    assert.equal(textOf(details), NOT_FOLLOWED, uri.toString());
+    assertHint(details, uri.toString());
   }
   assert.deepEqual(env.seen.revealed, []);
 
   env.moveCursor(fileUri(env, 'a.ts'), 11, { active: false });
-  assert.equal(textOf(details), NOT_FOLLOWED, 'an editor that is not the active one');
+  assertHint(details, 'an editor that is not the active one');
   env.moveCursor(fileUri(env, 'a.ts'), 11, { kind: env.vscode.TextEditorSelectionChangeKind.Command });
-  assert.equal(textOf(details), NOT_FOLLOWED, 'a selection set by a command, such as opening a diff from the tree');
+  assertHint(details, 'a selection set by a command, such as opening a diff from the tree');
   env.moveCursor(fileUri(env, 'a.ts'), 11, { kind: undefined });
   assert.match(textOf(details), BAD, 'an event that does not say how the cursor moved still counts');
 }));
@@ -167,7 +169,7 @@ test('the strip shows the counts of a pull request preview, with nothing selecte
   useResult(env, { tierA: true });
   await env.preview(pull(7));
   const details = env.openDetails();
-  assert.equal(textOf(details), NOT_FOLLOWED);
+  assertHint(details);
   assert.equal(stripTextOf(details), '0 of 1 looked at 1 needs attention 0 of 1 looked at', 'no source line and no percentage');
 }));
 
@@ -186,7 +188,7 @@ test('in a preview only the pull request\'s head side is followed', () => withEn
   const side = (s) => Uri.from({ scheme: 'impacttree-pr', path: 'a.ts', query: prQuery(result, s, { path: 'a.ts', status: 'modified' }) });
   env.moveCursor(fileUri(env, 'a.ts'), 11);
   env.moveCursor(side('base'), 11);
-  assert.equal(textOf(details), NOT_FOLLOWED, 'neither the worktree file nor the base side');
+  assertHint(details, 'neither the worktree file nor the base side');
   env.moveCursor(side('head'), 11);
   assert.match(textOf(details), BAD);
   assert.match(textOf(details), /Preview: callers outside this PR and tests are not searched\. Check out and analyse$/);
@@ -290,7 +292,7 @@ test('the panel follows a new analysis, and shows the hint while there is no rev
   const gate = env.holds.analyze.next();
   const running = env.refresh();
   await gate.reached;
-  assert.equal(textOf(details), NOT_FOLLOWED, 'while analysing');
+  assertHint(details, 'while analysing');
   gate.release();
   await running;
   assert.match(textOf(details), BAD, 'the same row of the new result');
@@ -408,7 +410,7 @@ test('the Check out and analyse message does nothing without a shown row', () =>
   useResult(env, { tierA: true });
   await env.preview(pull(7));
   const details = env.openDetails();
-  assert.equal(textOf(details), NOT_FOLLOWED);
+  assertHint(details);
   await sendAction(details, { type: 'checkoutAndAnalyse' });
   assert.equal(env.seen.modals, 0);
 }));

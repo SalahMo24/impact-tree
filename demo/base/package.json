@@ -1,0 +1,6 @@
+{
+  "name": "impact-tree-demo",
+  "private": true,
+  "version": "1.0.0",
+  "description": "A tiny row store, built by Impact Tree's demo. Safe to delete."
+}

@@ -234,14 +234,27 @@ function runScript(html) {
   return { script, sent, click, receive, node };
 }
 
-test('the page script sends only the checkout click, with its render token; other actions send nothing', () => {
+test('the page script sends the checkout click and a map link\'s action name, each with its render token, and nothing else', () => {
   const page = runScript(render(null, null));
-  for (const act of ['tick', 'next', 'peek', 'caller', 'test-reach', 'thread', 'comment', 'feedback', 'caller-comment']) {
-    page.click({ 'data-act': act, 'data-id': 'row-id', 'data-on': 'true', 'data-index': '2' });
-  }
+  page.click({ 'data-act': 'next', 'data-id': 'row-id', 'data-on': 'true', 'data-index': '2' });
   page.click({ 'data-act': 'checkout' });
-  assert.deepEqual(page.sent, [{ type: 'ready', token: NONCE }, { type: 'checkoutAndAnalyse', token: NONCE }]);
+  // The extension checks the name against its own list; the page passes it on as it is.
+  page.click({ 'data-act': 'rm -rf' });
+  assert.deepEqual(page.sent, [{ type: 'ready', token: NONCE }, { type: 'act', act: 'next', token: NONCE },
+    { type: 'checkoutAndAnalyse', token: NONCE }, { type: 'act', act: 'rm -rf', token: NONCE }]);
   assert.doesNotMatch(page.script, /innerHTML|outerHTML|insertAdjacentHTML/);
+});
+
+test('the panel runs only the map\'s own actions, each as its command', () => {
+  const { parseMessage, MAP_COMMANDS } = require('../src/views/details/detail-panel');
+  assert.deepEqual(parseMessage({ type: 'act', act: 'legend', token: 't' }, 't'), { type: 'act', act: 'legend' });
+  assert.equal(parseMessage({ type: 'act', act: 'next', token: 't' }, 't'), null, 'not a link of the map');
+  assert.equal(parseMessage({ type: 'act', act: 'rm -rf', token: 't' }, 't'), null);
+  assert.equal(parseMessage({ type: 'act', act: 'toString', token: 't' }, 't'), null);
+  assert.equal(parseMessage({ type: 'act', act: 'legend', token: 'old' }, 't'), null);
+  for (const act of ['reviewBranch', 'pullRequests', 'agentEdits', 'legend', 'connectAgent']) {
+    assert.match(MAP_COMMANDS[act][0], /^impactTree\./, act);
+  }
 });
 
 test('the page script patches the progress strip as text, only for its own token and a well-formed model', () => {
@@ -283,6 +296,27 @@ test('what the user\'s agent said a change does: kind and line, before / after /
   assert.equal(textOf(buildDetailHtml(row, { result, nonce: NONCE, cspSource: CSP_SOURCE, agentChange: { kind: 'same', what: 'Same result' } })),
     'Holder.bad src/a.ts:10–19 Same behaviour, new way: Same result Written by your agent');
   assert.equal(textOf(buildDetailHtml(row, { result, nonce: NONCE, cspSource: CSP_SOURCE, agentChange: null })), 'Holder.bad src/a.ts:10–19');
+});
+
+test('with no row and nothing reviewed, the panel maps what can be reviewed; each line runs a command', () => {
+  const { mapHtml } = require('../src/views/details/detail-panel-html');
+  const idle = buildDetailHtml(null, { result: null, nonce: NONCE, cspSource: CSP_SOURCE, map: { view: 'idle' } });
+  const text = textOf(idle);
+  assert.doesNotMatch(text, /Select a change/, 'nothing to select');
+  for (const heading of ['What you can review', 'Reading a review', 'Your agent']) assert.match(text, new RegExp(heading));
+  for (const act of ['reviewBranch', 'pullRequests', 'agentEdits', 'legend', 'connectAgent']) assert.match(withoutScript(idle), new RegExp(`<button class="link" data-act="${act}">`));
+  assert.doesNotMatch(withoutScript(idle), /\sstyle=|\son[a-z]+=/);
+  assert.equal(textOf(`<x>${mapHtml({ view: 'nothingChanged' })}</x>`), text, 'nothing changed: the same map');
+  assert.match(textOf(`<x>${mapHtml({ view: 'noFolder' })}</x>`), /^Open a git repository/);
+  assert.equal(mapHtml({ view: 'busy' }), '');
+  assert.equal(mapHtml(null), '');
+});
+
+test('inside a review or while analysing, with no row, the panel shows the hint alone', () => {
+  for (const view of ['shown', 'busy']) {
+    const html = buildDetailHtml(null, { result: null, nonce: NONCE, cspSource: CSP_SOURCE, map: { view } });
+    assert.equal(textOf(html), 'Select a change in the tree, or put the cursor in a changed function.', view);
+  }
 });
 
 test('the agent\'s pseudocode diff shows under its line, each line marked added, removed or kept', () => {

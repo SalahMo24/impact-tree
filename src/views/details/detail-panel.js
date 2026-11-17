@@ -40,7 +40,7 @@ function headRelPath(uri, { result, rel }) {
  * an older page cannot act on a new analysis.
  * @param {unknown} message
  * @param {string|null} token The current page's nonce; null when the view is disposed.
- * @returns {{ type: 'ready' }|{ type: 'checkoutAndAnalyse' }|null}
+ * @returns {{ type: 'ready' }|{ type: 'checkoutAndAnalyse' }|{ type: 'act', act: string }|null}
  */
 function parseMessage(message, token) {
   if (!message || typeof message !== 'object') return null;
@@ -48,8 +48,18 @@ function parseMessage(message, token) {
   if (token === null || m.token !== token) return null;
   if (m.type === 'ready') return { type: 'ready' };
   if (m.type === 'checkoutAndAnalyse') return { type: 'checkoutAndAnalyse' };
+  if (m.type === 'act' && typeof m.act === 'string' && Object.hasOwn(MAP_COMMANDS, m.act)) return { type: 'act', act: m.act };
   return null;
 }
+
+/** The command each link of the map (detail-panel-html.js `mapHtml`) runs, with its arguments. */
+const MAP_COMMANDS = Object.freeze({
+  reviewBranch: ['impactTree.analyseMode', 'pr'],
+  pullRequests: ['impactTree.searchPullRequests'],
+  agentEdits: ['impactTree.analyseMode', 'working'],
+  legend: ['impactTree.showLegend'],
+  connectAgent: ['impactTree.connectAgent'],
+});
 
 /**
  * Registers the Details view and makes it follow the tree and the cursor.
@@ -76,12 +86,14 @@ function parseMessage(message, token) {
  *   log: (message: string) => void,
  *   checkoutAndAnalyse?: (pr: any) => Promise<unknown>,
  *   agentChange?: (changeId: string) => any,
- * }} deps `view` is the change view; `getState` the session state. `checkoutAndAnalyse`
+ *   viewState?: () => string,
+ * }} deps `view` is the change view; `getState` the session state. `viewState` is the Review
+ *   view's state (view-state.js), which chooses what the panel says with no row. `checkoutAndAnalyse`
  *   checks out a pull request and analyses it; a Preview's page offers it for the PR shown.
  *   `agentChange`: what the user's agent said a change does to behaviour, or null.
  * @returns {{ disposables: Array<{ dispose(): any }>, refresh: () => void }}
  */
-function createDetailPanel(vscode, { provider, view, getState, log, checkoutAndAnalyse = async () => undefined, agentChange = () => null }) {
+function createDetailPanel(vscode, { provider, view, getState, log, checkoutAndAnalyse = async () => undefined, agentChange = () => null, viewState = () => 'shown' }) {
   /** @type {any} */
   let webviewView = null;
   /** @type {Array<{ dispose(): any }>} */
@@ -142,7 +154,8 @@ function createDetailPanel(vscode, { provider, view, getState, log, checkoutAndA
     const nonce = crypto.randomBytes(16).toString('base64');
     const f = row && row.type === 'finding' ? row.finding : null;
     const said = f ? agentChange(`${f.relPath}#${f.namePos}`) : null;
-    const html = buildDetailHtml(row, { result: state && state.result, nonce, cspSource: webviewView.webview.cspSource, progress, agentChange: said });
+    const map = { view: viewState() };
+    const html = buildDetailHtml(row, { result: state && state.result, nonce, cspSource: webviewView.webview.cspSource, progress, agentChange: said, map });
     renderToken = nonce;
     renderedVersion = provider.reviewVersion();
     lastProgress = progress;
@@ -231,6 +244,7 @@ function createDetailPanel(vscode, { provider, view, getState, log, checkoutAndA
     const m = parseMessage(message, renderToken);
     if (!m || renderedVersion !== provider.reviewVersion()) return;
     if (m.type === 'ready') { patchProgress(true); return; }
+    if (m.type === 'act') { await vscode.commands.executeCommand(...MAP_COMMANDS[/** @type {keyof typeof MAP_COMMANDS} */ (m.act)]); return; }
     if (m.type === 'checkoutAndAnalyse' && currentRow()) await onCheckout();
   }
 
@@ -281,4 +295,4 @@ function createDetailPanel(vscode, { provider, view, getState, log, checkoutAndA
   };
 }
 
-module.exports = { createDetailPanel, headRelPath };
+module.exports = { createDetailPanel, headRelPath, parseMessage, MAP_COMMANDS };
