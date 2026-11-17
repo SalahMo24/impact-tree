@@ -36,6 +36,9 @@ scripts/**
 docs/**
 # The demo repository's files: a fixture for tests and the README's media, not shipped.
 demo/**
+# README media. vsce rewrites the README's relative image links to the repository on GitHub
+# (raw/HEAD), so the store page loads them from there; the extension never reads them.
+images/readme/**
 scripts/**
 eslint-local/**
 eslint.config.js

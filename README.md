@@ -9,11 +9,7 @@ and the compiler is no help when a function starts throwing or a new parameter i
 Impact Tree turns the diff inside out: every change is listed with its callers under it,
 and a caller that was left behind is red.
 
-<!-- GIF: images/readme/first-review.gif — the lockRow change in GitHub's diff (looks fine),
-     then the Review view: lockRow red, "2 of 5 callers not updated", renameRow amber. ~20 s.
-     Uncomment once the file is committed; the store page shows a broken image until then.
 ![A branch reviewed in Impact Tree: the change that can break callers is red, with the callers it left behind](images/readme/first-review.gif)
--->
 
 ```
  [TS]  lockRow          2 of 5 callers not updated        <- red: review this first
@@ -33,8 +29,7 @@ runs in VS Code and Cursor, on TypeScript, JavaScript, Go, Python and Java.
 
 ## What you can review
 
-<!-- Three screenshots, side by side or stacked: images/readme/pull-request.png,
-     images/readme/local-branch.png, images/readme/agent-edits.png -->
+![Your own branch reviewed in Impact Tree: lockRow expanded with its callers, the diff beside it, and why it needs attention](images/readme/local-branch.png)
 
 - **A pull request.** Sign in to GitHub and the open pull requests are listed. Preview one
   without checking it out, or check it out for the full analysis with your editor's language
@@ -49,9 +44,6 @@ Mark changes reviewed as you go; the review counts only what needs attention, so
 attention · 3 of 5 looked at` is the definition of done.
 
 ## Bring your agent
-
-<!-- Screenshot: images/readme/agent-cards.png — the review ordered by card, with the
-     agent's note beside a change in the diff. -->
 
 The callers are facts. What a change *means* is a question for whoever reads the code, and
 your agent can read a lot of it fast. Impact Tree gives Claude Code, Codex, Cursor or
@@ -87,7 +79,7 @@ one establishes and where its evidence ends.
 ## What it shows
 
 ```
- [TS]  lockRow          2 of 3 callers not updated        M    <- red icon
+ [TS]  lockRow          2 of 5 callers not updated        M    <- red icon
  [TS]    ├ saveSnapshot   call updated                      M
  [TS]    ├ appendEntry    not changed
  [TS]    └ renameRow      changed, but not at the call           <- amber icon
