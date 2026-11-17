@@ -1,12 +1,13 @@
 # Changelog
 
-## Unreleased
+## 1.0.6 — 2026-11-17
 
 - **Details shows what you can review** while nothing is reviewed: this branch, a pull
   request, or your agent's edits, what the colours mean, and connecting your agent, each with
   a link that runs it. Nothing reviews by itself; you pick what to review.
 - **The README leads with the problem** (the caller a change left behind), what you can
-  review, and what your agent adds; the reference follows.
+  review, and what your agent adds; the reference follows. It opens with a short GIF of a
+  real review: the change that looks fine in the diff, and the callers it left behind.
 
 ## 1.0.5 — 2026-11-10
 
