@@ -1,6 +1,6 @@
 'use strict';
-// The demo repository (src/demo/demo-repo.js): it builds from demo/, and the review of it tells
-// the story the walkthrough promises — lockRow red with 2 of its 5 callers (three in the code, two
+// The demo repository (scripts/demo-repo.js): it builds from demo/, and the review of it tells
+// the story the README's media shows — lockRow red with 2 of its 5 callers (three in the code, two
 // tests) not updated, renameRow edited but not on its call, saveSnapshot updated at the call.
 const test = require('node:test');
 const assert = require('node:assert/strict');

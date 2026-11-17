@@ -10,8 +10,10 @@ Impact Tree turns the diff inside out: every change is listed with its callers u
 and a caller that was left behind is red.
 
 <!-- GIF: images/readme/first-review.gif — the lockRow change in GitHub's diff (looks fine),
-     then the Review view: lockRow red, "2 of 5 callers not updated", renameRow amber. ~20 s. -->
+     then the Review view: lockRow red, "2 of 5 callers not updated", renameRow amber. ~20 s.
+     Uncomment once the file is committed; the store page shows a broken image until then.
 ![A branch reviewed in Impact Tree: the change that can break callers is red, with the callers it left behind](images/readme/first-review.gif)
+-->
 
 ```
  [TS]  lockRow          2 of 5 callers not updated        <- red: review this first

@@ -1,7 +1,7 @@
 // @ts-check
 'use strict';
 
-// Builds the demo repository the "Try the demo" command opens: a tiny TypeScript row store
+// Builds the demo repository, a fixture for tests and the README's media: a tiny TypeScript row store
 // whose one branch holds a change with a caller left behind on purpose (demo/README.md).
 // The repository is local only: `main` is pushed to a bare repository beside it, which is
 // its `origin`, so the default review (Branch vs base, against origin/main) shows the change
