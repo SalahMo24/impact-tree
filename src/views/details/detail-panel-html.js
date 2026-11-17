@@ -13,7 +13,7 @@ const { describeProgress } = require('../changes/review-tree-model');
 //
 // With no row shown, the panel is where a reader learns what is here (`mapHtml`): while
 // nothing is reviewed, what can be reviewed, what the colours mean and what the agent adds;
-// inside a review, the ways on from it. Each line is one sentence with a link that runs the
+// inside a review, the hint alone. Each line is one sentence with a link that runs the
 // real command. Not a tour: an index, in the place the reader is already looking.
 //
 // Safety: every value that comes from a result (labels, paths, reasons) goes through
@@ -27,9 +27,8 @@ const NO_ROW_HINT = 'Select a change in the tree, or put the cursor in a changed
 const NO_REPO_HINT = 'Open a git repository to review its changes.';
 
 /**
- * What the panel says with no row. `view` is the Review view's state (view-state.js);
- * `hasCards` whether the shown review has cards.
- * @typedef {{ view: string, hasCards: boolean }} MapModel
+ * What the panel says with no row. `view` is the Review view's state (view-state.js).
+ * @typedef {{ view: string }} MapModel
  */
 
 /** A line of the map: the sentence, with its link. @param {string} text @param {string} act @param {string} label */
@@ -54,13 +53,7 @@ function mapHtml(model) {
       + line('Cards that group the changes, notes beside the code, and feedback rounds.', 'connectAgent', 'Connect my agent')
       + '</ul></div>';
   }
-  if (model.view !== 'shown') return '';
-  return '<div class="map"><h4>Also here</h4><ul>'
-    + line('The next change to look at is one key away: Alt+N.', 'next', 'Next')
-    + (model.hasCards ? line('The changes grouped by what they do together.', 'orderByCards', 'Order by card')
-      + line('Your agent\'s notes beside each change in the diff.', 'analyseWithAgent', 'Analyse with my agent') : '')
-    + '<li>Mark a change reviewed with its checkbox when you have looked at it; the count above follows.</li>'
-    + '</ul></div>';
+  return '';
 }
 
 /** @type {Record<string, string>} */

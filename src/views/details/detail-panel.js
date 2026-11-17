@@ -59,9 +59,6 @@ const MAP_COMMANDS = Object.freeze({
   agentEdits: ['impactTree.analyseMode', 'working'],
   legend: ['impactTree.showLegend'],
   connectAgent: ['impactTree.connectAgent'],
-  next: ['impactTree.nextUnreviewed'],
-  orderByCards: ['impactTree.orderByCards'],
-  analyseWithAgent: ['impactTree.analyseWithAgent'],
 });
 
 /**
@@ -85,7 +82,7 @@ const MAP_COMMANDS = Object.freeze({
  *   view: { visible: boolean, selection: readonly TreeRow[], reveal: (row: TreeRow, options: object) => PromiseLike<void>,
  *     onDidChangeSelection: (listener: (e: { selection: readonly TreeRow[] }) => void) => { dispose(): any },
  *     onDidChangeVisibility: (listener: (e: { visible: boolean }) => void) => { dispose(): any } },
- *   getState: () => { result: any, rel: (file: string) => string, source?: any, cards?: any }|null,
+ *   getState: () => { result: any, rel: (file: string) => string, source?: any }|null,
  *   log: (message: string) => void,
  *   checkoutAndAnalyse?: (pr: any) => Promise<unknown>,
  *   agentChange?: (changeId: string) => any,
@@ -157,7 +154,7 @@ function createDetailPanel(vscode, { provider, view, getState, log, checkoutAndA
     const nonce = crypto.randomBytes(16).toString('base64');
     const f = row && row.type === 'finding' ? row.finding : null;
     const said = f ? agentChange(`${f.relPath}#${f.namePos}`) : null;
-    const map = { view: viewState(), hasCards: !!(state && state.cards) };
+    const map = { view: viewState() };
     const html = buildDetailHtml(row, { result: state && state.result, nonce, cspSource: webviewView.webview.cspSource, progress, agentChange: said, map });
     renderToken = nonce;
     renderedVersion = provider.reviewVersion();

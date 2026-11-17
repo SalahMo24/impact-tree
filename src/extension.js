@@ -26,7 +26,6 @@ const { createReviewState } = require('./session/review-state');
 const { createGitHub } = require('./github/github');
 const { parseRemoteList, chooseGitHubRemote, describeRemoteProblem, baseRemoteOf } = require('./github/github-remote');
 const { createSourcesProvider } = require('./views/sidebar/sources-provider');
-const { createFirstRun } = require('./session/first-run');
 const { createPrDocuments } = require('./diff-editor/pr-documents');
 const { createSession } = require('./session/session');
 const { createAgentBridge } = require('./agent/agent-bridge');
@@ -672,10 +671,7 @@ function activate(context, { clock = realClock } = {}) {
     }, 2000);
     context.subscriptions.push({ dispose: () => clock.clearTimeout(timer) });
   }
-  // The branch is reviewed by itself when it is ahead of its base (src/session/first-run.js).
-  const firstRun = createFirstRun(vscode, { session: owned, provider, view, treeRead: () => sidebar.hostRow(), rowId: require('./views/changes/review-tree-model').treeItemId, globalState: context.globalState || null, makeGit: require('./engine/git').makeGit, log, clock, telemetry });
-  context.subscriptions.push(firstRun);
-  firstRun.schedule();
+  if (vscode.workspace.getConfiguration('impactTree').get('analyseOnStartup', false)) session.refresh();
 }
 
 function deactivate() {

@@ -11,7 +11,6 @@
 // demo/pr is copied over it for the commit on the demo branch. Every build starts from
 // scratch, so a reviewer who edited the demo gets the planted change back.
 
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
@@ -19,8 +18,6 @@ const { execFile } = require('child_process');
 const DEMO_FOLDER = 'impact-tree-demo';
 const ORIGIN_FOLDER = 'impact-tree-demo-origin.git';
 const DEMO_BRANCH = 'demo/lock-timeout';
-/** A random id per build, inside .git so the working tree stays the demo's own files. */
-const BUILD_ID_FILE = 'impact-tree-demo-build';
 /** Each git command is local and small; 15 s only guards against a hung process (a credential or editor prompt). */
 const GIT_TIMEOUT_MS = 15000;
 /**
@@ -45,20 +42,12 @@ const defaultRunGit = (cwd, args) => new Promise((resolve, reject) => {
 });
 
 /**
- * Where the demo lives under `parentDir` (the extension's global storage).
+ * Where the demo lives under `parentDir`.
  * @param {string} parentDir
  * @returns {{ repo: string, origin: string }}
  */
 const demoPaths = (parentDir) => ({ repo: path.join(parentDir, DEMO_FOLDER), origin: path.join(parentDir, ORIGIN_FOLDER) });
 
-/**
- * Whether `folder` is the demo repository built under `parentDir`.
- * @param {string|null|undefined} folder @param {string|null|undefined} parentDir
- */
-function isDemoRepo(folder, parentDir) {
-  if (!folder || !parentDir) return false;
-  return path.resolve(folder) === path.resolve(demoPaths(parentDir).repo);
-}
 
 /**
  * Builds the demo repository under `parentDir`, replacing any earlier copy.
@@ -92,23 +81,17 @@ async function buildDemoRepo({ templateDir, parentDir, runGit = defaultRunGit })
   fs.cpSync(pr, repo, { recursive: true });
   await runGit(repo, ['add', '-A']);
   await runGit(repo, ['commit', '-q', '-m', 'Lock rows with a timeout']);
-  fs.writeFileSync(path.join(repo, '.git', BUILD_ID_FILE), `${crypto.randomUUID()}\n`);
   return { repo, branch: DEMO_BRANCH };
 }
 
-/**
- * Which build of the demo `repo` holds: a random id written by `buildDemoRepo`, so every build
- * has its own, even two in the same second.
- * @param {string} repo
- * @returns {string|null} Null when it cannot be read (not a demo).
- */
-function demoBuildId(repo) {
-  try {
-    const id = fs.readFileSync(path.join(repo, '.git', BUILD_ID_FILE), 'utf8').trim();
-    return /^[0-9a-f-]{36}$/.test(id) ? id : null;
-  } catch {
-    return null;
-  }
-}
 
-module.exports = { buildDemoRepo, isDemoRepo, demoPaths, demoBuildId, DEMO_BRANCH };
+module.exports = { buildDemoRepo, DEMO_BRANCH };
+
+// `npm run demo:build -- <folder>` builds it under <folder> (default: the system temp folder)
+// for recording the README's media.
+if (require.main === module) {
+  const parentDir = path.resolve(process.argv[2] || require('os').tmpdir());
+  buildDemoRepo({ templateDir: path.join(__dirname, '..', 'demo'), parentDir })
+    .then(({ repo, branch }) => console.log(`Built ${repo} on branch ${branch}. Open it and pick Impact Tree.`))
+    .catch((e) => { console.error(e.message); process.exitCode = 1; });
+}

@@ -9,7 +9,7 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { requireTypeScript } = require('./find-typescript');
-const { buildDemoRepo, isDemoRepo, demoPaths, demoBuildId, DEMO_BRANCH } = require('../scripts/demo-repo');
+const { buildDemoRepo, DEMO_BRANCH } = require('../scripts/demo-repo');
 
 requireTypeScript('demo repository');
 const { analyze } = require('../src/engine/analyze');
@@ -28,17 +28,10 @@ test('builds the demo branch on top of a local origin/main, and rebuilds from sc
   assert.equal(git(repo, ['rev-parse', '--abbrev-ref', 'origin/HEAD']), 'origin/main');
   assert.equal(git(repo, ['rev-list', '--count', 'origin/main..HEAD']), '1');
   assert.equal(git(repo, ['status', '--porcelain']), '');
-  assert.ok(isDemoRepo(repo, tmp));
-  assert.ok(!isDemoRepo(path.join(tmp, 'elsewhere'), tmp));
 
-  const firstBuild = demoBuildId(repo);
-  assert.match(firstBuild, /^[0-9a-f-]{36}$/);
-  assert.equal(demoBuildId(path.join(tmp, 'elsewhere')), null);
-
-  // A reviewer's edit is gone after the next build, and the build has a new id.
+  // A reviewer's edit is gone after the next build.
   fs.writeFileSync(path.join(repo, 'src', 'rows.ts'), 'edited');
   await buildDemoRepo({ templateDir: TEMPLATE, parentDir: tmp });
-  assert.notEqual(demoBuildId(repo), firstBuild);
   assert.notEqual(fs.readFileSync(path.join(repo, 'src', 'rows.ts'), 'utf8'), 'edited');
   assert.equal(git(repo, ['status', '--porcelain']), '');
 });
@@ -48,8 +41,7 @@ test('a missing template is an error, not an empty demo', async () => {
 });
 
 test('the review shows the planted bug: lockRow with 2 of 5 callers not updated, 1 edited nearby', async () => {
-  const { repo } = demoPaths(tmp);
-  if (!fs.existsSync(repo)) await buildDemoRepo({ templateDir: TEMPLATE, parentDir: tmp });
+  const { repo } = await buildDemoRepo({ templateDir: TEMPLATE, parentDir: path.join(tmp, 'review') });
   const result = await analyze(repo, { mode: 'pr', skipForest: true, deferTestReach: true });
   const lockRow = result.allChanged.find((c) => c.label === 'lockRow');
   assert.ok(lockRow, 'lockRow is a changed symbol');

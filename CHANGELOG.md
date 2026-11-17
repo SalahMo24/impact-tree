@@ -2,16 +2,11 @@
 
 ## Unreleased
 
-- **The first review runs by itself, once.** The first time ever you open the Review view
-  after install, when the branch has commits its base does not, the branch is reviewed with
-  nothing to pick, the change that most needs a look is selected with its explanation in
-  Details, and a hint says what red means. From then on, opening the view does nothing by
-  itself. `impactTree.analyseOnStartup` is now `once` (the default), `always` or `never`;
-  its old `true` and `false` still mean always and never.
-- **Details maps what is here** when no change is shown. While nothing is reviewed: what you
-  can review (this branch, a pull request, your agent's edits), what the colours mean, and
-  what your agent adds, each with a link that runs it. Inside a review: the next change
-  (`Alt+N`), the order by card and your agent's notes when the review has cards.
+- **Details shows what you can review** while nothing is reviewed: this branch, a pull
+  request, or your agent's edits, what the colours mean, and connecting your agent, each with
+  a link that runs it. Nothing reviews by itself; you pick what to review.
+- **The README leads with the problem** (the caller a change left behind), what you can
+  review, and what your agent adds; the reference follows.
 
 ## 1.0.5 — 2026-11-10
 

@@ -72,9 +72,9 @@ Copilot the review's facts through a local MCP server and asks for one thing bac
 - **Command line**: `code --install-extension SalahMo24.impact-tree` (`cursor` in place of
   `code` for Cursor).
 
-Open a repository and pick **Impact Tree** in the activity bar. The first time, the current
-branch is reviewed against its base for you; after that, the Review view lists what you can
-review: your branch, in four modes, and the repository's open pull requests.
+Open a repository and pick **Impact Tree** in the activity bar. The Review view lists what
+you can review: your branch, in four modes, and the repository's open pull requests. Nothing
+runs until you pick one; Details beside it says what each is for.
 
 TypeScript and JavaScript are analysed everywhere. Go, Python and Java use your editor's
 language server (gopls, Pyright, Red Hat's Java); see [Languages](#languages) for what each

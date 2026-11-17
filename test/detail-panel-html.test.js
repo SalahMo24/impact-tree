@@ -247,11 +247,12 @@ test('the page script sends the checkout click and a map link\'s action name, ea
 
 test('the panel runs only the map\'s own actions, each as its command', () => {
   const { parseMessage, MAP_COMMANDS } = require('../src/views/details/detail-panel');
-  assert.deepEqual(parseMessage({ type: 'act', act: 'next', token: 't' }, 't'), { type: 'act', act: 'next' });
+  assert.deepEqual(parseMessage({ type: 'act', act: 'legend', token: 't' }, 't'), { type: 'act', act: 'legend' });
+  assert.equal(parseMessage({ type: 'act', act: 'next', token: 't' }, 't'), null, 'not a link of the map');
   assert.equal(parseMessage({ type: 'act', act: 'rm -rf', token: 't' }, 't'), null);
   assert.equal(parseMessage({ type: 'act', act: 'toString', token: 't' }, 't'), null);
-  assert.equal(parseMessage({ type: 'act', act: 'next', token: 'old' }, 't'), null);
-  for (const act of ['reviewBranch', 'pullRequests', 'agentEdits', 'legend', 'connectAgent', 'next', 'orderByCards', 'analyseWithAgent']) {
+  assert.equal(parseMessage({ type: 'act', act: 'legend', token: 'old' }, 't'), null);
+  for (const act of ['reviewBranch', 'pullRequests', 'agentEdits', 'legend', 'connectAgent']) {
     assert.match(MAP_COMMANDS[act][0], /^impactTree\./, act);
   }
 });
@@ -299,28 +300,23 @@ test('what the user\'s agent said a change does: kind and line, before / after /
 
 test('with no row and nothing reviewed, the panel maps what can be reviewed; each line runs a command', () => {
   const { mapHtml } = require('../src/views/details/detail-panel-html');
-  const idle = buildDetailHtml(null, { result: null, nonce: NONCE, cspSource: CSP_SOURCE, map: { view: 'idle', hasCards: false } });
+  const idle = buildDetailHtml(null, { result: null, nonce: NONCE, cspSource: CSP_SOURCE, map: { view: 'idle' } });
   const text = textOf(idle);
   assert.doesNotMatch(text, /Select a change/, 'nothing to select');
   for (const heading of ['What you can review', 'Reading a review', 'Your agent']) assert.match(text, new RegExp(heading));
   for (const act of ['reviewBranch', 'pullRequests', 'agentEdits', 'legend', 'connectAgent']) assert.match(withoutScript(idle), new RegExp(`<button class="link" data-act="${act}">`));
   assert.doesNotMatch(withoutScript(idle), /\sstyle=|\son[a-z]+=/);
-  assert.equal(textOf(`<x>${mapHtml({ view: 'nothingChanged', hasCards: false })}</x>`), text, 'nothing changed: the same map');
-  assert.match(textOf(`<x>${mapHtml({ view: 'noFolder', hasCards: false })}</x>`), /^Open a git repository/);
-  assert.equal(mapHtml({ view: 'busy', hasCards: false }), '');
+  assert.equal(textOf(`<x>${mapHtml({ view: 'nothingChanged' })}</x>`), text, 'nothing changed: the same map');
+  assert.match(textOf(`<x>${mapHtml({ view: 'noFolder' })}</x>`), /^Open a git repository/);
+  assert.equal(mapHtml({ view: 'busy' }), '');
   assert.equal(mapHtml(null), '');
 });
 
-test('inside a review with no row, the hint comes first and the ways on follow; cards add their lines', () => {
-  const plain = buildDetailHtml(null, { result: null, nonce: NONCE, cspSource: CSP_SOURCE, map: { view: 'shown', hasCards: false } });
-  assert.match(textOf(plain), /^Select a change in the tree, or put the cursor in a changed function\. Also here/);
-  assert.match(withoutScript(plain), /data-act="next"/);
-  assert.doesNotMatch(withoutScript(plain), /data-act="orderByCards"|data-act="analyseWithAgent"/);
-  const cards = buildDetailHtml(null, { result: null, nonce: NONCE, cspSource: CSP_SOURCE, map: { view: 'shown', hasCards: true } });
-  assert.match(withoutScript(cards), /data-act="orderByCards"/);
-  assert.match(withoutScript(cards), /data-act="analyseWithAgent"/);
-  const busy = buildDetailHtml(null, { result: null, nonce: NONCE, cspSource: CSP_SOURCE, map: { view: 'busy', hasCards: false } });
-  assert.equal(textOf(busy), 'Select a change in the tree, or put the cursor in a changed function.', 'while analysing, the hint alone');
+test('inside a review or while analysing, with no row, the panel shows the hint alone', () => {
+  for (const view of ['shown', 'busy']) {
+    const html = buildDetailHtml(null, { result: null, nonce: NONCE, cspSource: CSP_SOURCE, map: { view } });
+    assert.equal(textOf(html), 'Select a change in the tree, or put the cursor in a changed function.', view);
+  }
 });
 
 test('the agent\'s pseudocode diff shows under its line, each line marked added, removed or kept', () => {
