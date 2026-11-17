@@ -99,6 +99,20 @@ function createVscodeResolver({
     const extras = languageExtras?.query(file, pos) ?? null;
     const key = `${withTests ? 'A' : 'P'}${file}#${pos}`;
     if (cache.has(key)) { stats.cacheHits++; return { callers: cache.get(key), complete: true }; }
+    // A production-only answer is the all-callers answer without its test callers, so a
+    // query the resolve phase already made (the impact walk asks every changed function
+    // again, without tests) is served from it: a finished one by filtering, an unfinished
+    // one by repeating how it ended. Asking the server again would cost the same round
+    // trip, and for a query that timed out, the same timeout a second time.
+    if (!withTests) {
+      const allKey = `A${file}#${pos}`;
+      if (cache.has(allKey)) { stats.cacheHits++; return { callers: cache.get(allKey).filter((c) => !c.test), complete: true }; }
+      const ended = queryStates.get(allKey);
+      if (ended && !ended.ready) {
+        stats.cacheHits++;
+        return { callers: [], complete: false, reason: ended.reason, ...(ended.retryable ? { retryable: true } : {}) };
+      }
+    }
     const t = clock.now();
     stats.incomingCalls++;
     // A query the language's extras know the server answers wrongly (a TypeScript

@@ -55,6 +55,29 @@ test('local rows and diff commands are usable during warm-up; ticks survive fina
   assert.deepEqual(env.seen.errors, []);
 }, { changedSource: true }));
 
+test('the resolved callers show while the entry-point walk still runs; the final result replaces them', () => withEnv(async env => {
+  const changed = pendingFinding('warm', path.join(env.dir, 'a.ts'), 16);
+  const done = { ...changed, callerState: 'none', callersComplete: true, callersIncompleteReason: null };
+  env.hooks.localPrepared = o => ({ ...localResult(o, { findings: [changed] }), callersPending: true });
+  env.hooks.localResolved = o => ({ ...localResult(o, { findings: [done] }), callersPending: false });
+  env.hooks.localResult = o => ({ ...localResult(o, { findings: [done] }), callersPending: false, impactPaths: {} });
+  const walking = env.holds.analyze.next();
+  const run = env.refresh();
+  await walking.reached;
+  assert.equal(env.seen.analyzeOptions.at(-1).resolved, true, 'the session asks for the callers before the walk');
+  assert.equal(env.seen.analyzeOptions.at(-1).impactPaths, true);
+  // The walk is still running, and the rows already read as resolved.
+  const rows = await env.tree().getChildren();
+  assert.ok(!rows.some(row => row.label === 'Resolving callers…'), 'the resolving row is gone before the walk ends');
+  const [row] = await env.changeRows();
+  assert.equal(row.finding.callerState, 'none');
+  assert.ok(env.seen.log.some(line => /callers resolved in \d+ms; the entry-point search for the cards continues/.test(line)), 'the log says the callers landed first');
+  walking.release();
+  await run;
+  assert.equal((await env.changeRows())[0].finding.callerState, 'none');
+  assert.deepEqual(env.seen.errors, []);
+}, { changedSource: true }));
+
 test('a replacement hides the older prepared result and discards its late completion', () => withEnv(async env => {
   env.hooks.localPrepared = o => ({ ...localResult(o, { findings: [pendingFinding('old', path.join(env.dir, 'a.ts'), 5)] }), callersPending: true });
   const old = env.holds.analyze.next();
@@ -109,6 +132,57 @@ test('local engine prepares all symbols before querying callers and keeps the pe
     assert.equal(final.callersPending, false);
     assert.equal(final.allChanged[0].callerState, 'none');
     assert.equal(prepared.allChanged[0].callerState, 'unknown');
+  } finally { repo.remove(); }
+});
+
+test('local engine publishes the resolved callers before the entry-point walk, and disposes the resolver after it', async () => {
+  const repo = temporaryRepo();
+  try {
+    fs.writeFileSync(path.join(repo.dir, 'tsconfig.json'), '{"include":["*.js"],"compilerOptions":{"allowJs":true}}');
+    fs.writeFileSync(path.join(repo.dir, 'a.js'), 'function target(a, b) { return a + b; }\nmodule.exports = { target };\n');
+    let resolved, walkQueries = 0, disposed = 0;
+    const final = await analyze(repo.dir, { mode: 'working', deferTestReach: true, skipForest: true, impactPaths: true,
+      makeResolver: () => ({
+        callerState: async () => ({ state: 'none', callers: [], complete: true }),
+        incomingWithStatus: async () => { walkQueries++; return { callers: [], complete: true }; },
+        dispose: () => { disposed++; },
+      }),
+      makeModuleCallers: () => ({ appliesTo: () => null, hint() {}, notes: () => [] }),
+      onResolved: (result) => {
+        resolved = result;
+        assert.equal(walkQueries, 0, 'the walk has not started');
+        assert.equal(disposed, 0, 'the resolver is still needed for the walk');
+      },
+    });
+    assert.ok(resolved, 'onResolved was called');
+    assert.equal(resolved.callersPending, false);
+    assert.equal(resolved.allChanged[0].callerState, 'none');
+    assert.equal(resolved.impactPaths, undefined, 'the entry points come with the final result');
+    assert.ok(walkQueries >= 1, 'the walk ran after the publish');
+    assert.equal(Object.keys(final.impactPaths).length, 1);
+    assert.equal(final.allChanged[0].callerState, 'none');
+    assert.equal(disposed, 1, 'the resolver was disposed once, after its walk');
+  } finally { repo.remove(); }
+});
+
+test('a replaced run stops before the entry-point walk, and the unit resolver is still disposed', async () => {
+  const repo = temporaryRepo();
+  try {
+    fs.writeFileSync(path.join(repo.dir, 'tsconfig.json'), '{"include":["*.js"],"compilerOptions":{"allowJs":true}}');
+    fs.writeFileSync(path.join(repo.dir, 'a.js'), 'function target(a, b) { return a + b; }\nmodule.exports = { target };\n');
+    const controller = new AbortController();
+    let walkQueries = 0, disposed = 0;
+    await assert.rejects(analyze(repo.dir, { mode: 'working', deferTestReach: true, skipForest: true, impactPaths: true, signal: controller.signal,
+      makeResolver: () => ({
+        callerState: async () => ({ state: 'none', callers: [], complete: true }),
+        incomingWithStatus: async () => { walkQueries++; return { callers: [], complete: true }; },
+        dispose: () => { disposed++; },
+      }),
+      makeModuleCallers: () => ({ appliesTo: () => null, hint() {}, notes: () => [] }),
+      onResolved: () => { controller.abort(); },
+    }), (e) => e.code === 'ANALYSIS_CANCELLED');
+    assert.equal(walkQueries, 0, 'no walk query after the cancellation');
+    assert.equal(disposed, 1);
   } finally { repo.remove(); }
 });
 

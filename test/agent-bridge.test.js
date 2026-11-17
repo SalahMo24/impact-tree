@@ -21,13 +21,14 @@ const vscodeFake = { EventEmitter: class {
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'itb-'));
 
 /** One editor window on a fresh repository directory, with a fake session and workspace state. */
-function editor({ lockDir = tmp(), repo = tmp(), validator = () => ({ ok: true }), head = SHA('a'), source = { kind: 'local' }, tierA = false, updateDelayMs = 0, idleTimeoutMs } = {}) {
+function editor({ lockDir = tmp(), repo = tmp(), validator = () => ({ ok: true }), head = SHA('a'), source = { kind: 'local' }, tierA = false, updateDelayMs = 0, idleTimeoutMs, asked } = {}) {
   const memento = new Map();
   // `updateDelayMs` makes every storage write take that long, and records whether two ran at once.
   const writing = { now: 0, overlapped: false };
   const session = { state: { result: { mode: 'pr', base: { ref: 'main', sha: SHA('b') }, tierA }, source, cards: { clusters: [] } }, repoRoot: () => repo };
   const logs = [];
   const world = { head, validated: [] };
+  const events = [];
   const bridge = createAgentBridge(vscodeFake, {
     session, log: (m) => logs.push(m), lockDir,
     workspaceState: { get: (k) => memento.get(k), update: async (k, v) => {
@@ -40,10 +41,12 @@ function editor({ lockDir = tmp(), repo = tmp(), validator = () => ({ ok: true }
     validator: (kind, payload, given) => { world.validated.push({ kind, payload, given }); return validator(kind, payload, given); },
     readHead: async () => world.head,
     ...(idleTimeoutMs ? { idleTimeoutMs } : {}),
+    ...(asked ? { asked } : {}),
+    telemetry: { event: (name, props) => events.push({ name, props }) },
   });
   const stored = [];
   bridge.onDidStoreResult((e) => stored.push(e));
-  return { bridge, session, memento, lockDir, repo, logs, world, stored, writing };
+  return { bridge, session, memento, lockDir, repo, logs, world, stored, writing, events };
 }
 
 const meta = (e) => ({ head: e.world.head, base: SHA('b') });
@@ -291,6 +294,26 @@ test('submit: stored under the head keyed by kind and normalised payload, event 
     assert.deepEqual(e.bridge.resultsFor(SHA('z')), []);
     client.close();
   } finally { await e.bridge.stop(); }
+});
+
+test('agent.submitted says how the agent was used, in fixed words and counts, never its text', async () => {
+  let waiting = true;
+  const e = editor({ asked: () => waiting });
+  await e.bridge.start();
+  try {
+    const client = await connectBridge({ repo: e.repo, lockDir: e.lockDir });
+    const payload = { summary: 'secret summary', attention: ['a#1'], cards: [{ title: 'secret', members: ['a#1', 'a#2'] }],
+      changes: [{ id: 'a#1', kind: 'changed', what: 'secret', shape: '+ if x' }, { id: 'a#2', kind: 'same', what: 'secret' }] };
+    await client.submit('cards', payload, { ...meta(e), agent: { client: 'claude-code', model: 'claude-opus-5-5-secret/path', toolCalls: 4 } });
+    waiting = false;
+    await client.submit('callers', { function: 'a#1', callers: [] }, meta(e));
+    client.close();
+  } finally { await e.bridge.stop(); }
+  const sent = e.events.filter((x) => x.name === 'agent.submitted').map((x) => x.props);
+  assert.deepEqual(sent[0], { kind: 'cards', stored: true, client: 'claude-code', model: 'claude-opus', modelVersion: '5.5', toolCalls: 4, handedOver: true,
+    notes: 2, changed: 1, mayChange: 0, same: 1, new: 0, shapes: 1, attention: 1, cards: 1 });
+  assert.deepEqual(sent[1], { kind: 'callers', stored: true, client: 'unknown', model: 'unknown', handedOver: false }, 'an older server sends no agent: unknown');
+  assert.ok(!JSON.stringify(sent).includes('secret'));
 });
 
 test('submit: a payload over 512 KB is refused; a bad kind or shape is refused', async () => {

@@ -60,8 +60,9 @@ function viewStateOf({ repo = 'ok', phase, busy, state }) {
   if (repo !== 'ok') return repo;
   const result = state && state.result;
   // A prepared result belongs to the current run and is safe to review while callers load;
-  // so is the result a caller retry refines (`retryingCallers`).
-  if ((phase === 'analysing' || phase === 'preparing' || busy) && result && (result.callersPending || state.retryingCallers)) return 'shown';
+  // so is the result a caller retry refines (`retryingCallers`), and the resolved callers
+  // the run published while it still searches the entry points (`entryPointsPending`).
+  if ((phase === 'analysing' || phase === 'preparing' || busy) && result && (result.callersPending || state.retryingCallers || state.entryPointsPending)) return 'shown';
   if (phase === 'starting' || phase === 'preparing' || phase === 'analysing' || phase === 'checkingOut' || busy) return 'busy';
   if (state && state.problem) return 'problem';
   if (!state || (!result && !state.error)) return 'idle';

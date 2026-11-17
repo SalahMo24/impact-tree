@@ -4,9 +4,9 @@
 // controller, `impactTree.agent`, next to the pull request one (`review-comments.js`) and the
 // feedback one (`feedback-comments.js`), which it does not touch. One read-only thread per
 // change the agent described, on the change's first line in the head side of the review diff:
-// what the agent wrote, the callers it affects (a name the engine knows opens the call), the
-// engine's verdict sentence, and who wrote it. What a note says is decided in
-// `agent-threads-model.js`. Nothing here sends anything anywhere: "Reply in next round" opens
+// what the agent wrote, the callers it affects (a name the engine knows opens the call), and
+// the engine's verdict sentence when it warns. No thread for a "same behaviour" change. What a
+// note says is decided in `agent-threads-model.js`. Nothing here sends anything anywhere: "Reply in next round" opens
 // a feedback draft, and "Post to the PR" opens a GitHub draft holding the note's text, both
 // for the reviewer to edit and send or drop.
 //
@@ -39,6 +39,8 @@ const COMMANDS = Object.freeze({
 });
 /** The author every note shows; the glyph stands for the sparkle (an author's icon takes only an address). */
 const AUTHOR = Object.freeze({ name: '✦ Your agent' });
+/** The worst verdict levels (0 breaks callers, 1 risk unknown) whose sentence a note repeats. */
+const WARN_LEVEL = 1;
 
 /** @param {unknown} v @returns {v is Record<string, any>} */
 const isObject = (v) => typeof v === 'object' && v !== null;
@@ -120,11 +122,15 @@ function createAgentThreads(vscode, { provider, getAgentReview, whereIs, isRevie
   function specOf(row, review) {
     const id = changeIdOf(row);
     const change = id && review.notes ? review.notes.change(id) : null;
-    if (!id || !change || row.type !== 'finding') return null;
+    // A note flags what the reviewer should look at: "same behaviour, new way" is safe, so it
+    // stays in the tree and Details but gets no thread in the diff.
+    if (!id || !change || row.type !== 'finding' || change.kind === 'same') return null;
+    const verdict = classifyRowVerdict(row);
     const contextValue = [isReviewed(row) ? 'reviewed' : 'notReviewed', ...(canStartFeedback() ? ['canReply'] : []), ...(canPostToPr() ? ['canPost'] : [])].join(' ');
     return {
       id, relPath: row.finding.relPath, line: row.finding.startLine - 1, label: WORD[change.kind], contextValue,
-      body: noteMarkdown(change, { verdict: classifyRowVerdict(row).sentence, callers: row.finding.callers || [] }),
+      // The engine's sentence only when it warns (breaks callers, or the risk is unknown).
+      body: noteMarkdown(change, { verdict: verdict.level <= WARN_LEVEL ? verdict.sentence : null, callers: row.finding.callers || [] }),
       expanded: needsAttention(row, review.attention),
     };
   }

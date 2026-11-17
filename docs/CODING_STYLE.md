@@ -508,8 +508,9 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      JSON response). The open-PR list is capped at 10 pages and reports truncation only
      when a further page exists. Responses are validated for the fields used. Each
      limit's unit, owner, enforcement point and exhaustion behaviour is documented at
-     `DEFAULT_LIMITS`. Not done: retries (there are none) and the language-server limit
-     above.
+     `DEFAULT_LIMITS`. The one retry is a GET whose connection failed before any
+     response (`CONNECTION_RETRIES`, 1), within the same deadline; the second failure is a
+     `GitHubNetworkError` naming the cause. Not done: the language-server limit above.
    - Exists: an injected clock (`src/engine/clock.js`) times every deadline, budget, retry wait and tick; tests pass `test/fake-clock.js` and fast-forward it instead of waiting.
    - Exists: the lint rule `local/no-wall-clock` (`eslint-local/no-wall-clock.js`), applied
      to every file in `src/` whether enrolled or not, rejects `Date.now`, `new Date()`,

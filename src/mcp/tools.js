@@ -20,7 +20,7 @@ const {
   validateSubmission, checkEvidence, isRelativePath, lineStarts, escapeRe, MAX_LINE, IDENTIFIER,
   BEHAVIOUR_KINDS, MAX_WHAT_CHARS, MAX_ATTENTION,
 } = require('../engine/agent-results');
-const { makeEnv, impactOf, seamsOf, nameOf, hunkFor } = require('../engine/card-env');
+const { makeEnv, impactOf, seamsOf, nameOf, hunkFor, callsFor } = require('../engine/card-env');
 
 // Lines one get_source call returns at most. Unit: lines.
 const MAX_SOURCE_LINES = 400;
@@ -87,7 +87,8 @@ const locShape = {
  * @param {string[]} [ctx.notes] Analysis-wide limits to report (startup caps).
  * @param {import('./code-source').CodeSource} [ctx.source] Code at the PR head and base, for
  *   get_source, list_files and search_code; without it those tools say they are not available.
- * @param {(kind: 'cards'|'callers', normalised: any) => Promise<{ stored: boolean, reason?: string, errors?: string[] }>} [ctx.forward]
+ * @param {(kind: 'cards'|'callers', normalised: any, agent?: { model?: string }) => Promise<{ stored: boolean, reason?: string, errors?: string[] }>} [ctx.forward]
+ *   `agent.model`: the model the agent says it is, for the editor's usage counts only.
  *   Hands a checked submission to the editor; absent when no editor is connected.
  * @param {AbortSignal} [ctx.signal] Stops a running `impact_paths` walk.
  */
@@ -179,7 +180,7 @@ function addCardTools(tools, env) {
 
   tools.push({
     name: 'get_change', title: 'Get one changed function', annotations: READ_ONLY,
-    description: 'One changed (or deleted) function by id (relPath#offset, from get_card): before/after signatures, change kinds, added throws, the diff hunk of that function, its callers with call-site update state, tests reaching it, and its impact paths.',
+    description: 'One changed (or deleted) function by id (relPath#offset, from get_card): before/after signatures, change kinds, added throws, the diff hunk of that function, the calls it gained and lost (by name), its callers with call-site update state, tests reaching it, and its impact paths.',
     inputSchema: z.object({ id: z.string().min(1).max(2000).describe('Change id such as src/a.ts#1234.') }).strict(),
     run: async (args) => getChange(env, String(args.id)),
   });
@@ -200,6 +201,7 @@ function getChange(env, id) {
     baseSig: c.baseSig ?? null, headSig: c.headSig ?? null,
     kinds: (c.kinds || []).map((/** @type {any} */ k) => ({ id: k.id, label: k.label })), throwsAdded: c.throwsAdded || [],
     hunk: hunk.text, hunkComplete: hunk.complete,
+    calls: callsFor(env, c, env.readText),
     callerState: c.callerState, callers,
     tests: { state: c.testState, found: c.tests || [], incompleteReason: c.testReachIncompleteReason || null },
     impactPaths: env.paths[id] || null,
@@ -343,6 +345,7 @@ function cardsAnswerSchema() {
       before: z.string().optional().describe('What it did.'),
       after: z.string().optional().describe('What it does now.'),
       when: z.string().optional().describe('The inputs or conditions where the outcome differs.'),
+      shape: z.string().optional().describe('When the control flow changed, in place of before/after/when: a pseudocode diff in plain words, at most 8 lines of 60 characters, each starting with a space, + or -.'),
       affects: z.array(z.object({ name: z.string().describe('A caller or entry point of this change from the facts.'), how: z.string().describe('How it is affected.') })).optional(),
     })).optional().describe('What each change does to behaviour; one entry per change you describe.'),
     cards: z.array(z.object({
@@ -463,18 +466,22 @@ function addCodeTools(tools, env) {
 // ---------------------------------------------------------------------------------------
 // Write-back
 
+/** Longest model id a submission may name. Unit: characters. */
+const MAX_MODEL_CHARS = 80;
+
 /**
  * Check a submission and hand it to the editor.
  * @param {Env} env @param {'cards'|'callers'} kind @param {unknown} payload
+ * @param {unknown} [model] The model the agent named, passed on for the editor's usage counts; never checked or stored.
  * @returns {Promise<{ stored: boolean, reason?: string, notShown?: string[] }>}
  *   `notShown`: parts left out instead of refused (an "affects" name not in the facts); nothing to fix.
  * @throws {ToolError} listing what to fix, when the submission or the editor rejects it
  */
-async function submit(env, kind, payload) {
+async function submit(env, kind, payload, model) {
   const check = validateSubmission(kind, payload, submissionContext(env));
   if (!check.ok) throw new ToolError(`submit_${kind} rejected; fix these and submit again:\n- ${check.errors.join('\n- ')}`);
   if (!env.ctx.forward) return { stored: false, reason: NO_EDITOR_REASON, ...(check.dropped ? { notShown: check.dropped } : {}) };
-  const sent = await env.ctx.forward(kind, check.normalised);
+  const sent = await env.ctx.forward(kind, check.normalised, typeof model === 'string' ? { model } : {});
   if (sent.errors && sent.errors.length) throw new ToolError(`the editor rejected the ${kind} submission:\n- ${sent.errors.join('\n- ')}`);
   return { stored: sent.stored === true, ...(sent.reason ? { reason: sent.reason } : {}), ...(check.dropped ? { notShown: check.dropped } : {}) };
 }
@@ -489,15 +496,17 @@ function addSubmitTools(tools, env) {
         head: z.string().regex(/^[0-9a-f]{7,64}$/i).describe('The head commit the facts were for, as the prompt gives it.'),
         base: z.string().regex(/^[0-9a-f]{7,64}$/i).describe('The base commit the facts were for, as the prompt gives it.'),
       }).strict().optional().describe('The review your cards are for, from the prompt. With it, a server whose analysis is older analyses that review first and then checks and saves your cards; a review that is no longer the one the editor shows is refused.'),
+      model: z.string().max(MAX_MODEL_CHARS).optional().describe('Your model id, such as claude-opus-5-5 or gpt-5.1-codex. Only counted, by family, in the editor\'s anonymous usage events.'),
       answer: cardsAnswerSchema(),
     }).strict(),
-    run: async (args) => submit(env, 'cards', args.answer),
+    run: async (args) => submit(env, 'cards', args.answer, args.model),
   });
 
   tools.push({
     name: 'submit_callers', title: 'Submit callers of a function', annotations: WRITE_BACK,
     description: 'Submit the callers you found for one function (a change id from get_card, or file + line + name). Every caller\'s file must exist at the PR head and its line (±1) must mention the function, as check_evidence checks. On errors nothing is saved. Returns stored and, when not stored, the reason.',
     inputSchema: z.object({
+      model: z.string().max(MAX_MODEL_CHARS).optional().describe('Your model id, such as claude-opus-5-5 or gpt-5.1-codex. Only counted, by family, in the editor\'s anonymous usage events.'),
       answer: z.object({
         function: z.union([
           z.string().describe('Change id such as src/a.ts#1234.'),
@@ -512,7 +521,7 @@ function addSubmitTools(tools, env) {
         })),
       }),
     }).strict(),
-    run: async (args) => submit(env, 'callers', args.answer),
+    run: async (args) => submit(env, 'callers', args.answer, args.model),
   });
 }
 

@@ -64,6 +64,57 @@ test('PR analysis uses fresh head and merge base, including remote config inheri
   clearVirtualText();
 });
 
+test('a preview stops asking for configuration once GitHub could not be reached, and says how many it skipped', async () => {
+  const { remoteOptions, remotePackages, createConnectionFuse } = require('../src/engine/remote-config');
+  const { GitHubNetworkError, GitHubHttpError } = require('../src/github/github-request');
+  const unreachable = () => new GitHubNetworkError('/repos/o/r/contents/x', Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } }));
+  // One file four folders deep: the tsconfig chain asks level by level, so without the fuse
+  // every level would be asked and fail in turn.
+  const files = ['apps/web/src/features/x.ts'];
+  {
+    const asked = [];
+    const warnings = [];
+    const gh = { fileAtRef: async (_, rel) => { asked.push(rel); throw unreachable(); } };
+    await remoteOptions(ts, gh, { owner: 'o', repo: 'r' }, 'head', '/remote', files, warnings, undefined);
+    assert.equal(asked.length, 1, 'one request, then no more');
+    assert.equal(warnings.filter((w) => /unavailable — GitHub could not be reached .*ECONNRESET/.test(w)).length, 1, 'the failed file names the cause');
+    assert.deepEqual(warnings.filter((w) => /not fetched after GitHub could not be reached/.test(w)),
+      [`4 configuration file(s) not fetched after GitHub could not be reached (${unreachable().message})`], 'one line for the rest');
+  }
+  // The package loader asks up to 8 at once: those are in flight before the first fails,
+  // and the fuse spares the rest (13 package.json paths here).
+  {
+    const asked = [];
+    const warnings = [];
+    const gh = { fileAtRef: async (_, rel) => { asked.push(rel); throw unreachable(); } };
+    await remotePackages(gh, { owner: 'o', repo: 'r' }, 'head', '/remote', [...files, 'packages/a/b/c/d/e/f/g/y.ts'], warnings, undefined);
+    assert.equal(asked.length, 8, 'the first batch was already in flight');
+    assert.equal(warnings.filter((w) => /package metadata unavailable — GitHub could not be reached/.test(w)).length, 8);
+    assert.deepEqual(warnings.filter((w) => /not fetched after GitHub could not be reached/.test(w)),
+      [`5 configuration file(s) not fetched after GitHub could not be reached (${unreachable().message})`]);
+  }
+  // A 404 or another HTTP answer is GitHub answering: every level is still asked.
+  {
+    const asked = [];
+    const gh = { fileAtRef: async (_, rel) => { asked.push(rel); if (rel === 'tsconfig.json') throw new GitHubHttpError('/x', 500); return null; } };
+    const warnings = [];
+    await remoteOptions(ts, gh, { owner: 'o', repo: 'r' }, 'head', '/remote', files, warnings, undefined);
+    assert.equal(asked.length, 5);
+    assert.ok(!warnings.some((w) => /not fetched after/.test(w)));
+  }
+  // One fuse shared by both loaders: what the first learnt, the second does not pay for.
+  {
+    const asked = [];
+    const warnings = [];
+    const fuse = createConnectionFuse(warnings);
+    const gh = { fileAtRef: async (_, rel) => { asked.push(rel); throw unreachable(); } };
+    await remoteOptions(ts, gh, { owner: 'o', repo: 'r' }, 'head', '/remote', files, warnings, undefined, fuse);
+    await remotePackages(gh, { owner: 'o', repo: 'r' }, 'head', '/remote', files, warnings, undefined, fuse);
+    assert.equal(asked.length, 1);
+    assert.equal(warnings.filter((w) => /not fetched after/.test(w)).length, 2, 'each loader notes its own skipped files');
+  }
+});
+
 test('remote roots retain separate recursive components beside an ordinary root', async () => {
   const text = 'export function a() { b(); }\nexport function b() { a(); }\nexport function c() { d(); }\nexport function d() { c(); }\nexport function solo() {}\n';
   const gh = { listPullRequestFiles: async () => ({ files: [{ path: 'a.ts', status: 'added', patch: '@@ -0,0 +1,5 @@\n'+text.trimEnd().split('\n').map((l) => '+'+l).join('\n') }] }), fileAtRef: async (_, p) => p === 'a.ts' ? text : null };

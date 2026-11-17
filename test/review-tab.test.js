@@ -232,3 +232,19 @@ test('the panel says why there is nothing to show', () => {
   assert.match(page({ result: SMALL.result, cards: null }), /Cards are built when the analysis finishes/);
   assert.match(page({ result: { ...SMALL.result, tierA: true }, cards: SMALL.cards }), /preview: no diffs here/);
 });
+
+test('a change with a shape shows it under its line; the engine\'s gained and lost calls show under Impact Tree', () => {
+  const agent = { ...AGENT, changes: [{ id: 'src/a.ts#7', kind: 'changed', what: 'rejects empty input', shape: ' save(x)\n+  if x is empty\n+    throw <Empty>' }, AGENT.changes[1]] };
+  const calls = { added: ['Error', 'check'], removed: ['audit'], addedMore: 2, removedMore: 0 };
+  const m = reviewTabModel({ ...SMALL, agentPayload: agent, hunkOf: () => HUNK, callsOf: (c) => (c.relPath === 'src/a.ts' ? calls : { added: [], removed: [], addedMore: 0, removedMore: 0 }) });
+  const save = m.changes['src/a.ts#7'];
+  assert.equal(save.shape, ' save(x)\n+  if x is empty\n+    throw <Empty>');
+  assert.deepEqual(save.calls, { added: ['Error', 'check'], removed: ['audit'], more: 2 });
+  assert.equal(m.changes['src/c.ts#3'].calls, null, 'nothing gained or lost: no Calls row');
+  const html = buildReviewTabHtml(m, { nonce: 'bm9uY2U=', cspSource: 'x' });
+  assert.match(html, /<div class="what">rejects empty input<\/div><pre class="hunk shape"[^>]*><span class="ctxl"> save\(x\)<\/span><span class="add">\+  if x is empty<\/span><span class="add">\+    throw &lt;Empty&gt;<\/span><\/pre>/);
+  assert.match(html, /<dt>Calls<\/dt><dd><pre class="hunk calls"[^>]*><span class="add">\+ Error<\/span><span class="add">\+ check<\/span><span class="del">- audit<\/span><\/pre><\/dd><dd class="muted">…and 2 more<\/dd>/);
+  const aside = /<aside class="ctx" data-change="src\/a\.ts#7">[\s\S]*?<\/aside>/.exec(html)[0];
+  assert.match(aside, /Its pseudocode is on the change\./);
+  assert.doesNotMatch(aside, /nothing more said/);
+});

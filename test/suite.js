@@ -150,6 +150,7 @@ const SUITE = [
   { file: 'test/snapshot-store.test.js', tier: 'full' },  // 11.4s
   { file: 'test/fake-clock.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/telemetry.test.js', tier: 'quick' },  // 0.1s
+  { file: 'test/telemetry-usage.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/no-wall-clock-rule.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/entry-points.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/impact-paths.test.js', tier: 'quick' },  // 0.2s
@@ -161,6 +162,7 @@ const SUITE = [
   { file: 'test/github-commits.test.js', tier: 'quick' },
   { file: 'test/repeated-edits.test.js', tier: 'quick' },
   { file: 'test/agent-results.test.js', tier: 'quick' },
+  { file: 'test/call-diff.test.js', tier: 'quick' },
   { file: 'test/review-order-cards.test.js', tier: 'quick' },
   { file: 'test/agent-ai5.test.js', tier: 'quick' },
   { file: 'test/choose-agent.test.js', tier: 'quick' },  // 0.1s

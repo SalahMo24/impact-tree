@@ -9,6 +9,7 @@
 // Pure apart from reading files at the head (`readText`) and the file diffs (`diffOf`); both
 // are injectable.
 
+const { callDiff } = require('./call-diff');
 const fs = require('fs');
 const path = require('path');
 const { indexChanges, lineStarts, lineOf } = require('./agent-results');
@@ -122,19 +123,19 @@ function nameOf(env, id) {
 }
 
 /**
- * The hunks of the file diff that overlap the function's lines.
+ * The hunks of the file diff that overlap the function's lines, uncut.
  * @param {{ ctx: { diffOf?: CardEnvInput['diffOf']|null }, diffCache: Map<string, string|null> }} env
  *   A CardEnv, or just a diff source and a cache of one diff per file.
  * @param {any} c
- * @returns {{ text: string|null, complete: boolean }}
+ * @returns {string|null} Null when there is no diff for the file.
  */
-function hunkFor(env, c) {
+function hunksOf(env, c) {
   const diffOf = env.ctx.diffOf;
-  if (!diffOf) return { text: null, complete: false };
+  if (!diffOf) return null;
   const cache = env.diffCache;
   if (!cache.has(c.relPath)) cache.set(c.relPath, diffOf(c.relPath, c.oldPath));
   const diff = cache.get(c.relPath);
-  if (diff === null || diff === undefined) return { text: null, complete: false };
+  if (diff === null || diff === undefined) return null;
   const out = [];
   for (const h of diff.split(/\n(?=@@ )/)) {
     const m = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(h);
@@ -143,8 +144,34 @@ function hunkFor(env, c) {
     const end = start + Math.max(0, Number(m[2] ?? 1) - 1);
     if (end >= c.startLine && start <= c.endLine) out.push(h);
   }
-  const text = out.join('\n');
+  return out.join('\n');
+}
+
+/**
+ * The hunks of the file diff that overlap the function's lines, cut to MAX_HUNK_CHARS.
+ * @param {{ ctx: { diffOf?: CardEnvInput['diffOf']|null }, diffCache: Map<string, string|null> }} env
+ * @param {any} c
+ * @returns {{ text: string|null, complete: boolean }}
+ */
+function hunkFor(env, c) {
+  const text = hunksOf(env, c);
+  if (text === null) return { text: null, complete: false };
   return text.length > MAX_HUNK_CHARS ? { text: `${text.slice(0, MAX_HUNK_CHARS)}\n… (cut at ${MAX_HUNK_CHARS} characters)`, complete: false } : { text, complete: true };
 }
 
-module.exports = { makeEnv, impactOf, seamsOf, nameOf, hunkFor, MAX_HUNK_CHARS };
+/**
+ * The calls a changed function gained and lost (./call-diff.js), or null when there is no
+ * diff or head text for it, or it is deleted.
+ * @param {{ ctx: { diffOf?: CardEnvInput['diffOf']|null }, diffCache: Map<string, string|null> }} env
+ * @param {any} c @param {(abs: string) => string|null} readText Text at the head of an absolute path.
+ * @returns {ReturnType<typeof callDiff>}
+ */
+function callsFor(env, c, readText) {
+  if (!c || c.deletedFn || !c.file || !c.startLine) return null;
+  const hunks = hunksOf(env, c);
+  const headText = hunks ? readText(c.file) : null;
+  if (!hunks || headText === null) return null;
+  return callDiff({ headText, hunks, startLine: c.startLine, endLine: c.endLine, self: c.simpleName || undefined, hashComments: /\.pyi?$/.test(c.relPath || c.file) });
+}
+
+module.exports = { makeEnv, impactOf, seamsOf, nameOf, hunkFor, hunksOf, callsFor, MAX_HUNK_CHARS };

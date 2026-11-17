@@ -121,6 +121,39 @@ test('behaviour: changes and attention are checked and normalised; an alias name
   assert.equal(reviewOf({}).normalised.changes, undefined, 'both parts are optional');
 });
 
+test('behaviour: shape is a pseudocode diff; its indent is kept and its blank ends dropped', () => {
+  const shape = '\n save(x)\r\n+  if x is empty   \n+    throw EmptyInput\n   write x\n\n';
+  const r = reviewOf({ changes: [{ id: SAVE, kind: 'changed', what: 'Rejects empty input', shape }] });
+  assert.equal(r.ok, true, JSON.stringify(r.errors));
+  assert.equal(r.normalised.changes[0].shape, ' save(x)\n+  if x is empty\n+    throw EmptyInput\n   write x');
+  assert.equal(reviewOf({ changes: [{ id: SAVE, kind: 'changed', what: 'x', shape: '  \n' }] }).normalised.changes[0].shape, undefined, 'a blank shape is left out');
+  const errs = (/** @type {any} */ shape) => reviewOf({ changes: [{ id: SAVE, kind: 'changed', what: 'x', shape }] }).errors.join('\n');
+  assert.match(errs(3), /changes\[0\]\.shape must be a string/);
+  assert.match(errs('+a\n'.repeat(9)), /shape has 9 lines; keep it to 8/);
+  assert.match(errs('+' + 'a'.repeat(648)), /shape is longer than 648 characters/);
+  assert.match(errs(' a\n+' + 'b'.repeat(80)), /shape: line 2 is longer than 80 characters; write plain words, not code/);
+  assert.equal(reviewOf({ changes: [{ id: SAVE, kind: 'changed', what: 'x', shape: '+' + 'b'.repeat(79) }] }).ok, true, '80 characters is the limit');
+  assert.match(errs(' if steering\n+  && same provider'), /shape: line 2 reads as code \("&&"\); say it in words/);
+  for (const op of ['||', '===', '!==', '=>', '{', '}', ';']) assert.match(errs(`+ a ${op} b`), /reads as code/, op);
+  assert.equal(reviewOf({ changes: [{ id: SAVE, kind: 'changed', what: 'x', shape: ' if a = b\n+  or c is not d\n+    return (none)' }] }).ok, true, 'words, = and brackets are fine');
+  assert.match(errs(' a\nb'), /shape: line 2 must start with a space, \+ or -/);
+  assert.match(errs(' a\n b'), /shape needs at least one line starting with \+ or -/);
+});
+
+test('behaviour: a shape line removed and added back as it was becomes one unchanged line', () => {
+  const shape = ' if run is active\n-  if provider cannot steer\n+  if provider cannot steer\n+  or message switches provider\n    queue it';
+  const r = reviewOf({ changes: [{ id: SAVE, kind: 'changed', what: 'x', shape }] });
+  assert.equal(r.normalised.changes[0].shape, ' if run is active\n   if provider cannot steer\n+  or message switches provider\n    queue it');
+  assert.match(reviewOf({ changes: [{ id: SAVE, kind: 'changed', what: 'x', shape: '-a\n+a' }] }).errors.join('\n'), /needs at least one line starting with \+ or -/, 'nothing left changed');
+});
+
+test('behaviour: with a shape, before, after and when are left out and listed as dropped', () => {
+  const r = reviewOf({ changes: [{ id: SAVE, kind: 'changed', what: 'x', before: 'b', after: 'a', when: 'w', shape: ' save\n+  check' }] });
+  assert.equal(r.ok, true, JSON.stringify(r.errors));
+  assert.deepEqual(r.normalised.changes[0], { id: SAVE, kind: 'changed', what: 'x', shape: ' save\n+  check' });
+  assert.deepEqual(r.dropped, ['changes[0]: before, after and when are not shown when there is a shape']);
+});
+
 test('behaviour: every error kind, with its message', () => {
   const errs = (/** @type {any} */ extra) => reviewOf(extra).errors.join('\n');
   assert.match(errs({ changes: 'x' }), /answer\.changes must be an array/);

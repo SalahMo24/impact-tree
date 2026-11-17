@@ -292,6 +292,9 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
       error: null,
       problem: null,
       retryingCallers: false,
+      // True only for the run's own publish of the resolved callers before its entry-point
+      // walk (analyseLocalRun's onResolved); the final result resets it.
+      entryPointsPending: false,
       ...extra,
     };
   }
@@ -432,7 +435,9 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     if (lifecycle.run === record) {
       lifecycle.run = null;
       lifecycle.state = 'ready';
-      if (session.state && session.state.retryingCallers) session.state = { ...session.state, retryingCallers: false };
+      if (session.state && (session.state.retryingCallers || session.state.entryPointsPending)) {
+        session.state = { ...session.state, retryingCallers: false, entryPointsPending: false };
+      }
       session.provider.refresh();
     }
     record.settle();
@@ -502,6 +507,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     const wall = (clock.now() - tStart) / 1000;
     if (st.warmUpMs) log(`  server warm-up ${(st.warmUpMs / 1000).toFixed(1)}s (paid once per window)`);
     log(`  WALL ${wall.toFixed(1)}s   (query time sums to ${(st.incomingMs / 1000).toFixed(1)}s across ${result.concurrency} workers — overlapping, not additive)`);
+    if (result.impactPathsMeta) log(`  entry-point walk ${(result.impactPathsMeta.walkMs / 1000).toFixed(1)}s after the callers, for ${Object.keys(result.impactPaths || {}).length} changed function(s)`);
     log(`  queries: ${st.incomingCalls}  min ${st.minMs}ms / median ${st.medianMs}ms / max ${st.maxMs}ms`);
     log(`  ${st.cacheHits} cache hits · ${st.warmupRetries} warmup retries · ${st.skipped} unresolved · ${st.resolvedEmpty} resolved-but-empty${st.unseenUsers ? ` · ${st.unseenUsers} used in files the editor does not search` : ''}`);
     log(`  cqrs: +${st.cqrsEdges} edges / ${st.cqrsSuppressed} handlers de-noised`);
@@ -661,8 +667,18 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
         log(`changed files ready in ${clock.now() - tStart}ms; caller analysis continues`);
         if (pending.allChanged.length) await untilReady(run, session.ensureReady(progress));
       },
+      // The findings with their callers, before the entry-point walk the cards need: the
+      // reviewer reads them while it runs. The expansion resolver follows with the result.
+      onResolved: retry ? undefined : async (resolved) => {
+        // `entryPointsPending` marks it as this run's own, so the view shows it although the run is busy.
+        if (!completeAnalysisRun(run, { result: resolved, repo, expansionResolver: null, viewExtras: { entryPointsPending: true } })) return;
+        configureLocalReview(source, repo, resolved, base);
+        session.provider.refresh();
+        log(`callers resolved in ${clock.now() - tStart}ms; the entry-point search for the cards continues`);
+      },
       onProgress: (p2) => {
         if (p2.phase === 'component') report(`analysing ${p2.component}…`);
+        else if (p2.phase === 'impact') report('finding the entry points the cards show…');
         else if (p2.total) report(`${p2.component}: resolving callers ${p2.done}/${p2.total}`);
       },
       mode, base, remote: baseRemote.name, fetch: !retry && cfg.get('fetchBase', true),

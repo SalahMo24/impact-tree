@@ -322,3 +322,11 @@ test('inside a review with no row, the hint comes first and the ways on follow; 
   const busy = buildDetailHtml(null, { result: null, nonce: NONCE, cspSource: CSP_SOURCE, map: { view: 'busy', hasCards: false } });
   assert.equal(textOf(busy), 'Select a change in the tree, or put the cursor in a changed function.', 'while analysing, the hint alone');
 });
+
+test('the agent\'s pseudocode diff shows under its line, each line marked added, removed or kept', () => {
+  const bad = change('src/a.ts', 'Holder.bad', 10);
+  const result = resultOf({ allChanged: [bad] });
+  const html = buildDetailHtml(findRow(result, 'Holder.bad'), { result, nonce: NONCE, cspSource: CSP_SOURCE,
+    agentChange: { kind: 'changed', what: 'Checks the path', shape: ' add(path)\n+  if path has <cr>\n-  store it' } });
+  assert.match(html, /<div class="what">Changed: Checks the path<\/div><pre class="shape"><span class=""> add\(path\)<\/span><span class="add">\+  if path has &lt;cr&gt;<\/span><span class="del">-  store it<\/span><\/pre>/);
+});

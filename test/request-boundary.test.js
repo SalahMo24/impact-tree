@@ -95,6 +95,33 @@ test('a fetch that honours its signal is aborted by the deadline', async () => {
   assert.equal(seen.aborted, true, 'the underlying request was aborted, not just abandoned');
 });
 
+test('a GET whose connection failed is sent once more; the second failure names the network cause', async () => {
+  const { fetchBounded, CONNECTION_RETRIES } = require('../src/github/github-request');
+  assert.equal(CONNECTION_RETRIES, 1);
+  const connectionFailure = () => Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('connect ETIMEDOUT 140.82.112.5:443'), { code: 'UND_ERR_CONNECT_TIMEOUT' }) });
+  // Fails once, then answers: the caller sees the answer and two attempts.
+  let attempts = 0;
+  const once = await client(async () => { attempts++; if (attempts === 1) throw connectionFailure(); return text('export const a = 1;'); });
+  assert.equal(await once.fileAtRef(SLUG, 'a.ts', 'head'), 'export const a = 1;');
+  assert.equal(attempts, 2);
+  // Fails twice: no third attempt, and the error says what the network did, not "fetch failed".
+  attempts = 0;
+  const twice = await client(async () => { attempts++; throw connectionFailure(); });
+  await assert.rejects(twice.fileAtRef(SLUG, 'a.ts', 'head'), (e) => e.name === 'GitHubNetworkError'
+    && e.message.includes('/repos/o/r/contents/a.ts') && e.message.includes('UND_ERR_CONNECT_TIMEOUT') && !isAnalysisCancelled(e));
+  assert.equal(attempts, 2);
+  // A write is never sent twice.
+  attempts = 0;
+  await assert.rejects(fetchBounded(async () => { attempts++; throw connectionFailure(); }, 'https://api.github.com/x', { method: 'POST' },
+    { endpoint: '/x', deadlineMs: 1000, maxBytes: 1000, clock: createFakeClock() }), { name: 'GitHubNetworkError' });
+  assert.equal(attempts, 1);
+  // An HTTP status is not a connection failure: one attempt, the typed error as before.
+  attempts = 0;
+  const status = await client(async () => { attempts++; return json({}, 502); });
+  await assert.rejects(status.getPullRequest(SLUG, 1), { name: 'GitHubHttpError' });
+  assert.equal(attempts, 1);
+});
+
 test('a file fetch times out under the same deadline', async () => {
   const clock = createFakeClock();
   const gh = await client(() => new Promise(() => {}), { requestTimeoutMs: 20 }, clock);

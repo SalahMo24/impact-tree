@@ -80,6 +80,7 @@ pre.hunk span { display: block; padding: 0 8px; white-space: pre; }
 pre.hunk .add { background: var(--vscode-diffEditor-insertedLineBackground, rgba(0,160,0,.15)); }
 pre.hunk .del { background: var(--vscode-diffEditor-removedLineBackground, rgba(200,0,0,.15)); }
 pre.hunk .at { color: var(--vscode-descriptionForeground); }
+pre.hunk.shape { margin-top: 6px; }
 .link { font: inherit; background: none; border: 0; padding: 0; color: var(--vscode-textLink-foreground); cursor: pointer; }
 .link:hover { text-decoration: underline; }
 .btn { font: inherit; font-size: 12px; color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); background: var(--vscode-button-secondaryBackground, transparent); border: 1px solid var(--vscode-panel-border); border-radius: 4px; padding: 1px 8px; cursor: pointer; }
@@ -119,7 +120,17 @@ function changeHtml(ch) {
     + (ch.hunk.more ? `<div class="muted">${ch.hunk.more} more lines in the diff</div>` : '') + '</details>' : '';
   return `<div class="chg" data-change="${escapeHtml(ch.id)}"><div class="head"><span class="name">${escapeHtml(ch.name)}</span>`
     + `<span class="file">${escapeHtml(ch.file)}${ch.line ? `:${ch.line}` : ''}</span>${attention}${kind}${verdict}${open}</div>`
-    + (ch.what ? `<div class="what">${escapeHtml(ch.what)}</div>` : '') + hunk + '</div>';
+    + (ch.what ? `<div class="what">${escapeHtml(ch.what)}</div>` : '') + (ch.shape ? shapeHtml(ch.shape) : '') + hunk + '</div>';
+}
+
+/** Lines starting with ' ', '+' or '-' as a small diff block. @param {string[]} lines @param {string} [cls] @param {string} [title] */
+function diffBlockHtml(lines, cls = '', title = '') {
+  return `<pre class="hunk${cls ? ` ${cls}` : ''}"${title ? ` title="${escapeHtml(title)}"` : ''}>${lines.map((l) => `<span class="${l[0] === '+' ? 'add' : l[0] === '-' ? 'del' : 'ctxl'}">${escapeHtml(l)}</span>`).join('')}</pre>`;
+}
+
+/** The agent's pseudocode diff of the change. @param {string} shape */
+function shapeHtml(shape) {
+  return diffBlockHtml(shape.split('\n'), 'shape', "Your agent's reading of the control flow, in pseudocode");
 }
 
 /** @param {import('./review-tab-model').ChangeModel} ch */
@@ -129,7 +140,8 @@ function contextHtml(ch) {
   if (ch.kind) {
     const said = /** @type {Array<[string, string|null]>} */ ([['Before', ch.before], ['After', ch.after], ['When', ch.when]]).filter(([, v]) => v);
     parts.push('<h4>Your agent</h4><dl>');
-    if (!said.length && !ch.affects.length) parts.push(`<dd class="muted">${escapeHtml(KIND_WORD[/** @type {keyof typeof KIND_WORD} */ (ch.kind)] || ch.kind)}; nothing more said.</dd>`);
+    if (!said.length && !ch.affects.length && ch.shape) parts.push('<dd class="muted">Its pseudocode is on the change.</dd>');
+    if (!said.length && !ch.affects.length && !ch.shape) parts.push(`<dd class="muted">${escapeHtml(KIND_WORD[/** @type {keyof typeof KIND_WORD} */ (ch.kind)] || ch.kind)}; nothing more said.</dd>`);
     for (const [k, v] of said) parts.push(`<dt>${k}</dt><dd>${escapeHtml(/** @type {string} */ (v))}</dd>`);
     if (ch.affects.length) parts.push(`<dt>Affects</dt>${ch.affects.map((a) => `<dd><b>${escapeHtml(a.name)}</b> — ${escapeHtml(a.how)}</dd>`).join('')}`);
     parts.push('</dl>');
@@ -144,6 +156,10 @@ function contextHtml(ch) {
   }
   if (ch.callersMore) parts.push(`<dd class="muted">…and ${ch.callersMore} more</dd>`);
   if (!ch.callersComplete && ch.callers.length) parts.push('<dd class="muted">More callers may be missing.</dd>');
+  if (ch.calls) {
+    parts.push(`<dt>Calls</dt><dd>${diffBlockHtml([...ch.calls.added.map((n) => `+ ${n}`), ...ch.calls.removed.map((n) => `- ${n}`)], 'calls', 'Calls gained and lost, by name')}</dd>`);
+    if (ch.calls.more) parts.push(`<dd class="muted">…and ${ch.calls.more} more</dd>`);
+  }
   if (ch.entries.length) parts.push(`<dt>Reaches</dt>${ch.entries.map((e) => `<dd>${escapeHtml(e)}</dd>`).join('')}${ch.entriesMore ? `<dd class="muted">…and ${ch.entriesMore} more</dd>` : ''}`);
   parts.push('</dl>');
   return `<aside class="ctx" data-change="${escapeHtml(ch.id)}">${parts.join('')}</aside>`;
