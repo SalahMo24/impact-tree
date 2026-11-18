@@ -32,7 +32,7 @@ function createVscodeResolver({
   const initialStats = () => ({
     incomingCalls: 0, incomingMs: 0, cacheHits: 0, warmupRetries: 0,
     skipped: 0, resolvedEmpty: 0, cqrsEdges: 0, cqrsSuppressed: 0, durations: [], emptyAt: [],
-    inheritedDropped: 0, unseenUsers: 0, valueUsesDropped: 0, callerTargetQueries: 0,
+    inheritedDropped: 0, unseenUsers: 0, valueUsesDropped: 0, callerTargetQueries: 0, pathEdgeQueries: 0,
   });
   const stats = initialStats();
   // Validates the deadlines and budgets (see createVscodeServices for each one's range and
@@ -167,6 +167,18 @@ function createVscodeResolver({
     return reason;
   }
 
+  /**
+   * Walk-only edges (`EditorCallerExtras.pathEdges`): asked by the impact walk alone, never
+   * merged into the callers or cached here (the language's extras own their answers).
+   * @returns {Promise<import('../engine/caller-contract').PathEdgesAnswer>}
+   */
+  async function pathEdges(file, pos) {
+    const extras = extrasFor(file);
+    if (!extras || !extras.pathEdges) return { rows: [], complete: true };
+    stats.pathEdgeQueries++;
+    return extras.pathEdges(file, pos);
+  }
+
   async function incoming(file, pos, withTests = true) {
     return (await incomingWithStatus(file, pos, withTests)).callers;
   }
@@ -176,6 +188,7 @@ function createVscodeResolver({
     services,
     incoming,
     incomingWithStatus,
+    pathEdges,
     warmUp,
     isWarm: () => services.isWarm(),
     /**

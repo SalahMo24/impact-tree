@@ -42,4 +42,24 @@
  * @property {boolean} [retryable] As in CallerAnswer.
  */
 
+/**
+ * A function that passes the queried symbol on without calling it, for the impact walk only
+ * (`pathEdges`, src/engine/edges-jsx.js). Never a caller: never part of `incoming`,
+ * `incomingWithStatus` or `callerState`. `pos` and `label` follow the call hierarchy's
+ * convention for the function holding the use; `callSites` are the uses.
+ * @typedef {CallerRow & { via: 'jsx-prop', text: string }} PathEdgeRow
+ *   `via`: how it is passed (`'jsx-prop'`: in a JSX attribute's value); `text`: the same
+ *   for a reader, such as "passed as onClick to <Button>".
+ */
+
+/**
+ * Answer to a resolver's optional `pathEdges(file, pos)`. `complete: false` means some use
+ * of the symbol is neither an edge nor an import or export (or the search failed), so the
+ * walk records that end as unknown with `reason` while it follows `rows`.
+ * @typedef {object} PathEdgesAnswer
+ * @property {PathEdgeRow[]} rows
+ * @property {boolean} complete
+ * @property {string} [reason] Present whenever `complete` is false.
+ */
+
 module.exports = {};

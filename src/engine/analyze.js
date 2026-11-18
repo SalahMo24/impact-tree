@@ -144,8 +144,8 @@ function includeUntrackedFiles(changes, untracked, headRev) {
  * @param {(caller: {file: string}) => boolean} isUntracked
  * @param {(count: number) => void} onDropped Called with the number of direct callers removed
  *   from one `callerState` answer.
- * @returns {object} `resolver` with `incoming`, `incomingWithStatus` (when present) and
- *   `callerState` filtered.
+ * @returns {object} `resolver` with `incoming`, `incomingWithStatus` (when present),
+ *   `pathEdges` (when present; the impact walk's edges) and `callerState` filtered.
  */
 function withoutUntrackedCallers(resolver, isUntracked, onDropped) {
   const keep = (caller) => !isUntracked(caller);
@@ -167,6 +167,12 @@ function withoutUntrackedCallers(resolver, isUntracked, onDropped) {
     wrapped.incomingWithStatus = async (...args) => {
       const answer = await resolver.incomingWithStatus(...args);
       return { ...answer, callers: answer.callers.filter(keep) };
+    };
+  }
+  if (resolver.pathEdges) {
+    wrapped.pathEdges = async (...args) => {
+      const answer = await resolver.pathEdges(...args);
+      return { ...answer, rows: answer.rows.filter(keep) };
     };
   }
   return wrapped;
