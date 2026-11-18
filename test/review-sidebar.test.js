@@ -205,3 +205,20 @@ test('a preview says so on the reviewed row, and its limits are in the row\'s ho
   delete tree.isPreview;
   assert.equal(sidebar.getTreeItem(two).description, 'someone');
 });
+
+test('a host row read before a refresh is still drawn as a sources row (the reveal of a new review)', async () => {
+  // revealHost reads the host, then VS Code asks for its item; the review refreshing in between
+  // used to send the old row to the review tree, which drew it as a caller with no file:
+  // "The "path" argument must be of type string".
+  const tree = fakeTree();
+  const asked = [];
+  const getTreeItem = tree.getTreeItem;
+  tree.getTreeItem = (r) => { asked.push(r); return getTreeItem(r); };
+  const sidebar = createReviewSidebar(vscode, { tree, getHost: () => ({ kind: 'pr', number: 2 }) });
+  sidebar.setSources(fakeSources());
+  sidebar.followTree();
+  const host = await sidebar.hostRow();
+  tree.fire(undefined);
+  assert.equal(sidebar.getTreeItem(host).label, '#2  two');
+  assert.deepEqual(asked, [], 'the review tree is not asked about a sources row');
+});
