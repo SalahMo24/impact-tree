@@ -50,8 +50,13 @@ function createReviewSidebar(vscode, { tree, getHost, emptyRow = () => null }) {
   let cache = new Map();
   /** @type {WeakMap<any, any>} */
   let parentOf = new WeakMap();
-  /** @type {WeakSet<any>} */
-  let fromSources = new WeakSet();
+  /**
+   * Every row the sources provider made, so it is never drawn as a review row. Not cleared on
+   * a refresh: VS Code may still ask about a row read before it (a reveal of the host, sent
+   * just before the review refreshed), and that row is still a sources row.
+   * @type {WeakSet<any>}
+   */
+  const fromSources = new WeakSet();
   /** @type {any} */
   let host = null;
   /** The review tree's notices, read when the host's children are. @type {TreeRow[]} */
@@ -61,7 +66,7 @@ function createReviewSidebar(vscode, { tree, getHost, emptyRow = () => null }) {
   /** What the last root read reviewed, so a new review hides the groups and a refresh of the same one does not. */
   let hostKey = '';
 
-  const reset = () => { cache = new Map(); parentOf = new WeakMap(); fromSources = new WeakSet(); host = null; };
+  const reset = () => { cache = new Map(); parentOf = new WeakMap(); host = null; };
 
   /** Whether the root is the review alone: a host is shown and the groups were not asked for. */
   const scoped = () => host !== null && !pickerShown;

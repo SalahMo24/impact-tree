@@ -192,7 +192,11 @@ function activate(context, { clock = realClock } = {}) {
     if (key === revealedFor) return;
     revealedFor = key;
     const host = await sidebar.hostRow();
-    if (host) await Promise.resolve(view.reveal(host, { select: false, focus: false, expand: true })).then(undefined, (e) => log(`review: could not show the reviewed row: ${e && e.message}`));
+    if (host) await Promise.resolve(view.reveal(host, { select: false, focus: false, expand: true })).then(undefined, (e) => {
+      // Try again on the next change of the same review, unless another review came since.
+      if (revealedFor === key) revealedFor = '';
+      log(`review: could not show the reviewed row: ${e && e.message}`);
+    });
   };
   context.subscriptions.push(owned.onDidChangeAnalysis(() => { void revealHost(); }));
   // The agent's part of the review (set below, with the bridge): null until then.
