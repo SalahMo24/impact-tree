@@ -74,6 +74,7 @@ The `wait:` after the pick names text only the new review shows. Waiting for `lo
 
 - **macOS and Linux only.** The run folder lives in `/tmp`, and cleanup uses `pkill`.
 - **The window shows on screen and takes focus** while the run lasts.
+- **A run is a full VS Code:** about 1.4 GB of memory and two to three busy cores for 10–20 s. Built-in extensions the review does not need (git, GitHub, Copilot, debuggers, npm…) are switched off to keep it lighter. Put all the steps you need into one run rather than several, and don't start runs in parallel.
 - **One run at a time per checkout,** because they share `.vscode-test/out/latest/`. Runs from different worktrees do not interfere.
 - **No GitHub or pull request flows:** the throwaway profile is not signed in.
 - **VS Code only.** Cursor is not a target yet. Its sign-in screen and a possibly disabled debugging hook would need work first.

@@ -56,7 +56,40 @@ const SETTINGS = {
   'git.openRepositoryInParentFolders': 'never',
   'chat.disableAIFeatures': true,
   'workbench.secondarySideBar.defaultVisibility': 'hidden',
+  // Lighter runs: one TypeScript server instead of two (the extension needs the full one), and
+  // no animations or minimap to paint.
+  'typescript.tsserver.useSyntaxServer': 'never',
+  'workbench.reduceMotion': 'on',
+  'editor.minimap.enabled': false,
 };
+
+/** Built-in extensions that run code and that the review needs: the TypeScript language server. */
+const KEEP_BUILTINS = new Set(['vscode.typescript-language-features']);
+
+/**
+ * The built-in extensions to switch off for the run: every one that runs code (git, GitHub,
+ * Copilot, the debuggers, npm, emmet…) except those the review needs. Grammars and themes run
+ * nothing and stay. Each one switched off is a process or an activation less on a busy machine.
+ * @param {string} executablePath
+ * @returns {string[]} Their ids.
+ */
+function idleBuiltins(executablePath) {
+  // macOS: Code.app/Contents/MacOS/Code -> Contents/Resources/app; Linux: <dir>/code -> <dir>/resources/app.
+  const dir = process.platform === 'darwin'
+    ? path.join(path.dirname(executablePath), '..', 'Resources', 'app', 'extensions')
+    : path.join(path.dirname(executablePath), 'resources', 'app', 'extensions');
+  if (!fs.existsSync(dir)) return [];
+  /** @type {string[]} */
+  const ids = [];
+  for (const name of fs.readdirSync(dir)) {
+    const file = path.join(dir, name, 'package.json');
+    if (!fs.existsSync(file)) continue;
+    const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const id = `${manifest.publisher}.${manifest.name}`;
+    if ((manifest.main || manifest.browser) && !KEEP_BUILTINS.has(id)) ids.push(id);
+  }
+  return ids;
+}
 
 /**
  * What the command palette shows for a command id: "Category: Title", as package.json declares it.
@@ -398,6 +431,7 @@ async function main() {
         '--skip-welcome',
         '--skip-release-notes',
         '--use-inmemory-secretstorage',
+        ...idleBuiltins(executablePath).map((id) => `--disable-extension=${id}`),
         '--new-window',
         /** @type {string} */ (repo),
       ],
