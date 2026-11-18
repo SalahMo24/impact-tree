@@ -25,6 +25,8 @@ const KIND_TONE = { changed: 'warning', 'may-change': 'warning', new: 'plain', s
 const LEVEL_CLASS = ['lv0', 'lv1', 'lv2', 'lv3', 'lv4'];
 const STATE_WORD = { unchanged: 'not updated', 'changed-elsewhere': 'edited elsewhere', 'updated-at-call': 'updated', updated: 'updated', unknown: 'unknown' };
 const ATTENTION_WORD = 'Look at this first';
+/** The review tab's title: its editor tab and its page's <title> (scripts/drive.js looks for it). */
+const REVIEW_TAB_TITLE = 'Impact Tree review';
 /** Hunks of these kinds start open; the rest fold until asked. */
 const OPEN_HUNK_KINDS = new Set(['changed', 'may-change']);
 
@@ -252,8 +254,10 @@ function buildReviewTabHtml(model, { nonce, cspSource }) {
   return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'
     + `<meta http-equiv="Content-Security-Policy" content="${csp}">`
     + '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
+    // The tab's own title; scripts/drive.js finds this page among the webviews by it.
+    + `<title>${REVIEW_TAB_TITLE}</title>`
     + `<style nonce="${nonce}">${STYLE}</style></head>`
     + `<body><main>${bodyHtml(model)}</main><script nonce="${nonce}">${script(nonce)}</script></body></html>`;
 }
 
-module.exports = { buildReviewTabHtml, ATTENTION_WORD };
+module.exports = { buildReviewTabHtml, ATTENTION_WORD, REVIEW_TAB_TITLE };

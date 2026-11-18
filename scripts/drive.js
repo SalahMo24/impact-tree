@@ -17,10 +17,10 @@
 //   key:KEY       press a key (Escape, Enter, ArrowDown…; Playwright's key names)
 //   click:TEXT    select the first Review row containing TEXT (waits for it to appear)
 //   expand:TEXT   open the first Review row containing TEXT, without selecting it
-//   wait:TEXT     wait until TEXT shows in the Review tree or the Details view
+//   wait:TEXT     wait until TEXT shows in the Review tree, the Details view or the review tab
 //   shot:NAME     save the window as NAME.png
-//   dump[:NAME]   write tree.txt (the Review rows on screen) and details.txt (the Details text),
-//                 or NAME-tree.txt and NAME-details.txt
+//   dump[:NAME]   write tree.txt (the Review rows on screen), details.txt (the Details text) and
+//                 review.txt (the review tab's text), or NAME-tree.txt, NAME-details.txt…
 // Output (default .vscode-test/out/latest/, replaced each run): the PNGs, the dumps, summary.json
 // and the extension's log. Exit code: 0 passed, 1 a step or the launch failed, 2 the run passed its
 // deadline, 130 interrupted. The window shows on screen and takes focus while the run lasts.
@@ -32,6 +32,7 @@ const { execFileSync } = require('node:child_process');
 
 const ROOT = path.join(__dirname, '..');
 const MANIFEST = require(path.join(ROOT, 'package.json'));
+const { REVIEW_TAB_TITLE } = require(path.join(ROOT, 'src/views/review-tab/review-tab-html'));
 const EXTENSION_ID = `${MANIFEST.publisher}.${MANIFEST.name}`;
 /** Pinned so the download is cached and the workbench's markup stays the same between runs. */
 const VSCODE_VERSION = '1.146.0';
@@ -268,6 +269,30 @@ async function detailsText(page) {
   return frame.evaluate(() => document.body ? document.body.innerText : '').catch(() => '');
 }
 
+/**
+ * The review tab's document (`cmd:impactTree.openReview`), found by its page title among the
+ * extension's webview panels (src/views/review-tab/review-tab-html.js REVIEW_TAB_TITLE). Null
+ * while the tab is closed or behind another editor tab: its page is dropped while hidden.
+ * @param {import('playwright').Page} page
+ * @returns {Promise<import('playwright').Frame|null>}
+ */
+async function reviewFrame(page) {
+  for (const outer of page.frames()) {
+    if (!contains(outer.url(), `extensionId=${EXTENSION_ID}`) || outer.url().includes('purpose=webviewView')) continue;
+    for (const inner of outer.childFrames()) {
+      if (await inner.title().catch(() => '') === REVIEW_TAB_TITLE) return inner;
+    }
+  }
+  return null;
+}
+
+/** @param {import('playwright').Page} page @returns {Promise<string>} The review tab's text, or '' while it is not there. */
+async function reviewText(page) {
+  const frame = await reviewFrame(page);
+  if (!frame) return '';
+  return frame.evaluate(() => document.body ? document.body.innerText : '').catch(() => '');
+}
+
 /** @param {() => Promise<boolean>} check @param {number} timeout */
 async function poll(check, timeout) {
   const until = Date.now() + timeout;
@@ -338,8 +363,9 @@ const VERBS = {
     return info.text;
   },
   async wait({ page }, text) {
-    const found = await poll(async () => (await readRows(page).catch(() => [])).some((r) => contains(r.text, text)) || contains(await detailsText(page), text), STEP_TIMEOUT_MS);
-    if (!found) throw new Error(`"${text}" did not show in the Review tree or Details within ${STEP_TIMEOUT_MS / 1000} s`);
+    const found = await poll(async () => (await readRows(page).catch(() => [])).some((r) => contains(r.text, text))
+      || contains(await detailsText(page), text) || contains(await reviewText(page), text), STEP_TIMEOUT_MS);
+    if (!found) throw new Error(`"${text}" did not show in the Review tree, Details or the review tab within ${STEP_TIMEOUT_MS / 1000} s`);
   },
   async dump({ page, out, files }, name) {
     const prefix = name ? `${name}-` : '';
@@ -347,7 +373,11 @@ const VERBS = {
     fs.writeFileSync(path.join(out, `${prefix}tree.txt`), `# Review rows on screen (the list only holds the visible ones)\n${rows.map(rowLine).join('\n')}\n`);
     const frame = detailsFrame(page);
     fs.writeFileSync(path.join(out, `${prefix}details.txt`), frame ? `${await detailsText(page)}\n` : '# the Details view is not open (expand its pane)\n');
-    files.push(`${prefix}tree.txt`, `${prefix}details.txt`);
+    const review = await reviewFrame(page);
+    fs.writeFileSync(path.join(out, `${prefix}review.txt`), review
+      ? `${await review.evaluate(() => document.body ? document.body.innerText : '').catch(() => '')}\n`
+      : '# the review tab is not showing (open it with cmd:impactTree.openReview; a tab behind another one has no page)\n');
+    files.push(`${prefix}tree.txt`, `${prefix}details.txt`, `${prefix}review.txt`);
   },
   async shot({ page, out, files }, name) {
     await page.screenshot({ path: path.join(out, `${name}.png`), scale: 'css' });
