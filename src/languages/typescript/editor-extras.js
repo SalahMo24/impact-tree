@@ -12,6 +12,45 @@ const { findUnseenUsers, unseenUsersReason, gitGrep } = require('../../engine/un
 const { makeGit } = require('../../engine/git');
 const { isTestFile } = require('../../engine/diff');
 const { realClock } = require('../../engine/clock');
+const { readTextOfOffsets } = require('../../engine/textpos');
+
+// What the tree view maps to "passed around as a value" (src/views/changes/tree-row-models.js);
+// the same spelling the CLI resolver and the Go, Python and Java extras use.
+const VALUE_USE_REASON = 'referenced-as-value';
+// The largest file read to place a reference. Unit: bytes. Owner: this module. A larger file
+// leaves its references unplaced, and an unplaced reference counts as a use.
+const MAX_FILE_BYTES = 2_000_000;
+
+/**
+ * How the reference at `offset` uses the name: `'declaration'` for an import or export, which
+ * neither calls nor passes it on (`import { f }`, `import f`, `import * as f`, `export { f }`,
+ * `export default f`), `'call'` for the callee of a call or `new` (`f()`, `a.f()`), and
+ * `'other'` for any other use, or when it cannot be placed.
+ * @param {any} ts The TypeScript compiler module.
+ * @param {string} file Absolute path (picks the script kind by extension).
+ * @param {string} text
+ * @param {number} offset UTF-16 offset of the reference.
+ * @returns {'declaration'|'call'|'other'}
+ */
+function referenceKindAt(ts, file, text, offset) {
+  let sf;
+  try { sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true); } catch { return 'other'; }
+  /** @type {any} */
+  let node = sf;
+  for (let next = true; next;) {
+    next = false;
+    node.forEachChild((/** @type {any} */ child) => {
+      if (!next && child.getStart(sf) <= offset && offset < child.getEnd()) { node = child; next = true; }
+    });
+  }
+  const p = node.parent;
+  if (!p) return 'other';
+  if (ts.isImportSpecifier(p) || ts.isImportClause(p) || ts.isNamespaceImport(p) || ts.isImportEqualsDeclaration(p)
+    || ts.isExportSpecifier(p) || ts.isExportAssignment(p)) return 'declaration';
+  const callee = ts.isPropertyAccessExpression(p) && p.name === node ? p : node;
+  const q = callee.parent;
+  return q && (ts.isCallExpression(q) || ts.isNewExpression(q)) && q.expression === callee ? 'call' : 'other';
+}
 
 /**
  * @param {object} options See `LanguageProvider.editorCallers` (src/languages/types.js).
@@ -99,6 +138,33 @@ function createTypescriptEditorExtras({ ts, services, repoRoot, trace, filterInh
   // leaves the server's answer: it is no evidence either way.
   const grep = repoRoot ? gitGrep(makeGit(repoRoot)) : null;
 
+  /**
+   * Whether the target is used other than by a call the hierarchy lists: any reference
+   * outside its own name that is not an import or export. A call in a test file is not a use:
+   * the production query leaves test callers out. One references query.
+   * @param {string} file Absolute path. @param {number} pos
+   * @returns {Promise<string|null>} VALUE_USE_REASON, a failure reason, or null for no use.
+   */
+  async function valueUseReason(file, pos) {
+    let refs;
+    try {
+      refs = await services.references(headDoc(file), pos);
+    } catch (e) {
+      return `its references could not be listed: ${(e && /** @type {Error} */ (e).message) || 'lookup failed'}`;
+    }
+    if (!Array.isArray(refs)) return 'its references could not be listed (no answer)';
+    for (const r of refs) {
+      if (r.file === file && r.start != null && r.end != null && r.start <= pos && pos < r.end) continue; // the declaration's name
+      const text = r.start != null ? readTextOfOffsets(r.file, { maxBytes: MAX_FILE_BYTES }) : null;
+      // A reference that cannot be placed counts, as in `referenceVerdict`.
+      const kind = typeof text === 'string' ? referenceKindAt(ts, r.file, text, /** @type {number} */ (r.start)) : 'other';
+      if (kind === 'declaration' || (kind === 'call' && isTestPath(r.file))) continue;
+      trace(`typescript: value use of ${require('path').basename(file)}@${pos} at ${require('path').basename(r.file)}@${r.start}`);
+      return VALUE_USE_REASON;
+    }
+    return null;
+  }
+
   return {
     // a handler's execute() resolves through ICommandHandler.execute, so the call
     // hierarchy returns every bus.execute() site; none of them reach this handler
@@ -107,9 +173,15 @@ function createTypescriptEditorExtras({ ts, services, repoRoot, trace, filterInh
     droppedStat: 'inheritedDropped',
     query(file, pos) {
       const queryCqrs = cqrs;
+      // Callers the call hierarchy left after the filter (`filter` is skipped when it found none).
+      let hierarchyCallers = 0;
       return {
         isSuppressed: () => !!(queryCqrs && queryCqrs.isHandlerExecute(file, pos)),
-        filter: (callers) => (inherited && callers.length ? inherited.filterAt(file, pos, callers) : { kept: callers, dropped: 0 }),
+        filter(callers) {
+          const out = inherited && callers.length ? inherited.filterAt(file, pos, callers) : { kept: callers, dropped: 0 };
+          hierarchyCallers = out.kept.length;
+          return out;
+        },
         // No compiler, no command-bus edges: nothing to wait for.
         moreCallers: queryCqrs && (async () => {
           let failure = null;
@@ -119,6 +191,12 @@ function createTypescriptEditorExtras({ ts, services, repoRoot, trace, filterInh
             callers = found.callers;
             if (found.unresolved.length) failure = `no definition found for ${found.unresolved.join(', ')}`;
           } catch (e) { failure = (e && /** @type {Error} */ (e).message) || 'lookup failed'; }
+          // Only with no caller at all: a function used as a value (`onClick={f}`,
+          // `addEventListener('x', f)`) has no call hierarchy, and its uses are not "none".
+          if (!callers.length && !hierarchyCallers) {
+            const value = await valueUseReason(file, pos);
+            if (value) return { callers, incompleteReason: value };
+          }
           return { callers, incompleteReason: failure && `command-bus callers unavailable — ${failure}` };
         }),
       };

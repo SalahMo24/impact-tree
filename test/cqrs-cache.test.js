@@ -63,6 +63,9 @@ async function withResolver(run) {
         }
         // A type/import reference is not a dispatch.
         found.push(location('commands.ts', files['commands.ts'].indexOf(word), word.length));
+        // A server lists the queried name itself too; a method nothing uses has only that.
+        // A target with only this and the line above would read as used (as a value).
+        if (!files['commands.ts'].includes(word)) found.splice(found.length - 1, 1, location(path.relative(repo, uri.fsPath), pos, word.length));
         return references ? references(found) : found;
       }
       throw new Error(`unexpected command: ${name}`);
@@ -222,7 +225,10 @@ test('refresh preserves CQRS dispatches, event methods, test filtering and incom
 test('a superseded CQRS query cannot populate the new generation parsed-file cache', async () => {
   await withResolver(async ({ resolver, absolute, posOf, parses, setReferences }) => {
     const reached = deferred(), held = deferred();
-    setReferences((found) => { reached.resolve(); return held.promise.then(() => found); });
+    // Only the old query's CQRS lookup waits: the ordinary query below also asks references
+    // now (it has no caller), and must not wait on the old one.
+    let holding = true;
+    setReferences((found) => { if (!holding) return found; holding = false; reached.resolve(); return held.promise.then(() => found); });
     const old = resolver.incomingWithStatus(absolute('handler.ts'), posOf('Handler.execute'));
     await reached.promise;
     resolver.clear();
