@@ -289,7 +289,7 @@ function addLocationTools(tools, env) {
 
   tools.push({
     name: 'impact_paths', title: 'Impact paths of any function', annotations: READ_ONLY,
-    description: `Walk callers upward from the function at file:line to the application's entry points (HTTP routes, CLI commands, mains, public API, UI routes, …). Each path ends as entry, top-unidentified, unknown (with the reason) or budget. Limits: 8 levels, 300 callers, ${QUERY_DEADLINE_MS} ms.`,
+    description: `Walk callers upward from the function at file:line to the application's entry points (HTTP routes, CLI commands, mains, public API, UI routes, …). Each path ends as entry, top-unidentified, unknown (with the reason) or budget. A step that is not a call is listed in the path's hops (at: index in via; text, e.g. "passed as onClick to <Button>": a React handler passed in a JSX attribute, followed to the component that renders it). Limits: 8 levels, 300 callers, ${QUERY_DEADLINE_MS} ms.`,
     inputSchema: z.object({ ...locShape }).strict(),
     run: async (args) => {
       const loc = locate(env, args);

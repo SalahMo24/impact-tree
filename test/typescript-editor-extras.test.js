@@ -105,4 +105,83 @@ test('without the TypeScript compiler nothing changes: no references query', asy
   const h = setup(t, {}, () => assert.fail('not asked'));
   const extras = createTypescriptEditorExtras({ ts: null, services: h.services, repoRoot: null, trace() {}, filterInherited: false, onWarmupRetry() {} });
   assert.equal(extras.query(h.abs['a.ts'], NAME).moreCallers, null);
+  assert.equal(extras.pathEdges, undefined);
+});
+
+// N2: walk-only JSX edges (`pathEdges`, src/engine/edges-jsx.js) from the server's references.
+const COMPONENT = 'import { target } from "./a";\nexport const B = () => <button onClick={target} />;\n';
+/** @param {any} h A `setup` harness. */
+const extrasOf = (h) => createTypescriptEditorExtras({ ts, services: h.services, repoRoot: path.dirname(h.abs['a.ts']), trace() {}, filterInherited: false, onWarmupRetry() {} });
+
+test('pathEdges: a component passing it as onClick is an edge to the component, labelled', async (t) => {
+  const h = setup(t, { 'b.tsx': COMPONENT }, (abs) => [self(abs), at(abs['b.tsx'], COMPONENT, 'target'), at(abs['b.tsx'], COMPONENT, 'target', 1)]);
+  const extras = extrasOf(h);
+  const answer = await extras.pathEdges(h.abs['a.ts'], NAME);
+  assert.equal(answer.complete, true);
+  assert.deepEqual(answer.rows.map((r) => [r.label, r.file, r.pos, r.via, r.text, r.test]),
+    [['B', h.abs['b.tsx'], COMPONENT.indexOf('B ='), 'jsx-prop', 'passed as onClick to <button>', false]]);
+  // Asked once: a second question is served from the generation's answers; clear() drops them.
+  await extras.pathEdges(h.abs['a.ts'], NAME);
+  assert.equal(h.asked.references, 1);
+  extras.clear();
+  await extras.pathEdges(h.abs['a.ts'], NAME);
+  assert.equal(h.asked.references, 2);
+});
+
+test('pathEdges: another value use keeps it incomplete; a failed query is never cached', async (t) => {
+  const use = 'import { target } from "./a";\nwindow.addEventListener("x", target);\n';
+  const h = setup(t, { 'b.tsx': COMPONENT, 'c.ts': use }, (abs) => [self(abs), at(abs['b.tsx'], COMPONENT, 'target', 1), at(abs['c.ts'], use, 'target', 1)]);
+  const answer = await extrasOf(h).pathEdges(h.abs['a.ts'], NAME);
+  assert.equal(answer.rows.length, 1);
+  assert.equal(answer.complete, false);
+  assert.match(answer.reason, /referenced as a value .* \(in c\.ts\)/);
+
+  let fail = true;
+  const flaky = setup(t, { 'b.tsx': COMPONENT }, (abs) => { if (fail) throw new Error('server down'); return [at(abs['b.tsx'], COMPONENT, 'target', 1)]; });
+  const fx = extrasOf(flaky);
+  assert.deepEqual(await fx.pathEdges(flaky.abs['a.ts'], NAME), { rows: [], complete: false, reason: 'its references could not be listed: server down' });
+  fail = false;
+  assert.equal((await fx.pathEdges(flaky.abs['a.ts'], NAME)).rows.length, 1);
+});
+
+// Through the editor's resolver (src/session/resolver-vscode.js) with the vscode stub: the
+// handler's caller answer stays referenced-as-value, and the walk follows the edge.
+test('the editor resolver: callers unchanged, the impact walk goes on through the JSX edge', async (t) => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-ts-resolver-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const a = path.join(dir, 'a.ts');
+  const b = path.join(dir, 'b.tsx');
+  fs.writeFileSync(a, DECL);
+  fs.writeFileSync(b, COMPONENT);
+  const lineChar = (text, offset) => { const before = text.slice(0, offset).split('\n'); return { line: before.length - 1, character: before[before.length - 1].length }; };
+  const loc = (file, text, offset) => ({ uri: { fsPath: file }, range: { start: lineChar(text, offset), end: lineChar(text, offset + 6) } });
+  const refsOfTarget = [loc(a, DECL, NAME), loc(b, COMPONENT, COMPONENT.indexOf('target')), loc(b, COMPONENT, COMPONENT.lastIndexOf('target'))];
+  const original = Module._load;
+  const stub = { ...require('./vscode-stub'), Position: class { constructor(line, character) { Object.assign(this, { line, character }); } },
+    commands: { executeCommand: async (name, uri) => {
+      if (name === 'vscode.prepareCallHierarchy') return [{}];
+      if (name === 'vscode.provideIncomingCalls') return [];
+      if (name === 'vscode.executeReferenceProvider') return uri.fsPath === a ? refsOfTarget : [];
+      return undefined;
+    } } };
+  Module._load = function (name, ...args) { return name === 'vscode' ? stub : original.call(this, name, ...args); };
+  delete require.cache[require.resolve('../src/session/resolver-vscode')];
+  t.after(() => { Module._load = original; delete require.cache[require.resolve('../src/session/resolver-vscode')]; });
+  const { createVscodeResolver } = require('../src/session/resolver-vscode');
+  const { createFakeClock } = require('./fake-clock');
+  const resolver = createVscodeResolver({ ts, repoRoot: dir, retries: 0, clock: createFakeClock() });
+
+  // The caller list is what N0 made it: no caller, referenced as a value.
+  assert.deepEqual(await resolver.incomingWithStatus(a, NAME, true), { callers: [], complete: false, reason: 'referenced-as-value' });
+  const edges = await resolver.pathEdges(a, NAME);
+  assert.deepEqual(edges.rows.map((r) => [r.label, r.text]), [['B', 'passed as onClick to <button>']]);
+  assert.equal(resolver.stats().pathEdgeQueries, 1);
+
+  const changed = { label: 'target', file: a, relPath: 'a.ts', namePos: NAME, callers: [] };
+  const { byId } = await impactPathsFor({ units: [{ resolver, changed: [changed] }], repo: dir });
+  const p = byId[`a.ts#${NAME}`];
+  // B has no caller and no reference: a top, reached through a step that is not a call.
+  assert.deepEqual(p.topPaths.map((e) => [e.end, e.topKind, e.via, e.hops]),
+    [['top-unidentified', 'function', ['target', 'B'], [{ at: 0, via: 'jsx-prop', text: 'passed as onClick to <button>' }]]]);
+  assert.equal(p.complete, true);
 });

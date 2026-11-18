@@ -103,6 +103,14 @@ test('a change: kind, line, before/after/when, affects, verdict, hunk, callers w
   assert.equal(m.changes['src/c.ts#3'].hunk, null, 'no diff for it');
 });
 
+test('an entry reached through a JSX prop says so; the card chip keeps the plain name', () => {
+  const result = { ...SMALL.result, impactPaths: { 'src/a.ts#7': { entries: [{ type: 'ui-route', name: '/list', via: ['save', 'Form', 'Page'],
+    hops: [{ at: 0, via: 'jsx-prop', text: 'passed as onClick to <Button>' }] }] } } };
+  const m = reviewTabModel({ result, cards: SMALL.cards });
+  assert.deepEqual(m.changes['src/a.ts#7'].entries, ['ui-route: /list (save passed as onClick to <Button>)']);
+  assert.ok(m.cards[0].chips.some((c) => c.text === 'ui-route: /list'));
+});
+
 test('hunk lines: at most the cap, and how many more', () => {
   const long = `@@ -1,40 +1,40 @@\n${Array.from({ length: 50 }, (_, i) => `+line ${i}`).join('\n')}\n`;
   const h = hunkLines(long);

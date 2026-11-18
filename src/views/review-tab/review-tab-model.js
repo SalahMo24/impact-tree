@@ -37,6 +37,8 @@ const KINDS = ['changed', 'may-change', 'new', 'same'];
  *   calls: { added: string[], removed: string[], more: number }|null,
  *   verdict: { text: string, level: number }, hunk: { lines: Array<{ t: string, s: string }>, more: number }|null,
  *   callers: CallerModel[], callersMore: number, callersComplete: boolean, entries: string[], entriesMore: number }} ChangeModel
+ *   `entries`: each entry point reached, with the steps of its path that are not calls
+ *   ("ui-route: /list (handleSubmit passed as onClick to <Button>)").
  * @typedef {{ title: string, preview: boolean, counts: { changes: number, cards: number }, agent: boolean, summary: string|null,
  *   note: string|null, columns: Array<{ id: string, label: string, cards: string[] }>, cards: CardModel[], changes: Record<string, ChangeModel> }} TabModel
  */
@@ -86,6 +88,21 @@ function hunkLines(text, start, end) {
   return lines.length ? { lines, more: Math.max(0, all.length - MAX_HUNK_LINES) } : null;
 }
 
+/** @param {any} e An entry of `ImpactPaths.entries` (src/engine/impact-paths.js). */
+const entryName = (e) => `${e.type === 'public-api' ? 'public API' : e.type}: ${e.name}`;
+
+/**
+ * The steps of an entry's path that are not calls, as a note: " (handleSubmit passed as
+ * onClick to <Button>)", or "" when every step is a call.
+ * @param {any} e An entry of `ImpactPaths.entries`.
+ */
+function hopsNote(e) {
+  const hops = Array.isArray(e.hops) ? e.hops : [];
+  if (!hops.length) return '';
+  const via = Array.isArray(e.via) ? e.via : [];
+  return ` (${hops.map((/** @type {any} */ h) => `${via[h.at] || 'it'} ${h.text}`).join('; ')})`;
+}
+
 /**
  * @param {object} input
  * @param {any} input.result The shown analysis (`analyze()` or `analyzeRemote()`), with `impactPaths` when asked for.
@@ -116,6 +133,9 @@ function reviewTabModel({ result, cards, agentPayload = null, title = '', hunkOf
 
   /** @type {Record<string, ChangeModel>} */
   const changes = {};
+  // The plain names of each change's entries, for the card chips (without hops).
+  /** @type {Map<string, string[]>} */
+  const entryNames = new Map();
   /** @param {string} raw A member id (`relPath#namePos`, with `!deleted` for a deleted one sharing a position). */
   const changeOf = (raw) => {
     const id = raw.endsWith('!deleted') ? raw.slice(0, -'!deleted'.length) : raw;
@@ -125,7 +145,9 @@ function reviewTabModel({ result, cards, agentPayload = null, title = '', hunkOf
     const b = said(id);
     const verdict = c ? classifyChangeVerdict(c) : { text: d ? 'deleted' : 'not in this analysis', level: 2 };
     const callers = c ? (c.callers || []) : [];
-    const entries = ((paths[id] && paths[id].entries) || []).map((/** @type {any} */ e) => `${e.type === 'public-api' ? 'public API' : e.type}: ${e.name}`);
+    const reached = (paths[id] && paths[id].entries) || [];
+    const entries = reached.map((/** @type {any} */ e) => `${entryName(e)}${hopsNote(e)}`);
+    entryNames.set(id, reached.map(entryName));
     changes[id] = {
       id, name: c ? c.label : d ? `−${d.label}` : id, file: c ? c.relPath : d ? (d.relPath || d.file) : '', line: c ? c.startLine : null, deleted: !c,
       // The one attention set of the tree (gate G15): the engine flags it (level 0 or 1; a deleted symbol is always flagged) or the agent named it.
@@ -155,7 +177,8 @@ function reviewTabModel({ result, cards, agentPayload = null, title = '', hunkOf
     const ordered = [...ids].sort((a, b) => rank(a) - rank(b));
     const count = (/** @type {string} */ k) => ids.filter((id) => changes[id].kind === k).length;
     const stale = ids.reduce((n, id) => { const c = changed.get(id); return n + (c ? c.staleCallers || 0 : 0); }, 0);
-    const api = ids.flatMap((id) => changes[id].entries).find((e) => e.startsWith('public API')) || ids.flatMap((id) => changes[id].entries)[0];
+    const names = ids.flatMap((id) => entryNames.get(id) || []);
+    const api = names.find((e) => e.startsWith('public API')) || names[0];
     const attention = ids.some((id) => changes[id].attention);
     const moved = agent ? ids.some((id) => ['changed', 'may-change', 'new'].includes(String(changes[id].kind))) : true;
     /** @type {Chip[]} */

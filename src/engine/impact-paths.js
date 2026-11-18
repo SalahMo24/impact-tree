@@ -14,6 +14,11 @@ const { entryLanguageOf, declarationEntry, callSiteEntry } = require('./entry-po
 /** @typedef {import('./entry-points').EntryInfo} EntryInfo */
 /** @typedef {import('./entry-points').EntryFacts} EntryFacts */
 /** @typedef {import('./caller-contract').CallerRow} CallerRow */
+/** @typedef {import('./caller-contract').PathEdgesAnswer} PathEdgesAnswer */
+
+// The reason a caller answer gives for a function nothing calls but something references
+// as a value (the editor's TypeScript extras, src/languages/typescript/editor-extras.js).
+const VALUE_USE_REASON = 'referenced-as-value';
 
 /**
  * Limits of one walk. Owner: `impactPathsFor`'s caller (`analyze`, from `opts.impactPaths`).
@@ -66,6 +71,7 @@ function validateLimits(given) {
  *   function only tests call, or a package `bin` file's module code (program start).
  * @property {string} [bin] The command name, when `topKind` is `'app-start'`.
  * @property {string[]} via Labels from the changed function to the last node, both included.
+ * @property {PathHop[]} [hops] The steps of `via` that are not calls, when there are any.
  * @property {string} file Repository-relative path of the last node.
  * @property {number} depth Caller levels from the changed function to the last node.
  * @property {boolean} throughStale The first caller is one not updated by this change, and
@@ -75,10 +81,18 @@ function validateLimits(given) {
  */
 
 /**
+ * A step of a path that is not a call: `via[at + 1]` passes `via[at]` on (`'jsx-prop'`: in
+ * a JSX attribute's value) and `text` says so for a reader ("passed as onClick to <Button>").
+ * The walk follows it as it follows a caller (resolver `pathEdges`, ./edges-jsx.js).
+ * @typedef {{ at: number, via: 'jsx-prop', text: string }} PathHop
+ */
+
+/**
  * @typedef {object} ImpactPaths
  * @property {string} id `relPath#namePos` of the changed function.
- * @property {Array<{ type: string, name: string, file: string, depth: number, via: string[], how: string, method?: string, route?: string }>} entries
- *   Distinct entry points reached (by type, name and file), each at its shortest depth.
+ * @property {Array<{ type: string, name: string, file: string, depth: number, via: string[], hops?: PathHop[], how: string, method?: string, route?: string }>} entries
+ *   Distinct entry points reached (by type, name and file), each at its shortest depth;
+ *   `hops` as in PathEnd.
  * @property {{ ends: Record<string, number>, entryTypes: Record<string, number>, visited: number, testCallers: number }} summary
  *   `ends` counts paths by how they ended; `entryTypes` counts distinct entries by type;
  *   `visited` the callers admitted; `testCallers` the changed function's direct test
@@ -179,6 +193,8 @@ function makeTextCache(readText) {
  * @property {WalkNode|null} parent
  * @property {boolean} lowerBound
  * @property {boolean} throughStale
+ * @property {{ via: 'jsx-prop', text: string }} [hop] How this node reached `parent` when it
+ *   does not call it (a walk-only edge).
  */
 
 /**
@@ -211,8 +227,16 @@ async function walkOne({ resolver, changed, repo, facts, limits, deadline, signa
   const testCallers = (changed.callers || []).filter((/** @type {CallerRow} */ x) => x.test).length;
 
   const viaOf = (/** @type {WalkNode} */ n) => { const out = []; for (let k = /** @type {WalkNode|null} */ (n); k; k = k.parent) out.push(k.label); return out.reverse(); };
+  // Node depth is its index in `via`, so a hop at depth d is the step from via[d - 1] to via[d].
+  const hopsOf = (/** @type {WalkNode} */ n) => {
+    /** @type {PathHop[]} */
+    const out = [];
+    for (let k = /** @type {WalkNode|null} */ (n); k; k = k.parent) if (k.hop) out.push({ at: k.depth - 1, via: k.hop.via, text: k.hop.text });
+    return out.reverse();
+  };
   const finish = (/** @type {WalkNode} */ n, /** @type {Omit<PathEnd, 'via'|'file'|'depth'|'throughStale'|'lowerBound'>} */ e) => {
-    ends.push({ ...e, via: viaOf(n), file: rel(n.file), depth: n.depth, throughStale: n.throughStale, lowerBound: n.lowerBound });
+    const hops = hopsOf(n);
+    ends.push({ ...e, via: viaOf(n), ...(hops.length ? { hops } : {}), file: rel(n.file), depth: n.depth, throughStale: n.throughStale, lowerBound: n.lowerBound });
     if (e.end === 'unknown' || e.end === 'budget') reasons.add(/** @type {string} */ (e.reason));
   };
 
@@ -259,11 +283,22 @@ async function walkOne({ resolver, changed, repo, facts, limits, deadline, signa
       continue;
     }
     const prod = answer.callers.filter((x) => !x.test);
-    if (!answer.complete) finish(node, { end: 'unknown', reason: answer.reason || 'a caller query did not finish' });
+    /** @type {Array<CallerRow & { via?: 'jsx-prop', text?: string }>} */
+    let next = prod;
     if (!prod.length) {
-      const wrapped = answer.complete ? wrapperOf(node, texts) : null;
-      if (wrapped) { finish(node, { end: 'unknown', reason: `passed to ${wrapped}(): uses of what it returns are not traced` }); continue; }
-      if (answer.complete) {
+      // Nothing calls it in production; a handler passed in a JSX attribute (`onClick={f}`)
+      // is followed to the function that renders it (walk-only edges). Asked only when the
+      // answer is complete or says it is a value use: any other gap is left as it was.
+      const passed = resolver.pathEdges && (answer.complete || answer.reason === VALUE_USE_REASON)
+        ? await queryPathEdges(resolver, node, deadline) : null;
+      if (passed && passed.rows.length) {
+        // The edges explain the value use; another use they do not cover keeps it unknown.
+        if (!passed.complete) finish(node, { end: 'unknown', reason: passed.reason || 'referenced as a value (passed or registered), never called directly' });
+        next = passed.rows.filter((x) => !x.test);
+      } else {
+        if (!answer.complete) { finish(node, { end: 'unknown', reason: answer.reason || 'a caller query did not finish' }); continue; }
+        const wrapped = wrapperOf(node, texts);
+        if (wrapped) { finish(node, { end: 'unknown', reason: `passed to ${wrapped}(): uses of what it returns are not traced` }); continue; }
         // An empty answer from a resolver without coverage (TypeScript's `incoming`) is
         // checked against `callerState`, which tells "nothing calls it" from "it is passed
         // as a value" (a handler registered somewhere the text does not show).
@@ -271,24 +306,25 @@ async function walkOne({ resolver, changed, repo, facts, limits, deadline, signa
         // Only tests call it: a top for production, and the reason a card says "tests only".
         if (top.complete) finish(node, { end: 'top-unidentified', topKind: top.testCallers ? 'test-only' : 'function' });
         else finish(node, { end: 'unknown', reason: top.reason });
+        continue;
       }
-      continue;
-    }
-    for (const caller of prod) {
+    } else if (!answer.complete) finish(node, { end: 'unknown', reason: answer.reason || 'a caller query did not finish' });
+    for (const caller of next) {
       const key = `${caller.file}#${caller.pos}`;
       if (seen.has(key)) continue;
       if (admitted >= limits.maxNodes) { nodeBudgetHit = true; break; }
       seen.add(key);
       admitted++;
       /** @type {WalkNode} */
-      const next = {
+      const child = {
         file: caller.file, pos: caller.pos, label: caller.label, depth: node.depth + 1, parent: node,
         lowerBound: node.lowerBound || lowerBoundResolver,
         throughStale: node.depth === 0 ? staleIds.has(key) : node.throughStale,
+        ...(caller.via ? { hop: { via: caller.via, text: caller.text || caller.via } } : {}),
       };
-      const entry = entryOfNode(next, caller, facts, texts, repo);
-      if (entry) finish(next, { end: 'entry', entry });
-      else queue.push(next);
+      const entry = entryOfNode(child, caller, facts, texts, repo);
+      if (entry) finish(child, { end: 'entry', entry });
+      else queue.push(child);
     }
     if (nodeBudgetHit) {
       finish(node, { end: 'budget', reason: `node limit of ${limits.maxNodes} callers per changed function` });
@@ -344,6 +380,22 @@ async function queryCallers(resolver, node) {
   if (resolver.callersNotComputed) return { callers: [], complete: false, reason: resolver.callersNotComputed };
   if (resolver.incomingWithStatus) return resolver.incomingWithStatus(node.file, node.pos, false);
   return { callers: await resolver.incoming(node.file, node.pos, false), complete: true };
+}
+
+/**
+ * The walk-only edges of a node (resolver `pathEdges`), bounded by the time left. Null when
+ * the query failed or ran out of time: the node then ends as it would without edges.
+ * @param {any} resolver @param {WalkNode} node @param {ReturnType<typeof makeDeadline>} deadline
+ * @returns {Promise<PathEdgesAnswer|null>}
+ */
+async function queryPathEdges(resolver, node, deadline) {
+  const left = deadline.left();
+  if (left <= 0) return null;
+  try {
+    return await withDeadline(() => resolver.pathEdges(node.file, node.pos), left, 'impact path edge query', deadline.clock);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -405,7 +457,7 @@ function summarise({ id, ends, reasons, admitted, testCallers, walkMs, lowerBoun
     if (e.end !== 'entry' || !e.entry) continue;
     const key = `${e.entry.type}\u0000${e.entry.name}\u0000${e.file}`;
     const prior = entries.get(key);
-    if (!prior || e.depth < prior.depth) entries.set(key, { ...e.entry, file: e.file, depth: e.depth, via: e.via });
+    if (!prior || e.depth < prior.depth) entries.set(key, { ...e.entry, file: e.file, depth: e.depth, via: e.via, ...(e.hops ? { hops: e.hops } : {}) });
   }
   /** @type {Record<string, number>} */
   const entryTypes = {};

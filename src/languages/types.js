@@ -284,6 +284,10 @@
  * @property {(file: string, pos: number) => Promise<string|null>} unseenUsers Asked before
  *   "none": the reason the answer is unknown after all, or null. Never rejects.
  * @property {() => void} clear A new analysis starts: drop what was learnt.
+ * @property {(file: string, pos: number) => Promise<import('../engine/caller-contract').PathEdgesAnswer>} [pathEdges]
+ *   Walk-only edges of the function whose name is at `pos` (TypeScript: the functions that
+ *   pass it in a JSX attribute, src/engine/edges-jsx.js). Asked by the impact walk alone,
+ *   never merged into the callers. Never rejects. Absent: the language has none.
  * @property {(reason: string) => boolean} [retryRejected] For a caller query the server
  *   rejected (not already retryable): whether to ask it once more at once, because the
  *   language knows that rejection is transient (Java: jdtls' `-32603 Internal error` under

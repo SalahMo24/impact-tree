@@ -13,6 +13,7 @@ const { makeGit } = require('../../engine/git');
 const { isTestFile } = require('../../engine/diff');
 const { realClock } = require('../../engine/clock');
 const { readTextOfOffsets } = require('../../engine/textpos');
+const { makeJsxEdges, referenceKindOfNode, nodeAt } = require('../../engine/edges-jsx');
 
 // What the tree view maps to "passed around as a value" (src/views/changes/tree-row-models.js);
 // the same spelling the CLI resolver and the Go, Python and Java extras use.
@@ -35,21 +36,7 @@ const MAX_FILE_BYTES = 2_000_000;
 function referenceKindAt(ts, file, text, offset) {
   let sf;
   try { sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true); } catch { return 'other'; }
-  /** @type {any} */
-  let node = sf;
-  for (let next = true; next;) {
-    next = false;
-    node.forEachChild((/** @type {any} */ child) => {
-      if (!next && child.getStart(sf) <= offset && offset < child.getEnd()) { node = child; next = true; }
-    });
-  }
-  const p = node.parent;
-  if (!p) return 'other';
-  if (ts.isImportSpecifier(p) || ts.isImportClause(p) || ts.isNamespaceImport(p) || ts.isImportEqualsDeclaration(p)
-    || ts.isExportSpecifier(p) || ts.isExportAssignment(p)) return 'declaration';
-  const callee = ts.isPropertyAccessExpression(p) && p.name === node ? p : node;
-  const q = callee.parent;
-  return q && (ts.isCallExpression(q) || ts.isNewExpression(q)) && q.expression === callee ? 'call' : 'other';
+  return referenceKindOfNode(ts, nodeAt(sf, offset));
 }
 
 /**
@@ -132,6 +119,34 @@ function createTypescriptEditorExtras({ ts, services, repoRoot, trace, filterInh
   // settles. Source mtime/size checks and same-generation reuse remain in makeCqrsEdges.
   let cqrs = ts && makeCqrsEdges(ts, cqrsProviders);
 
+  // Walk-only JSX edges (src/engine/edges-jsx.js): the functions that pass a handler in a
+  // JSX attribute (`onClick={f}`), from the server's references and the files on disk.
+  const jsxProviders = {
+    isTestPath,
+    trace,
+    /** @param {string} f Absolute path. */
+    readText: (f) => readTextOfOffsets(f, { maxBytes: MAX_FILE_BYTES }),
+    /**
+     * @param {string} file Absolute path. @param {number} pos UTF-16 offset of the name.
+     * @returns {Promise<{ refs: Array<{ file: string, start: number }>, failed: boolean, reason?: string }>}
+     */
+    async referencesTo(file, pos) {
+      const refs = await services.references(headDoc(file), pos);
+      if (!Array.isArray(refs)) return { refs: [], failed: true, reason: 'its references could not be listed (no answer)' };
+      const out = [];
+      let unplaced = 0;
+      for (const r of refs) {
+        if (r.start == null) { unplaced++; continue; }
+        if (r.file === file && r.end != null && r.start <= pos && pos < r.end) continue; // the declaration's name
+        out.push({ file: r.file, start: r.start });
+      }
+      return unplaced ? { refs: out, failed: true, reason: `${unplaced} reference(s) could not be placed` } : { refs: out, failed: false };
+    },
+  };
+  // Owner: one editor analysis generation, as `cqrs` above; clear() replaces it with its
+  // parsed files and answers. Each query captures the helper it started with.
+  let jsx = ts && makeJsxEdges(ts, jsxProviders);
+
   // The server answers from the projects it has loaded; a component's tests in their own
   // tsconfig are never among them (see engine/unseen-users.js). Before "no callers", look
   // for files that may use the symbol outside them. A search that fails is logged and
@@ -201,6 +216,8 @@ function createTypescriptEditorExtras({ ts, services, repoRoot, trace, filterInh
         }),
       };
     },
+    // Walk-only edges for the impact walk (never callers). Absent without the compiler.
+    pathEdges: ts ? ((file, pos) => jsx.pathEdges(file, pos)) : undefined,
     async unseenUsers(file, pos) {
       if (!ts || !grep) return null;
       try {
@@ -217,6 +234,7 @@ function createTypescriptEditorExtras({ ts, services, repoRoot, trace, filterInh
     clear() {
       inherited?.clear();
       cqrs = ts && makeCqrsEdges(ts, cqrsProviders);
+      jsx = ts && makeJsxEdges(ts, jsxProviders);
     },
   };
 }

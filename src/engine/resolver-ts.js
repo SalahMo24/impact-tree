@@ -4,6 +4,7 @@ const path = require('path');
 const { createInheritanceFilter } = require('./inheritance');
 const { isTestFile } = require('./diff');
 const { makeCqrsEdges } = require('./edges-cqrs');
+const { makeJsxEdges } = require('./edges-jsx');
 
 // TS reports top-level/global-scope callers (a bare `it(...)` body) with the file path
 // as the item name. Render something a human can read.
@@ -194,7 +195,7 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
   // map is garbage with the resolver; `dispose()` releases the language services unless
   // the run's service pool owns them.
   const cache = new Map();
-  const stats = { incomingCalls: 0, incomingMs: 0, refCalls: 0, refMs: 0, cacheHits: 0, cqrsEdges: 0, inheritedDropped: 0 };
+  const stats = { incomingCalls: 0, incomingMs: 0, refCalls: 0, refMs: 0, cacheHits: 0, cqrsEdges: 0, inheritedDropped: 0, pathEdgeQueries: 0 };
   // Same over-report the extension sees: both ask the TypeScript call hierarchy.
   const inherited = filterInherited ? createInheritanceFilter(ts) : null;
   // Each query is a project-wide findReferences, so cost scales with program size and
@@ -296,6 +297,44 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
     return { callers: merged, failed, reason };
   }
 
+  /**
+   * @param {string} file @param {number} pos
+   * @returns {{ refs: Array<{ file: string, start: number, end: number }>, failed: boolean }}
+   */
+  function referencesOf(file, pos) {
+    const seen = new Map();
+    let failed = false;
+    for (const ls of services) {
+      if (!holds(ls, file)) continue;
+      let found = [];
+      try { found = ls.findReferences(file, pos) || []; } catch { failed = true; found = []; }
+      for (const r of found) {
+        for (const x of r.references) {
+          if (x.isDefinition) continue;
+          const key = `${x.fileName}#${x.textSpan.start}`;
+          if (!seen.has(key)) seen.set(key, { file: x.fileName, start: x.textSpan.start, end: x.textSpan.start + x.textSpan.length });
+        }
+      }
+    }
+    return { refs: [...seen.values()], failed };
+  }
+
+  // JSX handler edges for the impact walk, over the same services. Owner: this resolver,
+  // with its parsed files and answers (see makeJsxEdges); garbage with the resolver.
+  const jsx = makeJsxEdges(ts, {
+    isTestPath: isTest,
+    readText: (f) => { try { return fs.readFileSync(f, 'utf8'); } catch { return null; } },
+    async referencesTo(file, pos) {
+      // wall-clock: log-only — reference time summed into stats
+      const t = Date.now();
+      stats.refCalls++;
+      const found = referencesOf(file, pos);
+      // wall-clock: log-only — reference time summed into stats
+      stats.refMs += Date.now() - t;
+      return found.failed ? { ...found, reason: 'a references query failed: uses may be missing' } : found;
+    },
+  });
+
   return {
     kind: 'typescript-languageservice',
     async incoming(file, pos, withTests = true) { return (await withCqrs(file, pos, withTests)).callers; },
@@ -328,22 +367,15 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
      * service, de-duplicated. `failed` is true when a service threw: the list may be short.
      * @returns {{ refs: Array<{ file: string, start: number, end: number }>, failed: boolean }}
      */
-    findReferences(file, pos) {
-      const seen = new Map();
-      let failed = false;
-      for (const ls of services) {
-        if (!holds(ls, file)) continue;
-        let found = [];
-        try { found = ls.findReferences(file, pos) || []; } catch { failed = true; found = []; }
-        for (const r of found) {
-          for (const x of r.references) {
-            if (x.isDefinition) continue;
-            const key = `${x.fileName}#${x.textSpan.start}`;
-            if (!seen.has(key)) seen.set(key, { file: x.fileName, start: x.textSpan.start, end: x.textSpan.start + x.textSpan.length });
-          }
-        }
-      }
-      return { refs: [...seen.values()], failed };
+    findReferences: referencesOf,
+    /**
+     * Walk-only edges for the impact walk (./edges-jsx.js): the functions that pass the
+     * function at `pos` in a JSX attribute. Never merged into `incoming` or `callerState`.
+     * @returns {Promise<import('./caller-contract').PathEdgesAnswer>}
+     */
+    async pathEdges(file, pos) {
+      stats.pathEdgeQueries++;
+      return jsx.pathEdges(file, pos);
     },
     dispose() { if (servicePool) return; services.forEach((s) => s.dispose && s.dispose()); },
   };
