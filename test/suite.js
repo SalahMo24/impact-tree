@@ -44,6 +44,7 @@ const SUITE = [
   { file: 'test/go-syntactic-index.test.js', tier: 'quick' },
   { file: 'test/python-syntactic-index.test.js', tier: 'quick' },
   { file: 'test/python-editor-extras.test.js', tier: 'quick' },  // 0.3s
+  { file: 'test/typescript-editor-extras.test.js', tier: 'quick' },  // 0.5s
   { file: 'test/python-pyright-project.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/not-analysed.test.js', tier: 'full' },
   { file: 'test/go-call-sites.test.js', tier: 'quick' },  // 0.1s
