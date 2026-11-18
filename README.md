@@ -505,6 +505,9 @@ server answers, while the review stays open; the view says so. Refresh asks agai
 See [the coding style guide](docs/CODING_STYLE.md) for implementation requirements,
 their rationale, examples, and verification expectations.
 
+To see a change working in a real VS Code, with screenshots and text an agent can read, run
+`node scripts/drive.js`; see [driving the extension](docs/driving-the-extension.md).
+
 `npm test` is self-contained: the stages that analyse a repository run against a small
 TypeScript monorepo that `test/fixture-repo.js` builds in a temporary directory, with a
 branch that changes signatures, bodies, a `.tsx` component and a README. To aim those

@@ -37,7 +37,7 @@
     "test:loadts": "node test/load-typescript.test.js",
     "test:baseref": "node test/base-ref.test.js",
     "test:smoke": "node --test test/loading.test.js test/review-findings-smoke.test.js test/review-preview-smoke.test.js",
-    "lint": "eslint src",
+    "lint": "eslint src scripts/drive.js",
     "typecheck": "tsc -p jsconfig.json"
   },
   "activationEvents": [
@@ -1449,7 +1449,9 @@
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.20.5",
     "@types/sanitize-html": "^2.16.2",
+    "@vscode/test-electron": "3.1.0",
     "eslint": "^10.12.0",
-    "globals": "^17.13.0"
+    "globals": "^17.13.0",
+    "playwright": "1.65.1"
   }
 }
