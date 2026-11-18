@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 const { reviewTabModel } = require('./review-tab-model');
-const { buildReviewTabHtml } = require('./review-tab-html');
+const { buildReviewTabHtml, REVIEW_TAB_TITLE } = require('./review-tab-html');
 const { splitDiff } = require('../../engine/card-facts');
 const { hunkFor, callsFor } = require('../../engine/card-env');
 const { lineStarts, lineOf } = require('../../engine/agent-results');
@@ -146,7 +146,7 @@ function createReviewTab(vscode, { getState, agentPayload, repoRoot, log, diffTe
   function open() {
     if (disposed) return;
     if (current) { current.panel.reveal(undefined, false); render(); return; }
-    const panel = vscode.window.createWebviewPanel(VIEW_TYPE, 'Impact Tree review', { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
+    const panel = vscode.window.createWebviewPanel(VIEW_TYPE, REVIEW_TAB_TITLE, { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true, localResourceRoots: [], retainContextWhenHidden: false });
     const opened = { panel, token: /** @type {string|null} */ (null), subscriptions: /** @type {Array<{ dispose(): any }>} */ ([]) };
     current = opened;

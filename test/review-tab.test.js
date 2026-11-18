@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { reviewTabModel, hunkLines, MAX_HUNK_LINES, MAX_CHIPS } = require('../src/views/review-tab/review-tab-model');
-const { buildReviewTabHtml, ATTENTION_WORD } = require('../src/views/review-tab/review-tab-html');
+const { buildReviewTabHtml, ATTENTION_WORD, REVIEW_TAB_TITLE } = require('../src/views/review-tab/review-tab-html');
 const { createReviewTab, parseMessage } = require('../src/views/review-tab/review-tab-panel');
 
 const hono = () => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'cards', 'hono-1774.json'), 'utf8'));
@@ -142,6 +142,7 @@ test('the document reads as one page: cards grouped under their columns, ⚠ onl
   const m = reviewTabModel({ ...SMALL, agentPayload: AGENT, title: 'PR #9', hunkOf: () => HUNK });
   const html = buildReviewTabHtml(m, { nonce: 'bm9uY2U=', cspSource: 'https://webview.test' });
   assert.ok(!html.includes('class="board"') && !html.includes('class="tile'), 'one navigation, not a board and a list');
+  assert.ok(html.includes(`<title>${REVIEW_TAB_TITLE}</title>`), 'the page title scripts/drive.js finds the tab by');
   assert.match(html, /<nav class="layers"><div class="lbl">Needs your attention · 1<\/div><button class="layer" data-card="c2">/, 'the attention card under its column');
   assert.match(html, /No behaviour change · 0<\/div><div class="muted">None<\/div>/);
   assert.equal((html.match(/Reject empty saves/g) || []).length, 2, 'the card title in the nav and as the heading, nowhere else');

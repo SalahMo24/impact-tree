@@ -34,9 +34,9 @@ TEXT matches what a row shows (its label and description), ignoring case. The fi
 | `key:KEY` | Press a key: `Escape`, `Enter`, `ArrowDown`… (Playwright's key names). |
 | `click:TEXT` | Select the first Review row containing TEXT. Waits up to 20 s for it to appear. |
 | `expand:TEXT` | Open the first Review row containing TEXT without selecting it. Fails on a row with no children. |
-| `wait:TEXT` | Wait up to 20 s until TEXT shows in the Review tree or the Details view. |
+| `wait:TEXT` | Wait up to 20 s until TEXT shows in the Review tree, the Details view or the review tab. |
 | `shot:NAME` | Save the window as `NAME.png`. |
-| `dump` or `dump:NAME` | Write `tree.txt` and `details.txt`, or `NAME-tree.txt` and `NAME-details.txt`. |
+| `dump` or `dump:NAME` | Write `tree.txt`, `details.txt` and `review.txt`, or the same names with a `NAME-` prefix. |
 
 Details renders a moment after a row is selected, and analysis keeps running after the tree first appears. **After a `click`, `wait:` for the text you expect before `shot` or `dump`.**
 
@@ -48,6 +48,7 @@ Details renders a moment after a row is selected, and analysis keeps running aft
 | `*.png` | Screenshots at 1400×900. On a failure there is also `failure.png`. |
 | `tree.txt` | The Review rows **on screen**, indented by level. `v` marks an open row, `>` a closed one, and `[selected]` the selection. The list is virtualised, so rows scrolled out of view are not in it. When the screen reader's text says something the row does not show, it is added in brackets. |
 | `details.txt` | The Details view's text, or a note that its pane is not open. |
+| `review.txt` | The review tab's text (open it with `cmd:impactTree.openReview`): the cards, the selected change, its callers and the entry points it reaches. A note instead when the tab is closed or behind another editor tab, which drops its page. |
 | `Impact Tree.log` | The extension's log for the run: activation, timings, warnings. |
 
 Exit codes: `0` passed, `1` a step or the launch failed, `2` the run passed its 60 s deadline, `130` interrupted with Ctrl+C. Every way out closes the editor, kills what is left of it and removes the run's folder.
@@ -69,6 +70,12 @@ node scripts/drive.js view wait:lockRow dump:before cmd:impactTree.selectMode "p
 ```
 
 The `wait:` after the pick names text only the new review shows. Waiting for `lockRow` alone would pass at once on the old tree, before the new review is drawn.
+
+Check where a change's impact path ends, from the review tab (its text is in `review.txt`; CSS shows headings in capitals, so the file has `REACHES`):
+
+```bash
+node scripts/drive.js --repo ../my-app view cmd:impactTree.openReview wait:Reaches dump shot:review
+```
 
 ## Limits
 
