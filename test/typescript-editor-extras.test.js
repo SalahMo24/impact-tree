@@ -185,3 +185,32 @@ test('the editor resolver: callers unchanged, the impact walk goes on through th
     [['top-unidentified', 'function', ['target', 'B'], [{ at: 0, via: 'jsx-prop', text: 'passed as onClick to <button>' }]]]);
   assert.equal(p.complete, true);
 });
+
+// N3: a function a hook returns, from the server's flat reference lists (one location can
+// come twice, declarations included): every list is de-duplicated by file and offset.
+test('pathEdges: returned by a hook and called by its caller, from flat lists with repeats', async (t) => {
+  const HOOK = 'export function useForm() {\n  function submit() {}\n  return { submit };\n}\n';
+  const USE = 'import { useForm } from "./a";\nexport const B = () => { const { submit } = useForm(); return <button onClick={() => submit()} />; };\n';
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-ts-extras-')));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const a = path.join(dir, 'a.ts');
+  const b = path.join(dir, 'b.tsx');
+  fs.writeFileSync(a, HOOK);
+  fs.writeFileSync(b, USE);
+  const span = (file, text, needle, nth = 0) => at(file, text, needle, nth);
+  const lists = new Map([
+    [`${a}#${HOOK.indexOf('submit')}`, [span(a, HOOK, 'submit'), span(a, HOOK, 'submit', 1), span(a, HOOK, 'submit', 1)]],
+    [`${a}#${HOOK.indexOf('useForm')}`, [span(a, HOOK, 'useForm'), span(b, USE, 'useForm'), span(b, USE, 'useForm', 1), span(b, USE, 'useForm', 1)]],
+    [`${b}#${USE.indexOf('submit')}`, [span(b, USE, 'submit'), span(a, HOOK, 'submit', 1), span(b, USE, 'submit', 1), span(b, USE, 'submit', 1)]],
+  ]);
+  let asked = 0;
+  const services = { isServerWarm: () => true, definitions: async () => [], references: async (doc, offset) => { asked++; return lists.get(`${doc.file}#${offset}`) || []; } };
+  const extras = createTypescriptEditorExtras({ ts, services, repoRoot: dir, trace() {}, filterInherited: false, onWarmupRetry() {} });
+  const answer = await extras.pathEdges(a, HOOK.indexOf('submit'));
+  assert.deepEqual([answer.complete, answer.returnedBy], [true, 'useForm'], answer.reason);
+  assert.deepEqual(answer.rows.map((r) => [r.label, r.file, r.pos, r.via, r.text, r.sites]),
+    [['B', b, USE.indexOf('B ='), 'returned-member', 'returned by useForm, used in B', 1]]);
+  assert.equal(asked, 3);
+  await extras.pathEdges(a, HOOK.indexOf('submit'));
+  assert.equal(asked, 3);
+});

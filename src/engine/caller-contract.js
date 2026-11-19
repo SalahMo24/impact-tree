@@ -47,9 +47,11 @@
  * (`pathEdges`, src/engine/edges-jsx.js). Never a caller: never part of `incoming`,
  * `incomingWithStatus` or `callerState`. `pos` and `label` follow the call hierarchy's
  * convention for the function holding the use; `callSites` are the uses.
- * @typedef {CallerRow & { via: 'jsx-prop', text: string }} PathEdgeRow
- *   `via`: how it is passed (`'jsx-prop'`: in a JSX attribute's value); `text`: the same
- *   for a reader, such as "passed as onClick to <Button>".
+ * @typedef {CallerRow & { via: 'jsx-prop'|'returned-member', text: string }} PathEdgeRow
+ *   `via`: how it is passed (`'jsx-prop'`: in a JSX attribute's value; `'returned-member'`:
+ *   returned in an object literal by a named function whose caller uses it); `text`: the
+ *   same for a reader, such as "passed as onClick to <Button>" or "returned by useX, used in
+ *   handleNext".
  */
 
 /**
@@ -60,6 +62,9 @@
  * @property {PathEdgeRow[]} rows
  * @property {boolean} complete
  * @property {string} [reason] Present whenever `complete` is false.
+ * @property {string} [returnedBy] The named functions that return the symbol in an object
+ *   literal (`return { f }`), comma-separated, when any does. With no rows and `complete`,
+ *   every call site of them was followed and none uses it.
  */
 
 module.exports = {};

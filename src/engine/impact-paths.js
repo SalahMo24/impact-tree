@@ -66,11 +66,13 @@ function validateLimits(given) {
  * @property {'entry'|'top-unidentified'|'budget'|'unknown'} end
  * @property {EntryInfo} [entry] When `end` is `'entry'`.
  * @property {string} [reason] When `end` is `'budget'` or `'unknown'`.
- * @property {'module'|'function'|'test-only'|'app-start'|'server-action'} [topKind] When `end` is
+ * @property {'module'|'function'|'test-only'|'app-start'|'server-action'|'returned-unused'} [topKind] When `end` is
  *   `'top-unidentified'`: module-level code (runs at import), a function nothing calls, a
- *   function only tests call, a package `bin` file's module code (program start), or an
- *   exported Next.js server action nothing references (not an entry: no route reaches it).
+ *   function only tests call, a package `bin` file's module code (program start), an
+ *   exported Next.js server action nothing references (not an entry: no route reaches it),
+ *   or a function a named function returns (`return { f }`) that none of its callers uses.
  * @property {string} [bin] The command name, when `topKind` is `'app-start'`.
+ * @property {string} [returnedBy] The returning functions, when `topKind` is `'returned-unused'`.
  * @property {string[]} via Labels from the changed function to the last node, both included.
  * @property {PathHop[]} [hops] The steps of `via` that are not calls, when there are any.
  * @property {string} file Repository-relative path of the last node.
@@ -83,9 +85,11 @@ function validateLimits(given) {
 
 /**
  * A step of a path that is not a call: `via[at + 1]` passes `via[at]` on (`'jsx-prop'`: in
- * a JSX attribute's value) and `text` says so for a reader ("passed as onClick to <Button>").
- * The walk follows it as it follows a caller (resolver `pathEdges`, ./edges-jsx.js).
- * @typedef {{ at: number, via: 'jsx-prop', text: string }} PathHop
+ * a JSX attribute's value; `'returned-member'`: uses it as a member of what a named function
+ * returns) and `text` says so for a reader ("passed as onClick to <Button>", "returned by
+ * useX, used in handleNext"). The walk follows it as it follows a caller (resolver
+ * `pathEdges`, ./edges-jsx.js).
+ * @typedef {{ at: number, via: 'jsx-prop'|'returned-member', text: string }} PathHop
  */
 
 /**
@@ -195,7 +199,7 @@ function makeTextCache(readText) {
  * @property {WalkNode|null} parent
  * @property {boolean} lowerBound
  * @property {boolean} throughStale
- * @property {{ via: 'jsx-prop', text: string }} [hop] How this node reached `parent` when it
+ * @property {{ via: 'jsx-prop'|'returned-member', text: string }} [hop] How this node reached `parent` when it
  *   does not call it (a walk-only edge).
  * @property {EntryInfo} [action] A pass-through entry this node is (a server action): it is
  *   recorded once the node is found to have a caller or walk-only edge (see `walkOne`).
@@ -296,7 +300,7 @@ async function walkOne({ resolver, changed, repo, facts, limits, deadline, signa
       continue;
     }
     const prod = answer.callers.filter((x) => !x.test);
-    /** @type {Array<CallerRow & { via?: 'jsx-prop', text?: string }>} */
+    /** @type {Array<CallerRow & { via?: 'jsx-prop'|'returned-member', text?: string }>} */
     let next = prod;
     if (!prod.length) {
       // Nothing calls it in production; a handler passed in a JSX attribute (`onClick={f}`)
@@ -308,6 +312,12 @@ async function walkOne({ resolver, changed, repo, facts, limits, deadline, signa
         // The edges explain the value use; another use they do not cover keeps it unknown.
         if (!passed.complete) finish(node, { end: 'unknown', reason: passed.reason || 'referenced as a value (passed or registered), never called directly' });
         next = passed.rows.filter((x) => !x.test);
+      } else if (passed && passed.returnedBy) {
+        // Returned by a named function and used by none of its callers (every call site
+        // followed): a top, not a value use. A use not followed keeps it unknown with its reason.
+        if (passed.complete) finish(node, { end: 'top-unidentified', topKind: 'returned-unused', returnedBy: passed.returnedBy });
+        else finish(node, { end: 'unknown', reason: passed.reason || 'referenced as a value (passed or registered), never called directly' });
+        continue;
       } else {
         if (!answer.complete) { finish(node, { end: 'unknown', reason: answer.reason || 'a caller query did not finish' }); continue; }
         const wrapped = wrapperOf(node, texts);
