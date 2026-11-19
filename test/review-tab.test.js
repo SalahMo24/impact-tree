@@ -111,6 +111,14 @@ test('an entry reached through a JSX prop says so; the card chip keeps the plain
   assert.ok(m.cards[0].chips.some((c) => c.text === 'ui-route: /list'));
 });
 
+test('a server action reads as one, and the card chip prefers the route behind it', () => {
+  const result = { ...SMALL.result, impactPaths: { 'src/a.ts#7': { entries: [
+    { type: 'server-action', name: 'saveLead', via: ['f', 'saveLead'] }, { type: 'ui-route', name: '/p', via: ['f', 'saveLead', 'Page'] }] } } };
+  const m = reviewTabModel({ result, cards: SMALL.cards });
+  assert.deepEqual(m.changes['src/a.ts#7'].entries, ['server action: saveLead', 'ui-route: /p']);
+  assert.ok(m.cards[0].chips.some((c) => c.text === 'ui-route: /p'));
+});
+
 test('hunk lines: at most the cap, and how many more', () => {
   const long = `@@ -1,40 +1,40 @@\n${Array.from({ length: 50 }, (_, i) => `+line ${i}`).join('\n')}\n`;
   const h = hunkLines(long);

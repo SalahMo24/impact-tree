@@ -230,3 +230,62 @@ test('invalid limits are refused, cancellation rejects', async () => {
   const g = fakeGraph({ leaf: { file: 'a.ts', callers: ['b'] }, b: { file: 'b.ts' } }, { onQuery: () => controller.abort() });
   await assert.rejects(run(g, 'leaf', { signal: controller.signal }), (e) => e.code === 'ANALYSIS_CANCELLED');
 });
+
+// Next.js server actions (`server-action`, pass-through): the walk records the action and
+// goes on to what references it; one nothing references is no entry.
+const NEXT = { nextRoots: new Set(['']), packageRoots: new Set(['']) };
+const ACTIONS = "'use server'\nexport async function saveLead() {}\n";
+
+test('a referenced server action passes through: the path reaches the UI route behind it', async () => {
+  const g = fakeGraph({
+    leaf: { file: 'lib/lead.ts', callers: ['saveLead'] },
+    saveLead: { file: 'app/actions.ts', callers: ['Form'], text: ACTIONS },
+    Form: { file: 'app/p/form.tsx', callers: ['Page'] },
+    Page: { file: 'app/p/page.tsx', text: 'export default function Page() {}\n' },
+  });
+  const r = await run(g, 'leaf', { facts: NEXT });
+  assert.deepEqual(r.entries.map((e) => [e.type, e.name, e.via]), [
+    ['server-action', 'saveLead', ['leaf', 'saveLead']],
+    ['ui-route', '/p', ['leaf', 'saveLead', 'Form', 'Page']],
+  ]);
+  assert.deepEqual(r.summary.entryTypes, { 'server-action': 1, 'ui-route': 1 });
+  // Only the route is a path end: the action did not stop the walk.
+  assert.deepEqual(r.summary.ends, { entry: 1, 'top-unidentified': 0, budget: 0, unknown: 0 });
+  assert.equal(r.complete, true);
+});
+
+test('a changed server action that something references passes through too', async () => {
+  const g = fakeGraph({
+    saveLead: { file: 'app/actions.ts', callers: ['Page'], text: ACTIONS },
+    Page: { file: 'app/p/page.tsx', text: 'export default function Page() {}\n' },
+  });
+  const r = await run(g, 'saveLead', { facts: NEXT });
+  assert.deepEqual(r.entries.map((e) => [e.type, e.depth]), [['server-action', 0], ['ui-route', 1]]);
+});
+
+test('an exported server action nothing references is no entry: its path ends as a top', async () => {
+  const g = fakeGraph({
+    leaf: { file: 'lib/lead.ts', callers: ['saveLead'] },
+    saveLead: { file: 'app/actions.ts', text: ACTIONS },
+  });
+  const r = await run(g, 'leaf', { facts: NEXT });
+  assert.deepEqual(r.entries, []);
+  assert.deepEqual([r.topPaths[0].end, r.topPaths[0].topKind, r.topPaths[0].via], ['top-unidentified', 'server-action', ['leaf', 'saveLead']]);
+  assert.equal(r.complete, true);
+  // Changed itself, with no reference.
+  const own = await run(g, 'saveLead', { facts: NEXT });
+  assert.deepEqual([own.entries, own.topPaths[0].topKind], [[], 'server-action']);
+  // Without the Next gate the file is just a function.
+  const plain = await run(g, 'leaf', { facts: {} });
+  assert.equal(plain.topPaths[0].topKind, 'function');
+});
+
+test('a server action only tests reference is no entry', async () => {
+  const g = fakeGraph({
+    saveLead: { file: 'app/actions.ts', callers: ['spec'], text: ACTIONS },
+    spec: { file: 'app/actions.test.ts', test: true },
+  }, { state: { saveLead: { state: 'resolved', callers: [{ label: 'spec', file: abs('app/actions.test.ts'), pos: 10, test: true }], complete: true } } });
+  const r = await run(g, 'saveLead', { facts: NEXT });
+  assert.deepEqual(r.entries, []);
+  assert.equal(r.topPaths[0].topKind, 'test-only');
+});

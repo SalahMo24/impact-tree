@@ -89,7 +89,7 @@ function hunkLines(text, start, end) {
 }
 
 /** @param {any} e An entry of `ImpactPaths.entries` (src/engine/impact-paths.js). */
-const entryName = (e) => `${e.type === 'public-api' ? 'public API' : e.type}: ${e.name}`;
+const entryName = (e) => `${e.type === 'public-api' ? 'public API' : e.type === 'server-action' ? 'server action' : e.type}: ${e.name}`;
 
 /**
  * The steps of an entry's path that are not calls, as a note: " (handleSubmit passed as
@@ -178,7 +178,8 @@ function reviewTabModel({ result, cards, agentPayload = null, title = '', hunkOf
     const count = (/** @type {string} */ k) => ids.filter((id) => changes[id].kind === k).length;
     const stale = ids.reduce((n, id) => { const c = changed.get(id); return n + (c ? c.staleCallers || 0 : 0); }, 0);
     const names = ids.flatMap((id) => entryNames.get(id) || []);
-    const api = names.find((e) => e.startsWith('public API')) || names[0];
+    // A server action is where a path passes through, not where it ends: a route reached after it reads first.
+    const api = names.find((e) => e.startsWith('public API')) || names.find((e) => !e.startsWith('server action')) || names[0];
     const attention = ids.some((id) => changes[id].attention);
     const moved = agent ? ids.some((id) => ['changed', 'may-change', 'new'].includes(String(changes[id].kind))) : true;
     /** @type {Chip[]} */

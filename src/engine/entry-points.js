@@ -1,5 +1,6 @@
 // @ts-check
 'use strict';
+const path = require('path');
 // Entry points: where a call path enters the application from outside it. An HTTP route,
 // a CLI command, a `main`, an Electron IPC channel, a UI route, or the public API of a
 // published library. Pure: every input is passed in, nothing is read here. The repository
@@ -14,7 +15,7 @@
 // - frameworks not listed below.
 
 /**
- * @typedef {'http'|'cli-command'|'main'|'dev-tool'|'public-api'|'ipc'|'ui-route'|'job'|'event'} EntryType
+ * @typedef {'http'|'cli-command'|'main'|'dev-tool'|'public-api'|'ipc'|'ui-route'|'job'|'event'|'server-action'} EntryType
  *
  * One recognised entry point. `name` is what a reviewer reads: the route, the command line,
  * the exported name. `how` says which pattern matched, so an explanation can cite it.
@@ -24,6 +25,9 @@
  * @property {string} [method] HTTP method, upper case, when known (`'ALL'` for any).
  * @property {string} [route] HTTP or UI route as written.
  * @property {string} how
+ * @property {boolean} [passThrough] The walk records this entry and keeps going: the path
+ *   goes on to what references it (a Next.js server action, whose form a UI route renders).
+ *   Recorded only when something does reference it (./impact-paths.js).
  */
 
 /**
@@ -39,6 +43,11 @@
  *   builds a cobra command -> the parent command line (`'gh pr'`), when known.
  * @property {Map<string, string>} [binFiles] Repository-relative path of a package `bin`
  *   source file -> the command name.
+ * @property {Set<string>} [nextRoots] Repository-relative directories ('' for the root) of
+ *   Next.js apps: a package.json with `next` in its dependencies, or a `next.config.*`.
+ * @property {Set<string>} [packageRoots] Directories with a package.json, to find the
+ *   nearest one above a file. Both are absent in a preview (it lists only the pull
+ *   request's files), so the Next.js rules that need them do not fire there.
  */
 
 /** @typedef {'ts'|'go'|'python'} EntryLanguage */
@@ -417,6 +426,13 @@ function tsDeclarationEntry({ text, pos, label, relPath, facts }) {
   const name = lastSegment(label);
   const nextRoute = nextJsRoute(relPath, name, text);
   if (nextRoute) return nextRoute;
+  const root = nextRootOf(relPath, facts);
+  if (root !== null) {
+    const special = nextSpecialEntry({ relPath, root, name, label, text });
+    if (special) return special;
+    const action = serverActionOf({ text, pos, name, label });
+    if (action) return action;
+  }
 
   for (const deco of decoratorsAbove(text, pos)) {
     const verb = /^@(Get|Post|Put|Delete|Patch|Head|Options|All)\s*\(\s*(?:(['"`])([^'"`]*)\2)?/.exec(deco);
@@ -523,6 +539,148 @@ function nextJsRoute(relPath, name, text) {
     return { type: 'ui-route', name: route, route, how: 'Next.js page' };
   }
   return null;
+}
+
+/**
+ * The Next.js app a file belongs to: the nearest package root above it (a directory with a
+ * package.json), when that is a Next.js app (`facts.nextRoots`). `''` is the repository
+ * root; null when the file is in no Next.js app or the facts were not gathered.
+ * @param {string} relPath @param {EntryFacts|undefined} facts
+ * @returns {string|null}
+ */
+function nextRootOf(relPath, facts) {
+  if (!facts || !facts.nextRoots || !facts.nextRoots.size) return null;
+  for (let dir = path.posix.dirname(relPath); ; dir = path.posix.dirname(dir)) {
+    const d = dir === '.' ? '' : dir;
+    if (facts.nextRoots.has(d)) return d;
+    if (facts.packageRoots && facts.packageRoots.has(d)) return null;
+    if (d === '') return null;
+  }
+}
+
+/** Whether `name` is the default export of `text`: `export default [async] [function] name`, or `export default name;`. @param {string} text @param {string} name */
+function isDefaultExport(text, name) {
+  return new RegExp(`export\\s+default\\s+(?:async\\s+)?(?:function\\s*\\*?\\s*)?${escapeRe(name)}\\b|export\\s+default\\s+${escapeRe(name)}\\s*;?\\s*$`, 'm').test(text);
+}
+
+/** Whether `text` exports a function or constant `name` by its own declaration (`export [async] function name`, `export const name`); a comment line does not count. @param {string} text @param {string} name */
+function exportsDeclaration(text, name) {
+  return new RegExp(`^export\\s+(?:async\\s+)?function\\s*\\*?\\s*${escapeRe(name)}\\b|^export\\s+(?:const|let)\\s+${escapeRe(name)}\\b`, 'm').test(text);
+}
+
+/** `app/(g)/[l]/x` -> `/(g)/[l]/x`, parallel-route slots (`@name`) dropped: the segment as written, route groups kept. @param {string} dirs */
+function appSegmentOf(dirs) {
+  return `/${dirs.split('/').filter(Boolean).filter((p) => !p.startsWith('@')).join('/')}`;
+}
+
+// App Router files that wrap or stand in for a segment. `layout` and `template` wrap it and
+// everything below; the others render in it.
+const NEXT_SEGMENT_FILES = new Set(['layout', 'template', 'loading', 'error', 'global-error', 'not-found', 'default']);
+const NEXT_GENERATORS = /** @type {Array<[string, string]>} */ ([
+  ['generateMetadata', 'Next.js metadata'], ['generateStaticParams', 'Next.js static params'], ['generateViewport', 'Next.js viewport'],
+]);
+
+/**
+ * The Next.js rules that apply only inside a Next.js app (`nextRootOf`): App Router special
+ * files (`layout`, `template`, `loading`, `error`, `global-error`, `not-found`, `default`),
+ * `generateMetadata`/`generateStaticParams`/`generateViewport` of a page, layout or route
+ * file, and `middleware`/`proxy` at the app root or its `src/`. Not recognised: a default
+ * export written `export { X as default }` or `export default wrap(X)`.
+ * @param {{ relPath: string, root: string, name: string, label: string, text: string }} input
+ * @returns {EntryInfo|null}
+ */
+function nextSpecialEntry({ relPath, root, name, label, text }) {
+  if (classPart(label)) return null;
+  const inApp = root ? (relPath.startsWith(`${root}/`) ? relPath.slice(root.length + 1) : null) : relPath;
+  if (inApp === null) return null;
+  const mw = /^(?:src\/)?(middleware|proxy)\.[cm]?[jt]s$/.exec(inApp);
+  if (mw && ((name === mw[1] && exportsDeclaration(text, name)) || isDefaultExport(text, name))) {
+    return { type: 'http', name: `ALL * (Next.js ${mw[1]})`, method: 'ALL', route: '*', how: `Next.js ${mw[1]}` };
+  }
+  const file = /^(?:src\/)?app\/((?:[^/]+\/)*)([a-z-]+)\.[jt]sx?$/.exec(inApp);
+  if (!file) return null;
+  const [, dirs, kind] = file;
+  if (NEXT_SEGMENT_FILES.has(kind) && isDefaultExport(text, name)) {
+    if (kind === 'layout' || kind === 'template') {
+      const route = `${appSegmentOf(dirs).replace(/\/$/, '')}/*`;
+      return { type: 'ui-route', name: route, route, how: `Next.js ${kind}` };
+    }
+    const route = appRouteOf(dirs);
+    return { type: 'ui-route', name: route, route, how: `Next.js ${kind}` };
+  }
+  const gen = NEXT_GENERATORS.find(([n]) => n === name);
+  if (gen && ['page', 'layout', 'route'].includes(kind) && exportsDeclaration(text, name)) {
+    const route = kind === 'layout' ? `${appSegmentOf(dirs).replace(/\/$/, '')}/*` : appRouteOf(dirs);
+    return { type: 'ui-route', name: route, route, how: gen[1] };
+  }
+  return null;
+}
+
+/**
+ * Leading directives of a module or function body, after comments: the string-literal
+ * statements (`'use client'; "use server"`). A directive in a comment, or after any other
+ * statement, is not one.
+ * @param {string} text Starts at the first character that may hold a directive.
+ * @returns {string[]}
+ */
+function leadingDirectives(text) {
+  /** @type {string[]} */
+  const out = [];
+  let rest = text;
+  for (let guard = 0; guard < 8; guard++) {
+    rest = rest.replace(/^(?:\s+|\/\/[^\n]*|\/\*[^]*?\*\/)+/, '');
+    const m = /^(['"])([^'"\n]*)\1\s*;?/.exec(rest);
+    if (!m) break;
+    out.push(m[2]);
+    rest = rest.slice(m[0].length);
+  }
+  return out;
+}
+
+/**
+ * A Next.js server action: an exported async function of a file whose directives include
+ * `'use server'`, or a function whose body starts with that directive (an inline action).
+ * The caller has checked that the file is in a Next.js app. Passes through: the walk goes
+ * on to what references it, when anything does (./impact-paths.js).
+ * @param {{ text: string, pos: number, name: string, label: string }} input
+ * @returns {EntryInfo|null}
+ */
+function serverActionOf({ text, pos, name, label }) {
+  if (!/^[A-Za-z_$][\w$]*$/.test(name)) return null;
+  const how = 'Next.js server action';
+  const entry = /** @type {EntryInfo} */ ({ type: 'server-action', name, how, passThrough: true });
+  if (!classPart(label) && leadingDirectives(text).includes('use server')) {
+    const n = escapeRe(name);
+    const asyncExport = new RegExp(`^export\\s+(?:default\\s+)?async\\s+function\\s*\\*?\\s*${n}\\b|^export\\s+const\\s+${n}\\s*(?::[^=]{1,200})?=\\s*async\\b`, 'm').test(text);
+    // `async function f() {}` with `export { f }` below it.
+    const asyncListed = new RegExp(`^(?:async\\s+function\\s*\\*?\\s*${n}\\b|const\\s+${n}\\s*=\\s*async\\b)`, 'm').test(text)
+      && (text.match(/^export\s*(?:type\s*)?\{[^}]*\}(?!\s*from)/gm) || []).some((l) => new RegExp(`(?:[{,]\\s*)${n}\\s*(?:[,}]|as\\s)`).test(l));
+    if (asyncExport || asyncListed) return entry;
+  }
+  // Inline: `async function f(a) { 'use server'; … }`, `const f = async (a) => { 'use server'; … }`.
+  const head = new RegExp(`^${escapeRe(name)}\\s*(?:<[^()]{0,200}>)?\\s*(?:=\\s*(?:async\\s+)?(?:function\\s*\\*?\\s*[\\w$]*\\s*)?)?\\(`).exec(text.slice(pos, pos + 400));
+  if (!head) return null;
+  const close = matchingClose(text, pos + head[0].length - 1);
+  if (close < 0) return null;
+  const body = /^\s*(?::\s*[A-Za-z_$][\w$.<>[\], |]*)?\s*(?:=>\s*)?\{/.exec(text.slice(close + 1, close + 260));
+  if (!body) return null;
+  const open = close + 1 + body[0].length;
+  return leadingDirectives(text.slice(open, open + 400)).includes('use server') ? entry : null;
+}
+
+/** The offset of the `)` closing the `(` at `open` (strings and comments skipped), or -1 within 4000 characters. @param {string} text @param {number} open */
+function matchingClose(text, open) {
+  let depth = 0;
+  for (let i = open; i < Math.min(text.length, open + 4000); i++) {
+    const c = text[i];
+    if (c === '"' || c === "'" || c === '`') {
+      for (i++; i < text.length && text[i] !== c; i++) if (text[i] === '\\') i++;
+    } else if (c === '/' && text[i + 1] === '/') { while (i < text.length && text[i] !== '\n') i++; }
+    else if (c === '/' && text[i + 1] === '*') { const e = text.indexOf('*/', i + 2); if (e < 0) return -1; i = e + 1; }
+    else if (c === '(') depth++;
+    else if (c === ')' && --depth === 0) return i;
+  }
+  return -1;
 }
 
 /** `(group)/users/[id]/` -> `/users/[id]`. @param {string} dirs */
