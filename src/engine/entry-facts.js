@@ -135,9 +135,17 @@ function exportTargets(v, out) {
 
 /**
  * @param {string[]} listed @param {Set<string>} listedSet @param {(rel: string) => string|null} read
- * @returns {{ tsPublic: Map<string, Set<string>|'*'>, binFiles: Map<string, string> }}
+ * @returns {{ tsPublic: Map<string, Set<string>|'*'>, binFiles: Map<string, string>, nextRoots: Set<string>, packageRoots: Set<string> }}
  */
 function tsFacts(listed, listedSet, read) {
+  /** @type {Set<string>} */
+  const nextRoots = new Set();
+  /** @type {Set<string>} */
+  const packageRoots = new Set();
+  // A `next.config.*` marks a Next.js app even where its package.json is not listed or read.
+  for (const p of listed) {
+    if (/(?:^|\/)next\.config\.(?:js|mjs|cjs|ts)$/.test(p) && !isNodeModules(p)) nextRoots.add(path.posix.dirname(p) === '.' ? '' : path.posix.dirname(p));
+  }
   /** @type {Map<string, Set<string>|'*'>} */
   const tsPublic = new Map();
   /** @type {Map<string, string>} */
@@ -160,6 +168,9 @@ function tsFacts(listed, listedSet, read) {
     try { pkg = JSON.parse(text); } catch { continue; }
     if (!pkg || typeof pkg !== 'object') continue;
     const dir = path.posix.dirname(pj) === '.' ? '' : path.posix.dirname(pj);
+    packageRoots.add(dir);
+    const deps = { ...(pkg.devDependencies || {}), ...(pkg.dependencies || {}) };
+    if (Object.prototype.hasOwnProperty.call(deps, 'next')) nextRoots.add(dir);
     if (pkg.bin) {
       const bins = typeof pkg.bin === 'string' ? { [String(pkg.name || '').replace(/^@[^/]+\//, '')]: pkg.bin } : pkg.bin;
       for (const [name, target] of Object.entries(bins || {})) {
@@ -201,7 +212,7 @@ function tsFacts(listed, listedSet, read) {
       }
     }
   }
-  return { tsPublic, binFiles };
+  return { tsPublic, binFiles, nextRoots, packageRoots };
 }
 
 /** @param {string} dir @param {string} pattern @returns {string|null} */

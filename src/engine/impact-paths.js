@@ -66,9 +66,10 @@ function validateLimits(given) {
  * @property {'entry'|'top-unidentified'|'budget'|'unknown'} end
  * @property {EntryInfo} [entry] When `end` is `'entry'`.
  * @property {string} [reason] When `end` is `'budget'` or `'unknown'`.
- * @property {'module'|'function'|'test-only'|'app-start'} [topKind] When `end` is
+ * @property {'module'|'function'|'test-only'|'app-start'|'server-action'} [topKind] When `end` is
  *   `'top-unidentified'`: module-level code (runs at import), a function nothing calls, a
- *   function only tests call, or a package `bin` file's module code (program start).
+ *   function only tests call, a package `bin` file's module code (program start), or an
+ *   exported Next.js server action nothing references (not an entry: no route reaches it).
  * @property {string} [bin] The command name, when `topKind` is `'app-start'`.
  * @property {string[]} via Labels from the changed function to the last node, both included.
  * @property {PathHop[]} [hops] The steps of `via` that are not calls, when there are any.
@@ -92,7 +93,8 @@ function validateLimits(given) {
  * @property {string} id `relPath#namePos` of the changed function.
  * @property {Array<{ type: string, name: string, file: string, depth: number, via: string[], hops?: PathHop[], how: string, method?: string, route?: string }>} entries
  *   Distinct entry points reached (by type, name and file), each at its shortest depth;
- *   `hops` as in PathEnd.
+ *   `hops` as in PathEnd. A `server-action` (pass-through) is listed when something references
+ *   it; the walk went on past it, so a route may be listed too.
  * @property {{ ends: Record<string, number>, entryTypes: Record<string, number>, visited: number, testCallers: number }} summary
  *   `ends` counts paths by how they ended; `entryTypes` counts distinct entries by type;
  *   `visited` the callers admitted; `testCallers` the changed function's direct test
@@ -195,6 +197,8 @@ function makeTextCache(readText) {
  * @property {boolean} throughStale
  * @property {{ via: 'jsx-prop', text: string }} [hop] How this node reached `parent` when it
  *   does not call it (a walk-only edge).
+ * @property {EntryInfo} [action] A pass-through entry this node is (a server action): it is
+ *   recorded once the node is found to have a caller or walk-only edge (see `walkOne`).
  */
 
 /**
@@ -248,9 +252,18 @@ async function walkOne({ resolver, changed, repo, facts, limits, deadline, signa
   /** @type {WalkNode[]} */
   const queue = [];
 
+  // Pass-through entries (`EntryInfo.passThrough`): the path does not end there. Each is
+  // recorded when its node has at least one production caller or walk-only edge; an exported
+  // server action nothing references is no entry, and its path ends as a top.
+  /** @type {Array<{ node: WalkNode, entry: EntryInfo }>} */
+  const passed = [];
+
   const own = entryOfNode(start, null, facts, texts, repo);
-  if (own) finish(start, { end: 'entry', entry: own });
-  else queue.push(start);
+  if (own && !own.passThrough) finish(start, { end: 'entry', entry: own });
+  else {
+    if (own) start.action = own;
+    queue.push(start);
+  }
 
   let head = 0;
   while (head < queue.length) {
@@ -304,11 +317,12 @@ async function walkOne({ resolver, changed, repo, facts, limits, deadline, signa
         // as a value" (a handler registered somewhere the text does not show).
         const top = await topState(resolver, node);
         // Only tests call it: a top for production, and the reason a card says "tests only".
-        if (top.complete) finish(node, { end: 'top-unidentified', topKind: top.testCallers ? 'test-only' : 'function' });
+        if (top.complete) finish(node, { end: 'top-unidentified', topKind: top.testCallers ? 'test-only' : node.action ? 'server-action' : 'function' });
         else finish(node, { end: 'unknown', reason: top.reason });
         continue;
       }
     } else if (!answer.complete) finish(node, { end: 'unknown', reason: answer.reason || 'a caller query did not finish' });
+    if (node.action && next.length) passed.push({ node, entry: node.action });
     for (const caller of next) {
       const key = `${caller.file}#${caller.pos}`;
       if (seen.has(key)) continue;
@@ -323,8 +337,11 @@ async function walkOne({ resolver, changed, repo, facts, limits, deadline, signa
         ...(caller.via ? { hop: { via: caller.via, text: caller.text || caller.via } } : {}),
       };
       const entry = entryOfNode(child, caller, facts, texts, repo);
-      if (entry) finish(child, { end: 'entry', entry });
-      else queue.push(child);
+      if (entry && !entry.passThrough) finish(child, { end: 'entry', entry });
+      else {
+        if (entry) child.action = entry;
+        queue.push(child);
+      }
     }
     if (nodeBudgetHit) {
       finish(node, { end: 'budget', reason: `node limit of ${limits.maxNodes} callers per changed function` });
@@ -337,7 +354,7 @@ async function walkOne({ resolver, changed, repo, facts, limits, deadline, signa
   const lang = entryLanguageOf(changed.file);
   if (!lang) reasons.add('entry points are not recognised for this language');
   // wall-clock: log-only — this walk's time for the report
-  return summarise({ id, ends, reasons, admitted, testCallers, walkMs: Date.now() - t0, lowerBoundResolver });
+  return summarise({ id, ends, passed: passed.map((p) => ({ ...p.entry, file: rel(p.node.file), depth: p.node.depth, via: viaOf(p.node), ...(hopsOf(p.node).length ? { hops: hopsOf(p.node) } : {}) })), reasons, admitted, testCallers, walkMs: Date.now() - t0, lowerBoundResolver });
 }
 
 /**
@@ -444,10 +461,10 @@ function entryOfNode(node, row, facts, texts, repo) {
 const END_ORDER = { entry: 0, 'top-unidentified': 1, unknown: 2, budget: 3 };
 
 /**
- * @param {{ id: string, ends: PathEnd[], reasons: Set<string>, admitted: number, testCallers: number, walkMs: number, lowerBoundResolver: boolean }} input
+ * @param {{ id: string, ends: PathEnd[], passed: ImpactPaths['entries'], reasons: Set<string>, admitted: number, testCallers: number, walkMs: number, lowerBoundResolver: boolean }} input
  * @returns {ImpactPaths}
  */
-function summarise({ id, ends, reasons, admitted, testCallers, walkMs, lowerBoundResolver }) {
+function summarise({ id, ends, passed, reasons, admitted, testCallers, walkMs, lowerBoundResolver }) {
   /** @type {Record<string, number>} */
   const endCounts = { entry: 0, 'top-unidentified': 0, budget: 0, unknown: 0 };
   /** @type {Map<string, ImpactPaths['entries'][number]>} */
@@ -458,6 +475,12 @@ function summarise({ id, ends, reasons, admitted, testCallers, walkMs, lowerBoun
     const key = `${e.entry.type}\u0000${e.entry.name}\u0000${e.file}`;
     const prior = entries.get(key);
     if (!prior || e.depth < prior.depth) entries.set(key, { ...e.entry, file: e.file, depth: e.depth, via: e.via, ...(e.hops ? { hops: e.hops } : {}) });
+  }
+  // A pass-through entry the walk went on from counts as reached, at its own depth.
+  for (const e of passed) {
+    const key = `${e.type}\u0000${e.name}\u0000${e.file}`;
+    const prior = entries.get(key);
+    if (!prior || e.depth < prior.depth) entries.set(key, e);
   }
   /** @type {Record<string, number>} */
   const entryTypes = {};

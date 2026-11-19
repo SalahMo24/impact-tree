@@ -251,3 +251,117 @@ test('Go: a main under script/ or behind go:build ignore is a dev tool, its pack
   assert.equal(declarationEntry({ language: 'go', text, pos: at2, label: 'main', relPath: 'cmd/gh/main.go' }).type, 'main');
   assert.equal(declarationEntry({ language: 'go', text, pos: 0, label: 'main.go', relPath: 'cmd/gh/main.go' }), null);
 });
+
+// Next.js rules that need the Next gate: `nextRoots` (a package.json with `next`, or a
+// next.config.*) and `packageRoots` (every package.json), as entry-facts gathers them.
+const NEXT = { nextRoots: new Set(['']), packageRoots: new Set(['']) };
+const nx = (text, name, relPath, facts = NEXT, label = name) => decl('ts', text, name, label, relPath, facts);
+
+test('Next.js: layout and template are UI routes that keep route groups; segment files use the page route', () => {
+  const layout = 'export default function RootLayout({ children }) { return children; }\n';
+  assert.deepEqual(nx(layout, 'RootLayout', 'app/layout.tsx'), { type: 'ui-route', name: '/*', route: '/*', how: 'Next.js layout' });
+  const nested = 'const Shell = () => null;\nexport default Shell;\n';
+  assert.equal(nx(nested, 'Shell', 'src/app/[locale]/(public)/layout.tsx').name, '/[locale]/(public)/*');
+  assert.equal(nx(nested, 'Shell', 'app/dash/template.tsx').how, 'Next.js template');
+  const loading = 'export default async function Loading() {}\n';
+  assert.deepEqual(nx(loading, 'Loading', 'app/(shop)/items/loading.tsx'), { type: 'ui-route', name: '/items', route: '/items', how: 'Next.js loading' });
+  for (const f of ['error', 'global-error', 'not-found', 'default']) assert.equal(nx('export default function X() {}\n', 'X', `app/a/${f}.tsx`).how, `Next.js ${f}`);
+  // The default export only: a helper in the file is not the layout.
+  assert.equal(nx(`${layout}function helper() {}\n`, 'helper', 'app/layout.tsx'), null);
+  // Pinned: these forms are not recognised.
+  assert.equal(nx('function X() {}\nexport { X as default };\n', 'X', 'app/layout.tsx'), null);
+  assert.equal(nx('function X() {}\nexport default memo(X);\n', 'X', 'app/layout.tsx'), null);
+  // `app/` must sit at the app root or its `src/`.
+  assert.equal(nx(layout, 'RootLayout', 'components/app/layout.tsx'), null);
+});
+
+test('Next.js: the new rules need a Next.js app (negatives: no gate, other package, no facts)', () => {
+  const layout = 'export default function RootLayout() {}\n';
+  assert.equal(nx(layout, 'RootLayout', 'app/layout.tsx', {}), null);
+  assert.equal(nx(layout, 'RootLayout', 'app/layout.tsx', { nextRoots: new Set(), packageRoots: new Set(['']) }), null);
+  const page = 'export default function Page() {}\n';
+  assert.equal(nx(page, 'Page', 'src/pages/Page.tsx', {}), null);
+  // A monorepo: the nearest package root decides.
+  const mono = { nextRoots: new Set(['apps/web']), packageRoots: new Set(['', 'apps/web', 'packages/ui']) };
+  assert.equal(nx(layout, 'RootLayout', 'apps/web/app/layout.tsx', mono).name, '/*');
+  assert.equal(nx(layout, 'RootLayout', 'packages/ui/app/layout.tsx', mono), null);
+  assert.equal(nx(layout, 'RootLayout', 'app/layout.tsx', mono), null);
+  const nested = { nextRoots: new Set(['']), packageRoots: new Set(['', 'tools/x']) };
+  assert.equal(nx(layout, 'RootLayout', 'tools/x/app/layout.tsx', nested), null);
+});
+
+test('Next.js: generateMetadata, generateStaticParams and generateViewport belong to their segment', () => {
+  const page = 'export async function generateMetadata() { return {}; }\nexport const generateStaticParams = async () => [];\nexport default function Page() {}\n';
+  assert.deepEqual(nx(page, 'generateMetadata', 'app/(g)/blog/[slug]/page.tsx'), { type: 'ui-route', name: '/blog/[slug]', route: '/blog/[slug]', how: 'Next.js metadata' });
+  assert.equal(nx(page, 'generateStaticParams', 'app/blog/[slug]/page.tsx').how, 'Next.js static params');
+  const layout = 'export function generateViewport() {}\n';
+  assert.deepEqual(nx(layout, 'generateViewport', 'app/(g)/layout.tsx'), { type: 'ui-route', name: '/(g)/*', route: '/(g)/*', how: 'Next.js viewport' });
+  // Not exported, in a comment, in another file, or without the gate.
+  assert.equal(nx('async function generateMetadata() {}\n', 'generateMetadata', 'app/page.tsx'), null);
+  assert.equal(nx('// export async function generateMetadata() {}\nfunction generateMetadata() {}\n', 'generateMetadata', 'app/page.tsx'), null);
+  assert.equal(nx(page, 'generateMetadata', 'app/blog/other.tsx'), null);
+  assert.equal(nx(page, 'generateMetadata', 'app/blog/page.tsx', {}), null);
+});
+
+test('Next.js: middleware and proxy at the app root or src/, not nested', () => {
+  const mw = 'export function middleware(req) { return next(); }\nexport const config = {};\n';
+  assert.deepEqual(nx(mw, 'middleware', 'middleware.ts'), { type: 'http', name: 'ALL * (Next.js middleware)', method: 'ALL', route: '*', how: 'Next.js middleware' });
+  assert.equal(nx(mw, 'middleware', 'src/middleware.ts').type, 'http');
+  assert.equal(nx(mw, 'middleware', 'src/lib/middleware.ts'), null);
+  assert.equal(nx(mw, 'middleware', 'app/middleware.ts'), null);
+  assert.equal(nx(mw, 'middleware', 'middleware.ts', {}), null);
+  assert.equal(nx('export default async function guard(req) {}\n', 'guard', 'proxy.ts').name, 'ALL * (Next.js proxy)');
+  assert.equal(nx('function helper() {}\nexport function middleware() {}\n', 'helper', 'middleware.ts'), null);
+  // Another app's root in a monorepo.
+  const mono = { nextRoots: new Set(['apps/web']), packageRoots: new Set(['', 'apps/web']) };
+  assert.equal(nx(mw, 'middleware', 'apps/web/middleware.ts', mono).type, 'http');
+  assert.equal(nx(mw, 'middleware', 'middleware.ts', mono), null);
+});
+
+test('Next.js: server actions, by file directive and inline, as pass-through entries', () => {
+  const file = "'use server'\nimport x from 'y';\nexport async function addLead(f) { return x(f); }\nasync function inner() {}\nexport function sync() {}\nexport const upd = async (a) => a;\nasync function late() {}\nexport { late };\n";
+  assert.deepEqual(nx(file, 'addLead', 'app/actions.ts'), { type: 'server-action', name: 'addLead', how: 'Next.js server action', passThrough: true });
+  assert.equal(nx(file, 'upd', 'lib/actions.ts').type, 'server-action');
+  assert.equal(nx(file, 'late', 'lib/actions.ts').type, 'server-action');
+  // Not exported, or not async.
+  assert.equal(nx(file, 'inner', 'lib/actions.ts'), null);
+  assert.equal(nx(file, 'sync', 'lib/actions.ts'), null);
+  // Directive after comments counts; in a comment, a string, or after code it does not.
+  assert.equal(nx('// header\n/* x */\n"use server";\nexport async function a() {}\n', 'a', 'x.ts').type, 'server-action');
+  assert.equal(nx("// 'use server'\nexport async function a() {}\n", 'a', 'x.ts'), null);
+  assert.equal(nx("/* 'use server' */\nexport async function a() {}\n", 'a', 'x.ts'), null);
+  assert.equal(nx("import x from 'y';\n'use server'\nexport async function a() {}\n", 'a', 'x.ts'), null);
+  assert.equal(nx("const s = \"use server\";\nexport async function a() {}\n", 'a', 'x.ts'), null);
+  // Without the gate: nothing.
+  assert.equal(nx(file, 'addLead', 'app/actions.ts', {}), null);
+  // Inline: the body starts with the directive.
+  const inline = "export default function Page() {\n  async function save(data: { a: string }): Promise<void> {\n    'use server';\n    await db(data);\n  }\n  const other = async (x) => { 'use server'; return x; };\n  async function plain() { go(); 'use server'; }\n  return null;\n}\n";
+  assert.equal(nx(inline, 'save', 'app/page.tsx').type, 'server-action');
+  assert.equal(nx(inline, 'other', 'app/page.tsx').type, 'server-action');
+  assert.equal(nx(inline, 'plain', 'app/page.tsx'), null);
+});
+
+test('Next.js: the existing three rules do not need the gate', () => {
+  assert.equal(decl('ts', 'export default function Page() {}\n', 'Page', 'Page', 'app/page.tsx').how, 'Next.js page');
+});
+
+test('facts: Next.js apps are found by a next dependency or a next.config, per package root', () => {
+  const files = {
+    'package.json': JSON.stringify({ name: 'root', private: true }),
+    'apps/web/package.json': JSON.stringify({ name: 'web', dependencies: { next: '15.0.0' } }),
+    'apps/docs/package.json': JSON.stringify({ name: 'docs', devDependencies: { next: '15.0.0' } }),
+    'apps/legacy/next.config.mjs': 'export default {};\n',
+    'packages/ui/package.json': JSON.stringify({ name: 'ui', dependencies: { react: '19' } }),
+    'node_modules/next/package.json': JSON.stringify({ name: 'next' }),
+  };
+  const { gatherEntryFacts } = require('../src/engine/entry-facts');
+  const { facts } = gatherEntryFacts({
+    repo: '/r', languages: new Set(['ts']), readRel: (rel) => files[rel] ?? null,
+    git: { tryRaw: () => Object.keys(files).join('\0') },
+  });
+  assert.deepEqual([...facts.nextRoots].sort(), ['apps/docs', 'apps/legacy', 'apps/web']);
+  assert.ok(facts.packageRoots.has('') && facts.packageRoots.has('packages/ui'));
+  // A repository with no next at all has an empty set: the new rules never fire.
+  const none = gatherEntryFacts({ repo: '/r', languages: new Set(['ts']), readRel: (rel) => (rel === 'package.json' ? '{}' : null), git: { tryRaw: () => 'package.json' } });
+  assert.equal(none.facts.nextRoots.size, 0);
+});
