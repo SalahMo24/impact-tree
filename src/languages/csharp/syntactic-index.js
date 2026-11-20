@@ -111,7 +111,8 @@ const STATEMENT_START = new Set(['{', ';', '}', '(', ',', ']']);
  *   baseCalls: Map<number, { type: TypeRec, open: number }>, ui: boolean, uses: Use[]|null }} FileRec
  * @typedef {{ key: string, simple: string, arity: number, ns: string, path: string[], kind: string, parts: FileRec[], namePos: number,
  *   project: string, partial: boolean, members: Set<string>,
- *   bases: Array<{ text: string, file: FileRec, at: number }>, typeParams: Set<string>, methods: Map<string, DefRec[]>, ctors: DefRec[],
+ *   bases: Array<{ text: string, file: FileRec, at: number, written: string }>, typeParams: Set<string>, methods: Map<string, DefRec[]>, ctors: DefRec[],
+ *   explicits: DefRec[], views: Map<TypeRec, Map<string, string>>|null,
  *   fields: Map<string, { text: string, file: FileRec, at: number }|null>, outer: TypeRec|null, nested: Map<string, TypeRec>, sealed: boolean,
  *   isStatic: boolean, generated: boolean, hier: { types: TypeRec[], open: boolean, outside: string[] }|null }} TypeRec
  * @typedef {{ name: string, key: string, label: string, namePos: number, start: number, end: number, type: TypeRec|null, file: FileRec,
@@ -121,9 +122,10 @@ const STATEMENT_START = new Set(['{', ';', '}', '(', ',', ']']);
  * @typedef {{ name: string, pos: number, end: number, at: number, kind: 'call'|'new'|'ref', argc: number, open: number, newKind?: string, targs?: number }} Use
  * @typedef {DefRec[]|'unresolved'|null} Hit
  * @typedef {{ t: TypeRec } | { pre: string } | { ext: string } | null} ArgKind
- * @typedef {{ t: 'type', type: TypeRec, static: boolean, shadowable?: boolean } | { t: 'ext', name?: string } | { t: 'unk' } | { t: 'ns', name: string }} Recv
+ * @typedef {{ t: 'type', type: TypeRec, static: boolean, shadowable?: boolean, args?: string[] } | { t: 'ext', name?: string } | { t: 'unk' } | { t: 'ns', name: string }} Recv
  *   `ext`: an outside type; `name` its simple name (a predefined type's keyword) when written.
  *   `shadowable`: a type name that a member inherited from an outside base may hide.
+ *   `args`: the receiver's type arguments as written (`normType`), `*` for a type parameter.
  */
 
 /** @param {Token[]} toks @returns {Int32Array} */
@@ -226,6 +228,85 @@ function chainOnly(toks, match, from, to) {
 
 /** Whether `t`, after an expression, ends a local's initializer: `;`, or `,`/`)` of a list. @param {Token|undefined} t */
 const endsInitializer = (t) => isP(t, ';') || isP(t, ',') || isP(t, ')');
+
+/**
+ * A type as written from `toks[from]` to `toks[end]` (exclusive), its type arguments kept
+ * (`IRepo<User>?`): the receivers' text, so C8b can check generic arguments.
+ * @param {Token[]} toks @param {number} from @param {number} end
+ */
+const writtenType = (toks, from, end) => toks.slice(from, end).map((x) => x.text).join('');
+
+// Value types whose `?` is a different type (`Nullable<T>`); on other names `?` is an
+// annotation only and two spellings are one type.
+const VALUE_TYPES = new Set(['bool', 'byte', 'sbyte', 'char', 'decimal', 'double', 'float', 'int', 'uint', 'long', 'ulong', 'short', 'ushort',
+  'nint', 'nuint', 'Guid', 'DateTime', 'DateTimeOffset', 'TimeSpan', 'CancellationToken']);
+/** @type {Record<string, string>} */
+const SYSTEM_ALIASES = { String: 'string', Object: 'object', Boolean: 'bool', Int32: 'int', Int64: 'long', Int16: 'short', Byte: 'byte',
+  Double: 'double', Single: 'float', Decimal: 'decimal', Char: 'char', UInt32: 'uint', UInt64: 'ulong' };
+
+/**
+ * One spelling for a type as written in a signature or a base list, to compare two of them:
+ * no namespaces, `global::`, spaces or `params`/`this`; `Nullable<T>` as `T?`, `System.String`
+ * as `string`; `?` kept on value types only. `ref`/`out`/`in` stay, as a leading word.
+ * @param {string} text
+ */
+function normType(text) {
+  let s = text.replace(/^((params|scoped|this)\s+)+/, '').trim();
+  const mod = /^(ref|out|in)\s+/.exec(s);
+  if (mod) s = s.slice(mod[0].length);
+  s = s.replace(/\s+/g, '').replace(/global::/g, '').replace(/@/g, '').replace(/(?:[A-Za-z_]\w*\.)+(?=[A-Za-z_])/g, '');
+  s = s.replace(/\bNullable<([^<>]*)>/g, '$1?');
+  s = s.replace(/[A-Za-z_]\w*/g, (w) => SYSTEM_ALIASES[w] || w);
+  s = s.replace(/([A-Za-z_]\w*|>|\])\?/g, (m, w) => (VALUE_TYPES.has(w) ? m : w));
+  return (mod ? `${mod[1]} ` : '') + s;
+}
+
+/**
+ * The type arguments of a type as written (`IRepo<User, int>?` → `['User', 'int']`), of its
+ * last segment; none when it has none. @param {string} text @returns {string[]}
+ */
+function writtenArgs(text) {
+  let s = text.replace(/\s+/g, '');
+  while (/(\?|\[,*\])$/.test(s)) s = s.replace(/(\?|\[,*\])$/, '');
+  if (!s.endsWith('>')) return [];
+  let depth = 0;
+  let k = s.length - 1;
+  for (; k >= 0; k--) { if (s[k] === '>') depth++; else if (s[k] === '<' && --depth === 0) break; }
+  if (k < 0) return [];
+  /** @type {string[]} */
+  const out = [];
+  let from = k + 1;
+  depth = 0;
+  for (let j = k + 1; j < s.length - 1; j++) {
+    const c = s[j];
+    if (c === '<' || c === '(' || c === '[') depth++;
+    else if (c === '>' || c === ')' || c === ']') depth--;
+    else if (c === ',' && depth === 0) { out.push(s.slice(from, j)); from = j + 1; }
+  }
+  out.push(s.slice(from, s.length - 1));
+  return out.filter(Boolean);
+}
+
+/** `text` with each name `sub` maps replaced. @param {string} text @param {Map<string, string>} sub */
+const substType = (text, sub) => (sub.size ? text.replace(/[A-Za-z_]\w*/g, (w) => (sub.has(w) ? /** @type {string} */ (sub.get(w)) : w)) : text);
+
+/** @param {string} s */
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Whether two `normType` spellings may be one type: equal, or equal where one has `*` (a
+ * type parameter left open, standing for any type).
+ * @param {string} a @param {string} b
+ */
+function sameType(a, b) {
+  if (a === b) return true;
+  const wa = a.includes('*');
+  const wb = b.includes('*');
+  if (!wa && !wb) return false;
+  if (wa && wb) return true;
+  const [pat, other] = wa ? [a, b] : [b, a];
+  return new RegExp(`^${pat.split('*').map(escapeRe).join('.+')}$`).test(other);
+}
 
 /** `Foo<1>` → `Foo`1`. @param {string} name */
 const segOf = (name) => name.replace(/<(\d+)>$/, '`$1');
@@ -396,7 +477,8 @@ function createCsharpSyntacticIndex(sources, {
         owner.ctors.push(d);
         for (const pr of params) setField(owner, pr.name, pr.type, rec, d.namePos);
       } else if (isCtor) owner.ctors.push(d);
-      else if (d.member === 'method' && !d.explicit) {
+      else if (d.member === 'method' && d.explicit) owner.explicits.push(d);
+      else if (d.member === 'method') {
         let list = owner.methods.get(d.name);
         if (!list) { list = []; owner.methods.set(d.name, list); }
         list.push(d);
@@ -506,7 +588,7 @@ function createCsharpSyntacticIndex(sources, {
         key, simple, arity: Number(ar || 0), ns, path: p, kind: word, parts: [], namePos: s.selectionRange.start, bases: [],
         project: rec.project, partial: isPartial, members: new Set(),
         typeParams: new Set(), methods: new Map(), ctors: [], fields: new Map(), outer, nested: new Map(), sealed: false,
-        isStatic: false, generated: false, hier: null,
+        isStatic: false, generated: false, hier: null, explicits: [], views: null,
       };
       if (isFile) rec.fileTypes.set(seg, t);
       else { const list = typesByKey.get(key); if (list) list.push(t); else typesByKey.set(key, [t]); }
@@ -530,7 +612,7 @@ function createCsharpSyntacticIndex(sources, {
         const from = i;
         const ty = readType(toks, i);
         if (!ty) break;
-        t.bases.push({ text: ty.base, file: rec, at: toks[i].start });
+        t.bases.push({ text: ty.base, file: rec, at: toks[i].start, written: writtenType(toks, i, ty.end) });
         i = ty.end;
         if (isP(toks[i], '(') && match[i] > i) { rec.baseCalls.set(lastNameTok(toks, from, ty.end).start, { type: t, open: i }); i = match[i] + 1; }
         if (!isP(toks[i], ',')) break;
@@ -562,9 +644,10 @@ function createCsharpSyntacticIndex(sources, {
       if (ty && toks[ty.end] && toks[ty.end].kind === 'ident' && !KEYWORDS.has(toks[ty.end].text)) {
         const after = toks[ty.end + 1];
         if (after && ['; ', ';', '=', '{', '=>', ','].includes(after.text)) {
-          setField(t, bare(toks[ty.end].text), ty.text, rec, toks[ty.end].start);
+          const w = writtenType(toks, i, ty.end);
+          setField(t, bare(toks[ty.end].text), w, rec, toks[ty.end].start);
           // `T a, b;`
-          for (let k = ty.end + 1; isP(toks[k], ',') && toks[k + 1] && toks[k + 1].kind === 'ident'; k += 2) setField(t, bare(toks[k + 1].text), ty.text, rec, toks[k + 1].start);
+          for (let k = ty.end + 1; isP(toks[k], ',') && toks[k + 1] && toks[k + 1].kind === 'ident'; k += 2) setField(t, bare(toks[k + 1].text), w, rec, toks[k + 1].start);
         }
       }
       // To the end of this member: a `;` at this level or a closing body brace.
@@ -1114,7 +1197,15 @@ function createCsharpSyntacticIndex(sources, {
     const vars = new Map();
     /** @type {Set<string>} */
     const fns = new Set();
-    const set = (/** @type {string} */ n, /** @type {string|null} */ ty) => { const k = bare(n); vars.set(k, vars.has(k) && vars.get(k) !== ty ? null : ty); };
+    // Types are kept as written (generic arguments, `?`); two declarations of one name whose
+    // types differ only there keep the type without them, others make the name untyped.
+    const erase = (/** @type {string} */ ty) => (ty.startsWith('@') ? ty : readTypeText(ty) || ty);
+    const set = (/** @type {string} */ n, /** @type {string|null} */ ty) => {
+      const k = bare(n);
+      if (!vars.has(k)) { vars.set(k, ty); return; }
+      const prev = vars.get(k);
+      if (prev !== ty) vars.set(k, prev && ty && erase(prev) === erase(ty) ? erase(ty) : null);
+    };
     // Parameters keep their written type (`Foo?`, `IRepo<User>`, `global::N.Foo`; S8): the scan
     // below starts after the parameter list, so it never sets them again with another spelling.
     for (const p of d.params) set(p.name, p.type.replace(/^((this|ref|out|in|params|scoped)\s+)+/, ''));
@@ -1145,7 +1236,7 @@ function createCsharpSyntacticIndex(sources, {
       } else if (!isP(toks[j], '{') && !isP(toks[j], '(')) {
         const ty = readType(toks, j);
         if (!ty) return false;
-        type = ty.text;
+        type = writtenType(toks, j, ty.end);
         j = ty.end;
       }
       if ((isP(toks[j], '{') || isP(toks[j], '(')) && match[j] > j) j = match[j] + 1;
@@ -1172,7 +1263,7 @@ function createCsharpSyntacticIndex(sources, {
       if (t.kind === 'ident' && (t.text === 'from' || t.text === 'join')) {
         if (isIdent(toks[i + 1]) && toks[i + 2] && toks[i + 2].text === 'in') { set(toks[i + 1].text, null); continue; }
         const ty = readType(toks, i + 1);
-        if (ty && isIdent(toks[ty.end]) && toks[ty.end + 1] && toks[ty.end + 1].text === 'in') { set(toks[ty.end].text, ty.text); continue; }
+        if (ty && isIdent(toks[ty.end]) && toks[ty.end + 1] && toks[ty.end + 1].text === 'in') { set(toks[ty.end].text, writtenType(toks, i + 1, ty.end)); continue; }
       }
       if (t.kind === 'ident' && ((t.text === 'let' && isP(toks[i + 2], '=')) || t.text === 'into') && isIdent(toks[i + 1])) { set(toks[i + 1].text, null); continue; }
       if (t.kind !== 'ident') {
@@ -1218,7 +1309,7 @@ function createCsharpSyntacticIndex(sources, {
           const nt = readType(toks, ty.end + 3);
           let e = nt && !nt.array && (isP(toks[nt.end], '(') || isP(toks[nt.end], '{')) && match[nt.end] > nt.end ? match[nt.end] + 1 : -1;
           if (e > 0 && isP(toks[e], '{') && isP(toks[nt ? nt.end : 0], '(') && match[e] > e) e = match[e] + 1;
-          if (nt && e > 0 && endsInitializer(toks[e])) typed = nt.text;
+          if (nt && e > 0 && endsInitializer(toks[e])) typed = writtenType(toks, ty.end + 3, nt.end);
         } else if (after.text === '=' && isP(r, '(')) {
           // `var x = (T)e;`: a cast when a name, a literal, `(`, `!` or `~` follows the `)`
           // (C#'s rule), and the operand is one token or a chain of names and calls to the `;`;
@@ -1229,7 +1320,7 @@ function createCsharpSyntacticIndex(sources, {
           const castable = nx && (nx.kind === 'ident' && nx.text !== 'as' && nx.text !== 'is' || nx.kind === 'lit' || isP(nx, '(') || isP(nx, '!') || isP(nx, '~'));
           let k = close + 1;
           for (; toks[k] && !isP(toks[k], ';') && k < close + 64; k++) if ((isP(toks[k], '(') || isP(toks[k], '[') || isP(toks[k], '{')) && match[k] > k) k = match[k];
-          if (ct && isP(toks[ct.end], ')') && ct.end === close && castable && isP(toks[k], ';') && (k === close + 2 || chainOnly(toks, match, close + 1, k))) typed = ct.text;
+          if (ct && isP(toks[ct.end], ')') && ct.end === close && castable && isP(toks[k], ';') && (k === close + 2 || chainOnly(toks, match, close + 1, k))) typed = writtenType(toks, ty.end + 3, ct.end);
         }
         if (after.text === '=' && typed === null) {
           // `var x = e as T;`
@@ -1237,7 +1328,7 @@ function createCsharpSyntacticIndex(sources, {
           for (; toks[k] && !isP(toks[k], ';') && k < ty.end + 64; k++) if ((isP(toks[k], '(') || isP(toks[k], '{') || isP(toks[k], '[')) && match[k] > k) k = match[k];
           if (isP(toks[k], ';')) {
             for (let a = ty.end + 2; a < k; a++) {
-              if (toks[a].text === 'as') { const at = readType(toks, a + 1); if (at && at.end === k) typed = at.text; }
+              if (toks[a].text === 'as') { const at = readType(toks, a + 1); if (at && at.end === k) typed = writtenType(toks, a + 1, at.end); }
             }
             // `var x = a.B().C();`: typed later from the expression (a chain of names and calls).
             if (typed === null && k > ty.end + 2 && isP(toks[k - 1], ')') && chainOnly(toks, match, ty.end + 2, k)) typed = `@${k - 1}`;
@@ -1247,7 +1338,8 @@ function createCsharpSyntacticIndex(sources, {
         }
         set(nameTok.text, typed);
       } else {
-        set(nameTok.text, ty.text);
+        const w = writtenType(toks, i, ty.end);
+        set(nameTok.text, w);
         // `T a = …, b = …;` / `T a, b;`: the further declarators of a statement's declaration
         // (S3); not in a parameter list or a tuple (`(T a, b) = …`).
         const statement = ['{', ';', '}', ':', 'const', 'using'].includes(prev.text) || (isP(prev, '(') && !!toks[i - 2] && ['for', 'using', 'fixed'].includes(toks[i - 2].text));
@@ -1256,7 +1348,7 @@ function createCsharpSyntacticIndex(sources, {
             const x = toks[k];
             if ((isP(x, '(') || isP(x, '[') || isP(x, '{')) && match[k] > k) { k = match[k]; continue; }
             if (isP(x, ';') || isP(x, ')') || isP(x, '}')) break;
-            if (isP(x, ',') && isIdent(toks[k + 1]) && toks[k + 2] && ['=', ',', ';'].includes(toks[k + 2].text)) set(toks[k + 1].text, ty.text);
+            if (isP(x, ',') && isIdent(toks[k + 1]) && toks[k + 2] && ['=', ',', ';'].includes(toks[k + 2].text)) set(toks[k + 1].text, w);
           }
         }
       }
@@ -1274,14 +1366,20 @@ function createCsharpSyntacticIndex(sources, {
 
   /** @param {string} text @param {FileRec} file @param {number} at @param {TypeRec|null} enc @param {Set<string>} [tps] @returns {Recv} */
   function recvOfText(text, file, at, enc, tps) {
-    if (/[<?:]/.test(text)) text = readTypeText(text.replace(/^((this|ref|out|in|params|scoped)\s+)+/, '')) || text;
+    const written = text;
+    if (/[^\w.`]/.test(text)) text = readTypeText(text.replace(/^((this|ref|out|in|params|scoped)\s+)+/, '')) || text;
     text = text.replace(/\?$/, '');
     if (/\[\]$/.test(text)) return { t: 'ext' };
     if (text === 'dynamic') return { t: 'unk' };
     if (PREDEFINED.has(text)) return { t: 'ext', name: text };
     const r = resolveTypeName(text, file, at, enc, tps);
     if (r === 'tp' || r === 'amb') return { t: 'unk' };
-    return r ? { t: 'type', type: r, static: false } : { t: 'ext', name: text.replace(/`\d+/g, '').replace(/^.*\./, '') };
+    if (!r) return { t: 'ext', name: text.replace(/`\d+/g, '').replace(/^.*\./, '') };
+    if (!r.typeParams.size) return { t: 'type', type: r, static: false };
+    /** @param {string} a */
+    const isTp = (a) => !!(tps && tps.has(a)) || (() => { for (let o = enc; o; o = o.outer) if (o.typeParams.has(a)) return true; return false; })();
+    const args = writtenArgs(written).map((a) => { const n = normType(a); return isTp(n) ? '*' : n; });
+    return { t: 'type', type: r, static: false, ...(args.length === r.typeParams.size ? { args } : {}) };
   }
 
   /** @param {FileRec} rec @param {number} end @param {number} depth @returns {Recv} The type of the receiver ending at token `end`. */
@@ -1636,44 +1734,208 @@ function createCsharpSyntacticIndex(sources, {
 
   /**
    * Why `def`'s callers may be more than its direct calls: dispatch through an interface or a
-   * base it implements or overrides, a base the index does not declare.
-   * @param {DefRec} def @returns {string[]}
+   * base it implements or overrides, a base the index does not declare. `through`: what
+   * `throughOf` found (the interface members and base methods whose calls are listed).
+   * @param {DefRec} def @param {Through} through @returns {string[]}
    */
-  function dispatchReasons(def) {
+  function dispatchReasons(def, through) {
     /** @type {string[]} */
     const out = [];
     const t = def.type;
     if (!t) return out;
     if (def.inInterface) { out.push(`a member of the interface \`${t.simple}\`: calls through it reach its implementations, and calls written on an implementation are not listed here`); return out; }
-    if (def.explicit) { out.push(`an explicit implementation of \`${def.explicit}\`: it is called through that interface, which is not followed yet`); return out; }
+    if (def.explicit) { out.push(`an explicit implementation of \`${def.explicit.replace(/<\d+>/g, '')}\`: it is called through that interface, which is not followed yet`); return out; }
     if (def.mods.has('static')) return out;
     const h = hierarchy(t);
-    /** @type {string[]} */
-    const via = [];
-    for (const x of h.types.slice(1)) {
-      if (x.kind === 'interface') continue;
-      const same = (x.methods.get(def.name) || []).some((m) => m.paramKey === def.paramKey);
-      if (same) via.push(x.simple);
+    // Interface members it implements: their calls are listed, labelled; other implementations
+    // (or other assemblies, for a public interface) may be what those calls run.
+    for (const { member, impls } of through.ifaces) {
+      const others = impls - 1;
+      out.push(`implements \`${member.type ? member.type.simple : '?'}.${member.name}\`: calls through it are listed as "through \`${member.type ? member.type.simple : '?'}\`" and may also reach ${others > 0 ? `${others} other implementation(s) in the indexed files` : 'implementations outside the indexed files'}`);
     }
+    if (through.genericSkipped) out.push(`${through.genericSkipped} call(s) through a generic interface whose type arguments are not known or differ are not listed`);
     /** @type {string[]} */
-    const derivedVia = [];
-    for (const m of interfaceMembersFor(def)) {
-      if (m.through === t) { if (!via.includes(m.iface.simple)) via.push(m.iface.simple); }
-      else if (!derivedVia.includes(`\`${m.iface.simple}\` (through \`${m.through.simple}\`)`)) derivedVia.push(`\`${m.iface.simple}\` (through \`${m.through.simple}\`)`);
+    const notListed = [];
+    for (const m of through.unmatched) {
+      const name = m.through === t ? `\`${m.iface.simple}\`` : `\`${m.iface.simple}\` (through \`${m.through.simple}\`)`;
+      if (!notListed.includes(name)) notListed.push(name);
     }
-    if (via.length) out.push(`implements or overrides a member of ${via.map((v) => `\`${v}\``).join(', ')}: calls through ${via.length > 1 ? 'them' : 'it'} are not listed yet`);
-    if (derivedVia.length) out.push(`may implement a member of ${derivedVia.join(', ')}, a type derived from \`${t.simple}\`: calls through it are not listed yet`);
+    if (notListed.length) out.push(`may implement a member of ${notListed.join(', ')}${notListed.some((n) => n.includes('(through')) ? `, a type derived from \`${t.simple}\`` : ''}: calls through it are not listed`);
+    // A base method of the same parameters it hides or overrides (not through `override`).
+    if (!def.mods.has('override')) {
+      const hides = h.types.slice(1).filter((x) => x.kind !== 'interface' && (x.methods.get(def.name) || []).some((m) => m.paramKey === def.paramKey)).map((x) => `\`${x.simple}\``);
+      if (hides.length) out.push(`hides a member of ${hides.join(', ')}: calls written on ${hides.length > 1 ? 'them' : 'it'} are not listed`);
+    }
     const pubInst = def.member === 'method' && def.mods.has('public') && !t.sealed;
     const derivedOutside = pubInst ? [...new Set(derivedOf(t).flatMap((x) => hierarchy(x).outside.filter((o) => !h.outside.includes(o)).map((o) => `\`${o}\` (of \`${x.simple}\`)`)))] : [];
     if (derivedOutside.length) out.push(`may implement a member of ${derivedOutside.slice(0, 3).join(', ')}${derivedOutside.length > 3 ? ', …' : ''}, not in the indexed files, through a type derived from \`${t.simple}\``);
-    if (def.mods.has('override')) out.push('an override: calls written on its base type may run it and are not listed');
-    else if ((def.mods.has('virtual') || def.mods.has('abstract')) && !t.sealed) out.push('virtual: a call listed here may run an override');
+    if (def.mods.has('override')) {
+      out.push(through.bases.length
+        ? `an override of \`${through.bases.map((b) => `${b.type ? b.type.simple : '?'}.${b.name}`).join('`, `')}\`: calls written on ${through.bases.length > 1 ? 'those types' : 'that type'} are listed as "through" it when their receiver may be this type; other receivers are not followed`
+        : 'an override: calls written on its base type may run it and are not listed');
+    } else if ((def.mods.has('virtual') || def.mods.has('abstract')) && !t.sealed) out.push('virtual: a call listed here may run an override');
     const pub = def.mods.has('public') || def.mods.has('protected');
-    if (pub && h.outside.length && !via.length) {
+    if (pub && h.outside.length && !through.ifaces.length && !through.unmatched.length && !through.bases.length) {
       undeclaredBase.add(def);
       out.push(`may be called through \`${h.outside[0]}\`, which is not in the indexed files`);
     }
     return out;
+  }
+
+  // ---- C8b: calls through an interface member or a base method (C-D5) --------------------
+
+  /**
+   * Each type of `x`'s hierarchy with its type parameters as `x` sees them (`class A : IFoo<User>`
+   * gives `IFoo`'s `T` → `User`), starting from `sub0` for `x`'s own; nearest first, the class
+   * chain in order. Bound: `MAX_HIERARCHY` types.
+   * @param {TypeRec} x @param {Map<string, string>} sub0 @returns {Map<TypeRec, Map<string, string>>}
+   */
+  function viewsFrom(x, sub0) {
+    /** @type {Map<TypeRec, Map<string, string>>} */
+    const out = new Map();
+    /** @type {Array<[TypeRec, Map<string, string>]>} */
+    const queue = [[x, sub0]];
+    while (queue.length && out.size < MAX_HIERARCHY) {
+      const [y, sub] = /** @type {[TypeRec, Map<string, string>]} */ (queue.shift());
+      if (out.has(y)) continue;
+      out.set(y, sub);
+      for (const b of y.bases) {
+        const r = resolveTypeName(b.text, b.file, b.at, y.outer, y.typeParams);
+        if (!r || typeof r === 'string' || out.has(r)) continue;
+        const args = writtenArgs(b.written || '').map((a) => substType(normType(a), sub));
+        queue.push([r, new Map([...r.typeParams].map((tp, n) => [tp, args[n] ?? '*']))]);
+      }
+    }
+    return out;
+  }
+  // Cache: per type, its views with its own type parameters open (`*`); owner and lifetime: the index's.
+  /** @param {TypeRec} x */
+  const viewsOf = (x) => x.views || (x.views = viewsFrom(x, new Map([...x.typeParams].map((tp) => [tp, '*']))));
+
+  /**
+   * Whether `d`'s parameters are `m`'s as seen from type `x` (both in `x`'s hierarchy): the same
+   * count of parameters and of method type parameters, each parameter's type the same after
+   * substitution (`sameType`). @param {DefRec} d @param {DefRec} m @param {TypeRec} x
+   */
+  function sameParams(d, m, x) {
+    if (m.params.length !== d.params.length || m.typeParams.size !== d.typeParams.size || !m.type || !d.type) return false;
+    const views = viewsOf(x);
+    const ms = views.get(m.type);
+    const ds = views.get(d.type);
+    if (!ms || !ds) return false;
+    const mm = new Map(ms);
+    [...m.typeParams].forEach((tp, n) => mm.set(tp, `§${n}`));
+    const dm = new Map(ds);
+    [...d.typeParams].forEach((tp, n) => dm.set(tp, `§${n}`));
+    return m.params.every((p, n) => sameType(substType(normType(p.type), mm), substType(normType(d.params[n].type), dm)));
+  }
+
+  // Cache: the method implementing an interface member for a type (owner, lifetime: the index's).
+  /** @type {Map<DefRec, Map<TypeRec, DefRec|null>>} */
+  const implementers = new Map();
+  /**
+   * The method of `x`'s class chain that implements interface member `m` for `x`: the nearest
+   * class with an explicit implementation of it (then none listed: null) or one public instance
+   * method of its parameters. Null when not decided.
+   * @param {DefRec} m @param {TypeRec} x @returns {DefRec|null}
+   */
+  function implementerFor(m, x) {
+    let byType = implementers.get(m);
+    if (!byType) { byType = new Map(); implementers.set(m, byType); }
+    if (byType.has(x)) return /** @type {DefRec|null} */ (byType.get(x));
+    /** @type {DefRec|null} */
+    let found = null;
+    for (const y of viewsOf(x).keys()) {
+      if (y.kind === 'interface') continue;
+      if (y.explicits.some((e) => e.name === m.name && e.params.length === m.params.length && String(e.explicit).replace(/<\d+>/g, '').replace(/^.*\./, '') === (m.type && m.type.simple))) break;
+      const hit = (y.methods.get(m.name) || []).filter((d) => !d.mods.has('static') && d.mods.has('public') && sameParams(d, m, x));
+      if (hit.length === 1) found = hit[0];
+      if (hit.length) break;
+    }
+    byType.set(x, found);
+    return found;
+  }
+
+  /**
+   * @typedef {{ ifaces: Array<{ member: DefRec, impls: number }>, unmatched: Array<{ iface: TypeRec, member: DefRec, through: TypeRec }>,
+   *   bases: DefRec[], genericSkipped: number, sites: Array<{ rec: FileRec, use: Use, via: 'interface'|'override', name: string }> }} Through
+   */
+
+  /**
+   * The calls that may run `def` through dispatch (C-D5): calls resolved to an interface
+   * member it implements (transitively: derived interfaces, through a base class; a generic
+   * interface's call only where the receiver's written type arguments may be the
+   * implementation's), and calls resolved to a base method it overrides whose receiver's type
+   * may be `def`'s (not `base.M(…)`). Each is a may-call, labelled "through" the type.
+   * @param {DefRec} def @returns {Through}
+   */
+  function throughOf(def) {
+    /** @type {Through} */
+    const out = { ifaces: [], unmatched: [], bases: [], genericSkipped: 0, sites: [] };
+    const t = def.type;
+    if (!t || def.member !== 'method' || def.inInterface || def.explicit || def.mods.has('static')) return out;
+    /** @type {Set<DefRec>} */
+    const listed = new Set();
+    for (const m of interfaceMembersFor(def)) {
+      if (listed.has(m.member)) continue;
+      if (implementerFor(m.member, m.through) !== def) { out.unmatched.push(m); continue; }
+      listed.add(m.member);
+      const iface = /** @type {TypeRec} */ (m.member.type);
+      /** @type {Set<DefRec>} */
+      const impls = new Set();
+      for (const x of derivedOf(iface)) if (x.kind !== 'interface') { const d = implementerFor(m.member, x); if (d) impls.add(d); }
+      out.ifaces.push({ member: m.member, impls: Math.max(1, impls.size) });
+      // The implementation's view of the interface's type parameters, for generic receivers.
+      const implView = viewsOf(m.through).get(iface) || new Map();
+      for (const { rec, use } of usesByName.get(m.member.name) || []) {
+        if (use.kind !== 'call') continue;
+        const hit = resolveUse(rec, use);
+        if (!Array.isArray(hit) || !hit.includes(m.member)) continue;
+        if (iface.typeParams.size) {
+          const recv = receiverOf(rec, use);
+          const view = recv && recv.t === 'type' ? (recv.args ? viewsFrom(recv.type, new Map([...recv.type.typeParams].map((tp, n) => [tp, /** @type {string[]} */ (recv.args)[n]]))) : viewsOf(recv.type)).get(iface) : null;
+          // A receiver without written arguments (`this`, a bare call inside the interface) keeps them open.
+          const ok = view && recv && recv.t === 'type' && (recv.args || recv.type === iface || !recv.type.typeParams.size)
+            && [...iface.typeParams].every((tp) => sameType(view.get(tp) || '*', implView.get(tp) || '*'));
+          if (!ok) { out.genericSkipped++; continue; }
+        }
+        out.sites.push({ rec, use, via: 'interface', name: iface.simple });
+      }
+    }
+    if (def.mods.has('override')) {
+      for (const y of viewsOf(t).keys()) {
+        if (y === t || y.kind === 'interface') continue;
+        const b = (y.methods.get(def.name) || []).find((m) => !m.mods.has('static') && (m.mods.has('virtual') || m.mods.has('abstract') || m.mods.has('override')) && sameParams(def, m, t));
+        if (!b) continue;
+        out.bases.push(b);
+        if (!b.mods.has('override')) break;
+      }
+      const chain = viewsOf(t);
+      for (const b of out.bases) {
+        for (const { rec, use } of usesByName.get(b.name) || []) {
+          if (use.kind !== 'call') continue;
+          const hit = resolveUse(rec, use);
+          if (!Array.isArray(hit) || !hit.includes(b)) continue;
+          const r = rec.toks[use.at - 2];
+          if (r && r.text === 'base' && isP(rec.toks[use.at - 1], '.')) continue; // non-virtual
+          const recv = receiverOf(rec, use);
+          if (!recv || recv.t !== 'type' || recv.static || !chain.has(recv.type)) continue;
+          out.sites.push({ rec, use, via: 'override', name: /** @type {TypeRec} */ (b.type).simple });
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * The receiver of a call: `x` of `x.M(…)`, else the enclosing type (`M(…)`: `this`).
+   * @param {FileRec} rec @param {Use} use @returns {Recv|null}
+   */
+  function receiverOf(rec, use) {
+    const dot = isP(rec.toks[use.at - 1], '.') || isP(rec.toks[use.at - 1], '?.') ? use.at - 1 : -1;
+    if (dot >= 0) return recvAt(rec, dot - 1, 0);
+    const enc = innermostType(rec, use.pos);
+    return enc ? { t: 'type', type: enc, static: false } : null;
   }
 
   // Cache: indexed types derived from each type, transitively (owner, lifetime: the index's).
@@ -1747,11 +2009,26 @@ function createCsharpSyntacticIndex(sources, {
     const out = new Map();
     let valueUses = 0;
     let ambiguous = 0;
+    // Each row's sites' labels (null: a direct call): a row is labelled only when all are (C-D5).
+    /** @type {Map<import('../types').SyntacticCaller, Array<{ via: 'interface'|'override', name: string }|null>>} */
+    const labels = new Map();
+    /** @type {Set<string>} */
+    const seenSites = new Set();
+    const through = throughOf(def);
+    /** @type {Array<{ rec: FileRec, use: Use, label: { via: 'interface'|'override', name: string }|null }>} */
+    const sites = [];
     for (const { rec, use } of usesOf(def)) {
       const hit = resolveUse(rec, use);
       if (!hit || typeof hit === 'string' || !hit.includes(def)) continue;
       if (use.kind === 'ref') { valueUses++; continue; }
       if (hit.length > 1) ambiguous++;
+      sites.push({ rec, use, label: null });
+    }
+    for (const x of through.sites) sites.push({ rec: x.rec, use: x.use, label: { via: x.via, name: x.name } });
+    for (const { rec, use, label } of sites) {
+      const siteKey = `${rec.file}#${use.pos}`;
+      if (seenSites.has(siteKey)) continue;
+      seenSites.add(siteKey);
       const owner = innermostDef(rec, use.pos);
       const t = owner ? null : innermostType(rec, use.pos);
       const pos = owner ? owner.namePos : t ? t.namePos : 0;
@@ -1760,10 +2037,18 @@ function createCsharpSyntacticIndex(sources, {
       if (!row) {
         row = { file: rec.file, label: owner ? owner.label : t ? t.path.join('.').replace(/`(\d+)/g, '<$1>') : path.posix.basename(rec.rel), pos, callSites: [] };
         out.set(id, row);
+        labels.set(row, []);
       }
       row.callSites.push({ start: use.pos, end: use.end });
+      /** @type {any[]} */ (labels.get(row)).push(label);
     }
-    reasons.push(...dispatchReasons(def));
+    for (const [row, ls] of labels) {
+      if (!ls.length || ls.some((l) => !l)) continue;
+      const all = /** @type {Array<{ via: 'interface'|'override', name: string }>} */ (ls);
+      row.via = all.every((l) => l.via === 'override') ? 'override' : 'interface';
+      row.text = `through ${[...new Set(all.map((l) => l.name))].join(', ')}`;
+    }
+    reasons.push(...dispatchReasons(def, through));
     if (def.extension) reasons.push('an extension method: calls written as `x.' + def.name + '(…)` are not resolved yet');
     if (def.mods.has('partial') || (def.type && def.type.generated) || def.attributes.some((a) => GENERATED_ATTRIBUTES.has(a.replace(/Attribute$/, '')))) reasons.push('generated or partial members are not read');
     const isCtor = def.member === 'constructor' || def.member === 'primary-constructor';

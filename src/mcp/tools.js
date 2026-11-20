@@ -194,6 +194,7 @@ function getChange(env, id) {
   const callers = (c.callers || []).map((/** @type {any} */ x) => ({
     label: x.label, file: env.rel(x.file), line: env.lineAt(x.file, x.pos), test: !!x.test, callState: x.callState || null,
     callSiteLines: (x.callSites || []).slice(0, 5).map((/** @type {any} */ s) => env.lineAt(x.file, s.start)),
+    ...viaOf(x),
   }));
   const hunk = hunkFor(env, c);
   return fitObject({
@@ -260,13 +261,21 @@ function unitFor(env, file, lang) {
 const callerRow = (env, x) => ({
   label: x.label, file: env.rel(x.file), line: env.lineAt(x.file, x.pos), test: !!x.test,
   callSiteLines: (x.callSites || []).slice(0, 5).map((/** @type {any} */ s) => env.lineAt(x.file, s.start)),
+  ...viaOf(x),
 });
+
+/**
+ * A caller reached through an interface or an override (C-D5): `via` and its `text`
+ * ("through IFoo"), a may-call. Nothing for a direct caller.
+ * @param {any} x
+ */
+const viaOf = (x) => (x.via === 'interface' || x.via === 'override' ? { via: x.via, text: String(x.text || '') } : {});
 
 /** @param {ToolDef[]} tools @param {Env} env */
 function addLocationTools(tools, env) {
   tools.push({
     name: 'callers_of', title: 'Callers of any function', annotations: READ_ONLY,
-    description: 'Functions that call the function declared at file:line (any function, not only changed ones). TypeScript/JavaScript: the TypeScript language service (call hierarchy). Go and Python: a syntax-only index of the repository, so the list is a lower bound (calls through interfaces, function values and untyped receivers are missed). Carries complete and reasons. Paged.',
+    description: 'Functions that call the function declared at file:line (any function, not only changed ones). TypeScript/JavaScript: the TypeScript language service (call hierarchy). Go and Python: a syntax-only index of the repository, so the list is a lower bound (calls through interfaces, function values and untyped receivers are missed). C#: a caller with via (interface or override) and text ("through IFoo") calls an interface member or a base method this function implements or overrides, so it may run this function or another one. Carries complete and reasons. Paged.',
     inputSchema: z.object({ ...locShape, ...pageShape }).strict(),
     run: async (args) => {
       const loc = locate(env, args);
@@ -289,7 +298,7 @@ function addLocationTools(tools, env) {
 
   tools.push({
     name: 'impact_paths', title: 'Impact paths of any function', annotations: READ_ONLY,
-    description: `Walk callers upward from the function at file:line to the application's entry points (HTTP routes, CLI commands, mains, public API, UI routes, …; a Next.js server action is listed as an entry of type server-action but the path goes on past it, to what references it). Each path ends as entry, top-unidentified, unknown (with the reason) or budget. A step that is not a call is listed in the path's hops (at: index in via; text, e.g. "passed as onClick to <Button>": a React handler passed in a JSX attribute, followed to the component that renders it; "returned by useX, used in handleNext": a function a named function returns in an object literal, followed to where a caller of useX uses it). A top-unidentified path with topKind returned-unused is such a function none of those callers uses. Limits: 8 levels, 300 callers, ${QUERY_DEADLINE_MS} ms.`,
+    description: `Walk callers upward from the function at file:line to the application's entry points (HTTP routes, CLI commands, mains, public API, UI routes, …; a Next.js server action is listed as an entry of type server-action but the path goes on past it, to what references it). Each path ends as entry, top-unidentified, unknown (with the reason) or budget. A step that is not a call is listed in the path's hops (at: index in via; text, e.g. "passed as onClick to <Button>": a React handler passed in a JSX attribute, followed to the component that renders it; "returned by useX, used in handleNext": a function a named function returns in an object literal, followed to where a caller of useX uses it; "through IFoo": C#, a call written on an interface member or a base method the function implements or overrides, which may run it or another implementation). A top-unidentified path with topKind returned-unused is such a function none of those callers uses. Limits: 8 levels, 300 callers, ${QUERY_DEADLINE_MS} ms.`,
     inputSchema: z.object({ ...locShape }).strict(),
     run: async (args) => {
       const loc = locate(env, args);

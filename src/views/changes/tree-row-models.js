@@ -594,6 +594,8 @@ function buildCallerRows(classified, { ancestry, reviewParent, changedKeys, rel,
     return {
       type: 'caller', reviewParent, label: c.label, file: c.file, pos: c.pos, test: c.test,
       callSites: c.callSites || [], sites: c.sites,
+      // Reached through an interface or an override (C-D5): a may-call, said on the row.
+      ...(c.via && c.text ? { via: c.via, viaText: c.text } : {}),
       relPath, changed: symChanged, callState, callSiteUpdates, decorationUri: uri,
       cycle: ancestry.includes(`${c.file}#${c.pos}`),
       path: [...ancestry],

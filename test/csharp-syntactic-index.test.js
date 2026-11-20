@@ -179,9 +179,13 @@ test('interfaces: the interface member lists its direct calls; an implementation
   const iget = callersOf('Lib/Repo.cs', 'IRepo.Get(int)');
   assert.deepEqual(iget.rows, ['Service.A(Repo, object): _irepo.Get(1).Touch();']);
   assert.match(iget.reason, /interface `IRepo`/);
+  // C8b (C-D5): the implementation lists the interface member's calls, labelled, and stays incomplete.
   const get = callersOf('Lib/Repo.cs', 'Repo.Get(int)');
-  assert.deepEqual(get.rows, []);
-  assert.match(get.reason, /`IRepo`/);
+  assert.deepEqual(get.rows, ['Service.A(Repo, object): _irepo.Get(1).Touch();']);
+  assert.match(get.reason, /implements `IRepo.Get`: calls through it are listed as "through `IRepo`" and may also reach implementations outside the indexed files/);
+  const d = idx.byFile.get('/r/Lib/Repo.cs').defs.find((x) => x.key === 'Repo.Get(int)');
+  const row = idx.callersOfWithStatus({ file: d.file.file, name: d.name, pos: d.namePos }).callers[0];
+  assert.deepEqual([row.via, row.text], ['interface', 'through IRepo']);
 });
 
 test('an outside base marks public instance methods incomplete (C-D5)', () => {
@@ -369,19 +373,19 @@ public interface IFoo { void M(); }
 public class B { public void M() { } }
 public class D : B, IFoo { }
 public class U { void Run(IFoo f) { f.M(); } void Direct(B b) { b.M(); } }` }, 'B.M()');
-  assert.deepEqual([inherited.callers, inherited.complete], [['U.Direct(B)'], false]);
-  assert.match(inherited.reason, /may implement a member of `IFoo` \(through `D`\)/);
+  assert.deepEqual([inherited.callers, inherited.complete], [['U.Direct(B)', 'U.Run(IFoo)'], false]);
+  assert.match(inherited.reason, /implements `IFoo.M`: calls through it are listed/);
   const generic = answerFor({ 'a.cs': `namespace N; public sealed class User { }
 public interface IHandler<T> { void Handle(T item); }
 public sealed class UserHandler : IHandler<User> { public void Handle(User u) { } }
 sealed class Svc { void R(UserHandler c) { c.Handle(null); } }` }, 'UserHandler.Handle(User)');
   assert.equal(generic.complete, false);
-  assert.match(generic.reason, /implements or overrides a member of `IHandler`/);
+  assert.match(generic.reason, /implements `IHandler.Handle`/);
   const spelled = answerFor({ 'a.cs': `namespace N; public interface IX { void Put(System.String s, int? n); void Go(params int[] a); }
 public sealed class X : IX { public void Put(string s, System.Nullable<int> n) { } public void Go(int[] a) { } }
 sealed class Svc { void R(X c) { c.Put("a", 1); c.Go(null); } }` }, 'X.Put(string, Nullable)');
   assert.equal(spelled.complete, false);
-  assert.match(spelled.reason, /a member of `IX`/);
+  assert.match(spelled.reason, /implements `IX.Put`/);
   // A derived type's outside interface may be implemented by the inherited public method.
   const outside = answerFor({ 'a.cs': `namespace N; public class B { public void Dispose() { } } public class D : B, IDisposable { }
 sealed class U { void R(B b) { b.Dispose(); } }` }, 'B.Dispose()');
@@ -571,4 +575,50 @@ sealed class U { void R(MyError e) { e.Log(Path.GetTempPath()); } }` }, 'MyError
 public static class Ext { public static void Put(this C c, string s) { } }
 sealed class U { void R(C c, object x) { c.Put(x); c.Put(c); } }` }, 'C.Put(C)');
   assert.deepEqual([ext.callers, ext.unresolved], [['U.R(C, object)'], 1]);
+});
+
+/** Rows `label [text]` of the member keyed `key` (C8b labels). */
+function labelled(files, key) {
+  const ix = createCsharpSyntacticIndex(Object.entries(files).map(([p, text]) => ({ path: p, text })), { root: '/r' });
+  for (const rec of ix.byFile.values()) {
+    const d = rec.defs.find((x) => x.key === key);
+    if (!d) continue;
+    const a = ix.callersOfWithStatus({ file: rec.file, name: d.name, pos: d.namePos });
+    return { rows: a.callers.map((c) => `${c.label}${c.via ? ` [${c.via}: ${c.text}]` : ''} x${c.callSites.length}`).sort(), reason: a.incompleteReason || '' };
+  }
+  throw new Error(`no member keyed ${key}`);
+}
+
+test('C-D5: calls through an interface are listed on the implementation, labelled; transitive, generic arguments checked', () => {
+  const files = { 'a.cs': `namespace N; public sealed class User { } public sealed class Other { }
+public interface IHandler<T> { void Handle(T item); }
+public interface IUserHandler : IHandler<User> { }
+public sealed class UserHandler : IUserHandler { public void Handle(User u) { } }
+public sealed class OtherHandler : IHandler<Other> { public void Handle(Other o) { } }
+sealed class Svc
+{
+    private readonly IHandler<User> _h;
+    void A(IHandler<Other> o, IUserHandler u, UserHandler d) { _h.Handle(null); o.Handle(null); u.Handle(null); }
+    void B(UserHandler d, IUserHandler u) { d.Handle(null); u.Handle(null); }
+    void C<T>(IHandler<T> any) { any.Handle(default); }
+}` };
+  const r = labelled(files, 'UserHandler.Handle(User)');
+  assert.deepEqual(r.rows, ['Svc.A(IHandler, IUserHandler, UserHandler) [interface: through IHandler] x2', 'Svc.B(UserHandler, IUserHandler) x2', 'Svc.C<1>(IHandler) [interface: through IHandler] x1']);
+  assert.match(r.reason, /may also reach 1 other implementation\(s\) in the indexed files/);
+  assert.match(r.reason, /1 call\(s\) through a generic interface whose type arguments are not known or differ/);
+  assert.deepEqual(labelled(files, 'OtherHandler.Handle(Other)').rows, ['Svc.A(IHandler, IUserHandler, UserHandler) [interface: through IHandler] x1', 'Svc.C<1>(IHandler) [interface: through IHandler] x1']);
+});
+
+test('C-D5: an explicit implementation, another overload or a hiding class is not labelled; overrides list calls written on the base', () => {
+  const files = { 'a.cs': `namespace N;
+public interface IFoo { void M(int a); }
+public class Impl : IFoo { public void M(string s) { } void IFoo.M(int a) { } }
+public abstract class Base { public virtual void Run() { } public void Template() { Run(); } }
+public class Leaf : Base { public override void Run() { base.Run(); } }
+public class Sibling : Base { }
+sealed class U { void R(IFoo f, Base b, Sibling s, Leaf l) { f.M(1); b.Run(); s.Run(); l.Run(); } }` };
+  assert.deepEqual(labelled(files, 'Impl.M(string)').rows, []);
+  const leaf = labelled(files, 'Leaf.Run()');
+  assert.deepEqual(leaf.rows, ['Base.Template() [override: through Base] x1', 'U.R(IFoo, Base, Sibling, Leaf) x2']);
+  assert.match(leaf.reason, /an override of `Base.Run`: calls written on that type are listed/);
 });

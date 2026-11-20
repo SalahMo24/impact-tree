@@ -93,6 +93,7 @@ pre.hunk.shape { margin-top: 6px; }
 .ctx dt { color: var(--vscode-descriptionForeground); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; margin-top: 8px; }
 .ctx dd { margin: 2px 0 0; overflow-wrap: anywhere; }
 .caller { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; margin: 3px 0; }
+.caller .via { font-size: 12px; font-style: italic; opacity: 0.8; }
 .keys { color: var(--vscode-descriptionForeground); font-size: 11px; margin-top: 12px; }
 kbd { font-family: var(--vscode-editor-font-family); font-size: 11px; border: 1px solid var(--vscode-panel-border); border-radius: 3px; padding: 0 4px; }
 `;
@@ -154,7 +155,7 @@ function contextHtml(ch) {
     const state = c.test ? 'test' : STATE_WORD[/** @type {keyof typeof STATE_WORD} */ (c.state)] || c.state;
     const tone = !c.test && c.state === 'unchanged' ? ' danger' : !c.test && c.state === 'changed-elsewhere' ? ' warning' : '';
     parts.push(`<dd class="caller"><button class="link" data-act="caller" data-id="${escapeHtml(ch.id)}" data-index="${c.index}">${escapeHtml(c.label)}</button>`
-      + `<span class="chip${tone}">${escapeHtml(state)}</span><span class="file">${escapeHtml(c.file)}${c.line ? `:${c.line}` : ''}</span></dd>`);
+      + `<span class="chip${tone}">${escapeHtml(state)}</span>${c.via ? `<span class="via">${escapeHtml(c.via)}</span>` : ''}<span class="file">${escapeHtml(c.file)}${c.line ? `:${c.line}` : ''}</span></dd>`);
   }
   if (ch.callersMore) parts.push(`<dd class="muted">…and ${ch.callersMore} more</dd>`);
   if (!ch.callersComplete && ch.callers.length) parts.push('<dd class="muted">More callers may be missing.</dd>');

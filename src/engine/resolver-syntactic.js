@@ -44,6 +44,7 @@ function createSyntacticResolver(idx, { isTestPath = () => false, hints = new Ma
         sites: (c.callSites || []).length,
         callSites: c.callSites || [],
         via: c.via,
+        ...(c.text ? { text: c.text } : {}),
       }))
       .filter((c) => withTests || !c.test);
 

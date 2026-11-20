@@ -14,6 +14,11 @@
  * @property {number} sites How many call sites `callSites` holds.
  * @property {Array<{start: number, end: number}>} callSites UTF-16 offsets in `file`,
  *   end exclusive, of each call to the queried symbol.
+ * @property {string} [via] Set when every call site reaches the symbol through dispatch, not
+ *   by a direct call: `'interface'` (a call written on an interface member it implements) or
+ *   `'override'` (on a base method it overrides) — a may-call (C-D5). A row reached both ways
+ *   carries none. Labelled rows count wherever caller rows count.
+ * @property {string} [text] With `via`: the same for a reader, such as "through IFoo".
  */
 
 /**
