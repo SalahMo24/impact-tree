@@ -650,6 +650,12 @@ function callersCheck(repo, commit, oracleFile, preview) {
   const viaAtSite = new Map();
   /** @type {Map<string, any[]>} Oracle via edges by the implementation or override they may run. */
   const viaByImpl = new Map();
+  // Property and indexer reads and writes (C8b), by target and site.
+  /** @type {Set<string>} */
+  const propSites = new Set();
+  for (const e of o.edges) {
+    if (/^property-/.test(e.kind) && !isTestPath(e.file)) propSites.add(`${e.targetFile}|${e.target}|${e.file}|${e.start}`);
+  }
   for (const e of o.edges) {
     if (!SITE_KINDS.has(e.kind) || isTestPath(e.file) || isTestPath(e.targetFile)) continue;
     if (e.via) {
@@ -699,9 +705,27 @@ function callersCheck(repo, commit, oracleFile, preview) {
   const missReasons = Object.create(null);
   /** @type {Record<string, number>} */
   const incompleteBy = Object.create(null);
+  let propOurs = 0;
+  let propHits = 0;
+  let propComplete = 0;
+  /** @type {string[]} */
+  const propFps = [];
   for (const rec of idx.byFile.values()) {
     if (isTestPath(rec.rel) || !inOracle(rec.rel)) continue;
     for (const d of rec.defs) {
+      if (d.member === 'property' || d.member === 'indexer') {
+        const a = idx.callersOfWithStatus({ file: rec.file, name: d.name, pos: d.namePos });
+        if (!a.incompleteReason) propComplete++;
+        for (const c of a.callers) {
+          if (isTestPath(c.file) || !inOracle(c.file)) continue;
+          for (const st of c.callSites) {
+            propOurs++;
+            if (propSites.has(`${rec.rel}|${d.key}|${c.file}|${st.start}`)) propHits++;
+            else propFps.push(`${c.label} → ${d.key}  (${c.file}:${lineAt(c.file, st.start)}: ${String(read(c.file)).split('\n')[lineAt(c.file, st.start) - 1].trim().slice(0, 110)})`);
+          }
+        }
+        continue;
+      }
       if (!['method', 'constructor', 'primary-constructor'].includes(d.member)) continue;
       targets++;
       const tk = `${rec.rel}|${d.key}`;
@@ -774,6 +798,8 @@ function callersCheck(repo, commit, oracleFile, preview) {
   console.log(`C8b labelled (through) sites: ${labelledSites} on ${labelledRows} labelled rows; may-call ${pct(labelledMay, labelledSites)} (${labelledMay}/${labelledSites}); by the oracle's implementation count ${JSON.stringify(byImpls)}`);
   console.log(`C8b recall of calls through an interface or override on their implementations: ${pct(throughFound, throughTotal)} (${throughFound}/${throughTotal} invocations)`);
   console.log(`extension methods incomplete for that reason: ${extensionIncomplete}`);
+  console.log(`properties and indexers (C8b): ${propHits}/${propOurs} sites are oracle property edges (${pct(propHits, propOurs)}); complete answers ${propComplete} (must be 0); not oracle edges (${propFps.length}):`);
+  for (const f of propFps.slice(0, 25)) console.log(`  ${f}`);
   console.log(`misses by kind/answer: ${JSON.stringify(missReasons)}`);
   console.log(`incomplete reasons (targets): ${JSON.stringify(Object.entries(incompleteBy).sort((x, y) => y[1] - x[1]).slice(0, 14))}`);
   console.log(`false positives (${fps.length}):`);

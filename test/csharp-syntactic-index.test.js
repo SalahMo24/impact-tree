@@ -200,11 +200,11 @@ test('extension methods: the static form is listed; on an outside receiver (`str
   assert.equal(shout.unresolved, 1);
 });
 
-test('method groups are value uses; properties are not computed; a private static method with direct calls only is complete', () => {
+test('method groups are value uses; properties are always incomplete; a private static method with direct calls only is complete', () => {
   const count = callersOf('App/Service.cs', 'Service.Count(string)');
   assert.deepEqual(count.rows, ['Service.Size: public int Size => Count("z");']);
   assert.match(count.reason, /method group 1 time/);
-  assert.match(callersOf('App/Service.cs', 'Service.Size').reason, /^not computed/);
+  assert.match(callersOf('App/Service.cs', 'Service.Size').reason, /^a property: reads and writes are listed only on receivers the index typed/);
   const twice = callersOf('App/Helpers.cs', 'Helpers.Twice(int)');
   assert.equal(twice.reason, null);
   assert.equal(twice.unresolved, 0);
@@ -654,4 +654,43 @@ sealed class U { void R(IL l, System.Guid g) { l.Get(g); l.Get<int>(g); l.Put(nu
   assert.deepEqual(put.rows, []);
   assert.match(put.reason, /1 call\(s\) through an interface or a base type that match several overloads are not listed/);
   assert.doesNotMatch(put.reason, /may implement a member/);
+});
+
+test('C8b properties and indexers: reads and writes on typed receivers, always incomplete; initializers, named arguments and locals are not the property', () => {
+  const files = { 'a.cs': `namespace N;
+public class Box { private int _n; public int Size { get => _n; set => _n = value; } public int this[int i] => i; public int Twice => Size * 2; public int First() { return this[0]; } }
+public sealed class Other { public int Size => 1; }
+sealed class U
+{
+    void R(Box b, Other o, Box[] all)
+    {
+        var x = b.Size; b.Size = 3; var y = o.Size; var z = b[1]; var w = all[0];
+        var n = new Box { Size = 4 };
+        int Size = 5; var s = Size;
+    }
+}` };
+  const size = labelled(files, 'Box.Size');
+  assert.deepEqual(size.rows, ['Box.Twice x1', 'U.R(Box, Other, Box[]) x2']);
+  assert.match(size.reason, /a property: reads and writes are listed only on receivers the index typed/);
+  assert.match(size.reason, /1 use\(s\) of the name on a receiver that could not be resolved/);
+  const index = labelled(files, 'Box.this[int]');
+  assert.deepEqual(index.rows, ['Box.First() x1', 'U.R(Box, Other, Box[]) x1']);
+  assert.match(index.reason, /an indexer: element accesses are listed only/);
+});
+
+test('C8b properties: a name written where a type or a declared name goes is not a use (`Regex Regex`, `as Series`, `Version.Parse`)', () => {
+  const files = { 'a.cs': `namespace N;
+public class Series { } public class Version { public static Version Parse(string s) => null; }
+public class Ep
+{
+    private Series? _s; private Version? _v;
+    public Series Series { get => _s ??= Find<Series>() as Series; }
+    public Version Version { get => _v ??= Version.Parse("1"); }
+    private static readonly (Series Series, int W)[] Dims = null;
+    T Find<T>() => default;
+    bool Is(object o) => o is Series s && (Series)o != null && Series != null;
+}` };
+  const series = labelled(files, 'Ep.Series');
+  assert.deepEqual(series.rows, ['Ep.Is(object) x1']);
+  assert.deepEqual(labelled(files, 'Ep.Version').rows, []);
 });

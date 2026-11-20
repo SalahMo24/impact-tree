@@ -112,14 +112,16 @@ const STATEMENT_START = new Set(['{', ';', '}', '(', ',', ']']);
  * @typedef {{ key: string, simple: string, arity: number, ns: string, path: string[], kind: string, parts: FileRec[], namePos: number,
  *   project: string, partial: boolean, members: Set<string>,
  *   bases: Array<{ text: string, file: FileRec, at: number, written: string }>, typeParams: Set<string>, methods: Map<string, DefRec[]>, ctors: DefRec[],
- *   explicits: DefRec[], views: Map<TypeRec, Map<string, string>>|null,
+ *   explicits: DefRec[], views: Map<TypeRec, Map<string, string>>|null, props: Map<string, DefRec[]>,
  *   fields: Map<string, { text: string, file: FileRec, at: number }|null>, outer: TypeRec|null, nested: Map<string, TypeRec>, sealed: boolean,
  *   isStatic: boolean, generated: boolean, hier: { types: TypeRec[], open: boolean, outside: string[] }|null }} TypeRec
  * @typedef {{ name: string, key: string, label: string, namePos: number, start: number, end: number, type: TypeRec|null, file: FileRec,
  *   min: number, max: number, member: string, mods: Set<string>, attributes: string[], returns: string|null,
  *   params: Array<{ name: string, type: string }>, paramKey: string, typeParams: Set<string>, inInterface: boolean, extension: boolean,
  *   explicit: string|null, locals: { vars: Map<string, string|null>, fns: Set<string> }|null }} DefRec
- * @typedef {{ name: string, pos: number, end: number, at: number, kind: 'call'|'new'|'ref', argc: number, open: number, newKind?: string, targs?: number }} Use
+ * @typedef {{ name: string, pos: number, end: number, at: number, kind: 'call'|'new'|'ref'|'prop', argc: number, open: number, newKind?: string, targs?: number }} Use
+ *   `prop`: a read or write of an indexed property's name (`x.P`, `P`), or an element access
+ *   (`x[…]`, name `this`) where an indexer is indexed (C8b).
  * @typedef {DefRec[]|'unresolved'|null} Hit
  * @typedef {{ t: TypeRec } | { pre: string } | { ext: string } | null} ArgKind
  * @typedef {{ t: 'type', type: TypeRec, static: boolean, shadowable?: boolean, args?: string[] } | { t: 'ext', name?: string } | { t: 'unk' } | { t: 'ns', name: string }} Recv
@@ -346,6 +348,8 @@ function createCsharpSyntacticIndex(sources, {
   const extByName = new Map();
   /** @type {Set<string>} Names of indexed methods: the names a method-group use is recorded for. */
   const methodNames = new Set();
+  /** @type {Set<string>} Names of indexed properties (`this` for an indexer): the names a property use is recorded for. */
+  const propNames = new Set();
   // `global using` directives (namespaces, aliases, `using static`) and the SDK's implicit
   // usings hold for the files of one project only: by project directory.
   /** @type {Map<string, { usings: Set<string>, aliases: Map<string, string>, statics: string[] }>} */
@@ -383,7 +387,7 @@ function createCsharpSyntacticIndex(sources, {
   for (const rec of byFile.values()) {
     rec.uses = recordUses(rec);
     for (const use of rec.uses) {
-      const k = use.kind === 'new' ? `new ${use.name}` : use.name;
+      const k = use.kind === 'new' ? `new ${use.name}` : use.kind === 'prop' ? `prop ${use.name}` : use.name;
       let list = usesByName.get(k);
       if (!list) { list = []; usesByName.set(k, list); }
       list.push({ rec, use });
@@ -473,6 +477,11 @@ function createCsharpSyntacticIndex(sources, {
       rec.defs.push(d);
       rec.byPos.set(d.namePos, d);
       if (d.member === 'method') methodNames.add(d.name);
+      if ((d.member === 'property' || d.member === 'indexer') && owner && !d.explicit) {
+        propNames.add(d.name);
+        const list = owner.props.get(d.name);
+        if (list) list.push(d); else owner.props.set(d.name, [d]);
+      }
       if (!owner) continue;
       if (d.member !== 'method' && !isCtor) owner.members.add(d.name);
       if (/** @type {any} */ (sym).csharpKind === 'primary-constructor') {
@@ -594,7 +603,7 @@ function createCsharpSyntacticIndex(sources, {
         key, simple, arity: Number(ar || 0), ns, path: p, kind: word, parts: [], namePos: s.selectionRange.start, bases: [],
         project: rec.project, partial: isPartial, members: new Set(),
         typeParams: new Set(), methods: new Map(), ctors: [], fields: new Map(), outer, nested: new Map(), sealed: false,
-        isStatic: false, generated: false, hier: null, explicits: [], views: null,
+        isStatic: false, generated: false, hier: null, explicits: [], views: null, props: new Map(),
       };
       if (isFile) rec.fileTypes.set(seg, t);
       else { const list = typesByKey.get(key); if (list) list.push(t); else typesByKey.set(key, [t]); }
@@ -860,7 +869,14 @@ function createCsharpSyntacticIndex(sources, {
     for (let i = 0; i < toks.length; i++) {
       const t = toks[i];
       if (t.kind === 'punct') {
-        if (t.text === '[' && match[i] > i && opensAttribute(toks, i)) i = match[i];
+        if (t.text === '[' && match[i] > i && opensAttribute(toks, i)) { i = match[i]; continue; }
+        // `x[…]`, `x?[…]`, `F()[…]`: an element access, when an indexer is indexed (not `T[]`).
+        if (t.text === '[' && match[i] > i + 1 && propNames.has('this') && !isP(toks[i + 1], ',')) {
+          const p = isP(toks[i - 1], '?') ? toks[i - 2] : toks[i - 1];
+          if (p && !rec.byPos.has(p.start) && !(p.text === 'this' && toks[i - 2] && ((toks[i - 2].kind === 'ident' && !KEYWORDS.has(toks[i - 2].text)) || isP(toks[i - 2], '>') || isP(toks[i - 2], ']') || isP(toks[i - 2], '?') || isP(toks[i - 2], '.'))) && ((p.kind === 'ident' && (!KEYWORDS.has(p.text) || p.text === 'this' || p.text === 'base') && !PREDEFINED.has(p.text)) || isP(p, ')') || isP(p, ']'))) {
+            uses.push({ name: 'this', pos: t.start, end: t.end, at: i, kind: 'prop', argc: argCount(rec, i), open: i });
+          }
+        }
         continue;
       }
       if (t.kind !== 'ident') continue;
@@ -906,6 +922,7 @@ function createCsharpSyntacticIndex(sources, {
       // `c ? M : null`, `{ M }`, `[M]`, `x += M`. What the name denotes is decided when it is
       // resolved (a local, a field or a property of that name is not the method).
       const name = bare(t.text);
+      if (propNames.has(name) && !isP(toks[i - 1], '::')) uses.push({ name, pos: t.start, end: t.end, at: i, kind: 'prop', argc: -1, open: -1 });
       if (!methodNames.has(name)) continue;
       const nx = toks[open];
       if (nx && (isP(nx, '.') || isP(nx, '?.') || isP(nx, '::') || (isP(nx, '?') && isP(toks[open + 1], '[')))) continue;
@@ -1595,6 +1612,7 @@ function createCsharpSyntacticIndex(sources, {
     resolved.set(use, 'unresolved');
     const dot = isP(rec.toks[use.at - 1], '.') || isP(rec.toks[use.at - 1], '?.') ? use.at - 1 : -1;
     const hit = use.kind === 'new' ? resolveNew(rec, use)
+      : use.kind === 'prop' ? resolveProp(rec, use, depth)
       : dot >= 0 ? resolveQualified(rec, use, dot, depth)
         : resolveBare(rec, use);
     resolved.set(use, hit);
@@ -1794,6 +1812,96 @@ function createCsharpSyntacticIndex(sources, {
       return l.defs.length ? l.defs : l.open ? 'unresolved' : null;
     }
     return onReceiver(recvAt(rec, dot - 1, depth), use.name, use.argc, argKinds(rec, use), rec, use.pos);
+  }
+
+  /**
+   * The properties (or indexers, `name` `this`) named `name` a read or write on type `t` may
+   * reach: the nearest type of its hierarchy declaring one; null when a field, an
+   * auto-property or a method of the name comes first (not indexed symbols).
+   * @param {TypeRec} t @param {string} name @param {number} argc @param {boolean} [skipSelf] @returns {Hit}
+   */
+  function lookupProp(t, name, argc, skipSelf = false) {
+    const h = hierarchy(t);
+    for (const x of skipSelf ? h.types.slice(1) : h.types) {
+      if (x.kind === 'interface' && t.kind !== 'interface') continue;
+      const ps = (x.props.get(name) || []).filter((d) => name !== 'this' || arityMatches(d, argc));
+      if (ps.length) return ps;
+      if (name !== 'this' && (x.fields.has(name) || x.methods.has(name))) return null;
+    }
+    return h.open ? 'unresolved' : null;
+  }
+
+  /**
+   * Whether the name at `toks[at]` is written where a type or a declared name goes, not a
+   * value: `T x`, `T? x`, `T[]`, `G<…>`, `as T`, `is T`, `new T`, `<T>`, `(T)x`, or the name
+   * of a declarator after its type (`(int Type, …)`).
+   * @param {Token[]} toks @param {number} at
+   */
+  function typeOrDeclarator(toks, at) {
+    const prev = toks[at - 1];
+    const next = toks[at + 1];
+    const n2 = toks[at + 2];
+    const word = (/** @type {Token|undefined} */ x) => !!x && x.kind === 'ident' && (!KEYWORDS.has(x.text) || x.text === 'var');
+    if (word(next) && !['is', 'as', 'in', 'when', 'and', 'or', 'with', 'switch'].includes(next.text)) return true;
+    if (isP(next, '?') && word(n2)) return true;
+    if (isP(next, '[') && (isP(n2, ']') || isP(n2, ','))) return true;
+    if (isP(next, '<') && typeArgs(toks, at + 1)) return true;
+    if (prev && prev.kind === 'ident' && ['as', 'is', 'new', 'typeof', 'case'].includes(prev.text)) return true;
+    if (isP(prev, '<') || (isP(prev, ',') && isP(next, '>'))) return true;
+    if (isP(prev, '(') && isP(next, ')') && toks[at + 2] && (word(toks[at + 2]) || isP(toks[at + 2], '('))) return true;
+    if (prev && (word(prev) || isP(prev, '>') || isP(prev, ']') || isP(prev, '?')) && !isP(toks[at - 2], '.')) return true;
+    return false;
+  }
+
+  /**
+   * A property read or write (`x.P`, `P`, `base.P`) or an element access (`x[…]`): on a
+   * receiver the index typed, as `x.M(`. A bare name is an enclosing type's member unless a
+   * local of the name hides it; one assigned in an object initializer (`new T { P = … }`), a
+   * named argument (`P: …`) or a property pattern is not followed (unresolved).
+   * @param {FileRec} rec @param {Use} use @param {number} depth @returns {Hit}
+   */
+  function resolveProp(rec, use, depth) {
+    const { toks } = rec;
+    const isStatic = (/** @type {DefRec[]} */ ds) => ds.every((d) => d.mods.has('static'));
+    /** @param {Recv} recv @returns {Hit} */
+    const on = (recv) => {
+      if (recv.t === 'type') {
+        if (recv.shadowable) return 'unresolved';
+        const hit = lookupProp(recv.type, use.name, use.argc);
+        if (Array.isArray(hit) && recv.static !== isStatic(hit)) return 'unresolved';
+        return hit;
+      }
+      return recv.t === 'unk' ? 'unresolved' : null;
+    };
+    if (use.name === 'this') {
+      const end = isP(toks[use.at - 1], '?') ? use.at - 2 : use.at - 1;
+      if (toks[end] && toks[end].text === 'base') { const enc = innermostType(rec, use.pos); return enc ? lookupProp(enc, 'this', use.argc, true) : 'unresolved'; }
+      return on(recvAt(rec, end, depth + 1));
+    }
+    const prev = toks[use.at - 1];
+    if (isP(prev, '.') || isP(prev, '?.')) {
+      const r = toks[use.at - 2];
+      if (r && r.text === 'base' && !isP(toks[use.at - 3], '.')) { const enc = innermostType(rec, use.pos); return enc ? lookupProp(enc, use.name, -1, true) : 'unresolved'; }
+      return on(recvAt(rec, use.at - 2, depth + 1));
+    }
+    const next = toks[use.at + 1];
+    if (typeOrDeclarator(toks, use.at)) return null;
+    if ((isP(prev, '{') || isP(prev, ',')) && (isP(next, '=') || isP(next, ':'))) return 'unresolved';
+    if (isP(next, ':') || isP(next, '::')) return 'unresolved';
+    const def = innermostDef(rec, use.pos);
+    if (def && localsOf(def).vars.has(use.name)) return null;
+    if (def && def.params.some((p) => p.name === use.name)) return null;
+    const enc = innermostType(rec, use.pos);
+    // `Color.Red` where `Color` is both a property and an indexed type: either may be meant.
+    if (isP(next, '.') && resolveTypeName(use.name, rec, use.pos, enc, def ? def.typeParams : undefined)) return 'unresolved';
+    for (let o = enc; o; o = o.outer) {
+      const hit = lookupProp(o, use.name, -1);
+      // `Version.Parse(…)` where the property `Version` is of type `Version`: the type is meant.
+      if (Array.isArray(hit) && isP(next, '.') && hit.some((d) => String(d.returns || '').replace(/\?$/, '').replace(/^.*\./, '') === use.name)) return 'unresolved';
+      if (hit) return hit;
+      if (o.fields.has(use.name) || hierarchy(o).types.some((x) => x.members.has(use.name) && !x.props.has(use.name))) return null;
+    }
+    return enc && enclosingOpen(enc) ? 'unresolved' : null;
   }
 
   // ---- the contract ----------------------------------------------------------------------
@@ -2094,9 +2202,10 @@ function createCsharpSyntacticIndex(sources, {
     const reasons = [];
     if (partial) reasons.push(scopeNote(), 'the files outside the pull request were not read');
     if (!def) return { callers: [], incompleteReason: [scopeNote(), 'the member was not found in the indexed files'].join('; ') };
-    if (def.member === 'property' || def.member === 'indexer' || def.member === 'operator' || def.member === 'conversion' || def.member === 'top-level') {
+    if (def.member === 'operator' || def.member === 'conversion' || def.member === 'top-level' || ((def.member === 'property' || def.member === 'indexer') && (def.explicit || !def.type))) {
       return { callers: [], incompleteReason: [...reasons, `not computed: callers of a C# ${def.member === 'top-level' ? 'file\'s top-level statements' : def.member} are not searched yet`].join('; ') };
     }
+    if (def.member === 'property' || def.member === 'indexer') return propertyCallers(def, reasons);
     /** @type {Map<string, import('../types').SyntacticCaller>} */
     const out = new Map();
     let valueUses = 0;
@@ -2160,6 +2269,35 @@ function createCsharpSyntacticIndex(sources, {
     if (valueUses) reasons.push(`used as a method group ${valueUses} time(s): calls through that delegate cannot be followed`);
     if (ambiguous) reasons.push(`${ambiguous} call(s) match several overloads with the same number of arguments: each such call is listed for every one of them`);
     return { callers: [...out.values()], incompleteReason: reasons.length ? reasons.join('; ') : null };
+  }
+
+  /**
+   * The reads and writes of a property or indexer on receivers the index typed (C-D4): always
+   * incomplete. @param {DefRec} def @param {string[]} reasons @returns {{ callers: import('../types').SyntacticCaller[], incompleteReason: string }}
+   */
+  function propertyCallers(def, reasons) {
+    /** @type {Map<string, import('../types').SyntacticCaller>} */
+    const out = new Map();
+    let unresolved = 0;
+    for (const { rec, use } of usesByName.get(`prop ${def.name}`) || []) {
+      const hit = resolveUse(rec, use);
+      if (hit === 'unresolved') { unresolved++; continue; }
+      if (!Array.isArray(hit) || !hit.includes(def)) continue;
+      const owner = innermostDef(rec, use.pos);
+      const t = owner ? null : innermostType(rec, use.pos);
+      const pos = owner ? owner.namePos : t ? t.namePos : 0;
+      const id = `${rec.file}#${pos}`;
+      let row = out.get(id);
+      if (!row) {
+        row = { file: rec.file, label: owner ? owner.label : t ? t.path.join('.').replace(/`(\d+)/g, '<$1>') : path.posix.basename(rec.rel), pos, callSites: [] };
+        out.set(id, row);
+      }
+      row.callSites.push({ start: use.pos, end: use.end });
+    }
+    const what = def.member === 'indexer' ? 'an indexer: element accesses' : 'a property: reads and writes';
+    reasons.push(`${what} are listed only on receivers the index typed; through an interface, a base or an override, object initializers, patterns and reflection they are not followed`);
+    if (unresolved) reasons.push(`${unresolved} use(s) of the name on a receiver that could not be resolved`);
+    return { callers: [...out.values()], incompleteReason: reasons.join('; ') };
   }
 
   // Cache: count of unresolved calls by name, built on first use (owner, lifetime: the index's).
