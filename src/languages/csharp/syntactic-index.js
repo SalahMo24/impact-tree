@@ -41,15 +41,21 @@
 // A call whose receiver's type is not known (an untyped lambda parameter, `var x = F()`,
 // `dynamic`, a type parameter, a member of an outside base, a call named as an indexed extension
 // method on a receiver that has no such method) is an unresolved call to its name
-// (`unresolvedCallsTo`). A method named without `(` is a method group (a value use).
+// (`unresolvedCallsTo`). An indexed method's name used anywhere without `(` (and not as the left
+// side of a member access) is a method group (a value use). A type name a member inherited from
+// an outside base may hide is not a receiver, and a type written as a receiver reaches static
+// methods only. A name used under an inactive `#if` branch or in a file that was not indexed
+// counts as an unresolved call to that name.
 //
 // Completeness (the CLI's whole-repository index can answer complete; the preview never does):
 // a method answers incomplete when it is virtual, abstract or an override, a member of an
-// interface, implements a member of an interface or a base in the index (C8b lists those
-// callers), belongs to a type with a base the index does not declare and is public and not
-// static (C-D5: "may be called through `IBar`, which is not in the indexed files"), is an
-// extension method, is used as a method group, is generated or partial, or sits in a project
-// with Razor/XAML files; properties, indexers and operators are "not computed" (C8b).
+// interface, implements a member of an interface or a base in the index (by name and parameter
+// count for interfaces, also those of indexed derived types; C8b lists those callers), belongs
+// to a type with a base the index does not declare and is public and not static (C-D5: "may be
+// called through `IBar`, which is not in the indexed files"; also a derived type's outside
+// base), is an extension method, is used as a method group, is generated or partial, sits in a
+// project with Razor/XAML files, or a C# file could not be read; properties, indexers and
+// operators are "not computed" (C8b).
 //
 // Pure: reads only the `{ path, text }` pairs it is given. Budgets (CODING_STYLE §2):
 // - files: bounded by its input (the CLI: `pickRepositoryFiles`, 3000 files / 64 MiB).
@@ -107,8 +113,9 @@ const STATEMENT_START = new Set(['{', ';', '}', '(', ',', ']']);
  * @typedef {{ name: string, pos: number, end: number, at: number, kind: 'call'|'new'|'ref', argc: number, open: number, newKind?: string, targs?: number }} Use
  * @typedef {DefRec[]|'unresolved'|null} Hit
  * @typedef {{ t: TypeRec } | { pre: string } | { ext: string } | null} ArgKind
- * @typedef {{ t: 'type', type: TypeRec, static: boolean } | { t: 'ext', name?: string } | { t: 'unk' } | { t: 'ns', name: string }} Recv
+ * @typedef {{ t: 'type', type: TypeRec, static: boolean, shadowable?: boolean } | { t: 'ext', name?: string } | { t: 'unk' } | { t: 'ns', name: string }} Recv
  *   `ext`: an outside type; `name` its simple name (a predefined type's keyword) when written.
+ *   `shadowable`: a type name that a member inherited from an outside base may hide.
  */
 
 /** @param {Token[]} toks @returns {Int32Array} */
@@ -209,6 +216,9 @@ function chainOnly(toks, match, from, to) {
   return true;
 }
 
+/** Whether `t`, after an expression, ends a local's initializer: `;`, or `,`/`)` of a list. @param {Token|undefined} t */
+const endsInitializer = (t) => isP(t, ';') || isP(t, ',') || isP(t, ')');
+
 /** `Foo<1>` → `Foo`1`. @param {string} name */
 const segOf = (name) => name.replace(/<(\d+)>$/, '`$1');
 
@@ -235,17 +245,30 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
   const usesByName = new Map();
   /** @type {Set<string>} Names of indexed extension methods. */
   const extNames = new Set();
+  /** @type {Set<string>} Names of indexed methods: the names a method-group use is recorded for. */
+  const methodNames = new Set();
   const globalUsings = new Set(implicitUsings);
   /** @type {Map<string, string>} */
   const globalAliases = new Map();
   /** @type {string[]} */
   const globalStatics = [];
   let skipped = 0;
+  // Names written where the index does not read calls (B1, B2): code under an inactive `#if`
+  // branch (blanked as Roslyn does with no symbols defined, yet compiled in other
+  // configurations: `DEBUG`, a target framework) and files that were not indexed (over
+  // `MAX_FILE_BYTES`, or the outline cannot read them). Each identifier there counts as an
+  // unresolved use of its name: a lower bound on nothing, so an answer for that name is never
+  // complete. `unreadSkipped`: skipped files without text, whose names are not known.
+  /** @type {Map<string, number>} */
+  const hiddenInIf = new Map();
+  /** @type {Map<string, number>} */
+  const hiddenInSkipped = new Map();
+  let unreadSkipped = 0;
 
   for (const src of sources) {
-    if (typeof src.text !== 'string' || src.text.length > MAX_FILE_BYTES) { skipped++; continue; }
-    const rec = parseFile(src.path, src.text);
-    if (!rec) { skipped++; continue; }
+    if (typeof src.text !== 'string') { skipped++; unreadSkipped++; continue; }
+    const rec = src.text.length > MAX_FILE_BYTES ? null : parseFile(src.path, src.text);
+    if (!rec) { skipped++; countNames(src.text, hiddenInSkipped); continue; }
     byFile.set(rec.file, rec);
   }
   for (const rec of byFile.values()) {
@@ -258,12 +281,29 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
     }
   }
 
+  /** @param {string} text @param {Map<string, number>} into Counts each non-keyword identifier of `text` by name. */
+  function countNames(text, into) {
+    for (const m of text.matchAll(/@?([\p{L}_][\p{L}\p{N}_]*)/gu)) {
+      const name = m[1];
+      if (KEYWORDS.has(name) || PREDEFINED.has(name)) continue;
+      into.set(name, (into.get(name) || 0) + 1);
+    }
+  }
+
+  /** @param {string} text @param {string} active `activeText(text)` @returns {string} The inactive `#if` code of `text` only (the rest blanked). */
+  function inactivePart(text, active) {
+    let out = '';
+    for (let i = 0; i < text.length; i++) out += active[i] === text[i] && !/\s/.test(text[i]) ? ' ' : text[i];
+    return out;
+  }
+
   /** @param {string} rel @param {string} text @returns {FileRec|null} */
   function parseFile(rel, text) {
     const base = path.posix.basename(rel);
     const outline = csharpOutline(text, { fileName: base });
     if (!outline) return null;
     const active = activeText(text);
+    if (active !== text) countNames(inactivePart(text, active), hiddenInIf);
     /** @type {Token[]} */
     const toks = [];
     // The code of interpolation holes (`$"…{F(x)}…"`) is lexed after its literal, so calls
@@ -321,6 +361,7 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
       if (/** @type {any} */ (sym).csharpKind === 'static-constructor') continue;
       rec.defs.push(d);
       rec.byPos.set(d.namePos, d);
+      if (d.member === 'method') methodNames.add(d.name);
       if (!owner) continue;
       if (/** @type {any} */ (sym).csharpKind === 'primary-constructor') {
         owner.ctors.push(d);
@@ -717,11 +758,15 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
         uses.push({ name: bare(t.text), pos: t.start, end: t.end, at: i, kind: 'call', argc: argCount(rec, open), open, ...(targs ? { targs } : {}) });
         continue;
       }
-      // A possible method group: a name not called, not declared, not assigned to, not a type position.
-      const nx = toks[i + 1];
-      if (nx && (isP(nx, ',') || isP(nx, ')') || isP(nx, ';')) && (isP(toks[i - 1], '.') || isP(toks[i - 1], '(') || isP(toks[i - 1], ',') || isP(toks[i - 1], '=') || isP(toks[i - 1], '+=') || isP(toks[i - 1], '=>'))) {
-        uses.push({ name: bare(t.text), pos: t.start, end: t.end, at: i, kind: 'ref', argc: -1, open: -1 });
-      }
+      // A possible method group: any other use of an indexed method's name that is not called
+      // and not the left side of a member access (`M.x`, `M::x`) — `return M;`, `h: M`,
+      // `c ? M : null`, `{ M }`, `[M]`, `x += M`. What the name denotes is decided when it is
+      // resolved (a local, a field or a property of that name is not the method).
+      const name = bare(t.text);
+      if (!methodNames.has(name)) continue;
+      const nx = toks[open];
+      if (nx && (isP(nx, '.') || isP(nx, '?.') || isP(nx, '::') || (isP(nx, '?') && isP(toks[open + 1], '[')))) continue;
+      uses.push({ name, pos: t.start, end: t.end, at: i, kind: 'ref', argc: -1, open: -1 });
     }
     return uses;
   }
@@ -983,8 +1028,25 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
       if (ty.base === 'var') {
         const r = toks[ty.end + 2];
         let typed = null;
-        if (after.text === '=' && r && r.text === 'new') { const nt = readType(toks, ty.end + 3); if (nt && (isP(toks[nt.end], '(') || isP(toks[nt.end], '{')) && !nt.array) typed = nt.text; }
-        else if (after.text === '=' && isP(r, '(')) { const ct = readType(toks, ty.end + 3); if (ct && isP(toks[ct.end], ')') && ct.end === match[ty.end + 2] - 0 && toks[ct.end + 1] && !isP(toks[ct.end + 1], ';')) typed = ct.text; }
+        // `var x = new T(…);` / `new T { … };` / `new T(…) { … };`: only when the `new` expression
+        // is the whole initializer (`new T().Build()` is typed below, as a chain).
+        if (after.text === '=' && r && r.text === 'new') {
+          const nt = readType(toks, ty.end + 3);
+          let e = nt && !nt.array && (isP(toks[nt.end], '(') || isP(toks[nt.end], '{')) && match[nt.end] > nt.end ? match[nt.end] + 1 : -1;
+          if (e > 0 && isP(toks[e], '{') && isP(toks[nt ? nt.end : 0], '(') && match[e] > e) e = match[e] + 1;
+          if (nt && e > 0 && endsInitializer(toks[e])) typed = nt.text;
+        } else if (after.text === '=' && isP(r, '(')) {
+          // `var x = (T)e;`: a cast when a name, a literal, `(`, `!` or `~` follows the `)`
+          // (C#'s rule), and the operand is one token or a chain of names and calls to the `;`;
+          // `var y = (x).M();` is a parenthesized expression.
+          const ct = readType(toks, ty.end + 3);
+          const close = match[ty.end + 2];
+          const nx = toks[close + 1];
+          const castable = nx && (nx.kind === 'ident' && nx.text !== 'as' && nx.text !== 'is' || nx.kind === 'lit' || isP(nx, '(') || isP(nx, '!') || isP(nx, '~'));
+          let k = close + 1;
+          for (; toks[k] && !isP(toks[k], ';') && k < close + 64; k++) if ((isP(toks[k], '(') || isP(toks[k], '[') || isP(toks[k], '{')) && match[k] > k) k = match[k];
+          if (ct && isP(toks[ct.end], ')') && ct.end === close && castable && isP(toks[k], ';') && (k === close + 2 || chainOnly(toks, match, close + 1, k))) typed = ct.text;
+        }
         if (after.text === '=' && typed === null) {
           // `var x = e as T;`
           let k = ty.end + 2;
@@ -1082,8 +1144,11 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
     }
     const ty = resolveTypeName(name, rec, t.start, enc, def ? def.typeParams : undefined);
     if (ty === 'tp' || ty === 'amb') return { t: 'unk' };
-    if (ty) return { t: 'type', type: ty, static: true };
-    for (let o = enc; o; o = o.outer) if (hierarchy(o).open) return { t: 'unk' };
+    // A member inherited from an outside base hides a type of the same name found outside the
+    // enclosing types (`User.IsInRole(…)` in a controller is `ControllerBase.User`): only a
+    // static method of the type can be meant then (`onReceiver`), and no member of it.
+    if (ty) return { t: 'type', type: ty, static: true, ...(memberTypeOf(enc, name) !== ty && enclosingOpen(enc) ? { shadowable: true } : {}) };
+    if (enclosingOpen(enc)) return { t: 'unk' };
     if (namespaces.has(name) || rec.aliases.has(name) || globalAliases.has(name)) return { t: 'ns', name: rec.aliases.get(name) || globalAliases.get(name) || name };
     // A namespace named relative to an enclosing one (`Naming.TV.X` inside `Emby.Server`).
     for (let ns = nsAt(rec, t.start); ns; ns = ns.includes('.') ? ns.slice(0, ns.lastIndexOf('.')) : '') {
@@ -1092,6 +1157,23 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
     // A lowercase name not declared anywhere visible: something this cannot see.
     if (/^[a-z_]/.test(name)) return { t: 'unk' };
     return { t: 'ext' };
+  }
+
+  /** @param {TypeRec|null} enc @returns {boolean} Whether an enclosing type has a base class outside the index. */
+  function enclosingOpen(enc) {
+    for (let o = enc; o; o = o.outer) if (hierarchy(o).open) return true;
+    return false;
+  }
+
+  /** @param {TypeRec|null} enc @param {string} name @returns {TypeRec|null} The type `name` denotes as a member of an enclosing type (itself, nested, a base's nested). */
+  function memberTypeOf(enc, name) {
+    for (let o = enc; o; o = o.outer) {
+      if (o.simple === name && !o.arity) return o;
+      const n = o.nested.get(name);
+      if (n) return n;
+      for (const s of hierarchy(o).types.slice(1)) { const m = s.nested.get(name); if (m) return m; }
+    }
+    return null;
   }
 
   /**
@@ -1116,6 +1198,7 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
 
   /** @param {Recv} base @param {string} name @param {FileRec} rec @param {number} pos @returns {Recv} `base.name`. */
   function memberOf(base, name, rec, pos) {
+    if (base.t === 'type' && base.shadowable) return { t: 'unk' };
     if (base.t === 'type') {
       const f = fieldOf(base.type, name);
       if (f === null) return { t: 'unk' };
@@ -1263,7 +1346,9 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
   function onReceiver(recv, name, argc, kinds = null) {
     if (recv.t === 'type') {
       const l = lookup(recv.type, name, argc, false, kinds);
-      if (l.defs.length) return l.defs;
+      // A type written as the receiver calls static methods only: an instance method found
+      // there means the name is something else (an inherited member, a property not read).
+      if (l.defs.length) return recv.static && l.defs.some((d) => !d.mods.has('static')) ? 'unresolved' : l.defs;
       return l.open || extNames.has(name) ? 'unresolved' : null;
     }
     if (recv.t === 'ext') return extNames.has(name) ? 'unresolved' : null;
@@ -1346,16 +1431,81 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
     /** @type {string[]} */
     const via = [];
     for (const x of h.types.slice(1)) {
+      if (x.kind === 'interface') continue;
       const same = (x.methods.get(def.name) || []).some((m) => m.paramKey === def.paramKey);
       if (same) via.push(x.simple);
     }
+    /** @type {string[]} */
+    const derivedVia = [];
+    for (const m of interfaceMembersFor(def)) {
+      if (m.through === t) { if (!via.includes(m.iface.simple)) via.push(m.iface.simple); }
+      else if (!derivedVia.includes(`\`${m.iface.simple}\` (through \`${m.through.simple}\`)`)) derivedVia.push(`\`${m.iface.simple}\` (through \`${m.through.simple}\`)`);
+    }
     if (via.length) out.push(`implements or overrides a member of ${via.map((v) => `\`${v}\``).join(', ')}: calls through ${via.length > 1 ? 'them' : 'it'} are not listed yet`);
+    if (derivedVia.length) out.push(`may implement a member of ${derivedVia.join(', ')}, a type derived from \`${t.simple}\`: calls through it are not listed yet`);
+    const pubInst = def.member === 'method' && def.mods.has('public') && !t.sealed;
+    const derivedOutside = pubInst ? [...new Set(derivedOf(t).flatMap((x) => hierarchy(x).outside.filter((o) => !h.outside.includes(o)).map((o) => `\`${o}\` (of \`${x.simple}\`)`)))] : [];
+    if (derivedOutside.length) out.push(`may implement a member of ${derivedOutside.slice(0, 3).join(', ')}${derivedOutside.length > 3 ? ', …' : ''}, not in the indexed files, through a type derived from \`${t.simple}\``);
     if (def.mods.has('override')) out.push('an override: calls written on its base type may run it and are not listed');
     else if ((def.mods.has('virtual') || def.mods.has('abstract')) && !t.sealed) out.push('virtual: a call listed here may run an override');
     const pub = def.mods.has('public') || def.mods.has('protected');
     if (pub && h.outside.length && !via.length) {
       undeclaredBase.add(def);
       out.push(`may be called through \`${h.outside[0]}\`, which is not in the indexed files`);
+    }
+    return out;
+  }
+
+  // Cache: indexed types derived from each type, transitively (owner, lifetime: the index's).
+  /** @type {Map<TypeRec, TypeRec[]>|null} */
+  let derivedIndex = null;
+
+  /** @param {TypeRec} t @returns {TypeRec[]} The indexed types whose hierarchy holds `t` (not `t` itself). */
+  function derivedOf(t) {
+    if (!derivedIndex) {
+      derivedIndex = new Map();
+      const all = new Set(typesByKey.values());
+      for (const rec of byFile.values()) for (const ft of rec.fileTypes.values()) all.add(ft);
+      for (const x of all) {
+        for (const b of hierarchy(x).types.slice(1)) {
+          let list = derivedIndex.get(b);
+          if (!list) { list = []; derivedIndex.set(b, list); }
+          list.push(x);
+        }
+      }
+    }
+    return derivedIndex.get(t) || [];
+  }
+
+  /**
+   * The indexed interface members a public instance method may implement (B4; C8b lists the
+   * calls through them): a member of the same name and parameter count in an interface of the
+   * method's type's hierarchy, or — for a class that is not sealed — of an indexed type derived
+   * from it (a derived class may implement an interface with an inherited method). Parameter
+   * types are not compared: generic parameters (`IHandler<T>.Handle(T)`), aliases and
+   * spellings (`System.String`, `int?`) would need a binder, so the match errs towards more.
+   * `through`: the type whose hierarchy holds the interface (the method's own type or a derived
+   * one).
+   * @param {DefRec} def @returns {Array<{ iface: TypeRec, member: DefRec, through: TypeRec }>}
+   */
+  function interfaceMembersFor(def) {
+    const t = def.type;
+    /** @type {Array<{ iface: TypeRec, member: DefRec, through: TypeRec }>} */
+    const out = [];
+    if (!t || def.inInterface || def.explicit || def.mods.has('static') || def.member !== 'method') return out;
+    // An implicit implementation is public; a type's own interfaces are checked for any access
+    // so a private method of the name is incomplete too (it cannot implement, but errs safe).
+    const throughs = [t, ...(def.mods.has('public') && !t.sealed ? derivedOf(t) : [])];
+    const seen = new Set();
+    for (const x of throughs) {
+      for (const i of hierarchy(x).types) {
+        if (i.kind !== 'interface' || i === t) continue;
+        for (const m of i.methods.get(def.name) || []) {
+          if (m.params.length !== def.params.length || seen.has(m)) continue;
+          seen.add(m);
+          out.push({ iface: i, member: m, through: x });
+        }
+      }
     }
     return out;
   }
@@ -1405,6 +1555,11 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
       if (target) reasons.push(`${target} target-typed \`new(…)\` call(s) whose type is not written`);
     }
     if (def.file.ui && !def.mods.has('private')) reasons.push('Razor/XAML calls are not read');
+    const inIf = hiddenInIf.get(def.name) || 0;
+    if (inIf) reasons.push(`${inIf} use(s) of the name \`${def.name}\` in code under an inactive \`#if\` branch (read with no symbols defined): calls there are not resolved`);
+    const inSkipped = hiddenInSkipped.get(def.name) || 0;
+    if (inSkipped) reasons.push(`${inSkipped} use(s) of the name \`${def.name}\` in C# file(s) that were not indexed (over ${MAX_FILE_BYTES / 1024 / 1024} MiB, or not readable as C#)`);
+    if (!partial && unreadSkipped + notIndexed) reasons.push(`${unreadSkipped + notIndexed} C# file(s) could not be read: calls there are not seen`);
     if (valueUses) reasons.push(`used as a method group ${valueUses} time(s): calls through that delegate cannot be followed`);
     if (ambiguous) reasons.push(`${ambiguous} call(s) match several overloads with the same number of arguments: each such call is listed for every one of them`);
     return { callers: [...out.values()], incompleteReason: reasons.length ? reasons.join('; ') : null };
@@ -1416,7 +1571,8 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
   /** @param {{ name: string }} target @returns {number} */
   function unresolvedCallsTo(target) {
     if (unresolvedByName.has(target.name)) return /** @type {number} */ (unresolvedByName.get(target.name));
-    let n = 0;
+    // Uses in code that was not read (inactive `#if` branches, files not indexed) count too.
+    let n = (hiddenInIf.get(target.name) || 0) + (hiddenInSkipped.get(target.name) || 0);
     for (const k of [target.name, `new ${target.name}`]) for (const { rec, use } of usesByName.get(k) || []) if (use.kind !== 'ref' && resolveUse(rec, use) === 'unresolved') n++;
     unresolvedByName.set(target.name, n);
     return n;
