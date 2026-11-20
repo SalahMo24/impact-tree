@@ -5,7 +5,8 @@
 // steps, and leave screenshots and text an agent (or a person) can read to check a change. Each
 // run starts a fresh, throwaway profile, so it never touches the editor you work in.
 //
-//   node scripts/drive.js [--repo PATH] [--out DIR] [--keep-open] <steps…>
+//   node scripts/drive.js [--repo PATH] [--out DIR] [--keep-open] [--extensions-dir DIR]
+//     [--settings FILE] [--extension-dev PATH]… <steps…>
 //
 // Without --repo it opens the demo repository (scripts/demo-repo.js), built fresh for the run.
 // Steps run in order; the run stops at the first one that fails (saving failure.png and the dumps).
@@ -18,6 +19,7 @@
 //   click:TEXT    select the first Review row containing TEXT (waits for it to appear)
 //   expand:TEXT   open the first Review row containing TEXT, without selecting it
 //   wait:TEXT     wait until TEXT shows in the Review tree, the Details view or the review tab
+//   pause:SECONDS wait that long (at most 20 s), for work outside the views (another extension's)
 //   shot:NAME     save the window as NAME.png
 //   dump[:NAME]   write tree.txt (the Review rows on screen), details.txt (the Details text) and
 //                 review.txt (the review tab's text), or NAME-tree.txt, NAME-details.txt…
@@ -119,8 +121,8 @@ const splitStep = (step) => {
 
 /** @param {string[]} argv */
 function parseArgs(argv) {
-  /** @type {{ repo: string|null, out: string, keepOpen: boolean, steps: string[] }} */
-  const o = { repo: null, out: path.join(ROOT, '.vscode-test', 'out', 'latest'), keepOpen: false, steps: [] };
+  /** @type {{ repo: string|null, out: string, keepOpen: boolean, extensionsDir: string|null, settings: string|null, extensionDev: string[], steps: string[] }} */
+  const o = { repo: null, out: path.join(ROOT, '.vscode-test', 'out', 'latest'), keepOpen: false, extensionsDir: null, settings: null, extensionDev: [], steps: [] };
   /** @param {number} i */
   const value = (i) => {
     if (argv[i] === undefined || argv[i].startsWith('--')) throw new Error(`${argv[i - 1]} needs a path`);
@@ -131,11 +133,15 @@ function parseArgs(argv) {
     if (a === '--repo') o.repo = value(++i);
     else if (a === '--out') o.out = value(++i);
     else if (a === '--keep-open') o.keepOpen = true;
+    else if (a === '--extensions-dir') o.extensionsDir = value(++i);
+    else if (a === '--settings') o.settings = value(++i);
+    else if (a === '--extension-dev') o.extensionDev.push(value(++i));
     else if (a.startsWith('--')) throw new Error(`unknown option ${a}`);
     else o.steps.push(a);
   }
   if (!o.steps.length) throw new Error('no steps given; for example: node scripts/drive.js view shot:start');
   if (o.repo && !fs.existsSync(o.repo)) throw new Error(`--repo ${o.repo} does not exist`);
+  for (const p of [o.extensionsDir, o.settings, ...o.extensionDev]) if (p && !fs.existsSync(p)) throw new Error(`${p} does not exist`);
   // Every step is checked before the editor starts, so a typo fails in milliseconds, not after a launch.
   for (const step of o.steps) {
     const { verb, arg } = splitStep(step);
@@ -304,7 +310,7 @@ async function poll(check, timeout) {
 }
 
 /** Steps that need text after the colon. */
-const NEEDS_ARG = new Set(['cmd', 'pick', 'key', 'click', 'expand', 'wait', 'shot']);
+const NEEDS_ARG = new Set(['cmd', 'pick', 'key', 'click', 'expand', 'wait', 'shot', 'pause']);
 
 /**
  * The step verbs. Each gets the page, the output folder and the step's argument (the text after
@@ -366,6 +372,11 @@ const VERBS = {
     const found = await poll(async () => (await readRows(page).catch(() => [])).some((r) => contains(r.text, text))
       || contains(await detailsText(page), text) || contains(await reviewText(page), text), STEP_TIMEOUT_MS);
     if (!found) throw new Error(`"${text}" did not show in the Review tree, Details or the review tab within ${STEP_TIMEOUT_MS / 1000} s`);
+  },
+  async pause(_ctx, seconds) {
+    const s = Number(seconds);
+    if (!(s > 0 && s <= 20)) throw new Error(`pause:${seconds}: give 1 to 20 seconds`);
+    await new Promise((r) => setTimeout(r, s * 1000));
   },
   async dump({ page, out, files }, name) {
     const prefix = name ? `${name}-` : '';
@@ -444,7 +455,9 @@ async function main() {
   try {
     fs.mkdirSync(path.join(userData, 'User'), { recursive: true });
     fs.mkdirSync(tmp);
-    fs.writeFileSync(path.join(userData, 'User', 'settings.json'), JSON.stringify(SETTINGS, null, 2));
+    // --settings adds to (or overrides) the run's settings, e.g. another extension's.
+    const settings = opts.settings ? { ...SETTINGS, ...JSON.parse(fs.readFileSync(opts.settings, 'utf8')) } : SETTINGS;
+    fs.writeFileSync(path.join(userData, 'User', 'settings.json'), JSON.stringify(settings, null, 2));
     if (!repo) {
       stage = 'building the demo repository';
       const { buildDemoRepo } = require('./demo-repo');
@@ -455,8 +468,11 @@ async function main() {
       executablePath,
       args: [
         `--extensionDevelopmentPath=${ROOT}`,
+        ...opts.extensionDev.map((p) => `--extensionDevelopmentPath=${p}`),
         `--user-data-dir=${userData}`,
-        `--extensions-dir=${path.join(run, 'ext')}`,
+        // --extensions-dir: installed extensions to run beside this one (kept between runs; never
+        // the folder of an editor you use). Without it, an empty folder of the run's own.
+        `--extensions-dir=${opts.extensionsDir || path.join(run, 'ext')}`,
         '--disable-workspace-trust',
         '--skip-welcome',
         '--skip-release-notes',

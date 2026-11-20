@@ -11,7 +11,7 @@ Each run starts a throwaway profile under `/tmp/itd-*`, so it never touches the 
 ## Usage
 
 ```
-node scripts/drive.js [--repo PATH] [--out DIR] [--keep-open] <steps…>
+node scripts/drive.js [--repo PATH] [--out DIR] [--keep-open] [--extensions-dir DIR] [--settings FILE] [--extension-dev PATH]… <steps…>
 ```
 
 | Option | Meaning |
@@ -19,6 +19,9 @@ node scripts/drive.js [--repo PATH] [--out DIR] [--keep-open] <steps…>
 | `--repo PATH` | Open this repository instead of the demo. |
 | `--out DIR` | Where to write the output. The default is `.vscode-test/out/latest/`, replaced each run. The tool refuses a folder that is not empty and was not written by it. |
 | `--keep-open` | Leave the editor open after the steps, for looking around by hand. Close its window or press Ctrl+C to end the run. Agents never need this. |
+| `--extensions-dir DIR` | Run with the extensions installed in DIR (kept between runs), for example another language's extension under `.vscode-test/`. Never point it at the folder of an editor you use. Without it, the run has an empty folder of its own. |
+| `--settings FILE` | A JSON object of settings added to (or overriding) the run's own, for example that extension's. |
+| `--extension-dev PATH` | Also load the extension in PATH from source, beside Impact Tree (a small probe, say). Repeatable. |
 
 ## Steps
 
@@ -35,6 +38,7 @@ TEXT matches what a row shows (its label and description), ignoring case. The fi
 | `click:TEXT` | Select the first Review row containing TEXT. Waits up to 20 s for it to appear. |
 | `expand:TEXT` | Open the first Review row containing TEXT without selecting it. Fails on a row with no children. |
 | `wait:TEXT` | Wait up to 20 s until TEXT shows in the Review tree, the Details view or the review tab. |
+| `pause:SECONDS` | Wait that long (1 to 20 s), for work the views do not show, such as another extension loading. |
 | `shot:NAME` | Save the window as `NAME.png`. |
 | `dump` or `dump:NAME` | Write `tree.txt`, `details.txt` and `review.txt`, or the same names with a `NAME-` prefix. |
 
