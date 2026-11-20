@@ -10,6 +10,10 @@ const KIND = {
   NEW_THROW:      { id: 'new-throw',      weight: 80, label: 'new throw path', short: 'new throw' },
   OPTIONAL_PARAM: { id: 'optional-param', weight: 70, label: 'optional parameter added', short: '+optional param' },
   OPTIONAL_CHANGED: { id: 'optional-param-changed', weight: 70, label: 'parameter made optional', short: 'param optional' },
+  // C# (C-D6): a parameter's default value changed. Callers that omit the argument compile
+  // as before and silently get the new value (C# bakes the default into each call site).
+  // Compared only when both sides' params carry `default` text (C#'s sig does).
+  DEFAULT_CHANGED: { id: 'default-changed', weight: 65, label: 'default value changed (callers that omit it get the new value)', short: 'default' },
   PARAM_REMOVED:  { id: 'param-removed',  weight: 55, label: 'parameter removed', short: '-param' },
   TYPE_CHANGED:   { id: 'type-changed',   weight: 30, label: 'parameter type changed', short: 'param type' },
   REQUIRED_PARAM: { id: 'required-param', weight: 25, label: 'required parameter changed (old calls fail loudly)', short: 'required param' },
@@ -42,6 +46,7 @@ function diffSignature(baseSym, headSym) {
     if (i < bp.length && j < hp.length && cost[i][j] === cost[i + 1][j + 1] + (bp[i].name === hp[j].name ? 0 : 1)) {
       if (bp[i].type !== hp[j].type) add(KIND.TYPE_CHANGED);
       if (bp[i].optional !== hp[j].optional) add(hp[j].optional ? KIND.OPTIONAL_CHANGED : KIND.REQUIRED_PARAM);
+      else if (typeof bp[i].default === 'string' && typeof hp[j].default === 'string' && bp[i].default !== hp[j].default) add(KIND.DEFAULT_CHANGED);
       i++; j++;
     } else if (j < hp.length && cost[i][j] === 1 + cost[i][j + 1]) {
       add(hp[j].optional || hp[j].rest ? KIND.OPTIONAL_PARAM : KIND.REQUIRED_PARAM);
