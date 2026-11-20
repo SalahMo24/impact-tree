@@ -694,3 +694,22 @@ public class Ep
   assert.deepEqual(series.rows, ['Ep.Is(object) x1']);
   assert.deepEqual(labelled(files, 'Ep.Version').rows, []);
 });
+
+test('C8b properties: a nullable type in a type position is not a read (`T?[]`, `T? value`, `G<T?>`); `P?[i]` and `P ? a : b` are', () => {
+  const files = { 'a.cs': `namespace N;
+public enum Kind { A }
+public class V
+{
+    private static readonly Kind?[] _all = null;
+    public Kind? Kind { get => _k; set => _k = value; }
+    private Kind? _k;
+    public int[] Items { get => null; }
+    public bool On { get => true; }
+    void Set(Kind? value) { }
+    void Pair(List<Kind?> xs, (Kind?, int) t) { }
+    int Read() { var a = Items?[0]; return On ? 1 : 0; }
+}` };
+  assert.deepEqual(labelled(files, 'V.Kind').rows, []);
+  assert.deepEqual(labelled(files, 'V.Items').rows, ['V.Read() x1']);
+  assert.deepEqual(labelled(files, 'V.On').rows, ['V.Read() x1']);
+});

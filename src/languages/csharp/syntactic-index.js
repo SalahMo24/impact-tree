@@ -1858,7 +1858,10 @@ function createCsharpSyntacticIndex(sources, {
     const n2 = toks[at + 2];
     const word = (/** @type {Token|undefined} */ x) => !!x && x.kind === 'ident' && (!KEYWORDS.has(x.text) || x.text === 'var');
     if (word(next) && !['is', 'as', 'in', 'when', 'and', 'or', 'with', 'switch'].includes(next.text)) return true;
-    if (isP(next, '?') && word(n2)) return true;
+    // `T? x` (also `T? value`), `T?[]`, `G<T?>`, `(T?, U)`: a nullable type, not a read (`P?[i]`, `P ? a : b` are).
+    const n3 = toks[at + 3];
+    if (isP(next, '?') && n2 && ((n2.kind === 'ident' && !['null', 'true', 'false', 'new', 'this', 'base', 'default', 'await', 'throw', 'typeof', 'nameof', 'sizeof', 'checked', 'unchecked', 'stackalloc'].includes(n2.text))
+      || (isP(n2, '[') && (isP(n3, ']') || isP(n3, ','))) || isP(n2, '>') || isP(n2, ',') || isP(n2, ')'))) return true;
     if (isP(next, '[') && (isP(n2, ']') || isP(n2, ','))) return true;
     if (isP(next, '<') && typeArgs(toks, at + 1)) return true;
     if (prev && prev.kind === 'ident' && ['as', 'is', 'new', 'typeof', 'case'].includes(prev.text)) return true;

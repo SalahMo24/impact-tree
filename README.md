@@ -289,6 +289,14 @@ until you mark it reviewed, and its tooltip and Details say why.
   within the indexed files on the 12 pull requests: 100% precision and 99.2% recall in
   the CLI and in the preview, every miss on an answer marked incomplete.
 
+### C# (in progress)
+
+- **Calls through an interface or an override** are listed on the implementing method,
+  labelled "through `IFoo`" (or "through `Base`"): such a call may run this method or
+  another implementation, so the answer stays incomplete. When a PR changes both `IFoo.M`
+  and `Impl.M`, the same callers show twice — as direct callers of `IFoo.M` and, labelled
+  "through `IFoo`", of `Impl.M`. That is expected.
+
 ## Review workflow
 
 - Open **Impact Tree** in the Activity Bar. The **Review** view lists local change
