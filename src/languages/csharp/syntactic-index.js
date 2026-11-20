@@ -1,6 +1,6 @@
 // @ts-check
 'use strict';
-// C# callers without a language server (Part C, C8a): an index of a set of C# files, read from
+// C# callers without a language server (Part C, C8a, C8b): an index of a set of C# files, read from
 // their text alone, implementing S1's `SyntacticIndex` contract (src/languages/types.js) for
 // `createSyntacticResolver` (src/engine/resolver-syntactic.js). Shaped as Java's J8 index
 // (../java/syntactic-index.js).
@@ -45,22 +45,37 @@
 //   match are each listed and the answer says so.
 // A call whose receiver's type is not known (an untyped lambda parameter, `var x = F()`,
 // `dynamic`, a type parameter, a member of an outside base, a call named as an indexed extension
-// method on a receiver that has no such method) is an unresolved call to its name
+// method on a receiver the extension rules above do not decide) is an unresolved call to its name
 // (`unresolvedCallsTo`). An indexed method's name used anywhere without `(` (and not as the left
 // side of a member access) is a method group (a value use). A type name a member inherited from
 // an outside base may hide is not a receiver, and a type written as a receiver reaches static
 // methods only. A name used under an inactive `#if` branch or in a file that was not indexed
 // counts as an unresolved call to that name.
 //
+// Extension methods (C8b): `x.M(…)` with no instance `M` that takes it reaches the indexed
+// extension methods in scope (enclosing namespaces, `using`, global usings, `using static`)
+// whose `this` type the receiver's indexed type converts to, when the receiver's hierarchy stays
+// in the index; on an outside receiver it stays unresolved (the outside type's own method of the
+// name would win). `Ext.M(x)` is a static call.
+//
+// Dispatch (C8b, C-D5 (a)): an implementing method also lists the calls resolved to the
+// interface members it implements (derived interfaces, implementation through a base class;
+// parameters compared after generic substitution; not an explicit implementation or a hiding
+// class's; a generic interface's call only when the receiver's written type arguments may be
+// the implementation's), and an override the calls resolved to the base methods it overrides
+// whose receiver may be its type (not `base.M(…)`): rows labelled `via` + `text` ("through
+// IFoo"), a may-call; a row with a direct call too is unlabelled. Properties and indexers list
+// reads, writes and element accesses on typed receivers, always incomplete.
+//
 // Completeness (the CLI's whole-repository index can answer complete; the preview never does):
 // a method answers incomplete when it is virtual, abstract or an override, a member of an
-// interface, implements a member of an interface or a base in the index (by name and parameter
-// count for interfaces, also those of indexed derived types; C8b lists those callers), belongs
-// to a type with a base the index does not declare and is public and not static (C-D5: "may be
-// called through `IBar`, which is not in the indexed files"; also a derived type's outside
-// base), is an extension method, is used as a method group, is generated or partial, sits in a
-// project with Razor/XAML files, or a C# file could not be read; properties, indexers and
-// operators are "not computed" (C8b).
+// interface, implements a member of an interface or a base in the index (also those of indexed
+// derived types; the calls through them are listed, labelled), belongs to a type with a base the
+// index does not declare and is public and not static (C-D5: "may be called through `IBar`,
+// which is not in the indexed files"; also a derived type's outside base), is an extension
+// method of a generic type, is used as a method group, is generated or partial, sits in a
+// project with Razor/XAML files, or a C# file could not be read; properties and indexers are
+// always incomplete; operators are "not computed".
 //
 // Pure: reads only the `{ path, text }` pairs it is given. Budgets (CODING_STYLE §2):
 // - files: bounded by its input (the CLI: `pickRepositoryFiles`, 3000 files / 64 MiB).
@@ -1906,7 +1921,7 @@ function createCsharpSyntacticIndex(sources, {
 
   // ---- the contract ----------------------------------------------------------------------
 
-  const scopeNote = () => `C# callers from syntax only: ${scope}${skipped + notIndexed ? `, ${skipped + notIndexed} C# file(s) not indexed${skipped ? ` (${skipped} unreadable or over ${MAX_FILE_BYTES / 1024 / 1024} MiB)` : ''}` : ''}${partial ? '; the SDK\'s implicit usings are assumed (the web SDK\'s)' : ''}; calls through an interface or an override, extension methods, method groups, reflection and receivers whose type is not written are not resolved`;
+  const scopeNote = () => `C# callers from syntax only: ${scope}${skipped + notIndexed ? `, ${skipped + notIndexed} C# file(s) not indexed${skipped ? ` (${skipped} unreadable or over ${MAX_FILE_BYTES / 1024 / 1024} MiB)` : ''}` : ''}${partial ? '; the SDK\'s implicit usings are assumed (the web SDK\'s)' : ''}; calls through an interface or an override are listed (labelled) only as far as the indexed files show them; extension methods on types outside them, method groups, reflection and receivers whose type is not written are not resolved`;
 
   /** @param {string} file @param {number|undefined} pos @param {string|null} className @param {string} name @returns {DefRec|null} */
   function targetDef(file, pos, className, name) {

@@ -169,7 +169,7 @@ function csharpSpec() {
 }
 
 /** What the syntax index does not resolve, for the preview's `callersScope` (types.js, PreparedLanguage). */
-const UNRESOLVED = 'calls through an interface or an override, extension methods, method groups, reflection, generated members, and receivers whose type is not written';
+const UNRESOLVED = 'calls through an interface or an override beyond the indexed files (those it sees are listed, labelled "through"), extension methods on types outside them, method groups, reflection, generated members, and receivers whose type is not written';
 
 /**
  * The changed, added and deleted C# members and their signature kinds from the text alone
