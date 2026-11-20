@@ -88,8 +88,8 @@ function hunkLines(text, start, end) {
   return lines.length ? { lines, more: Math.max(0, all.length - MAX_HUNK_LINES) } : null;
 }
 
-/** @param {any} e An entry of `ImpactPaths.entries` (src/engine/impact-paths.js). */
-const entryName = (e) => `${e.type === 'public-api' ? 'public API' : e.type === 'server-action' ? 'server action' : e.type}: ${e.name}`;
+/** @param {any} e An entry of `ImpactPaths.entries` (src/engine/impact-paths.js), its caveat after the name. */
+const entryName = (e) => `${e.type === 'public-api' ? 'public API' : e.type === 'server-action' ? 'server action' : e.type}: ${e.name}${e.caveat ? ` (${e.caveat})` : ''}`;
 
 /**
  * The steps of an entry's path that are not calls, as a note: " (handleSubmit passed as

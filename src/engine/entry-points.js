@@ -1,6 +1,7 @@
 // @ts-check
 'use strict';
 const path = require('path');
+const csharp = require('./entry-points-csharp');
 // Entry points: where a call path enters the application from outside it. An HTTP route,
 // a CLI command, a `main`, an Electron IPC channel, a UI route, or the public API of a
 // published library. Pure: every input is passed in, nothing is read here. The repository
@@ -17,6 +18,12 @@ const path = require('path');
 /**
  * @typedef {'http'|'cli-command'|'main'|'dev-tool'|'public-api'|'ipc'|'ui-route'|'job'|'event'|'server-action'} EntryType
  *
+ * @typedef {'prefix may come from the caller'|'conventional route'} EntryCaveat
+ * `prefix may come from the caller`: registered on a builder the caller passes (an
+ * `IEndpointRouteBuilder` parameter, a lambda parameter), which may be a route group;
+ * `conventional route`: an MVC action without an attribute route, routed by the default
+ * `{controller}/{action}` pattern (a custom pattern is not read).
+ *
  * One recognised entry point. `name` is what a reviewer reads: the route, the command line,
  * the exported name. `how` says which pattern matched, so an explanation can cite it.
  * @typedef {object} EntryInfo
@@ -25,10 +32,15 @@ const path = require('path');
  * @property {string} [method] HTTP method, upper case, when known (`'ALL'` for any).
  * @property {string} [route] HTTP or UI route as written.
  * @property {string} how
+ * @property {EntryCaveat} [caveat] What is not known about `route`, shown after the name
+ *   wherever an entry is shown (` (prefix may come from the caller)`); `name` and `route` stay
+ *   as written, so keys do not change. C# only (./entry-points-csharp.js).
  * @property {boolean} [passThrough] The walk records this entry and keeps going: the path
  *   goes on to what references it (a Next.js server action, whose form a UI route renders).
  *   Recorded only when something does reference it (./impact-paths.js).
  */
+
+/** @typedef {{ route: string|null, base: string|null, mvc?: boolean, ns?: string }} CsClassFacts */
 
 /**
  * Repository-level facts, gathered once per analysis (./entry-facts.js). Every field is
@@ -48,9 +60,21 @@ const path = require('path');
  * @property {Set<string>} [packageRoots] Directories with a package.json, to find the
  *   nearest one above a file. Both are absent in a preview (it lists only the pull
  *   request's files), so the Next.js rules that need them do not fire there.
+ * @property {Map<string, CsClassFacts & { candidates?: Array<CsClassFacts & { ns: string }> }>} [csControllerRoutes] Class
+ *   name -> its `[Route]` template (null when it has none), first non-interface base class
+ *   and whether its file uses ASP.NET MVC (or it is `[ApiController]`/`[Controller]`), for
+ *   classes in files named `*Controller*.cs`: a controller without its own `[Route]`
+ *   inherits the base class's, and a class based on a `*Controller` is a controller only
+ *   when that base leads to MVC. A name that classes with different facts share holds them
+ *   all in `candidates` (with their namespaces) and null/false at the top. Absent in a preview.
+ * @property {Map<string, string>} [csProjects] Repository-relative path of a `.cs` file in an
+ *   executable C# project (OutputType Exe/WinExe, or a Web/Worker SDK) -> the name of its
+ *   nearest `.csproj`, no extension: the program a top-level-statements file starts. A
+ *   superset of those files (reading every file would cost more than the rule needs: it is
+ *   asked only of a module-level node). Absent in a preview, where the file name is used.
  */
 
-/** @typedef {'ts'|'go'|'python'} EntryLanguage */
+/** @typedef {'ts'|'go'|'python'|'csharp'} EntryLanguage */
 
 /**
  * The language whose patterns apply to a file, or null when none are known (Java, others).
@@ -61,6 +85,7 @@ function entryLanguageOf(file) {
   if (/\.(?:[cm]?[jt]sx?)$/.test(file) && !/\.d\.[cm]?ts$/.test(file)) return 'ts';
   if (/\.go$/.test(file)) return 'go';
   if (/\.pyi?$/.test(file)) return 'python';
+  if (/\.cs$/i.test(file)) return 'csharp';
   return null;
 }
 
@@ -171,11 +196,14 @@ function bracketBody(text, at, language, limit = 20000) {
  * registration, which makes the caller an entry point for that path (`app.get('/x',
  * (c) => handler(c))`, a cobra command's `RunE`). `callerPos` is the caller's name offset:
  * the scan starts there (0 for module-level code).
- * @param {{ language: EntryLanguage, text: string, callerPos: number, callSiteStart: number,
+ * `blanked` (C#): `text` with comments and string contents blanked by ../languages/csharp/lexer.js
+ * `blank`, offsets unchanged; patterns match on it, routes are read from `text`.
+ * @param {{ language: EntryLanguage, text: string, blanked?: string, callerPos: number, callSiteStart: number,
  *   relPath: string, callerLabel: string, facts?: EntryFacts }} input
  * @returns {EntryInfo|null}
  */
-function callSiteEntry({ language, text, callerPos, callSiteStart, relPath, callerLabel, facts }) {
+function callSiteEntry({ language, text, blanked, callerPos, callSiteStart, relPath, callerLabel, facts }) {
+  if (language === 'csharp') return csharp.callSiteEntry(text, blanked ?? text, callerPos, callSiteStart);
   const stack = enclosingBrackets(text, callerPos, callSiteStart, language);
   if (!stack) return null;
   for (let k = stack.length - 1, seen = 0; k >= 0 && seen < MAX_ENCLOSING; k--, seen++) {
@@ -353,12 +381,13 @@ function enclosingGoFunc(text, at) {
 
 /**
  * Whether the function at `pos` (its name's offset) is itself an entry point.
- * @param {{ language: EntryLanguage, text: string, pos: number, label: string,
+ * @param {{ language: EntryLanguage, text: string, blanked?: string, pos: number, label: string,
  *   relPath: string, facts?: EntryFacts }} input
  * @returns {EntryInfo|null}
  */
 function declarationEntry(input) {
   const { language } = input;
+  if (language === 'csharp') return csharp.declarationEntry({ ...input, blanked: input.blanked ?? input.text });
   if (language === 'ts') return tsDeclarationEntry(input);
   if (language === 'go') return goDeclarationEntry(input);
   if (language === 'python') return pythonDeclarationEntry(input);
@@ -805,5 +834,5 @@ function pythonDeclarationEntry({ text, pos, label, relPath, facts }) {
 
 module.exports = {
   entryLanguageOf, declarationEntry, callSiteEntry, cobraCommandsIn, enclosingBrackets,
-  MAX_SCAN_CHARS,
+  unreachableReason: csharp.unreachableReason, MAX_SCAN_CHARS,
 };

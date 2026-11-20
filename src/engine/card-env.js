@@ -91,7 +91,7 @@ function impactOf(env, members) {
     walked++;
     if (p.complete) complete++;
     if (p.testOnly) testOnly++;
-    for (const e of p.entries || []) entries.set(`${e.type}|${e.name}`, { type: e.type, name: e.name, file: e.file, depth: e.depth, via: e.via, ...(e.hops ? { hops: e.hops } : {}) });
+    for (const e of p.entries || []) entries.set(`${e.type}|${e.name}`, { type: e.type, name: e.name, ...(e.caveat ? { caveat: e.caveat } : {}), file: e.file, depth: e.depth, via: e.via, ...(e.hops ? { hops: e.hops } : {}) });
     for (const [k, v] of Object.entries((p.summary && p.summary.ends) || {})) ends[k] = (ends[k] || 0) + /** @type {number} */ (v);
     for (const r of p.incompleteReasons || []) reasons.set(r, (reasons.get(r) || 0) + 1);
     for (const t of p.topPaths || []) top.push({ from: id, ...t });

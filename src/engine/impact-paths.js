@@ -9,7 +9,7 @@ const path = require('path');
 const { realClock } = require('./clock');
 const { withDeadline } = require('./deadline');
 const { throwIfCancelled } = require('./cancellation');
-const { entryLanguageOf, declarationEntry, callSiteEntry } = require('./entry-points');
+const { entryLanguageOf, declarationEntry, callSiteEntry, unreachableReason } = require('./entry-points');
 
 /** @typedef {import('./entry-points').EntryInfo} EntryInfo */
 /** @typedef {import('./entry-points').EntryFacts} EntryFacts */
@@ -66,12 +66,12 @@ function validateLimits(given) {
  * @property {'entry'|'top-unidentified'|'budget'|'unknown'} end
  * @property {EntryInfo} [entry] When `end` is `'entry'`.
  * @property {string} [reason] When `end` is `'budget'` or `'unknown'`.
- * @property {'module'|'function'|'test-only'|'app-start'|'server-action'|'returned-unused'} [topKind] When `end` is
+ * @property {'module'|'function'|'test-only'|'app-start'|'server-action'|'returned-unused'|import('./entry-points').EntryType} [topKind] When `end` is
  *   `'top-unidentified'`: module-level code (runs at import), a function nothing calls, a
  *   function only tests call, a package `bin` file's module code (program start), an
  *   exported Next.js server action nothing references (not an entry: no route reaches it),
  *   or a function a named function returns (`return { f }`) that none of its callers uses.
- * @property {string} [bin] The command name, when `topKind` is `'app-start'`.
+ * @property {string} [bin] The command name (a C# project's name or file name), when `topKind` is `'app-start'`.
  * @property {string} [returnedBy] The returning functions, when `topKind` is `'returned-unused'`.
  * @property {string[]} via Labels from the changed function to the last node, both included.
  * @property {PathHop[]} [hops] The steps of `via` that are not calls, when there are any.
@@ -95,7 +95,7 @@ function validateLimits(given) {
 /**
  * @typedef {object} ImpactPaths
  * @property {string} id `relPath#namePos` of the changed function.
- * @property {Array<{ type: string, name: string, file: string, depth: number, via: string[], hops?: PathHop[], how: string, method?: string, route?: string }>} entries
+ * @property {Array<{ type: string, name: string, file: string, depth: number, via: string[], hops?: PathHop[], how: string, method?: string, route?: string, caveat?: string }>} entries
  *   Distinct entry points reached (by type, name and file), each at its shortest depth;
  *   `hops` as in PathEnd. A `server-action` (pass-through) is listed when something references
  *   it; the walk went on past it, so a route may be listed too.
@@ -137,6 +137,7 @@ function createImpactWalker({ repo, facts = {}, limits, signal, clock = realCloc
   const valid = validateLimits(limits);
   const deadline = makeDeadline(valid.deadlineMs, clock);
   const texts = makeTextCache(readText);
+  const blanked = makeBlankedCache(texts);
   /** @type {Record<string, ImpactPaths>} */
   const byId = {};
   let walkMs = 0;
@@ -156,7 +157,7 @@ function createImpactWalker({ repo, facts = {}, limits, signal, clock = realCloc
     async walk(resolver, changed, unit = {}) {
       for (const c of changed) {
         throwIfCancelled(signal);
-        const result = await walkOne({ resolver, changed: c, repo, facts, limits: valid, deadline, signal, texts, scopeNote: unit.scopeNote });
+        const result = await walkOne({ resolver, changed: c, repo, facts, limits: valid, deadline, signal, texts, blanked, scopeNote: unit.scopeNote });
         byId[result.id] = result;
         walkMs += result.walkMs;
       }
@@ -191,6 +192,25 @@ function makeTextCache(readText) {
 }
 
 /**
+ * The lexer-blanked text of a C# file (comments and string contents spaces, offsets kept),
+ * for the entry rules; computed once per file, cached beside the raw text. Null when the
+ * file cannot be read.
+ * @param {(file: string) => string|null} texts
+ * @returns {(file: string) => string|null}
+ */
+function makeBlankedCache(texts) {
+  /** @type {Map<string, string|null>} */
+  const cache = new Map();
+  return (file) => {
+    if (cache.has(file)) return /** @type {string|null} */ (cache.get(file));
+    const text = texts(file);
+    const out = text === null ? null : require('../languages/csharp/lexer').blank(text);
+    if (cache.size < MAX_CACHED_TEXTS) cache.set(file, out);
+    return out;
+  };
+}
+
+/**
  * @typedef {object} WalkNode
  * @property {string} file Absolute path.
  * @property {number} pos
@@ -211,10 +231,11 @@ function makeTextCache(readText) {
  * add no path (cycles cut). A worklist, not recursion: depth and breadth are both bounded.
  * @param {{ resolver: any, changed: any, repo: string, facts: EntryFacts, limits: WalkLimits,
  *   deadline: ReturnType<typeof makeDeadline>, signal: AbortSignal|undefined,
- *   texts: (file: string) => string|null, scopeNote: string|undefined }} input
+ *   texts: (file: string) => string|null, blanked: (file: string) => string|null,
+ *   scopeNote: string|undefined }} input
  * @returns {Promise<ImpactPaths>}
  */
-async function walkOne({ resolver, changed, repo, facts, limits, deadline, signal, texts, scopeNote }) {
+async function walkOne({ resolver, changed, repo, facts, limits, deadline, signal, texts, blanked, scopeNote }) {
   // wall-clock: log-only — this walk's time for the report
   const t0 = Date.now();
   const rel = (/** @type {string} */ f) => path.relative(repo, f).split(path.sep).join('/');
@@ -262,7 +283,7 @@ async function walkOne({ resolver, changed, repo, facts, limits, deadline, signa
   /** @type {Array<{ node: WalkNode, entry: EntryInfo }>} */
   const passed = [];
 
-  const own = entryOfNode(start, null, facts, texts, repo);
+  const own = entryOfNode(start, null, facts, texts, blanked, repo);
   if (own && !own.passThrough) finish(start, { end: 'entry', entry: own });
   else {
     if (own) start.action = own;
@@ -279,6 +300,12 @@ async function walkOne({ resolver, changed, repo, facts, limits, deadline, signa
       // A package `bin` file's module code is where the program starts: a known top.
       const bin = facts.binFiles ? facts.binFiles.get(rel(node.file)) : undefined;
       if (bin !== undefined) { finish(node, { end: 'top-unidentified', topKind: 'app-start', bin }); continue; }
+      // A C# file's top-level statements are the program's start: the project's name, or the
+      // file name when the facts have none (a preview, or a project not read as executable).
+      if (/\.cs$/i.test(node.file)) {
+        finish(node, { end: 'top-unidentified', topKind: 'app-start', bin: (facts.csProjects && facts.csProjects.get(rel(node.file))) || path.basename(node.file) });
+        continue;
+      }
       finish(node, { end: 'top-unidentified', topKind: 'module' });
       reasons.add('module-level code on a path: what loads the module is not traced');
       continue;
@@ -319,6 +346,9 @@ async function walkOne({ resolver, changed, repo, facts, limits, deadline, signa
         else finish(node, { end: 'unknown', reason: passed.reason || 'referenced as a value (passed or registered), never called directly' });
         continue;
       } else {
+        // A framework dispatches to it (MediatR `Send`), an edge not followed: not a top.
+        const dispatched = handlerReasonOf(node, texts, blanked, repo);
+        if (dispatched) { finish(node, { end: 'unknown', reason: dispatched }); continue; }
         if (!answer.complete) { finish(node, { end: 'unknown', reason: answer.reason || 'a caller query did not finish' }); continue; }
         const wrapped = wrapperOf(node, texts);
         if (wrapped) { finish(node, { end: 'unknown', reason: `passed to ${wrapped}(): uses of what it returns are not traced` }); continue; }
@@ -327,7 +357,7 @@ async function walkOne({ resolver, changed, repo, facts, limits, deadline, signa
         // as a value" (a handler registered somewhere the text does not show).
         const top = await topState(resolver, node);
         // Only tests call it: a top for production, and the reason a card says "tests only".
-        if (top.complete) finish(node, { end: 'top-unidentified', topKind: top.testCallers ? 'test-only' : node.action ? 'server-action' : 'function' });
+        if (top.complete) finish(node, { end: 'top-unidentified', topKind: top.testCallers ? 'test-only' : node.action ? node.action.type : 'function' });
         else finish(node, { end: 'unknown', reason: top.reason });
         continue;
       }
@@ -346,7 +376,7 @@ async function walkOne({ resolver, changed, repo, facts, limits, deadline, signa
         throughStale: node.depth === 0 ? staleIds.has(key) : node.throughStale,
         ...(caller.via ? { hop: { via: caller.via, text: caller.text || caller.via } } : {}),
       };
-      const entry = entryOfNode(child, caller, facts, texts, repo);
+      const entry = entryOfNode(child, caller, facts, texts, blanked, repo);
       if (entry && !entry.passThrough) finish(child, { end: 'entry', entry });
       else {
         if (entry) child.action = entry;
@@ -381,7 +411,9 @@ function withoutScopeNote(answer, scopeNote) {
 
 /** @param {WalkNode} node */
 function isModuleLevel(node) {
-  return node.pos === 0 && node.label === path.basename(node.file);
+  // A C# module row (top-level statements) sits at its first statement, not offset 0, so
+  // there the file-name label alone says it (a method labelled `Program.cs` has params).
+  return node.label === path.basename(node.file) && (node.pos === 0 || /\.cs$/i.test(node.file));
 }
 
 /**
@@ -450,22 +482,38 @@ async function topState(resolver, node) {
  * The entry point a node is, by its declaration or, for a caller, by the call site of the
  * function below it on the path. Null when neither matches or the file cannot be read.
  * @param {WalkNode} node @param {CallerRow|null} row @param {EntryFacts} facts
- * @param {(file: string) => string|null} texts @param {string} repo
+ * @param {(file: string) => string|null} texts @param {(file: string) => string|null} blanked @param {string} repo
  * @returns {EntryInfo|null}
  */
-function entryOfNode(node, row, facts, texts, repo) {
+function entryOfNode(node, row, facts, texts, blanked, repo) {
   const language = entryLanguageOf(node.file);
   if (!language) return null;
   const text = texts(node.file);
   if (text === null) return null;
   const relPath = path.relative(repo, node.file).split(path.sep).join('/');
-  const own = declarationEntry({ language, text, pos: node.pos, label: node.label, relPath, facts });
+  const blank = language === 'csharp' ? (blanked(node.file) ?? undefined) : undefined;
+  const own = declarationEntry({ language, text, blanked: blank, pos: node.pos, label: node.label, relPath, facts });
   if (own) return own;
   for (const site of (row && row.callSites) || []) {
-    const hit = callSiteEntry({ language, text, callerPos: node.pos, callSiteStart: site.start, relPath, callerLabel: node.label, facts });
+    const hit = callSiteEntry({ language, text, blanked: blank, callerPos: node.pos, callSiteStart: site.start, relPath, callerLabel: node.label, facts });
     if (hit) return hit;
   }
   return null;
+}
+
+/**
+ * The reason a method nothing calls is not a top, when a framework dispatches to it (C#: a
+ * MediatR handler), or null.
+ * @param {WalkNode} node @param {(file: string) => string|null} texts
+ * @param {(file: string) => string|null} blanked @param {string} repo
+ * @returns {string|null}
+ */
+function handlerReasonOf(node, texts, blanked, repo) {
+  if (entryLanguageOf(node.file) !== 'csharp') return null;
+  const text = texts(node.file);
+  const b = blanked(node.file);
+  if (text === null || b === null) return null;
+  return unreachableReason({ text, blanked: b, pos: node.pos, label: node.label, relPath: path.relative(repo, node.file).split(path.sep).join('/') });
 }
 
 const END_ORDER = { entry: 0, 'top-unidentified': 1, unknown: 2, budget: 3 };

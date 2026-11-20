@@ -158,6 +158,7 @@ const SUITE = [
   { file: 'test/telemetry-usage.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/no-wall-clock-rule.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/entry-points.test.js', tier: 'quick' },  // 0.1s
+  { file: 'test/entry-points-csharp.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/impact-paths.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/impact-paths-preview.test.js', tier: 'quick' },  // 0.3s
   { file: 'test/clusters.test.js', tier: 'quick' },

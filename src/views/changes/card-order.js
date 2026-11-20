@@ -193,7 +193,7 @@ function entryPointsOf(ids, paths) {
     const p = paths[id];
     if (!p) { incomplete = true; continue; }
     if (p.complete === false || (p.topPaths || []).some((/** @type {any} */ t) => t.lowerBound)) incomplete = true;
-    for (const e of p.entries || []) if (!names.has(`${e.type}|${e.name}`)) names.set(`${e.type}|${e.name}`, `${e.name} (${e.type})`);
+    for (const e of p.entries || []) if (!names.has(`${e.type}|${e.name}`)) names.set(`${e.type}|${e.name}`, `${e.name}${e.caveat ? ` (${e.caveat})` : ''} (${e.type})`);
   }
   return { computed: true, names: [...names.values()].sort(), incomplete };
 }

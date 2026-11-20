@@ -162,7 +162,7 @@ function buildCardFacts(input, review) {
       return {
         id: c.id, kind: c.kind, label: one(c.label),
         ...(c.files ? { files: c.files.length } : {}),
-        entryPoints: im.entryPoints.slice(0, entryCap).map((e) => `${one(e.type, 30)} ${one(e.name, 100)}`),
+        entryPoints: im.entryPoints.slice(0, entryCap).map((e) => `${one(e.type, 30)} ${one(e.name, 100)}${e.caveat ? ` (${e.caveat})` : ''}`),
         entryPointsTotal: im.entryPoints.length,
         ...(im.complete ? {} : { impactIncomplete: im.reasons.slice(0, 2).map((r) => one(r)) }),
         seamsWith: [...new Set(seamsOf(env, c.id).flatMap((/** @type {any} */ s) => s.clusters).filter((/** @type {string} */ k) => k !== c.id))].slice(0, MAX_SEAMS),

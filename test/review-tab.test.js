@@ -119,6 +119,14 @@ test('a server action reads as one, and the card chip prefers the route behind i
   assert.ok(m.cards[0].chips.some((c) => c.text === 'ui-route: /p'));
 });
 
+test('an entry\'s caveat follows its name in the changes and the card chip', () => {
+  const result = { ...SMALL.result, impactPaths: { 'src/a.ts#7': { entries: [
+    { type: 'http', name: 'GET /api/items', caveat: 'prefix may come from the caller' }, { type: 'http', name: 'GET /Home/Index', caveat: 'conventional route' }] } } };
+  const m = reviewTabModel({ result, cards: SMALL.cards });
+  assert.deepEqual(m.changes['src/a.ts#7'].entries, ['http: GET /api/items (prefix may come from the caller)', 'http: GET /Home/Index (conventional route)']);
+  assert.ok(m.cards[0].chips.some((c) => c.text === 'http: GET /api/items (prefix may come from the caller)'));
+});
+
 test('hunk lines: at most the cap, and how many more', () => {
   const long = `@@ -1,40 +1,40 @@\n${Array.from({ length: 50 }, (_, i) => `+line ${i}`).join('\n')}\n`;
   const h = hunkLines(long);

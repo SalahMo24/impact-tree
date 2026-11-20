@@ -145,7 +145,7 @@ function addCardTools(tools, env) {
         return {
           ...item,
           memberList: members.slice(0, MAX_DETAIL_MEMBERS), membersShown: Math.min(members.length, MAX_DETAIL_MEMBERS),
-          entryPoints: im.entryPoints.slice(0, MAX_DETAIL_ENTRIES).map((e) => ({ type: e.type, name: e.name })), entryPointsTotal: im.entryPoints.length,
+          entryPoints: im.entryPoints.slice(0, MAX_DETAIL_ENTRIES).map((e) => ({ type: e.type, name: e.name, ...(e.caveat ? { caveat: e.caveat } : {}) })), entryPointsTotal: im.entryPoints.length,
           seamsWith: [...new Set(seamsOf(env, c.id).flatMap((/** @type {any} */ s) => s.clusters).filter((/** @type {string} */ k) => k !== c.id))].slice(0, MAX_SEAMS_SHOWN),
           mergeHints: env.hints.filter((/** @type {any} */ h) => h.clusters.includes(c.id) && h.strength >= 1).slice(0, 3)
             .map((/** @type {any} */ h) => ({ cards: h.clusters, strength: h.strength })),
