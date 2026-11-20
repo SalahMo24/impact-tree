@@ -194,10 +194,9 @@ test('an outside base marks public instance methods incomplete (C-D5)', () => {
   assert.ok(idx.undeclaredBase.size >= 1);
 });
 
-test('extension methods: the static form is listed, the receiver form counts as unresolved', () => {
+test('extension methods: the static form is listed; on an outside receiver (`string`) the receiver form stays unresolved', () => {
   const shout = callersOf('App/Helpers.cs', 'Helpers.Shout(this string)');
   assert.deepEqual(shout.rows, ['Controller.Act(): public void Act() { "a".Shout(); Helpers.Shout("b"); }']);
-  assert.match(shout.reason, /extension method/);
   assert.equal(shout.unresolved, 1);
 });
 
@@ -621,4 +620,38 @@ sealed class U { void R(IFoo f, Base b, Sibling s, Leaf l) { f.M(1); b.Run(); s.
   const leaf = labelled(files, 'Leaf.Run()');
   assert.deepEqual(leaf.rows, ['Base.Template() [override: through Base] x1', 'U.R(IFoo, Base, Sibling, Leaf) x2']);
   assert.match(leaf.reason, /an override of `Base.Run`: calls written on that type are listed/);
+});
+
+test('C8b extension methods: `x.M()` by the `this` type and the namespaces in scope; undecided ones stay unresolved', () => {
+  const files = {
+    'ext.cs': `namespace Lib.Ext;
+public static class FooExt { public static void Go(this N.Foo f, int n) { } public static void Any<T>(this T x) { } public static void Seq(this IEnumerable<int> xs) { } }`,
+    'a.cs': `using Lib.Ext;
+namespace N;
+public class Foo { } public sealed class Bar : Foo { }
+sealed class U { void R(Foo f, Bar b, List<int> xs) { f.Go(1); b.Go(2); f.Any(); xs.Seq(); FooExt.Go(f, 3); } }`,
+    'b.cs': `namespace M; sealed class V { void R(N.Foo f) { f.Go(1); } }`,
+  };
+  const go = answerFor(files, 'FooExt.Go(this Foo, int)');
+  assert.deepEqual([go.callers, go.unresolved, go.complete], [['U.R(Foo, Bar, List)'], 0, true]);
+  const any = answerFor(files, 'FooExt.Any<1>(this T)');
+  assert.equal(any.unresolved, 1);
+  const seq = answerFor(files, 'FooExt.Seq(this IEnumerable)');
+  assert.deepEqual([seq.callers, seq.unresolved], [[], 1]);
+  const ix = createCsharpSyntacticIndex(Object.entries(files).map(([p, text]) => ({ path: p, text })), { root: '/r' });
+  const d = ix.byFile.get('/r/ext.cs').defs.find((x) => x.key === 'FooExt.Go(this Foo, int)');
+  assert.equal(ix.callersOfWithStatus({ file: '/r/ext.cs', name: 'Go', pos: d.namePos }).callers[0].callSites.length, 3);
+});
+
+test('C8b: a generic method that cannot infer its type parameter is not called without type arguments; a call matching several interface overloads is not labelled', () => {
+  const files = { 'a.cs': `namespace N;
+public interface IL { T Get<T>(System.Guid id); object Get(System.Guid id); void Put(string s); void Put(object o); }
+public sealed class L : IL { public T Get<T>(System.Guid id) => default; public object Get(System.Guid id) => null; public void Put(string s) { } public void Put(object o) { } }
+sealed class U { void R(IL l, System.Guid g) { l.Get(g); l.Get<int>(g); l.Put(null); } }` };
+  assert.deepEqual(labelled(files, 'L.Get(Guid)').rows, ['U.R(IL, Guid) [interface: through IL] x1']);
+  assert.deepEqual(labelled(files, 'L.Get<1>(Guid)').rows, ['U.R(IL, Guid) [interface: through IL] x1']);
+  const put = labelled(files, 'L.Put(string)');
+  assert.deepEqual(put.rows, []);
+  assert.match(put.reason, /1 call\(s\) through an interface or a base type that match several overloads are not listed/);
+  assert.doesNotMatch(put.reason, /may implement a member/);
 });

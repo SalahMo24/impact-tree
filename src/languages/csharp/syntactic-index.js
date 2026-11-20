@@ -342,6 +342,8 @@ function createCsharpSyntacticIndex(sources, {
   const usesByName = new Map();
   /** @type {Set<string>} Names of indexed extension methods. */
   const extNames = new Set();
+  /** @type {Map<string, DefRec[]>} Indexed extension methods (classic and extension-block members) by name. */
+  const extByName = new Map();
   /** @type {Set<string>} Names of indexed methods: the names a method-group use is recorded for. */
   const methodNames = new Set();
   // `global using` directives (namespaces, aliases, `using static`) and the SDK's implicit
@@ -482,7 +484,11 @@ function createCsharpSyntacticIndex(sources, {
         let list = owner.methods.get(d.name);
         if (!list) { list = []; owner.methods.set(d.name, list); }
         list.push(d);
-        if (d.extension) extNames.add(d.name);
+        if (d.extension) {
+          extNames.add(d.name);
+          const list = extByName.get(d.name);
+          if (list) list.push(d); else extByName.set(d.name, [d]);
+        }
       }
       if (d.attributes.some((a) => GENERATED_ATTRIBUTES.has(a.replace(/Attribute$/, '')))) owner.generated = true;
     }
@@ -1121,6 +1127,9 @@ function createCsharpSyntacticIndex(sources, {
         // in generic arguments (`Find(IList<A>)`, `Find(IList<B>)`, keys `#2`) are both kept.
         if (!arityMatches(d, argc) || [...found.values()].some((f) => f.paramKey === d.paramKey && f.type !== d.type)) continue;
         if (targs && d.typeParams.size !== targs) continue;
+        // A generic method none of whose parameters names a type parameter cannot infer it: a
+        // call without type arguments is not to it.
+        if (!targs && argc >= 0 && d.typeParams.size && [...d.typeParams].some((tp) => !d.params.some((p) => new RegExp(`\\b${tp}\\b`).test(p.type)))) continue;
         if (kinds && !kinds.every((k, n) => argFits(k, d, n))) { misfit = true; continue; }
         found.set(d.key, d);
       }
@@ -1388,7 +1397,7 @@ function createCsharpSyntacticIndex(sources, {
     let t = rec.toks[end];
     if (isP(t, '!')) { end--; t = rec.toks[end]; }
     if (!t) return { t: 'unk' };
-    if (t.kind === 'lit') return /^[$@]*"/.test(t.text) ? { t: 'ext' } : { t: 'unk' };
+    if (t.kind === 'lit') return /^[$@]*"/.test(t.text) ? { t: 'ext', name: 'string' } : { t: 'unk' };
     if (t.kind === 'ident') return recvOfName(rec, end, depth);
     if (isP(t, ')')) return recvOfParen(rec, end, depth);
     if (isP(t, '>')) {
@@ -1654,8 +1663,13 @@ function createCsharpSyntacticIndex(sources, {
     return defs.length ? defs : null;
   }
 
-  /** @param {Recv} recv @param {string} name @param {number} argc @param {ArgKind[]|null} [kinds] @returns {Hit} */
-  function onReceiver(recv, name, argc, kinds = null) {
+  /**
+   * `x.M(…)` on a receiver: its type's methods, else the indexed extension methods in scope.
+   * @param {Recv} recv @param {string} name @param {number} argc @param {ArgKind[]|null} [kinds]
+   * @param {FileRec} [rec] @param {number} [pos] Where the call is (for the extensions in scope).
+   * @returns {Hit}
+   */
+  function onReceiver(recv, name, argc, kinds = null, rec, pos) {
     if (recv.t === 'type') {
       const l = lookup(recv.type, name, argc, false, kinds);
       // A type written as the receiver calls static methods only: an instance method found
@@ -1664,13 +1678,84 @@ function createCsharpSyntacticIndex(sources, {
         if (recv.static && l.defs.some((d) => !d.mods.has('static'))) return 'unresolved';
         // An indexed extension method of the name may be the one called when the instance
         // method does not surely take the arguments (C# tries extensions only then).
-        if (!recv.static && extNames.has(name) && argc > 0 && !l.defs.some((d) => surelyApplicable(d, kinds, argc))) return 'unresolved';
+        if (!recv.static && extNames.has(name) && argc > 0 && !l.defs.some((d) => surelyApplicable(d, kinds, argc))) {
+          return rec && pos != null && extensionCall(recv, name, argc, kinds, rec, pos) === null ? l.defs : 'unresolved';
+        }
         return l.defs;
       }
-      return l.open || extNames.has(name) ? 'unresolved' : null;
+      if (l.open && !recv.static) return 'unresolved';
+      if (!extNames.has(name)) return l.open ? 'unresolved' : null;
+      return recv.static || !rec || pos == null ? 'unresolved' : extensionCall(recv, name, argc, kinds, rec, pos);
     }
-    if (recv.t === 'ext') return extNames.has(name) ? 'unresolved' : null;
+    if (recv.t === 'ext') return !extNames.has(name) ? null : !rec || pos == null ? 'unresolved' : extensionCall(recv, name, argc, kinds, rec, pos);
     return recv.t === 'unk' ? 'unresolved' : null;
+  }
+
+  /** @param {DefRec} d @returns {{ text: string, offset: number }} An extension method's receiver type as written, and 1 when it is the first parameter. */
+  function thisOf(d) {
+    const p0 = d.params[0];
+    if (p0 && /^this\s/.test(p0.type)) return { text: p0.type.replace(/^this\s+/, ''), offset: 1 };
+    const m = /\(this ([^,)]+)/.exec(d.key);
+    return { text: m ? m[1] : '?', offset: 0 };
+  }
+
+  /**
+   * Whether the extension methods declared in namespace `ns` are in scope at `pos` of `rec`:
+   * an enclosing namespace, one a visible `using` (or the project's global usings) imports.
+   * `using static` imports a type's: `owner` (the declaring type's key).
+   * @param {string} ns @param {string} owner @param {FileRec} rec @param {number} pos
+   */
+  function extInScope(ns, owner, rec, pos) {
+    const here = nsAt(rec, pos);
+    if (!ns || here === ns || here.startsWith(`${ns}.`)) return true;
+    for (const u of rec.usings) {
+      if (u.scope && !(u.scope.start <= pos && pos < u.scope.end)) continue;
+      if (u.name === ns) return true;
+      for (let o = u.scope ? u.scope.name : ''; o; o = parentNs(o)) if (`${o}.${u.name}` === ns) return true;
+    }
+    const g = globalsOf(rec.project);
+    return g.usings.has(ns) || [...rec.statics, ...g.statics].some((x) => x === owner || x.endsWith(`.${owner}`) || owner.endsWith(`.${x}`));
+  }
+
+  /**
+   * `x.M(…)` with no instance method `M` that takes it: the indexed extension methods named `M`
+   * in scope whose receiver type `x`'s may convert to. Listed only on an indexed receiver whose
+   * hierarchy stays in the index (an outside type's own instance method of the name would win,
+   * and is not known). Unresolved when one may apply and that is not decided (a receiver or
+   * `this` type not known or outside, a generic `this T`, candidates from several namespaces);
+   * null when none does.
+   * @param {Recv} recv @param {string} name @param {number} argc @param {ArgKind[]|null} kinds @param {FileRec} rec @param {number} pos
+   * @returns {Hit}
+   */
+  function extensionCall(recv, name, argc, kinds, rec, pos) {
+    /** @type {DefRec[]} */
+    const yes = [];
+    for (const d of extByName.get(name) || []) {
+      if (!d.type) continue;
+      const { text, offset } = thisOf(d);
+      if (!arityMatches(d, argc + offset)) continue;
+      if (!extInScope(d.type.ns, d.type.key, rec, pos)) continue;
+      if (kinds && !kinds.every((k, n) => argFits(k, d, n + offset))) continue;
+      const bare = text.replace(/^((ref|in|scoped)\s+)+/, '').replace(/\?$/, '');
+      const base = (readTypeText(bare) || bare).replace(/\[\]$/, '');
+      if (d.typeParams.has(base) || /\[/.test(bare)) return 'unresolved';
+      const p = PREDEFINED.has(base) ? null : resolveTypeName(base, d.file, d.namePos, d.type, d.typeParams);
+      if (p === 'tp' || p === 'amb') return 'unresolved';
+      if (recv.t === 'type' && base === 'object') { yes.push(d); continue; }
+      if (recv.t === 'type') {
+        if (p) { if (hierarchy(recv.type).types.includes(p)) yes.push(d); continue; }
+        // An outside `this` type: an indexed receiver reaches it only through an outside base.
+        if (hierarchy(recv.type).outside.length || hierarchy(recv.type).open) return 'unresolved';
+        continue;
+      }
+      // An outside receiver: an outside type never derives from an indexed one; for an outside
+      // `this` type, its own instance method of the name may be the one called (a newer
+      // framework's `Process.WaitForExitAsync(CancellationToken)`), which is not known here.
+      if (recv.t === 'ext' && p) continue;
+      return 'unresolved';
+    }
+    if (new Set(yes.map((d) => d.type && d.type.ns)).size > 1) return 'unresolved';
+    return yes.length ? yes : null;
   }
 
   /** @param {FileRec} rec @param {Use} use @returns {Hit} Bare `M(`. */
@@ -1708,7 +1793,7 @@ function createCsharpSyntacticIndex(sources, {
       const l = lookup(enc, use.name, use.argc, true, argKinds(rec, use));
       return l.defs.length ? l.defs : l.open ? 'unresolved' : null;
     }
-    return onReceiver(recvAt(rec, dot - 1, depth), use.name, use.argc, argKinds(rec, use));
+    return onReceiver(recvAt(rec, dot - 1, depth), use.name, use.argc, argKinds(rec, use), rec, use.pos);
   }
 
   // ---- the contract ----------------------------------------------------------------------
@@ -1753,6 +1838,7 @@ function createCsharpSyntacticIndex(sources, {
       const others = impls - 1;
       out.push(`implements \`${member.type ? member.type.simple : '?'}.${member.name}\`: calls through it are listed as "through \`${member.type ? member.type.simple : '?'}\`" and may also reach ${others > 0 ? `${others} other implementation(s) in the indexed files` : 'implementations outside the indexed files'}`);
     }
+    if (through.ambiguousSkipped) out.push(`${through.ambiguousSkipped} call(s) through an interface or a base type that match several overloads are not listed`);
     if (through.genericSkipped) out.push(`${through.genericSkipped} call(s) through a generic interface whose type arguments are not known or differ are not listed`);
     /** @type {string[]} */
     const notListed = [];
@@ -1858,7 +1944,7 @@ function createCsharpSyntacticIndex(sources, {
 
   /**
    * @typedef {{ ifaces: Array<{ member: DefRec, impls: number }>, unmatched: Array<{ iface: TypeRec, member: DefRec, through: TypeRec }>,
-   *   bases: DefRec[], genericSkipped: number, sites: Array<{ rec: FileRec, use: Use, via: 'interface'|'override', name: string }> }} Through
+   *   bases: DefRec[], genericSkipped: number, ambiguousSkipped: number, sites: Array<{ rec: FileRec, use: Use, via: 'interface'|'override', name: string }> }} Through
    */
 
   /**
@@ -1871,14 +1957,17 @@ function createCsharpSyntacticIndex(sources, {
    */
   function throughOf(def) {
     /** @type {Through} */
-    const out = { ifaces: [], unmatched: [], bases: [], genericSkipped: 0, sites: [] };
+    const out = { ifaces: [], unmatched: [], bases: [], genericSkipped: 0, ambiguousSkipped: 0, sites: [] };
     const t = def.type;
     if (!t || def.member !== 'method' || def.inInterface || def.explicit || def.mods.has('static')) return out;
     /** @type {Set<DefRec>} */
     const listed = new Set();
     for (const m of interfaceMembersFor(def)) {
       if (listed.has(m.member)) continue;
-      if (implementerFor(m.member, m.through) !== def) { out.unmatched.push(m); continue; }
+      const impl = implementerFor(m.member, m.through);
+      // Implemented by another method (an overload of other parameter types): not this one's.
+      if (impl && impl !== def) continue;
+      if (!impl) { out.unmatched.push(m); continue; }
       listed.add(m.member);
       const iface = /** @type {TypeRec} */ (m.member.type);
       /** @type {Set<DefRec>} */
@@ -1891,6 +1980,8 @@ function createCsharpSyntacticIndex(sources, {
         if (use.kind !== 'call') continue;
         const hit = resolveUse(rec, use);
         if (!Array.isArray(hit) || !hit.includes(m.member)) continue;
+        // Bound to several overloads: which one the call runs is not known.
+        if (hit.length > 1) { out.ambiguousSkipped++; continue; }
         if (iface.typeParams.size) {
           const recv = receiverOf(rec, use);
           const view = recv && recv.t === 'type' ? (recv.args ? viewsFrom(recv.type, new Map([...recv.type.typeParams].map((tp, n) => [tp, /** @type {string[]} */ (recv.args)[n]]))) : viewsOf(recv.type)).get(iface) : null;
@@ -1916,6 +2007,7 @@ function createCsharpSyntacticIndex(sources, {
           if (use.kind !== 'call') continue;
           const hit = resolveUse(rec, use);
           if (!Array.isArray(hit) || !hit.includes(b)) continue;
+          if (hit.length > 1) { out.ambiguousSkipped++; continue; }
           const r = rec.toks[use.at - 2];
           if (r && r.text === 'base' && isP(rec.toks[use.at - 1], '.')) continue; // non-virtual
           const recv = receiverOf(rec, use);
@@ -2049,7 +2141,7 @@ function createCsharpSyntacticIndex(sources, {
       row.text = `through ${[...new Set(all.map((l) => l.name))].join(', ')}`;
     }
     reasons.push(...dispatchReasons(def, through));
-    if (def.extension) reasons.push('an extension method: calls written as `x.' + def.name + '(…)` are not resolved yet');
+    if (def.extension && def.type && def.type.typeParams.size) reasons.push('an extension method of a generic type: calls written as `x.' + def.name + '(…)` are not resolved');
     if (def.mods.has('partial') || (def.type && def.type.generated) || def.attributes.some((a) => GENERATED_ATTRIBUTES.has(a.replace(/Attribute$/, '')))) reasons.push('generated or partial members are not read');
     const isCtor = def.member === 'constructor' || def.member === 'primary-constructor';
     if (isCtor && def.type) {

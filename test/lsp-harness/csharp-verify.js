@@ -640,6 +640,12 @@ function callersCheck(repo, commit, oracleFile, preview) {
     while (stack.length) { const x = /** @type {string} */ (stack.pop()); if (all.has(x)) continue; all.add(x); stack.push(...(overridesOf.get(x) || [])); }
     implsOf.set(k, new Set([...(implsOf.get(k) || []), ...all]));
   }
+  // An interface member's implementation may itself be overridden (`IGroupState.M` →
+  // `AbstractGroupState.M`, overridden by `IdleGroupState.M`): the call may run those too.
+  for (const i of o.interfaces || []) {
+    const set = /** @type {Set<string>} */ (implsOf.get(`${i.file}|${i.member}`));
+    for (const impl of [...set]) for (const x of implsOf.get(impl) || []) set.add(x);
+  }
   /** @type {Map<string, any[]>} Oracle via edges by site. */
   const viaAtSite = new Map();
   /** @type {Map<string, any[]>} Oracle via edges by the implementation or override they may run. */
