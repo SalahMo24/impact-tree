@@ -42,7 +42,7 @@ test('every fixture text is the one its symbols were recorded for', () => {
 });
 
 test('Java is registered after Python, needs a server, and .java is no longer "not analysed yet"', () => {
-  assert.deepEqual(LANGUAGES.map((l) => l.id), ['typescript', 'go', 'python', 'java']);
+  assert.deepEqual(LANGUAGES.map((l) => l.id), ['typescript', 'go', 'python', 'java', 'csharp']);
   assert.equal(languageFor('src/main/java/a/B.java'), javaProvider);
   assert.equal(javaProvider.needsServer, true);
   assert.equal(unsupportedLanguageOf('src/main/java/a/B.java'), null);

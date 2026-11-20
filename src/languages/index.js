@@ -8,6 +8,7 @@ const { typescriptProvider } = require('./typescript/provider');
 const { goProvider } = require('./go/provider');
 const { pythonProvider } = require('./python/provider');
 const { javaProvider } = require('./java/provider');
+const { csharpProvider } = require('./csharp/provider');
 const { slashed } = require('./text');
 
 /**
@@ -15,7 +16,7 @@ const { slashed } = require('./text');
  * owns the file.
  * @type {ReadonlyArray<import('./types').LanguageProvider>}
  */
-const LANGUAGES = Object.freeze([typescriptProvider, goProvider, pythonProvider, javaProvider]);
+const LANGUAGES = Object.freeze([typescriptProvider, goProvider, pythonProvider, javaProvider, csharpProvider]);
 
 // The languages every answer below comes from: `LANGUAGES`, except while a test has put
 // others in their place (`useLanguagesForTest`). Owner: this module. Never changed by
@@ -80,7 +81,7 @@ function isTestPath(relPath) {
 // display: a file handled by a registered language never gets here.
 /** @type {ReadonlyArray<[RegExp, string]>} */
 const UNSUPPORTED = Object.freeze([
-  [/\.kts?$/, 'Kotlin'], [/\.cs$/, 'C#'],
+  [/\.kts?$/, 'Kotlin'],
   [/\.rb$/, 'Ruby'], [/\.rs$/, 'Rust'], [/\.php$/, 'PHP'], [/\.swift$/, 'Swift'],
   [/\.(c|h)$/, 'C'], [/\.(cc|cpp|cxx|hh|hpp|hxx)$/, 'C++'], [/\.scala$/, 'Scala'],
 ]);

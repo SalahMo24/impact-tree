@@ -4,7 +4,7 @@
  * C# verification harness (Part C). A development script, not part of `npm test`.
  *
  *   node test/lsp-harness/csharp-verify.js --syntactic --repo <C# clone> --commit <sha>
- *        --outline <module exporting outlineOf(text)> [--prs <n,n,…>] [--tools <dir>]
+ *        --outline <module exporting outlineOf(text, path)> [--prs <n,n,…>] [--tools <dir>]
  *   node test/lsp-harness/csharp-verify.js --oracle-only --repo <C# clone> --commit <sha>
  *   node test/lsp-harness/csharp-verify.js --signatures [--all-kinds] --repo <C# clone> --commit <sha>
  *   node test/lsp-harness/csharp-verify.js --kinds --repo <C# clone> --commit <sha> --prs <n,n,…>
@@ -30,10 +30,11 @@
  * src/. Nothing of the repository is checked out, built or run: files are read from git
  * objects at the commit.
  *
- * The candidate: `require(<--outline>).outlineOf(text)` returns the file's members as
+ * The candidate: `require(<--outline>).outlineOf(text, path)` returns the file's members as
  * `{ key, kind?, nameOffset?, start, end }[]`, offsets in UTF-16 code units with the oracle's
  * meaning (Roslyn `Span`: attributes in, leading trivia and XML doc comments out) and keys per
- * C-D6 (repeats `#2` in source order). C3's outline will export this; until then an adapter.
+ * C-D6 (repeats `#2` in source order); it throws for a file it cannot read. C3's outline:
+ * `--outline test/lsp-harness/csharp-outline-adapter.js`.
  *
  * 1. Whole repository at --commit: each candidate member is paired with one oracle member of
  *    its file (the same key; else the same `nameOffset` when the candidate gives it; else the
@@ -173,10 +174,14 @@ function lineIndex(text) {
   };
 }
 
-/** The candidate's members of a text, lines added. @param {(t: string) => any[]} outlineOf @param {string} text */
-function candidateOf(outlineOf, text) {
+/**
+ * The candidate's members of a text, lines added. `outlineOf` is given the file's path too
+ * (top-level statements are keyed by its basename).
+ * @param {(t: string, file: string) => any[]} outlineOf @param {string} text @param {string} file
+ */
+function candidateOf(outlineOf, text, file) {
   const lineOf = lineIndex(text);
-  return outlineOf(text).map((m) => ({ ...m, startLine: lineOf(m.start), endLine: lineOf(Math.max(m.start, m.end - 1)) }));
+  return outlineOf(text, file).map((m) => ({ ...m, startLine: lineOf(m.start), endLine: lineOf(Math.max(m.start, m.end - 1)) }));
 }
 
 // ---- 1. whole commit ----------------------------------------------------------------------
@@ -212,7 +217,7 @@ function pairMembers(ours, theirs) {
 
 const pct = (/** @type {number} */ a, /** @type {number} */ b) => (b ? `${((100 * a) / b).toFixed(1)}%` : 'n/a');
 
-/** @param {string} repo @param {string} commit @param {(t: string) => any[]} outlineOf @param {string} tools */
+/** @param {string} repo @param {string} commit @param {(t: string, file: string) => any[]} outlineOf @param {string} tools */
 function wholeCommit(repo, commit, outlineOf, tools) {
   const o = oracle({ repo, tools, what: commit });
   console.log(`oracle: ${o.files.length} files, ${o.cached ? 'cached' : 'computed'} in ${(o.ms / 1000).toFixed(1)} s`);
@@ -229,7 +234,7 @@ function wholeCommit(repo, commit, outlineOf, tools) {
     if (f.topLevelStatements) T.topLevel++;
     if (f.hasIf) T.hasIf++;
     let ours;
-    try { ours = candidateOf(outlineOf, text); } catch (e) { examples.threw.push(`${f.path}: ${/** @type {Error} */ (e).message}`); ours = []; }
+    try { ours = candidateOf(outlineOf, text, f.path); } catch (e) { examples.threw.push(`${f.path}: ${/** @type {Error} */ (e).message}`); ours = []; }
     const { pairs, extra, missed } = pairMembers(ours, f.members);
     T.ours += ours.length; T.oracle += f.members.length; T.paired += pairs.length;
     for (const m of f.members) (byKind[m.kind] ||= { oracle: 0, paired: 0, ranges: 0, keys: 0 }).oracle++;
@@ -331,7 +336,7 @@ function rowsOf(f, baseMembers, headMembers) {
   return rows;
 }
 
-/** @param {string} repo @param {string} commit @param {number[]} numbers @param {(t: string) => any[]} outlineOf @param {string} tools */
+/** @param {string} repo @param {string} commit @param {number[]} numbers @param {(t: string, file: string) => any[]} outlineOf @param {string} tools */
 function prMode(repo, commit, numbers, outlineOf, tools) {
   const prs = resolvePrs(repo, commit, numbers);
   const perPr = prs.map((pr) => ({ pr, files: changedFiles(repo, pr).map((f) => ({ ...f, hunks: hunksOf(repo, pr, f) })) }));
@@ -357,7 +362,7 @@ function prMode(repo, commit, numbers, outlineOf, tools) {
       const side = (/** @type {string} */ sha, /** @type {string} */ p) => {
         const name = `${sha}:${p}`;
         let mine = [];
-        try { mine = candidateOf(outlineOf, texts.get(name) || ''); } catch { /* listed as missed rows */ }
+        try { mine = candidateOf(outlineOf, texts.get(name) || '', p); } catch { /* listed as missed rows */ }
         return { mine, roslyn: oracleBy.get(name) || [] };
       };
       const b = f.status === 'A' ? { mine: [], roslyn: [] } : side(pr.base, f.oldPath);
