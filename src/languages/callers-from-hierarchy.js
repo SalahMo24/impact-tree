@@ -201,7 +201,9 @@ const MAX_CALLER_TARGETS = 4;
  * The rows of several queries as one list: each caller (file#pos) once, its call sites the
  * union of every query's (a site, start:end, once). When a caller is listed twice and one
  * of its rows has no `callSites`, the larger `sites` count is kept (their overlap is not
- * known). Pure; the input rows are not changed.
+ * known). A row's label (`via`, `text`: reached through an interface or an override) is kept
+ * only when every merged row carries one of the same `via` (C-D5: a caller reached both ways
+ * is unlabelled); different texts are joined. Pure; the input rows are not changed.
  * @param {CallerRow[][]} lists
  * @returns {CallerRow[]}
  */
@@ -213,19 +215,37 @@ function mergeCallerRows(lists) {
       const id = `${r.file}#${r.pos}`;
       const had = byId.get(id);
       if (!had) { byId.set(id, r); continue; }
+      /** @type {CallerRow} */
+      let merged = had;
       if (!Array.isArray(had.callSites) || !Array.isArray(r.callSites)) {
-        byId.set(id, { ...had, sites: Math.max(had.sites || 0, r.sites || 0) });
-        continue;
+        merged = { ...had, sites: Math.max(had.sites || 0, r.sites || 0) };
+      } else {
+        const seen = new Set(had.callSites.map((s) => `${s.start}:${s.end}`));
+        const added = r.callSites.filter((s) => !seen.has(`${s.start}:${s.end}`));
+        if (added.length) {
+          const callSites = had.callSites.concat(added);
+          merged = { ...had, callSites, sites: callSites.length };
+        }
       }
-      const seen = new Set(had.callSites.map((s) => `${s.start}:${s.end}`));
-      const added = r.callSites.filter((s) => !seen.has(`${s.start}:${s.end}`));
-      if (added.length) {
-        const callSites = had.callSites.concat(added);
-        byId.set(id, { ...had, callSites, sites: callSites.length });
-      }
+      byId.set(id, mergeLabel(merged, had, r));
     }
   }
   return [...byId.values()];
+}
+
+/**
+ * `row` (the merge of `a` and `b`) with the label both carry, or none.
+ * @param {CallerRow} row @param {CallerRow} a @param {CallerRow} b @returns {CallerRow}
+ */
+function mergeLabel(row, a, b) {
+  if (!a.via && !b.via) return row;
+  /** @type {CallerRow} */
+  const bare = { ...row };
+  delete bare.via;
+  delete bare.text;
+  if (!a.via || a.via !== b.via) return bare;
+  const texts = [...new Set([a.text, b.text].filter(Boolean))];
+  return { ...bare, via: a.via, ...(texts.length ? { text: texts.join('; ') } : {}) };
 }
 
 /**

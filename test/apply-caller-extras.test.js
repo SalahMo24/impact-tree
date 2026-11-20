@@ -132,3 +132,13 @@ test('mergeCallerRows: a row without call sites keeps the larger count; inputs u
   assert.equal(merged[0].sites, 3);
   assert.equal(a.sites, 1);
 });
+
+test('mergeCallerRows: a label (via, text) stays only when every merged row carries it (C-D5)', () => {
+  const direct = row('/r/b.py', 1);
+  const through = { ...row('/r/b.py', 1), via: 'interface', text: 'through IFoo' };
+  const other = { ...row('/r/b.py', 1), via: 'interface', text: 'through IBar' };
+  assert.equal(mergeCallerRows([[through], [direct]])[0].via, undefined);
+  assert.equal(mergeCallerRows([[direct], [through]])[0].text, undefined);
+  assert.deepEqual([mergeCallerRows([[through], [through]])[0].via, mergeCallerRows([[through], [other]])[0].text], ['interface', 'through IFoo; through IBar']);
+  assert.equal(through.via, 'interface');
+});

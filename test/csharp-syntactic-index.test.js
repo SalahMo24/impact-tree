@@ -179,9 +179,13 @@ test('interfaces: the interface member lists its direct calls; an implementation
   const iget = callersOf('Lib/Repo.cs', 'IRepo.Get(int)');
   assert.deepEqual(iget.rows, ['Service.A(Repo, object): _irepo.Get(1).Touch();']);
   assert.match(iget.reason, /interface `IRepo`/);
+  // C8b (C-D5): the implementation lists the interface member's calls, labelled, and stays incomplete.
   const get = callersOf('Lib/Repo.cs', 'Repo.Get(int)');
-  assert.deepEqual(get.rows, []);
-  assert.match(get.reason, /`IRepo`/);
+  assert.deepEqual(get.rows, ['Service.A(Repo, object): _irepo.Get(1).Touch();']);
+  assert.match(get.reason, /implements `IRepo.Get`: calls through it are listed as "through `IRepo`" and may also reach implementations outside the indexed files/);
+  const d = idx.byFile.get('/r/Lib/Repo.cs').defs.find((x) => x.key === 'Repo.Get(int)');
+  const row = idx.callersOfWithStatus({ file: d.file.file, name: d.name, pos: d.namePos }).callers[0];
+  assert.deepEqual([row.via, row.text], ['interface', 'through IRepo']);
 });
 
 test('an outside base marks public instance methods incomplete (C-D5)', () => {
@@ -190,18 +194,17 @@ test('an outside base marks public instance methods incomplete (C-D5)', () => {
   assert.ok(idx.undeclaredBase.size >= 1);
 });
 
-test('extension methods: the static form is listed, the receiver form counts as unresolved', () => {
+test('extension methods: the static form is listed; on an outside receiver (`string`) the receiver form stays unresolved', () => {
   const shout = callersOf('App/Helpers.cs', 'Helpers.Shout(this string)');
   assert.deepEqual(shout.rows, ['Controller.Act(): public void Act() { "a".Shout(); Helpers.Shout("b"); }']);
-  assert.match(shout.reason, /extension method/);
   assert.equal(shout.unresolved, 1);
 });
 
-test('method groups are value uses; properties are not computed; a private static method with direct calls only is complete', () => {
+test('method groups are value uses; properties are always incomplete; a private static method with direct calls only is complete', () => {
   const count = callersOf('App/Service.cs', 'Service.Count(string)');
   assert.deepEqual(count.rows, ['Service.Size: public int Size => Count("z");']);
   assert.match(count.reason, /method group 1 time/);
-  assert.match(callersOf('App/Service.cs', 'Service.Size').reason, /^not computed/);
+  assert.match(callersOf('App/Service.cs', 'Service.Size').reason, /^a property: reads and writes are listed only on receivers the index typed/);
   const twice = callersOf('App/Helpers.cs', 'Helpers.Twice(int)');
   assert.equal(twice.reason, null);
   assert.equal(twice.unresolved, 0);
@@ -369,19 +372,19 @@ public interface IFoo { void M(); }
 public class B { public void M() { } }
 public class D : B, IFoo { }
 public class U { void Run(IFoo f) { f.M(); } void Direct(B b) { b.M(); } }` }, 'B.M()');
-  assert.deepEqual([inherited.callers, inherited.complete], [['U.Direct(B)'], false]);
-  assert.match(inherited.reason, /may implement a member of `IFoo` \(through `D`\)/);
+  assert.deepEqual([inherited.callers, inherited.complete], [['U.Direct(B)', 'U.Run(IFoo)'], false]);
+  assert.match(inherited.reason, /implements `IFoo.M`: calls through it are listed/);
   const generic = answerFor({ 'a.cs': `namespace N; public sealed class User { }
 public interface IHandler<T> { void Handle(T item); }
 public sealed class UserHandler : IHandler<User> { public void Handle(User u) { } }
 sealed class Svc { void R(UserHandler c) { c.Handle(null); } }` }, 'UserHandler.Handle(User)');
   assert.equal(generic.complete, false);
-  assert.match(generic.reason, /implements or overrides a member of `IHandler`/);
+  assert.match(generic.reason, /implements `IHandler.Handle`/);
   const spelled = answerFor({ 'a.cs': `namespace N; public interface IX { void Put(System.String s, int? n); void Go(params int[] a); }
 public sealed class X : IX { public void Put(string s, System.Nullable<int> n) { } public void Go(int[] a) { } }
 sealed class Svc { void R(X c) { c.Put("a", 1); c.Go(null); } }` }, 'X.Put(string, Nullable)');
   assert.equal(spelled.complete, false);
-  assert.match(spelled.reason, /a member of `IX`/);
+  assert.match(spelled.reason, /implements `IX.Put`/);
   // A derived type's outside interface may be implemented by the inherited public method.
   const outside = answerFor({ 'a.cs': `namespace N; public class B { public void Dispose() { } } public class D : B, IDisposable { }
 sealed class U { void R(B b) { b.Dispose(); } }` }, 'B.Dispose()');
@@ -553,4 +556,160 @@ test('S7: a name the index cannot place is unresolved, not outside', () => {
   // A capitalised name that is nothing the index declares, with no `using static`, stays outside.
   const bcl = answerFor({ 'a.cs': 'namespace N; public sealed class Foo { internal static void Exists() { } } sealed class U { void R() { Console.Exists(); } }' }, 'Foo.Exists()');
   assert.deepEqual([bcl.callers, bcl.complete], [[], true]);
+});
+
+test('S8: parameters typed `Foo?`, `G<int>`, `global::N.Foo` are typed receivers', () => {
+  const files = { 'a.cs': `namespace N; public sealed class Foo { public void A() { } public void B() { } public void E() { } }
+public sealed class G<T> { public void Z() { } }
+sealed class U { void R(Foo a, Foo? b, G<int> g, global::N.Foo e) { a.A(); b.B(); g.Z(); e.E(); } }` };
+  for (const key of ['Foo.A()', 'Foo.B()', 'G<1>.Z()', 'Foo.E()']) assert.deepEqual(answerFor(files, key), { callers: ['U.R(Foo, Foo?, G, Foo)'], reason: '', unresolved: 0, complete: true }, key);
+});
+
+test('nits: an outside first base named like `IOException` is a class; an indexed extension of the name keeps an unsure instance call unresolved', () => {
+  const io = answerFor({ 'a.cs': `namespace N; public class MyError : IOException { public void Log(object o) { } }
+sealed class U { void R(MyError e) { e.Log(Path.GetTempPath()); } }` }, 'MyError.Log(object)');
+  // An argument of a type not known: `IOException` may declare an overload that wins, so the call is not listed.
+  assert.deepEqual([io.callers, io.complete], [[], false]);
+  const ext = answerFor({ 'a.cs': `namespace N; public sealed class C { public void Put(C other) { } }
+public static class Ext { public static void Put(this C c, string s) { } }
+sealed class U { void R(C c, object x) { c.Put(x); c.Put(c); } }` }, 'C.Put(C)');
+  assert.deepEqual([ext.callers, ext.unresolved], [['U.R(C, object)'], 1]);
+});
+
+/** Rows `label [text]` of the member keyed `key` (C8b labels). */
+function labelled(files, key) {
+  const ix = createCsharpSyntacticIndex(Object.entries(files).map(([p, text]) => ({ path: p, text })), { root: '/r' });
+  for (const rec of ix.byFile.values()) {
+    const d = rec.defs.find((x) => x.key === key);
+    if (!d) continue;
+    const a = ix.callersOfWithStatus({ file: rec.file, name: d.name, pos: d.namePos });
+    return { rows: a.callers.map((c) => `${c.label}${c.via ? ` [${c.via}: ${c.text}]` : ''} x${c.callSites.length}`).sort(), reason: a.incompleteReason || '' };
+  }
+  throw new Error(`no member keyed ${key}`);
+}
+
+test('C-D5: calls through an interface are listed on the implementation, labelled; transitive, generic arguments checked', () => {
+  const files = { 'a.cs': `namespace N; public sealed class User { } public sealed class Other { }
+public interface IHandler<T> { void Handle(T item); }
+public interface IUserHandler : IHandler<User> { }
+public sealed class UserHandler : IUserHandler { public void Handle(User u) { } }
+public sealed class OtherHandler : IHandler<Other> { public void Handle(Other o) { } }
+sealed class Svc
+{
+    private readonly IHandler<User> _h;
+    void A(IHandler<Other> o, IUserHandler u, UserHandler d) { _h.Handle(null); o.Handle(null); u.Handle(null); }
+    void B(UserHandler d, IUserHandler u) { d.Handle(null); u.Handle(null); }
+    void C<T>(IHandler<T> any) { any.Handle(default); }
+}` };
+  const r = labelled(files, 'UserHandler.Handle(User)');
+  assert.deepEqual(r.rows, ['Svc.A(IHandler, IUserHandler, UserHandler) [interface: through IHandler] x2', 'Svc.B(UserHandler, IUserHandler) x2', 'Svc.C<1>(IHandler) [interface: through IHandler] x1']);
+  assert.match(r.reason, /may also reach 1 other implementation\(s\) in the indexed files/);
+  assert.match(r.reason, /1 call\(s\) through a generic interface whose type arguments are not known or differ/);
+  assert.deepEqual(labelled(files, 'OtherHandler.Handle(Other)').rows, ['Svc.A(IHandler, IUserHandler, UserHandler) [interface: through IHandler] x1', 'Svc.C<1>(IHandler) [interface: through IHandler] x1']);
+});
+
+test('C-D5: an explicit implementation, another overload or a hiding class is not labelled; overrides list calls written on the base', () => {
+  const files = { 'a.cs': `namespace N;
+public interface IFoo { void M(int a); }
+public class Impl : IFoo { public void M(string s) { } void IFoo.M(int a) { } }
+public abstract class Base { public virtual void Run() { } public void Template() { Run(); } }
+public class Leaf : Base { public override void Run() { base.Run(); } }
+public class Sibling : Base { }
+sealed class U { void R(IFoo f, Base b, Sibling s, Leaf l) { f.M(1); b.Run(); s.Run(); l.Run(); } }` };
+  assert.deepEqual(labelled(files, 'Impl.M(string)').rows, []);
+  const leaf = labelled(files, 'Leaf.Run()');
+  assert.deepEqual(leaf.rows, ['Base.Template() [override: through Base] x1', 'U.R(IFoo, Base, Sibling, Leaf) x2']);
+  assert.match(leaf.reason, /an override of `Base.Run`: calls written on that type are listed/);
+});
+
+test('C8b extension methods: `x.M()` by the `this` type and the namespaces in scope; undecided ones stay unresolved', () => {
+  const files = {
+    'ext.cs': `namespace Lib.Ext;
+public static class FooExt { public static void Go(this N.Foo f, int n) { } public static void Any<T>(this T x) { } public static void Seq(this IEnumerable<int> xs) { } }`,
+    'a.cs': `using Lib.Ext;
+namespace N;
+public class Foo { } public sealed class Bar : Foo { }
+sealed class U { void R(Foo f, Bar b, List<int> xs) { f.Go(1); b.Go(2); f.Any(); xs.Seq(); FooExt.Go(f, 3); } }`,
+    'b.cs': `namespace M; sealed class V { void R(N.Foo f) { f.Go(1); } }`,
+  };
+  const go = answerFor(files, 'FooExt.Go(this Foo, int)');
+  assert.deepEqual([go.callers, go.unresolved, go.complete], [['U.R(Foo, Bar, List)'], 0, true]);
+  const any = answerFor(files, 'FooExt.Any<1>(this T)');
+  assert.equal(any.unresolved, 1);
+  const seq = answerFor(files, 'FooExt.Seq(this IEnumerable)');
+  assert.deepEqual([seq.callers, seq.unresolved], [[], 1]);
+  const ix = createCsharpSyntacticIndex(Object.entries(files).map(([p, text]) => ({ path: p, text })), { root: '/r' });
+  const d = ix.byFile.get('/r/ext.cs').defs.find((x) => x.key === 'FooExt.Go(this Foo, int)');
+  assert.equal(ix.callersOfWithStatus({ file: '/r/ext.cs', name: 'Go', pos: d.namePos }).callers[0].callSites.length, 3);
+});
+
+test('C8b: a generic method that cannot infer its type parameter is not called without type arguments; a call matching several interface overloads is not labelled', () => {
+  const files = { 'a.cs': `namespace N;
+public interface IL { T Get<T>(System.Guid id); object Get(System.Guid id); void Put(string s); void Put(object o); }
+public sealed class L : IL { public T Get<T>(System.Guid id) => default; public object Get(System.Guid id) => null; public void Put(string s) { } public void Put(object o) { } }
+sealed class U { void R(IL l, System.Guid g) { l.Get(g); l.Get<int>(g); l.Put(null); } }` };
+  assert.deepEqual(labelled(files, 'L.Get(Guid)').rows, ['U.R(IL, Guid) [interface: through IL] x1']);
+  assert.deepEqual(labelled(files, 'L.Get<1>(Guid)').rows, ['U.R(IL, Guid) [interface: through IL] x1']);
+  const put = labelled(files, 'L.Put(string)');
+  assert.deepEqual(put.rows, []);
+  assert.match(put.reason, /1 call\(s\) through an interface or a base type that match several overloads are not listed/);
+  assert.doesNotMatch(put.reason, /may implement a member/);
+});
+
+test('C8b properties and indexers: reads and writes on typed receivers, always incomplete; initializers, named arguments and locals are not the property', () => {
+  const files = { 'a.cs': `namespace N;
+public class Box { private int _n; public int Size { get => _n; set => _n = value; } public int this[int i] => i; public int Twice => Size * 2; public int First() { return this[0]; } }
+public sealed class Other { public int Size => 1; }
+sealed class U
+{
+    void R(Box b, Other o, Box[] all)
+    {
+        var x = b.Size; b.Size = 3; var y = o.Size; var z = b[1]; var w = all[0];
+        var n = new Box { Size = 4 };
+        int Size = 5; var s = Size;
+    }
+}` };
+  const size = labelled(files, 'Box.Size');
+  assert.deepEqual(size.rows, ['Box.Twice x1', 'U.R(Box, Other, Box[]) x2']);
+  assert.match(size.reason, /a property: reads and writes are listed only on receivers the index typed/);
+  assert.match(size.reason, /1 use\(s\) of the name on a receiver that could not be resolved/);
+  const index = labelled(files, 'Box.this[int]');
+  assert.deepEqual(index.rows, ['Box.First() x1', 'U.R(Box, Other, Box[]) x1']);
+  assert.match(index.reason, /an indexer: element accesses are listed only/);
+});
+
+test('C8b properties: a name written where a type or a declared name goes is not a use (`Regex Regex`, `as Series`, `Version.Parse`)', () => {
+  const files = { 'a.cs': `namespace N;
+public class Series { } public class Version { public static Version Parse(string s) => null; }
+public class Ep
+{
+    private Series? _s; private Version? _v;
+    public Series Series { get => _s ??= Find<Series>() as Series; }
+    public Version Version { get => _v ??= Version.Parse("1"); }
+    private static readonly (Series Series, int W)[] Dims = null;
+    T Find<T>() => default;
+    bool Is(object o) => o is Series s && (Series)o != null && Series != null;
+}` };
+  const series = labelled(files, 'Ep.Series');
+  assert.deepEqual(series.rows, ['Ep.Is(object) x1']);
+  assert.deepEqual(labelled(files, 'Ep.Version').rows, []);
+});
+
+test('C8b properties: a nullable type in a type position is not a read (`T?[]`, `T? value`, `G<T?>`); `P?[i]` and `P ? a : b` are', () => {
+  const files = { 'a.cs': `namespace N;
+public enum Kind { A }
+public class V
+{
+    private static readonly Kind?[] _all = null;
+    public Kind? Kind { get => _k; set => _k = value; }
+    private Kind? _k;
+    public int[] Items { get => null; }
+    public bool On { get => true; }
+    void Set(Kind? value) { }
+    void Pair(List<Kind?> xs, (Kind?, int) t) { }
+    int Read() { var a = Items?[0]; return On ? 1 : 0; }
+}` };
+  assert.deepEqual(labelled(files, 'V.Kind').rows, []);
+  assert.deepEqual(labelled(files, 'V.Items').rows, ['V.Read() x1']);
+  assert.deepEqual(labelled(files, 'V.On').rows, ['V.Read() x1']);
 });

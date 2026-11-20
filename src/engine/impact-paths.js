@@ -88,8 +88,9 @@ function validateLimits(given) {
  * a JSX attribute's value; `'returned-member'`: uses it as a member of what a named function
  * returns) and `text` says so for a reader ("passed as onClick to <Button>", "returned by
  * useX, used in handleNext"). The walk follows it as it follows a caller (resolver
- * `pathEdges`, ./edges-jsx.js).
- * @typedef {{ at: number, via: 'jsx-prop'|'returned-member', text: string }} PathHop
+ * `pathEdges`, ./edges-jsx.js). Also a caller row reached through dispatch (`'interface'`,
+ * `'override'`: C#'s "through IFoo", a may-call, ./caller-contract.js `CallerRow`).
+ * @typedef {{ at: number, via: 'jsx-prop'|'returned-member'|'interface'|'override'|string, text: string }} PathHop
  */
 
 /**
@@ -243,7 +244,7 @@ function makeDeclarationCache(facts, repo) {
  * @property {WalkNode|null} parent
  * @property {boolean} lowerBound
  * @property {boolean} throughStale
- * @property {{ via: 'jsx-prop'|'returned-member', text: string }} [hop] How this node reached `parent` when it
+ * @property {{ via: string, text: string }} [hop] How this node reached `parent` when it
  *   does not call it (a walk-only edge).
  * @property {EntryInfo} [action] A pass-through entry this node is (a server action): it is
  *   recorded once the node is found to have a caller or walk-only edge (see `walkOne`).
@@ -351,7 +352,7 @@ async function walkOne({ resolver, changed, repo, facts, limits, deadline, signa
       continue;
     }
     const prod = answer.callers.filter((x) => !x.test);
-    /** @type {Array<CallerRow & { via?: 'jsx-prop'|'returned-member', text?: string }>} */
+    /** @type {Array<CallerRow & { text?: string }>} */
     let next = prod;
     if (!prod.length) {
       // Nothing calls it in production; a handler passed in a JSX attribute (`onClick={f}`)

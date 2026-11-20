@@ -481,7 +481,7 @@ function renderCallerItem(vscode, item, n, view) {
   const notUpdated = untouched.length + unknown.length;
   const partlyUpdated = updated.length > 0 && notUpdated > 0;
   const how = !n.cycle && view.agentHowOf ? view.agentHowOf(n) : null;
-  item.description = n.cycle ? state : [`${state}  ·  ${base}${n.sites > 1 ? `  ·  ${n.sites} call sites` : ''}`, how].filter(Boolean).join('  ·  ');
+  item.description = n.cycle ? state : [`${state}  ·  ${base}${n.sites > 1 ? `  ·  ${n.sites} call sites` : ''}`, n.viaText, how].filter(Boolean).join('  ·  ');
   item.iconPath = n.cycle ? new vscode.ThemeIcon('issue-reopened')
     : n.test ? new vscode.ThemeIcon('beaker')
       : rowIcon(n.label, null, n.callState === 'changed-elsewhere' ? CHANGED_ELSEWHERE_TONE : null);
@@ -492,6 +492,7 @@ function renderCallerItem(vscode, item, n, view) {
     '',
     `\`${n.relPath || n.file}\``,
     ...(n.sites ? ['', `${n.sites} call site${n.sites === 1 ? '' : 's'} to the changed symbol`] : []),
+    ...(n.viaText ? ['', `Called ${mdText(n.viaText)}: the call is written on ${n.via === 'override' ? 'a base method this overrides' : 'an interface member this implements'}, so it may run this one or another.`] : []),
     ...(partlyUpdated ? ['', `${updated.length} of ${updated.length + notUpdated} call sites updated`] : []),
     ...(n.callState === 'changed-elsewhere'
       ? ['', '---', '', 'This caller **was** edited in this change, but not on the line that calls the changed symbol — it may still need updating.']

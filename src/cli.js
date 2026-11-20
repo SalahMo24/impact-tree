@@ -92,7 +92,7 @@ for (const f of result.findings) {
   f.throwsAdded.forEach((t) => console.log(`      + throw ${t}`));
   if (f.stale.length) {
     console.log(`      🔴 ${f.stale.length} caller(s) NOT updated in this change:`);
-    f.stale.slice(0, 8).forEach((s) => console.log(`         ⚠ ${s.label}   ${rel(s.file)}`));
+    f.stale.slice(0, 8).forEach((s) => console.log(`         ⚠ ${s.label}   ${rel(s.file)}${s.via && s.text ? `   (${s.text})` : ''}`));
     if (f.stale.length > 8) console.log(`         +${f.stale.length - 8} more`);
     if (f.callersComplete === false) console.log(`      ? ${missingNote(f)}`);
   } else if (isNotComputedReason(f.callersIncompleteReason)) {

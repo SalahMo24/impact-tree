@@ -333,3 +333,16 @@ test('the panel reads each caller file once per result, and again for a new resu
   await nextTurn();
   assert.ok(reads.length > first, 'a new result is read again');
 });
+
+test('C8b: a caller reached through an interface or an override carries its label in the review tab and the changes tree; a direct caller has none', () => {
+  const labelled = { ...SAVE, callers: [{ ...SAVE.callers[0], via: 'interface', text: 'through IStore' }, { ...SAVE.callers[1], via: 'cqrs' }] };
+  const m = reviewTabModel({ result: { ...SMALL.result, allChanged: [labelled, RUN] }, cards: SMALL.cards });
+  assert.deepEqual(m.changes['src/a.ts#7'].callers.map((c) => c.via || null), ['through IStore', null]);
+  const html = buildReviewTabHtml(m, { nonce: 'n', cspSource: 'c' });
+  assert.match(html, /<span class="via">through IStore<\/span>/);
+  assert.equal((html.match(/class="via"/g) || []).length, 1);
+  const { buildCallerRows, NO_SITE_EVIDENCE } = require('../src/views/changes/tree-row-models');
+  const { rows } = buildCallerRows(labelled.callers.map((caller) => ({ caller, callSiteUpdates: NO_SITE_EVIDENCE })),
+    { ancestry: [], reviewParent: null, changedKeys: new Set(), rel: null, result: null, uriOf: (f) => f });
+  assert.deepEqual(rows.map((r) => [r.label, r.viaText || null]), [['spec', null], ['handler', 'through IStore']]);
+});

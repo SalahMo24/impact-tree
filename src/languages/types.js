@@ -221,7 +221,10 @@
  * @property {string} label
  * @property {number} pos Offset of the caller's name.
  * @property {Array<{ start: number, end: number }>} callSites Offsets, exclusive end.
- * @property {string} [via] How it was reached when not by a direct call (`cqrs`).
+ * @property {string} [via] How it was reached when not by a direct call (`cqrs`; C#'s
+ *   `'interface'`/`'override'`: a call written on an interface member or a base method this
+ *   implements or overrides, a may-call).
+ * @property {string} [text] The same for a reader, such as "through IFoo"; with `via` only.
  */
 
 /**

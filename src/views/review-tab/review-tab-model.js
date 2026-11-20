@@ -31,7 +31,8 @@ const KINDS = ['changed', 'may-change', 'new', 'same'];
 /**
  * @typedef {{ text: string, tone: 'danger'|'warning'|'plain' }} Chip
  * @typedef {{ id: string, n: number, title: string, sentence: string, chips: Chip[], attention: boolean, column: string, changes: string[], why: string|null }} CardModel
- * @typedef {{ label: string, file: string, line: number|null, state: string, test: boolean, index: number }} CallerModel
+ * @typedef {{ label: string, file: string, line: number|null, state: string, test: boolean, index: number, via?: string }} CallerModel
+ *   `via`: how a caller reached through an interface or an override is said ("through IFoo"); absent for a direct caller.
  * @typedef {{ id: string, name: string, file: string, line: number|null, deleted: boolean, attention: boolean, kind: string|null, what: string|null,
  *   before: string|null, after: string|null, when: string|null, shape: string|null, affects: Array<{ name: string, how: string }>,
  *   calls: { added: string[], removed: string[], more: number }|null,
@@ -157,7 +158,8 @@ function reviewTabModel({ result, cards, agentPayload = null, title = '', hunkOf
       affects: (b && b.affects) || [], verdict: { text: verdict.text, level: verdict.level },
       hunk: c ? hunkLines(hunkOf(c), c.startLine, c.endLine) : null,
       callers: callers.slice(0, MAX_CALLERS).map((/** @type {any} */ x, /** @type {number} */ index) => ({
-        label: x.label, file: rel(x.file), line: lineAt(x.file, x.pos), state: x.callState || 'unknown', test: !!x.test, index })),
+        label: x.label, file: rel(x.file), line: lineAt(x.file, x.pos), state: x.callState || 'unknown', test: !!x.test, index,
+        ...(x.via && x.text ? { via: String(x.text) } : {}) })),
       callersMore: Math.max(0, callers.length - MAX_CALLERS), callersComplete: !c || c.callersComplete !== false,
       entries: entries.slice(0, MAX_ENTRIES), entriesMore: Math.max(0, entries.length - MAX_ENTRIES),
     };

@@ -583,8 +583,11 @@ function fixtureKeys(tools, write) {
 // that are an oracle edge of that target (any `via`: a call bound to an interface or virtual
 // member is a direct row of that member); recall over the oracle's direct edges (`via` absent,
 // kinds invocation, object-creation, initializer) whose target the index declares; edges with
-// `via` (C8b's: through an interface or override) reported apart, "not expected yet". Misses on
-// an answer marked complete must be 0.
+// `via` (through an interface or override) reported apart. C8b's labelled sites (a call the index
+// resolved to an interface member or base method the target implements or overrides, not to the
+// target) are scored as may-calls: the oracle binds that site to a member (`via` interface or
+// override-base) whose implementations or overrides (transitively) include the target; reported
+// by the oracle's implementation count. Misses on an answer marked complete must be 0.
 
 /** @param {string} repo @param {string} commit @param {string} oracleFile @param {boolean} preview */
 function callersCheck(repo, commit, oracleFile, preview) {
@@ -624,8 +627,46 @@ function callersCheck(repo, commit, oracleFile, preview) {
   const directByTarget = new Map();
   /** @type {Map<string, any[]>} */
   const viaByTarget = new Map();
+  // Implementations and overrides (transitive) of each interface or virtual member, by `file|key`.
+  /** @type {Map<string, Set<string>>} */
+  const implsOf = new Map();
+  for (const i of o.interfaces || []) implsOf.set(`${i.file}|${i.member}`, new Set(i.implementations.map((/** @type {any} */ x) => `${x.file}|${x.key}`)));
+  /** @type {Map<string, string[]>} */
+  const overridesOf = new Map();
+  for (const v of o.overrides || []) overridesOf.set(`${v.file}|${v.member}`, v.overrides.map((/** @type {any} */ x) => `${x.file}|${x.key}`));
+  for (const k of overridesOf.keys()) {
+    const all = new Set();
+    const stack = [...(overridesOf.get(k) || [])];
+    while (stack.length) { const x = /** @type {string} */ (stack.pop()); if (all.has(x)) continue; all.add(x); stack.push(...(overridesOf.get(x) || [])); }
+    implsOf.set(k, new Set([...(implsOf.get(k) || []), ...all]));
+  }
+  // An interface member's implementation may itself be overridden (`IGroupState.M` →
+  // `AbstractGroupState.M`, overridden by `IdleGroupState.M`): the call may run those too.
+  for (const i of o.interfaces || []) {
+    const set = /** @type {Set<string>} */ (implsOf.get(`${i.file}|${i.member}`));
+    for (const impl of [...set]) for (const x of implsOf.get(impl) || []) set.add(x);
+  }
+  /** @type {Map<string, any[]>} Oracle via edges by site. */
+  const viaAtSite = new Map();
+  /** @type {Map<string, any[]>} Oracle via edges by the implementation or override they may run. */
+  const viaByImpl = new Map();
+  // Property and indexer reads and writes (C8b), by target and site.
+  /** @type {Set<string>} */
+  const propSites = new Set();
+  for (const e of o.edges) {
+    if (/^property-/.test(e.kind) && !isTestPath(e.file)) propSites.add(`${e.targetFile}|${e.target}|${e.file}|${e.start}`);
+  }
   for (const e of o.edges) {
     if (!SITE_KINDS.has(e.kind) || isTestPath(e.file) || isTestPath(e.targetFile)) continue;
+    if (e.via) {
+      const sk = `${e.file}|${e.start}`;
+      if (!viaAtSite.has(sk)) viaAtSite.set(sk, []);
+      /** @type {any[]} */ (viaAtSite.get(sk)).push(e);
+      for (const impl of implsOf.get(`${e.targetFile}|${e.target}`) || []) {
+        if (!viaByImpl.has(impl)) viaByImpl.set(impl, []);
+        /** @type {any[]} */ (viaByImpl.get(impl)).push(e);
+      }
+    }
     const tk = `${e.targetFile}|${e.target}`;
     oracleSites.set(`${tk}|${e.file}|${e.start}`, e);
     const into = e.via ? viaByTarget : directByTarget;
@@ -644,6 +685,16 @@ function callersCheck(repo, commit, oracleFile, preview) {
   let viaFound = 0;
   let sameArity = 0;
   let outsideOracle = 0;
+  let labelledSites = 0;
+  let labelledRows = 0;
+  let labelledMay = 0;
+  let throughTotal = 0;
+  let throughFound = 0;
+  let extensionIncomplete = 0;
+  /** @type {Record<string, { sites: number, may: number }>} */
+  const byImpls = Object.create(null);
+  /** @type {string[]} */
+  const labelledWrong = [];
   const projectDirs = o.projects.map((/** @type {any} */ p) => path.posix.dirname(p.path)).map((/** @type {string} */ d) => (d === '.' ? '' : d));
   const inOracle = (/** @type {string} */ rel) => projectDirs.some((/** @type {string} */ d) => d === '' || rel.startsWith(`${d}/`));
   /** @type {string[]} */
@@ -654,9 +705,27 @@ function callersCheck(repo, commit, oracleFile, preview) {
   const missReasons = Object.create(null);
   /** @type {Record<string, number>} */
   const incompleteBy = Object.create(null);
+  let propOurs = 0;
+  let propHits = 0;
+  let propComplete = 0;
+  /** @type {string[]} */
+  const propFps = [];
   for (const rec of idx.byFile.values()) {
     if (isTestPath(rec.rel) || !inOracle(rec.rel)) continue;
     for (const d of rec.defs) {
+      if (d.member === 'property' || d.member === 'indexer') {
+        const a = idx.callersOfWithStatus({ file: rec.file, name: d.name, pos: d.namePos });
+        if (!a.incompleteReason) propComplete++;
+        for (const c of a.callers) {
+          if (isTestPath(c.file) || !inOracle(c.file)) continue;
+          for (const st of c.callSites) {
+            propOurs++;
+            if (propSites.has(`${rec.rel}|${d.key}|${c.file}|${st.start}`)) propHits++;
+            else propFps.push(`${c.label} → ${d.key}  (${c.file}:${lineAt(c.file, st.start)}: ${String(read(c.file)).split('\n')[lineAt(c.file, st.start) - 1].trim().slice(0, 110)})`);
+          }
+        }
+        continue;
+      }
       if (!['method', 'constructor', 'primary-constructor'].includes(d.member)) continue;
       targets++;
       const tk = `${rec.rel}|${d.key}`;
@@ -664,13 +733,17 @@ function callersCheck(repo, commit, oracleFile, preview) {
       const unresolved = idx.unresolvedCallsTo({ name: d.name });
       const isComplete = !a.incompleteReason && !unresolved;
       if (isComplete) complete++;
+      if (/an extension method/.test(a.incompleteReason || '')) extensionIncomplete++;
       else for (const r of [...(a.incompleteReason ? a.incompleteReason.split('; ') : []), ...(unresolved ? ['unresolved calls of the name'] : [])]) {
         const k = r.replace(/`[^`]*`/g, '`…`').replace(/\d+/g, 'N').slice(0, 60);
         incompleteBy[k] = (incompleteBy[k] || 0) + 1;
       }
       /** @type {Set<string>} */
       const mine = new Set();
+      /** @type {Set<string>} */
+      const mineThrough = new Set();
       for (const c of a.callers) {
+        if (c.via) labelledRows++;
         const crel = c.file;
         if (isTestPath(crel)) continue;
         // A file of no project the oracle loaded (`fuzz/…`): it has no edges to compare.
@@ -678,6 +751,20 @@ function callersCheck(repo, commit, oracleFile, preview) {
         const callerRec = idx.byFile.get(c.file);
         const callerKey = callerRec && callerRec.byPos.get(c.pos) ? callerRec.byPos.get(c.pos).key : null;
         for (const s of c.callSites) {
+          // A site the index bound to another member (an interface member or a base method):
+          // a may-call through dispatch, scored apart.
+          const bound = idx.targetsAt(c.file, s.start);
+          if (Array.isArray(bound) && !bound.includes(d)) {
+            labelledSites++;
+            mineThrough.add(`${crel}|${s.start}`);
+            const es = (viaAtSite.get(`${crel}|${s.start}`) || []).filter((e) => (implsOf.get(`${e.targetFile}|${e.target}`) || new Set()).has(tk));
+            const n = es.length ? Number(es[0].implementations || es[0].overrides || 1) : 0;
+            const bucket = !es.length ? 'none' : n <= 1 ? '1' : n <= 5 ? '2-5' : '6+';
+            byImpls[bucket] = byImpls[bucket] || { sites: 0, may: 0 };
+            byImpls[bucket].sites++;
+            if (es.length) { labelledMay++; byImpls[bucket].may++; } else labelledWrong.push(`${c.label} → ${d.key} [${c.text || 'mixed row'}]  (${crel}:${lineAt(crel, s.start)}: ${String(read(crel)).split('\n')[lineAt(crel, s.start) - 1].trim().slice(0, 110)})`);
+            continue;
+          }
           ours++;
           const sk = `${tk}|${crel}|${s.start}`;
           mine.add(sk);
@@ -698,6 +785,7 @@ function callersCheck(repo, commit, oracleFile, preview) {
         missReasons[`${e.kind}/${why}`] = (missReasons[`${e.kind}/${why}`] || 0) + 1;
       }
       for (const e of viaByTarget.get(tk) || []) { viaTotal++; if (mine.has(`${tk}|${e.file}|${e.start}`)) viaFound++; }
+      for (const e of viaByImpl.get(tk) || []) { if (e.kind !== 'invocation') continue; throughTotal++; if (mineThrough.has(`${e.file}|${e.start}`)) throughFound++; }
     }
   }
   const queryMs = Date.now() - t2;
@@ -706,15 +794,22 @@ function callersCheck(repo, commit, oracleFile, preview) {
   console.log(`targets (non-test methods and constructors): ${targets}; complete answers ${complete} (${pct(complete, targets)}); hit by the undeclared-base rule ${idx.undeclaredBase.size}`);
   console.log(`direct precision ${pct(hits, ours - sameArity)} on unambiguous rows (${hits}/${ours - sameArity} call sites; caller keys equal on ${keyAgree}); ${pct(hits, ours)} with the ${sameArity} same-arity rows counted; recall ${pct(found, oracleDirect)} (${found}/${oracleDirect} direct oracle edges)`);
   console.log(`call sites in files of no project the oracle loaded (not compared): ${outsideOracle}`);
-  console.log(`edges through an interface or an override (C8b, not expected yet): ${viaFound}/${viaTotal} found as direct rows of the dispatched member`);
+  console.log(`edges through an interface or an override: ${viaFound}/${viaTotal} found as direct rows of the dispatched member`);
+  console.log(`C8b labelled (through) sites: ${labelledSites} on ${labelledRows} labelled rows; may-call ${pct(labelledMay, labelledSites)} (${labelledMay}/${labelledSites}); by the oracle's implementation count ${JSON.stringify(byImpls)}`);
+  console.log(`C8b recall of calls through an interface or override on their implementations: ${pct(throughFound, throughTotal)} (${throughFound}/${throughTotal} invocations)`);
+  console.log(`extension methods incomplete for that reason: ${extensionIncomplete}`);
+  console.log(`properties and indexers (C8b): ${propHits}/${propOurs} sites are oracle property edges (${pct(propHits, propOurs)}); complete answers ${propComplete} (must be 0); not oracle edges (${propFps.length}):`);
+  for (const f of propFps.slice(0, 25)) console.log(`  ${f}`);
   console.log(`misses by kind/answer: ${JSON.stringify(missReasons)}`);
   console.log(`incomplete reasons (targets): ${JSON.stringify(Object.entries(incompleteBy).sort((x, y) => y[1] - x[1]).slice(0, 14))}`);
   console.log(`false positives (${fps.length}):`);
   for (const f of fps) console.log(`  ${f}`);
+  console.log(`labelled sites that are not may-calls (${labelledWrong.length}, must be 0):`);
+  for (const f of labelledWrong.slice(0, 40)) console.log(`  ${f}`);
   console.log(`misses on an answer marked complete (${missesOnComplete.length}, must be 0):`);
   for (const m of missesOnComplete.slice(0, 60)) console.log(`  ${m}`);
   if (preview && complete) console.log(`FAIL: ${complete} complete answer(s) in the preview`);
-  return ours > 0 && hits / (ours - sameArity) >= 0.95 && !missesOnComplete.length && (!preview || !complete);
+  return ours > 0 && hits / (ours - sameArity) >= 0.95 && !missesOnComplete.length && !labelledWrong.length && (!preview || !complete);
 }
 
 function main() {
