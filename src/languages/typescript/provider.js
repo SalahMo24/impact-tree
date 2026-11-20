@@ -145,7 +145,8 @@ async function prepare(ctx) {
   // in the process-wide registry of resolver-ts.js, which keeps TypeScript's lib files across
   // runs). Owner: this `prepare` call, then the run through `extras.dispose`. Key:
   // TypeScript version and config path; the config is read once, and a file's version is
-  // its mtime, so an edit during the run is seen by the service. Invalidation: none; the
+  // its mtime, re-checked once per event-loop turn (resolver-ts.js), so an edit is seen by
+  // the service at its next call after the loop has turned. Invalidation: none; the
   // next run builds a new pool. Disposal: `extras.dispose`, which the pipeline calls once
   // the caller stage is over (on failure and cancellation too), or the `catch` below when this rejects.
   const servicePool = { services: new Map() };

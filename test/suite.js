@@ -79,6 +79,7 @@ const SUITE = [
   { file: 'test/review-identity-regressions.test.js', tier: 'quick' },  // 2.1s
   { file: 'test/engine-regressions.test.js', tier: 'full' },  // 63.1s
   { file: 'test/cqrs-cache.test.js', tier: 'quick' },  // 0.6s
+  { file: 'test/resolver-ts-versions.test.js', tier: 'quick' },  // 0.3s
   { file: 'test/call-site-classifier.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/unseen-users.test.js', tier: 'quick' },  // 2.6s
   { file: 'test/caller-evidence.test.js', tier: 'full' },  // 5.6s
