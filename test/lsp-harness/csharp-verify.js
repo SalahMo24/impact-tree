@@ -6,6 +6,16 @@
  *   node test/lsp-harness/csharp-verify.js --syntactic --repo <C# clone> --commit <sha>
  *        --outline <module exporting outlineOf(text)> [--prs <n,n,…>] [--tools <dir>]
  *   node test/lsp-harness/csharp-verify.js --oracle-only --repo <C# clone> --commit <sha>
+ *   node test/lsp-harness/csharp-verify.js --signatures [--all-kinds] --repo <C# clone> --commit <sha>
+ *   node test/lsp-harness/csharp-verify.js --kinds --repo <C# clone> --commit <sha> --prs <n,n,…>
+ *
+ * `--signatures` (C2): src/languages/csharp/signature.js on every method and constructor's
+ * text (the oracle's span; `--all-kinds` adds properties, indexers, operators, conversions),
+ * every field compared with the oracle's (name, explicit interface, modifiers, attributes,
+ * type parameters, return type, each parameter's name, type, modifiers, default, attributes
+ * and key type, the key's parameter text, header, body kind). Exit 0 only at 100% agreement.
+ * `--kinds` (C2): the PRs' members whose header changed (oracle headers, J-D3 pairing), each
+ * with `csharpKindsOf`, for checking by hand.
  *
  * `--syntactic` (C0a-1): a candidate text outline against the Roslyn syntax oracle
  * (test/csharp-syntax-oracle/, README.md there for its format), which shares no code with
@@ -365,18 +375,170 @@ function prMode(repo, commit, numbers, outlineOf, tools) {
   return T.tp === T.ours && T.tp >= 0.98 * T.oracle;
 }
 
+// ---- 3. signatures (C2) ---------------------------------------------------------------------
+
+const SIG_KINDS = new Set(['method', 'constructor', 'static-constructor', 'primary-constructor']);
+const same = (/** @type {any} */ a, /** @type {any} */ b) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * src/languages/csharp/signature.js against the oracle: every method and constructor's member
+ * text (the oracle's span) parsed, and its name, explicit interface, modifiers, attributes,
+ * type parameters, return type, parameters (name, type, modifiers, default, attributes, key
+ * type), the key's parameter text, the header and the body kind compared.
+ * @param {string} repo @param {string} commit @param {string} tools @param {boolean} all also properties, indexers, operators, conversions
+ */
+function signatures(repo, commit, tools, all) {
+  const sig = require('../../src/languages/csharp/signature');
+  const o = oracle({ repo, tools, what: commit });
+  const sha = git(repo, 'rev-parse', `${commit}^{commit}`).trim();
+  const texts = readObjects(repo, o.files.map((f) => `${sha}:${f.path}`));
+  const t0 = Date.now();
+  /** @type {Record<string, { n: number, agreed: number }>} */
+  const byKind = Object.create(null);
+  /** @type {Map<string, string[]>} */
+  const diffs = new Map();
+  const note = (/** @type {string} */ field, /** @type {string} */ ex) => { if (!diffs.has(field)) diffs.set(field, []); /** @type {string[]} */ (diffs.get(field)).push(ex); };
+  for (const f of o.files) {
+    const text = /** @type {string} */ (texts.get(`${sha}:${f.path}`));
+    for (const m of f.members) {
+      if (!(SIG_KINDS.has(m.kind) || (all && m.kind !== 'top-level'))) continue;
+      const k = (byKind[m.kind] ||= { n: 0, agreed: 0 });
+      k.n++;
+      const where = `${f.path}:${m.startLine} ${m.key}`;
+      const decl = text.slice(m.start, m.end);
+      const before = diffs.size ? [...diffs.values()].reduce((a, x) => a + x.length, 0) : 0;
+      if (m.kind === 'primary-constructor') {
+        const p = sig.parseCsharpParameterList(decl);
+        if (!p) note('unparsed', `${where}: ${decl.slice(0, 100)}`);
+        else comparePars(p.params, m.params, where, note, sig);
+      } else {
+        const p = sig.parseCsharpDeclaration(decl);
+        if (!p) { note('unparsed', `${where}: ${decl.slice(0, 120).replace(/\s+/g, ' ')}`); } else {
+          const kind = p.kind === 'constructor' && m.kind === 'static-constructor' ? 'static-constructor' : p.kind;
+          if (kind !== m.kind) note('kind', `${where}: ours ${p.kind}`);
+          if (p.name !== m.name) note('name', `${where}: ours ${p.name} | Roslyn ${m.name}`);
+          if ((p.explicitInterface || undefined) !== m.explicitInterface) note('explicitInterface', `${where}: ours ${p.explicitInterface} | Roslyn ${m.explicitInterface}`);
+          if (!same(p.modifiers, m.modifiers)) note('modifiers', `${where}: ours ${p.modifiers} | Roslyn ${m.modifiers}`);
+          if (!same(p.attributes, m.attributes)) note('attributes', `${where}: ours ${JSON.stringify(p.attributes)} | Roslyn ${JSON.stringify(m.attributes)}`);
+          if (!same(p.typeParameters, m.typeParameters)) note('typeParameters', `${where}: ours ${p.typeParameters} | Roslyn ${m.typeParameters}`);
+          if (p.returns !== m.returns) note('returns', `${where}: ours ${p.returns} | Roslyn ${m.returns}`);
+          if (p.header !== m.header) note('header', `${where}:\n      ours   ${p.header}\n      Roslyn ${m.header}`);
+          if (p.body !== m.body) note('body', `${where}: ours ${p.body} | Roslyn ${m.body}`);
+          comparePars(p.params, m.params, where, note, sig);
+        }
+      }
+      const after = [...diffs.values()].reduce((a, x) => a + x.length, 0);
+      if (after === before) k.agreed++;
+    }
+  }
+  const total = Object.values(byKind).reduce((a, k) => a + k.n, 0);
+  const agreed = Object.values(byKind).reduce((a, k) => a + k.agreed, 0);
+  console.log(`signatures of ${path.basename(path.resolve(repo))} at ${sha.slice(0, 12)}: ${total} members, ${agreed} agree in every field (${pct(agreed, total)}), parsed in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+  for (const [kind, k] of Object.entries(byKind)) console.log(`  ${kind.padEnd(20)} ${String(k.n).padStart(6)} ${String(k.agreed).padStart(6)}`);
+  for (const [field, xs] of diffs) {
+    console.log(`${field}: ${xs.length}`);
+    for (const x of xs.slice(0, MAX_LISTED)) console.log(`  ${x}`);
+  }
+  return agreed === total;
+}
+
+/**
+ * @param {any[]} ours @param {any[]} theirs @param {string} where
+ * @param {(field: string, ex: string) => void} note @param {any} sig
+ */
+function comparePars(ours, theirs, where, note, sig) {
+  if (ours.length !== theirs.length) { note('param count', `${where}: ours ${ours.length} | Roslyn ${theirs.length}`); return; }
+  for (let i = 0; i < ours.length; i++) {
+    const a = ours[i];
+    const b = theirs[i];
+    for (const field of ['name', 'type', 'modifiers', 'default', 'attributes', 'keyType']) {
+      if (!same(a[field], b[field])) note(`param ${field}`, `${where} #${i}: ours ${JSON.stringify(a[field])} | Roslyn ${JSON.stringify(b[field])}`);
+    }
+  }
+  const keyText = theirs.map((p) => p.keyType).join(', ');
+  if (sig.csharpKeyParams(ours) !== keyText) note('key params', `${where}: ours (${sig.csharpKeyParams(ours)})`);
+}
+
+/**
+ * Members whose header changed in the PRs: base and head versions paired by key (J-D3 pairing),
+ * the header texts (the oracle's) differ; each pair's `csharpKindsOf` printed for checking by
+ * hand.
+ * @param {string} repo @param {string} commit @param {number[]} numbers @param {string} tools
+ */
+function headerKinds(repo, commit, numbers, tools) {
+  const sig = require('../../src/languages/csharp/signature');
+  const prs = resolvePrs(repo, commit, numbers);
+  const perPr = prs.map((pr) => ({ pr, files: changedFiles(repo, pr) }));
+  /** @type {string[]} */
+  const list = [];
+  for (const { pr, files } of perPr) {
+    for (const f of files) {
+      if (f.status !== 'A') list.push(`${pr.base}:${f.oldPath}`);
+      if (f.status !== 'D') list.push(`${pr.head}:${f.path}`);
+    }
+  }
+  const unique = [...new Set(list)];
+  const o = oracle({ repo, tools, what: { list: unique } });
+  const oracleBy = new Map(o.files.map((f) => [`${f.commit}:${f.path}`, f.members]));
+  const texts = readObjects(repo, unique);
+  const side = (/** @type {string} */ name, /** @type {any} */ m) => {
+    const text = texts.get(name) || '';
+    const decl = text.slice(m.start, m.end);
+    if (m.kind === 'primary-constructor') {
+      const pl = sig.parseCsharpParameterList(decl);
+      return { sig: pl ? pl.sig : null, header: m.header, modifiers: ['public'] };
+    }
+    const p = sig.parseCsharpDeclaration(decl);
+    return { sig: p ? p.sig : null, header: p ? p.header : m.header, modifiers: p ? p.modifiers : m.modifiers };
+  };
+  let n = 0;
+  for (const { pr, files } of perPr) {
+    for (const f of files) {
+      if (f.status === 'A' || f.status === 'D') continue;
+      const bName = `${pr.base}:${f.oldPath}`;
+      const hName = `${pr.head}:${f.path}`;
+      const base = oracleBy.get(bName) || [];
+      const head = paired(base, oracleBy.get(hName) || []);
+      const byKey = new Map(base.map((/** @type {any} */ m) => [m.key, m]));
+      for (const h of head) {
+        const b = byKey.get(h.key);
+        if (!b || b.header === h.header || h.kind === 'top-level') continue;
+        n++;
+        const bs = side(bName, b);
+        const hs = side(hName, h);
+        const kinds = sig.csharpKindsOf(bs, hs).map((/** @type {any} */ k) => k.id);
+        console.log(`#${pr.number} ${f.path} ${h.key} (${h.kind})\n    - ${b.header}\n    + ${h.header}\n    kinds: ${kinds.join(', ') || '(none)'}${bs.sig && hs.sig ? '' : ' [header fallback]'}`);
+      }
+    }
+  }
+  console.log(`${n} members with a changed header`);
+}
+
 function main() {
   const args = process.argv.slice(2);
   const opt = (/** @type {string} */ name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
   const repo = opt('--repo');
   const commit = opt('--commit') || 'HEAD';
   const tools = opt('--tools') || scratchpadPath('csharp-tools');
-  if (!repo || !fs.existsSync(repo) || !(args.includes('--syntactic') || args.includes('--oracle-only'))) {
+  if (!repo || !fs.existsSync(repo) || !['--syntactic', '--oracle-only', '--signatures', '--kinds'].some((a) => args.includes(a))) {
     console.error('usage: node test/lsp-harness/csharp-verify.js --syntactic --repo <clone> --commit <sha> --outline <module> [--prs <n,n,…>] [--tools <dir>]');
     console.error('       node test/lsp-harness/csharp-verify.js --oracle-only --repo <clone> --commit <sha>');
+    console.error('       node test/lsp-harness/csharp-verify.js --signatures [--all-kinds] --repo <clone> --commit <sha>');
+    console.error('       node test/lsp-harness/csharp-verify.js --kinds --repo <clone> --commit <sha> --prs <n,n,…>');
     process.exit(2);
   }
   const t0 = Date.now();
+  if (args.includes('--signatures')) {
+    const ok = signatures(repo, commit, tools, args.includes('--all-kinds'));
+    console.log(`wall time ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+    process.exitCode = ok ? 0 : 1;
+    return;
+  }
+  if (args.includes('--kinds')) {
+    headerKinds(repo, commit, String(opt('--prs') || '').split(',').filter(Boolean).map(Number), tools);
+    console.log(`wall time ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+    return;
+  }
   if (args.includes('--oracle-only')) {
     const o = oracle({ repo, tools, what: commit });
     /** @type {Record<string, number>} */
