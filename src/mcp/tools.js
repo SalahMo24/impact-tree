@@ -289,7 +289,7 @@ function addLocationTools(tools, env) {
 
   tools.push({
     name: 'impact_paths', title: 'Impact paths of any function', annotations: READ_ONLY,
-    description: `Walk callers upward from the function at file:line to the application's entry points (HTTP routes, CLI commands, mains, public API, UI routes, …; a Next.js server action is listed as an entry of type server-action but the path goes on past it, to what references it). Each path ends as entry, top-unidentified, unknown (with the reason) or budget. A step that is not a call is listed in the path's hops (at: index in via; text, e.g. "passed as onClick to <Button>": a React handler passed in a JSX attribute, followed to the component that renders it). Limits: 8 levels, 300 callers, ${QUERY_DEADLINE_MS} ms.`,
+    description: `Walk callers upward from the function at file:line to the application's entry points (HTTP routes, CLI commands, mains, public API, UI routes, …; a Next.js server action is listed as an entry of type server-action but the path goes on past it, to what references it). Each path ends as entry, top-unidentified, unknown (with the reason) or budget. A step that is not a call is listed in the path's hops (at: index in via; text, e.g. "passed as onClick to <Button>": a React handler passed in a JSX attribute, followed to the component that renders it; "returned by useX, used in handleNext": a function a named function returns in an object literal, followed to where a caller of useX uses it). A top-unidentified path with topKind returned-unused is such a function none of those callers uses. Limits: 8 levels, 300 callers, ${QUERY_DEADLINE_MS} ms.`,
     inputSchema: z.object({ ...locShape }).strict(),
     run: async (args) => {
       const loc = locate(env, args);

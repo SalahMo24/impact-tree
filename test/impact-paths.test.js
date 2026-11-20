@@ -289,3 +289,37 @@ test('a server action only tests reference is no entry', async () => {
   assert.deepEqual(r.entries, []);
   assert.equal(r.topPaths[0].topKind, 'test-only');
 });
+
+// Walk-only edges of a function returned by a hook (resolver `pathEdges`, src/engine/edges-jsx.js).
+const VALUE_USE = { callers: [], complete: false, reason: 'referenced-as-value' };
+
+test('returned by a hook and used by none of its callers: a returned-unused top, not "referenced as a value"', async () => {
+  const g = fakeGraph({ submit: { file: 'hooks/form.ts' } }, {
+    status: { submit: VALUE_USE },
+    state: { submit: { state: 'unknown', reason: 'referenced-as-value', callers: [], complete: false } },
+  });
+  g.resolver.pathEdges = async () => ({ rows: [], complete: true, returnedBy: 'useForm' });
+  const r = await run(g, 'submit');
+  assert.deepEqual(r.topPaths.map((e) => [e.end, e.topKind, e.returnedBy, e.via]), [['top-unidentified', 'returned-unused', 'useForm', ['submit']]]);
+  assert.deepEqual([r.complete, r.incompleteReasons], [true, []]);
+  // A use the edges do not follow keeps it unknown, with their reason.
+  g.resolver.pathEdges = async () => ({ rows: [], complete: false, reason: 'the object useForm returns is passed on in a.tsx', returnedBy: 'useForm' });
+  const open = await run(g, 'submit');
+  assert.deepEqual(open.topPaths.map((e) => [e.end, e.reason]), [['unknown', 'the object useForm returns is passed on in a.tsx']]);
+  // Without `returnedBy`, an empty answer reads as before: the caller answer's value use.
+  g.resolver.pathEdges = async () => ({ rows: [], complete: true });
+  const before = await run(g, 'submit');
+  assert.deepEqual(before.topPaths.map((e) => [e.end, e.reason]), [['unknown', 'referenced-as-value']]);
+});
+
+test('N3-D1 (pinned): a returned function with a production caller is walked through its callers; edges are not asked for it', async () => {
+  const g = fakeGraph({
+    reset: { file: 'hooks/form.ts', callers: ['called'] },
+    called: { file: 'hooks/form.ts', pos: 40 },
+  });
+  const asked = [];
+  g.resolver.pathEdges = async (file, pos) => { asked.push(pos); return { rows: [], complete: true, returnedBy: 'useForm' }; };
+  const r = await run(g, 'reset');
+  assert.deepEqual(asked, [40]);
+  assert.deepEqual(r.topPaths.map((e) => [e.topKind, e.via]), [['returned-unused', ['reset', 'called']]]);
+});
