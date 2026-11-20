@@ -5,7 +5,8 @@
 // steps, and leave screenshots and text an agent (or a person) can read to check a change. Each
 // run starts a fresh, throwaway profile, so it never touches the editor you work in.
 //
-//   node scripts/drive.js [--repo PATH] [--out DIR] [--keep-open] <steps…>
+//   node scripts/drive.js [--repo PATH] [--out DIR] [--keep-open] [--extensions-dir DIR]
+//     [--settings FILE] [--extension-dev PATH]… <steps…>
 //
 // Without --repo it opens the demo repository (scripts/demo-repo.js), built fresh for the run.
 // Steps run in order; the run stops at the first one that fails (saving failure.png and the dumps).
@@ -18,6 +19,7 @@
 //   click:TEXT    select the first Review row containing TEXT (waits for it to appear)
 //   expand:TEXT   open the first Review row containing TEXT, without selecting it
 //   wait:TEXT     wait until TEXT shows in the Review tree, the Details view or the review tab
+//   pause:SECONDS wait that long (at most 20 s), for work outside the views (another extension's)
 //   shot:NAME     save the window as NAME.png
 //   dump[:NAME]   write tree.txt (the Review rows on screen), details.txt (the Details text) and
 //                 review.txt (the review tab's text), or NAME-tree.txt, NAME-details.txt…
@@ -43,15 +45,24 @@ const STEP_TIMEOUT_MS = 20_000;
 const READY_TIMEOUT_MS = 30_000;
 const CLOSE_GRACE_MS = 3_000;
 
-const SETTINGS = {
-  'impactTree.analyseOnStartup': true,
-  'workbench.startupEditor': 'none',
-  'window.restoreWindows': 'none',
+/**
+ * Settings that keep a run from reaching outside it: no telemetry, no editor or extension
+ * updates (an update would rewrite the extensions folder), no workspace-trust prompt. Applied
+ * after --settings, so a settings file cannot turn them back on.
+ */
+const SAFETY_SETTINGS = Object.freeze({
   'security.workspace.trust.enabled': false,
   'update.mode': 'none',
   'extensions.autoUpdate': false,
   'extensions.autoCheckUpdates': false,
   'telemetry.telemetryLevel': 'off',
+});
+
+const SETTINGS = {
+  'impactTree.analyseOnStartup': true,
+  'workbench.startupEditor': 'none',
+  'window.restoreWindows': 'none',
+  ...SAFETY_SETTINGS,
   'workbench.tips.enabled': false,
   'workbench.colorTheme': 'Default Dark Modern',
   'git.openRepositoryInParentFolders': 'never',
@@ -63,6 +74,47 @@ const SETTINGS = {
   'workbench.reduceMotion': 'on',
   'editor.minimap.enabled': false,
 };
+
+/**
+ * The run's settings: the driver's own, then --settings (adding or overriding), then the safety
+ * settings again, which a settings file cannot override.
+ * @param {Record<string, unknown> | null} user @returns {Record<string, unknown>}
+ */
+const runSettings = (user) => ({ ...SETTINGS, ...(user || {}), ...SAFETY_SETTINGS });
+
+/**
+ * The folders an --extensions-dir may be in: this repository's `.vscode-test/` and the
+ * scratchpad (IMPACT_TREE_SCRATCHPAD, else ~/Projects/impact-tree-scratchpad). VS Code
+ * rewrites the folder's `extensions.json` (it can drop extensions it thinks obsolete), so it
+ * must never be an editor's own folder.
+ * @param {string} home @returns {string[]}
+ */
+const extensionsDirRoots = (home) => [
+  path.join(ROOT, '.vscode-test'),
+  process.env.IMPACT_TREE_SCRATCHPAD || path.join(home, 'Projects', 'impact-tree-scratchpad'),
+];
+
+/** The editors' own extension folders, refused even inside an allowed root. @param {string} home */
+const editorExtensionDirs = (home) => ['.vscode', '.vscode-insiders', '.vscode-oss', '.cursor', '.windsurf']
+  .map((d) => path.join(home, d, 'extensions'));
+
+/**
+ * Refuses an --extensions-dir outside the allowed roots or that is (or is inside) an editor's
+ * own extensions folder. Symlinks are resolved first, so a link cannot point the run at one.
+ * @param {string} dir @param {string} [home] @returns {string} the resolved folder
+ */
+function checkExtensionsDir(dir, home = require('node:os').homedir()) {
+  const real = (/** @type {string} */ p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const within = (/** @type {string} */ p, /** @type {string} */ root) => p === root || p.startsWith(root + path.sep);
+  const resolved = real(dir);
+  const editor = editorExtensionDirs(home).map(real).find((e) => within(resolved, e) || within(e, resolved));
+  if (editor) throw new Error(`--extensions-dir ${dir} is (or holds) an editor's own extensions folder (${editor}); copy the extensions under .vscode-test/ or the scratchpad`);
+  const roots = extensionsDirRoots(home).map(real);
+  if (!roots.some((r) => within(resolved, r) && resolved !== r)) {
+    throw new Error(`--extensions-dir ${dir} must be a folder inside ${roots.join(' or ')}`);
+  }
+  return resolved;
+}
 
 /** Built-in extensions that run code and that the review needs: the TypeScript language server. */
 const KEEP_BUILTINS = new Set(['vscode.typescript-language-features']);
@@ -119,8 +171,8 @@ const splitStep = (step) => {
 
 /** @param {string[]} argv */
 function parseArgs(argv) {
-  /** @type {{ repo: string|null, out: string, keepOpen: boolean, steps: string[] }} */
-  const o = { repo: null, out: path.join(ROOT, '.vscode-test', 'out', 'latest'), keepOpen: false, steps: [] };
+  /** @type {{ repo: string|null, out: string, keepOpen: boolean, extensionsDir: string|null, settings: string|null, extensionDev: string[], steps: string[] }} */
+  const o = { repo: null, out: path.join(ROOT, '.vscode-test', 'out', 'latest'), keepOpen: false, extensionsDir: null, settings: null, extensionDev: [], steps: [] };
   /** @param {number} i */
   const value = (i) => {
     if (argv[i] === undefined || argv[i].startsWith('--')) throw new Error(`${argv[i - 1]} needs a path`);
@@ -131,11 +183,16 @@ function parseArgs(argv) {
     if (a === '--repo') o.repo = value(++i);
     else if (a === '--out') o.out = value(++i);
     else if (a === '--keep-open') o.keepOpen = true;
+    else if (a === '--extensions-dir') o.extensionsDir = value(++i);
+    else if (a === '--settings') o.settings = value(++i);
+    else if (a === '--extension-dev') o.extensionDev.push(value(++i));
     else if (a.startsWith('--')) throw new Error(`unknown option ${a}`);
     else o.steps.push(a);
   }
   if (!o.steps.length) throw new Error('no steps given; for example: node scripts/drive.js view shot:start');
   if (o.repo && !fs.existsSync(o.repo)) throw new Error(`--repo ${o.repo} does not exist`);
+  for (const p of [o.extensionsDir, o.settings, ...o.extensionDev]) if (p && !fs.existsSync(p)) throw new Error(`${p} does not exist`);
+  if (o.extensionsDir) o.extensionsDir = checkExtensionsDir(o.extensionsDir);
   // Every step is checked before the editor starts, so a typo fails in milliseconds, not after a launch.
   for (const step of o.steps) {
     const { verb, arg } = splitStep(step);
@@ -304,7 +361,7 @@ async function poll(check, timeout) {
 }
 
 /** Steps that need text after the colon. */
-const NEEDS_ARG = new Set(['cmd', 'pick', 'key', 'click', 'expand', 'wait', 'shot']);
+const NEEDS_ARG = new Set(['cmd', 'pick', 'key', 'click', 'expand', 'wait', 'shot', 'pause']);
 
 /**
  * The step verbs. Each gets the page, the output folder and the step's argument (the text after
@@ -366,6 +423,11 @@ const VERBS = {
     const found = await poll(async () => (await readRows(page).catch(() => [])).some((r) => contains(r.text, text))
       || contains(await detailsText(page), text) || contains(await reviewText(page), text), STEP_TIMEOUT_MS);
     if (!found) throw new Error(`"${text}" did not show in the Review tree, Details or the review tab within ${STEP_TIMEOUT_MS / 1000} s`);
+  },
+  async pause(_ctx, seconds) {
+    const s = Number(seconds);
+    if (!(s > 0 && s <= 20)) throw new Error(`pause:${seconds}: give 1 to 20 seconds`);
+    await new Promise((r) => setTimeout(r, s * 1000));
   },
   async dump({ page, out, files }, name) {
     const prefix = name ? `${name}-` : '';
@@ -444,7 +506,9 @@ async function main() {
   try {
     fs.mkdirSync(path.join(userData, 'User'), { recursive: true });
     fs.mkdirSync(tmp);
-    fs.writeFileSync(path.join(userData, 'User', 'settings.json'), JSON.stringify(SETTINGS, null, 2));
+    // --settings adds to (or overrides) the run's settings, e.g. another extension's; never the safety ones.
+    const settings = runSettings(opts.settings ? JSON.parse(fs.readFileSync(opts.settings, 'utf8')) : null);
+    fs.writeFileSync(path.join(userData, 'User', 'settings.json'), JSON.stringify(settings, null, 2));
     if (!repo) {
       stage = 'building the demo repository';
       const { buildDemoRepo } = require('./demo-repo');
@@ -455,8 +519,11 @@ async function main() {
       executablePath,
       args: [
         `--extensionDevelopmentPath=${ROOT}`,
+        ...opts.extensionDev.map((p) => `--extensionDevelopmentPath=${p}`),
         `--user-data-dir=${userData}`,
-        `--extensions-dir=${path.join(run, 'ext')}`,
+        // --extensions-dir: installed extensions to run beside this one (kept between runs; only
+        // under .vscode-test/ or the scratchpad, checkExtensionsDir). Without it, an empty folder of the run's own.
+        `--extensions-dir=${opts.extensionsDir || path.join(run, 'ext')}`,
         '--disable-workspace-trust',
         '--skip-welcome',
         '--skip-release-notes',
@@ -514,4 +581,6 @@ async function main() {
   await finish(failed ? 1 : 0);
 }
 
-main().catch((e) => { console.error(`drive: ${e.message}`); process.exit(1); });
+if (require.main === module) main().catch((e) => { console.error(`drive: ${e.message}`); process.exit(1); });
+
+module.exports = { checkExtensionsDir, runSettings, SAFETY_SETTINGS };
