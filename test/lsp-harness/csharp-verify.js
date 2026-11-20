@@ -5,6 +5,7 @@
  *
  *   node test/lsp-harness/csharp-verify.js --syntactic --repo <C# clone> --commit <sha>
  *        --outline <module exporting outlineOf(text, path)> [--prs <n,n,…>] [--tools <dir>]
+ *   node test/lsp-harness/csharp-verify.js --syntactic --callers [--preview] --repo <C# clone> --commit <sha> [--oracle <semantic json>]
  *   node test/lsp-harness/csharp-verify.js --oracle-only --repo <C# clone> --commit <sha>
  *   node test/lsp-harness/csharp-verify.js --signatures [--all-kinds] --repo <C# clone> --commit <sha>
  *   node test/lsp-harness/csharp-verify.js --kinds --repo <C# clone> --commit <sha> --prs <n,n,…>
@@ -24,6 +25,10 @@
  * and key type, the key's parameter text, header, body kind). Exit 0 only at 100% agreement.
  * `--kinds` (C2): the PRs' members whose header changed (oracle headers, J-D3 pairing), each
  * with `csharpKindsOf`, for checking by hand.
+ *
+ * `--syntactic --callers [--preview]` (C8a): the syntax index's callers against the semantic
+ * oracle (C0a-2); see "the caller check" below. Exit 0 when direct precision >= 95%, no miss
+ * sits on an answer marked complete and (`--preview`) no answer is complete.
  *
  * `--syntactic` (C0a-1): a candidate text outline against the Roslyn syntax oracle
  * (test/csharp-syntax-oracle/, README.md there for its format), which shares no code with
@@ -565,6 +570,142 @@ function fixtureKeys(tools, write) {
   return ok;
 }
 
+// ---- the caller check (C8a): `--syntactic --callers [--preview]` ---------------------------
+//
+// The syntax index (src/languages/csharp/syntactic-index.js) over every C# file of the tree at
+// --commit outside bin/obj (the CLI's scope, C-D8; test projects included, as the CLI), read
+// from git objects; implicit usings and Razor/XAML projects from the tree's .csproj files as
+// the provider reads them (`projectFacts`). `--preview`: the same files, built as the preview
+// builds its index (`partial`, the web SDK's implicit usings): no answer may be complete.
+// Targets: every method and constructor the index declares in a non-test file. Compared with
+// the semantic oracle (C0a-2, `--oracle <json>`, default the cached jellyfin run) by call site
+// (target key + target file + site file + site offset): precision = our non-test call sites
+// that are an oracle edge of that target (any `via`: a call bound to an interface or virtual
+// member is a direct row of that member); recall over the oracle's direct edges (`via` absent,
+// kinds invocation, object-creation, initializer) whose target the index declares; edges with
+// `via` (C8b's: through an interface or override) reported apart, "not expected yet". Misses on
+// an answer marked complete must be 0.
+
+/** @param {string} repo @param {string} commit @param {string} oracleFile @param {boolean} preview */
+function callersCheck(repo, commit, oracleFile, preview) {
+  const { createCsharpSyntacticIndex, WEB_IMPLICIT_USINGS } = require('../../src/languages/csharp/syntactic-index');
+  const { projectFacts, NOT_SOURCE_DIRS } = require('../../src/languages/csharp/provider');
+  const sha = git(repo, 'rev-parse', commit).trim();
+  const all = git(repo, 'ls-tree', '-r', '--name-only', sha).split('\n').filter(Boolean);
+  const csFiles = all.filter((p) => /\.cs$/.test(p) && !path.posix.dirname(p).split('/').some((d) => NOT_SOURCE_DIRS.has(d)));
+  const projects = all.filter((p) => /\.csproj$/i.test(p));
+  const t0 = Date.now();
+  const texts = readObjects(repo, [...csFiles, ...projects].map((p) => `${sha}:${p}`));
+  const readMs = Date.now() - t0;
+  const read = (/** @type {string} */ rel) => texts.get(`${sha}:${rel}`) ?? null;
+  const facts = projectFacts(projects, all, read);
+  const sources = csFiles.map((p) => ({ path: p, text: /** @type {string} */ (read(p)) })).filter((s) => s.text != null);
+  const t1 = Date.now();
+  const idx = createCsharpSyntacticIndex(sources, preview
+    ? { scope: 'the tree, as the preview', partial: true, implicitUsings: WEB_IMPLICIT_USINGS }
+    : { scope: 'the tree', implicitUsings: facts.usings, uiDirs: facts.uiDirs });
+  const buildMs = Date.now() - t1;
+  const o = JSON.parse(fs.readFileSync(oracleFile, 'utf8'));
+  if (o.commit && !sha.startsWith(String(o.commit).slice(0, 12)) && !String(o.commit).startsWith(sha.slice(0, 12))) {
+    console.error(`oracle commit ${o.commit} is not ${sha}`);
+    process.exit(2);
+  }
+  const lineOfSite = new Map();
+  /** @param {string} rel @param {number} off */
+  const lineAt = (rel, off) => {
+    if (!lineOfSite.has(rel)) lineOfSite.set(rel, lineIndex(/** @type {string} */ (read(rel))));
+    return lineOfSite.get(rel)(off);
+  };
+  // Oracle edges by site; direct ones by target.
+  const SITE_KINDS = new Set(['invocation', 'object-creation', 'initializer']);
+  /** @type {Map<string, any>} */
+  const oracleSites = new Map();
+  /** @type {Map<string, any[]>} */
+  const directByTarget = new Map();
+  /** @type {Map<string, any[]>} */
+  const viaByTarget = new Map();
+  for (const e of o.edges) {
+    if (!SITE_KINDS.has(e.kind) || isTestPath(e.file) || isTestPath(e.targetFile)) continue;
+    const tk = `${e.targetFile}|${e.target}`;
+    oracleSites.set(`${tk}|${e.file}|${e.start}`, e);
+    const into = e.via ? viaByTarget : directByTarget;
+    if (!into.has(tk)) into.set(tk, []);
+    /** @type {any[]} */ (into.get(tk)).push(e);
+  }
+  const t2 = Date.now();
+  let targets = 0;
+  let complete = 0;
+  let ours = 0;
+  let hits = 0;
+  let keyAgree = 0;
+  let oracleDirect = 0;
+  let found = 0;
+  let viaTotal = 0;
+  let viaFound = 0;
+  /** @type {string[]} */
+  const fps = [];
+  /** @type {string[]} */
+  const missesOnComplete = [];
+  /** @type {Record<string, number>} */
+  const missReasons = Object.create(null);
+  /** @type {Record<string, number>} */
+  const incompleteBy = Object.create(null);
+  for (const rec of idx.byFile.values()) {
+    if (isTestPath(rec.rel)) continue;
+    for (const d of rec.defs) {
+      if (!['method', 'constructor', 'primary-constructor'].includes(d.member)) continue;
+      targets++;
+      const tk = `${rec.rel}|${d.key}`;
+      const a = idx.callersOfWithStatus({ file: rec.file, name: d.name, pos: d.namePos });
+      const unresolved = idx.unresolvedCallsTo({ name: d.name });
+      const isComplete = !a.incompleteReason && !unresolved;
+      if (isComplete) complete++;
+      else for (const r of [...(a.incompleteReason ? a.incompleteReason.split('; ') : []), ...(unresolved ? ['unresolved calls of the name'] : [])]) {
+        const k = r.replace(/`[^`]*`/g, '`…`').replace(/\d+/g, 'N').slice(0, 60);
+        incompleteBy[k] = (incompleteBy[k] || 0) + 1;
+      }
+      /** @type {Set<string>} */
+      const mine = new Set();
+      for (const c of a.callers) {
+        const crel = c.file;
+        if (isTestPath(crel)) continue;
+        const callerRec = idx.byFile.get(c.file);
+        const callerKey = callerRec && callerRec.byPos.get(c.pos) ? callerRec.byPos.get(c.pos).key : null;
+        for (const s of c.callSites) {
+          ours++;
+          const sk = `${tk}|${crel}|${s.start}`;
+          mine.add(sk);
+          const e = oracleSites.get(sk);
+          if (e) { hits++; if (e.caller === callerKey || (e.caller == null && callerKey == null)) keyAgree++; }
+          else fps.push(`${c.label} → ${d.key}  (${crel}:${lineAt(crel, s.start)}: ${String(read(crel)).split('\n')[lineAt(crel, s.start) - 1].trim().slice(0, 110)})`);
+        }
+      }
+      for (const e of directByTarget.get(tk) || []) {
+        oracleDirect++;
+        if (mine.has(`${tk}|${e.file}|${e.start}`)) { found++; continue; }
+        if (isComplete) missesOnComplete.push(`${e.caller} → ${d.key}  (${e.file}:${e.line})`);
+        const why = a.incompleteReason ? 'incomplete' : unresolved ? 'unresolved' : 'complete';
+        missReasons[`${e.kind}/${why}`] = (missReasons[`${e.kind}/${why}`] || 0) + 1;
+      }
+      for (const e of viaByTarget.get(tk) || []) { viaTotal++; if (mine.has(`${tk}|${e.file}|${e.start}`)) viaFound++; }
+    }
+  }
+  const queryMs = Date.now() - t2;
+  console.log(`caller check (${preview ? 'preview: the tree as the preview indexes it' : 'CLI: the tree'}) at ${sha.slice(0, 12)}; oracle ${path.basename(oracleFile)}`);
+  console.log(`index: ${idx.size} files indexed, ${idx.skipped} skipped; read ${readMs} ms, build ${buildMs} ms, queries ${queryMs} ms; implicit usings ${facts.usings.length}, Razor/XAML projects ${facts.uiDirs.length}`);
+  console.log(`targets (non-test methods and constructors): ${targets}; complete answers ${complete} (${pct(complete, targets)}); hit by the undeclared-base rule ${idx.undeclaredBase.size}`);
+  console.log(`direct precision ${pct(hits, ours)} (${hits}/${ours} call sites; caller keys equal on ${keyAgree}); recall ${pct(found, oracleDirect)} (${found}/${oracleDirect} direct oracle edges)`);
+  console.log(`edges through an interface or an override (C8b, not expected yet): ${viaFound}/${viaTotal} found as direct rows of the dispatched member`);
+  console.log(`misses by kind/answer: ${JSON.stringify(missReasons)}`);
+  console.log(`incomplete reasons (targets): ${JSON.stringify(Object.entries(incompleteBy).sort((x, y) => y[1] - x[1]).slice(0, 14))}`);
+  console.log(`false positives (${fps.length}):`);
+  for (const f of fps) console.log(`  ${f}`);
+  console.log(`misses on an answer marked complete (${missesOnComplete.length}, must be 0):`);
+  for (const m of missesOnComplete.slice(0, 60)) console.log(`  ${m}`);
+  if (preview && complete) console.log(`FAIL: ${complete} complete answer(s) in the preview`);
+  return ours > 0 && hits / ours >= 0.95 && !missesOnComplete.length && (!preview || !complete);
+}
+
 function main() {
   const args = process.argv.slice(2);
   const opt = (/** @type {string} */ name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
@@ -580,6 +721,7 @@ function main() {
   }
   if (!repo || !fs.existsSync(repo) || !['--syntactic', '--oracle-only', '--signatures', '--kinds'].some((a) => args.includes(a))) {
     console.error('usage: node test/lsp-harness/csharp-verify.js --syntactic --repo <clone> --commit <sha> --outline <module> [--prs <n,n,…>] [--tools <dir>]');
+    console.error('       node test/lsp-harness/csharp-verify.js --syntactic --callers [--preview] --repo <clone> --commit <sha> [--oracle <semantic json>]');
     console.error('       node test/lsp-harness/csharp-verify.js --oracle-only --repo <clone> --commit <sha>');
     console.error('       node test/lsp-harness/csharp-verify.js --signatures [--all-kinds] --repo <clone> --commit <sha>');
     console.error('       node test/lsp-harness/csharp-verify.js --kinds --repo <clone> --commit <sha> --prs <n,n,…>');
@@ -587,6 +729,13 @@ function main() {
     process.exit(2);
   }
   const t0 = Date.now();
+  if (args.includes('--syntactic') && args.includes('--callers')) {
+    const oracleFile = opt('--oracle') || path.join(tools, 'cache', 'semantic-jellyfin-821b849e61f6-f522323982f5.json');
+    const ok = callersCheck(repo, commit, oracleFile, args.includes('--preview'));
+    console.log(`wall time ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+    process.exitCode = ok ? 0 : 1;
+    return;
+  }
   if (args.includes('--signatures')) {
     const ok = signatures(repo, commit, tools, args.includes('--all-kinds'));
     console.log(`wall time ${((Date.now() - t0) / 1000).toFixed(1)} s`);

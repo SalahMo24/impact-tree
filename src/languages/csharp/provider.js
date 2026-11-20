@@ -9,10 +9,9 @@
 // is paired with its old self (`pairCsharpOverloads`, J-D3), the header parser and kinds
 // (./signature.js, C2) and which project a file belongs to (`csharpProjectOf`, ./rules.js).
 //
-// Until C5 (editor callers) and C8a (a syntax index) callers are not computed: every unit's
-// resolver is src/engine/resolver-not-computed.js's, so no answer reads as "no callers".
-// `needsServer` is false and `prepare` and `prepareSyntactic` are the same outline path: the
-// editor, the CLI and the no-checkout preview list the same changed members and kinds.
+// Callers come from a syntax-only index (./syntactic-index.js, C8a) until the editor's callers
+// (C5): `needsServer` is false and `prepare` and `prepareSyntactic` are the same path, so the
+// editor, the CLI and the no-checkout preview list the same changed members, kinds and callers.
 //
 // Engine modules are required where they are used: the registry (../index.js) loads this file,
 // and src/engine/diff.js loads the registry.
@@ -166,41 +165,134 @@ function csharpSpec() {
   };
 }
 
-/** Why C# callers are not listed until C5/C8a; starts with "not computed" (resolver-not-computed.js). */
-const CALLERS_REASON = 'not computed: C# callers are not searched yet; the changed members and their signature kinds are listed';
+/** What the syntax index does not resolve, for the preview's `callersScope` (types.js, PreparedLanguage). */
+const UNRESOLVED = 'calls through an interface or an override, extension methods, method groups, reflection, generated members, and receivers whose type is not written';
 
 /**
  * The changed, added and deleted C# members and their signature kinds from the text alone
  * (`csharpOutline`, then `collectCsharpSymbols`, the header parser, the overload pairing and
- * the shared matching), in units of `csharpProjectOf` (or `ctx.unit`, the preview's), callers
- * not computed. A file the outline cannot read (null: unbalanced `#if` branches, an
- * unterminated literal, a member it cannot parse) is reported by the shared pipeline as not
- * analysed, never as a file without members. `ctx.hooks` is not read.
+ * the shared matching), in units of `csharpProjectOf` (or `ctx.unit`, the preview's), with
+ * callers from a syntax-only index (./syntactic-index.js, C8a) shared by every unit. The index
+ * reads `ctx.syntacticSources` when given (the preview: the PR's C# files, implicit usings
+ * assumed from the web SDK, no answer complete), else the repository per C-D8
+ * (`indexRepository`). A file the outline cannot read (null) is reported by the shared
+ * pipeline as not analysed, never as a file without members. `ctx.hooks` is not read.
  * @param {import('../types').PrepareContext} ctx
  * @returns {Promise<import('../types').PreparedLanguage>}
  */
 async function prepareSyntactic(ctx) {
-  const { createNotComputedResolver } = require('../../engine/resolver-not-computed');
+  const { createSyntacticResolver } = require('../../engine/resolver-syntactic');
   const { csharpOutline } = require('./outline');
   /** @type {import('../types').LanguageServices} */
   const services = /** @type {any} */ ({
     available: async () => ({ ok: true }),
     documentSymbols: async (/** @type {import('../types').DocRef} */ doc) => csharpOutline(/** @type {string} */ (doc.text), { fileName: path.basename(doc.file) }),
   });
+  // A stand-in until the units are known: the index is built once, for all of them, below.
+  const pending = Object.freeze({ pending: true });
   const answer = await require('../server-symbols').prepareFromServerSymbols(
-    { ...ctx, hooks: { services, makeResolver: () => createNotComputedResolver(CALLERS_REASON) } }, csharpSpec());
-  const files = new Set(answer.units.flatMap((u) => [...u.changed, ...u.deleted]).map((c) => /** @type {any} */ (c).relPath)).size;
-  if (files) ctx.warnings.push(`${files} changed C# file(s) read from their text: changed members and signature kinds only; callers ${CALLERS_REASON}`);
-  return answer;
+    { ...ctx, hooks: { services, makeResolver: () => /** @type {any} */ (pending) } }, csharpSpec());
+  if (!answer.units.length) return answer;
+  /** @type {any[]} */
+  const changed = answer.units.flatMap((u) => [...u.changed, ...u.deleted]);
+  const { createCsharpSyntacticIndex, WEB_IMPLICIT_USINGS } = require('./syntactic-index');
+  const idx = ctx.syntacticSources
+    ? createCsharpSyntacticIndex(ctx.syntacticSources.filter((s) => csharpRules.handles(s.path)), {
+      root: ctx.repo, scope: `the pull request's own files (${ctx.syntacticSources.length} C# file(s) indexed)`, partial: true, implicitUsings: WEB_IMPLICIT_USINGS,
+    })
+    : indexRepository(ctx, changed);
+  const { isTestFile } = require('../../engine/diff');
+  const resolver = {
+    ...createSyntacticResolver(idx, /** @type {any} */ ({ isTestPath: (/** @type {string} */ file) => isTestFile(ctx.repo, file) })),
+    // The syntax-only answers are lower bounds, so a blast radius counted from them is one too.
+    callersLowerBound: true,
+  };
+  for (const unit of answer.units) unit.resolver = /** @type {any} */ (resolver);
+  const files = new Set(changed.map((c) => c.relPath)).size;
+  if (files) ctx.warnings.push(`${files} changed C# file(s) read from their text: changed members and signature kinds; ${idx.scopeNote()}`);
+  return { ...answer, extras: { ...answer.extras, scopeNote: idx.scopeNote(), unresolved: UNRESOLVED } };
+}
+
+// Directories whose C# files are build output (C-D8), at any depth.
+const NOT_SOURCE_DIRS = new Set(['bin', 'obj', 'node_modules']);
+const UI_FILE = /\.(razor|cshtml|xaml|axaml)$/i;
+
+/**
+ * The CLI's C# index (C-D8 (a)): every C# file of the repository the C# rules handle, from the
+ * tracked and untracked files, read from disk, bounded by `REPO_MAX_FILES`/`REPO_MAX_BYTES`
+ * (../repository-files.js): past the bound, the changed projects' files plus the files that
+ * mention a changed name. Implicit usings from the `.csproj` files (`projectFacts`); projects
+ * with Razor/XAML files are passed as `uiDirs`. When the files cannot be listed, the changed
+ * files only, and the scope says so. Reads the file system and the repository.
+ * @param {import('../types').PrepareContext} ctx
+ * @param {any[]} changed The changed and deleted symbols.
+ */
+function indexRepository(ctx, changed) {
+  const fs = require('fs');
+  const { createCsharpSyntacticIndex, MAX_FILE_BYTES } = require('./syntactic-index');
+  const { pickRepositoryFiles, REPO_MAX_FILES, REPO_MAX_BYTES } = require('../repository-files');
+  const read = (/** @type {string} */ rel) => { try { return fs.readFileSync(path.join(ctx.repo, rel), 'utf8'); } catch { return null; } };
+  const changedPaths = new Set(ctx.files.map((f) => f.path).filter((p) => csharpRules.handles(p)));
+  const out = ctx.git && ctx.git.tryRaw(['ls-files', '--cached', '--others', '--exclude-standard', '-z']);
+  if (out == null) {
+    const sources = /** @type {Array<{ path: string, text: string }>} */ ([...changedPaths].map((rel) => ({ path: rel, text: read(rel) })).filter((s) => s.text != null));
+    return createCsharpSyntacticIndex(sources, { root: ctx.repo, scope: `the changed files only (the repository's files could not be listed; ${sources.length} C# file(s) indexed)`, partial: true });
+  }
+  const all = [...new Set(String(out).split('\0').filter(Boolean))];
+  const projects = all.filter((rel) => /\.csproj$/i.test(rel));
+  const { usings, uiDirs } = projectFacts(projects, all, read);
+  const listed = all
+    .filter((rel) => csharpRules.handles(rel) && !path.posix.dirname(rel).split('/').some((d) => NOT_SOURCE_DIRS.has(d)))
+    .flatMap((rel) => { try { return [{ path: rel, size: fs.statSync(path.join(ctx.repo, rel)).size }]; } catch { return []; } });
+  const names = new Set(changed.map((c) => c.simpleName));
+  const changedDirs = [...changedPaths].map((rel) => csharpProjectDir(rel, projects));
+  const picked = pickRepositoryFiles(listed, read, {
+    changedPaths, names, keep: (rel) => changedPaths.has(rel) || changedDirs.some((d) => d === '' || rel.startsWith(`${d}/`)), maxFileBytes: MAX_FILE_BYTES,
+  });
+  const scope = picked.bounded
+    ? `the repository's changed projects and the files that mention a changed name (${picked.sources.length} of ${listed.length} C# file(s) indexed: over the bound of ${REPO_MAX_FILES} files or ${REPO_MAX_BYTES / 1024 / 1024} MiB)`
+    : `the repository (${picked.sources.length} C# file(s) indexed)`;
+  return createCsharpSyntacticIndex(picked.sources, { root: ctx.repo, scope, notIndexed: picked.notIndexed, partial: picked.bounded, implicitUsings: usings, uiDirs });
+}
+
+/**
+ * The directory of the nearest `.csproj` above `rel` among `projects` ('' at the root), else
+ * `rel`'s own directory. Pure.
+ * @param {string} rel @param {string[]} projects
+ */
+function csharpProjectDir(rel, projects) {
+  /** @type {string|null} */
+  let best = null;
+  for (const p of projects) {
+    const d = path.posix.dirname(p) === '.' ? '' : path.posix.dirname(p);
+    if ((d === '' || rel.startsWith(`${d}/`)) && (best === null || d.length > best.length)) best = d;
+  }
+  return best === null ? path.posix.dirname(rel) : best;
+}
+
+/**
+ * The implicit usings (the union over the projects that enable them, applied to every file:
+ * a listed approximation) and the project directories with Razor/XAML files.
+ * @param {string[]} projects @param {string[]} all @param {(rel: string) => string|null} read
+ */
+function projectFacts(projects, all, read) {
+  const { implicitUsingsOf } = require('./syntactic-index');
+  /** @type {Set<string>} */
+  const usings = new Set();
+  for (const p of projects) for (const u of implicitUsingsOf(read(p) || '')) usings.add(u);
+  /** @type {Set<string>} */
+  const uiDirs = new Set();
+  for (const rel of all) if (UI_FILE.test(rel)) uiDirs.add(csharpProjectDir(rel, projects));
+  return { usings: [...usings], uiDirs: [...uiDirs] };
 }
 
 /** @type {import('../types').LanguageProvider} */
 const csharpProvider = Object.freeze({
   ...csharpRules,
-  // The outline serves every environment until the editor's callers (C5).
+  // The outline and the syntax index serve every environment until the editor's callers (C5).
   needsServer: false,
   prepare: prepareSyntactic,
   prepareSyntactic,
 });
 
-module.exports = { csharpProvider, csharpSpec, collectCsharpSymbols, pairCsharpOverloads, renderCsharpSymbolSig, prepareSyntactic, CALLERS_REASON };
+module.exports = { csharpProvider, csharpSpec, collectCsharpSymbols, pairCsharpOverloads, renderCsharpSymbolSig, prepareSyntactic, projectFacts, csharpProjectDir, NOT_SOURCE_DIRS };

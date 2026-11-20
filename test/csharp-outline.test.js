@@ -10,7 +10,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { csharpOutline } = require('../src/languages/csharp/outline');
-const { collectCsharpSymbols, pairCsharpOverloads, csharpProvider, CALLERS_REASON } = require('../src/languages/csharp/provider');
+const { collectCsharpSymbols, pairCsharpOverloads, csharpProvider } = require('../src/languages/csharp/provider');
 const { overloadNameOf } = require('../src/languages/csharp/keys');
 const { outlineOf } = require('./lsp-harness/csharp-outline-adapter');
 
@@ -137,7 +137,7 @@ test('J-D3 pairing: one overload out and one in keep the old key; indexers and g
   assert.deepEqual(pairCsharpOverloads([sym('A.M(int)'), sym('A.M(string)')], [sym('A.M(long)'), sym('A.M(bool)')]).map((s) => s.key), ['A.M(long)', 'A.M(bool)'], 'two out, two in: not paired');
 });
 
-test('the provider is registered without a server: prepare is the outline path, callers not computed', async () => {
+test('the provider is registered without a server: prepare is the outline path, callers from the syntax index (C8a)', async () => {
   assert.equal(csharpProvider.needsServer, false);
   assert.equal(csharpProvider.prepare, csharpProvider.prepareSyntactic);
   const base = 'namespace N;\npublic class A\n{\n    public int Run(int a) { return 1; }\n    public void Gone() { }\n}\n';
@@ -151,15 +151,17 @@ test('the provider is registered without a server: prepare is the outline path, 
     headTexts: new Map([['src/A.cs', head], ['src/B.cs', 'class B {\n#if X\n#else\n{\n#endif\n}\n']]),
     changedRanges: { 'src/A.cs': [[4, 4]], 'src/B.cs': [[1, 1]] }, deletions: { 'src/A.cs': [5] },
     warnings, unanalysable: new Map(), notAnalysedFiles: new Map(), report: () => {}, hooks: {}, unit,
+    syntacticSources: [{ path: 'src/A.cs', text: head }, { path: 'src/C.cs', text: 'namespace N;\nclass C { void M(A a) { a.Run(1, "x"); } }\n' }],
   }));
   assert.equal(answer.units.length, 1);
   const [u] = answer.units;
   const changed = /** @type {any[]} */ (u.changed);
   assert.deepEqual(changed.map((c) => [c.key, c.kinds.map((/** @type {any} */ k) => k.id)]), [['A.Run(int)', ['required-param']]]);
   assert.deepEqual(/** @type {any[]} */ (u.deleted).map((d) => d.key), ['A.Gone()']);
-  const state = await u.resolver.callerState(/** @type {any} */ (null));
-  assert.equal(state.state, 'unknown');
-  assert.equal(state.reason, CALLERS_REASON);
-  assert.match(CALLERS_REASON, /^not computed: /);
+  const state = await u.resolver.callerState(changed[0].file, changed[0].namePos);
+  assert.equal(state.state, 'resolved');
+  assert.deepEqual(state.callers.map((/** @type {any} */ c) => c.label), ['C.M(A)']);
+  assert.equal(state.complete, false, 'the preview: never complete');
+  assert.equal(/** @type {any} */ (u.resolver).callersLowerBound, true);
   assert.ok(warnings.some((w) => /src\/B\.cs: NOT analysed/.test(w)), 'unbalanced #if braces: the file is not analysed');
 });

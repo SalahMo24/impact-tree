@@ -630,4 +630,4 @@ class Reader {
   }
 }
 
-module.exports = { csharpOutline, MAX_TEXT_CHARS, KIND };
+module.exports = { csharpOutline, activeText, MAX_TEXT_CHARS, KIND };
