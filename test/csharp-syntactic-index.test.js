@@ -307,3 +307,117 @@ public class A { } public class B { }
   assert.deepEqual([best1.n, best2.n], [1, 1]);
   assert.match(best2.reason, /several overloads with the same number of arguments/);
 });
+
+// ---- the C8a review's blockers (REVIEW-C8a B1–B6): never a wrong caller, never complete while one is missed ----
+
+/** The answer for the member keyed `key` over in-memory `files` ({ path: text }): caller labels, reason, unresolved count, complete. */
+function answerFor(files, key, opts = {}) {
+  const ix = createCsharpSyntacticIndex(Object.entries(files).map(([p, text]) => ({ path: p, text })), { root: '/r', ...opts });
+  for (const rec of ix.byFile.values()) {
+    const d = rec.defs.find((x) => x.key === key);
+    if (!d) continue;
+    const a = ix.callersOfWithStatus({ file: rec.file, name: d.name, pos: d.namePos });
+    const unresolved = ix.unresolvedCallsTo({ name: d.name });
+    return { callers: a.callers.map((c) => c.label).sort(), reason: a.incompleteReason || '', unresolved, complete: !a.incompleteReason && !unresolved };
+  }
+  throw new Error(`no member keyed ${key}`);
+}
+
+test('B1: a file that was not indexed (unreadable as C#, over 1 MiB, left out by the caller) makes the answer incomplete', () => {
+  const a = 'namespace N; sealed class C { internal static void M() { } static void K() { M(); } }';
+  const bad = answerFor({ 'a.cs': a, 'bad.cs': 'namespace N; sealed class Bad { void R() { C.M(); }\n#if X\n }' }, 'C.M()');
+  assert.deepEqual([bad.callers, bad.complete, bad.unresolved], [['C.K()'], false, 1]);
+  assert.match(bad.reason, /1 use\(s\) of the name `M` in C# file\(s\) that were not indexed/);
+  const big = answerFor({ 'a.cs': a, 'big.cs': `namespace N; sealed class Big { void R() { C.M(); } } //${'x'.repeat(1024 * 1024 + 5)}` }, 'C.M()');
+  assert.equal(big.complete, false);
+  assert.match(big.reason, /not indexed \(over 1 MiB/);
+  const left = answerFor({ 'a.cs': a }, 'C.M()', { notIndexed: 7 });
+  assert.equal(left.complete, false);
+  assert.match(left.reason, /7 C# file\(s\) could not be read/);
+  // A name the skipped file does not use stays complete.
+  assert.equal(answerFor({ 'a.cs': a, 'bad.cs': 'namespace N; sealed class Bad { void R() { C.Other(); }\n#if X\n }' }, 'C.M()').complete, true);
+});
+
+test('B2: a call under an inactive `#if` branch makes the answer incomplete, with its own reason', () => {
+  const r = answerFor({ 'a.cs': `namespace N; public static class C { internal static void M() { } static void K() { M(); }
+#if DEBUG
+  static void Dbg() { M(); }
+#endif
+}` }, 'C.M()');
+  assert.deepEqual([r.callers, r.complete, r.unresolved], [['C.K()'], false, 1]);
+  assert.match(r.reason, /1 use\(s\) of the name `M` in code under an inactive `#if` branch/);
+});
+
+test('B3: `var x = new T(…).Chain()` types x by the chain, not as T; `var y = (x).M()` is not a cast', () => {
+  const files = { 'a.cs': `namespace N; public sealed class Client { internal void Send() { } internal void Close() { } }
+public sealed class Builder { internal Client Build() => new Client(); internal void Close() { } }
+sealed class U { void R() { var c = new Builder().Build(); c.Send(); c.Close(); var b = new Builder() { }; b.Close(); } }` };
+  assert.deepEqual(answerFor(files, 'Client.Close()').callers, ['U.R()']);
+  assert.deepEqual(answerFor(files, 'Client.Send()').callers, ['U.R()']);
+  const builderClose = answerFor(files, 'Builder.Close()');
+  assert.deepEqual([builderClose.callers, builderClose.complete], [['U.R()'], true]); // `b.Close()` only
+  const paren = { 'a.cs': `namespace N; public sealed class x { internal void Z() { } }
+public sealed class Y { internal Y Get() => null; internal void Z() { } }
+sealed class U { void R(Y x) { var y = (x).Get(); y.Z(); } void S(object o) { var z = (x)o; z.Z(); } }` };
+  assert.deepEqual(answerFor(paren, 'x.Z()').callers, ['U.S(object)']);
+  assert.equal(answerFor(paren, 'Y.Z()').complete, false);
+});
+
+test('B4: an implementation the index cannot match by key text is incomplete (inherited, generic, spelled differently)', () => {
+  const inherited = answerFor({ 'a.cs': `namespace N;
+public interface IFoo { void M(); }
+public class B { public void M() { } }
+public class D : B, IFoo { }
+public class U { void Run(IFoo f) { f.M(); } void Direct(B b) { b.M(); } }` }, 'B.M()');
+  assert.deepEqual([inherited.callers, inherited.complete], [['U.Direct(B)'], false]);
+  assert.match(inherited.reason, /may implement a member of `IFoo` \(through `D`\)/);
+  const generic = answerFor({ 'a.cs': `namespace N; public sealed class User { }
+public interface IHandler<T> { void Handle(T item); }
+public sealed class UserHandler : IHandler<User> { public void Handle(User u) { } }
+sealed class Svc { void R(UserHandler c) { c.Handle(null); } }` }, 'UserHandler.Handle(User)');
+  assert.equal(generic.complete, false);
+  assert.match(generic.reason, /implements or overrides a member of `IHandler`/);
+  const spelled = answerFor({ 'a.cs': `namespace N; public interface IX { void Put(System.String s, int? n); void Go(params int[] a); }
+public sealed class X : IX { public void Put(string s, System.Nullable<int> n) { } public void Go(int[] a) { } }
+sealed class Svc { void R(X c) { c.Put("a", 1); c.Go(null); } }` }, 'X.Put(string, Nullable)');
+  assert.equal(spelled.complete, false);
+  assert.match(spelled.reason, /a member of `IX`/);
+  // A derived type's outside interface may be implemented by the inherited public method.
+  const outside = answerFor({ 'a.cs': `namespace N; public class B { public void Dispose() { } } public class D : B, IDisposable { }
+sealed class U { void R(B b) { b.Dispose(); } }` }, 'B.Dispose()');
+  assert.equal(outside.complete, false);
+  assert.match(outside.reason, /`IDisposable` \(of `D`\), not in the indexed files/);
+});
+
+test('B5: a member inherited from an outside base hides an indexed type of the same name', () => {
+  const r = answerFor({ 'User.cs': 'namespace App.Models; public class User { public bool IsInRole(string r) => true; public static User Make() => null; }',
+    'C.cs': `using App.Models; using Microsoft.AspNetCore.Mvc; namespace App.Controllers;
+public class HomeController : ControllerBase { public bool Get() { return User.IsInRole("admin"); } public object New() => User.Make(); }
+public class Other { void X(User u) { u.IsInRole("a"); } }` }, 'User.IsInRole(string)');
+  assert.deepEqual([r.callers, r.complete, r.unresolved], [['Other.X(User)'], false, 1]);
+  // A static method of the type is still meant.
+  const s = answerFor({ 'User.cs': 'namespace App.Models; public class User { public static User Make() => null; }',
+    'C.cs': 'using App.Models; namespace App.Controllers; public class HomeController : ControllerBase { public object New() => User.Make(); }' }, 'User.Make()');
+  assert.deepEqual(s.callers, ['HomeController.New()']);
+  // A type written as a receiver never reaches an instance method.
+  const inst = answerFor({ 'a.cs': 'namespace N; public sealed class Job { internal void Run() { } } sealed class U { void R() { Job.Run(); } }' }, 'Job.Run()');
+  assert.deepEqual([inst.callers, inst.complete], [[], false]);
+});
+
+test('B6: a method group in any position is a value use (return, named argument, conditional, initializer, collection expression)', () => {
+  const files = { 'a.cs': `using System; namespace N;
+public class C {
+  static void A() { } static void B2() { } static void C3() { } static void D4() { } static void F6() { }
+  Action Get() { return A; }
+  void Use(bool c) { Reg(handler: B2); Action x = c ? C3 : null; var l = new Action[] { D4 }; Action[] z = [F6]; A(); B2(); C3(); D4(); F6(); }
+  void Reg(Action handler) { }
+}` };
+  for (const key of ['C.A()', 'C.B2()', 'C.C3()', 'C.D4()', 'C.F6()']) {
+    const r = answerFor(files, key);
+    assert.deepEqual([key, r.callers, r.complete], [key, ['C.Use(bool)'], false]);
+    assert.match(r.reason, /used as a method group 1 time\(s\)/);
+  }
+  // A local or a parameter of a method's name is not the method.
+  const local = answerFor({ 'a.cs': 'namespace N; sealed class C { static void A() { } void U(int A) { var y = A; } void V() { int A = 1; Use(A); } void W() { A(); } static void Use(int a) { } }' }, 'C.A()');
+  assert.deepEqual([local.callers, local.complete], [['C.W()'], true]);
+});
