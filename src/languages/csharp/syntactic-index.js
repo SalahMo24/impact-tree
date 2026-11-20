@@ -68,7 +68,7 @@
 
 const path = require('path');
 const { lex, opensAttribute } = require('./lexer');
-const { csharpOutline, activeText } = require('./outline');
+const { csharpOutlineParts } = require('./outline');
 
 const MAX_FILE_BYTES = 1024 * 1024;
 const MAX_CHAIN_DEPTH = 32;
@@ -300,9 +300,10 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
   /** @param {string} rel @param {string} text @returns {FileRec|null} */
   function parseFile(rel, text) {
     const base = path.posix.basename(rel);
-    const outline = csharpOutline(text, { fileName: base });
-    if (!outline) return null;
-    const active = activeText(text);
+    // One lexing pass per file: the outline's active text and tokens are reused here.
+    const parts = csharpOutlineParts(text, { fileName: base });
+    if (!parts) return null;
+    const { symbols: outline, active } = parts;
     if (active !== text) countNames(inactivePart(text, active), hiddenInIf);
     /** @type {Token[]} */
     const toks = [];
@@ -318,7 +319,8 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
         lex(active.slice(0, b), a, (x) => { take(x); });
       }
     };
-    if (lex(active, 0, (t) => { take(t); }) < 0) return null;
+    // The outline's tokens are `lex(active)`'s without directives, which it has read already.
+    for (const t of parts.toks) take(t);
     /** @type {FileRec} */
     const rec = {
       rel, file: root ? path.join(root, rel) : rel, text: active, toks, match: matchBrackets(toks), spaces: [], usings: [], aliases: new Map(),
@@ -338,7 +340,7 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
       }
     };
     walk(outline, null, []);
-    for (const sym of collectCsharpSymbols(/** @type {any} */ (outline), text)) {
+    for (const sym of collectCsharpSymbols(/** @type {any} */ (outline), text, { throws: false })) {
       const part = innermostPart(rec, sym.namePos);
       const owner = sym.csharpKind === 'top-level' ? null : part ? part.type : null;
       const sig = /** @type {any} */ (sym.sig);

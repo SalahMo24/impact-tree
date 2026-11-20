@@ -112,6 +112,19 @@ const valueOf = (s) => (s.startsWith('@') ? s.slice(1) : s);
  * @returns {CsharpSymbol[]|null}
  */
 function csharpOutline(text, options = {}) {
+  const parts = csharpOutlineParts(text, options);
+  return parts ? parts.symbols : null;
+}
+
+/**
+ * `csharpOutline` with what it read on the way, for a caller that would otherwise compute
+ * them again (the syntax index, ./syntactic-index.js): `active`, `activeText(text)`, and
+ * `toks`, the tokens of `active` in order without its directives (interpolation holes not
+ * lexed). Null exactly when `csharpOutline` is. The tokens are shared: do not change them.
+ * @param {string} text @param {{ fileName?: string }} [options]
+ * @returns {{ symbols: CsharpSymbol[], active: string, toks: Token[] }|null}
+ */
+function csharpOutlineParts(text, options = {}) {
   if (typeof text !== 'string' || text.length > MAX_TEXT_CHARS) return null;
   try {
     const active = activeText(text);
@@ -120,7 +133,7 @@ function csharpOutline(text, options = {}) {
     if (lex(active, 0, (t) => { if (t.kind !== 'directive') toks.push(t); }) < 0) return null;
     const match = matchBrackets(toks);
     if (!match) return null;
-    return new Reader(active, toks, match, options.fileName || 'Program.cs').compilationUnit();
+    return { symbols: new Reader(active, toks, match, options.fileName || 'Program.cs').compilationUnit(), active, toks };
   } catch (e) {
     if (e instanceof Unreadable) return null;
     throw e;
@@ -133,11 +146,16 @@ function csharpOutline(text, options = {}) {
  * The text with every inactive `#if` branch's lines blanked (white space kept, so offsets and
  * lines are the text's); directive lines are kept. Throws Unreadable on a conditional that
  * does not nest or an expression it cannot read, and on an unterminated literal or comment in
- * active text.
+ * active text (checked only when the text holds a conditional directive).
  * @param {string} text @returns {string}
  */
 function activeText(text) {
-  if (!text.includes('#')) return text;
+  // Only `#if`, `#elif`, `#else` and `#endif` change anything (`#define` and `#undef` only
+  // feed `#if`); a file with just `#nullable`, `#pragma` or `#region` is returned as is
+  // without lexing it. The test is wider than the directive rule below (any white space,
+  // anywhere), so it never skips a text that rule would change or refuse. An unterminated
+  // literal or comment is then left to the caller's own lexing pass, which refuses it too.
+  if (!/#\s*(?:if|elif|else|endif)/.test(text)) return text;
   /** @type {Set<string>} */
   const defined = new Set();
   /** @type {Array<{ active: boolean, taken: boolean, parent: boolean }>} */
@@ -630,4 +648,4 @@ class Reader {
   }
 }
 
-module.exports = { csharpOutline, activeText, MAX_TEXT_CHARS, KIND };
+module.exports = { csharpOutline, csharpOutlineParts, activeText, MAX_TEXT_CHARS, KIND };

@@ -9,7 +9,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { csharpOutline } = require('../src/languages/csharp/outline');
+const { csharpOutline, csharpOutlineParts, activeText } = require('../src/languages/csharp/outline');
+const { lex } = require('../src/languages/csharp/lexer');
 const { collectCsharpSymbols, pairCsharpOverloads, csharpProvider } = require('../src/languages/csharp/provider');
 const { overloadNameOf } = require('../src/languages/csharp/keys');
 const { outlineOf } = require('./lsp-harness/csharp-outline-adapter');
@@ -111,6 +112,28 @@ test('a file the outline cannot read is null, never a partial or wrong outline',
   assert.equal(csharpOutline('class A { void M( { } }'), null);
   assert.equal(csharpOutline('class A { public void 1M() { } }'), null, 'a member the header parser cannot read');
   assert.deepEqual(csharpOutline(''), []);
+});
+
+test('activeText reads only texts with a conditional directive; the outline still refuses what it did', () => {
+  const pragma = '#nullable enable\n#pragma warning disable CS1\n#region R\nclass A { void M() { } }\n#endregion\n';
+  assert.equal(activeText(pragma), pragma);
+  assert.deepEqual(keysOf(pragma), ['method A.M()']);
+  assert.equal(csharpOutline('#nullable enable\nclass A { string s = "open\n }'), null, 'an unterminated literal behind #nullable');
+  assert.equal(csharpOutline('# endif\nclass A { }\n'), null, 'a directive with white space after #');
+  assert.equal(csharpOutline('#define X\n#else\nclass A { }\n'), null);
+  assert.equal(activeText('#if X\nclass B { }\n#endif\nclass A { }\n'), '#if X\n           \n#endif\nclass A { }\n');
+});
+
+test('csharpOutlineParts: the outline with its active text and the tokens of it, directives left out', () => {
+  const text = '#nullable enable\n#if X\nclass B { }\n#endif\nclass A { void M() { var s = $"{F(1)}"; } }\n';
+  const parts = /** @type {NonNullable<ReturnType<typeof csharpOutlineParts>>} */ (csharpOutlineParts(text));
+  assert.deepEqual(parts.symbols, csharpOutline(text));
+  assert.equal(parts.active, activeText(text));
+  /** @type {any[]} */
+  const toks = [];
+  lex(parts.active, 0, (t) => { if (t.kind !== 'directive') toks.push(t); });
+  assert.deepEqual(parts.toks, toks);
+  assert.equal(csharpOutlineParts('class A {'), null);
 });
 
 test('the provider: labels, constructors, exported, the header parser\'s sig and modifiers', () => {
