@@ -128,13 +128,48 @@ function createTsResolver(ts, componentDir, { tsconfig = 'tsconfig.json', testTs
     }
     const files = parsed.fileNames;
     // Defect fix: a constant version made the service cache file contents forever —
-    // correct for a batch run, wrong the moment anything edits a file.
+    // correct for a batch run, wrong the moment anything edits a file (the MCP server keeps
+    // these services between tool calls). A file's version is its mtime.
+    //
+    // Before every call TypeScript asks the host whether its program is up to date: without
+    // `getProjectVersion` that is one version, so one `statSync`, per program file per call
+    // (1.1 M stats, a quarter of a large CLI run). So the mtimes are read once and kept, and
+    // `getProjectVersion` re-checks them at most once per event-loop turn: the first call
+    // of a turn stats every file the service has asked about and moves the epoch when any
+    // mtime moved; TypeScript then re-validates the program and re-reads the edited files,
+    // and skips the check while the epoch stands. A synchronous stretch of queries (a CLI
+    // walk) therefore sees one snapshot, as the caller cache below already assumes; a
+    // long-lived service (MCP) sees an edit at its next call after the loop has turned.
+    // No clock decides anything: the boundary is the next turn, not a duration.
+    // Not seen without a version change: files created after the program was built that an
+    // import would now resolve to (the root file list is fixed at construction anyway).
     const versions = new Map();
+    const statVersion = (f) => {
+      try { return String(fs.statSync(f).mtimeMs); } catch { return versions.get(f) || '0'; }
+    };
     const versionOf = (f) => {
-      try { const m = fs.statSync(f).mtimeMs; versions.set(f, String(m)); return String(m); }
-      catch { return versions.get(f) || '0'; }
+      let v = versions.get(f);
+      if (v === undefined) { v = statVersion(f); versions.set(f, v); }
+      return v;
+    };
+    let epoch = 0;
+    let checkedThisTurn = false;
+    const projectVersion = () => {
+      if (checkedThisTurn) return String(epoch);
+      checkedThisTurn = true;
+      // wall-clock: next-turn — re-check the mtimes once the current turn is over
+      const t = setTimeout(() => { checkedThisTurn = false; }, 0);
+      if (t && typeof t.unref === 'function') t.unref();
+      let moved = false;
+      for (const [f, v] of versions) {
+        const now = statVersion(f);
+        if (now !== v) { versions.set(f, now); moved = true; }
+      }
+      if (moved) epoch++;
+      return String(epoch);
     };
     const svc = ts.createLanguageService({
+      getProjectVersion: projectVersion,
       getScriptFileNames: () => files,
       getScriptVersion: versionOf,
       getScriptSnapshot: (f) => (fs.existsSync(f) ? ts.ScriptSnapshot.fromString(fs.readFileSync(f, 'utf8')) : undefined),

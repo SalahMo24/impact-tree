@@ -51,9 +51,12 @@ const TYPE_KINDS = new Set([5, 10, 11, 23]); // Class, Enum, Interface, Struct
  * Pure. Throws RangeError for a range outside `text`.
  * @param {CsharpSymbol[]} symbols `csharpOutline`'s answer for `text`.
  * @param {string} text
+ * @param {{ throws?: boolean }} [options] `throws: false`: leave `throws` empty instead of
+ *   lexing every member's body for its throw statements (the syntax index never reads them).
  * @returns {CsharpCollected[]}
  */
-function collectCsharpSymbols(symbols, text) {
+function collectCsharpSymbols(symbols, text, options = {}) {
+  const withThrows = options.throws !== false;
   const starts = lineStartsOf(text);
   const p = parser();
   /** @type {Array<{ s: CsharpSymbol, path: string[] }>} */
@@ -107,7 +110,7 @@ function collectCsharpSymbols(symbols, text) {
       csharpKind: info.member,
       sig: decl ? decl.sig : info.sig || null,
       header: decl ? decl.header : info.member === 'top-level' ? '' : p.normaliseHeader(declText),
-      throws: decl ? p.thrownOf(declText, decl.headerEnd) : new Set(),
+      throws: decl && withThrows ? p.thrownOf(declText, decl.headerEnd) : new Set(),
     };
   });
 }

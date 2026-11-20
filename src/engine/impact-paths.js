@@ -138,6 +138,7 @@ function createImpactWalker({ repo, facts = {}, limits, signal, clock = realCloc
   const deadline = makeDeadline(valid.deadlineMs, clock);
   const texts = makeTextCache(readText);
   const blanked = makeBlankedCache(texts);
+  const declared = makeDeclarationCache(facts, repo);
   /** @type {Record<string, ImpactPaths>} */
   const byId = {};
   let walkMs = 0;
@@ -157,7 +158,7 @@ function createImpactWalker({ repo, facts = {}, limits, signal, clock = realCloc
     async walk(resolver, changed, unit = {}) {
       for (const c of changed) {
         throwIfCancelled(signal);
-        const result = await walkOne({ resolver, changed: c, repo, facts, limits: valid, deadline, signal, texts, blanked, scopeNote: unit.scopeNote });
+        const result = await walkOne({ resolver, changed: c, repo, facts, limits: valid, deadline, signal, texts, blanked, declared, scopeNote: unit.scopeNote });
         byId[result.id] = result;
         walkMs += result.walkMs;
       }
@@ -211,6 +212,29 @@ function makeBlankedCache(texts) {
 }
 
 /**
+ * The entry a function is by its own declaration (`declarationEntry`), once per function per
+ * walker. Every changed function's walk has its own visited set, so a shared ancestor is
+ * examined once per changed function below it, and the declaration rules run whole-file
+ * regexes. Cache owner: the walker (one run). Key: file, position and label; the language,
+ * text, relative path and facts follow from the file and the walker, and files do not change
+ * during a run. Invalidation: none. Size: one entry per walked function.
+ * @param {EntryFacts} facts @param {string} repo
+ * @returns {(node: WalkNode, language: import('./entry-points').EntryLanguage, text: string, blank: string|undefined) => EntryInfo|null}
+ */
+function makeDeclarationCache(facts, repo) {
+  /** @type {Map<string, EntryInfo|null>} */
+  const cache = new Map();
+  return (node, language, text, blank) => {
+    const key = `${node.file}#${node.pos}#${node.label}`;
+    if (cache.has(key)) return /** @type {EntryInfo|null} */ (cache.get(key));
+    const relPath = path.relative(repo, node.file).split(path.sep).join('/');
+    const own = declarationEntry({ language, text, blanked: blank, pos: node.pos, label: node.label, relPath, facts });
+    cache.set(key, own);
+    return own;
+  };
+}
+
+/**
  * @typedef {object} WalkNode
  * @property {string} file Absolute path.
  * @property {number} pos
@@ -232,10 +256,10 @@ function makeBlankedCache(texts) {
  * @param {{ resolver: any, changed: any, repo: string, facts: EntryFacts, limits: WalkLimits,
  *   deadline: ReturnType<typeof makeDeadline>, signal: AbortSignal|undefined,
  *   texts: (file: string) => string|null, blanked: (file: string) => string|null,
- *   scopeNote: string|undefined }} input
+ *   declared: ReturnType<typeof makeDeclarationCache>, scopeNote: string|undefined }} input
  * @returns {Promise<ImpactPaths>}
  */
-async function walkOne({ resolver, changed, repo, facts, limits, deadline, signal, texts, blanked, scopeNote }) {
+async function walkOne({ resolver, changed, repo, facts, limits, deadline, signal, texts, blanked, declared, scopeNote }) {
   // wall-clock: log-only — this walk's time for the report
   const t0 = Date.now();
   const rel = (/** @type {string} */ f) => path.relative(repo, f).split(path.sep).join('/');
@@ -283,7 +307,7 @@ async function walkOne({ resolver, changed, repo, facts, limits, deadline, signa
   /** @type {Array<{ node: WalkNode, entry: EntryInfo }>} */
   const passed = [];
 
-  const own = entryOfNode(start, null, facts, texts, blanked, repo);
+  const own = entryOfNode(start, null, facts, texts, blanked, repo, declared);
   if (own && !own.passThrough) finish(start, { end: 'entry', entry: own });
   else {
     if (own) start.action = own;
@@ -376,7 +400,7 @@ async function walkOne({ resolver, changed, repo, facts, limits, deadline, signa
         throughStale: node.depth === 0 ? staleIds.has(key) : node.throughStale,
         ...(caller.via ? { hop: { via: caller.via, text: caller.text || caller.via } } : {}),
       };
-      const entry = entryOfNode(child, caller, facts, texts, blanked, repo);
+      const entry = entryOfNode(child, caller, facts, texts, blanked, repo, declared);
       if (entry && !entry.passThrough) finish(child, { end: 'entry', entry });
       else {
         if (entry) child.action = entry;
@@ -483,16 +507,17 @@ async function topState(resolver, node) {
  * function below it on the path. Null when neither matches or the file cannot be read.
  * @param {WalkNode} node @param {CallerRow|null} row @param {EntryFacts} facts
  * @param {(file: string) => string|null} texts @param {(file: string) => string|null} blanked @param {string} repo
+ * @param {ReturnType<typeof makeDeclarationCache>} declared the walker's memo of `declarationEntry`
  * @returns {EntryInfo|null}
  */
-function entryOfNode(node, row, facts, texts, blanked, repo) {
+function entryOfNode(node, row, facts, texts, blanked, repo, declared) {
   const language = entryLanguageOf(node.file);
   if (!language) return null;
   const text = texts(node.file);
   if (text === null) return null;
   const relPath = path.relative(repo, node.file).split(path.sep).join('/');
   const blank = language === 'csharp' ? (blanked(node.file) ?? undefined) : undefined;
-  const own = declarationEntry({ language, text, blanked: blank, pos: node.pos, label: node.label, relPath, facts });
+  const own = declared(node, language, text, blank);
   if (own) return own;
   for (const site of (row && row.callSites) || []) {
     const hit = callSiteEntry({ language, text, blanked: blank, callerPos: node.pos, callSiteStart: site.start, relPath, callerLabel: node.label, facts });
