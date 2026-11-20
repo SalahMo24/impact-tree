@@ -183,15 +183,16 @@ whole record declaration. documentSymbol took 48–431 ms per file.
 
 **How it ran.** `scripts/drive.js` gained three options and one step (documented in
 `docs/driving-the-extension.md`): `--extensions-dir DIR` (here
-`.vscode-test/ext-csharp-c0b/` of this worktree: the VSIX's `extension/` folder copied in, never
-the owner's editors), `--settings FILE`, `--extension-dev PATH` (a 70-line probe extension in
+`.vscode-test/ext-csharp-c0b/` of the C0b worktree at the time, since moved to
+`csharp-tools/vscode-ext/`, see "The C# extensions folder" below: the VSIX's `extension/` folder
+copied in, never the owner's editors), `--settings FILE`, `--extension-dev PATH` (a 70-line probe extension in
 `csharp-tools/c0b-probe/`, never shipped) and `pause:SECONDS`. `.NET` came from the scratchpad
 (env.sh sourced: `DOTNET_ROOT`, `PATH`, `NUGET_PACKAGES`); telemetry off
 (`telemetry.telemetryLevel: off`, which the C# extension follows).
 
 ```
 . csharp-tools/env.sh; C0B_PROBE_OUT=…/c0b-runs/probe node scripts/drive.js \
-  --repo …/c0b-fixture --extensions-dir .vscode-test/ext-csharp-c0b \
+  --repo …/c0b-fixture --extensions-dir …/csharp-tools/vscode-ext \
   --settings …/c0b-probe/settings.json --extension-dev …/c0b-probe pause:20 pause:18 shot:csharp
 ```
 
@@ -206,6 +207,31 @@ version 3.0.0 → the C# extension activates but `initializationFinished()` reje
 and asks the Install Tool for .NET); (4) the stub registers `dotnet.findPath` → returns
 `$DOTNET_ROOT/dotnet`: the server started. Later steps (C7) can reuse this folder and stub as
 they are; the real Install Tool (a download needing the owner's yes) would also work.
+
+**The C# extensions folder** (moved after the C0–C2 review, finding 19). It lives at
+`~/Projects/impact-tree-scratchpad/csharp-tools/vscode-ext/` (about 340 MB, outside any
+worktree; `drive.js --extensions-dir` accepts only folders under `.vscode-test/` or the
+scratchpad and refuses an editor's own). It holds:
+
+- `ms-dotnettools.csharp-2.160.4-darwin-x64/`: the `extension/` folder of
+  `csharp-tools/vsix/ms-dotnettools.csharp-2.160.4-darwin-x64.vsix` (unzipped in
+  `csharp-tools/vsix/unzipped/`), copied as is. It runs only inside the driver's VS Code; no
+  committed code starts its server (licence, see §1).
+- `ms-dotnettools.vscode-dotnet-runtime-3.0.0-stub/`: the local stand-in for the .NET Install
+  Tool, two files. `package.json`: `name` `vscode-dotnet-runtime`, `publisher`
+  `ms-dotnettools`, `version` `3.0.0` (the C# extension needs at least 2.2.3; keep the folder
+  name, a rename made VS Code drop it), `main` `./stub.js`, `activationEvents`
+  `["onCommand:dotnet.findPath"]`, `contributes.commands` `dotnet.findPath`. `stub.js`:
+  `activate` registers `dotnet.findPath`, returning `{ dotnetPath: path.join(process.env.DOTNET_ROOT, 'dotnet') }`
+  (or `undefined` without `DOTNET_ROOT`), so the C# extension uses the scratchpad's .NET
+  (source `csharp-tools/env.sh` before the run).
+- `extensions.json`: VS Code's list of the two, by `relativeLocation` (the folder names above);
+  its absolute `location` paths were rewritten to the new folder.
+
+To rebuild it: make the folder, unzip the VSIX and copy its `extension/` folder in under the
+name above, write the stub's two files as described, and write `extensions.json` with one entry
+per folder (`identifier.id`, `version`, `location` as a file URI, `relativeLocation`), or start
+the driver once with the folder and let VS Code list them.
 
 **What the probe saw** (ms from the probe's activation, run 4; `probe/probe.json`, `probe/csharp-logs/C#.log`):
 
@@ -293,7 +319,7 @@ one unlabelled row" merge is by caller, not by site. References are a usable cro
 - **C6 (warm-up):** budget ~20–25 s for jellyfin's load in the harness (restored), plus up to
   ~6 s for the first incoming query on a heavily used interface member; in VS Code add the
   C# extension's own start (~20 s seen on the loaded machine).
-- **C7 (editor verify):** reuse `.vscode-test/ext-csharp-c0b/` (stub Install Tool with
+- **C7 (editor verify):** reuse `csharp-tools/vscode-ext/` (stub Install Tool with
   `dotnet.findPath`) and `drive.js --extensions-dir/--settings/--extension-dev`; the 60 s
   `drive.js` deadline was enough for the fixture (43 s), not for jellyfin (would need
   ~20 s start + ~20 s load + queries): C7 needs a longer deadline option.

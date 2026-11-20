@@ -19,8 +19,8 @@ node scripts/drive.js [--repo PATH] [--out DIR] [--keep-open] [--extensions-dir 
 | `--repo PATH` | Open this repository instead of the demo. |
 | `--out DIR` | Where to write the output. The default is `.vscode-test/out/latest/`, replaced each run. The tool refuses a folder that is not empty and was not written by it. |
 | `--keep-open` | Leave the editor open after the steps, for looking around by hand. Close its window or press Ctrl+C to end the run. Agents never need this. |
-| `--extensions-dir DIR` | Run with the extensions installed in DIR (kept between runs), for example another language's extension under `.vscode-test/`. Never point it at the folder of an editor you use. Without it, the run has an empty folder of its own. |
-| `--settings FILE` | A JSON object of settings added to (or overriding) the run's own, for example that extension's. |
+| `--extensions-dir DIR` | Run with the extensions installed in DIR (kept between runs), for example another language's extension. DIR must be a folder inside this repository's `.vscode-test/` or the scratchpad (`IMPACT_TREE_SCRATCHPAD`, else `~/Projects/impact-tree-scratchpad/`); anything else is refused, and so is an editor's own folder (`~/.vscode/extensions`, `~/.vscode-insiders/extensions`, `~/.cursor/extensions`, …) even through a symlink, because VS Code rewrites the folder's `extensions.json`. Without it, the run has an empty folder of its own. |
+| `--settings FILE` | A JSON object of settings added to (or overriding) the run's own, for example that extension's. The safety settings are applied after it and cannot be overridden: `telemetry.telemetryLevel: off`, `update.mode: none`, `extensions.autoUpdate: false`, `extensions.autoCheckUpdates: false`, `security.workspace.trust.enabled: false`. |
 | `--extension-dev PATH` | Also load the extension in PATH from source, beside Impact Tree (a small probe, say). Repeatable. |
 
 ## Steps
