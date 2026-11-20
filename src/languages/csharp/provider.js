@@ -243,7 +243,7 @@ function indexRepository(ctx, changed) {
   }
   const all = [...new Set(String(out).split('\0').filter(Boolean))];
   const projects = all.filter((rel) => /\.csproj$/i.test(rel));
-  const { usings, uiDirs } = projectFacts(projects, all, read);
+  const { usingsByProject, uiDirs } = projectFacts(projects, all, read);
   const listed = all
     .filter((rel) => csharpRules.handles(rel) && !path.posix.dirname(rel).split('/').some((d) => NOT_SOURCE_DIRS.has(d)))
     .flatMap((rel) => { try { return [{ path: rel, size: fs.statSync(path.join(ctx.repo, rel)).size }]; } catch { return []; } });
@@ -255,7 +255,9 @@ function indexRepository(ctx, changed) {
   const scope = picked.bounded
     ? `the repository's changed projects and the files that mention a changed name (${picked.sources.length} of ${listed.length} C# file(s) indexed: over the bound of ${REPO_MAX_FILES} files or ${REPO_MAX_BYTES / 1024 / 1024} MiB)`
     : `the repository (${picked.sources.length} C# file(s) indexed)`;
-  return createCsharpSyntacticIndex(picked.sources, { root: ctx.repo, scope, notIndexed: picked.notIndexed, partial: picked.bounded, implicitUsings: usings, uiDirs });
+  return createCsharpSyntacticIndex(picked.sources, {
+    root: ctx.repo, scope, notIndexed: picked.notIndexed, partial: picked.bounded, projects, projectUsings: usingsByProject, uiDirs,
+  });
 }
 
 /**
@@ -274,19 +276,28 @@ function csharpProjectDir(rel, projects) {
 }
 
 /**
- * The implicit usings (the union over the projects that enable them, applied to every file:
- * a listed approximation) and the project directories with Razor/XAML files.
+ * The implicit usings by project directory (`csharpProjectDir`'s; `usings`: their union, for
+ * reports) and the project directories with Razor/XAML files.
  * @param {string[]} projects @param {string[]} all @param {(rel: string) => string|null} read
  */
 function projectFacts(projects, all, read) {
   const { implicitUsingsOf } = require('./syntactic-index');
   /** @type {Set<string>} */
   const usings = new Set();
-  for (const p of projects) for (const u of implicitUsingsOf(read(p) || '')) usings.add(u);
+  /** @type {Record<string, string[]>} */
+  const usingsByProject = {};
+  for (const p of projects) {
+    const own = implicitUsingsOf(read(p) || '');
+    if (!own.length) continue;
+    const dir = path.posix.dirname(p) === '.' ? '' : path.posix.dirname(p);
+    // Two project files in one directory: the union (their files are the same).
+    usingsByProject[dir] = [...new Set([...(usingsByProject[dir] || []), ...own])];
+    for (const u of own) usings.add(u);
+  }
   /** @type {Set<string>} */
   const uiDirs = new Set();
   for (const rel of all) if (UI_FILE.test(rel)) uiDirs.add(csharpProjectDir(rel, projects));
-  return { usings: [...usings], uiDirs: [...uiDirs] };
+  return { usings: [...usings], usingsByProject, uiDirs: [...uiDirs] };
 }
 
 /** @type {import('../types').LanguageProvider} */
