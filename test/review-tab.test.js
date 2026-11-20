@@ -200,10 +200,14 @@ function fakeVscode() {
     ViewColumn: { Active: -1 },
     window: {
       createWebviewPanel: () => {
-        let onMsg = null; let onDispose = null;
-        const panel = { webview: { html: '', cspSource: 'https://webview.test', onDidReceiveMessage: (l) => { onMsg = l; return { dispose() {} }; } },
+        let onMsg = null; let onDispose = null; let onView = null; let html = '';
+        const webview = { renders: 0, cspSource: 'https://webview.test', onDidReceiveMessage: (l) => { onMsg = l; return { dispose() {} }; } };
+        Object.defineProperty(webview, 'html', { get: () => html, set: (v) => { html = v; webview.renders++; } });
+        const panel = { webview, visible: true,
+          onDidChangeViewState: (l) => { onView = l; return { dispose() {} }; },
           onDidDispose: (l) => { onDispose = l; return { dispose() {} }; }, reveal: () => { panel.revealed = (panel.revealed || 0) + 1; },
-          dispose: () => onDispose && onDispose(), send: (m) => onMsg(m) };
+          dispose: () => onDispose && onDispose(), send: (m) => onMsg(m),
+          show: (visible) => { panel.visible = visible; if (onView) onView({ webviewPanel: panel }); } };
         panels.push(panel);
         return panel;
       },
@@ -272,4 +276,60 @@ test('a change with a shape shows it under its line; the engine\'s gained and lo
   const aside = /<aside class="ctx" data-change="src\/a\.ts#7">[\s\S]*?<\/aside>/.exec(html)[0];
   assert.match(aside, /Its pseudocode is on the change\./);
   assert.doesNotMatch(aside, /nothing more said/);
+});
+
+const nextTurn = () => new Promise((r) => setTimeout(r, 0));
+
+test('the panel: a burst of refreshes renders once in the next turn; a hidden tab renders when shown again', async () => {
+  const { vscode, panels } = fakeVscode();
+  let state = { result: SMALL.result, cards: SMALL.cards, rel: (f) => f.replace('/r/', '') };
+  const tab = createReviewTab(vscode, { getState: () => state, agentPayload: () => null, repoRoot: () => null, log: () => {}, readText: () => 'a\nb\n' });
+  tab.refresh();
+  assert.equal(panels.length, 0, 'nothing while the tab is closed');
+  tab.open();
+  const w = panels[0].webview;
+  assert.equal(w.renders, 1, 'opening renders at once');
+  tab.refresh(); tab.refresh(); tab.refresh();
+  assert.equal(w.renders, 1, 'not in the same turn');
+  await nextTurn();
+  assert.equal(w.renders, 2, 'one render for the burst');
+  await nextTurn();
+  assert.equal(w.renders, 2, 'and no other');
+
+  panels[0].show(false);
+  state = { ...state, cards: null };
+  tab.refresh(); tab.refresh();
+  await nextTurn();
+  assert.equal(w.renders, 2, 'hidden: not rendered');
+  panels[0].show(true);
+  assert.equal(w.renders, 3, 'shown again: rendered once');
+  assert.match(w.html, /Cards are built when the analysis finishes/, 'with the state of now');
+  panels[0].show(false);
+  panels[0].show(true);
+  assert.equal(w.renders, 3, 'shown again with nothing new: not rendered');
+  tab.open();
+  assert.equal(w.renders, 4, 'opening an open tab still renders at once');
+});
+
+test('the panel reads each caller file once per result, and again for a new result', async () => {
+  const { vscode, panels } = fakeVscode();
+  const reads = [];
+  let state = { result: SMALL.result, cards: SMALL.cards, rel: (f) => f.replace('/r/', '') };
+  const tab = createReviewTab(vscode, { getState: () => state, agentPayload: () => AGENT, repoRoot: () => '/r', log: () => {},
+    readText: (abs) => { reads.push(abs); return 'a\nb\nc\nd\n'; }, diffText: async () => HUNK });
+  tab.open();
+  await nextTurn();
+  const html = panels[0].webview.html;
+  assert.ok(html.includes('class="hunk"'), 'the hunk arrived');
+  const first = reads.length;
+  assert.ok(first > 0);
+  tab.refresh();
+  await nextTurn();
+  assert.equal(reads.length, first, 'a render of the same result reads nothing');
+  const withoutNonce = (h) => h.split(/'nonce-([^']+)'/.exec(h)[1]).join('');
+  assert.equal(withoutNonce(panels[0].webview.html), withoutNonce(html), 'and shows the same page');
+  state = { ...state, result: { ...SMALL.result } };
+  tab.refresh();
+  await nextTurn();
+  assert.ok(reads.length > first, 'a new result is read again');
 });

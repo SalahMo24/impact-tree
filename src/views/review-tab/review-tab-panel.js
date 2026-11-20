@@ -19,7 +19,7 @@ const { lineStarts, lineOf } = require('../../engine/agent-results');
 const VIEW_TYPE = 'impactTree.review';
 /** Largest diff read for the hunks. Unit: bytes. Larger: the tab shows no hunks. */
 const MAX_DIFF_BYTES = 64 * 1024 * 1024;
-/** Files read for caller line numbers per render. Unit: files. Past it, lines are left out. */
+/** Files read for caller line numbers per result. Unit: files. Past it, lines are left out. */
 const MAX_FILES_READ = 2000;
 
 /**
@@ -66,6 +66,29 @@ function createReviewTab(vscode, { getState, agentPayload, repoRoot, log, diffTe
   /** What the rendered page's ids name. @type {{ changed: Map<string, any>, deleted: Map<string, any> }} */
   let shown = { changed: new Map(), deleted: new Map() };
   let disposed = false;
+  // A render builds the whole page on the extension host's thread (on a large PR ~200 ms and
+  // hundreds of file reads), and refreshes come in bursts (result, cards, hints, the agent).
+  // So a refresh only marks the page stale: a visible tab renders once in the next turn, a
+  // hidden one when it is shown again. Opening the tab and the diff's arrival render at once.
+  /** The page no longer shows the current state. */
+  let stale = false;
+  /** A render is queued for the next turn. */
+  let queued = false;
+  // Cache: what the page reads from the files of one result. Owner: this tab. Key: the
+  // result object (line starts per file) and, for the hunks and gained/lost calls, the diff
+  // too; the result's offsets are of the files as analysed, which a new analysis replaces.
+  // Invalidation: a new result or diff replaces it. Size: one line-start array per caller
+  // file (at most MAX_FILES_READ) and one small answer per changed function.
+  /** @type {{ result: any, diffOf: any, env: { ctx: { diffOf: any }, diffCache: Map<string, string|null> }, starts: Map<string, number[]|null>, calls: Map<any, any> }|null} */
+  let memo = null;
+  /** @param {any} result @param {any} diffOf */
+  function memoFor(result, diffOf) {
+    if (memo && memo.result === result && memo.diffOf === diffOf) return memo;
+    const starts = memo && memo.result === result ? memo.starts : new Map();
+    memo = { result, diffOf, env: { ctx: { diffOf }, diffCache: new Map() }, starts, calls: new Map() };
+    return memo;
+  }
+  const isVisible = () => !!current && current.panel.visible !== false;
 
   /** The diff of the shown checkout, read once per base; a render follows when it arrives. */
   function diffOfNow(/** @type {any} */ result) {
@@ -79,7 +102,7 @@ function createReviewTab(vscode, { getState, agentPayload, repoRoot, log, diffTe
       if (diff !== mine) return;
       mine.diffOf = splitDiff(text);
       mine.pending = false;
-      render();
+      if (isVisible()) render(); else stale = true;
     }, (e) => { if (diff === mine) mine.pending = false; log(`review tab: no diff for the hunks: ${e && e.message}`); });
     return null;
   }
@@ -92,9 +115,11 @@ function createReviewTab(vscode, { getState, agentPayload, repoRoot, log, diffTe
     if (!state.cards) return message(state.cardsError ? 'Cards could not be built for this review.' : 'Cards are built when the analysis finishes.');
     const result = state.result;
     const diffOf = diffOfNow(result);
-    const env = { ctx: { diffOf }, diffCache: new Map() };
-    /** @type {Map<string, number[]|null>} */
-    const starts = new Map();
+    const { env, starts, calls } = memoFor(result, diffOf);
+    const callsOf = (/** @type {any} */ c) => {
+      if (!calls.has(c)) calls.set(c, callsFor(env, c, readText));
+      return calls.get(c);
+    };
     const lineAt = (/** @type {string} */ file, /** @type {number} */ pos) => {
       if (!starts.has(file)) {
         if (starts.size >= MAX_FILES_READ) return null;
@@ -106,7 +131,7 @@ function createReviewTab(vscode, { getState, agentPayload, repoRoot, log, diffTe
     };
     const model = reviewTabModel({
       result, cards: state.cards, agentPayload: agentPayload(), title: titleOf(state),
-      hunkOf: (c) => (diffOf ? hunkFor(env, c).text : null), callsOf: (c) => (diffOf ? callsFor(env, c, readText) : null), lineAt, rel: state.rel || ((/** @type {string} */ f) => f),
+      hunkOf: (c) => (diffOf ? hunkFor(env, c).text : null), callsOf: (c) => (diffOf ? callsOf(c) : null), lineAt, rel: state.rel || ((/** @type {string} */ f) => f),
     });
     shown = {
       changed: new Map((result.allChanged || []).map((/** @type {any} */ c) => [`${c.relPath}#${c.namePos}`, c])),
@@ -117,6 +142,7 @@ function createReviewTab(vscode, { getState, agentPayload, repoRoot, log, diffTe
 
   function render() {
     if (!current || disposed) return;
+    stale = false;
     const nonce = crypto.randomBytes(16).toString('base64');
     try {
       current.panel.webview.html = pageHtml(nonce, current.panel.webview.cspSource);
@@ -124,6 +150,16 @@ function createReviewTab(vscode, { getState, agentPayload, repoRoot, log, diffTe
     } catch (e) {
       log(`review tab: could not render: ${e && /** @type {any} */ (e).stack}`);
     }
+  }
+
+  /** Marks the page stale; renders it in the next turn when the tab is visible. */
+  function requestRender() {
+    if (!current || disposed) return;
+    stale = true;
+    if (queued || !isVisible()) return;
+    queued = true;
+    // wall-clock: next-turn — the refreshes of one turn make one render
+    setTimeout(() => { queued = false; if (stale && isVisible()) render(); }, 0);
   }
 
   /** @param {unknown} message */
@@ -152,10 +188,12 @@ function createReviewTab(vscode, { getState, agentPayload, repoRoot, log, diffTe
     current = opened;
     opened.subscriptions = [
       panel.webview.onDidReceiveMessage((/** @type {unknown} */ m) => onMessage(m).catch((/** @type {any} */ e) => log(`review tab: ${e && e.message}`))),
+      // Shown again: render what changed while it was hidden.
+      panel.onDidChangeViewState(() => { if (current === opened && stale && isVisible()) render(); }),
       panel.onDidDispose(() => {
         for (const s of opened.subscriptions) s.dispose();
         opened.token = null;
-        if (current === opened) current = null;
+        if (current === opened) { current = null; memo = null; }
       }),
     ];
     render();
@@ -163,8 +201,12 @@ function createReviewTab(vscode, { getState, agentPayload, repoRoot, log, diffTe
 
   return {
     open,
-    /** Shows the review again (analysis, cards or the agent's result changed); nothing when the tab is closed. */
-    refresh: () => render(),
+    /**
+     * Shows the review again (analysis, cards or the agent's result changed): in the next
+     * turn, once for all the refreshes of this one, or when a hidden tab is shown again.
+     * Nothing when the tab is closed.
+     */
+    refresh: () => requestRender(),
     disposables: [{ dispose() { disposed = true; if (current) current.panel.dispose(); current = null; } }],
   };
 }
