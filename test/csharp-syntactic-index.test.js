@@ -554,3 +554,21 @@ test('S7: a name the index cannot place is unresolved, not outside', () => {
   const bcl = answerFor({ 'a.cs': 'namespace N; public sealed class Foo { internal static void Exists() { } } sealed class U { void R() { Console.Exists(); } }' }, 'Foo.Exists()');
   assert.deepEqual([bcl.callers, bcl.complete], [[], true]);
 });
+
+test('S8: parameters typed `Foo?`, `G<int>`, `global::N.Foo` are typed receivers', () => {
+  const files = { 'a.cs': `namespace N; public sealed class Foo { public void A() { } public void B() { } public void E() { } }
+public sealed class G<T> { public void Z() { } }
+sealed class U { void R(Foo a, Foo? b, G<int> g, global::N.Foo e) { a.A(); b.B(); g.Z(); e.E(); } }` };
+  for (const key of ['Foo.A()', 'Foo.B()', 'G<1>.Z()', 'Foo.E()']) assert.deepEqual(answerFor(files, key), { callers: ['U.R(Foo, Foo?, G, Foo)'], reason: '', unresolved: 0, complete: true }, key);
+});
+
+test('nits: an outside first base named like `IOException` is a class; an indexed extension of the name keeps an unsure instance call unresolved', () => {
+  const io = answerFor({ 'a.cs': `namespace N; public class MyError : IOException { public void Log(object o) { } }
+sealed class U { void R(MyError e) { e.Log(Path.GetTempPath()); } }` }, 'MyError.Log(object)');
+  // An argument of a type not known: `IOException` may declare an overload that wins, so the call is not listed.
+  assert.deepEqual([io.callers, io.complete], [[], false]);
+  const ext = answerFor({ 'a.cs': `namespace N; public sealed class C { public void Put(C other) { } }
+public static class Ext { public static void Put(this C c, string s) { } }
+sealed class U { void R(C c, object x) { c.Put(x); c.Put(c); } }` }, 'C.Put(C)');
+  assert.deepEqual([ext.callers, ext.unresolved], [['U.R(C, object)'], 1]);
+});

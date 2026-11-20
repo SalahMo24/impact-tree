@@ -966,8 +966,11 @@ function createCsharpSyntacticIndex(sources, {
     }
   }
 
-  /** An outside base named `I` + capital is taken for an interface. @param {string} text */
-  const looksLikeInterface = (text) => /^I[A-Z]/.test(text.slice(text.lastIndexOf('.') + 1));
+  /**
+   * An outside base named `I` + capital + lower case (`IFoo`, not `IOException`, `IPAddress`)
+   * is taken for an interface. @param {string} text
+   */
+  const looksLikeInterface = (text) => /^I[A-Z][a-z0-9]/.test(text.slice(text.lastIndexOf('.') + 1));
 
   /**
    * The type and its bases within the index, nearest first. `open`: a base class is written
@@ -991,12 +994,15 @@ function createCsharpSyntacticIndex(sources, {
       if (types.length >= MAX_HIERARCHY) { open = true; break; }
       seen.add(x);
       types.push(x);
-      for (const b of x.bases) {
+      for (const [bi, b] of x.bases.entries()) {
         const r = resolveTypeName(b.text, b.file, b.at, x.outer, x.typeParams);
         if (r && r !== 'tp' && r !== 'amb') queue.push(r);
         else if (b.text !== 'object' && b.text !== 'Object') {
           outside.push(b.text.replace(/`\d+/g, ''));
-          if (r === 'amb' || !looksLikeInterface(b.text) || t.kind === 'interface') open = true;
+          // Only a class's first base may be a class: a later one, or any base of a struct or
+          // an interface, is an interface; the first is told by its name.
+          const iface = bi > 0 || x.kind === 'struct' || x.kind === 'interface' || looksLikeInterface(b.text);
+          if (r === 'amb' || !iface || t.kind === 'interface') open = true;
         }
       }
     }
@@ -1109,10 +1115,17 @@ function createCsharpSyntacticIndex(sources, {
     /** @type {Set<string>} */
     const fns = new Set();
     const set = (/** @type {string} */ n, /** @type {string|null} */ ty) => { const k = bare(n); vars.set(k, vars.has(k) && vars.get(k) !== ty ? null : ty); };
-    for (const p of d.params) set(p.name, p.type.replace(/^(this|ref|out|in|params|scoped)\s+/g, ''));
+    // Parameters keep their written type (`Foo?`, `IRepo<User>`, `global::N.Foo`; S8): the scan
+    // below starts after the parameter list, so it never sets them again with another spelling.
+    for (const p of d.params) set(p.name, p.type.replace(/^((this|ref|out|in|params|scoped)\s+)+/, ''));
     const { toks, match } = d.file;
     let i = 0;
     while (i < toks.length && toks[i].start < d.namePos) i++;
+    if (d.params.length && toks[i] && toks[i].start === d.namePos) {
+      let k = i + 1;
+      if (isP(toks[k], '<')) { const ta = typeArgs(toks, k); if (ta) k = ta.end; }
+      if ((isP(toks[k], '(') || isP(toks[k], '[')) && match[k] > k) i = match[k] + 1;
+    }
     /**
      * A pattern's designation from `toks[k]` (S3): `T x`, `T { … } x`, `T ( … ) x`, `{ … } x`,
      * `var x` (untyped), `var (a, b)`; `ends`: the tokens that may follow the name (any but a
@@ -1549,7 +1562,13 @@ function createCsharpSyntacticIndex(sources, {
       const l = lookup(recv.type, name, argc, false, kinds);
       // A type written as the receiver calls static methods only: an instance method found
       // there means the name is something else (an inherited member, a property not read).
-      if (l.defs.length) return recv.static && l.defs.some((d) => !d.mods.has('static')) ? 'unresolved' : l.defs;
+      if (l.defs.length) {
+        if (recv.static && l.defs.some((d) => !d.mods.has('static'))) return 'unresolved';
+        // An indexed extension method of the name may be the one called when the instance
+        // method does not surely take the arguments (C# tries extensions only then).
+        if (!recv.static && extNames.has(name) && argc > 0 && !l.defs.some((d) => surelyApplicable(d, kinds, argc))) return 'unresolved';
+        return l.defs;
+      }
       return l.open || extNames.has(name) ? 'unresolved' : null;
     }
     if (recv.t === 'ext') return extNames.has(name) ? 'unresolved' : null;
