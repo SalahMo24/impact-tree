@@ -1,6 +1,7 @@
 // @ts-check
 'use strict';
 const path = require('path');
+const csharp = require('./entry-points-csharp');
 // Entry points: where a call path enters the application from outside it. An HTTP route,
 // a CLI command, a `main`, an Electron IPC channel, a UI route, or the public API of a
 // published library. Pure: every input is passed in, nothing is read here. The repository
@@ -48,9 +49,18 @@ const path = require('path');
  * @property {Set<string>} [packageRoots] Directories with a package.json, to find the
  *   nearest one above a file. Both are absent in a preview (it lists only the pull
  *   request's files), so the Next.js rules that need them do not fire there.
+ * @property {Map<string, { route: string|null, base: string|null }>} [csControllerRoutes] Class
+ *   name -> its `[Route]` template (null when it has none) and first non-interface base class,
+ *   for classes in files named `*Controller*.cs`: a controller without its own `[Route]`
+ *   inherits the base class's. Absent in a preview.
+ * @property {Map<string, string>} [csProjects] Repository-relative path of a `.cs` file in an
+ *   executable C# project (OutputType Exe/WinExe, or a Web/Worker SDK) -> the name of its
+ *   nearest `.csproj`, no extension: the program a top-level-statements file starts. A
+ *   superset of those files (reading every file would cost more than the rule needs: it is
+ *   asked only of a module-level node). Absent in a preview, where the file name is used.
  */
 
-/** @typedef {'ts'|'go'|'python'} EntryLanguage */
+/** @typedef {'ts'|'go'|'python'|'csharp'} EntryLanguage */
 
 /**
  * The language whose patterns apply to a file, or null when none are known (Java, others).
@@ -61,6 +71,7 @@ function entryLanguageOf(file) {
   if (/\.(?:[cm]?[jt]sx?)$/.test(file) && !/\.d\.[cm]?ts$/.test(file)) return 'ts';
   if (/\.go$/.test(file)) return 'go';
   if (/\.pyi?$/.test(file)) return 'python';
+  if (/\.cs$/i.test(file)) return 'csharp';
   return null;
 }
 
@@ -171,11 +182,14 @@ function bracketBody(text, at, language, limit = 20000) {
  * registration, which makes the caller an entry point for that path (`app.get('/x',
  * (c) => handler(c))`, a cobra command's `RunE`). `callerPos` is the caller's name offset:
  * the scan starts there (0 for module-level code).
- * @param {{ language: EntryLanguage, text: string, callerPos: number, callSiteStart: number,
+ * `blanked` (C#): `text` with comments and string contents blanked by ../languages/csharp/lexer.js
+ * `blank`, offsets unchanged; patterns match on it, routes are read from `text`.
+ * @param {{ language: EntryLanguage, text: string, blanked?: string, callerPos: number, callSiteStart: number,
  *   relPath: string, callerLabel: string, facts?: EntryFacts }} input
  * @returns {EntryInfo|null}
  */
-function callSiteEntry({ language, text, callerPos, callSiteStart, relPath, callerLabel, facts }) {
+function callSiteEntry({ language, text, blanked, callerPos, callSiteStart, relPath, callerLabel, facts }) {
+  if (language === 'csharp') return csharp.callSiteEntry(text, blanked ?? text, callerPos, callSiteStart);
   const stack = enclosingBrackets(text, callerPos, callSiteStart, language);
   if (!stack) return null;
   for (let k = stack.length - 1, seen = 0; k >= 0 && seen < MAX_ENCLOSING; k--, seen++) {
@@ -353,12 +367,13 @@ function enclosingGoFunc(text, at) {
 
 /**
  * Whether the function at `pos` (its name's offset) is itself an entry point.
- * @param {{ language: EntryLanguage, text: string, pos: number, label: string,
+ * @param {{ language: EntryLanguage, text: string, blanked?: string, pos: number, label: string,
  *   relPath: string, facts?: EntryFacts }} input
  * @returns {EntryInfo|null}
  */
 function declarationEntry(input) {
   const { language } = input;
+  if (language === 'csharp') return csharp.declarationEntry({ ...input, blanked: input.blanked ?? input.text });
   if (language === 'ts') return tsDeclarationEntry(input);
   if (language === 'go') return goDeclarationEntry(input);
   if (language === 'python') return pythonDeclarationEntry(input);
@@ -805,5 +820,5 @@ function pythonDeclarationEntry({ text, pos, label, relPath, facts }) {
 
 module.exports = {
   entryLanguageOf, declarationEntry, callSiteEntry, cobraCommandsIn, enclosingBrackets,
-  MAX_SCAN_CHARS,
+  unreachableReason: csharp.unreachableReason, MAX_SCAN_CHARS,
 };

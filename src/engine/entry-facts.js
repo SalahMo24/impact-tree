@@ -36,7 +36,7 @@ const factsCache = new Map();
 /**
  * @param {{ repo: string, git: { tryRaw: (args: string[]) => string|null }, languages: Set<string>,
  *   readRel?: (relPath: string) => string|null }} input
- *   `languages`: which of 'ts', 'go', 'python' the analysis has changed functions in.
+ *   `languages`: which of 'ts', 'go', 'python', 'csharp' the analysis has changed functions in.
  *   `readRel`: reads a file by repository-relative path (another revision than the disk,
  *   such as a preview's head); default: the file on disk.
  * @returns {{ facts: import('./entry-points').EntryFacts, notes: string[] }} The facts are
@@ -83,12 +83,71 @@ function gatherEntryFacts({ repo, git, languages, readRel }) {
   if (languages.has('ts')) Object.assign(facts, tsFacts(listed, listedSet, read));
   if (languages.has('python')) facts.pyPublic = pythonFacts(listed, listedSet, read);
   if (languages.has('go')) facts.goCommandPrefix = goFacts(listed, read);
+  // Not in a preview: its file list is the pull request's, with no `.csproj` to read.
+  if (languages.has('csharp') && !readRel) { facts.csProjects = csharpFacts(listed, read); facts.csControllerRoutes = csharpControllerRoutes(listed, read); }
   if (skipped) notes.push(`entry-point facts are partial: ${skipped} file(s) not read (over ${MAX_FILES_READ} files or ${MAX_FILE_BYTES / 1024} KB per file)`);
   if (cacheKey !== null) {
     factsCache.set(cacheKey, { listing: out, reads: seen, facts, notes: notes.slice() });
     while (factsCache.size > MAX_CACHED_REPOS) factsCache.delete(/** @type {string} */ (factsCache.keys().next().value));
   }
   return { facts, notes };
+}
+
+// `.csproj` files read for C# facts. Unit: files.
+const MAX_CSPROJ_READ = 400;
+
+/**
+ * `.cs` files in executable C# projects -> their nearest `.csproj`'s name. A project is
+ * executable when its `.csproj` says `OutputType` Exe or WinExe, or uses the Web or Worker
+ * SDK (which implies Exe). `Directory.Build.props` is not read, so a project that gets its
+ * OutputType there is missed and a top-level-statements file in it is named by its file.
+ * @param {string[]} listed @param {(rel: string) => string|null} read
+ * @returns {Map<string, string>}
+ */
+function csharpFacts(listed, read) {
+  /** @type {Map<string, string>} */
+  const executable = new Map();
+  for (const p of listed.filter((f) => /\.csproj$/i.test(f)).slice(0, MAX_CSPROJ_READ)) {
+    const text = read(p);
+    if (text && (/<OutputType>\s*(?:Win)?Exe\s*<\/OutputType>/i.test(text) || /Sdk="Microsoft\.NET\.Sdk\.(?:Web|Worker)"|<Project\s+Sdk="[^"]*Aspire[^"]*"/i.test(text))) {
+      const dir = path.posix.dirname(p) === '.' ? '' : path.posix.dirname(p);
+      executable.set(dir, path.posix.basename(p).replace(/\.csproj$/i, ''));
+    }
+  }
+  const projectDirs = new Set(listed.filter((f) => /\.csproj$/i.test(f)).map((f) => (path.posix.dirname(f) === '.' ? '' : path.posix.dirname(f))));
+  /** @type {Map<string, string>} */
+  const out = new Map();
+  if (!executable.size) return out;
+  for (const f of listed) {
+    if (!/\.cs$/i.test(f)) continue;
+    for (let dir = path.posix.dirname(f) === '.' ? '' : path.posix.dirname(f); ; dir = path.posix.dirname(dir) === '.' ? '' : path.posix.dirname(dir)) {
+      if (projectDirs.has(dir)) { const name = executable.get(dir); if (name !== undefined) out.set(f, name); break; }
+      if (dir === '') break;
+    }
+  }
+  return out;
+}
+
+// `*Controller*.cs` files read for inherited routes. Unit: files.
+const MAX_CONTROLLER_FILES = 600;
+
+/**
+ * Each class of the `*Controller*.cs` files -> its `[Route]` and base class, so a controller
+ * that inherits its route (jellyfin's `BaseJellyfinApiController`) can be routed.
+ * @param {string[]} listed @param {(rel: string) => string|null} read
+ * @returns {Map<string, { route: string|null, base: string|null }>}
+ */
+function csharpControllerRoutes(listed, read) {
+  const { blank } = require('../languages/csharp/lexer');
+  const { classRoutesOf } = require('./entry-points-csharp');
+  /** @type {Map<string, { route: string|null, base: string|null }>} */
+  const out = new Map();
+  for (const f of listed.filter((p) => /Controller[^/]*\.cs$/i.test(p)).slice(0, MAX_CONTROLLER_FILES)) {
+    const text = read(f);
+    if (!text) continue;
+    for (const c of classRoutesOf(text, blank(text))) if (!out.has(c.name)) out.set(c.name, { route: c.route, base: c.base });
+  }
+  return out;
 }
 
 /** @param {string} abs @param {{ size: number, mtimeMs: number }} was */
