@@ -603,7 +603,7 @@ function callersCheck(repo, commit, oracleFile, preview) {
   const t1 = Date.now();
   const idx = createCsharpSyntacticIndex(sources, preview
     ? { scope: 'the tree, as the preview', partial: true, implicitUsings: WEB_IMPLICIT_USINGS }
-    : { scope: 'the tree', implicitUsings: facts.usings, uiDirs: facts.uiDirs });
+    : { scope: 'the tree', projects, projectUsings: facts.usingsByProject, uiDirs: facts.uiDirs });
   const buildMs = Date.now() - t1;
   const o = JSON.parse(fs.readFileSync(oracleFile, 'utf8'));
   if (o.commit && !sha.startsWith(String(o.commit).slice(0, 12)) && !String(o.commit).startsWith(sha.slice(0, 12))) {

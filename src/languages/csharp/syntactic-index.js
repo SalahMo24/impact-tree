@@ -9,24 +9,29 @@
 // changed rows are (C-D6 keys), so a caller row expands in the tree; top-level statements are
 // the outline's module symbol (its key the file's basename, its position the first
 // statement's). Types with their base lists as written, type parameters, `partial` parts
-// merged (one type per namespace, name and arity), `file` types visible in their file only;
-// fields, properties (auto or not) and primary-constructor parameters with their types.
+// merged (both `partial`, one project, namespace, name and arity), `file` types visible in
+// their file only; fields, properties (auto or not) and primary-constructor parameters with
+// their types. A file's project is the nearest `.csproj` above it.
 //
 // Names. A file's namespaces are its `namespace` declarations (block and file-scoped). A simple
 // type name resolves, in order: the enclosing types, their nested types and their bases'
-// nested types; the `file` types of the file; the enclosing namespaces, innermost first; `using`
-// aliases (the file's, then `global using` ones); `using` namespaces (the file's, `global
-// using`, and the SDK's implicit usings when a project enables them). Two indexed types found
-// through `using` namespaces for one name is an ambiguity: not typed. A name that resolves to
-// none of the indexed types is an outside type (the BCL, a package): its calls are not calls to
-// an indexed declaration. `using static T` binds T's methods to bare calls.
+// nested types; the `file` types of the file; each enclosing namespace, innermost first, with
+// the `using` aliases and namespaces of its block; at the file's top level, its `using`
+// aliases and namespaces, the project's `global using` ones and SDK implicit usings, and the
+// nested types of `using static` types. One key declared in two projects is the file's own
+// project's type. Two indexed types for one name is an ambiguity: not typed. A name that
+// resolves to none of the indexed types is an outside type (the BCL, a package): its calls are
+// not calls to an indexed declaration; a name the index cannot place (a nested name an indexed
+// type does not declare, a member imported from an outside `using static` type) is unknown.
+// `using static T` binds T's methods to bare calls and T's fields to names.
 //
 // A call resolves only where the receiver's type is written:
 //   - `M(` bare: the innermost enclosing type whose hierarchy has a method `M`, then `using
 //     static` types; a local function or a delegate-typed local, parameter or field is not a
 //     call of a member;
-//   - `x.M(` / `x?.M(` / `x!.M(`: x a local (`T x`, `var x = new T(…)`, `var x = (T)e`,
-//     `var x = e as T`, `is T x`, `out T x`, `catch (T x)`, `foreach (T x in`), a parameter, a
+//   - `x.M(` / `x?.M(` / `x!.M(`: x a local (`T x`, `T a, x`, `var x = new T(…)`, `var x = (T)e`,
+//     `var x = e as T`, `is T x`, `case T x`, `T x =>`, `{ P: T x }`, `out T x`, `catch (T x)`,
+//     `foreach (T x in`, `from T x in`; untyped: `var x` patterns, `from x`, `let x`, `into x`), a parameter, a
 //     field, property or primary-constructor parameter (of the enclosing types and their bases),
 //     `this`, `a.b` through member types, `a.GetB().M(` through the declared return type, a
 //     cast `((T)e).M(`, `(e as T).M(`, `new T(…).M(`;
@@ -98,11 +103,14 @@ const STATEMENT_START = new Set(['{', ';', '}', '(', ',', ']']);
 
 /**
  * @typedef {import('./lexer').Token} Token
- * @typedef {{ rel: string, file: string, text: string, toks: Token[], match: Int32Array, spaces: Array<{ name: string, start: number, end: number }>,
- *   usings: string[], aliases: Map<string, string>, statics: string[], fileTypes: Map<string, TypeRec>,
+ * @typedef {{ name: string, start: number, end: number }} Space
+ * @typedef {{ rel: string, file: string, project: string, text: string, toks: Token[], match: Int32Array, spaces: Space[],
+ *   usings: Array<{ name: string, scope: Space|null }>, aliases: Map<string, Array<{ target: string, scope: Space|null }>>, statics: string[],
+ *   fileTypes: Map<string, TypeRec>,
  *   parts: Array<{ start: number, end: number, type: TypeRec }>, defs: DefRec[], byPos: Map<number, DefRec>,
  *   baseCalls: Map<number, { type: TypeRec, open: number }>, ui: boolean, uses: Use[]|null }} FileRec
  * @typedef {{ key: string, simple: string, arity: number, ns: string, path: string[], kind: string, parts: FileRec[], namePos: number,
+ *   project: string, partial: boolean, members: Set<string>,
  *   bases: Array<{ text: string, file: FileRec, at: number }>, typeParams: Set<string>, methods: Map<string, DefRec[]>, ctors: DefRec[],
  *   fields: Map<string, { text: string, file: FileRec, at: number }|null>, outer: TypeRec|null, nested: Map<string, TypeRec>, sealed: boolean,
  *   isStatic: boolean, generated: boolean, hier: { types: TypeRec[], open: boolean, outside: string[] }|null }} TypeRec
@@ -226,18 +234,26 @@ const segOf = (name) => name.replace(/<(\d+)>$/, '`$1');
  * The index of a set of C# files.
  * @param {Array<{ path: string, text: string }>} sources Repository-relative paths.
  * @param {{ root?: string, scope?: string, notIndexed?: number, partial?: boolean, implicitUsings?: string[],
- *   uiDirs?: string[] }} [options]
+ *   projects?: string[], projectUsings?: Record<string, string[]>, uiDirs?: string[] }} [options]
  *   `root`: the repository's directory (answers name absolute files); `scope`: what was indexed,
  *   for the scope note; `notIndexed`: files left out by the caller's bound; `partial`: the
  *   preview (the files outside the pull request are not read, so no answer is complete);
- *   `implicitUsings`: namespaces every file imports (the SDK's implicit usings);
+ *   `implicitUsings`: namespaces every file imports; `projects`: the repository's `.csproj`
+ *   paths (a file belongs to the nearest above it, `csharpProjectDir`; none given: every file
+ *   is of one project); `projectUsings`: the SDK's implicit usings by project directory;
  *   `uiDirs`: project directories with `.razor`/`.cshtml`/`.xaml` files.
  */
-function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed files', notIndexed = 0, partial = false, implicitUsings = [], uiDirs = [] } = {}) {
-  const { collectCsharpSymbols } = require('./provider');
+function createCsharpSyntacticIndex(sources, {
+  root = '', scope = 'the indexed files', notIndexed = 0, partial = false, implicitUsings = [], projects = [], projectUsings = {}, uiDirs = [],
+} = {}) {
+  const { collectCsharpSymbols, csharpProjectDir } = require('./provider');
   /** @type {Map<string, FileRec>} */
   const byFile = new Map();
-  /** @type {Map<string, TypeRec>} */
+  /**
+   * Types by namespace-qualified key. Several under one key: types of different projects (or a
+   * non-`partial` duplicate), told apart by the file's project (`typeAt`).
+   * @type {Map<string, TypeRec[]>}
+   */
   const typesByKey = new Map();
   /** @type {Set<string>} Every declared namespace and its prefixes. */
   const namespaces = new Set();
@@ -247,11 +263,21 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
   const extNames = new Set();
   /** @type {Set<string>} Names of indexed methods: the names a method-group use is recorded for. */
   const methodNames = new Set();
-  const globalUsings = new Set(implicitUsings);
-  /** @type {Map<string, string>} */
-  const globalAliases = new Map();
-  /** @type {string[]} */
-  const globalStatics = [];
+  // `global using` directives (namespaces, aliases, `using static`) and the SDK's implicit
+  // usings hold for the files of one project only: by project directory.
+  /** @type {Map<string, { usings: Set<string>, aliases: Map<string, string>, statics: string[] }>} */
+  const globalsByProject = new Map();
+  /** @param {string} project */
+  function globalsOf(project) {
+    let g = globalsByProject.get(project);
+    if (!g) {
+      g = { usings: new Set([...implicitUsings, ...(projectUsings[project] || [])]), aliases: new Map(), statics: [] };
+      globalsByProject.set(project, g);
+    }
+    return g;
+  }
+  /** @param {string} rel */
+  function projectOf(rel) { return projects.length ? csharpProjectDir(rel, projects) : ''; }
   let skipped = 0;
   // Names written where the index does not read calls (B1, B2): code under an inactive `#if`
   // branch (blanked as Roslyn does with no symbols defined, yet compiled in other
@@ -323,7 +349,7 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
     for (const t of parts.toks) take(t);
     /** @type {FileRec} */
     const rec = {
-      rel, file: root ? path.join(root, rel) : rel, text: active, toks, match: matchBrackets(toks), spaces: [], usings: [], aliases: new Map(),
+      rel, file: root ? path.join(root, rel) : rel, project: projectOf(rel), text: active, toks, match: matchBrackets(toks), spaces: [], usings: [], aliases: new Map(),
       statics: [], fileTypes: new Map(), parts: [], defs: [], byPos: new Map(), baseCalls: new Map(),
       ui: uiDirs.some((d) => d === '' || rel.startsWith(`${d}/`)), uses: null,
     };
@@ -365,6 +391,7 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
       rec.byPos.set(d.namePos, d);
       if (d.member === 'method') methodNames.add(d.name);
       if (!owner) continue;
+      if (d.member !== 'method' && !isCtor) owner.members.add(d.name);
       if (/** @type {any} */ (sym).csharpKind === 'primary-constructor') {
         owner.ctors.push(d);
         for (const pr of params) setField(owner, pr.name, pr.type, rec, d.namePos);
@@ -416,19 +443,39 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
       const ty = readType(toks, j);
       if (!ty || !isP(toks[ty.end], ';')) continue;
       const name = ty.base.replace(/^global\./, '');
-      if (alias) (isGlobal ? globalAliases : rec.aliases).set(alias, name);
-      else if (isStatic) (isGlobal ? globalStatics : rec.statics).push(name);
-      else if (isGlobal) globalUsings.add(name); else rec.usings.push(name);
+      // A `using` inside a namespace block holds in that block, before the file's (S7).
+      const scope = spaceAt(rec, t.start);
+      const g = isGlobal ? globalsOf(rec.project) : null;
+      if (alias) {
+        if (g) g.aliases.set(alias, name);
+        else { const list = rec.aliases.get(alias) || []; list.push({ target: name, scope }); rec.aliases.set(alias, list); }
+      } else if (isStatic) (g ? g.statics : rec.statics).push(name);
+      else if (g) g.usings.add(name); else rec.usings.push({ name, scope });
       i = ty.end;
     }
   }
 
-  /** @param {FileRec} rec @param {number} pos @returns {string} The namespace at `pos`. */
-  function nsAt(rec, pos) {
-    /** @type {{ name: string, start: number }|null} */
+  /** @param {FileRec} rec @param {number} pos @returns {Space|null} The innermost namespace declaration holding `pos`. */
+  function spaceAt(rec, pos) {
+    /** @type {Space|null} */
     let best = null;
     for (const s of rec.spaces) if (s.start <= pos && pos < s.end && (!best || s.start >= best.start)) best = s;
-    return best ? best.name : '';
+    return best;
+  }
+  /** @param {FileRec} rec @param {number} pos @returns {string} The namespace at `pos`. */
+  function nsAt(rec, pos) { const s = spaceAt(rec, pos); return s ? s.name : ''; }
+
+  /**
+   * The indexed type keyed `key` as seen from `rec` (S2): the one type of that key, else the one
+   * in `rec`'s project; `'amb'` when that does not decide. @param {string} key @param {FileRec} rec
+   * @returns {TypeRec|null|'amb'}
+   */
+  function typeAt(key, rec) {
+    const list = typesByKey.get(key);
+    if (!list) return null;
+    if (list.length === 1) return list[0];
+    const own = list.filter((t) => t.project === rec.project);
+    return own.length === 1 ? own[0] : 'amb';
   }
 
   /** @param {TypeRec} t @param {string} name @param {string} text @param {FileRec} file @param {number} at */
@@ -447,17 +494,22 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
     const word = (/\b(class|struct|interface|enum|record)\b(?:\s+(?:class|struct))?\s*$/.exec(head) || [])[1] || 'class';
     const ns = nsAt(rec, s.selectionRange.start);
     const isFile = /\bfile\b/.test(head);
+    const isPartial = /\bpartial\b/.test(head);
     const key = `${ns ? `${ns}.` : ''}${p.join('.')}`;
+    // Parts merge only when both are `partial`, of one project and one outer type (S2): two
+    // projects' `App.Startup` are two types.
     /** @type {TypeRec|undefined} */
-    let t = isFile ? undefined : typesByKey.get(key);
+    let t = isFile || !isPartial ? undefined : (typesByKey.get(key) || []).find((x) => x.partial && x.project === rec.project && x.outer === outer);
     if (!t) {
       const [simple, ar] = seg.split('`');
       t = {
         key, simple, arity: Number(ar || 0), ns, path: p, kind: word, parts: [], namePos: s.selectionRange.start, bases: [],
+        project: rec.project, partial: isPartial, members: new Set(),
         typeParams: new Set(), methods: new Map(), ctors: [], fields: new Map(), outer, nested: new Map(), sealed: false,
         isStatic: false, generated: false, hier: null,
       };
-      if (isFile) rec.fileTypes.set(seg, t); else typesByKey.set(key, t);
+      if (isFile) rec.fileTypes.set(seg, t);
+      else { const list = typesByKey.get(key); if (list) list.push(t); else typesByKey.set(key, [t]); }
       if (outer) outer.nested.set(seg, t);
     }
     t.parts.push(rec);
@@ -787,7 +839,9 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
 
   /**
    * The type a name written in `rec` denotes: an indexed type, null for an outside one, `'tp'`
-   * for a type parameter, `'amb'` for two indexed types imported under one name.
+   * for a type parameter, `'amb'` when indexed types may be meant but none is decided (two
+   * imported under one name, two projects' types of one key, a nested name not found in an
+   * indexed type, an alias to an indexed namespace's unknown type).
    * @param {string} text `readType`'s `base` (segments with arity) @param {FileRec} rec @param {number} pos
    * @param {TypeRec|null} enc @param {Set<string>} [tps] @returns {TypeRec|null|'tp'|'amb'}
    */
@@ -805,44 +859,111 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
     if (head) {
       /** @type {TypeRec|null} */
       let x = head;
-      for (const seg of parts.slice(1)) x = x && (x.nested.get(seg) || null);
+      for (const seg of parts.slice(1)) x = x && nestedIn(x, seg);
       if (x) return x;
     }
     if (parts.length > 1) {
-      const alias = rec.aliases.get(first) || globalAliases.get(first);
-      const full = alias ? [alias, ...parts.slice(1)].join('.') : name;
-      if (typesByKey.has(full)) return /** @type {TypeRec} */ (typesByKey.get(full));
-      for (let ns = nsAt(rec, pos); ns; ns = ns.includes('.') ? ns.slice(0, ns.lastIndexOf('.')) : '') {
-        const t = typesByKey.get(`${ns}.${name}`);
+      const alias = aliasVisible(rec, first, pos);
+      const full = alias ? [alias.target, ...parts.slice(1)].join('.') : name;
+      const direct = typeAt(full, rec);
+      if (direct) return direct;
+      for (let ns = alias ? (alias.scope ? alias.scope.name : '') : nsAt(rec, pos); ns; ns = parentNs(ns)) {
+        const t = typeAt(`${ns}.${full}`, rec);
         if (t) return t;
       }
     }
+    // An indexed type whose nested type is not found (an outside base's): not placed (S7).
+    return head ? 'amb' : null;
+  }
+
+  /** @param {string} ns @returns {string} */
+  function parentNs(ns) { return ns.includes('.') ? ns.slice(0, ns.lastIndexOf('.')) : ''; }
+
+  /** @param {TypeRec} x @param {string} seg @returns {TypeRec|null} The nested type `seg` of `x` or of one of its indexed bases. */
+  function nestedIn(x, seg) {
+    const n = x.nested.get(seg);
+    if (n) return n;
+    for (const s of hierarchy(x).types.slice(1)) { const m = s.nested.get(seg); if (m) return m; }
     return null;
+  }
+
+  /**
+   * The alias `name` declared at namespace level `level` ('' the file's top level, then the
+   * project's `global using` aliases) and visible at `pos`.
+   * @param {FileRec} rec @param {string} name @param {number} pos @param {string} level
+   * @returns {{ target: string, scope: Space|null }|null}
+   */
+  function aliasAt(rec, name, pos, level) {
+    for (const a of rec.aliases.get(name) || []) {
+      if ((a.scope ? a.scope.name : '') === level && (!a.scope || (a.scope.start <= pos && pos < a.scope.end))) return a;
+    }
+    if (level !== '') return null;
+    const g = globalsOf(rec.project).aliases.get(name);
+    return g ? { target: g, scope: null } : null;
+  }
+
+  /** @param {FileRec} rec @param {string} name @param {number} pos The alias `name` visible at `pos`, innermost namespace first. */
+  function aliasVisible(rec, name, pos) {
+    for (let ns = nsAt(rec, pos); ; ns = parentNs(ns)) {
+      const a = aliasAt(rec, name, pos, ns);
+      if (a || !ns) return a;
+    }
+  }
+
+  /**
+   * The type an alias names: its target as written, else relative to the namespace it is
+   * declared in. An alias to a namespace is no type (null); one whose namespace the index
+   * declares but whose type it does not know is not placed (`'amb'`, S7); else outside.
+   * @param {{ target: string, scope: Space|null }} a @param {FileRec} rec @returns {TypeRec|null|'amb'}
+   */
+  function aliasType(a, rec) {
+    const prefixes = [''];
+    for (let ns = a.scope ? a.scope.name : ''; ns; ns = parentNs(ns)) prefixes.splice(prefixes.length - 1, 0, `${ns}.`);
+    for (const p of prefixes) { const t = typeAt(`${p}${a.target}`, rec); if (t) return t; }
+    if (prefixes.some((p) => namespaces.has(`${p}${a.target}`))) return null;
+    const nsPart = a.target.includes('.') ? a.target.slice(0, a.target.lastIndexOf('.')) : '';
+    return nsPart && prefixes.some((p) => namespaces.has(`${p}${nsPart}`)) ? 'amb' : null;
   }
 
   /** @param {string} name @param {FileRec} rec @param {number} pos @param {TypeRec|null} enc @returns {TypeRec|null|'amb'} */
   function resolveSimple(name, rec, pos, enc) {
     for (let o = enc; o; o = o.outer) {
       if (`${o.simple}${o.arity ? `\`${o.arity}` : ''}` === name) return o;
-      const n = o.nested.get(name);
+      const n = nestedIn(o, name);
       if (n) return n;
-      for (const s of hierarchy(o).types.slice(1)) { const m = s.nested.get(name); if (m) return m; }
     }
     const ft = rec.fileTypes.get(name);
     if (ft) return ft;
-    for (let ns = nsAt(rec, pos); ; ns = ns.slice(0, Math.max(0, ns.lastIndexOf('.')))) {
-      const t = typesByKey.get(ns ? `${ns}.${name}` : name);
+    // C#'s order: each enclosing namespace, innermost first, with the aliases and `using`
+    // namespaces declared in its block; the file's top level last, with the project's global
+    // usings and the nested types of `using static` types.
+    for (let ns = nsAt(rec, pos); ; ns = parentNs(ns)) {
+      const t = typeAt(ns ? `${ns}.${name}` : name, rec);
       if (t) return t;
-      if (!ns) break;
+      const alias = aliasAt(rec, name, pos, ns);
+      if (alias) return aliasType(alias, rec);
+      /** @type {Set<TypeRec>} */
+      const found = new Set();
+      let amb = false;
+      /** @param {TypeRec|null|'amb'} r */
+      const add = (r) => { if (r === 'amb') amb = true; else if (r) found.add(r); };
+      for (const u of rec.usings) {
+        if ((u.scope ? u.scope.name : '') !== ns || (u.scope && !(u.scope.start <= pos && pos < u.scope.end))) continue;
+        // A block's `using X;` names X relative to its namespace first.
+        let full = u.name;
+        for (let o = ns; o; o = parentNs(o)) if (namespaces.has(`${o}.${u.name}`)) { full = `${o}.${u.name}`; break; }
+        add(typeAt(`${full}.${name}`, rec));
+      }
+      if (!ns) {
+        const g = globalsOf(rec.project);
+        for (const u of g.usings) add(typeAt(`${u}.${name}`, rec));
+        // `using static L.Outer;` imports `Outer`'s nested types too.
+        for (const owner of [...rec.statics, ...g.statics]) { const o = typeAt(owner, rec); if (o && o !== 'amb') add(nestedIn(o, name)); }
+      }
+      if (amb || found.size > 1) return 'amb';
+      if (found.size) return [...found][0];
+      if (!ns) return null;
     }
-    const alias = rec.aliases.get(name) || globalAliases.get(name);
-    if (alias) return typesByKey.get(alias) || null;
-    /** @type {Set<TypeRec>} */
-    const found = new Set();
-    for (const u of rec.usings) { const t = typesByKey.get(`${u}.${name}`); if (t) found.add(t); }
-    for (const u of globalUsings) { const t = typesByKey.get(`${u}.${name}`); if (t) found.add(t); }
-    if (found.size > 1) return 'amb';
-    return found.size ? [...found][0] : null;
   }
 
   /** An outside base named `I` + capital is taken for an interface. @param {string} text */
@@ -992,12 +1113,62 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
     const { toks, match } = d.file;
     let i = 0;
     while (i < toks.length && toks[i].start < d.namePos) i++;
+    /**
+     * A pattern's designation from `toks[k]` (S3): `T x`, `T { … } x`, `T ( … ) x`, `{ … } x`,
+     * `var x` (untyped), `var (a, b)`; `ends`: the tokens that may follow the name (any but a
+     * member access or a call when null). True when one was registered.
+     * @param {number} k @param {Set<string>|null} ends
+     */
+    const designation = (k, ends) => {
+      let j = k;
+      /** @type {string|null} */
+      let type = null;
+      if (toks[j] && toks[j].text === 'var') {
+        if (isP(toks[j + 1], '(') && match[j + 1] > j + 1) {
+          for (let a = j + 2; a < match[j + 1]; a++) if (isIdent(toks[a]) && !isP(toks[a + 1], '.') && !isP(toks[a + 1], '(')) set(toks[a].text, null);
+          return true;
+        }
+        j++;
+      } else if (!isP(toks[j], '{') && !isP(toks[j], '(')) {
+        const ty = readType(toks, j);
+        if (!ty) return false;
+        type = ty.text;
+        j = ty.end;
+      }
+      if ((isP(toks[j], '{') || isP(toks[j], '(')) && match[j] > j) j = match[j] + 1;
+      else if (j === k) return false;
+      const nameTok = toks[j];
+      const after = toks[j + 1];
+      if (!isIdent(nameTok) || !after || (ends ? !ends.has(after.text) : isP(after, '.') || isP(after, '(') || isP(after, '?.'))) return false;
+      set(nameTok.text, type);
+      return true;
+    };
+    // A switch-expression arm (`T x =>`, `T x when`) and a property subpattern (`{ P: T x }`).
+    const ARM_END = new Set(['=>', 'when']);
+    const SUBPATTERN_END = new Set([',', '}', ')', '=>', 'when']);
     for (; i < toks.length && toks[i].start < d.end; i++) {
       const t = toks[i];
+      const pv = toks[i - 1];
+      if (pv && t.start !== d.namePos) {
+        // `is T x`, `case T x`, `and T x`, `is var x`, `is { … } x`; `{ T x =>` / `, T x =>`; `P: T x`.
+        const ends = pv.kind === 'ident' && (pv.text === 'is' || pv.text === 'case' || pv.text === 'and') ? null
+          : isP(pv, '{') || isP(pv, ',') ? ARM_END : isP(pv, ':') ? SUBPATTERN_END : undefined;
+        if (ends !== undefined && designation(i, ends)) continue;
+      }
+      // LINQ range variables: `from [T] x in`, `join [T] x in`, `let x =`, `into x`.
+      if (t.kind === 'ident' && (t.text === 'from' || t.text === 'join')) {
+        if (isIdent(toks[i + 1]) && toks[i + 2] && toks[i + 2].text === 'in') { set(toks[i + 1].text, null); continue; }
+        const ty = readType(toks, i + 1);
+        if (ty && isIdent(toks[ty.end]) && toks[ty.end + 1] && toks[ty.end + 1].text === 'in') { set(toks[ty.end].text, ty.text); continue; }
+      }
+      if (t.kind === 'ident' && ((t.text === 'let' && isP(toks[i + 2], '=')) || t.text === 'into') && isIdent(toks[i + 1])) { set(toks[i + 1].text, null); continue; }
       if (t.kind !== 'ident') {
         if (isP(t, '=>')) {
           const prev = toks[i - 1];
-          if (isIdent(prev) && prev.start !== d.namePos && !isP(toks[i - 2], '.') && !(toks[i - 2] && toks[i - 2].kind === 'ident')) set(prev.text, null);
+          const p2 = toks[i - 2];
+          // `x =>` and `async x =>` / `static x =>`: an untyped lambda parameter (`T x =>` is a
+          // switch arm's pattern, read above).
+          if (isIdent(prev) && prev.start !== d.namePos && !isP(p2, '.') && !(p2 && p2.kind === 'ident' && p2.text !== 'async' && p2.text !== 'static')) set(prev.text, null);
           else if (isP(prev, ')') && match[i - 1] >= 0) {
             for (let j = match[i - 1] + 1; j < i - 1; j++) {
               if (isIdent(toks[j]) && (isP(toks[j + 1], ',') || j + 1 === i - 1) && (isP(toks[j - 1], ',') || isP(toks[j - 1], '('))) set(toks[j].text, null);
@@ -1006,16 +1177,14 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
         }
         continue;
       }
-      if (t.text === 'is' || t.text === 'as') {
-        if (t.text === 'is') { const ty = readType(toks, i + 1); if (ty && isIdent(toks[ty.end]) && !isP(toks[ty.end + 1], '.') && !isP(toks[ty.end + 1], '(')) set(toks[ty.end].text, ty.text); }
-        continue;
-      }
+      if (t.text === 'is' || t.text === 'as') continue;
       if (isIdent(t) && isP(toks[i + 1], '(') && isDeclarationAt(toks, match, i, i + 1) && t.start !== d.namePos) {
         fns.add(bare(t.text));
         continue;
       }
       const prev = toks[i - 1];
-      if (!prev || !(STATEMENT_START.has(prev.text) || ['out', 'using', 'const', 'ref', 'readonly', 'await', 'scoped'].includes(prev.text))) continue;
+      // `:` too: a declaration after a `case …:` or a label.
+      if (!prev || !(STATEMENT_START.has(prev.text) || isP(prev, ':') || ['out', 'using', 'const', 'ref', 'readonly', 'await', 'scoped'].includes(prev.text))) continue;
       if (NOT_TYPE_START.has(t.text) && t.text !== 'var') continue;
       if (t.text === 'var' && isP(toks[i + 1], '(')) {
         // `var (a, b) = …`: untyped.
@@ -1064,7 +1233,20 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
           }
         }
         set(nameTok.text, typed);
-      } else set(nameTok.text, ty.text);
+      } else {
+        set(nameTok.text, ty.text);
+        // `T a = …, b = …;` / `T a, b;`: the further declarators of a statement's declaration
+        // (S3); not in a parameter list or a tuple (`(T a, b) = …`).
+        const statement = ['{', ';', '}', ':', 'const', 'using'].includes(prev.text) || (isP(prev, '(') && !!toks[i - 2] && ['for', 'using', 'fixed'].includes(toks[i - 2].text));
+        if (statement && (after.text === '=' || after.text === ',')) {
+          for (let k = ty.end + 1; k < toks.length && k < ty.end + 400; k++) {
+            const x = toks[k];
+            if ((isP(x, '(') || isP(x, '[') || isP(x, '{')) && match[k] > k) { k = match[k]; continue; }
+            if (isP(x, ';') || isP(x, ')') || isP(x, '}')) break;
+            if (isP(x, ',') && isIdent(toks[k + 1]) && toks[k + 2] && ['=', ',', ';'].includes(toks[k + 2].text)) set(toks[k + 1].text, ty.text);
+          }
+        }
+      }
       i = ty.end;
     }
     d.locals = { vars, fns };
@@ -1151,7 +1333,23 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
     // static method of the type can be meant then (`onReceiver`), and no member of it.
     if (ty) return { t: 'type', type: ty, static: true, ...(memberTypeOf(enc, name) !== ty && enclosingOpen(enc) ? { shadowable: true } : {}) };
     if (enclosingOpen(enc)) return { t: 'unk' };
-    if (namespaces.has(name) || rec.aliases.has(name) || globalAliases.has(name)) return { t: 'ns', name: rec.aliases.get(name) || globalAliases.get(name) || name };
+    // A member of an enclosing type this did not read as a field (a property of another form).
+    for (let o = enc; o; o = o.outer) if (hierarchy(o).types.some((x) => x.members.has(name))) return { t: 'unk' };
+    // A member imported by `using static` (S7): typed from an indexed type's field; not placed
+    // when that type does not declare it readably or is not indexed.
+    let outsideStatic = false;
+    for (const owner of [...rec.statics, ...globalsOf(rec.project).statics]) {
+      const o = typeAt(owner, rec);
+      if (!o || o === 'amb') { outsideStatic = true; continue; }
+      const f = fieldOf(o, name);
+      if (f === null) return { t: 'unk' };
+      if (f) return recvOfText(f.text, f.file, f.at, innermostType(f.file, f.at));
+      if (hierarchy(o).types.some((x) => x.members.has(name)) || hierarchy(o).open) return { t: 'unk' };
+    }
+    if (outsideStatic) return { t: 'unk' };
+    const alias = aliasVisible(rec, name, t.start);
+    if (alias) return { t: 'ns', name: alias.target };
+    if (namespaces.has(name)) return { t: 'ns', name };
     // A namespace named relative to an enclosing one (`Naming.TV.X` inside `Emby.Server`).
     for (let ns = nsAt(rec, t.start); ns; ns = ns.includes('.') ? ns.slice(0, ns.lastIndexOf('.')) : '') {
       if (namespaces.has(`${ns}.${name}`)) return { t: 'ns', name: `${ns}.${name}` };
@@ -1205,13 +1403,14 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
       const f = fieldOf(base.type, name);
       if (f === null) return { t: 'unk' };
       if (f) return recvOfText(f.text, f.file, f.at, innermostType(f.file, f.at));
-      const n = base.type.nested.get(name) || [...base.type.nested.entries()].find(([k]) => k.startsWith(`${name}\``))?.[1];
+      const n = nestedIn(base.type, name) || [...base.type.nested.entries()].find(([k]) => k.startsWith(`${name}\``))?.[1];
       if (n) return { t: 'type', type: n, static: true };
       return { t: 'unk' }; // a member this does not read (an auto-property of another form, an outside base's)
     }
     if (base.t === 'ns') {
       const full = `${base.name}.${name}`;
-      const ty = typesByKey.get(full) || resolveTypeName(full, rec, pos, null);
+      const ty = typeAt(full, rec) || resolveTypeName(full, rec, pos, null);
+      if (ty === 'amb') return { t: 'unk' };
       if (ty && typeof ty !== 'string') return { t: 'type', type: ty, static: true };
       return namespaces.has(full) ? { t: 'ns', name: full } : /^[A-Z]/.test(name) && !namespaces.has(base.name) ? { t: 'ext' } : namespaces.has(base.name) ? { t: 'ext' } : { t: 'unk' };
     }
@@ -1373,7 +1572,7 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
       open = open || l.open;
     }
     let outsideStatic = false;
-    for (const owner of [...rec.statics, ...globalStatics]) {
+    for (const owner of [...rec.statics, ...globalsOf(rec.project).statics]) {
       const t = resolveTypeName(owner, rec, use.pos, null);
       if (!t || typeof t === 'string') { outsideStatic = true; continue; }
       const l = lookup(t, use.name, use.argc, false, argKinds(rec, use));
@@ -1466,7 +1665,7 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
   function derivedOf(t) {
     if (!derivedIndex) {
       derivedIndex = new Map();
-      const all = new Set(typesByKey.values());
+      const all = new Set([...typesByKey.values()].flat());
       for (const rec of byFile.values()) for (const ft of rec.fileTypes.values()) all.add(ft);
       for (const x of all) {
         for (const b of hierarchy(x).types.slice(1)) {

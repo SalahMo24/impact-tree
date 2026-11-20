@@ -421,3 +421,136 @@ public class C {
   const local = answerFor({ 'a.cs': 'namespace N; sealed class C { static void A() { } void U(int A) { var y = A; } void V() { int A = 1; Use(A); } void W() { A(); } static void Use(int a) { } }' }, 'C.A()');
   assert.deepEqual([local.callers, local.complete], [['C.W()'], true]);
 });
+
+// ---- the C8a review's should-fix S1, S2, S3, S7: project scope, pattern locals, names not placed ----
+
+const TWO_PROJECTS = { projects: ['p1/p1.csproj', 'p2/p2.csproj'] };
+
+test('S1: `global using`, global aliases, `global using static` and implicit usings hold in their own project only', () => {
+  const files = {
+    'p1/G.cs': 'global using App.Models; global using F = App.Models.File; global using static App.Models.Helpers;',
+    'p1/M.cs': 'namespace App.Models; public static class File { public static bool Exists(string p) => true; } public static class Helpers { public static void Go() { } }',
+    'p1/V.cs': 'namespace X; sealed class V { bool R() => File.Exists("y"); void S() { Go(); } }',
+    'p2/U.cs': 'using System.IO; namespace Other; sealed class U { bool R() { return File.Exists("x"); } bool A() => F.Exists("z"); void S() { Go(); } }',
+  };
+  const exists = answerFor(files, 'File.Exists(string)', TWO_PROJECTS);
+  assert.deepEqual([exists.callers, exists.complete], [['V.R()'], true]);
+  const go = answerFor(files, 'Helpers.Go()', TWO_PROJECTS);
+  assert.deepEqual([go.callers, go.complete], [['V.S()'], true]);
+  // Implicit usings by project directory.
+  const implicit = {
+    'p1/M.cs': 'namespace App.Models; public static class File { public static bool Exists(string p) => true; }',
+    'p1/V.cs': 'namespace X; sealed class V { bool R() => File.Exists("y"); }',
+    'p2/U.cs': 'namespace Other; sealed class U { bool R() => File.Exists("x"); }',
+  };
+  const byProject = answerFor(implicit, 'File.Exists(string)', { ...TWO_PROJECTS, projectUsings: { p1: ['App.Models'], p2: ['System.IO'] } });
+  assert.deepEqual([byProject.callers, byProject.complete], [['V.R()'], true]);
+  // Without projects every file is of one project (the preview's single set, never complete).
+  assert.deepEqual(answerFor(files, 'File.Exists(string)').callers, ['U.A()', 'U.R()', 'V.R()']);
+  assert.equal(answerFor(files, 'File.Exists(string)', { partial: true }).complete, false);
+});
+
+test('S2: types of one namespace and name in two projects are two types; a name resolves in its own project first', () => {
+  const startup = answerFor({
+    'p1/Startup.cs': 'namespace App; public class Startup { public void Configure(int a) { } }',
+    'p2/Startup.cs': 'namespace App; public class Startup { public void Init() { Configure(1); } }',
+  }, 'Startup.Configure(int)', TWO_PROJECTS);
+  assert.deepEqual(startup.callers, []);
+  const files = {
+    'p1/Helper.cs': 'namespace App; static class Helper { public static void Do() { } } class U1 { void R() { Helper.Do(); } }',
+    'p2/Helper.cs': 'namespace App; static class Helper { public static void Do() { } } class U2 { void R() { Helper.Do(); } }',
+  };
+  const ask = (/** @type {object} */ opts) => {
+    const ix = createCsharpSyntacticIndex(Object.entries(files).map(([p, text]) => ({ path: p, text })), { root: '/r', ...opts });
+    return [...ix.byFile.values()].filter((rec) => rec.defs.some((x) => x.key === 'Helper.Do()')).map((rec) => {
+      const d = rec.defs.find((x) => x.key === 'Helper.Do()');
+      const a = ix.callersOfWithStatus({ file: rec.file, name: d.name, pos: d.namePos });
+      return [rec.rel, a.callers.map((c) => c.label), !a.incompleteReason && !ix.unresolvedCallsTo({ name: 'Do' })];
+    });
+  };
+  assert.deepEqual(ask(TWO_PROJECTS), [['p1/Helper.cs', ['U1.R()'], true], ['p2/Helper.cs', ['U2.R()'], true]]);
+  // A third project that sees both cannot tell: unresolved, so neither answer is complete.
+  files['p3/U3.cs'] = 'namespace App; class U3 { void R() { Helper.Do(); } }';
+  assert.deepEqual(ask({ projects: [...TWO_PROJECTS.projects, 'p3/p3.csproj'] }).map((r) => r[2]), [false, false]);
+  delete files['p3/U3.cs'];
+  // No projects known: two non-`partial` types of one key are ambiguous, never merged.
+  assert.deepEqual(ask({}).map((r) => [r[1], r[2]]), [[[], false], [[], false]]);
+  // `partial` parts of two projects do not merge either.
+  const parts = answerFor({
+    'p1/P.cs': 'namespace App; public sealed partial class P { internal void A() { } }',
+    'p2/P.cs': 'namespace App; public sealed partial class P { void B() { A(); } }',
+  }, 'P.A()', TWO_PROJECTS);
+  assert.deepEqual(parts.callers, []);
+});
+
+test('S3: locals declared by patterns, switch arms, `case`, LINQ and further declarators shadow a field of the name', () => {
+  const head = 'namespace N; sealed class Bar { internal void M() { } } sealed class Foo { internal void M() { } }\n';
+  /** @param {string} body Members of `U`, which has a field `item` of type Bar. */
+  const both = (body) => {
+    const files = { 'a.cs': `${head}sealed class U { Bar item; ${body} }` };
+    return { bar: answerFor(files, 'Bar.M()'), foo: answerFor(files, 'Foo.M()') };
+  };
+  // Typed forms: the call reaches Foo.M, never Bar.M.
+  for (const body of [
+    'void R(object o) { switch (o) { case Foo item: item.M(); break; } }',
+    'void R(object o) { switch (o) { case Foo item when item != null: item.M(); break; } }',
+    'int R(object o) => o switch { Foo item => Do(() => item.M()), _ => 0 }; int Do(System.Action a) => 0;',
+    'void R(object o) { if (o is Foo { } item) item.M(); }',
+    'void R(object o) { if (o is Foo(var a) item) item.M(); }',
+    'void R(object o) { if (o is string and Foo item) item.M(); }',
+    'void R(object o) { switch (o) { case 1: Foo item = null; item.M(); break; } }',
+    'void R() { Foo a = null, item = null; item.M(); }',
+    'void R(System.Collections.Generic.List<Foo> xs) { var q = from Foo item in xs select Wrap(() => item.M()); } int Wrap(System.Action a) => 0;',
+  ]) {
+    const r = both(body);
+    assert.deepEqual([body, r.bar.callers, r.foo.callers.length], [body, [], 1]);
+  }
+  // Untyped forms: unresolved, so Bar.M is incomplete and lists nothing.
+  for (const body of [
+    'void R(object o) { if (o is var item) item.M(); }',
+    'void R(object o) { if (o is { } item) item.M(); }',
+    'int R(object o) => o switch { var item => Do(() => item.M()) }; int Do(System.Action a) => 0;',
+    'void R(System.Collections.Generic.List<Foo> xs) { var q = from item in xs select Wrap(() => item.M()); } int Wrap(System.Action a) => 0;',
+    'void R(System.Collections.Generic.List<Foo> xs) { var q = from x in xs let item = x select Wrap(() => item.M()); } int Wrap(System.Action a) => 0;',
+    'void R(System.Collections.Generic.List<Foo> xs, System.Collections.Generic.List<Foo> ys) { var q = from x in xs join item in ys on x equals item select Wrap(() => item.M()); } int Wrap(System.Action a) => 0;',
+    'void R(System.Collections.Generic.List<Foo> xs) { var q = from x in xs group x by x into item select Wrap(() => item.M()); } int Wrap(System.Action a) => 0;',
+    'void R(System.Collections.Generic.List<Foo> xs) { xs.ForEach(async item => item.M()); }',
+  ]) {
+    const r = both(body);
+    assert.deepEqual([body, r.bar.callers, r.bar.complete], [body, [], false]);
+  }
+  // The field itself still types the name where no local hides it.
+  assert.deepEqual(both('void R() { item.M(); }').bar.callers, ['U.R()']);
+  // A parameter list or a tuple is not a declarator list: `F(out Foo a, item)` keeps the field.
+  assert.deepEqual(both('void R() { F(out Foo a, item); item.M(); } static void F(out Foo a, Bar b) { a = null; }').bar.callers, ['U.R()']);
+});
+
+test('S7: a name the index cannot place is unresolved, not outside', () => {
+  // A member imported by `using static`: typed through the indexed type; unknown through an outside one.
+  const hub = 'namespace N; public sealed class Svc { internal void M() { } } public static class Hub { public static Svc Instance { get; } = new Svc(); }';
+  const typed = answerFor({ 'a.cs': hub, 'b.cs': 'using static N.Hub; namespace Z; sealed class U { void R() { Instance.M(); } }' }, 'Svc.M()');
+  assert.deepEqual([typed.callers, typed.complete], [['U.R()'], true]);
+  const outside = answerFor({ 'a.cs': hub, 'b.cs': 'using static Lib.Hub; namespace Z; sealed class U { void R() { Instance.M(); } }' }, 'Svc.M()');
+  assert.deepEqual([outside.callers, outside.complete], [[], false]);
+  // A nested type named through a derived type, through `using static`.
+  const inherited = answerFor({ 'a.cs': 'namespace N; public class B { public sealed class Inner { internal void M() { } } } public class D : B { } sealed class U { void R(D.Inner i) { i.M(); } }' }, 'B.Inner.M()');
+  assert.deepEqual([inherited.callers, inherited.complete], [['U.R(Inner)'], true]);
+  const viaStatic = answerFor({ 'm.cs': 'namespace L; public static class Outer { public sealed class Inner { internal void M() { } } }',
+    'u.cs': 'using static L.Outer; namespace App; sealed class U { void R(Inner f) { f.M(); } }' }, 'Outer.Inner.M()');
+  assert.deepEqual([viaStatic.callers, viaStatic.complete], [['U.R(Inner)'], true]);
+  // A nested name an indexed type does not declare (an outside base's): not placed.
+  const notFound = answerFor({ 'a.cs': 'namespace N; public sealed class Foo { internal void M() { } } public class D : Outside { } sealed class U { void R(D.Foo f) { f.M(); } }' }, 'Foo.M()');
+  assert.deepEqual([notFound.callers, notFound.complete], [[], false]);
+  // An alias declared in a namespace block, relative to it.
+  const relative = answerFor({ 'm.cs': 'namespace App.Models { public sealed class Foo { internal void M() { } } }',
+    'u.cs': 'namespace App { using F = Models.Foo; sealed class U { void R(F f) { f.M(); } } }' }, 'Foo.M()');
+  assert.deepEqual([relative.callers, relative.complete], [['U.R(F)'], true]);
+  // A `using` in a namespace block binds before the enclosing namespaces' types.
+  const files = { 'x.cs': 'namespace X { public sealed class Foo { internal void M() { } } } namespace N1 { public sealed class Foo { internal void M() { } } }',
+    'u.cs': 'namespace N1.N2 { using X; sealed class U { void R(Foo f) { f.M(); } } }' };
+  assert.deepEqual(answerFor(files, 'Foo.M()').callers, ['U.R(Foo)']);
+  assert.deepEqual(answerFor(files, 'Foo.M()#2').callers, []);
+  // A capitalised name that is nothing the index declares, with no `using static`, stays outside.
+  const bcl = answerFor({ 'a.cs': 'namespace N; public sealed class Foo { internal static void Exists() { } } sealed class U { void R() { Console.Exists(); } }' }, 'Foo.Exists()');
+  assert.deepEqual([bcl.callers, bcl.complete], [[], true]);
+});
