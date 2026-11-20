@@ -266,7 +266,19 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
     const active = activeText(text);
     /** @type {Token[]} */
     const toks = [];
-    if (lex(active, 0, (t) => { if (t.kind !== 'directive') toks.push(t); }) < 0) return null;
+    // The code of interpolation holes (`$"…{F(x)}…"`) is lexed after its literal, so calls
+    // there are read; a hole's own literals may have holes in turn.
+    /** @type {(t: Token) => void} */
+    const take = (t) => {
+      if (t.kind === 'directive') return;
+      toks.push(t);
+      for (const [a, b] of t.holes || []) {
+        // A separator before each hole, so two holes never read as one declaration (`{a}{F(x)}`).
+        toks.push({ kind: 'punct', text: '$hole', start: a, end: a });
+        lex(active.slice(0, b), a, (x) => { take(x); });
+      }
+    };
+    if (lex(active, 0, (t) => { take(t); }) < 0) return null;
     /** @type {FileRec} */
     const rec = {
       rel, file: root ? path.join(root, rel) : rel, text: active, toks, match: matchBrackets(toks), spaces: [], usings: [], aliases: new Map(),
@@ -848,10 +860,12 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
       if (x.kind === 'interface' && t.kind !== 'interface') continue;
       for (const d of x.methods.get(name) || []) {
         byName = true;
-        if (!arityMatches(d, argc) || found.has(d.paramKey)) continue;
+        // The nearest declaration of a parameter list wins; two of one type that differ only
+        // in generic arguments (`Find(IList<A>)`, `Find(IList<B>)`, keys `#2`) are both kept.
+        if (!arityMatches(d, argc) || [...found.values()].some((f) => f.paramKey === d.paramKey && f.type !== d.type)) continue;
         if (targs && d.typeParams.size !== targs) continue;
         if (kinds && !kinds.every((k, n) => argFits(k, d, n))) { misfit = true; continue; }
-        found.set(d.paramKey, d);
+        found.set(d.key, d);
       }
       // Overload resolution stops at the most derived type with an applicable method.
       if (found.size && argc >= 0) break;
@@ -864,7 +878,33 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
       const exact = defs.filter((d) => d.min === argc && d.max === argc);
       if (exact.length) defs = exact;
     }
+    // A base chain that leaves the index: C# tries the most derived type's applicable methods
+    // first, so an indexed method wins only when it surely takes the arguments; otherwise an
+    // outside base's overload (`ControllerBase.Ok(object)`) may be the one called.
+    if (defs.length && h.open && argc >= 0 && !defs.some((d) => surelyApplicable(d, kinds, argc))) return { defs: [], byName, open: true };
     return { defs, byName, open: h.open || t.generated || (misfit && !defs.length) };
+  }
+
+  /**
+   * Whether `d` surely takes a call's arguments: no arguments, or each argument's type is
+   * known and converts to its parameter's (an indexed base, the same or a widening predefined
+   * type, the same outside type name, `object`, a bare type parameter).
+   * @param {DefRec} d @param {ArgKind[]|null} kinds @param {number} argc
+   */
+  function surelyApplicable(d, kinds, argc) {
+    if (argc === 0) return true;
+    if (!kinds || kinds.length !== argc) return false;
+    return kinds.every((k, n) => {
+      if (!k) return false;
+      const p = d.params[Math.min(n, d.params.length - 1)];
+      if (!p) return false;
+      const pt = p.type.replace(/^((this|ref|out|in|params|scoped)\s+)+/, '').replace(/\?$/, '');
+      if (pt === 'object' || d.typeParams.has(pt)) return true;
+      if ('pre' in k) return predefinedConverts(k.pre, pt);
+      if ('ext' in k) return pt.replace(/<.*$/s, '').replace(/^.*\./, '') === k.ext;
+      const pr = PREDEFINED.has(pt) ? null : resolveTypeName(readTypeText(pt) || pt, d.file, d.namePos, d.type, d.typeParams);
+      return !!pr && typeof pr !== 'string' && hierarchy(k.t).types.includes(pr);
+    });
   }
 
   /**
@@ -955,6 +995,8 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
             }
             // `var x = a.B().C();`: typed later from the expression (a chain of names and calls).
             if (typed === null && k > ty.end + 2 && isP(toks[k - 1], ')') && chainOnly(toks, match, ty.end + 2, k)) typed = `@${k - 1}`;
+            // `var x = await a.F(…)[.ConfigureAwait(…)];`: the awaited result of F.
+            else if (typed === null && toks[ty.end + 2] && toks[ty.end + 2].text === 'await' && k > ty.end + 3 && isP(toks[k - 1], ')') && chainOnly(toks, match, ty.end + 3, k)) typed = `@await${k - 1}`;
           }
         }
         set(nameTok.text, typed);
@@ -1027,6 +1069,7 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
       const { vars } = localsOf(def);
       if (vars.has(name)) {
         const ty = vars.get(name);
+        if (ty && ty.startsWith('@await')) return awaitedAt(rec, Number(ty.slice(6)), depth + 1);
         if (ty && ty.startsWith('@')) return recvAt(rec, Number(ty.slice(1)), depth + 1);
         return ty ? recvOfText(ty, rec, t.start, def.type || enc, def.typeParams) : { t: 'unk' };
       }
@@ -1049,6 +1092,26 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
     // A lowercase name not declared anywhere visible: something this cannot see.
     if (/^[a-z_]/.test(name)) return { t: 'unk' };
     return { t: 'ext' };
+  }
+
+  /**
+   * The awaited result of the call ending at `toks[end]` (`)`): its declared return type's
+   * `Task<T>`/`ValueTask<T>` argument; a trailing `.ConfigureAwait(…)` is skipped.
+   * @param {FileRec} rec @param {number} end @param {number} depth @returns {Recv}
+   */
+  function awaitedAt(rec, end, depth) {
+    const { toks, match } = rec;
+    let open = match[end];
+    if (open > 2 && toks[open - 1].text === 'ConfigureAwait' && isP(toks[open - 2], '.') && isP(toks[open - 3], ')')) { end = open - 3; open = match[end]; }
+    if (open < 0) return { t: 'unk' };
+    const use = (rec.uses || []).find((u) => u.open === open && u.kind === 'call');
+    if (!use) return { t: 'unk' };
+    const hit = resolveUse(rec, use, depth + 1);
+    if (!Array.isArray(hit) || !hit.length || new Set(hit.map((d) => String(d.returns))).size !== 1) return { t: 'unk' };
+    const d = hit[0];
+    const m = /^(?:System\.Threading\.Tasks\.)?(?:Task|ValueTask)<(.+)>$/s.exec(String(d.returns).trim());
+    if (!m || !d.type || d.typeParams.has(m[1].replace(/\?$/, ''))) return { t: 'unk' };
+    return recvOfText(m[1].trim(), d.file, d.namePos, d.type, d.typeParams);
   }
 
   /** @param {Recv} base @param {string} name @param {FileRec} rec @param {number} pos @returns {Recv} `base.name`. */
@@ -1343,7 +1406,7 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
     }
     if (def.file.ui && !def.mods.has('private')) reasons.push('Razor/XAML calls are not read');
     if (valueUses) reasons.push(`used as a method group ${valueUses} time(s): calls through that delegate cannot be followed`);
-    if (ambiguous) reasons.push(`${ambiguous} call(s) match several overloads by argument count: each such call is listed for every one of them`);
+    if (ambiguous) reasons.push(`${ambiguous} call(s) match several overloads with the same number of arguments: each such call is listed for every one of them`);
     return { callers: [...out.values()], incompleteReason: reasons.length ? reasons.join('; ') : null };
   }
 
@@ -1365,7 +1428,17 @@ function createCsharpSyntacticIndex(sources, { root = '', scope = 'the indexed f
     return d ? { className: d.type ? d.type.simple : null, name: d.name } : null;
   }
 
-  return { symbolAt, callersOfWithStatus, unresolvedCallsTo, size: byFile.size, skipped, scopeNote, byFile, undeclaredBase };
+  /**
+   * The declarations the use at `pos` in `file` reaches (for the verification harness).
+   * @param {string} file @param {number} pos @returns {Hit|undefined}
+   */
+  function targetsAt(file, pos) {
+    const rec = byFile.get(file);
+    const use = rec && (rec.uses || []).find((u) => u.pos === pos);
+    return rec && use ? resolveUse(rec, use) : undefined;
+  }
+
+  return { symbolAt, callersOfWithStatus, unresolvedCallsTo, size: byFile.size, skipped, scopeNote, byFile, undeclaredBase, targetsAt };
 }
 
 /**

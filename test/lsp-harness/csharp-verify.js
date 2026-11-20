@@ -5,7 +5,7 @@
  *
  *   node test/lsp-harness/csharp-verify.js --syntactic --repo <C# clone> --commit <sha>
  *        --outline <module exporting outlineOf(text, path)> [--prs <n,n,…>] [--tools <dir>]
- *   node test/lsp-harness/csharp-verify.js --syntactic --callers [--preview] --repo <C# clone> --commit <sha> [--oracle <semantic json>]
+ *   node test/lsp-harness/csharp-verify.js --syntactic --callers [--preview | --both] --repo <C# clone> --commit <sha> [--oracle <semantic json>]
  *   node test/lsp-harness/csharp-verify.js --oracle-only --repo <C# clone> --commit <sha>
  *   node test/lsp-harness/csharp-verify.js --signatures [--all-kinds] --repo <C# clone> --commit <sha>
  *   node test/lsp-harness/csharp-verify.js --kinds --repo <C# clone> --commit <sha> --prs <n,n,…>
@@ -642,6 +642,10 @@ function callersCheck(repo, commit, oracleFile, preview) {
   let found = 0;
   let viaTotal = 0;
   let viaFound = 0;
+  let sameArity = 0;
+  let outsideOracle = 0;
+  const projectDirs = o.projects.map((/** @type {any} */ p) => path.posix.dirname(p.path)).map((/** @type {string} */ d) => (d === '.' ? '' : d));
+  const inOracle = (/** @type {string} */ rel) => projectDirs.some((/** @type {string} */ d) => d === '' || rel.startsWith(`${d}/`));
   /** @type {string[]} */
   const fps = [];
   /** @type {string[]} */
@@ -651,7 +655,7 @@ function callersCheck(repo, commit, oracleFile, preview) {
   /** @type {Record<string, number>} */
   const incompleteBy = Object.create(null);
   for (const rec of idx.byFile.values()) {
-    if (isTestPath(rec.rel)) continue;
+    if (isTestPath(rec.rel) || !inOracle(rec.rel)) continue;
     for (const d of rec.defs) {
       if (!['method', 'constructor', 'primary-constructor'].includes(d.member)) continue;
       targets++;
@@ -669,6 +673,8 @@ function callersCheck(repo, commit, oracleFile, preview) {
       for (const c of a.callers) {
         const crel = c.file;
         if (isTestPath(crel)) continue;
+        // A file of no project the oracle loaded (`fuzz/…`): it has no edges to compare.
+        if (!inOracle(crel)) { outsideOracle += c.callSites.length; continue; }
         const callerRec = idx.byFile.get(c.file);
         const callerKey = callerRec && callerRec.byPos.get(c.pos) ? callerRec.byPos.get(c.pos).key : null;
         for (const s of c.callSites) {
@@ -676,8 +682,12 @@ function callersCheck(repo, commit, oracleFile, preview) {
           const sk = `${tk}|${crel}|${s.start}`;
           mine.add(sk);
           const e = oracleSites.get(sk);
-          if (e) { hits++; if (e.caller === callerKey || (e.caller == null && callerKey == null)) keyAgree++; }
-          else fps.push(`${c.label} → ${d.key}  (${crel}:${lineAt(crel, s.start)}: ${String(read(crel)).split('\n')[lineAt(crel, s.start) - 1].trim().slice(0, 110)})`);
+          if (e) { hits++; if (e.caller === callerKey || (e.caller == null && callerKey == null)) keyAgree++; continue; }
+          // Listed for every overload of one argument count while Roslyn chose another one:
+          // counted apart, and the answer must say so (as java-verify.js).
+          const hit = idx.targetsAt(c.file, s.start);
+          if (Array.isArray(hit) && hit.length > 1 && /several overloads with the same number of arguments/.test(a.incompleteReason || '')) { sameArity++; continue; }
+          fps.push(`${c.label} → ${d.key}  (${crel}:${lineAt(crel, s.start)}: ${String(read(crel)).split('\n')[lineAt(crel, s.start) - 1].trim().slice(0, 110)})`);
         }
       }
       for (const e of directByTarget.get(tk) || []) {
@@ -694,7 +704,8 @@ function callersCheck(repo, commit, oracleFile, preview) {
   console.log(`caller check (${preview ? 'preview: the tree as the preview indexes it' : 'CLI: the tree'}) at ${sha.slice(0, 12)}; oracle ${path.basename(oracleFile)}`);
   console.log(`index: ${idx.size} files indexed, ${idx.skipped} skipped; read ${readMs} ms, build ${buildMs} ms, queries ${queryMs} ms; implicit usings ${facts.usings.length}, Razor/XAML projects ${facts.uiDirs.length}`);
   console.log(`targets (non-test methods and constructors): ${targets}; complete answers ${complete} (${pct(complete, targets)}); hit by the undeclared-base rule ${idx.undeclaredBase.size}`);
-  console.log(`direct precision ${pct(hits, ours)} (${hits}/${ours} call sites; caller keys equal on ${keyAgree}); recall ${pct(found, oracleDirect)} (${found}/${oracleDirect} direct oracle edges)`);
+  console.log(`direct precision ${pct(hits, ours - sameArity)} on unambiguous rows (${hits}/${ours - sameArity} call sites; caller keys equal on ${keyAgree}); ${pct(hits, ours)} with the ${sameArity} same-arity rows counted; recall ${pct(found, oracleDirect)} (${found}/${oracleDirect} direct oracle edges)`);
+  console.log(`call sites in files of no project the oracle loaded (not compared): ${outsideOracle}`);
   console.log(`edges through an interface or an override (C8b, not expected yet): ${viaFound}/${viaTotal} found as direct rows of the dispatched member`);
   console.log(`misses by kind/answer: ${JSON.stringify(missReasons)}`);
   console.log(`incomplete reasons (targets): ${JSON.stringify(Object.entries(incompleteBy).sort((x, y) => y[1] - x[1]).slice(0, 14))}`);
@@ -703,7 +714,7 @@ function callersCheck(repo, commit, oracleFile, preview) {
   console.log(`misses on an answer marked complete (${missesOnComplete.length}, must be 0):`);
   for (const m of missesOnComplete.slice(0, 60)) console.log(`  ${m}`);
   if (preview && complete) console.log(`FAIL: ${complete} complete answer(s) in the preview`);
-  return ours > 0 && hits / ours >= 0.95 && !missesOnComplete.length && (!preview || !complete);
+  return ours > 0 && hits / (ours - sameArity) >= 0.95 && !missesOnComplete.length && (!preview || !complete);
 }
 
 function main() {
@@ -731,7 +742,10 @@ function main() {
   const t0 = Date.now();
   if (args.includes('--syntactic') && args.includes('--callers')) {
     const oracleFile = opt('--oracle') || path.join(tools, 'cache', 'semantic-jellyfin-821b849e61f6-f522323982f5.json');
-    const ok = callersCheck(repo, commit, oracleFile, args.includes('--preview'));
+    // `--both`: the CLI check, then the preview check, in one process (one read of the tree).
+    let ok = args.includes('--both') ? callersCheck(repo, commit, oracleFile, false) : true;
+    if (args.includes('--both')) console.log('');
+    ok = callersCheck(repo, commit, oracleFile, args.includes('--preview') || args.includes('--both')) && ok;
     console.log(`wall time ${((Date.now() - t0) / 1000).toFixed(1)} s`);
     process.exitCode = ok ? 0 : 1;
     return;

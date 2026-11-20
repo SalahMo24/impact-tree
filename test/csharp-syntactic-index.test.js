@@ -258,3 +258,52 @@ namespace Emby.Server.Run
   // `kind is Kind.A ? Pick(n) : 0`: `Pick` is a call, not a pattern variable.
   assert.deepEqual(ask('Emby.Server/Run.cs', 'Runner.Pick(int)'), { n: 1, complete: true });
 });
+
+test('verify-run fixes: an outside base may hold the overload, overloads differing in generic arguments, interpolation holes, await', () => {
+  const sources = [{ path: 'A.cs', text: `namespace N;
+public class Base : ControllerBase
+{
+    protected IActionResult Ok<T>(IEnumerable<T>? items) => null;
+    protected void Note(string s) { }
+}
+public class Api : Base
+{
+    private readonly Svc _svc;
+    public async Task Get(object o, string s)
+    {
+        Ok(o);
+        Note(s);
+        var dto = await _svc.LoadAsync().ConfigureAwait(false);
+        dto.Touch();
+        var msg = $"size {s}{Size(3)} and {Size(4):N0}";
+    }
+    private static string Size(long n) => "";
+}
+public class Svc { public Task<Dto> LoadAsync() => null; }
+public class Dto { public void Touch() { } }
+public static class Find
+{
+    public static A? Best(IReadOnlyList<A>? r, int y) => null;
+    public static B? Best(IReadOnlyList<B>? r, int y) => null;
+    public static void Use(object rs) { Best(rs, 1); }
+}
+public class A { } public class B { }
+` }];
+  const ix = createCsharpSyntacticIndex(sources, { root: '/r' });
+  const ask = (key) => {
+    const d = ix.byFile.get('/r/A.cs').defs.find((x) => x.key === key);
+    assert.ok(d, key);
+    const a = ix.callersOfWithStatus({ file: '/r/A.cs', name: d.name, pos: d.namePos });
+    return { n: a.callers.reduce((m, c) => m + c.callSites.length, 0), reason: a.incompleteReason, unresolved: ix.unresolvedCallsTo({ name: d.name }) };
+  };
+  // `Ok(o)`: `o` is not surely an IEnumerable, so ControllerBase.Ok(object) may be the one called.
+  assert.deepEqual([ask('Base.Ok<1>(IEnumerable?)').n, ask('Base.Ok<1>(IEnumerable?)').unresolved], [0, 1]);
+  // `Note(s)`: a string surely fits, so it is listed.
+  assert.equal(ask('Base.Note(string)').n, 1);
+  assert.equal(ask('Dto.Touch()').n, 1);
+  assert.equal(ask('Api.Size(long)').n, 2);
+  const best1 = ask('Find.Best(IReadOnlyList?, int)');
+  const best2 = ask('Find.Best(IReadOnlyList?, int)#2');
+  assert.deepEqual([best1.n, best2.n], [1, 1]);
+  assert.match(best2.reason, /several overloads with the same number of arguments/);
+});
