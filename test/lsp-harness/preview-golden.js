@@ -47,6 +47,9 @@ const PRS = [
   // Java: expected today to report Java files as "not analysed in this mode" (google/gson, squash-merged PRs).
   { name: 'gson-3137', repo: 'gson', number: 3137, base: '216c41b6e70dc04e6856418dd76bb00c854eb6b4', head: '845664ba1c307e6c1910d07cfed2f622e0ad8df1', why: 'Java: a one-line fix in JsonReader plus its test (small)' },
   { name: 'gson-3096', repo: 'gson', number: 3096, base: '119818bc666d3b9f897d6c0ca7546ce28e9bbcac', head: 'dae37cf0fe12235b76fb09f01118a0a8c8823f42', why: 'Java: changes in MapTypeAdapterFactory and TypeAdapters, plus five test files' },
+  // C# (C3): changed members and kinds from the text, callers not computed (jellyfin merge commits; base = the first parent, head = the second).
+  { name: 'jellyfin-17821', repo: 'jellyfin', number: 17821, base: '882faf2b2da329ec09077f5a18cf743289ea7e1f', head: '2644163f57a6690366c3106faa392afb72b1e55a', why: 'C#: 9 C# files, added and removed methods, header changes, overloads' },
+  { name: 'jellyfin-18517', repo: 'jellyfin', number: 18517, base: 'c7ce6a1b56ee7dcc1896250df0f2f9deaa828a81', head: '8620f0dd25669c9d60619133282c74b06a061bc4', why: 'C#: three controller actions whose headers changed (small)' },
   // Docs only: hono 099c664d changes README.md alone.
   { name: 'hono-docs-only', repo: 'hono', number: 9999, base: '099c664d^', head: '099c664d', why: 'docs only: hono "docs(readme): update the badges" changes README.md alone' },
 ];

@@ -48,7 +48,7 @@ test('every source and test answer equals the rules diff.js had before the regis
 });
 
 test('TypeScript is registered first and owns its source paths; Go, Python and Java come after it', () => {
-  assert.deepEqual(LANGUAGES.map((l) => l.id), ['typescript', 'go', 'python', 'java']);
+  assert.deepEqual(LANGUAGES.map((l) => l.id), ['typescript', 'go', 'python', 'java', 'csharp']);
   assert.equal(languageFor('a/b.go').id, 'go');
   assert.equal(languageFor('a/b.py').id, 'python');
   assert.equal(languageFor('stubs/b.pyi').id, 'python');
@@ -85,9 +85,9 @@ test('diff.js still exports SOURCE_EXT for its existing users', () => {
 
 test('a common language no provider analyses is named; a handled or unknown file is not', () => {
   for (const [p, name] of [['b.kt', 'Kotlin'],
-    ['c.cs', 'C#'], ['d.rb', 'Ruby'], ['e.rs', 'Rust'], ['f.php', 'PHP'], ['g.swift', 'Swift'], ['h.c', 'C'], ['i.hpp', 'C++'], ['j.scala', 'Scala']]) {
+    ['d.rb', 'Ruby'], ['e.rs', 'Rust'], ['f.php', 'PHP'], ['g.swift', 'Swift'], ['h.c', 'C'], ['i.hpp', 'C++'], ['j.scala', 'Scala']]) {
     assert.equal(unsupportedLanguageOf(p), name, p);
   }
-  // Python is analysed since P2, Java since J2: never "not analysed yet".
-  for (const p of ['A.java', 'a.go', 'a.ts', 'a.d.ts', 'svc/app.py', 'stubs/x.pyi', 'README.md', 'Makefile', 'go.mod']) assert.equal(unsupportedLanguageOf(p), null, p);
+  // Python is analysed since P2, Java since J2, C# since C3: never "not analysed yet".
+  for (const p of ['A.java', 'src/A.cs', 'a.go', 'a.ts', 'a.d.ts', 'svc/app.py', 'stubs/x.pyi', 'README.md', 'Makefile', 'go.mod']) assert.equal(unsupportedLanguageOf(p), null, p);
 });

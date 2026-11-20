@@ -39,6 +39,7 @@ const SUITE = [
   { file: 'test/java-signature.test.js', tier: 'quick' },
   { file: 'test/csharp-lexer.test.js', tier: 'quick' },  // 0.1s
   { file: 'test/csharp-signature.test.js', tier: 'quick' },  // 0.1s
+  { file: 'test/csharp-outline.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/java-outline.test.js', tier: 'quick' },
   { file: 'test/java-syntactic.test.js', tier: 'quick' },
   { file: 'test/python-lexer.test.js', tier: 'quick' },  // 0.1s  // 0.2s
