@@ -50,10 +50,10 @@ Member:
 
 Members (C-D4): methods (body-less interface, `abstract`, `partial`, `extern` ones too),
 constructors, a primary constructor (class, struct or record parameter list), static
-constructors, properties and indexers only when an accessor has a body or the member is `=>`
-bodied, operators, conversions, explicit interface implementations of any of these, and the
+constructors, properties and indexers when an accessor has a body, the member is `=>` bodied, or it is
+body-less but declared in an interface or `abstract` (`body: none`), operators, conversions, explicit interface implementations of any of these, and the
 file's top-level statements. Not members: local functions and lambdas (their method's body),
-finalizers, events, fields, auto-properties, delegates, enum members.
+finalizers, events, fields, auto-properties of classes, structs and records, delegates, enum members.
 
 `Oracle.MembersOf(root, path)` returns a file's members with their keys; the semantic oracle
 (`../csharp-semantic-oracle/`) compiles this file in and keys callers and targets with it.

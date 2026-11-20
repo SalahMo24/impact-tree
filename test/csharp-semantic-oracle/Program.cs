@@ -87,6 +87,7 @@ static class SemanticOracle
         var seenPaths = new HashSet<string>(StringComparer.Ordinal);
         var impls = new SortedDictionary<string, SortedSet<string>>(StringComparer.Ordinal);  // "file|key" of an interface member → impl ids
         var overrides = new SortedDictionary<string, SortedSet<string>>(StringComparer.Ordinal);
+        unkeyedImpls.Clear();
         // Keys first for every in-repo file of every compilation (targets may live in any of them).
         foreach (var (_, c) in comps)
             foreach (var tree in c.SyntaxTrees)
@@ -126,7 +127,11 @@ static class SemanticOracle
         foreach (var e in edges)
         {
             var id = e.TargetFile + "|" + e.Target;
-            if (e.Via == "interface") e.Implementations = impls.TryGetValue(id, out var s) ? s.Count : 0;
+            if (e.Via == "interface")
+            {
+                e.Implementations = impls.TryGetValue(id, out var s) ? s.Count : 0;
+                if (unkeyedImpls.TryGetValue(id, out var u)) e.UnkeyedImplementations = u;
+            }
             else if (e.Via == null && e.Virtual && overrides.TryGetValue(id, out var o) && o.Count > 0) { e.Via = "override-base"; e.Overrides = o.Count; }
         }
         var bindMs = sw.ElapsedMilliseconds;
@@ -165,7 +170,7 @@ static class SemanticOracle
             w.WriteStartArray("edges");
             foreach (var e in edges) e.Write(w);
             w.WriteEndArray();
-            Relation(w, "interfaces", "implementations", impls);
+            Relation(w, "interfaces", "implementations", impls, unkeyedImpls);
             Relation(w, "overrides", "overrides", overrides);
             w.WriteEndObject();
         }
@@ -173,11 +178,16 @@ static class SemanticOracle
         return 0;
     }
 
-    static void Relation(Utf8JsonWriter w, string name, string field, SortedDictionary<string, SortedSet<string>> map)
+    /// Interface member id → implementing members with no key (an auto-property implementing an interface property).
+    static readonly SortedDictionary<string, int> unkeyedImpls = new(StringComparer.Ordinal);
+
+    static void Relation(Utf8JsonWriter w, string name, string field, SortedDictionary<string, SortedSet<string>> map, SortedDictionary<string, int>? unkeyed = null)
     {
         w.WriteStartArray(name);
-        foreach (var (id, set) in map)
+        var ids = unkeyed == null ? map.Keys.ToList() : map.Keys.Union(unkeyed.Keys).OrderBy(k => k, StringComparer.Ordinal).ToList();
+        foreach (var id in ids)
         {
+            var set = map.TryGetValue(id, out var ms) ? ms : new SortedSet<string>();
             w.WriteStartObject();
             var bar = id.IndexOf('|');
             w.WriteString("member", id[(bar + 1)..]); w.WriteString("file", id[..bar]);
@@ -188,6 +198,7 @@ static class SemanticOracle
                 w.WriteStartObject(); w.WriteString("key", s[(b + 1)..]); w.WriteString("file", s[..b]); w.WriteEndObject();
             }
             w.WriteEndArray();
+            if (unkeyed != null && unkeyed.TryGetValue(id, out var n)) w.WriteNumber("unkeyedImplementations", n);
             w.WriteEndObject();
         }
         w.WriteEndArray();
@@ -202,7 +213,7 @@ static class SemanticOracle
         public int Start, End, Line;
         public string? Via;
         public bool Virtual;
-        public int Implementations = -1, Overrides = -1;
+        public int Implementations = -1, Overrides = -1, UnkeyedImplementations = -1;
 
         public void Write(Utf8JsonWriter w)
         {
@@ -214,6 +225,7 @@ static class SemanticOracle
             w.WriteString("file", File); w.WriteNumber("start", Start); w.WriteNumber("end", End); w.WriteNumber("line", Line);
             if (Via != null) w.WriteString("via", Via);
             if (Implementations >= 0) w.WriteNumber("implementations", Implementations);
+            if (UnkeyedImplementations > 0) w.WriteNumber("unkeyedImplementations", UnkeyedImplementations);
             if (Overrides >= 0) w.WriteNumber("overrides", Overrides);
             w.WriteEndObject();
         }
@@ -427,7 +439,8 @@ static class SemanticOracle
                     _ => null,
                 };
                 if (off is int o && fk.ByNameOffset.TryGetValue(o, out var key)) return (key, rel);
-                // Not C-D4 members (no key): reported by reason in "skipped".
+                // Not C-D4 members (no key): reported by reason in "skipped" (body-less interface and abstract
+                // properties and indexers are members now, keyed by the syntax oracle).
                 why = node switch
                 {
                     PropertyDeclarationSyntax when sym.ContainingType?.TypeKind == TypeKind.Interface => "interface-property-without-body",
@@ -470,6 +483,8 @@ static class SemanticOracle
                     if (impl == null) continue;
                     var mk = keyer.Target(impl, out _);
                     if (mk != null) AddTo(impls, Id(ik.Value), Id(mk.Value));
+                    else if (impl.DeclaringSyntaxReferences.Length > 0 && impl.DeclaringSyntaxReferences.Any(r => InRepo(r.SyntaxTree.FilePath) != null))
+                        unkeyedImpls[Id(ik.Value)] = unkeyedImpls.GetValueOrDefault(Id(ik.Value)) + 1; // auto-property: not a member
                 }
             foreach (var m in type.GetMembers())
             {

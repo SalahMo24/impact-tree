@@ -178,13 +178,13 @@ static class Oracle
                 m.Key = $"{path}.{Pre(iface)}{m.Name}({KeyParams(m.Params)})";
                 break;
             case PropertyDeclarationSyntax pd:
-                if (!Bodied(pd.ExpressionBody, pd.AccessorList)) return null;
+                if (!Bodied(pd.ExpressionBody, pd.AccessorList) && !BodylessMember(pd)) return null;
                 m.Kind = "property"; m.Name = pd.Identifier.ValueText; m.NameOffset = pd.Identifier.SpanStart; m.Returns = pd.Type.ToString();
                 iface = Iface(pd.ExplicitInterfaceSpecifier);
                 m.Key = $"{path}.{Pre(iface)}{m.Name}";
                 break;
             case IndexerDeclarationSyntax ix:
-                if (!Bodied(ix.ExpressionBody, ix.AccessorList)) return null;
+                if (!Bodied(ix.ExpressionBody, ix.AccessorList) && !BodylessMember(ix)) return null;
                 m.Kind = "indexer"; m.Name = "this"; m.NameOffset = ix.ThisKeyword.SpanStart; m.Returns = ix.Type.ToString();
                 m.Params = ParamsOf(ix.ParameterList.Parameters);
                 iface = Iface(ix.ExplicitInterfaceSpecifier);
@@ -203,6 +203,11 @@ static class Oracle
 
     static bool Bodied(ArrowExpressionClauseSyntax? expr, AccessorListSyntax? accessors) =>
         expr != null || (accessors != null && accessors.Accessors.Any(a => a.Body != null || a.ExpressionBody != null));
+
+    /// A body-less property or indexer is a member (C-D4) when an interface declares it or it is
+    /// `abstract`; a class's, struct's or record's auto-property is a field in practice.
+    static bool BodylessMember(MemberDeclarationSyntax n) =>
+        n.Parent is InterfaceDeclarationSyntax || n.Modifiers.Any(SyntaxKind.AbstractKeyword);
 
     static string Pre(string? iface) => iface == null ? "" : iface + ".";
 
@@ -236,10 +241,10 @@ static class Oracle
                 return (b.SemicolonToken, "none");
             case PropertyDeclarationSyntax p:
                 if (p.ExpressionBody != null) return (p.ExpressionBody.ArrowToken, "expression");
-                return (p.AccessorList!.OpenBraceToken, "accessors");
+                return (p.AccessorList!.OpenBraceToken, p.AccessorList.Accessors.Any(a => a.Body != null || a.ExpressionBody != null) ? "accessors" : "none");
             case IndexerDeclarationSyntax x:
                 if (x.ExpressionBody != null) return (x.ExpressionBody.ArrowToken, "expression");
-                return (x.AccessorList!.OpenBraceToken, "accessors");
+                return (x.AccessorList!.OpenBraceToken, x.AccessorList.Accessors.Any(a => a.Body != null || a.ExpressionBody != null) ? "accessors" : "none");
         }
         return (node.GetLastToken(), "none");
     }

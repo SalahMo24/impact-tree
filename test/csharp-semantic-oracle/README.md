@@ -49,12 +49,14 @@ Edge:
 
 `interfaces`: every in-repo interface member (method or property with a key) and its in-repo
 implementing members, through base classes too (`FindImplementationForInterfaceMember` on every
-in-repo class/struct). `overrides`: every in-repo member and all in-repo members overriding it,
+in-repo class/struct). Implementations with no key (an auto-property implementing an interface
+property) are not listed; their number is `unkeyedImplementations` (also on the edge, when > 0).
+Body-less interface and `abstract` properties and indexers are members (C-D4), so they are edge
+targets: an interface property gets `via: interface`, an abstract one `override-base`. `overrides`: every in-repo member and all in-repo members overriding it,
 transitively. Members are keyed with `file` beside `member`, as targets.
 
 `skipped` reasons: `external` (target outside the repo: framework, packages, test projects),
-`auto-property`, `interface-property-without-body`, `abstract-property`, `indexer-without-body`,
-`record-property`, `anonymous-type-property` (properties that are not C-D4 members, so have no
+`auto-property` (of a class, struct or record), `record-property`, `anonymous-type-property` (properties that are not C-D4 members, so have no
 key), `implicit` (an implicit default constructor, a record's synthesized members),
 `local-function`, `delegate-invoke`, `delegate-creation`, `type-parameter-new`, `nameof`,
 `dynamic`, `unresolved`, `generated-or-external`.
