@@ -49,10 +49,12 @@ const csharp = require('./entry-points-csharp');
  * @property {Set<string>} [packageRoots] Directories with a package.json, to find the
  *   nearest one above a file. Both are absent in a preview (it lists only the pull
  *   request's files), so the Next.js rules that need them do not fire there.
- * @property {Map<string, { route: string|null, base: string|null }>} [csControllerRoutes] Class
- *   name -> its `[Route]` template (null when it has none) and first non-interface base class,
- *   for classes in files named `*Controller*.cs`: a controller without its own `[Route]`
- *   inherits the base class's. Absent in a preview.
+ * @property {Map<string, { route: string|null, base: string|null, mvc?: boolean }>} [csControllerRoutes] Class
+ *   name -> its `[Route]` template (null when it has none), first non-interface base class
+ *   and whether its file uses ASP.NET MVC (or it is `[ApiController]`/`[Controller]`), for
+ *   classes in files named `*Controller*.cs`: a controller without its own `[Route]`
+ *   inherits the base class's, and a class based on a `*Controller` is a controller only
+ *   when that base leads to MVC. Absent in a preview.
  * @property {Map<string, string>} [csProjects] Repository-relative path of a `.cs` file in an
  *   executable C# project (OutputType Exe/WinExe, or a Web/Worker SDK) -> the name of its
  *   nearest `.csproj`, no extension: the program a top-level-statements file starts. A

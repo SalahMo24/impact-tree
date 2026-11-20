@@ -135,17 +135,17 @@ const MAX_CONTROLLER_FILES = 600;
  * Each class of the `*Controller*.cs` files -> its `[Route]` and base class, so a controller
  * that inherits its route (jellyfin's `BaseJellyfinApiController`) can be routed.
  * @param {string[]} listed @param {(rel: string) => string|null} read
- * @returns {Map<string, { route: string|null, base: string|null }>}
+ * @returns {Map<string, { route: string|null, base: string|null, mvc: boolean }>}
  */
 function csharpControllerRoutes(listed, read) {
   const { blank } = require('../languages/csharp/lexer');
   const { classRoutesOf } = require('./entry-points-csharp');
-  /** @type {Map<string, { route: string|null, base: string|null }>} */
+  /** @type {Map<string, { route: string|null, base: string|null, mvc: boolean }>} */
   const out = new Map();
   for (const f of listed.filter((p) => /Controller[^/]*\.cs$/i.test(p)).slice(0, MAX_CONTROLLER_FILES)) {
     const text = read(f);
     if (!text) continue;
-    for (const c of classRoutesOf(text, blank(text))) if (!out.has(c.name)) out.set(c.name, { route: c.route, base: c.base });
+    for (const c of classRoutesOf(text, blank(text))) if (!out.has(c.name)) out.set(c.name, { route: c.route, base: c.base, mvc: c.mvc });
   }
   return out;
 }

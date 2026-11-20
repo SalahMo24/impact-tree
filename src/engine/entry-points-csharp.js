@@ -10,8 +10,10 @@
 // services, integration-event handlers, SignalR hub methods, `static Main`.
 // Not seen, so a path stopping there reads `top-unidentified`/`unknown`, not "no entry": a
 // controller whose base class is in another file and is not named `*Controller`/
-// `ControllerBase` (nor marked `[ApiController]`); a `[Route]` inherited from a base class;
-// a handler registered in another file than its declaration or through a variable;
+// `ControllerBase` (nor marked `[ApiController]`), or a `*Controller` without ASP.NET evidence
+// in its file (a global using cannot be seen; see `isController`); the actions of an abstract
+// or generic base controller (routed under each derived controller's name); a handler
+// registered in another file than its declaration or through a variable;
 // `IScheduledTask` and `IEventConsumer<T>` (no rule in v1); MediatR (`Send`/`Publish` are
 // not followed yet, see `unreachableReason`).
 
@@ -77,8 +79,10 @@ function splitTop(b, from, to) {
  */
 function literal(rawArg) {
   const t = rawArg.trim();
-  const m = /^(?:\$@|@\$|\$|@)?"((?:[^"\\]|\\.|"")*)"\s*$/.exec(t);
-  return m ? m[1] : `<${t.replace(/\s+/g, ' ')}>`;
+  const m = /^(\$@|@\$|\$|@)?"((?:[^"\\]|\\.|"")*)"\s*$/.exec(t);
+  // An interpolated string with a hole (`$"{Base}/items"`) is not known.
+  if (m && m[1] && m[1].includes('$') && /(?:^|[^{])\{(?!\{)/.test(m[2])) return `<${t.replace(/\s+/g, ' ')}>`;
+  return m ? m[2] : `<${t.replace(/\s+/g, ' ')}>`;
 }
 
 const MODS = /\b(?:public|private|protected|internal|static|abstract|virtual|override|async|sealed|new|extern|unsafe|partial|readonly|required|file)\b/g;
@@ -140,8 +144,9 @@ function templateOf(text, b, a) {
 }
 
 /**
- * @typedef {{ kw: number, kind: string, name: string, bases: string[], head: Head }} Cls
- * `bases`: each base-list entry as written (`IFoo<Bar>`).
+ * @typedef {{ kw: number, kind: string, name: string, bases: string[], head: Head, generic: boolean, open: number, close: number }} Cls
+ * `bases`: each base-list entry as written (`IFoo<Bar>`); `generic`: the class has type
+ * parameters; `open`/`close`: its body's braces (`close` -1 when not found).
  */
 
 /**
@@ -179,7 +184,8 @@ function enclosingClass(b, pos) {
     if (close >= 0 && close < pos) continue;
     const baseText = colon < 0 ? '' : b.slice(colon + 1, whereAt >= 0 ? whereAt : open);
     const bases = baseText ? splitTopAngle(baseText).map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean) : [];
-    found = { kw: m.index, kind: m[0].split(/\s/)[0], name: m[1].replace(/^@/, ''), bases, head: headOf(b, m.index) };
+    const generic = /^\s*</.test(b.slice(m.index + m[0].length, m.index + m[0].length + 40));
+    found = { kw: m.index, kind: m[0].split(/\s/)[0], name: m[1].replace(/^@/, ''), bases, head: headOf(b, m.index), generic, open, close };
   }
   return found;
 }
@@ -202,7 +208,7 @@ function splitTopAngle(s) {
 /** The type name of a base-list entry without namespace and arguments: `A.B<C>` -> `B`. @param {string} base */
 const baseName = (base) => (/^(?:global::)?((?:[\p{L}_][\p{L}\p{N}_]*\s*\.\s*)*)([\p{L}_][\p{L}\p{N}_]*)/u.exec(base) || [])[2] || base;
 
-/** @typedef {{ name: string, head: Head, paramsText: string }} Method */
+/** @typedef {{ name: string, head: Head, paramsText: string, generic: boolean }} Method `generic`: it has type parameters. */
 
 /** The method whose name starts at `pos`, or null (a property, a constructor, a type). @param {string} b @param {number} pos @returns {Method|null} */
 function methodAt(b, pos) {
@@ -215,22 +221,60 @@ function methodAt(b, pos) {
   if (!head.typeText) return null;
   const open = pos + id[0].length + after[0].length - 1;
   const close = matchOf(b, open);
-  return { name: id[0].replace(/^@/, ''), head, paramsText: close < 0 ? '' : b.slice(open + 1, close) };
+  return { name: id[0].replace(/^@/, ''), head, paramsText: close < 0 ? '' : b.slice(open + 1, close), generic: after[0].includes('<') };
 }
 
 /** An interface name by convention: `ISessionController`. @param {string} name */
 const looksLikeInterface = (name) => /^I[A-Z]/.test(name);
 
+const FRAMEWORK_BASES = new Set(['Controller', 'ControllerBase']);
+
+/** ASP.NET MVC in the file: a `using` of its namespace (a global using elsewhere cannot be seen). */
+const MVC_USING = /\busing\s+(?:static\s+)?Microsoft\s*\.\s*AspNetCore\s*\.\s*Mvc\b/;
+/** An MVC routing attribute anywhere in a list: `[HttpGet]`, `[Authorize, Route("x")]`. */
+const MVC_ATTR = /[[,]\s*(?:Microsoft\s*\.\s*AspNetCore\s*\.\s*Mvc\s*\.\s*)?(?:Http(?:Get|Post|Put|Delete|Patch|Head|Options)|Route|AcceptVerbs|ApiController)(?:Attribute)?\s*[\](,]/;
+
 /**
- * A controller: `[ApiController]` or `[Controller]`; a base class named `Controller`,
- * `ControllerBase` or ending in `Controller`/`ControllerBase` (an `I…` interface name does
- * not count); or, with no base list at all, a name ending in `Controller` (a POCO controller).
- * @param {Cls} cls
+ * Whether a class's base chain, read through `facts.csControllerRoutes`, reaches the framework
+ * base `Controller`/`ControllerBase` or a class in a file that uses ASP.NET MVC.
+ * @param {string} name @param {import('./entry-points').EntryFacts} [facts]
  */
-function isController(cls) {
-  return cls.head.attrs.some((a) => a.name === 'ApiController' || a.name === 'Controller')
-    || cls.bases.some((x) => !looksLikeInterface(baseName(x)) && /Controller(?:Base)?$/.test(baseName(x)))
-    || (!cls.bases.length && /Controller$/.test(cls.name));
+function baseIsMvc(name, facts) {
+  const map = facts && facts.csControllerRoutes;
+  for (let guard = 0; map && guard < 6; guard++) {
+    const info = map.get(name);
+    if (!info) return false;
+    if (info.mvc) return true;
+    if (!info.base) return false;
+    if (FRAMEWORK_BASES.has(info.base)) return true;
+    name = info.base;
+  }
+  return false;
+}
+
+/**
+ * A controller, as ASP.NET finds one: `[ApiController]` or `[Controller]`, or a base class
+ * `Controller`/`ControllerBase`; or, with ASP.NET evidence, a name ending in `Controller` with
+ * no base list (a POCO controller) or a base class named `*Controller`/`*ControllerBase` (an
+ * `I…` interface name does not count). Evidence: the file uses `Microsoft.AspNetCore.Mvc`, the
+ * class or one of its members carries an MVC routing attribute, or (with facts) the base
+ * chain reaches the framework base or a file that uses MVC. Without it a Unity
+ * `PlayerController` or a class based on `CharacterController` is no controller.
+ * `[NonController]` is never one.
+ * @param {Cls} cls @param {string} [b] the blanked file text @param {import('./entry-points').EntryFacts} [facts]
+ */
+function isController(cls, b, facts) {
+  if (cls.head.attrs.some((a) => a.name === 'NonController')) return false;
+  if (cls.head.attrs.some((a) => a.name === 'ApiController' || a.name === 'Controller')) return true;
+  const classBases = cls.bases.map(baseName).filter((x) => !looksLikeInterface(x));
+  if (classBases.some((x) => FRAMEWORK_BASES.has(x))) return true;
+  const named = classBases.find((x) => /Controller(?:Base)?$/.test(x));
+  if (!named && !(!cls.bases.length && /Controller$/.test(cls.name))) return false;
+  if (b === undefined) return false;
+  if (MVC_USING.test(b)) return true;
+  if (cls.head.attrs.some((x) => x.name === 'Route')) return true;
+  if (cls.close > cls.open && MVC_ATTR.test(b.slice(cls.open, cls.close))) return true;
+  return !!named && baseIsMvc(named, facts);
 }
 
 const HTTP_ATTR = /^Http(Get|Post|Put|Delete|Patch|Head|Options)$/;
@@ -250,26 +294,54 @@ function combine(classRoute, template) {
   return joinRoute(classRoute, template);
 }
 
+/** Members a controller inherits or overrides that ASP.NET never routes. */
+const NOT_ACTIONS = new Set(['OnActionExecuting', 'OnActionExecuted', 'OnActionExecutionAsync', 'Dispose', 'ToString', 'Equals', 'GetHashCode']);
+
 /**
- * A public non-static method of a controller class (`[ApiController]`, or named or based on
- * `*Controller`/`ControllerBase`) not marked `[NonAction]`. Routes: the class `[Route]`
- * combined with each `[Http*]` (or `[AcceptVerbs]`, or a `[Route]` on the action) template.
- * A class without `[Route]` inherits its base class's (the attribute is inherited): read from
- * `facts.csControllerRoutes`, and shown as `<inherited>` when the base is not among them.
+ * The action name ASP.NET gives a method: `[ActionName("x")]`, else the method name with an
+ * `Async` suffix removed (`SuppressAsyncSuffixInActionNames`, true by default).
+ * @param {string} text @param {string} b @param {Method} m
+ */
+function actionNameOf(text, b, m) {
+  const a = m.head.attrs.find((x) => x.name === 'ActionName');
+  const t = a ? templateOf(text, b, a) : null;
+  return t !== null && !t.startsWith('<') ? t : m.name.replace(/(.)Async$/, '$1');
+}
+
+/**
+ * A public non-static, non-generic method of a controller class (see `isController`) not
+ * marked `[NonAction]` and not an override of a framework member (`OnActionExecuting`,
+ * `Dispose`...; any override when the class derives from `Controller`/`ControllerBase`
+ * directly). Routes: the class `[Route]` combined with each `[Http*]` (or `[AcceptVerbs]`, or a
+ * `[Route]` on the action) template. A class without `[Route]` inherits its base class's (the
+ * attribute is inherited): read from `facts.csControllerRoutes`, and shown as `<inherited>`
+ * when the base is not among them. An action with no attribute route at all (none on the
+ * class, own or inherited, nor on the action) is conventionally routed: shown as
+ * `/{Controller}/{Action}`, the default `MapDefaultControllerRoute` pattern, and said so in
+ * `how` (a custom `MapControllerRoute` pattern is not read).
+ * An abstract or generic controller is never routed under its own name: each concrete
+ * controller deriving from it exposes its actions under its own name, so it gives no entry
+ * (the derived controllers' actions are not listed here).
  * @param {string} text @param {string} b @param {Method} m @param {Cls|null} cls
  * @param {import('./entry-points').EntryFacts} [facts] @returns {EntryInfo|null}
  */
 function controllerEntry(text, b, m, cls, facts) {
-  if (!cls || !isController(cls)) return null;
+  if (!cls || !isController(cls, b, facts)) return null;
+  if (cls.head.mods.has('abstract') || cls.generic) return null;
   const { attrs, mods } = m.head;
-  if (!mods.has('public') || mods.has('static') || attrs.some((a) => a.name === 'NonAction')) return null;
+  if (!mods.has('public') || mods.has('static') || m.generic || attrs.some((a) => a.name === 'NonAction')) return null;
+  if (NOT_ACTIONS.has(m.name)) return null;
+  if (mods.has('override') && cls.bases.map(baseName).some((x) => FRAMEWORK_BASES.has(x))) return null;
   const classAttr = cls.head.attrs.find((a) => a.name === 'Route');
   let classRoute = classAttr ? (templateOf(text, b, classAttr) ?? '') : '';
+  /** No attribute route on the class, own or inherited: an action without one is conventional. */
+  let classless = !classAttr && !cls.head.attrs.some((a) => a.name === 'ApiController');
   if (!classAttr) {
     const inherited = inheritedRoute(cls.bases, facts);
-    if (inherited !== null) classRoute = inherited;
+    if (inherited !== null) { classRoute = inherited; if (inherited !== '') classless = false; }
   }
   const controller = cls.name.replace(/Controller$/, '');
+  const action = actionNameOf(text, b, m);
   const routeTemplates = attrs.filter((a) => a.name === 'Route').map((a) => templateOf(text, b, a));
   /** @type {Array<{ method: string, template: string|null }>} */
   const found = [];
@@ -290,20 +362,23 @@ function controllerEntry(text, b, m, cls, facts) {
   const seen = new Set();
   /** @type {Array<{ method: string, route: string }>} */
   const lines = [];
+  let conventional = false;
   for (const f of found) {
-    const route = fill(combine(classRoute, f.template), controller, m.name);
+    const conv = classless && f.template === null;
+    conventional ||= conv;
+    const route = conv ? joinRoute(controller, action) : fill(combine(classRoute, f.template), controller, action);
     const key = `${f.method} ${route}`;
     if (!seen.has(key)) { seen.add(key); lines.push({ method: f.method, route }); }
   }
   const methods = [...new Set(lines.map((l) => l.method))];
+  const how = conventional
+    ? `${cls.name} action, conventional route (MapDefaultControllerRoute / MapControllerRoute): {controller}/{action} assumed, a custom pattern is not read`
+    : attrs.some((a) => HTTP_ATTR.test(a.name) || a.name === 'AcceptVerbs') ? `${cls.name} action with an HTTP attribute` : `public method of controller ${cls.name}`;
   return {
     type: 'http', name: lines.map((l) => `${l.method} ${l.route}`).join(', '),
-    method: methods.join('|'), route: lines[0].route,
-    how: attrs.some((a) => HTTP_ATTR.test(a.name) || a.name === 'AcceptVerbs') ? `${cls.name} action with an HTTP attribute` : `public method of controller ${cls.name}`,
+    method: methods.join('|'), route: lines[0].route, how,
   };
 }
-
-const FRAMEWORK_BASES = new Set(['Controller', 'ControllerBase']);
 
 /**
  * The route a class inherits from its base classes, `''` when the chain reaches the framework
@@ -327,12 +402,15 @@ function inheritedRoute(bases, facts) {
 }
 
 /**
- * The `[Route]` and base class of each class a file declares, for `facts.csControllerRoutes`.
+ * The `[Route]` and base class of each class a file declares, for `facts.csControllerRoutes`;
+ * `mvc`: the file uses ASP.NET MVC or the class is `[ApiController]`/`[Controller]` (evidence
+ * that a class deriving from it is a controller, see `isController`).
  * @param {string} text @param {string} b the blanked text
- * @returns {Array<{ name: string, route: string|null, base: string|null }>}
+ * @returns {Array<{ name: string, route: string|null, base: string|null, mvc: boolean }>}
  */
 function classRoutesOf(text, b) {
   const out = [];
+  const fileMvc = MVC_USING.test(b);
   const re = /\b(?:record\s+(?:class|struct)|class|record)\s+(@?[\p{L}_][\p{L}\p{N}_]*)/gu;
   let m;
   while ((m = re.exec(b))) {
@@ -344,20 +422,27 @@ function classRoutesOf(text, b) {
     if (!cls || cls.kw !== m.index) continue;
     const route = cls.head.attrs.find((a) => a.name === 'Route');
     const base = cls.bases.map(baseName).find((x) => !looksLikeInterface(x)) || null;
-    out.push({ name: cls.name, route: route ? (templateOf(text, b, route) ?? '') : null, base });
+    const mvc = fileMvc || cls.head.attrs.some((a) => a.name === 'ApiController' || a.name === 'Controller');
+    out.push({ name: cls.name, route: route ? (templateOf(text, b, route) ?? '') : null, base, mvc });
   }
   return out;
 }
 
-/** @typedef {{ receiver: string, call: string, at: number, route: string|null, methods: string[], handler: string|null }} MapCall */
+/**
+ * @typedef {{ receiver: string, call: string, at: number, route: string|null, methods: string[],
+ *   handler: string|null, qualifier: string|null, ownerKw: number }} MapCall `handler`: a
+ *   method-group handler's name; `qualifier`: the type (last segment) or `this` it is written
+ *   with, null when bare; `ownerKw`: the `class` keyword offset of the class holding the call,
+ *   -1 outside any (top-level statements).
+ */
 
 const MAP_RE = /\b([A-Za-z_]\w*)\s*\.\s*(Map(?:Get|Post|Put|Delete|Patch|Methods)?)\s*\(/g;
 
 /** @type {{ b: string, calls: MapCall[] }|null} */
 let lastMapCalls = null;
 
-/** The `"GET"` strings of a MapMethods array argument. @param {string} text @param {[number, number]|undefined} arg @returns {string[]} */
-const verbsIn = (text, arg) => (arg ? (text.slice(arg[0], arg[1]).match(/"([A-Za-z]+)"/g) || []).map((x) => x.slice(1, -1).toUpperCase()) : []);
+/** The verbs of a MapMethods array argument: `"GET"` strings and `HttpMethods.Get`. @param {string} text @param {[number, number]|undefined} arg @returns {string[]} */
+const verbsIn = (text, arg) => (arg ? (text.slice(arg[0], arg[1]).match(/"[A-Za-z]+"|\bHttpMethods\s*\.\s*[A-Za-z]+/g) || []).map((x) => x.replace(/^"|"$|^HttpMethods\s*\.\s*/g, '').toUpperCase()) : []);
 
 /** The route argument's value, null when there is none. @param {string} text @param {[number, number]} arg @returns {string|null} */
 function routeArg(text, arg) {
@@ -386,34 +471,106 @@ function mapCalls(text, b) {
     // A plain `Map(` needs a path starting `/`: `mapper.Map("x", y)` is not a route.
     if (m[2] === 'Map' && !(route !== null && route.startsWith('/'))) continue;
     const idx = m[2] === 'MapMethods' ? 2 : 1;
-    const h = args[idx] ? /^\s*(?:[A-Za-z_]\w*\s*\.\s*)*([A-Za-z_]\w*)\s*$/.exec(b.slice(args[idx][0], args[idx][1])) : null;
-    calls.push({ receiver: m[1], call: m[2], at, route, methods: m[2] === 'MapMethods' ? verbsIn(text, args[1]) : [], handler: h ? h[1] : null });
+    const h = args[idx] ? /^\s*((?:[A-Za-z_]\w*\s*\.\s*)*)([A-Za-z_]\w*)\s*$/.exec(b.slice(args[idx][0], args[idx][1])) : null;
+    const qualifier = h && h[1].trim() ? h[1].replace(/\s+/g, '').replace(/\.$/, '').split('.').pop() || null : null;
+    const owner = h ? enclosingClass(b, at) : null;
+    calls.push({
+      receiver: m[1], call: m[2], at, route, methods: m[2] === 'MapMethods' ? verbsIn(text, args[1]) : [],
+      handler: h ? h[2] : null, qualifier, ownerKw: owner ? owner.kw : -1,
+    });
   }
   lastMapCalls = { b, calls };
   return calls;
 }
 
+/** The offset of the `(` opening the `)` at `close` (blanked text), or -1. @param {string} b @param {number} close */
+function matchBack(b, close) {
+  let depth = 0;
+  for (let i = close; i >= 0 && i > close - 8000; i--) {
+    const c = b[i];
+    if (c === ')' || c === ']' || c === '}') depth++;
+    else if (c === '(' || c === '[' || c === '{') { depth--; if (depth === 0) return i; }
+  }
+  return -1;
+}
+
+/** Words before `(…) {` that open a statement block, not a method body. */
+const STATEMENT_WORDS = /^(?:if|while|for|foreach|switch|using|lock|catch|fixed|when|return|new|await|nameof|typeof|sizeof|default|checked|unchecked|else)$/;
+
 /**
- * The `MapGroup("…")` prefix a variable carries, from its last assignment before `before`:
- * `var v1 = vApi.MapGroup("api/catalog").HasApiVersion(1, 0)` follows `vApi` back too. A
- * parameter or an unseen assignment contributes nothing.
- * @param {string} text @param {string} b @param {string} variable @param {number} before @param {number} [depth]
- * @returns {string}
+ * The scope a variable used at `before` is looked up in: the body of the enclosing method,
+ * constructor or local function (statement blocks, lambdas and initializers are looked
+ * through), or of a type, or the whole file for top-level statements. `params`: that method's
+ * parameter list; `lambdaParams`: the names of the lambdas' parameters passed on the way out.
+ * @param {string} b @param {number} before
+ * @returns {{ start: number, params: string|null, lambdaParams: string[] }}
  */
-function groupPrefix(text, b, variable, before, depth = 0) {
-  if (depth > 4) return '';
+function scopeOf(b, before) {
+  /** @type {string[]} */
+  const lambdaParams = [];
+  let depth = 0;
+  for (let i = before - 1; i >= 0; i--) {
+    const c = b[i];
+    if (c === '}') { depth++; continue; }
+    if (c !== '{') continue;
+    if (depth > 0) { depth--; continue; }
+    let j = i - 1;
+    while (j >= 0 && /\s/.test(b[j])) j--;
+    if (b[j] === '>' && b[j - 1] === '=') {
+      const lp = /(?:\(([^()]*)\)|([A-Za-z_]\w*))\s*$/.exec(b.slice(Math.max(0, j - 400), j - 1));
+      if (lp) for (const p of (lp[1] ?? lp[2]).split(',')) { const n = /([A-Za-z_]\w*)\s*$/.exec(p.trim()); if (n) lambdaParams.push(n[1]); }
+      continue;
+    }
+    if (b[j] === ')') {
+      const open = matchBack(b, j);
+      if (open < 0) return { start: i + 1, params: null, lambdaParams };
+      const head = b.slice(Math.max(0, open - 300), open);
+      const id = /(@?[\p{L}_][\p{L}\p{N}_]*)\s*(?:<[^<>()]*(?:<[^<>()]*>[^<>()]*)*>)?\s*$/u.exec(head);
+      if (!id || STATEMENT_WORDS.test(id[1]) || /\bnew\s*$/.test(head.slice(0, head.length - id[0].length))) continue;
+      return { start: i + 1, params: b.slice(open + 1, j), lambdaParams };
+    }
+    const word = /([A-Za-z_]\w*)$/.exec(b.slice(Math.max(0, j - 20), j + 1));
+    if (/[=,([\]]/.test(b[j] || '') || (word && /^(?:else|try|finally|do|unsafe|checked|unchecked|switch)$/.test(word[1]))) continue;
+    return { start: i + 1, params: null, lambdaParams };
+  }
+  return { start: 0, params: null, lambdaParams };
+}
+
+/** Parameter types a route group never comes from: the application itself. */
+const ROOT_BUILDERS = new Set(['IEndpointRouteBuilder', 'WebApplication', 'IApplicationBuilder']);
+
+/**
+ * The `MapGroup("…")` prefix a variable carries, from its last assignment before `before` in
+ * the enclosing method (local function, or top-level statements): `var v1 =
+ * vApi.MapGroup("api/catalog").HasApiVersion(1, 0)` follows `vApi` back too. What is not seen
+ * there is a `<group>` piece, so the route reads as partial: a `RouteGroupBuilder` (or
+ * untyped) parameter, a field, a method's return (`var g = Grp(app)`). A parameter typed as
+ * the application (`this IEndpointRouteBuilder app`, `WebApplication`) or a lambda parameter
+ * contributes nothing and sets `ctx.note`: a prefix the caller adds is not followed.
+ * @param {string} text @param {string} b @param {string} variable @param {number} before
+ * @param {{ note: string }} ctx @param {number} [depth] @returns {string}
+ */
+function groupPrefix(text, b, variable, before, ctx, depth = 0) {
+  if (depth > 4) return '<group>';
+  const scope = scopeOf(b, before);
   const re = new RegExp(`(?<![\\w.])${escapeRe(variable)}\\s*=(?!=|>)`, 'g');
-  const from = Math.max(0, before - 20000);
-  const window = b.slice(from, before);
+  const window = b.slice(scope.start, before);
   let last = null;
   let m;
   while ((m = re.exec(window))) last = m;
-  if (!last) return '';
-  const start = from + last.index + last[0].length;
+  if (!last) {
+    const param = scope.params === null ? null : splitTopAngle(scope.params)
+      .map((p) => new RegExp(`(?:^|\\s)([\\w.<>?]+)\\s+@?${escapeRe(variable)}\\s*(?:=[^]*)?$`).exec(p.trim())).find(Boolean);
+    if ((param && ROOT_BUILDERS.has(baseName(param[1]))) || scope.lambdaParams.includes(variable)) {
+      ctx.note = 'a prefix the caller adds is not followed';
+      return '';
+    }
+    return '<group>';
+  }
+  const start = scope.start + last.index + last[0].length;
   const semi = b.indexOf(';', start);
   const rhs = b.slice(start, semi < 0 || semi - start > 1500 ? start + 1500 : semi);
-  const root = /^\s*(?:await\s+)?([A-Za-z_]\w*)/.exec(rhs);
-  const base = root && root[1] !== variable ? groupPrefix(text, b, root[1], from + last.index, depth + 1) : '';
+  const root = /^\s*(?:await\s+)?(@?[A-Za-z_]\w*)\s*(\(|<)?/.exec(rhs);
   const pieces = [];
   const g = /\.\s*MapGroup\s*\(/g;
   let gm;
@@ -423,15 +580,20 @@ function groupPrefix(text, b, variable, before, depth = 0) {
     const first = close < 0 ? null : splitTop(b, open + 1, close)[0];
     if (first) pieces.push(literal(text.slice(first[0], first[1])));
   }
+  let base = '';
+  if (!root || root[1] === 'new' || root[1] === 'WebApplication' || (!pieces.length && /\.\s*Build\s*\(/.test(rhs))) base = '';
+  else if (root[2]) base = '<group>';   // a method's return: `Grp(app)`
+  else if (root[1] !== variable) base = groupPrefix(text, b, root[1], scope.start + last.index, ctx, depth + 1);
   return [base, ...pieces].map((s) => s.replace(/^\/+|\/+$/g, '')).filter(Boolean).join('/');
 }
 
 /** @param {string} text @param {string} b @param {MapCall} c @returns {EntryInfo|null} */
 function mapEntry(text, b, c) {
   if (c.route === null) return null;
-  const route = joinRoute(groupPrefix(text, b, c.receiver, c.at), c.route);
+  const ctx = { note: '' };
+  const route = joinRoute(groupPrefix(text, b, c.receiver, c.at, ctx), c.route);
   const method = c.call === 'MapMethods' ? (c.methods.join('|') || 'ALL') : c.call === 'Map' ? 'ALL' : c.call.slice(3).toUpperCase();
-  return { type: 'http', name: `${method} ${route}`, method, route, how: `${c.receiver}.${c.call}() registration` };
+  return { type: 'http', name: `${method} ${route}`, method, route, how: `${c.receiver}.${c.call}() registration${ctx.note ? `; ${ctx.note}` : ''}` };
 }
 
 /**
@@ -453,7 +615,7 @@ function callSiteEntry(text, b, callerPos, callSiteStart) {
     if (!args.length) continue;
     const route = routeArg(text, args[0]);
     if (route === null || (m[2] === 'Map' && !route.startsWith('/'))) continue;
-    return mapEntry(text, b, { receiver: m[1], call: m[2], at, route, methods: m[2] === 'MapMethods' ? verbsIn(text, args[1]) : [], handler: null });
+    return mapEntry(text, b, { receiver: m[1], call: m[2], at, route, methods: m[2] === 'MapMethods' ? verbsIn(text, args[1]) : [], handler: null, qualifier: null, ownerKw: -1 });
   }
   return null;
 }
@@ -499,10 +661,14 @@ function declarationEntry({ text, blanked: b, pos, label, relPath, facts }) {
 
   // A named handler registered in this file: `api.MapGet("/items", GetItems)`.
   if (m.name.length > 1) {
-    const reg = mapCalls(text, b).find((c) => c.handler === m.name);
+    // `Other.Get` names a method of class `Other`; a bare `Get` (or `this.Get`) one of the class
+    // holding the call, or a local function there (top-level statements: outside any class).
+    const ownerKw = found ? found.kw : -1;
+    const reg = mapCalls(text, b).find((c) => c.handler === m.name
+      && (c.qualifier && c.qualifier !== 'this' ? !!found && found.name === c.qualifier : c.ownerKw === ownerKw));
     if (reg) {
       const e = mapEntry(text, b, reg);
-      if (e) return { ...e, how: `passed to ${reg.receiver}.${reg.call}() in this file` };
+      if (e) return { ...e, how: `passed to ${reg.receiver}.${reg.call}() in this file${/; (.*)$/.exec(e.how)?.[0] ?? ''}` };
     }
   }
   return null;

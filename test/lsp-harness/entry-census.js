@@ -15,9 +15,18 @@
  * `[...]` lines above it, the text up to its `{`), which shares nothing with the rules
  * (they match on lexer-blanked offsets). The expected sets follow C-D7's wording:
  *
- *   controller action  oracle method, `public`, not `static`, no `[NonAction]`, in a class with
- *                      `[ApiController]`/`[Controller]`, or with a base type (not an `I…` interface) ending
- *                      `Controller`/`ControllerBase`, or named `…Controller` with no base list at all
+ *   controller action  oracle method, `public`, not `static`, not generic, no `[NonAction]`, not
+ *                      `OnActionExecuting`/`OnActionExecuted`/`OnActionExecutionAsync`/`Dispose`/
+ *                      `ToString`/`Equals`/`GetHashCode`, not an `override` in a class based directly
+ *                      on `Controller`/`ControllerBase`; in a class that is not `abstract`, not
+ *                      generic, not `[NonController]`, with `[ApiController]`/`[Controller]`, or a
+ *                      base `Controller`/`ControllerBase`, or (with ASP.NET evidence) a base type
+ *                      (not an `I…` interface) ending `Controller`/`ControllerBase`, or named
+ *                      `…Controller` with no base list at all. Evidence: the file has a
+ *                      `using Microsoft.AspNetCore.Mvc` line, or the class or one of its methods
+ *                      (oracle attributes) has `[Http*]`/`[Route]`/`[AcceptVerbs]`/`[ApiController]`,
+ *                      or the base chain, read by the same line scanner over the files read, reaches
+ *                      `Controller`/`ControllerBase` or a file with that `using`
  *   minimal-API handler oracle method whose name is a whole-word argument of a statement that
  *                      starts at `.MapGet(`/`.MapPost(`/`.MapPut(`/`.MapDelete(`/`.MapPatch(`
  *                      /`.MapMethods(` in the same file (string literals removed)
@@ -31,7 +40,8 @@
  *
  * It proves coverage of C-D7's rules by an independent reading, not that routes are right:
  * C-D9's sample (30 jellyfin actions, all eShop minimal-API handlers) is printed for a hand
- * check, with file:line, the attributes and the route computed. Also: a deterministic sample
+ * check, with file:line, the attributes and the route computed, then eShop's MVC actions
+ * (Identity.API, conventionally routed). Also: a deterministic sample
  * of 100 methods that are no expected entry, none of which may be `http`, and every method
  * the rules call an entry without it being expected.
  *
@@ -88,15 +98,20 @@ function readBlobs(dir, commit, paths) {
 }
 
 /**
- * Classes of a file by line scanning: name -> { attrs (text of the lines above), bases (names) }.
- * @param {string} text @returns {Map<string, { attrs: string, bases: string[] }>}
+ * @typedef {{ attrs: string, bases: string[], abstract: boolean, generic: boolean, mvcFile: boolean }} LineClass
+ */
+/**
+ * Classes of a file by line scanning: name -> { attrs (text of the lines above), bases (names),
+ * abstract, generic, mvcFile (the file has a `using Microsoft.AspNetCore.Mvc` line) }.
+ * @param {string} text @returns {Map<string, LineClass>}
  */
 function classesByLines(text) {
   const lines = text.split('\n');
-  /** @type {Map<string, { attrs: string, bases: string[] }>} */
+  const mvcFile = lines.some((l) => /^\s*(?:global\s+)?using\s+Microsoft\.AspNetCore\.Mvc(?:\.|;|\s)/.test(l));
+  /** @type {Map<string, LineClass>} */
   const out = new Map();
   for (let i = 0; i < lines.length; i++) {
-    const m = /^\s*(?:(?:public|internal|private|protected|sealed|abstract|static|partial|unsafe|file|readonly)\s+)*(?:record\s+(?:class|struct)|class|record|struct)\s+([A-Za-z_]\w*)/.exec(lines[i]);
+    const m = /^\s*((?:(?:public|internal|private|protected|sealed|abstract|static|partial|unsafe|file|readonly)\s+)*)(?:record\s+(?:class|struct)|class|record|struct)\s+([A-Za-z_]\w*)(\s*<)?/.exec(lines[i]);
     if (!m || /^\s*\/\//.test(lines[i])) continue;
     // header: up to the line with `{` (or `;`)
     let header = '';
@@ -104,7 +119,7 @@ function classesByLines(text) {
       header += ` ${lines[k]}`;
       if (/[{;]/.test(lines[k])) break;
     }
-    header = header.slice(header.indexOf(m[1]) + m[1].length).replace(/\{.*$/, '');
+    header = header.slice(header.indexOf(m[2]) + m[2].length).replace(/\{.*$/, '');
     // parameters of a primary constructor are not bases: drop a leading (...) group
     let rest = header.trim();
     rest = rest.replace(/^<[^(:{]*?>(?=\s|\(|:|$)/, '').trim();
@@ -126,7 +141,7 @@ function classesByLines(text) {
       if (l.startsWith('[') || /^[\w."(),:\s]+\)?\]?,?$/.test(l) && attrs.length && !/[;{}]$/.test(l)) { attrs = `${l} ${attrs}`; continue; }
       break;
     }
-    out.set(m[1], { attrs, bases });
+    out.set(m[2], { attrs, bases, abstract: /\babstract\b/.test(m[1]), generic: !!m[3], mvcFile });
   }
   return out;
 }
@@ -178,9 +193,9 @@ const className = (s) => s.split('.').pop().replace(/<\d+>$/, '');
 function controllerRoutesAt(repo) {
   const listed = execFileSync('git', ['-C', repo.dir, 'ls-tree', '-r', '--name-only', repo.commit], { encoding: 'utf8', maxBuffer: 1 << 28 }).split('\n').filter((f) => /Controller[^/]*\.cs$/i.test(f));
   const texts = readBlobs(repo.dir, repo.commit, listed);
-  /** @type {Map<string, { route: string|null, base: string|null }>} */
+  /** @type {Map<string, { route: string|null, base: string|null, mvc: boolean }>} */
   const out = new Map();
-  for (const [, text] of texts) for (const c of classRoutesOf(text, blank(text))) if (!out.has(c.name)) out.set(c.name, { route: c.route, base: c.base });
+  for (const [, text] of texts) for (const c of classRoutesOf(text, blank(text))) if (!out.has(c.name)) out.set(c.name, { route: c.route, base: c.base, mvc: c.mvc });
   return out;
 }
 
@@ -189,12 +204,31 @@ function rowsOf(repo) {
   const oracle = JSON.parse(fs.readFileSync(path.join(CACHE, repo.cache), 'utf8'));
   const files = oracle.files.filter((/** @type {any} */ f) => f.members.some((/** @type {any} */ m) => m.kind === 'method'));
   const texts = readBlobs(repo.dir, oracle.commit, files.map((/** @type {any} */ f) => f.path));
+  // Every class of the files read, for base chains (first declaration of a name wins).
+  /** @type {Map<string, LineClass>} */
+  const allClasses = new Map();
+  for (const t of texts.values()) for (const [n, c] of classesByLines(t)) if (!allClasses.has(n)) allClasses.set(n, c);
+  /** @param {string} name */
+  const chainIsMvc = (name) => {
+    for (let g = 0; g < 6; g++) {
+      if (name === 'Controller' || name === 'ControllerBase') return true;
+      const c = allClasses.get(name);
+      if (!c) return false;
+      if (c.mvcFile || /\[\s*(ApiController|Controller)\b/.test(c.attrs)) return true;
+      const next = c.bases.map(baseId).find((x) => !/^I[A-Z]/.test(x));
+      if (!next) return false;
+      name = next;
+    }
+    return false;
+  };
   /** @type {Row[]} */
   const rows = [];
   for (const f of files) {
     const text = texts.get(f.path);
     if (text === undefined) continue;
     const classes = classesByLines(text);
+    /** Class name -> whether any of its methods (oracle) carries an MVC routing attribute. */
+    const mvcAttrIn = new Set(f.members.filter((/** @type {any} */ x) => x.attributes.some((/** @type {string} */ a) => /^(?:Http(?:Get|Post|Put|Delete|Patch|Head|Options)|Route|AcceptVerbs|ApiController)\b/.test(a.replace(/^.*\./, '')))).map((/** @type {any} */ x) => className(x.container || '')));
     const handlers = mapHandlerNames(text);
     const blanked = blank(text);
     for (const m of f.members) {
@@ -206,8 +240,14 @@ function rowsOf(repo) {
       const attrs = /** @type {string[]} */ (m.attributes);
       const mods = /** @type {string[]} */ (m.modifiers);
       const expected = [];
-      const isController = cls && (/\[\s*(ApiController|Controller)\b/.test(cls.attrs) || (!bases.length && /Controller$/.test(cn)) || baseIds.some((b) => !/^I[A-Z]/.test(b) && /Controller(Base)?$/.test(b)));
-      if (isController && mods.includes('public') && !mods.includes('static') && !attrs.some((a) => /\bNonAction\b/.test(a))) expected.push('controller');
+      const framework = baseIds.some((b) => b === 'Controller' || b === 'ControllerBase');
+      const namedBase = baseIds.find((b) => !/^I[A-Z]/.test(b) && /Controller(Base)?$/.test(b));
+      const evidence = cls && (cls.mvcFile || /\[\s*(Route|ApiController)\b/.test(cls.attrs) || mvcAttrIn.has(cn) || (!!namedBase && chainIsMvc(namedBase)));
+      const isController = cls && !/\bNonController\b/.test(cls.attrs) && !cls.abstract && !cls.generic
+        && (/\[\s*(ApiController|Controller)\b/.test(cls.attrs) || framework || (evidence && ((!bases.length && /Controller$/.test(cn)) || !!namedBase)));
+      const notAction = (m.typeParameters && m.typeParameters.length) || /^(OnActionExecuting|OnActionExecuted|OnActionExecutionAsync|Dispose|ToString|Equals|GetHashCode)$/.test(m.name)
+        || (mods.includes('override') && framework);
+      if (isController && !notAction && mods.includes('public') && !mods.includes('static') && !attrs.some((a) => /\bNonAction\b/.test(a))) expected.push('controller');
       if (handlers.has(m.name)) expected.push('minimal');
       if (cls && mods.includes('override') && m.params.some((/** @type {any} */ p) => /\bServerCallContext\b/.test(p.type)) && bases.some((b) => { const q = /^(?:\w+\.)*(\w+)\.(\w+)/.exec(b); return q && q[2] === `${q[1]}Base`; })) expected.push('grpc');
       if (cls && m.name === 'ExecuteAsync' && baseIds.includes('BackgroundService')) expected.push('hosted');
@@ -348,6 +388,9 @@ function main() {
     lines.push(`eshop ${r.path}:${r.line} (registered near line ${callLine || '?'}) | ${r.name} | ${got.get(r).e ? got.get(r).e.name : '(no entry)'}`);
   }
   lines.push('# eShop lambda handlers (call-site entries, first call in the lambda)', ...lines0);
+  const mvc = all.filter((r) => r.repo === 'eshop' && r.expected.includes('controller'));
+  lines.push(`# eShop MVC controller actions: ${mvc.length} (Identity.API: conventional routes, app.MapDefaultControllerRoute())`);
+  for (const r of mvc) lines.push(`eshop ${r.path}:${r.line} | ${r.cls}.${r.name} | ${r.attrs.join(' ')} | ${got.get(r).e ? `${got.get(r).e.name} [${got.get(r).e.how}]` : '(no entry)'}`);
   const text = `${lines.join('\n')}\n`;
   if (args.sampleOut) { fs.writeFileSync(args.sampleOut, text); console.log(`route sample written to ${args.sampleOut}`); }
   else console.log(text);
