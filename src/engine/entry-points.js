@@ -18,6 +18,12 @@ const csharp = require('./entry-points-csharp');
 /**
  * @typedef {'http'|'cli-command'|'main'|'dev-tool'|'public-api'|'ipc'|'ui-route'|'job'|'event'|'server-action'} EntryType
  *
+ * @typedef {'prefix may come from the caller'|'conventional route'} EntryCaveat
+ * `prefix may come from the caller`: registered on a builder the caller passes (an
+ * `IEndpointRouteBuilder` parameter, a lambda parameter), which may be a route group;
+ * `conventional route`: an MVC action without an attribute route, routed by the default
+ * `{controller}/{action}` pattern (a custom pattern is not read).
+ *
  * One recognised entry point. `name` is what a reviewer reads: the route, the command line,
  * the exported name. `how` says which pattern matched, so an explanation can cite it.
  * @typedef {object} EntryInfo
@@ -26,10 +32,15 @@ const csharp = require('./entry-points-csharp');
  * @property {string} [method] HTTP method, upper case, when known (`'ALL'` for any).
  * @property {string} [route] HTTP or UI route as written.
  * @property {string} how
+ * @property {EntryCaveat} [caveat] What is not known about `route`, shown after the name
+ *   wherever an entry is shown (` (prefix may come from the caller)`); `name` and `route` stay
+ *   as written, so keys do not change. C# only (./entry-points-csharp.js).
  * @property {boolean} [passThrough] The walk records this entry and keeps going: the path
  *   goes on to what references it (a Next.js server action, whose form a UI route renders).
  *   Recorded only when something does reference it (./impact-paths.js).
  */
+
+/** @typedef {{ route: string|null, base: string|null, mvc?: boolean, ns?: string }} CsClassFacts */
 
 /**
  * Repository-level facts, gathered once per analysis (./entry-facts.js). Every field is
@@ -49,12 +60,13 @@ const csharp = require('./entry-points-csharp');
  * @property {Set<string>} [packageRoots] Directories with a package.json, to find the
  *   nearest one above a file. Both are absent in a preview (it lists only the pull
  *   request's files), so the Next.js rules that need them do not fire there.
- * @property {Map<string, { route: string|null, base: string|null, mvc?: boolean }>} [csControllerRoutes] Class
+ * @property {Map<string, CsClassFacts & { candidates?: Array<CsClassFacts & { ns: string }> }>} [csControllerRoutes] Class
  *   name -> its `[Route]` template (null when it has none), first non-interface base class
  *   and whether its file uses ASP.NET MVC (or it is `[ApiController]`/`[Controller]`), for
  *   classes in files named `*Controller*.cs`: a controller without its own `[Route]`
  *   inherits the base class's, and a class based on a `*Controller` is a controller only
- *   when that base leads to MVC. Absent in a preview.
+ *   when that base leads to MVC. A name that classes with different facts share holds them
+ *   all in `candidates` (with their namespaces) and null/false at the top. Absent in a preview.
  * @property {Map<string, string>} [csProjects] Repository-relative path of a `.cs` file in an
  *   executable C# project (OutputType Exe/WinExe, or a Web/Worker SDK) -> the name of its
  *   nearest `.csproj`, no extension: the program a top-level-statements file starts. A

@@ -58,6 +58,9 @@ test('facts: the review stamp, every card with its members, and a member\'s cont
   assert.equal(facts.changed, 3);
   const [k1, k2] = facts.cards;
   assert.deepEqual(k1.entryPoints, ['public-api Hono']);
+  const withCaveat = fixture();
+  withCaveat.result.impactPaths['src/router.ts#10'].entries.push({ type: 'http', name: 'GET /a', caveat: 'prefix may come from the caller' });
+  assert.deepEqual(buildCardFacts(withCaveat, REVIEW).facts.cards[0].entryPoints, ['public-api Hono', 'http GET /a (prefix may come from the caller)']);
   assert.deepEqual(k1.seamsWith, ['K2']);
   assert.deepEqual(k1.mergeHints, [{ cards: ['K1', 'K2'], strength: 2, evidence: ['commit 0123456789ab: fix(router): reject line terminators', 'shared name addRoute in 3 files', '2 shared tests', 'same folder src/router'] }]);
   const add = k1.members[0];

@@ -95,7 +95,7 @@ function validateLimits(given) {
 /**
  * @typedef {object} ImpactPaths
  * @property {string} id `relPath#namePos` of the changed function.
- * @property {Array<{ type: string, name: string, file: string, depth: number, via: string[], hops?: PathHop[], how: string, method?: string, route?: string }>} entries
+ * @property {Array<{ type: string, name: string, file: string, depth: number, via: string[], hops?: PathHop[], how: string, method?: string, route?: string, caveat?: string }>} entries
  *   Distinct entry points reached (by type, name and file), each at its shortest depth;
  *   `hops` as in PathEnd. A `server-action` (pass-through) is listed when something references
  *   it; the walk went on past it, so a route may be listed too.

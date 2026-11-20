@@ -5,7 +5,7 @@
  * Entry-point census for C# (Part C, C4; src/engine/entry-points-csharp.js). A development
  * script, not part of `npm test`.
  *
- *   node test/lsp-harness/entry-census.js [--sample-out <file>] [--jellyfin <clone>] [--eshop <clone>]
+ *   node test/lsp-harness/entry-census.js [--sample-out <file>] [--update-routes] [--jellyfin <clone>] [--eshop <clone>]
  *
  * For jellyfin (821b849e6) and eShop (ab10e4c), at those commits, read with `git cat-file`
  * (nothing is checked out): the members (methods) come from the Roslyn syntax oracle's
@@ -34,7 +34,8 @@
  *   hosted service     `ExecuteAsync` of a class based on `BackgroundService`;
  *                      `StartAsync`/`StopAsync` of one based on `IHostedService`
  *   integration handler `Handle` of a class based on `IIntegrationEventHandler<…>`
- *   SignalR hub        public non-static method of a class based on `Hub`/`Hub<T>`
+ *   SignalR hub        public non-static method of a class based on `Hub`/`Hub<T>`, in a file with a
+ *                      `using Microsoft.AspNetCore.SignalR;` line or with the base written qualified
  *   MediatR handler    `Handle` of a class based on `IRequestHandler<…>`/`INotificationHandler<…>`
  *   Main               `static Main`
  *
@@ -45,7 +46,12 @@
  * of 100 methods that are no expected entry, none of which may be `http`, and every method
  * the rules call an entry without it being expected.
  *
- * Exit code 1 when any expected entry is missing, an extra is found, or a negative is `http`.
+ * The route sample (with each entry's caveat after its name, as the views show it) is compared
+ * with the hand-checked copy committed beside this script, entry-census-routes.txt; any
+ * difference fails. `--update-routes` rewrites that copy after a change has been checked by hand.
+ *
+ * Exit code 1 when any expected entry is missing, an extra is found, a negative is `http`, or
+ * the route sample differs from entry-census-routes.txt.
  */
 const { spawnSync, execFileSync } = require('child_process');
 const fs = require('fs');
@@ -61,14 +67,18 @@ const REPOS = [
   { name: 'eshop', dir: path.join(os.homedir(), 'Projects', 'impact-tree-test-repos', 'eshop'), commit: 'ab10e4c68fd2', cache: 'syntax-eshop-ab10e4c68fd2-78681b53ab0c.json' },
 ];
 const NEGATIVE_SAMPLE = 100;
+const ROUTES_FILE = path.join(__dirname, 'entry-census-routes.txt');
+/** An entry as the views show it: its name, then its caveat. @param {any} e */
+const shown = (e) => (e ? `${e.name}${e.caveat ? ` (${e.caveat})` : ''}` : '(no entry)');
 const ACTION_SAMPLE = 30;
 
 /** @param {string[]} argv */
 function parseArgs(argv) {
-  /** @type {{ sampleOut: string|null, dirs: Record<string, string> }} */
-  const out = { sampleOut: null, dirs: {} };
+  /** @type {{ sampleOut: string|null, updateRoutes: boolean, dirs: Record<string, string> }} */
+  const out = { sampleOut: null, updateRoutes: false, dirs: {} };
   for (let i = 0; i < argv.length; i += 2) {
-    if (argv[i] === '--sample-out') out.sampleOut = argv[i + 1];
+    if (argv[i] === '--update-routes') { out.updateRoutes = true; i--; }
+    else if (argv[i] === '--sample-out') out.sampleOut = argv[i + 1];
     else if (argv[i] === '--jellyfin') out.dirs.jellyfin = argv[i + 1];
     else if (argv[i] === '--eshop') out.dirs.eshop = argv[i + 1];
     else { console.error(`unknown argument ${argv[i]}`); process.exit(2); }
@@ -253,7 +263,8 @@ function rowsOf(repo) {
       if (cls && m.name === 'ExecuteAsync' && baseIds.includes('BackgroundService')) expected.push('hosted');
       if (cls && (m.name === 'StartAsync' || m.name === 'StopAsync') && baseIds.includes('IHostedService')) expected.push('hosted');
       if (cls && m.name === 'Handle' && baseIds.includes('IIntegrationEventHandler')) expected.push('integration');
-      if (cls && baseIds.includes('Hub') && mods.includes('public') && !mods.includes('static')) expected.push('hub');
+      if (cls && baseIds.includes('Hub') && mods.includes('public') && !mods.includes('static')
+        && (/^\s*using\s+Microsoft\.AspNetCore\.SignalR\s*;/m.test(text) || bases.some((b) => /^(?:global::)?Microsoft\.AspNetCore\.SignalR\.Hub\b/.test(b)))) expected.push('hub');
       if (cls && m.name === 'Handle' && baseIds.some((b) => b === 'IRequestHandler' || b === 'INotificationHandler')) expected.push('mediatr');
       if (m.name === 'Main' && mods.includes('static')) expected.push('main');
       rows.push({
@@ -354,7 +365,7 @@ function main() {
   const lambdaBad = lambdaRows.filter((x) => !x.e || x.e.method !== x.verb);
   console.log(`lambda registrations in eshop: ${lambdaRows.length}, call-site entry with the verb: ${lambdaRows.length - lambdaBad.length}, not: ${lambdaBad.length}`);
   if (lambdaBad.length) failed = true;
-  for (const x of lambdaRows) lines0.push(`eshop ${x.r.path} (lambda) | ${x.e ? x.e.name : '(no entry)'}`);
+  for (const x of lambdaRows) lines0.push(`eshop ${x.r.path} (lambda) | ${shown(x.e)}`);
   // Rows that got an entry without any expectation, any kind.
   const unexpected = all.filter((r) => got.get(r).e && !r.expected.length);
   console.log(`entries on methods with no expectation: ${unexpected.length}`);
@@ -380,20 +391,29 @@ function main() {
   const picked = actions.filter((_, i) => i % astep === 0).slice(0, ACTION_SAMPLE);
   lines.push(`# C-D9 route sample: ${picked.length} of ${actions.length} jellyfin controller actions (every ${astep}th in file order), then all eShop minimal-API handlers`);
   lines.push('# file:line | class attributes | method attributes | route computed');
-  for (const r of picked) lines.push(`jellyfin ${r.path}:${r.line} | class ${r.cls}: ${r.classAttrs.replace(/\s+/g, ' ')} | ${r.attrs.join(' ')} | ${got.get(r).e ? got.get(r).e.name : '(no entry)'}`);
+  for (const r of picked) lines.push(`jellyfin ${r.path}:${r.line} | class ${r.cls}: ${r.classAttrs.replace(/\s+/g, ' ')} | ${r.attrs.join(' ')} | ${shown(got.get(r).e)}`);
   const minimal = all.filter((r) => r.repo === 'eshop' && r.expected.includes('minimal'));
   lines.push(`# eShop minimal-API handlers: ${minimal.length}`);
   for (const r of minimal) {
     const callLine = r.text.split('\n').findIndex((l) => new RegExp(`\\.Map\\w+\\([^;]*\\b${r.name}\\b`).test(l)) + 1;
-    lines.push(`eshop ${r.path}:${r.line} (registered near line ${callLine || '?'}) | ${r.name} | ${got.get(r).e ? got.get(r).e.name : '(no entry)'}`);
+    lines.push(`eshop ${r.path}:${r.line} (registered near line ${callLine || '?'}) | ${r.name} | ${shown(got.get(r).e)}`);
   }
   lines.push('# eShop lambda handlers (call-site entries, first call in the lambda)', ...lines0);
   const mvc = all.filter((r) => r.repo === 'eshop' && r.expected.includes('controller'));
   lines.push(`# eShop MVC controller actions: ${mvc.length} (Identity.API: conventional routes, app.MapDefaultControllerRoute())`);
-  for (const r of mvc) lines.push(`eshop ${r.path}:${r.line} | ${r.cls}.${r.name} | ${r.attrs.join(' ')} | ${got.get(r).e ? `${got.get(r).e.name} [${got.get(r).e.how}]` : '(no entry)'}`);
+  for (const r of mvc) lines.push(`eshop ${r.path}:${r.line} | ${r.cls}.${r.name} | ${r.attrs.join(' ')} | ${got.get(r).e ? `${shown(got.get(r).e)} [${got.get(r).e.how}]` : '(no entry)'}`);
   const text = `${lines.join('\n')}\n`;
   if (args.sampleOut) { fs.writeFileSync(args.sampleOut, text); console.log(`route sample written to ${args.sampleOut}`); }
-  else console.log(text);
+  if (args.updateRoutes) { fs.writeFileSync(ROUTES_FILE, text); console.log(`route sample written to ${ROUTES_FILE}`); }
+  else {
+    const want = fs.existsSync(ROUTES_FILE) ? fs.readFileSync(ROUTES_FILE, 'utf8').split('\n') : [];
+    const have = text.split('\n');
+    const diff = [];
+    for (let i = 0; i < Math.max(want.length, have.length); i++) if (want[i] !== have[i]) diff.push(`   line ${i + 1}\n     checked: ${want[i] ?? '(none)'}\n     now:     ${have[i] ?? '(none)'}`);
+    console.log(`route sample vs ${path.basename(ROUTES_FILE)}: ${diff.length ? `${diff.length} line(s) differ` : 'same'}`);
+    for (const d of diff.slice(0, 10)) console.log(d);
+    if (diff.length) failed = true;
+  }
   console.log(`read ${tRead} ms, rules ${tRun} ms, total ${Date.now() - t0} ms`);
   process.exit(failed ? 1 : 0);
 }

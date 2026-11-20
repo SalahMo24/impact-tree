@@ -133,19 +133,29 @@ const MAX_CONTROLLER_FILES = 600;
 
 /**
  * Each class of the `*Controller*.cs` files -> its `[Route]` and base class, so a controller
- * that inherits its route (jellyfin's `BaseJellyfinApiController`) can be routed.
+ * that inherits its route (jellyfin's `BaseJellyfinApiController`) can be routed. Classes of
+ * one name that differ are all kept, as `candidates` with their namespaces; the rules choose
+ * per derived file, or show the route as unknown (`baseFacts` in ./entry-points-csharp.js).
  * @param {string[]} listed @param {(rel: string) => string|null} read
- * @returns {Map<string, { route: string|null, base: string|null, mvc: boolean }>}
+ * @returns {NonNullable<import('./entry-points').EntryFacts['csControllerRoutes']>}
  */
 function csharpControllerRoutes(listed, read) {
   const { blank } = require('../languages/csharp/lexer');
   const { classRoutesOf } = require('./entry-points-csharp');
-  /** @type {Map<string, { route: string|null, base: string|null, mvc: boolean }>} */
+  /** @type {NonNullable<import('./entry-points').EntryFacts['csControllerRoutes']>} */
   const out = new Map();
   for (const f of listed.filter((p) => /Controller[^/]*\.cs$/i.test(p)).slice(0, MAX_CONTROLLER_FILES)) {
     const text = read(f);
     if (!text) continue;
-    for (const c of classRoutesOf(text, blank(text))) if (!out.has(c.name)) out.set(c.name, { route: c.route, base: c.base, mvc: c.mvc });
+    for (const c of classRoutesOf(text, blank(text))) {
+      const prior = out.get(c.name);
+      const one = { route: c.route, base: c.base, mvc: c.mvc, ns: c.ns };
+      if (!prior) { out.set(c.name, one); continue; }
+      const all = [...(prior.candidates || [{ route: prior.route, base: prior.base, mvc: !!prior.mvc, ns: prior.ns || '' }]), one];
+      // Classes of one name that agree need no choice; ones that differ are chosen per file.
+      if (all.every((x) => x.route === one.route && x.base === one.base && x.mvc === one.mvc)) continue;
+      out.set(c.name, { route: null, base: null, mvc: false, candidates: all });
+    }
   }
   return out;
 }

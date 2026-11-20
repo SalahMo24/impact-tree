@@ -335,3 +335,9 @@ test('while a hand-off waits the review shows one progress row with Cancel; a st
   await sidebar.getChildren(host);
   assert.match(sidebar.getTreeItem(host).tooltip, /another state of this branch — ask again, or undo it/);
 });
+
+test('the card tooltip\'s entry points show an entry\'s caveat after its name', () => {
+  const { entryPointsOf } = require('../src/views/changes/card-order');
+  const paths = { 'a.cs#1': { complete: true, entries: [{ type: 'http', name: 'GET /a', caveat: 'prefix may come from the caller' }, { type: 'main', name: 'Program.cs' }] } };
+  assert.deepEqual(entryPointsOf(['a.cs#1'], paths).names, ['GET /a (prefix may come from the caller) (http)', 'Program.cs (main)']);
+});

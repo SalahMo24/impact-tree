@@ -230,7 +230,8 @@ test('minimal API: the MapGroup prefix is looked up in the enclosing method only
 `;
   const one = decl(text, 'H1() =>');
   assert.equal(one.name, 'GET /one/a');
-  assert.match(one.how, /a prefix the caller adds is not followed/);   // app: a WebApplication parameter
+  assert.equal(one.how, 'passed to g.MapGet() in this file');           // app: a WebApplication parameter, the application
+  assert.equal(one.caveat, undefined);
   assert.equal(decl(text, 'H2() =>').name, 'GET /<group>/b');          // not /one/b from method One
   assert.equal(decl(text, 'H3() =>').name, 'GET /<group>/v2/c');
   assert.equal(decl(text, 'H4() =>').name, 'GET /<group>/d');          // a method's return
@@ -294,7 +295,7 @@ const minimal = `public static class CatalogApi
 `;
 
 test('minimal API: a method group registered in the same file, with the MapGroup prefix', () => {
-  assert.deepEqual(decl(minimal, 'GetAllItemsV1(int'), { type: 'http', name: 'GET /api/catalog/items', method: 'GET', route: '/api/catalog/items', how: 'passed to v1.MapGet() in this file; a prefix the caller adds is not followed' });
+  assert.deepEqual(decl(minimal, 'GetAllItemsV1(int'), { type: 'http', name: 'GET /api/catalog/items', method: 'GET', route: '/api/catalog/items', how: 'passed to v1.MapGet() in this file; a prefix the caller adds is not followed', caveat: 'prefix may come from the caller' });
   assert.equal(decl(minimal, 'GetItemById(int').name, 'GET /api/catalog/items/{id:int}');
   assert.equal(decl(minimal, 'CancelOrder(int').name, 'PUT /api/catalog/cancel');
   assert.equal(decl(minimal, 'Multi(int').name, 'GET|POST /api/catalog/m');
@@ -308,6 +309,127 @@ test('minimal API: a call inside the lambda handler makes its function a call-si
   assert.equal(site(text, 'var app', 'Save(c)').name, 'POST /v1/y');
   assert.equal(site(text, 'var app', 'Skip()'), null);     // plain Map needs a path starting with /
   assert.equal(site(text, 'var app', 'Plain()'), null);
+});
+
+test('minimal API: a WebApplication is the application; an IEndpointRouteBuilder or lambda parameter has the caller caveat', () => {
+  const text = `public static class Apis
+{
+    public static void A(this WebApplication app) { app.MapGet("/a", Ha); }
+    public static void B(this IEndpointRouteBuilder app) { var v = app.MapGroup("/v"); v.MapGet("/b", Hb); }
+    public static void C(WebApplication app)
+    {
+        Configure(app.MapGroup("/v1"), g => { g.MapGet("/c", Hc); });
+        app.UseEndpoints(endpoints => { endpoints.MapGet("/d", Hd); });
+        Configure(app, (IEndpointRouteBuilder e) => { e.MapPost("/f", (HttpContext x) => Save(x)); });
+    }
+    static int Ha() => 1; static int Hb() => 1; static int Hc() => 1; static int Hd() => 1;
+}
+`;
+  const a = decl(text, 'Ha() =>');
+  assert.deepEqual([a.name, a.caveat, a.how], ['GET /a', undefined, 'passed to app.MapGet() in this file']);
+  const b = decl(text, 'Hb() =>');
+  assert.deepEqual([b.name, b.route, b.caveat], ['GET /v/b', '/v/b', 'prefix may come from the caller']);   // name and route as written
+  assert.match(b.how, /a prefix the caller adds is not followed/);
+  assert.deepEqual([decl(text, 'Hc() =>').name, decl(text, 'Hc() =>').caveat], ['GET /c', 'prefix may come from the caller']);
+  assert.deepEqual([decl(text, 'Hd() =>').name, decl(text, 'Hd() =>').caveat], ['GET /d', undefined]);   // UseEndpoints: the app
+  const f = site(text, 'C(WebApplication', 'Save(x)');
+  assert.deepEqual([f.name, f.caveat], ['POST /f', 'prefix may come from the caller']);
+});
+
+test('minimal API: a call in a group chain other than the known prefix-free ones makes the route partial', () => {
+  const text = `var app = WebApplication.CreateBuilder(args).Build();
+var g = app.MapApiV1();
+g.MapGet("/a", Ha);
+var v = app.NewVersionedApi("x").MapGroup("/v").WithTags("t").RequireAuthorization().HasApiVersion(1, 0);
+v.MapGet("/b", Hb);
+var w = app.MapGroup("/w").AddEndpointFilter<F>().CreateVersionedGroup("v1").WithOpenApi();
+w.MapGet("/c", Hc);
+var x = app.MapGroup(Prefixes.Get("x")).WithName("n");
+x.MapGet("/d", Hd);
+static int Ha() => 1; static int Hb() => 1; static int Hc() => 1; static int Hd() => 1;
+`;
+  assert.equal(decl(text, 'Ha() =>').name, 'GET /<group>/a');
+  const b = decl(text, 'Hb() =>');
+  assert.deepEqual([b.name, b.caveat], ['GET /v/b', undefined]);
+  assert.equal(decl(text, 'Hc() =>').name, 'GET /w/<group>/c');
+  assert.equal(decl(text, 'Hd() =>').name, 'GET /<Prefixes.Get("x")>/d');   // a call inside the arguments is no chain member
+});
+
+test('minimal API: IApplicationBuilder.Map branches the pipeline and is no endpoint', () => {
+  const text = `public static class Pipeline
+{
+    public static void M(this IApplicationBuilder app) { app.Map("/admin", Hx); }
+    public static void N(WebApplication app)
+    {
+        app.Map("/branch", admin => { Configure(admin); });
+        app.Map("/run", b => b.Run(Terminal));
+        app.Map("/typed", (IApplicationBuilder b) => { Other(b); });
+        app.Map("/hello", (HttpContext c) => Hello(c));
+        app.Map("/rd", async c => await Write(c));
+    }
+    static void Hx(IApplicationBuilder a) { }
+}
+`;
+  assert.equal(decl(text, 'Hx(IApplicationBuilder'), null);
+  assert.equal(site(text, 'N(WebApplication', 'Configure(admin)'), null);
+  assert.equal(site(text, 'N(WebApplication', 'Other(b)'), null);
+  assert.equal(site(text, 'N(WebApplication', 'Hello(c)').name, 'ALL /hello');
+  assert.equal(site(text, 'N(WebApplication', 'Write(c)').name, 'ALL /rd');
+});
+
+test('controller: [Area] fills a conventional route as /{area}/{controller}/{action} and [area] in attribute routes', () => {
+  const text = `using Microsoft.AspNetCore.Mvc;
+[Area("Admin")]
+public class UsersController : Controller
+{
+    public IActionResult Index() => View();
+}
+[Area("Admin")]
+[Route("[area]/[controller]")]
+public class RolesController : Controller
+{
+    [HttpGet("{id}")] public IActionResult One(int id) => View();
+}
+[Area(Areas.Shop)]
+public class CartController : Controller
+{
+    public IActionResult Show() => View();
+}
+`;
+  const idx = decl(text, 'Index()');
+  assert.deepEqual([idx.name, idx.caveat], ['ALL /Admin/Users/Index', 'conventional route']);
+  assert.match(idx.how, /\{area\}\/\{controller\}\/\{action\} assumed/);
+  const one = decl(text, 'One(int');
+  assert.deepEqual([one.name, one.caveat], ['GET /Admin/Roles/{id}', undefined]);
+  assert.equal(decl(text, 'Show()').name, 'ALL /<area>/Cart/Show');
+});
+
+test('controller: a base class name two classes share is chosen by the derived file\'s namespace, else unknown', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { gatherEntryFacts } = require('../src/engine/entry-facts');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'entry-facts-cs-'));
+  const files = {
+    'A/BaseApiController.cs': 'using Microsoft.AspNetCore.Mvc;\nnamespace Shop.A;\n[Route("a/[controller]")] public abstract class BaseApiController : ControllerBase { }\n',
+    'B/BaseApiController.cs': 'using Microsoft.AspNetCore.Mvc;\nnamespace Shop.B { [Route("b/[controller]")] public abstract class BaseApiController : ControllerBase { } }\n',
+    'C/SameController.cs': 'using Microsoft.AspNetCore.Mvc;\nnamespace Shop.C;\n[Route("c")] public class SameController : ControllerBase { }\n',
+    'D/SameController.cs': 'using Microsoft.AspNetCore.Mvc;\nnamespace Shop.D;\n[Route("c")] public class SameController : ControllerBase { }\n',
+  };
+  try {
+    for (const [rel, t] of Object.entries(files)) { fs.mkdirSync(path.join(dir, path.dirname(rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), t); }
+    const git = { tryRaw: () => Object.keys(files).join('\0') };
+    const { facts } = gatherEntryFacts({ repo: dir, git, languages: new Set(['csharp']) });
+    assert.equal(facts.csControllerRoutes.get('BaseApiController').candidates.length, 2);
+    assert.equal(facts.csControllerRoutes.get('SameController').candidates, undefined);   // they agree
+    const derived = (head) => `${head}\npublic class OrdersController : BaseApiController { [HttpGet] public int Get() => 1; }\n`;
+    assert.equal(decl(derived('namespace Shop.A.Orders;'), 'Get(', 'x.cs', facts).name, 'GET /a/Orders');        // enclosing namespace
+    assert.equal(decl(derived('using Shop.B;\nnamespace Other;'), 'Get(', 'x.cs', facts).name, 'GET /b/Orders');   // imported
+    assert.equal(decl(derived('using Shop.A;\nusing Shop.B;\nnamespace Other;'), 'Get(', 'x.cs', facts).name, 'GET /<inherited>');
+    assert.equal(decl(derived('namespace Other;'), 'Get(', 'x.cs', facts).name, 'GET /<inherited>');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('gRPC, hosted services, integration handlers, SignalR hubs and Main', () => {
@@ -331,7 +453,7 @@ public class PaidHandler : IIntegrationEventHandler<PaidIntegrationEvent>
     public async Task Handle(PaidIntegrationEvent @event) { }
 }
 public interface IIntegrationEventHandler<in T> : IIntegrationEventHandler { Task Handle(T e); }
-public class ChatHub : Hub<IChat>
+public class ChatHub : Microsoft.AspNetCore.SignalR.Hub<IChat>
 {
     public Task Send(string m) => null;
     private void Hidden() { }
@@ -347,6 +469,10 @@ public class Program { public static void Main(string[] args) { } }
   assert.equal(decl(text, 'Handle(T e'), null);  // the interface's own declaration
   assert.deepEqual([decl(text, 'Send(').type, decl(text, 'Send').name], ['event', 'ChatHub.Send']);
   assert.equal(decl(text, 'Hidden'), null);
+  // a Hub needs ASP.NET evidence: the qualified base above, or the using
+  const hub = 'namespace Transit { class Station : Hub { public void Depart() {} } }';
+  assert.equal(decl(hub, 'Depart'), null);
+  assert.equal(decl(`using Microsoft.AspNetCore.SignalR;\n${hub}`, 'Depart').name, 'Station.Depart');
   assert.deepEqual(decl(text, 'Main', 'src/App/Program.cs'), { type: 'main', name: 'src/App/Program.cs', how: 'static Main' });
 });
 

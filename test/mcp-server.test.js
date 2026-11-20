@@ -80,6 +80,7 @@ test('get_card and get_change shapes', async () => {
   assert.equal(card.members[0].label, 'save');
   assert.deepEqual(card.members[0].lines, [1, 3]);
   assert.equal(card.impact.entryPoints[0].name, 'GET /x');
+  assert.equal(card.impact.entryPoints[0].caveat, undefined);
   assert.equal(card.complete, true);
   assert.equal(card.mergeHints[0].strength, 2);
   assert.equal(card.seams[0].type, 'call');
@@ -92,6 +93,16 @@ test('get_card and get_change shapes', async () => {
   assert.equal(go.complete, false);
   assert.deepEqual(go.reasons, ['Go callers from syntax only']);
   assert.equal(await impl.call('nope', {}), null);
+});
+
+test('an entry\'s caveat is carried by get_card, list_cards detail and impact paths', async () => {
+  const f = fakeContext();
+  Object.assign(f.ctx.result.impactPaths[f.ids[0]].entries[0], { caveat: 'prefix may come from the caller' });
+  const impl = createImpactTools(f.ctx);
+  assert.deepEqual((await impl.call('get_card', { id: 'K1' })).impact.entryPoints[0].caveat, 'prefix may come from the caller');
+  const listed = await impl.call('list_cards', { detail: true });
+  assert.deepEqual(listed.cards[0].entryPoints, [{ type: 'http', name: 'GET /x', caveat: 'prefix may come from the caller' }]);
+  assert.equal((await impl.call('get_change', { id: f.ids[0] })).impactPaths.entries[0].caveat, 'prefix may come from the caller');
 });
 
 test('list_cards reports the cards and the limits of the analysis, hint notes included', async () => {
