@@ -55,6 +55,9 @@ bodied, operators, conversions, explicit interface implementations of any of the
 file's top-level statements. Not members: local functions and lambdas (their method's body),
 finalizers, events, fields, auto-properties, delegates, enum members.
 
+`Oracle.MembersOf(root, path)` returns a file's members with their keys; the semantic oracle
+(`../csharp-semantic-oracle/`) compiles this file in and keys callers and targets with it.
+
 ## Keys (C-D6)
 
 - Type path: enclosing types with arity when > 0 (`Result<1>.Map(…)`), namespaces dropped; a

@@ -51,19 +51,8 @@ static class Oracle
             var text = texts[i];
             var tree = CSharpSyntaxTree.ParseText(text, options);
             var root = (CompilationUnitSyntax)tree.GetRoot();
-            var members = new List<Member>();
+            var members = MembersOf(root, files[i].path);
             var globals = root.Members.OfType<GlobalStatementSyntax>().ToList();
-            if (globals.Count > 0)
-            {
-                var name = Path.GetFileName(files[i].path);
-                members.Add(new Member
-                {
-                    Kind = "top-level", Key = name, Name = name,
-                    NameOffset = globals[0].SpanStart, Start = globals[0].SpanStart, End = globals[^1].Span.End,
-                });
-            }
-            Walk(root.Members, "", members);
-            Number(members);
             w.WriteStartObject();
             w.WriteString("path", files[i].path);
             if (sha.Length == 0) w.WriteString("commit", files[i].commit);
@@ -80,14 +69,34 @@ static class Oracle
         return 0;
     }
 
-    sealed class Param
+    /// The C-D4 members of one file with their C-D6 keys, in source order (top-level first).
+    /// Shared with the semantic oracle (test/csharp-semantic-oracle), so both key alike.
+    internal static List<Member> MembersOf(CompilationUnitSyntax root, string path)
+    {
+        var members = new List<Member>();
+        var globals = root.Members.OfType<GlobalStatementSyntax>().ToList();
+        if (globals.Count > 0)
+        {
+            var name = Path.GetFileName(path);
+            members.Add(new Member
+            {
+                Kind = "top-level", Key = name, Name = name,
+                NameOffset = globals[0].SpanStart, Start = globals[0].SpanStart, End = globals[^1].Span.End,
+            });
+        }
+        Walk(root.Members, "", members);
+        Number(members);
+        return members;
+    }
+
+    internal sealed class Param
     {
         public string Name = "", Type = "", KeyType = "";
         public List<string> Modifiers = new(), Attributes = new();
         public string? Default;
     }
 
-    sealed class Member
+    internal sealed class Member
     {
         public string Kind = "", Key = "", Name = "", Container = "";
         public string? ExplicitInterface, Returns, Header, Body;
