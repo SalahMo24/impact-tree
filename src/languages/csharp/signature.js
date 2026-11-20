@@ -318,7 +318,8 @@ function readParams(text, toks, open) {
       dfltNorm = render(toks.slice(from, m));
       k = m;
     }
-    const kept = modifiers.filter((x) => x !== 'scoped');
+    // `this` first however written (`ref this Span<int> s` → `this ref Span`), as the oracle keys it.
+    const kept = modifiers.filter((x) => x !== 'scoped').sort((a, b) => (a === 'this' ? -1 : b === 'this' ? 1 : 0));
     params.push({ name, type, keyType: [...kept, keyType].join(' '), modifiers, default: dflt, attributes: attrs.attributes });
     sigParams.push({
       name,
@@ -480,6 +481,9 @@ function parseCsharpDeclaration(declText) {
     }
   }
   if (k !== toks.length) return null;
+  // A property has an accessor list or `=>`; `int _x;` (a field without an initializer) ends
+  // at `;` and is not a member (C-D4), so null as for any field.
+  if (kind === 'property' && declText[headerEnd] === ';') return null;
   const constraints = render(toks.slice(constraintsFrom, k));
   let body = /** @type {CsharpDeclaration['body']} */ ('none');
   if (declText.startsWith('=>', headerEnd)) body = 'expression';
@@ -570,6 +574,28 @@ function parseCsharpParameterList(text) {
  * @param {Array<{ keyType: string }>} params @returns {string}
  */
 const csharpKeyParams = (params) => params.map((p) => p.keyType).join(', ');
+
+/**
+ * C# 14 extension blocks (owner decision after the C0–C2 review): an instance member of
+ * `extension(Foo f) { … }` is keyed as the classic extension method, the receiver first as a
+ * `this` parameter, so `extension(Foo f) { int M(int x) }` and `static int M(this Foo f, int x)`
+ * share the key `Ext.M(this Foo, int)`. This returns that bracket text from the block's
+ * parameter list as written (`(Foo f)`, `(ref Foo f)`, `(List<T> l)`, unnamed `(Foo)`) and the
+ * member's parameters (as `parseCsharpDeclaration` gives them). Null when the receiver cannot
+ * be read. The rest of the key, as the syntax oracle builds it:
+ * - methods: `Type.Name<arity>(…)`, arity = the block's type parameters + the method's own
+ *   (`extension<T>(List<T> l) { void M<U>() }` → `Ext.M<2>(this List)`);
+ * - properties: `Type.Name(this Foo)` (this helper with no parameters);
+ * - static members and operators of a block have no receiver: key them as usual.
+ * @param {string} receiverList @param {Array<{ keyType: string }>} params @returns {string | null}
+ */
+function csharpExtensionKeyParams(receiverList, params) {
+  let parsed = parseCsharpParameterList(receiverList);
+  // An unnamed receiver (`extension(Foo)`, for static members) reads with a placeholder name.
+  if (!parsed) parsed = parseCsharpParameterList(String(receiverList).replace(/\)\s*$/, ' __receiver)'));
+  if (!parsed || parsed.params.length !== 1) return null;
+  return [`this ${parsed.params[0].keyType}`, ...params.map((p) => p.keyType)].join(', ');
+}
 
 /**
  * The exception types of `throw new X(…)` (statements and `throw` expressions) in the
@@ -730,6 +756,6 @@ function renderCsharpSig(sig) {
 }
 
 module.exports = {
-  parseCsharpDeclaration, parseCsharpParameterList, csharpKeyParams, thrownOf, csharpKindsOf,
-  renderCsharpSig, normaliseHeader,
+  parseCsharpDeclaration, parseCsharpParameterList, csharpKeyParams, csharpExtensionKeyParams, thrownOf,
+  csharpKindsOf, renderCsharpSig, normaliseHeader,
 };

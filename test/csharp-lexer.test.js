@@ -82,3 +82,41 @@ test('attribute lists versus collection expressions, list patterns and element a
   const opens = toks.map((t, k) => (t.text === '[' ? opensAttribute(toks, k) : null)).filter((x) => x !== null);
   assert.deepEqual(opens, [true, true, false, false]);
 });
+
+test('a `[` after `{` is an attribute only when the brace opens a block, type body or accessors', () => {
+  /** @param {string} src @param {string} marker the first `[` at or after this text */
+  const after = (src, marker) => {
+    const toks = /** @type {any[]} */ (tokenize(src));
+    const at = src.indexOf(marker);
+    return opensAttribute(toks, toks.findIndex((t) => t.text === '[' && t.start >= at));
+  };
+  // Expressions: indexer and object initializers, list patterns, collection expressions.
+  assert.equal(after('var d = new Dictionary<string, int> { ["a"] = 1, ["b"] = 2 };', '{'), false);
+  assert.equal(after('var d = new D { [1] = 2 };', '{'), false);
+  assert.equal(after('var d = new D() { [1] = 2 };', '{'), false);
+  assert.equal(after('D d = new() { [1] = 2 };', '{'), false);
+  assert.equal(after('var a = new int[] { [0] = 1 };', '{'), false);
+  assert.equal(after('var a = new N.D<int>? { [0] = 1 };', '{'), false);
+  assert.equal(after('var r = x switch { [1, ..] => 1, [] => 2 };', '{'), false);
+  assert.equal(after('List<int[]> x = new() { [1, 2], [3] };', '{'), false);
+  assert.equal(after('var y = x with { [0] = 1 };', '{'), false);
+  assert.equal(after('if (o is { } && o is { P: [1] }) {}', '{'), false);
+  assert.equal(after('M(a, new() { [1] = 2 });', '{'), false);
+  // Nested initializer braces follow the outer one.
+  assert.equal(after('var d = new D { { [1] } };', '{ ['), false);
+  // Real attribute positions: start of a member or local function, after another list,
+  // at the start of a file and an assembly attribute.
+  assert.equal(after('class C { [Obsolete] void M() {} }', '{'), true);
+  assert.equal(after('class C<T> : B { [A] int P => 1; }', '{'), true);
+  assert.equal(after('namespace N.M { [A] class C {} }', '{'), true);
+  assert.equal(after('void M() { [A] void Local() {} }', '{'), true);
+  assert.equal(after('public new void M() { [A] void Local() {} }', '{'), true);
+  assert.equal(after('void M<T>() where T : class, new() { [A] void L() {} }', '{'), true);
+  assert.equal(after('int P { [A] get; set; }', '{'), true);
+  assert.equal(after('class C { [A][B] void M() {} }', '[B]'), true);
+  assert.equal(after('[assembly: InternalsVisibleTo("X")]', '['), true);
+  assert.equal(after('using X; [assembly: A] namespace N;', '['), true);
+  // A parameter's attribute.
+  const toks = /** @type {any[]} */ (tokenize('void M(int a, [FromBody] B b) {}'));
+  assert.equal(opensAttribute(toks, toks.findIndex((t) => t.text === '['), true), true);
+});

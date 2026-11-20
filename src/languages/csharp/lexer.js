@@ -271,22 +271,100 @@ function blank(text) {
 }
 
 
+/** The index of the token before `k` that is not a directive (-1 at the start). @param {Token[]} tokens @param {number} k */
+function prevCode(tokens, k) {
+  let p = k - 1;
+  while (p >= 0 && tokens[p].kind === 'directive') p--;
+  return p;
+}
+
+/**
+ * The index of the bracket opening the group that `tokens[k]` (`)`, `]` or `>`) closes, or -1.
+ * @param {Token[]} tokens @param {number} k
+ */
+function groupStart(tokens, k) {
+  const close = tokens[k].text;
+  const open = close === ')' ? '(' : close === ']' ? '[' : '<';
+  let d = 0;
+  for (let m = k; m >= 0; m--) {
+    if (tokens[m].text === close) d++;
+    else if (tokens[m].text === open && --d === 0) return m;
+  }
+  return -1;
+}
+
+// Words after which a `{` is an expression's brace: `x switch {`, `x with {`, `x is {`, `case {`.
+const EXPRESSION_BRACE_AFTER = new Set(['new', 'switch', 'with', 'return', 'is', 'and', 'or', 'not', 'case', 'when', 'yield']);
+const EXPRESSION_BRACE_AFTER_PUNCT = new Set(['=', '(', ',', '[', '?', '??']);
+
+/**
+ * Whether the `{` at `tokens[b]` opens an expression's braces (an object, collection or
+ * array initializer, an anonymous type, a switch expression, `with`, a property pattern)
+ * rather than a block, a type body or an accessor list. Read from the tokens before it:
+ * `new D {`, `new D(…) {`, `new() {`, `new List<int> {`, `new int[] {`, `new {`, `= {`,
+ * `x switch {`, `x with {`, `is {`; a `{` right after such a `{` or a `,` follows its outer brace.
+ * @param {Token[]} tokens @param {number} b @returns {boolean}
+ */
+function isExpressionBrace(tokens, b) {
+  let q = prevCode(tokens, b);
+  if (q < 0) return false;
+  const t = tokens[q];
+  if (t.kind === 'ident') {
+    if (EXPRESSION_BRACE_AFTER.has(t.text)) return true;
+  } else if (t.kind === 'punct') {
+    if (t.text === '{') return isExpressionBrace(tokens, q);
+    if (EXPRESSION_BRACE_AFTER_PUNCT.has(t.text)) return true;
+    if (t.text !== ')' && t.text !== ']' && t.text !== '>') return false;
+  } else return false;
+  // A creation's type: `new` [dotted name [type arguments]] [array ranks] [(arguments)] `{`.
+  if (tokens[q].text === ')') { q = groupStart(tokens, q); if (q < 0) return false; q = prevCode(tokens, q); }
+  while (q >= 0 && tokens[q].text === ']') { q = groupStart(tokens, q); if (q < 0) return false; q = prevCode(tokens, q); }
+  if (q >= 0 && tokens[q].text === '?') q = prevCode(tokens, q);
+  for (;;) {
+    if (q < 0) return false;
+    if (tokens[q].text === '>') { q = groupStart(tokens, q); if (q < 0) return false; q = prevCode(tokens, q); }
+    if (q < 0) return false;
+    if (tokens[q].kind !== 'ident') return false;
+    if (tokens[q].text === 'new') return !inConstraint(tokens, q);
+    const before = prevCode(tokens, q);
+    if (before >= 0 && (tokens[before].text === '.' || tokens[before].text === '::')) { q = prevCode(tokens, before); continue; }
+    return before >= 0 && tokens[before].text === 'new';
+  }
+}
+
+/**
+ * Whether the `new` at `tokens[k]` is a `new()` constraint (`where T : class, new() {`): the
+ * tokens before it, through a constraint's names and punctuation, reach `where`.
+ * @param {Token[]} tokens @param {number} k
+ */
+function inConstraint(tokens, k) {
+  for (let m = prevCode(tokens, k); m >= 0; m = prevCode(tokens, m)) {
+    const t = tokens[m];
+    if (t.kind === 'ident') { if (t.text === 'where') return true; continue; }
+    if (t.kind !== 'punct' || ![',', ':', '.', '<', '>', '?', '::'].includes(t.text)) return false;
+  }
+  return false;
+}
+
 /**
  * Whether the `[` at `tokens[k]` opens an attribute list rather than a collection expression,
- * a list pattern or an element access. True after nothing, `;`, `{`, `}` or another attribute
- * list's `]`; after `(` or `,` only when `inParameters` (a declaration's parameter list or type
- * parameter list `<`). Never after `=`, `return`, `=>`, `is`, `case`, `in`, an identifier or `)`.
+ * a list pattern, an indexer initializer or an element access. True after nothing, `;`, `}`,
+ * another attribute list's `]`, or a `{` that opens a block, type body or accessor list (not an
+ * expression's brace: see `isExpressionBrace`, so `new D { [1] = 2 }`, `x switch { [1] => … }`
+ * and `new() { [1, 2] }` are false); after `(` or `,` only when `inParameters` (a declaration's
+ * parameter list or type parameter list `<`). Never after `=`, `return`, `=>`, `is`, `case`,
+ * `in`, an identifier or `)`.
  * @param {Token[]} tokens @param {number} k @param {boolean} [inParameters]
  * @returns {boolean}
  */
 function opensAttribute(tokens, k, inParameters = false) {
   if (!tokens[k] || tokens[k].text !== '[') return false;
-  let p = k - 1;
-  while (p >= 0 && tokens[p].kind === 'directive') p--;
+  const p = prevCode(tokens, k);
   if (p < 0) return true;
   const prev = tokens[p];
   if (prev.kind !== 'punct') return false;
-  if (prev.text === ';' || prev.text === '{' || prev.text === '}') return true;
+  if (prev.text === '{') return !isExpressionBrace(tokens, p);
+  if (prev.text === ';' || prev.text === '}') return true;
   if (prev.text === '(' || prev.text === ',' || prev.text === '<') return inParameters;
   if (prev.text === ']') {
     let d = 0;

@@ -8,6 +8,14 @@
  *   node test/lsp-harness/csharp-verify.js --oracle-only --repo <C# clone> --commit <sha>
  *   node test/lsp-harness/csharp-verify.js --signatures [--all-kinds] --repo <C# clone> --commit <sha>
  *   node test/lsp-harness/csharp-verify.js --kinds --repo <C# clone> --commit <sha> --prs <n,n,…>
+ *   node test/lsp-harness/csharp-verify.js --fixture-keys [--write]
+ *
+ * `--fixture-keys`: pins the oracle's key function on constructs the test repositories lack
+ * (extension blocks, checked operators and conversions, indexers, generic explicit
+ * implementations). Each `test/csharp-syntax-oracle/fixtures/<name>.cs` is committed into a
+ * throwaway git repository in the OS temp folder and run through the oracle (seconds, no
+ * cache); its members' `<kind> <key>` lines must equal `<name>.expected.json`. `--write`
+ * rewrites the expected files from the oracle (review the diff by hand).
  *
  * `--signatures` (C2): src/languages/csharp/signature.js on every method and constructor's
  * text (the oracle's span; `--all-kinds` adds properties, indexers, operators, conversions),
@@ -514,17 +522,63 @@ function headerKinds(repo, commit, numbers, tools) {
   console.log(`${n} members with a changed header`);
 }
 
+/**
+ * `--fixture-keys`: each fixture's member keys against its expected file.
+ * @param {string} tools @param {boolean} write @returns {boolean}
+ */
+function fixtureKeys(tools, write) {
+  const dir = path.join(ORACLE_SRC, 'fixtures');
+  const dll = ensureOracle(tools, toolHash());
+  let ok = true;
+  for (const name of fs.readdirSync(dir).filter((f) => f.endsWith('.cs')).sort()) {
+    const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'csharp-fixture-'));
+    try {
+      fs.copyFileSync(path.join(dir, name), path.join(tmp, name));
+      const g = (/** @type {string[]} */ ...a) => execFileSync('git', ['-C', tmp, '-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', '-c', 'commit.gpgsign=false', ...a], { stdio: 'pipe' });
+      g('init', '-q');
+      g('add', name);
+      g('commit', '-q', '-m', 'fixture');
+      const out = path.join(tmp, 'oracle.json');
+      execFileSync(path.join(tools, 'dotnet', 'dotnet'), [dll, tmp, 'HEAD', out], { env: dotnetEnv(tools), stdio: ['ignore', 'inherit', 'inherit'], timeout: ORACLE_DEADLINE_MS });
+      const file = JSON.parse(fs.readFileSync(out, 'utf8')).files[0];
+      const actual = file.members.map((/** @type {any} */ m) => `${m.kind} ${m.key}`);
+      const expPath = path.join(dir, name.replace(/\.cs$/, '.expected.json'));
+      if (write) { fs.writeFileSync(expPath, `${JSON.stringify({ diagnostics: file.diagnostics, members: actual }, null, 2)}\n`); console.log(`${name}: wrote ${actual.length} keys`); continue; }
+      const expected = fs.existsSync(expPath) ? JSON.parse(fs.readFileSync(expPath, 'utf8')) : { diagnostics: 0, members: [] };
+      const missing = expected.members.filter((/** @type {string} */ k) => !actual.includes(k));
+      const extra = actual.filter((/** @type {string} */ k) => !expected.members.includes(k));
+      const same = missing.length === 0 && extra.length === 0 && actual.join('\n') === expected.members.join('\n') && file.diagnostics === expected.diagnostics;
+      console.log(`${name}: ${actual.length} keys, ${same ? 'as expected' : 'DIFFERENT'} (parse errors ${file.diagnostics})`);
+      for (const k of missing) console.log(`  - ${k}`);
+      for (const k of extra) console.log(`  + ${k}`);
+      if (!same && !missing.length && !extra.length) console.log('  (order or parse-error count differs)');
+      ok = ok && same;
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+  return ok;
+}
+
 function main() {
   const args = process.argv.slice(2);
   const opt = (/** @type {string} */ name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
   const repo = opt('--repo');
   const commit = opt('--commit') || 'HEAD';
   const tools = opt('--tools') || scratchpadPath('csharp-tools');
+  if (args.includes('--fixture-keys')) {
+    const t0 = Date.now();
+    const ok = fixtureKeys(tools, args.includes('--write'));
+    console.log(`wall time ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+    process.exitCode = ok ? 0 : 1;
+    return;
+  }
   if (!repo || !fs.existsSync(repo) || !['--syntactic', '--oracle-only', '--signatures', '--kinds'].some((a) => args.includes(a))) {
     console.error('usage: node test/lsp-harness/csharp-verify.js --syntactic --repo <clone> --commit <sha> --outline <module> [--prs <n,n,…>] [--tools <dir>]');
     console.error('       node test/lsp-harness/csharp-verify.js --oracle-only --repo <clone> --commit <sha>');
     console.error('       node test/lsp-harness/csharp-verify.js --signatures [--all-kinds] --repo <clone> --commit <sha>');
     console.error('       node test/lsp-harness/csharp-verify.js --kinds --repo <clone> --commit <sha> --prs <n,n,…>');
+    console.error('       node test/lsp-harness/csharp-verify.js --fixture-keys [--write]');
     process.exit(2);
   }
   const t0 = Date.now();

@@ -7,7 +7,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  parseCsharpDeclaration, parseCsharpParameterList, csharpKeyParams, thrownOf, csharpKindsOf, renderCsharpSig,
+  parseCsharpDeclaration, parseCsharpParameterList, csharpKeyParams, csharpExtensionKeyParams, thrownOf, csharpKindsOf,
+  renderCsharpSig,
 } = require('../src/languages/csharp/signature');
 const { diffSignature, KIND } = require('../src/engine/signature');
 
@@ -107,6 +108,32 @@ test('constructors, static constructors, operators, conversions, properties, ind
   for (const bad of ['private int x = 3;', 'public event EventHandler E;', '~Foo() { }', 'public class Foo { }', 'int x', 'void M(int) {}']) {
     assert.equal(parseCsharpDeclaration(bad), null, bad);
   }
+});
+
+test('fields are not members: null with or without an initializer, const, event fields', () => {
+  for (const field of [
+    'private readonly int _x;', 'public int X;', '[A] B c;', 'private List<int>? _items;', 'int a, b;',
+    'private readonly int _x = 3;', 'public static readonly Foo Default = new();', 'const int Max = 10;',
+    'public const string Name = "n";', 'public event EventHandler E;', 'public event EventHandler? Changed = null;',
+    'static event Action A, B;',
+  ]) assert.equal(parseCsharpDeclaration(field), null, field);
+  // Properties still parse: accessors, `=>`, and an initializer after the accessor list.
+  assert.equal(parse('public int P { get; set; }').kind, 'property');
+  assert.equal(parse('public int P { get; } = 3;').kind, 'property');
+  assert.equal(parse('public int P => 1;').kind, 'property');
+});
+
+test('extension blocks: the key parameter text of the classic extension method', () => {
+  const m = parse('public int M(int x, ref string y) => 1;');
+  assert.equal(csharpExtensionKeyParams('(Foo f)', m.params), 'this Foo, int, ref string');
+  // Same text as the classic form's own parameters.
+  assert.equal(csharpExtensionKeyParams('(Foo f)', m.params), keyOf('public static int M(this Foo f, int x, ref string y) => 1;'));
+  assert.equal(csharpExtensionKeyParams('(N.List<T>? items)', []), 'this List?');
+  assert.equal(csharpExtensionKeyParams('(ref Span<int> s)', []), 'this ref Span');
+  assert.equal(keyOf('static void Bump(ref this Span<int> s) { }'), 'this ref Span');
+  assert.equal(csharpExtensionKeyParams('(Foo)', []), 'this Foo');
+  assert.equal(csharpExtensionKeyParams('()', []), null);
+  assert.equal(csharpExtensionKeyParams('(int a, int b)', []), null);
 });
 
 test('a primary constructor parameter list', () => {

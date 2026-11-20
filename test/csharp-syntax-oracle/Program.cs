@@ -84,7 +84,7 @@ static class Oracle
                 NameOffset = globals[0].SpanStart, Start = globals[0].SpanStart, End = globals[^1].Span.End,
             });
         }
-        Walk(root.Members, "", members);
+        Walk(root.Members, "", members, null);
         Number(members);
         return members;
     }
@@ -107,24 +107,33 @@ static class Oracle
 
     // ---- walking ------------------------------------------------------------------------
 
-    static void Walk(SyntaxList<MemberDeclarationSyntax> list, string path, List<Member> into)
+    /// A C# 14 `extension(T x) { … }` block around a member: the receiver as a key parameter
+    /// (`this T`) and the block's type-parameter count.
+    internal sealed record Ext(string Receiver, int Arity);
+
+    static void Walk(SyntaxList<MemberDeclarationSyntax> list, string path, List<Member> into, Ext? ext)
     {
         foreach (var node in list)
         {
             switch (node)
             {
-                case BaseNamespaceDeclarationSyntax ns: Walk(ns.Members, path, into); break;
+                case BaseNamespaceDeclarationSyntax ns: Walk(ns.Members, path, into, null); break;
                 case TypeDeclarationSyntax t when t.Kind().ToString() == "ExtensionBlockDeclaration":
-                    // C# 14 `extension(T x) { … }`: not a type, its members belong to the static class.
-                    Walk(t.Members, path, into); break;
+                    // C# 14 `extension(T x) { … }`: not a type, its members belong to the static class
+                    // and an instance member is keyed as the classic extension method (owner decision
+                    // after the C0–C2 review): `this T` first, the block's type parameters added to
+                    // the method's arity.
+                    var recv = t.ParameterList?.Parameters.FirstOrDefault();
+                    var block = new Ext(recv == null ? "" : "this " + KeyType(recv), t.TypeParameterList?.Parameters.Count ?? 0);
+                    Walk(t.Members, path, into, block); break;
                 case TypeDeclarationSyntax t:
                     var seg = t.Identifier.ValueText + Arity(t.TypeParameterList);
                     var inner = path.Length == 0 ? seg : path + "." + seg;
                     if (t.ParameterList != null) into.Add(PrimaryCtor(t, inner));
-                    Walk(t.Members, inner, into);
+                    Walk(t.Members, inner, into, null);
                     break;
                 case BaseMethodDeclarationSyntax or BasePropertyDeclarationSyntax:
-                    var m = MemberOf(node, path);
+                    var m = MemberOf(node, path, ext);
                     if (m != null) into.Add(m);
                     break;
             }
@@ -144,7 +153,7 @@ static class Oracle
         return m;
     }
 
-    static Member? MemberOf(MemberDeclarationSyntax node, string path)
+    static Member? MemberOf(MemberDeclarationSyntax node, string path, Ext? ext)
     {
         var m = new Member { Container = path, Start = node.SpanStart, End = node.Span.End };
         m.Modifiers = node.Modifiers.Select(x => x.Text).ToList();
@@ -157,7 +166,12 @@ static class Oracle
                 m.Returns = md.ReturnType.ToString(); m.Params = ParamsOf(md.ParameterList.Parameters);
                 m.TypeParameters = md.TypeParameterList?.Parameters.Select(p => p.Identifier.ValueText).ToList() ?? new();
                 iface = Iface(md.ExplicitInterfaceSpecifier);
-                m.Key = $"{path}.{Pre(iface)}{m.Name}{Arity(md.TypeParameterList)}({KeyParams(m.Params)})";
+                if (ext != null && !md.Modifiers.Any(SyntaxKind.StaticKeyword) && ext.Receiver.Length > 0)
+                {
+                    var arity = ext.Arity + (md.TypeParameterList?.Parameters.Count ?? 0);
+                    m.Key = $"{path}.{m.Name}{(arity > 0 ? $"<{arity}>" : "")}({ExtParams(ext, m.Params)})";
+                }
+                else m.Key = $"{path}.{Pre(iface)}{m.Name}{Arity(md.TypeParameterList)}({KeyParams(m.Params)})";
                 break;
             case ConstructorDeclarationSyntax cd:
                 var isStatic = cd.Modifiers.Any(SyntaxKind.StaticKeyword);
@@ -181,7 +195,9 @@ static class Oracle
                 if (!Bodied(pd.ExpressionBody, pd.AccessorList) && !BodylessMember(pd)) return null;
                 m.Kind = "property"; m.Name = pd.Identifier.ValueText; m.NameOffset = pd.Identifier.SpanStart; m.Returns = pd.Type.ToString();
                 iface = Iface(pd.ExplicitInterfaceSpecifier);
-                m.Key = $"{path}.{Pre(iface)}{m.Name}";
+                m.Key = ext != null && !pd.Modifiers.Any(SyntaxKind.StaticKeyword) && ext.Receiver.Length > 0
+                    ? $"{path}.{m.Name}({ext.Receiver})" // an extension property: the receiver in brackets
+                    : $"{path}.{Pre(iface)}{m.Name}";
                 break;
             case IndexerDeclarationSyntax ix:
                 if (!Bodied(ix.ExpressionBody, ix.AccessorList) && !BodylessMember(ix)) return null;
@@ -276,14 +292,19 @@ static class Oracle
     }).ToList();
 
     /// C-D6: ref/out/in/params/this (and `ref readonly`) kept, `scoped` dropped, then the erased type.
+    /// `this` comes first however it was written (`ref this Span<int> s` → `this ref Span`), so a
+    /// classic extension method keys as its extension-block form does.
     static string KeyType(ParameterSyntax p)
     {
-        var mods = p.Modifiers.Where(x => !x.IsKind(SyntaxKind.ScopedKeyword)).Select(x => x.Text);
+        var mods = p.Modifiers.Where(x => !x.IsKind(SyntaxKind.ScopedKeyword))
+            .OrderBy(x => x.IsKind(SyntaxKind.ThisKeyword) ? 0 : 1).Select(x => x.Text);
         var type = p.Type == null ? "" : Erase(p.Type);
         return string.Join(" ", mods.Append(type));
     }
 
     static string KeyParams(List<Param> ps) => string.Join(", ", ps.Select(p => p.KeyType));
+
+    static string ExtParams(Ext ext, List<Param> ps) => string.Join(", ", ps.Select(p => p.KeyType).Prepend(ext.Receiver));
 
     /// C-D6: types as written minus namespaces, generic arguments erased, `?`, arrays and
     /// pointers kept; a tuple's element names dropped.

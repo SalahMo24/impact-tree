@@ -359,9 +359,12 @@ static class SemanticOracle
     }
 
     /// The member a call site belongs to (lambdas and local functions belong to their member).
+    /// The walk starts at the site itself: a primary constructor's base call `class D(int x) : B(x)`
+    /// is the site `B(x)` (PrimaryConstructorBaseTypeSyntax), whose caller is D's primary
+    /// constructor. No other site kind is a declaration node, so this changes nothing else.
     static (string? key, string? context) CallerOf(SyntaxNode site, FileKeys fk)
     {
-        for (var n = site.Parent; n != null; n = n.Parent)
+        for (var n = site; n != null; n = n.Parent)
         {
             switch (n)
             {

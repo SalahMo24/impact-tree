@@ -62,6 +62,14 @@ finalizers, events, fields, auto-properties of classes, structs and records, del
 
 - Type path: enclosing types with arity when > 0 (`Result<1>.Map(…)`), namespaces dropped; a
   C# 14 `extension(…)` block adds no segment.
+- C# 14 extension blocks (owner decision after the C0–C2 review): an instance member of
+  `extension(Foo f) { … }` is keyed as the classic extension method, so converting between the
+  two forms keeps the key. A method gets the receiver as a leading `this` parameter
+  (`Ext.M(this Foo, int)`, like `static void M(this Foo f, int x)`), its arity counting the
+  block's type parameters first (`extension<T>(List<T> l) { void M<U>() }` → `Ext.M<2>(this List)`);
+  a receiver `ref Foo f` gives `this ref Foo`, as the classic `ref this Foo f` does. An instance property gets the receiver in
+  brackets (`Ext.Count(this Foo)`; there is no classic form). Static members (and operators) of
+  a block have no receiver and are keyed as members of the static class.
 - Methods `Type.Name<arity>(T1, T2)` (arity shown when > 0); constructors `Type.<init>(…)`;
   static constructor `Type.<cinit>()`; properties `Type.Name`; indexers `Type.this[int]`;
   operators `Type.operator +(T, T)`; conversions `Type.implicit operator X(Y)`; explicit
@@ -70,4 +78,5 @@ finalizers, events, fields, auto-properties of classes, structs and records, del
 - Parameter types: as written minus namespaces and alias qualifiers, generic arguments erased
   (`List<int>?` → `List?`), `?`, arrays (`[]`, `[,]`) and pointers kept, a tuple's element
   names dropped (`(int, string)`); modifiers `ref`, `out`, `in`, `params`, `this`,
-  `ref readonly` kept in front, `scoped` dropped.
+  `ref readonly` kept in front (`this` first: `ref this Span<int> s` → `this ref Span`),
+  `scoped` dropped.
