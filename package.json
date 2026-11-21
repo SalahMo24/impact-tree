@@ -29,6 +29,7 @@
     "demo:build": "node scripts/demo-repo.js",
     "test": "node test/run.js",
     "test:quick": "node test/run.js --tier quick",
+    "t": "node test/run.js",
     "test:serial": "node test/run.js --serial",
     "record": "node --max-old-space-size=8192 test/record-fixture.js",
     "test:fixtures": "node --max-old-space-size=8192 test/run-fixtures.js",
@@ -44,7 +45,7 @@
     "test:loadts": "node test/load-typescript.test.js",
     "test:baseref": "node test/base-ref.test.js",
     "test:smoke": "node --test test/loading.test.js test/review-findings-smoke.test.js test/review-preview-smoke.test.js",
-    "lint": "eslint src scripts/drive.js scripts/setup.js scripts/check.js scripts/check-baseline.js scripts/pr-link.js scripts/local-notes.js scripts/check-public.js",
+    "lint": "eslint src scripts/drive.js scripts/setup.js scripts/check.js scripts/check-baseline.js scripts/pr-link.js scripts/local-notes.js scripts/check-public.js scripts/agent-guard.js",
     "typecheck": "tsc -p jsconfig.json"
   },
   "activationEvents": [

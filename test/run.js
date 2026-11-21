@@ -11,6 +11,7 @@
 //   --serial          Same as --concurrency 1.
 //   --tier quick|full quick = the quick tier only; full = every file. Default: full.
 //   --only SUBSTRING  Keep only manifest files whose path contains SUBSTRING (repeatable).
+//   NAME…             Bare arguments are --only values: `npm run t -- entry-points drive-guards`.
 //   --file PATH       Run an ad-hoc file instead of the manifest (repeatable); it is not timed.
 //   --deadline-s N    Wall-clock limit per file. Unit: seconds. Default: 120. On expiry the child's
 //                     process group is killed and the file is reported HUNG.
@@ -101,6 +102,7 @@ function parseArgs(argv) {
     else if (flag === '--file') opts.files.push(value());
     else if (flag === '--deadline-s') opts.deadlineS = positiveInt(flag, value(), 24 * 3600);
     else if (flag === '--verbose') opts.verbose = true;
+    else if (!flag.startsWith('-')) opts.only.push(flag);
     else throw new Error(`unknown option ${flag}`);
   }
   return opts;
