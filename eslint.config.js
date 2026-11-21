@@ -59,9 +59,10 @@ module.exports = [
       'prefer-const': 'error',
     },
   },
-  // The UI driver (a development tool, not shipped). Its page callbacks run in the editor's window.
+  // Development tools (not shipped): the UI driver, whose page callbacks run in the editor's
+  // window, and the setup and check commands.
   {
-    files: ['scripts/drive.js'],
+    files: ['scripts/drive.js', 'scripts/setup.js', 'scripts/check.js', 'scripts/check-baseline.js', 'scripts/pr-link.js', 'scripts/local-notes.js', 'scripts/check-public.js'],
     languageOptions: { sourceType: 'commonjs', ecmaVersion: 2022, globals: { ...globals.node, ...globals.browser } },
     rules: {
       ...js.configs.recommended.rules,

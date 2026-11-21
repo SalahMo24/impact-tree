@@ -16,6 +16,14 @@
   "main": "./src/extension.js",
   "scripts": {
     "vscode:prepublish": "node scripts/write-telemetry-key.js",
+    "prepare": "node scripts/setup.js --hooks-only",
+    "setup": "node scripts/setup.js",
+    "check": "node scripts/check.js",
+    "check:baseline": "node scripts/check-baseline.js",
+    "check:public": "node scripts/check-public.js",
+    "oracle": "bash scripts/oracle.sh",
+    "pr-link": "node scripts/pr-link.js",
+    "local-notes": "node scripts/local-notes.js",
     "package": "node scripts/package.js",
     "analyze": "node --max-old-space-size=8192 src/cli.js",
     "demo:build": "node scripts/demo-repo.js",
@@ -37,7 +45,7 @@
     "test:loadts": "node test/load-typescript.test.js",
     "test:baseref": "node test/base-ref.test.js",
     "test:smoke": "node --test test/loading.test.js test/review-findings-smoke.test.js test/review-preview-smoke.test.js",
-    "lint": "eslint src scripts/drive.js",
+    "lint": "eslint src scripts/drive.js scripts/setup.js scripts/check.js scripts/check-baseline.js scripts/pr-link.js scripts/local-notes.js scripts/check-public.js",
     "typecheck": "tsc -p jsconfig.json"
   },
   "activationEvents": [

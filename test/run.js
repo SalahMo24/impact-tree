@@ -178,24 +178,39 @@ function failingLines(output) {
 }
 
 /**
- * The environment for children. On macOS with the /usr/bin/git shim first on PATH: PATH led by a
- * temporary directory with `git` linked to the real binary, removed when the runner exits.
- * Anything else, or any failure to set it up: the runner's own environment, unchanged.
+ * The runner's environment without git's repository variables (GIT_DIR, GIT_WORK_TREE,
+ * GIT_INDEX_FILE…). A git hook sets them; inherited, they make every `git init`/`git config`/
+ * `git commit` a test runs in its temporary repository act on the real repository instead (a hook's
+ * test run once set core.bare and a test user.name there).
+ * @returns {NodeJS.ProcessEnv}
+ */
+function baseEnv() {
+  /** @type {NodeJS.ProcessEnv} */
+  const env = {};
+  for (const [k, v] of Object.entries(process.env)) if (!/^GIT_/.test(k)) env[k] = v;
+  return env;
+}
+
+/**
+ * The environment for children: baseEnv(), and on macOS with the /usr/bin/git shim first on PATH,
+ * PATH led by a temporary directory with `git` linked to the real binary, removed when the runner
+ * exits. Any failure to set up the link: baseEnv() unchanged.
  * @returns {NodeJS.ProcessEnv}
  */
 function childEnv() {
-  if (process.platform !== 'darwin') return process.env;
+  const env = baseEnv();
+  if (process.platform !== 'darwin') return env;
   try {
     const onPath = execFileSync('/usr/bin/which', ['git'], { encoding: 'utf8' }).trim();
-    if (onPath !== '/usr/bin/git') return process.env;
+    if (onPath !== '/usr/bin/git') return env;
     const real = execFileSync('/usr/bin/xcrun', ['-f', 'git'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-    if (!real || !fs.existsSync(real)) return process.env;
+    if (!real || !fs.existsSync(real)) return env;
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'impact-tree-test-git-'));
     fs.symlinkSync(real, path.join(dir, 'git'));
     process.on('exit', () => fs.rmSync(dir, { recursive: true, force: true }));
-    return { ...process.env, PATH: `${dir}${path.delimiter}${process.env.PATH || ''}` };
+    return { ...env, PATH: `${dir}${path.delimiter}${env.PATH || ''}` };
   } catch {
-    return process.env;
+    return env;
   }
 }
 /** @type {NodeJS.ProcessEnv|null} */

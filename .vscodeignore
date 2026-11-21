@@ -43,3 +43,4 @@ scripts/**
 eslint-local/**
 eslint.config.js
 jsconfig.json
+.githooks/**

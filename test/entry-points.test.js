@@ -365,3 +365,9 @@ test('facts: Next.js apps are found by a next dependency or a next.config, per p
   const none = gatherEntryFacts({ repo: '/r', languages: new Set(['ts']), readRel: (rel) => (rel === 'package.json' ? '{}' : null), git: { tryRaw: () => 'package.json' } });
   assert.equal(none.facts.nextRoots.size, 0);
 });
+
+test('entry facts: an unknown language key is an error, not an empty answer', () => {
+  const { gatherEntryFacts } = require('../src/engine/entry-facts');
+  const git = { tryRaw: () => 'package.json' };
+  assert.throws(() => gatherEntryFacts({ repo: '/r', git, languages: new Set(['typescript']), readRel: () => '{}' }), /unknown language 'typescript'/);
+});
