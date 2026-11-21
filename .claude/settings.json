@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f \"$CLAUDE_PROJECT_DIR/scripts/agent-guard.js\" ] && node \"$CLAUDE_PROJECT_DIR/scripts/agent-guard.js\" || true",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

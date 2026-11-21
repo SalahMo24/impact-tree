@@ -37,6 +37,17 @@ Tracked files name no machine paths, user names or the local test codebases the 
 against. Write `<clone>`, "the test repositories", or point to `npm run -s local-notes`;
 `check:public` (in the pre-commit hook) enforces it.
 
+## Sessions stay short
+
+Every turn re-reads the whole conversation, so a long session costs more per step than a fresh
+one: calls made above 200K tokens of context were about half of all agent cost.
+
+- One task per session. When it is pushed or merged, the next task starts in a new session.
+- Past about 150K tokens with work left: write the state into the task's plan file (done, next
+  step, open questions) and continue in a fresh session from it.
+- Briefs point at code by `file:line` ranges, ask for independent reads in one batch, and name the
+  model per the list above.
+
 ## Status and notes
 
 One place for a task's status: its plan file. Notes elsewhere point to it instead of repeating it.

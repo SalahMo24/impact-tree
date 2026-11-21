@@ -20,6 +20,7 @@
     "scripts/check-baseline.js",
     "scripts/pr-link.js",
     "scripts/local-notes.js",
-    "scripts/check-public.js"
+    "scripts/check-public.js",
+    "scripts/agent-guard.js"
   ]
 }

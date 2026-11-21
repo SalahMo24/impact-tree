@@ -31,6 +31,7 @@ runs the quick tests (~16 s). `--no-verify` skips them for one commit or push; s
 
 | Command | Use |
 |---|---|
+| `npm run t -- <name…>` | the test files whose path contains each name: one line per file (pass/fail counts, time), failing lines included; `--verbose` prints a failing file's whole output |
 | `npm test` | the full suite, parallel, with a per-file deadline |
 | `npm run test:quick` | the quick tier |
 | `node test/run.js --only <substring>` | the manifest files whose path contains it (repeatable) |
@@ -38,7 +39,10 @@ runs the quick tests (~16 s). `--no-verify` skips them for one commit or push; s
 
 A new test file goes in `test/suite.js` (SUITE, or EXCLUDED with a reason); the runner fails on an
 unlisted file. Run tests through `test/run.js`, not bare `node --test`: the runner sets deadlines,
-heap limits and a fast `git` on macOS. A test file over ~5–10 s is too slow; see
+heap limits and a fast `git` on macOS, and strips git's hook variables. A PreToolUse hook
+(`.claude/settings.json`, `scripts/agent-guard.js`) refuses a bare test-file run and names the
+`npm run t` command instead; `IT_RAW_TEST=1` in front of the command runs a file directly on purpose.
+A test file over ~5–10 s is too slow; see
 [working-agreements.md](working-agreements.md).
 
 ## Oracles and end-to-end runs
