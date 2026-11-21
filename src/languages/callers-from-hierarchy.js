@@ -12,6 +12,7 @@
  * @typedef {import('../engine/caller-contract').CallerRow} CallerRow
  * @typedef {import('../engine/caller-contract').CallerAnswer} CallerAnswer
  * @typedef {import('../engine/caller-contract').CallerState} CallerState
+ * @typedef {import('./types').CallerTarget} CallerTarget
  */
 
 /**
@@ -251,20 +252,22 @@ function mergeLabel(row, a, b) {
 /**
  * The language's caller targets for `file`/`pos`: other positions whose incoming calls are
  * also this target's callers, de-duplicated, without `pos` itself, up to MAX_CALLER_TARGETS.
+ * A target's `via`/`text` (C#: "through IFoo") is kept with it. Resolves; a language whose
+ * lookup rejects gives no targets.
  * @param {import('./types').EditorCallerExtras|null} extras
  * @param {string} file @param {number} pos
- * @returns {{ targets: Array<{ file: string, pos: number }>, notAsked: number }}
+ * @returns {Promise<{ targets: CallerTarget[], notAsked: number }>}
  */
-function callerTargetsOf(extras, file, pos) {
-  const given = extras && extras.callerTargets ? extras.callerTargets(file, pos) || [] : [];
+async function callerTargetsOf(extras, file, pos) {
+  const given = extras && extras.callerTargets ? (await extras.callerTargets(file, pos)) || [] : [];
   const seen = new Set([`${file}#${pos}`]);
-  /** @type {Array<{ file: string, pos: number }>} */
+  /** @type {CallerTarget[]} */
   const all = [];
   for (const t of given) {
     const id = `${t.file}#${t.pos}`;
     if (seen.has(id)) continue;
     seen.add(id);
-    all.push({ file: t.file, pos: t.pos });
+    all.push({ file: t.file, pos: t.pos, ...(t.via ? { via: t.via, text: t.text || '' } : {}) });
   }
   return { targets: all.slice(0, MAX_CALLER_TARGETS), notAsked: Math.max(0, all.length - MAX_CALLER_TARGETS) };
 }
@@ -315,7 +318,8 @@ function callerTargetsOf(extras, file, pos) {
  *   de-duplication); `targetsAsked`: caller-target queries asked.
  */
 async function applyCallerExtras(hierarchy, { extras, query, file, pos, withTests, askAt, isStale = () => false }) {
-  const { targets, notAsked } = callerTargetsOf(extras, file, pos);
+  const { targets, notAsked } = await callerTargetsOf(extras, file, pos);
+  if (isStale()) return { stale: true };
   /** @type {string[]} */
   const reasons = [];
   let retryable = true;
@@ -342,8 +346,11 @@ async function applyCallerExtras(hierarchy, { extras, query, file, pos, withTest
     targetsAsked = targets.length;
     const answers = await Promise.all(targets.map((t) => ask(t.file, t.pos).catch((e) => /** @type {HierarchyQuery} */ ({ ready: false, reason: reasonOf(e), retryable: isRetryable(e) }))));
     if (isStale()) return { stale: true };
-    for (const a of answers) {
-      if (a.ready) { lists.push(a.rows); continue; }
+    for (const [n, a] of answers.entries()) {
+      const { via, text } = targets[n];
+      // A labelled target's rows carry its label (C-D5); `mergeCallerRows` drops it from a
+      // caller the main query lists too.
+      if (a.ready) { lists.push(via ? a.rows.map((r) => ({ ...r, via, text })) : a.rows); continue; }
       // A target's `null`: no calls there, as the editor's `[]` for it (step 2).
       if (a.reason === NO_INCOMING_RESULT) continue;
       reasons.push(`at another position of its callers: ${a.reason || 'caller query did not complete'}`);

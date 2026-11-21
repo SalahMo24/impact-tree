@@ -1,0 +1,400 @@
+'use strict';
+// C#'s editor callers (Part C, C5; src/languages/csharp/editor-extras.js and the provider's
+// probe): Roslyn's call hierarchy faked, as C0b measured it (`Impl.M` and `IFoo.M` disjoint,
+// top-level callers named `Program.<top-level-statements-entry-point>`, no item for a primary
+// constructor, method groups listed as calls), applied through the shared `applyCallerExtras`
+// as the editor's resolver and the harness apply it.
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const { createCsharpSyntacticIndex } = require('../src/languages/csharp/syntactic-index');
+const { csharpOutline } = require('../src/languages/csharp/outline');
+const {
+  createCsharpEditorExtras, EMPTY_ANSWER_REASON, VALUE_USE_REASON, NOT_COMPUTED, PRIMARY_CONSTRUCTOR_REASON, NOT_LOADED_REASON, isCsharpCallSite,
+  PROPERTY_REASON, STALE_TARGET_REASON, SERVER_CHANGED_REASON, shortCallerName,
+} = require('../src/languages/csharp/editor-extras');
+const { createCsharpProvider, createServerStateTracker, NO_HIERARCHY_NOTE } = require('../src/languages/csharp/provider');
+const { createHierarchyResolver } = require('./lsp-harness/harness-languages');
+
+const ROOT = '/repo';
+const LIB = `namespace Lib;
+public interface IFoo { int M(int x); }
+public class Impl : IFoo
+{
+    public int M(int x) => x;
+    public void Use() { M(1); }
+}
+public class Svc(IFoo foo) { public void Run() { foo.M(1); } }
+public static class Handlers
+{
+    public static void H() { }
+    public static void Reg() { Map(H); }
+    static void Map(System.Action a) { }
+}
+public sealed class Ctor { public Ctor(int a) { } }
+public class Local
+{
+    static readonly int F = Helper.Twice(2);
+    public int Run() { int Inner() => Helper.Twice(1); return Inner(); }
+    public int Doubled { get { return Helper.Twice(3); } }
+}
+public static class Helper { public static int Twice(int x) => x * 2; }
+`;
+const PROGRAM = `using Lib;
+var i = new Impl();
+i.M(5);
+new Svc(i).Run();
+`;
+const FILES = { 'Lib/Shapes.cs': LIB, 'App/Program.cs': PROGRAM };
+const abs = (/** @type {string} */ rel) => path.join(ROOT, rel);
+const textOf = (/** @type {string} */ file) => /** @type {Record<string, string>} */ (FILES)[path.relative(ROOT, file)] ?? null;
+const index = createCsharpSyntacticIndex(Object.entries(FILES).map(([p, text]) => ({ path: p, text })), { root: ROOT, scope: 'test' });
+
+/** The outline member `name` (of `member` kind) in `rel`: its name position. */
+function posOf(/** @type {string} */ rel, /** @type {string} */ member, /** @type {string} */ name, /** @type {string|null} */ typeName = null) {
+  /** @type {number|null} */
+  let found = null;
+  const walk = (/** @type {any[]} */ list) => {
+    for (const s of list) {
+      if (s.csharp && s.csharp.member === member && (s.csharp.decl ? s.csharp.decl.name : s.csharp.typeName || s.name) === name && (!typeName || s.csharp.typeName === typeName)) found = s.selectionRange.start;
+      if (s.children) walk(s.children);
+    }
+  };
+  walk(/** @type {any[]} */ (csharpOutline(/** @type {string} */ (textOf(abs(rel))), { fileName: path.basename(rel) })));
+  assert.ok(found != null, `${rel}: no ${member} ${name}`);
+  return /** @type {number} */ (found);
+}
+
+const LIB_FILE = abs('Lib/Shapes.cs');
+const PROGRAM_FILE = abs('App/Program.cs');
+const at = (/** @type {string} */ text, /** @type {string} */ needle, offset = 0) => { const i = text.indexOf(needle); assert.ok(i >= 0, needle); return i + offset; };
+const site = (/** @type {string} */ text, /** @type {string} */ needle, /** @type {string} */ name) => { const s = at(text, needle) + needle.indexOf(name); return { start: s, end: s + name.length }; };
+
+/** A caller row as Roslyn's services give it. */
+const row = (/** @type {string} */ file, /** @type {string} */ label, /** @type {number} */ pos, /** @type {Array<{ start: number, end: number }>} */ callSites) => ({ file, label, pos, test: false, sites: callSites.length, callSites });
+
+/**
+ * Fake services: an item at each position in `answers` (`null`: no item), its incoming calls.
+ * @param {Map<string, any[]|null>} answers keyed `file#pos`
+ */
+function fakeServices(answers) {
+  const asked = /** @type {string[]} */ ([]);
+  return {
+    asked,
+    available: async () => ({ ok: true }),
+    async prepareCallHierarchy(/** @type {any} */ doc, /** @type {number} */ pos) {
+      const id = `${doc.file}#${pos}`;
+      asked.push(id);
+      return answers.has(id) && answers.get(id) !== null ? [{ id }] : null;
+    },
+    async incomingCalls(/** @type {any} */ item) { return answers.get(item.id) || []; },
+    async references() { return []; },
+  };
+}
+
+const IMPL_M = posOf('Lib/Shapes.cs', 'method', 'M', 'Impl');
+const IFOO_M = posOf('Lib/Shapes.cs', 'method', 'M', 'IFoo');
+const USE = posOf('Lib/Shapes.cs', 'method', 'Use', 'Impl');
+const RUN = posOf('Lib/Shapes.cs', 'method', 'Run', 'Svc');
+
+function resolverWith(/** @type {Map<string, any[]|null>} */ answers, extrasOptions = {}) {
+  const services = fakeServices(answers);
+  const extras = createCsharpEditorExtras({ readText: textOf, repoRoot: ROOT, indexOf: async () => index, ...extrasOptions });
+  return { services, resolver: createHierarchyResolver(/** @type {any} */ (services), { extras }) };
+}
+
+test('an implementation: the interface member is asked too, its rows labelled "through IFoo"; top-level callers are the module row', async () => {
+  const answers = new Map([
+    [`${LIB_FILE}#${IMPL_M}`, [
+      row(LIB_FILE, 'Impl.Use()', USE, [site(LIB, '{ M(1); }', 'M')]),
+      row(PROGRAM_FILE, 'Program.<top-level-statements-entry-point>', 0, [site(PROGRAM, 'i.M(5)', 'M')]),
+    ]],
+    // Disjoint in Roslyn; Impl.Use is listed here too only to show a caller reached both ways.
+    [`${LIB_FILE}#${IFOO_M}`, [
+      row(LIB_FILE, 'Svc.Run()', RUN, [site(LIB, 'foo.M(1)', 'M')]),
+      row(LIB_FILE, 'Impl.Use()', USE, [site(LIB, '{ M(1); }', 'M')]),
+    ]],
+  ]);
+  const { services, resolver } = resolverWith(answers);
+  const answer = await resolver.incomingWithStatus(LIB_FILE, IMPL_M);
+  assert.deepEqual(services.asked.sort(), [`${LIB_FILE}#${IFOO_M}`, `${LIB_FILE}#${IMPL_M}`].sort());
+  const by = Object.fromEntries(answer.callers.map((c) => [c.label, c]));
+  assert.deepEqual(Object.keys(by).sort(), ['Impl.Use()', 'Program.cs', 'Svc.Run()']);
+  assert.equal(by['Svc.Run()'].via, 'interface');
+  assert.equal(by['Svc.Run()'].text, 'through IFoo');
+  assert.equal(by['Impl.Use()'].via, undefined, 'reached both ways: unlabelled');
+  assert.equal(by['Program.cs'].pos, posOf('App/Program.cs', 'top-level', 'Program.cs'), 'top-level caller: the module row, as the syntax index lists it');
+  assert.equal(answer.complete, false, 'through an interface: always incomplete');
+  assert.match(String(answer.reason), /implements `IFoo\.M`/);
+});
+
+test('an empty answer for an implementing method is incomplete (the empty-answer guard)', async () => {
+  const { resolver } = resolverWith(new Map([[`${LIB_FILE}#${IMPL_M}`, []], [`${LIB_FILE}#${IFOO_M}`, []]]));
+  const answer = await resolver.incomingWithStatus(LIB_FILE, IMPL_M);
+  assert.equal(answer.complete, false);
+  assert.ok(String(answer.reason).includes(EMPTY_ANSWER_REASON));
+});
+
+test('a plain method with callers is complete; without the index, an instance method is incomplete', async () => {
+  const reg = posOf('Lib/Shapes.cs', 'method', 'Reg', 'Handlers');
+  const answers = new Map([[`${LIB_FILE}#${USE}`, [row(PROGRAM_FILE, 'Program.<top-level-statements-entry-point>', 0, [])]]]);
+  const ok = await resolverWith(answers).resolver.incomingWithStatus(LIB_FILE, USE);
+  assert.equal(ok.complete, true, String(ok.reason));
+  const noIndex = await resolverWith(answers, { indexOf: async () => null }).resolver.incomingWithStatus(LIB_FILE, USE);
+  assert.equal(noIndex.complete, false);
+  assert.match(String(noIndex.reason), /syntax index is not available/);
+  assert.ok(reg > 0);
+});
+
+test('a method group is a value use: its caller is dropped and the answer incomplete', async () => {
+  const h = posOf('Lib/Shapes.cs', 'method', 'H', 'Handlers');
+  const reg = posOf('Lib/Shapes.cs', 'method', 'Reg', 'Handlers');
+  assert.equal(isCsharpCallSite(LIB, site(LIB, 'Map(H)', 'H'), 'H'), false);
+  assert.equal(isCsharpCallSite(LIB, site(LIB, '{ M(1); }', 'M'), 'M'), true);
+  const { resolver } = resolverWith(new Map([[`${LIB_FILE}#${h}`, [row(LIB_FILE, 'Handlers.Reg()', reg, [site(LIB, 'Map(H)', 'H')])]]]));
+  const answer = await resolver.incomingWithStatus(LIB_FILE, h);
+  assert.deepEqual(answer.callers, []);
+  assert.equal(answer.complete, false);
+  assert.ok(String(answer.reason).includes(VALUE_USE_REASON));
+});
+
+test('a primary constructor is not asked: the syntax index\'s callers, incomplete', async () => {
+  const ctor = posOf('Lib/Shapes.cs', 'primary-constructor', 'Svc');
+  const { services, resolver } = resolverWith(new Map());
+  const answer = await resolver.incomingWithStatus(LIB_FILE, ctor);
+  assert.deepEqual(services.asked, []);
+  assert.deepEqual(answer.callers.map((c) => [c.label, c.pos]), [['Program.cs', posOf('App/Program.cs', 'top-level', 'Program.cs')]]);
+  assert.equal(answer.complete, false);
+  assert.ok(String(answer.reason).startsWith(PRIMARY_CONSTRUCTOR_REASON));
+});
+
+test('top-level statements are never asked of Roslyn: not computed', async () => {
+  const top = posOf('App/Program.cs', 'top-level', 'Program.cs');
+  const { services, resolver } = resolverWith(new Map());
+  const state = await resolver.callerState(PROGRAM_FILE, top);
+  assert.deepEqual(services.asked, []);
+  assert.equal(state.state, 'unknown');
+  assert.equal(state.reason, NOT_COMPUTED['top-level']);
+});
+
+test('a constructor is asked of Roslyn (not "not computed")', async () => {
+  const ctor = posOf('Lib/Shapes.cs', 'constructor', 'Ctor');
+  const { services, resolver } = resolverWith(new Map([[`${LIB_FILE}#${ctor}`, [row(LIB_FILE, 'Impl.Use()', USE, [])]]]));
+  const answer = await resolver.incomingWithStatus(LIB_FILE, ctor);
+  assert.deepEqual(services.asked, [`${LIB_FILE}#${ctor}`]);
+  assert.equal(answer.complete, true, String(answer.reason));
+  assert.equal(answer.callers.length, 1);
+});
+
+test('queries that start together share one session index build', async () => {
+  const { sessionIndex } = require('../src/languages/csharp/editor-extras');
+  /** @type {string[]} */
+  const traces = [];
+  const root = path.join(__dirname, '..');
+  await Promise.all([sessionIndex(root, (m) => traces.push(m)), sessionIndex(root, (m) => traces.push(m))]);
+  assert.equal(traces.filter((t) => /syntax index/.test(t)).length, 1, traces.join('\n'));
+});
+
+test('no item at a listed member: the file may not be in a loaded project (not retryable)', async () => {
+  const { resolver } = resolverWith(new Map([[`${LIB_FILE}#${USE}`, null]]));
+  const answer = await resolver.incomingWithStatus(LIB_FILE, USE);
+  assert.equal(answer.complete, false);
+  assert.equal(answer.reason, NOT_LOADED_REASON);
+  assert.ok(!answer.retryable);
+});
+
+// ---- caller rows through the outline (review M1, M2) -----------------------------------------
+
+test('M1: a caller row is named and placed as the outline member, never with Roslyn\'s qualified name', async () => {
+  // Roslyn's form as VS Code labels it: the containing type's full name, then the item's name.
+  const answers = new Map([[`${LIB_FILE}#${IMPL_M}`, [row(LIB_FILE, 'Lib.Impl.Impl.Use()', USE, [site(LIB, '{ M(1); }', 'M')])]], [`${LIB_FILE}#${IFOO_M}`, [
+    row(LIB_FILE, 'Lib.Svc.Svc.Run()', RUN, [site(LIB, 'foo.M(1)', 'M')]),
+  ]]]);
+  const answer = await resolverWith(answers).resolver.incomingWithStatus(LIB_FILE, IMPL_M);
+  assert.deepEqual(answer.callers.map((c) => [c.label, c.pos]).sort(), [['Impl.Use()', USE], ['Svc.Run()', RUN]]);
+  const { collectCsharpSymbols } = require('../src/languages/csharp/provider');
+  const keys = collectCsharpSymbols(/** @type {any} */ (csharpOutline(LIB, { fileName: 'Shapes.cs' })), LIB).map((s) => s.label);
+  for (const c of answer.callers) assert.ok(keys.includes(c.label), `${c.label} is the changed-row label`);
+});
+
+test('M1/M2: a local function and an accessor are their member\'s rows; a row in no member keeps a short name', async () => {
+  const twice = posOf('Lib/Shapes.cs', 'method', 'Twice', 'Helper');
+  const run = posOf('Lib/Shapes.cs', 'method', 'Run', 'Local');
+  const doubled = posOf('Lib/Shapes.cs', 'property', 'Doubled', 'Local');
+  const answers = new Map([[`${LIB_FILE}#${twice}`, [
+    row(LIB_FILE, 'Lib.Local.Local.F', at(LIB, 'F = Helper'), [site(LIB, 'F = Helper.Twice(2)', 'Twice')]),
+    row(LIB_FILE, 'Lib.Local.Local.Inner()', at(LIB, 'Inner() =>'), [site(LIB, '=> Helper.Twice(1)', 'Twice')]),
+    row(LIB_FILE, 'Lib.Local.Local.Run()', run, []),
+    row(LIB_FILE, 'Lib.Local.Local.Doubled.get', at(LIB, 'get { return'), [site(LIB, 'return Helper.Twice(3)', 'Twice')]),
+  ]]]);
+  const answer = await resolverWith(answers).resolver.incomingWithStatus(LIB_FILE, twice);
+  const by = Object.fromEntries(answer.callers.map((c) => [c.label, c]));
+  assert.deepEqual(Object.keys(by).sort(), ['Local.Doubled', 'Local.F', 'Local.Run()']);
+  assert.equal(by['Local.Run()'].pos, run, 'the local function is its method');
+  assert.equal(by['Local.Run()'].sites, 1, 'the two rows merged, their sites joined');
+  assert.equal(by['Local.Doubled'].pos, doubled, 'the accessor is its property, at the property\'s name');
+  assert.equal(by['Local.F'].pos, at(LIB, 'F = Helper'), 'no outline member: Roslyn\'s position');
+  assert.equal(answer.complete, true, String(answer.reason));
+  // Asked at the mapped position, the property is a property: incomplete (calls through a base or interface property).
+  const prop = await resolverWith(new Map([[`${LIB_FILE}#${doubled}`, []]])).resolver.incomingWithStatus(LIB_FILE, doubled);
+  assert.equal(prop.complete, false);
+  assert.equal(prop.reason, PROPERTY_REASON);
+});
+
+test('shortCallerName: no namespaces, no parameters', () => {
+  assert.equal(shortCallerName('Acme.Tv.TvManager.TvManager.GetChannels(Acme.Model.Tv.ChannelQuery, System.Threading.CancellationToken)'), 'TvManager.GetChannels');
+  assert.equal(shortCallerName('N.BaseNfoParser<T>.BaseNfoParser<T>.F'), 'BaseNfoParser<T>.F');
+  assert.equal(shortCallerName('N.Box<System.Int32>.Box<System.Int32>.F'), 'Box<Int32>.F');
+  assert.equal(shortCallerName('M()'), 'M');
+});
+
+// ---- the session index against the current text (review M3) ----------------------------------
+
+test('M3: an interface member that moved since the index was built is not asked: incomplete with a reason', async () => {
+  const moved = LIB.replace('public interface IFoo { int M(int x); }', 'public interface IFoo { int Pad(int y); int M(int x); }');
+  const old = createCsharpSyntacticIndex([{ path: 'Lib/Shapes.cs', text: LIB }], { root: ROOT, scope: 'test' });
+  const implM = at(moved, 'public int M(int x) => x;', 'public int '.length);
+  const services = fakeServices(new Map([[`${LIB_FILE}#${implM}`, [row(LIB_FILE, 'Lib.Impl.Impl.Use()', at(moved, 'Use()'), [site(moved, '{ M(1); }', 'M')])]]]));
+  const extras = createCsharpEditorExtras({ readText: (f) => (f === LIB_FILE ? moved : textOf(f)), repoRoot: ROOT, indexOf: async () => old });
+  const answer = await createHierarchyResolver(/** @type {any} */ (services), { extras }).incomingWithStatus(LIB_FILE, implM);
+  assert.deepEqual(services.asked, [`${LIB_FILE}#${implM}`], 'the stale position (now `Pad`) is not asked');
+  assert.equal(answer.complete, false);
+  assert.ok(String(answer.reason).includes(STALE_TARGET_REASON), String(answer.reason));
+});
+
+test('M3: by name among overloads is ambiguous: no target, a reason (never complete)', async () => {
+  const before = 'namespace L;\npublic interface IBar { void M(int x); }\npublic class Two : IBar\n{\n    public void M(string s) { }\n    public void M(int x) { }\n}\n';
+  const after = before.replace('{\n    public void M(string', '{\n    public void Pad() { }\n    public void M(string');
+  const file = abs('L/Two.cs');
+  const idx = createCsharpSyntacticIndex([{ path: 'L/Two.cs', text: before }], { root: ROOT, scope: 'test' });
+  const mInt = at(after, 'M(int x) { }');
+  const direct = idx.dispatchOf({ file, pos: mInt, name: 'M', className: 'Two' });
+  assert.deepEqual(direct && direct.targets, []);
+  assert.match(String(direct && direct.reasons), /2 members named `M`/);
+  const services = fakeServices(new Map([[`${file}#${mInt}`, []]]));
+  const extras = createCsharpEditorExtras({ readText: (f) => (f === file ? after : null), repoRoot: ROOT, indexOf: async () => idx });
+  const answer = await createHierarchyResolver(/** @type {any} */ (services), { extras }).incomingWithStatus(file, mInt);
+  assert.equal(answer.complete, false);
+  assert.match(String(answer.reason), /2 members named `M`/);
+});
+
+test('M3: the session index is rebuilt after an uncommitted edit (same HEAD)', async () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const { execFileSync } = require('node:child_process');
+  const { sessionIndex, recheckSessionIndexes } = require('../src/languages/csharp/editor-extras');
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-cs-index-')));
+  try {
+    const git = (/** @type {string[]} */ args) => execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], { cwd: dir, stdio: 'ignore' });
+    fs.writeFileSync(path.join(dir, 'A.cs'), 'namespace N;\npublic class A { public void M() { } }\n');
+    git(['init', '-q']);
+    git(['add', '-A']);
+    git(['commit', '-qm', 'base']);
+    /** @type {string[]} */
+    const traces = [];
+    const trace = (/** @type {string} */ m) => traces.push(m);
+    const builds = () => traces.filter((t) => /index for dispatch built/.test(t)).length;
+    const first = await sessionIndex(dir, trace);
+    recheckSessionIndexes();
+    assert.equal(await sessionIndex(dir, trace), first, 'nothing changed: the same index');
+    const edited = 'namespace N;\npublic class A\n{\n    public void Pad() { }\n    public void M() { }\n}\n';
+    fs.writeFileSync(path.join(dir, 'A.cs'), edited);
+    recheckSessionIndexes();
+    const second = await sessionIndex(dir, trace);
+    assert.notEqual(second, first);
+    assert.equal(builds(), 2, traces.join('\n'));
+    assert.deepEqual(second.symbolAt(path.join(dir, 'A.cs'), edited.indexOf('M()')), { className: 'A', name: 'M' });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---- the provider's probe (C-D3 as C0b changed it) ------------------------------------------
+
+const BASE = 'namespace N;\npublic class A\n{\n    public int Run(int a) { return 1; }\n}\n';
+const HEAD = 'namespace N;\npublic class A\n{\n    public int Run(int a, string b) { return 2; }\n}\n';
+const ctxWith = (/** @type {any} */ hooks, /** @type {string[]} */ warnings) => /** @type {any} */ ({
+  repo: '/nowhere', files: [{ path: 'src/A.cs', status: 'modified' }],
+  baseTexts: new Map([['src/A.cs', BASE]]), headTexts: new Map([['src/A.cs', HEAD]]),
+  changedRanges: { 'src/A.cs': [[4, 4]] }, deletions: {},
+  warnings, unanalysable: new Map(), notAnalysedFiles: new Map(), report: () => {}, hooks,
+  unit: { component: 'pull request', projectRoot: '' }, syntacticSources: [{ path: 'src/A.cs', text: HEAD }],
+});
+
+test('no provider → the syntax path with a note, asked again at the next analysis', async () => {
+  let probes = 0;
+  const provider = createCsharpProvider({ probe: async () => { probes++; return { ok: false, reason: 'the C# extension (ms-dotnettools.csharp) is not installed' }; } });
+  const editorResolver = { kind: 'editor' };
+  const hooks = { services: {}, makeResolver: () => editorResolver };
+  for (let n = 0; n < 2; n++) {
+    /** @type {string[]} */
+    const warnings = [];
+    const answer = await provider.prepare(ctxWith(hooks, warnings));
+    assert.equal(answer.units.length, 1);
+    assert.notEqual(answer.units[0].resolver, editorResolver);
+    assert.equal(/** @type {any} */ (answer.units[0].resolver).callersLowerBound, true, 'the syntax index');
+    assert.ok(warnings.some((w) => w.startsWith(NO_HIERARCHY_NOTE)), warnings.join('\n'));
+  }
+  assert.equal(probes, 2, 'a negative answer is asked again');
+});
+
+test('a positive probe is kept: the editor\'s resolver, the outline\'s members', async () => {
+  let probes = 0;
+  const provider = createCsharpProvider({ probe: async () => { probes++; return { ok: true }; } });
+  const editorResolver = { kind: 'editor' };
+  const hooks = { services: {}, makeResolver: () => editorResolver };
+  for (let n = 0; n < 2; n++) {
+    /** @type {string[]} */
+    const warnings = [];
+    const answer = await provider.prepare(ctxWith(hooks, warnings));
+    assert.equal(answer.units[0].resolver, editorResolver);
+    assert.deepEqual(answer.units[0].changed.map((/** @type {any} */ c) => c.key), ['A.Run(int)']);
+    assert.ok(!warnings.some((w) => w.startsWith(NO_HIERARCHY_NOTE)));
+  }
+  assert.equal(probes, 1);
+  // Without services (the CLI) the syntax path, never the probe.
+  const cli = await provider.prepare(ctxWith({}, []));
+  assert.equal(/** @type {any} */ (cli.units[0].resolver).callersLowerBound, true);
+  assert.equal(probes, 1);
+});
+
+test('M4: a server state change after a positive probe: the next analysis probes again; answers meanwhile are incomplete', async () => {
+  let probes = 0;
+  let changes = 0;
+  const provider = createCsharpProvider({ probe: async () => { probes++; return { ok: true }; }, serverChanges: () => changes });
+  const editorResolver = { kind: 'editor' };
+  const hooks = { services: {}, makeResolver: () => editorResolver };
+  await provider.prepare(ctxWith(hooks, []));
+  const extras = /** @type {NonNullable<typeof provider.editorCallers>} */ (provider.editorCallers)(/** @type {any} */ ({ trace: () => {}, repoRoot: ROOT, services: {}, ts: null }));
+  const twice = posOf('Lib/Shapes.cs', 'method', 'Twice', 'Helper');
+  const query = extras.query(LIB_FILE, twice);
+  changes++; // the server reloads its projects (state 2) during the analysis
+  const more = query.moreCallers ? await query.moreCallers() : null;
+  assert.equal(more && more.incompleteReason, SERVER_CHANGED_REASON);
+  await provider.prepare(ctxWith(hooks, []));
+  assert.equal(probes, 2, 'asked again after the change');
+  await provider.prepare(ctxWith(hooks, []));
+  assert.equal(probes, 2, 'no change since: kept');
+});
+
+test('M4: the state tracker waits for "loaded" after a reload, not the one-shot initial load', async () => {
+  const tracker = createServerStateTracker();
+  /** @type {(e: { state: number }) => void} */
+  let fire = () => {};
+  tracker.subscribe({ experimental: { languageServerEvents: { onServerStateChange: (/** @type {any} */ f) => { fire = f; } } } });
+  let initial = 0;
+  const initialLoad = async () => { initial++; };
+  await tracker.loaded(initialLoad);
+  assert.equal(initial, 1, 'no state reported yet: the extension\'s initialisation answers');
+  fire({ state: 2 });
+  let done = false;
+  const wait = tracker.loaded(initialLoad).then(() => { done = true; });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(done, false, 'loading: not trusted');
+  assert.equal(initial, 1, 'the one-shot promise is not asked while loading');
+  fire({ state: 3 });
+  await wait;
+  assert.equal(done, true);
+  assert.equal(tracker.changes, 2);
+});

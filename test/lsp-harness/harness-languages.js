@@ -49,8 +49,12 @@ function languageServicesOver(server, { repoRoot }) {
       if (calls === null) return null;
       return calls.map((c) => {
         const file = fileURLToPath(c.from.uri);
+        // The label as the editor's services build it (src/session/services-vscode.js
+        // `toCallerRows`): the item's detail and name joined, so a language's extras see the
+        // editor's form.
         return {
-          label: c.from.name, file, pos: c.from.selectionRange.start, test: isTestFile(repoRoot, file),
+          label: c.from.detail ? `${c.from.detail}.${c.from.name}` : c.from.name,
+          file, pos: c.from.selectionRange.start, test: isTestFile(repoRoot, file),
           sites: c.fromRanges.length, callSites: c.fromRanges.map((r) => ({ start: r.start, end: r.end })),
         };
       });
@@ -81,8 +85,8 @@ function languageServicesOver(server, { repoRoot }) {
  * default `callersFromHierarchy`: what the editor resolver does for a Go or Python target,
  * without its cache, cold phase or stats. `extras` (a language's `EditorCallerExtras`, such
  * as `goProvider.editorCallers(...)`) are applied by the same function the editor resolver
- * uses (`applyCallerExtras`, src/languages/callers-from-hierarchy.js). Suppressed queries
- * and unseen users are not applied (Go and Python have neither).
+ * uses (`applyCallerExtras`, src/languages/callers-from-hierarchy.js). A suppressed query is not
+ * asked (an empty answer, then `moreCallers`, as the editor's); unseen users are not applied.
  * @param {import('../../src/languages/types').LanguageServices} services
  * @param {{ extras?: import('../../src/languages/types').EditorCallerExtras|null }} [options]
  */
@@ -97,7 +101,10 @@ function createHierarchyResolver(services, { extras = null } = {}) {
     const query = extras ? extras.query(file, pos) : null;
     const retryRejected = extras?.retryRejected ?? null;
     const gate = extras?.queryGate ?? null;
-    const hierarchy = await queryHierarchy(services, headDoc(file), pos, { retryRejected, gate });
+    // A query the language does not ask (C#: top-level statements, primary constructors), as the editor's resolver.
+    const hierarchy = query && query.isSuppressed()
+      ? /** @type {const} */ ({ ready: true, rows: [] })
+      : await queryHierarchy(services, headDoc(file), pos, { retryRejected, gate });
     const applied = await applyCallerExtras(hierarchy, {
       extras, query, file, pos, withTests, askAt: (f, p) => queryHierarchy(services, headDoc(f), p, { retryRejected, gate }),
     });

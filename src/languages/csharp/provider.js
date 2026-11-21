@@ -9,9 +9,11 @@
 // is paired with its old self (`pairCsharpOverloads`, J-D3), the header parser and kinds
 // (./signature.js, C2) and which project a file belongs to (`csharpProjectOf`, ./rules.js).
 //
-// Callers come from a syntax-only index (./syntactic-index.js, C8a) until the editor's callers
-// (C5): `needsServer` is false and `prepare` and `prepareSyntactic` are the same path, so the
-// editor, the CLI and the no-checkout preview list the same changed members, kinds and callers.
+// Callers: in the editor (C5), Roslyn's call hierarchy through the C# extension, with C#'s
+// extras (./editor-extras.js: calls through interfaces as caller targets, labelled), once the
+// probe (`editorCsharpProbe`) says the extension's projects are loaded; else, in the CLI and
+// the no-checkout preview, a syntax-only index (./syntactic-index.js, C8a). Both paths read
+// the changed members from the same outline, so their keys and kinds are the same.
 //
 // Engine modules are required where they are used: the registry (../index.js) loads this file,
 // and src/engine/diff.js loads the registry.
@@ -300,13 +302,158 @@ function projectFacts(projects, all, read) {
   return { usings: [...usings], usingsByProject, uiDirs: [...uiDirs] };
 }
 
-/** @type {import('../types').LanguageProvider} */
-const csharpProvider = Object.freeze({
-  ...csharpRules,
-  // The outline and the syntax index serve every environment until the editor's callers (C5).
-  needsServer: false,
-  prepare: prepareSyntactic,
-  prepareSyntactic,
-});
+// How long the editor's probe waits for the C# extension to finish loading the projects, in
+// milliseconds. Owner: `editorCsharpProbe`, one wait per analysis until a positive answer.
+// C0b: the corpus solution loaded in 19–25 s in the harness, ~4 s after a ~20 s server start in
+// VS Code. Exhaustion: that analysis uses the syntax index, with a note; the next one asks again.
+const PROBE_DEADLINE_MS = 90000;
+const NO_HIERARCHY_NOTE = 'no answer from a C# call hierarchy: callers from syntax';
 
-module.exports = { csharpProvider, csharpSpec, collectCsharpSymbols, pairCsharpOverloads, renderCsharpSymbolSig, prepareSyntactic, projectFacts, csharpProjectDir, NOT_SOURCE_DIRS };
+// The C# extension's server states (`exports.experimental.languageServerEvents
+// .onServerStateChange`, its `ServerState`): 0 stopped, 1 started, 2 loading the projects
+// (the solution or projects were opened again: a start, a solution switch, a project change),
+// 3 projects loaded. Only 3 is a state whose answers are whole (C0b: partial while loading).
+const SERVER_STATE_LOADED = 3;
+
+/**
+ * The C# extension's server state as its events last reported it, for the life of the
+ * extension host (one subscription, never disposed: the C# extension's emitter lives as long).
+ * `changes` counts the events, so a positive probe is trusted only while no event came after
+ * it (`createCsharpProvider`). `state` is null until the first event: the extension reports
+ * none after the load it is in, so `initializationFinished()` answers then.
+ */
+function createServerStateTracker() {
+  /** @type {number|null} */
+  let state = null;
+  let changes = 0;
+  let subscribed = false;
+  /** @type {Array<() => void>} */
+  let waiting = [];
+  const tracker = {
+    get state() { return state; },
+    get changes() { return changes; },
+    /** @param {number} s */
+    note(s) {
+      state = s;
+      changes++;
+      const wake = waiting;
+      waiting = [];
+      for (const w of wake) w();
+    },
+    /** @param {any} exports The C# extension's exports. */
+    subscribe(exports) {
+      const events = exports && exports.experimental && exports.experimental.languageServerEvents;
+      if (subscribed || !events || typeof events.onServerStateChange !== 'function') return;
+      subscribed = true;
+      events.onServerStateChange((/** @type {any} */ e) => { if (e && typeof e.state === 'number') tracker.note(e.state); });
+    },
+    /**
+     * Resolves when the projects are loaded: `initialLoad()` (the extension's one-shot
+     * `initializationFinished()`) while no state was reported or the last was "loaded",
+     * else at the next "loaded" event. Callers bound it with a deadline.
+     * @param {() => Promise<unknown>} initialLoad
+     */
+    async loaded(initialLoad) {
+      if (state === null || state === SERVER_STATE_LOADED) await initialLoad();
+      while (state !== null && state !== SERVER_STATE_LOADED) await new Promise((resolve) => { waiting.push(() => resolve(undefined)); });
+    },
+  };
+  return tracker;
+}
+
+// The editor's tracker (owner: this module, for the extension host's life).
+const editorServerState = createServerStateTracker();
+
+/**
+ * Whether the editor's C# call hierarchy can be trusted now (C-D3 (a) as C0b changed it):
+ * Microsoft's C# extension (`ms-dotnettools.csharp`) is installed and active and its
+ * `initializationFinished()` resolved within `deadlineMs` (the projects are loaded; before
+ * that, answers are partial) and, once its server reported a state, that state is "loaded"
+ * (else the next "loaded" within the deadline: a reload after the first load). Subscribes
+ * `tracker` to the extension's state events. Never rejects. Outside VS Code: not available.
+ * @param {number} [deadlineMs]
+ * @param {ReturnType<typeof createServerStateTracker>} [tracker]
+ * @returns {Promise<{ ok: true } | { ok: false, reason: string }>}
+ */
+async function editorCsharpProbe(deadlineMs = PROBE_DEADLINE_MS, tracker = editorServerState) {
+  let vscode;
+  // By name, so the typecheck (no vscode types here) and the CLI never load it.
+  const editorModule = 'vscode';
+  try { vscode = require(editorModule); } catch { return { ok: false, reason: 'not in the editor' }; }
+  const ext = vscode.extensions.getExtension('ms-dotnettools.csharp');
+  if (!ext) return { ok: false, reason: 'the C# extension (ms-dotnettools.csharp) is not installed' };
+  if (!ext.isActive || !ext.exports || typeof ext.exports.initializationFinished !== 'function') return { ok: false, reason: 'the C# extension is not active' };
+  tracker.subscribe(ext.exports);
+  const { withDeadline } = require('../../engine/deadline');
+  try {
+    await withDeadline(() => tracker.loaded(() => Promise.resolve(ext.exports.initializationFinished())), deadlineMs, 'the C# project load');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: `the C# extension's server did not finish loading the projects (${e && /** @type {any} */ (e).message})` };
+  }
+}
+
+/**
+ * C#'s provider. `probe`: whether the environment's C# call hierarchy answers (the editor's:
+ * `editorCsharpProbe`); a positive answer is kept while the server reports no state change
+ * (`serverChanges`, the tracker's count), a negative one is asked again at the next analysis.
+ * A state change after it (a restart, the projects loaded again) makes the next analysis ask
+ * again, and the editor's caller answers given meanwhile incomplete (SERVER_CHANGED_REASON).
+ * @param {{ probe?: () => Promise<{ ok: true } | { ok: false, reason: string }>, serverChanges?: () => number }} [options]
+ * @returns {import('../types').LanguageProvider}
+ */
+function createCsharpProvider({ probe = () => editorCsharpProbe(), serverChanges = () => editorServerState.changes } = {}) {
+  // The tracker's count when the probe last answered yes; null: not trusted.
+  /** @type {number|null} */
+  let readyAt = null;
+  const ready = () => readyAt !== null && readyAt === serverChanges();
+  /**
+   * The editor's path (C5): the changed members from the outline, as `prepareSyntactic`, with
+   * the environment's resolver (Roslyn's call hierarchy plus ./editor-extras.js). When the
+   * probe says the C# call hierarchy cannot be trusted, `prepareSyntactic` with a note.
+   * @param {import('../types').PrepareContext} ctx
+   * @returns {Promise<import('../types').PreparedLanguage>}
+   */
+  async function prepare(ctx) {
+    if (!ctx.hooks.services || !ctx.hooks.makeResolver) return prepareSyntactic(ctx);
+    if (!ready()) {
+      readyAt = null;
+      const answer = await probe();
+      if (answer.ok) readyAt = serverChanges();
+      else {
+        ctx.warnings.push(`${NO_HIERARCHY_NOTE} (${answer.reason})`);
+        return prepareSyntactic(ctx);
+      }
+    }
+    const { csharpOutline } = require('./outline');
+    /** @type {import('../types').LanguageServices} */
+    const services = /** @type {any} */ ({
+      available: async () => ({ ok: true }),
+      // Symbols come from the outline (C-D3/C-D4); callers are asked on the head side only.
+      documentSymbols: async (/** @type {import('../types').DocRef} */ doc) => csharpOutline(/** @type {string} */ (doc.text), { fileName: path.basename(doc.file) }),
+    });
+    return require('../server-symbols').prepareFromServerSymbols({ ...ctx, hooks: { ...ctx.hooks, services } }, csharpSpec());
+  }
+  return Object.freeze({
+    ...csharpRules,
+    needsServer: true,
+    prepare,
+    prepareSyntactic,
+    /** @type {NonNullable<import('../types').LanguageProvider['editorCallers']>} */
+    // `serverSteady`: no server state change since the probe said yes (true before any probe:
+    // the harness and the tests make the extras without one).
+    editorCallers: ({ trace, repoRoot, csharpIndex }) => require('./editor-extras').createCsharpEditorExtras({
+      trace, repoRoot, serverSteady: () => readyAt === null || readyAt === serverChanges(),
+      ...(csharpIndex !== undefined ? { indexOf: async () => csharpIndex } : {}),
+    }),
+    serverLabel: 'the C# language server (Roslyn)',
+  });
+}
+
+const csharpProvider = createCsharpProvider();
+
+module.exports = {
+  csharpProvider, createCsharpProvider, editorCsharpProbe, csharpSpec, collectCsharpSymbols, pairCsharpOverloads, renderCsharpSymbolSig,
+  prepareSyntactic, indexRepository, projectFacts, csharpProjectDir, NOT_SOURCE_DIRS, PROBE_DEADLINE_MS, NO_HIERARCHY_NOTE,
+  createServerStateTracker, SERVER_STATE_LOADED,
+};

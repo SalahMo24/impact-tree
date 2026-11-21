@@ -306,15 +306,23 @@
  *   or a decorator-registered function, whose callers no answer could list), or null to
  *   keep the server's reason. Synchronous. An explained failure is a lasting condition of the
  *   workspace, so the answer is incomplete and not retryable. Absent: never explained.
- * @property {(file: string, pos: number) => Array<{ file: string, pos: number }>} [callerTargets]
+ * @property {(file: string, pos: number) => CallerTarget[]|Promise<CallerTarget[]>} [callerTargets]
  *   Other positions whose incoming calls are also the callers of the target at `pos` in
  *   `file` (Python: a class's name for its `__init__`, whose constructions Pyright lists
- *   only at the class). Synchronous; empty or absent: none. The shared step
+ *   only at the class; C#: the interface members a method implements, C-D5, whose rows are
+ *   labelled "through IFoo"). Synchronous or a promise that never rejects; empty or absent:
+ *   none. A target's `via`/`text` label its rows (a caller also listed unlabelled loses
+ *   the label, `mergeCallerRows`). The shared step
  *   (`applyCallerExtras`) asks the call hierarchy at each, up to MAX_CALLER_TARGETS (past
  *   it the answer is incomplete), merges their callers with the target's own (each caller
  *   once, call sites merged) and keeps the answer incomplete when any of them was not
  *   answered. With targets, the target's own `null` incoming-call result means no calls at
  *   that position, not "no answer". `filter` and `moreCallers` see the merged callers.
+ */
+
+/**
+ * Another position whose incoming calls are callers of a target (`callerTargets`).
+ * @typedef {{ file: string, pos: number, via?: 'interface'|'override', text?: string }} CallerTarget
  */
 
 /**
@@ -372,7 +380,7 @@
  *   needsServer: boolean,
  *   prepare: (ctx: PrepareContext) => Promise<PreparedLanguage>,
  *   prepareSyntactic?: (ctx: PrepareContext) => Promise<PreparedLanguage>,
- *   editorCallers?: (options: { ts: any, services: any, repoRoot: string|null, trace: (message: string) => void, filterInherited: boolean, onWarmupRetry: () => void, clock?: import('../engine/clock').Clock, javaServerStatus?: import('./java/server-status').JavaServerStatus|null }) => EditorCallerExtras,
+ *   editorCallers?: (options: { ts: any, services: any, repoRoot: string|null, trace: (message: string) => void, filterInherited: boolean, onWarmupRetry: () => void, clock?: import('../engine/clock').Clock, javaServerStatus?: import('./java/server-status').JavaServerStatus|null, csharpIndex?: any }) => EditorCallerExtras,
  *   warmUpTarget?: (ctx: WarmUpContext) => Promise<{ file: string, pos: number }|null>,
  *   serverLabel?: string,
  * }} LanguageProvider

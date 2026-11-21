@@ -160,9 +160,9 @@ test('J-D3 pairing: one overload out and one in keep the old key; indexers and g
   assert.deepEqual(pairCsharpOverloads([sym('A.M(int)'), sym('A.M(string)')], [sym('A.M(long)'), sym('A.M(bool)')]).map((s) => s.key), ['A.M(long)', 'A.M(bool)'], 'two out, two in: not paired');
 });
 
-test('the provider is registered without a server: prepare is the outline path, callers from the syntax index (C8a)', async () => {
-  assert.equal(csharpProvider.needsServer, false);
-  assert.equal(csharpProvider.prepare, csharpProvider.prepareSyntactic);
+test('without language services, prepare is the outline path with callers from the syntax index (C8a)', async () => {
+  assert.equal(csharpProvider.needsServer, true, 'C5: the editor asks Roslyn');
+  assert.equal(csharpProvider.serverLabel, 'the C# language server (Roslyn)');
   const base = 'namespace N;\npublic class A\n{\n    public int Run(int a) { return 1; }\n    public void Gone() { }\n}\n';
   const head = 'namespace N;\npublic class A\n{\n    public int Run(int a, string b) { return 2; }\n}\n';
   /** @type {string[]} */
