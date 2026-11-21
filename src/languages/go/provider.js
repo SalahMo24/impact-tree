@@ -162,7 +162,7 @@ function goKindsOf(base, head) {
 /**
  * Type text with every empty interface written `any`. Go declares `any` as an alias of
  * `interface{}` (identical types), so `go fix`'s rewrite of one into the other changes no
- * caller (G7: 142 headers in cli/cli PR #14278, each read as a type change before). A
+ * caller (G7: 142 headers in one Go test PR, each read as a type change before). A
  * package that declares its own `any` is not told apart: its change would read as none.
  * @param {string} text
  */
@@ -305,7 +305,7 @@ async function prepareSyntactic(ctx) {
 }
 
 /**
- * The module path a `go.mod` text declares (`module github.com/cli/cli/v2`), or null.
+ * The module path a `go.mod` text declares (`module example.com/tool/v2`), or null.
  * @param {string} text @returns {string|null}
  */
 function modulePathOf(text) {

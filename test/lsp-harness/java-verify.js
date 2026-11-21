@@ -1,13 +1,13 @@
 'use strict';
 /**
  * Java verification harness (J7; J6 adds the editor mode): runs the pipeline on the PRs of
- * ./java-verify-corpus.json (google/gson) and compares its changed methods and constructors
+ * <scratchpad>/corpora/java-verify-corpus.json (`java-a`) and compares its changed methods and constructors
  * and their signature kinds with oracle (a), the JDK's own parser, which shares no code with
  * the engine's Java reading. A development script, not part of `npm test`:
  *
- *   node test/lsp-harness/java-verify.js [--repo <dedicated gson clone>] [<PR number>…]
- *   node test/lsp-harness/java-verify.js --syntactic [--repo <gson clone>] [<PR number>…]
- *   node test/lsp-harness/java-verify.js --syntactic --callers [--preview] [--repo <gson clone>] [<PR number>…]
+ *   node test/lsp-harness/java-verify.js [--repo <dedicated java-a clone>] [<PR number>…]
+ *   node test/lsp-harness/java-verify.js --syntactic [--repo <java-a clone>] [<PR number>…]
+ *   node test/lsp-harness/java-verify.js --syntactic --callers [--preview] [--repo <java-a clone>] [<PR number>…]
  *
  * `--callers` (J8): the syntax index's callers against oracle (b), javac's attribution; see
  * "the caller check" below. Exit 0 when caller precision is >= 95% (and, `--preview`, no
@@ -17,8 +17,8 @@
  * preview does: `analyzeRemote` offline, its `gh` a fake over the clone's git objects
  * (`git diff`, `git show <sha>:<path>`), so Java goes through `javaProvider.prepareSyntactic`
  * (the text outline, `collectJavaSymbols`, J3's parser, the shared matching). Nothing is
- * checked out and nothing of gson runs; the clone stays where it is. Without `--syntactic`
- * (J6, the editor's jdtls path): see "the editor mode" below; results in J6-REPORT.md.
+ * checked out and nothing of java-a runs; the clone stays where it is. Without `--syntactic`
+ * (J6, the editor's jdtls path): see "the editor mode" below; results in the J6 report (kept outside the repository; npm run -s local-notes).
  *
  * Compared, over the PR's changed main (non-test) Java files, as the preview diffs them:
  * - Functions: rows `<path>#<key>|added|changed|removed`. Precision = ours that the oracle
@@ -48,7 +48,7 @@
  * skipped on both sides.
  *
  * Cache: the oracle's answer for a PR depends only on its two commits and Members.java, so
- * it is kept at ~/Projects/impact-tree-scratchpad/java-oracle/verify/<head>-<base>/
+ * it is kept at <scratchpad>/java-oracle/verify/<head>-<base>/
  * oracle-<Members.java hash>.json.
  *
  * Exit code: 0 when functions are 100% precise with recall >= 98% and every kind agrees,
@@ -60,11 +60,16 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
-const DEFAULT_REPO = path.join(os.homedir(), 'Projects/impact-tree-test-repos/gson');
-const JAVA = path.join(os.homedir(), 'Projects/impact-tree-scratchpad/java-tools/jdk/jdk-21.0.13+9/Contents/Home/bin/java');
-const CACHE_ROOT = path.join(os.homedir(), 'Projects/impact-tree-scratchpad/java-oracle/verify');
+const { scratchpadPath } = require('./scratchpad');
+
+const JAVA = scratchpadPath('java-tools', 'jdk', 'jdk-21.0.13+9', 'Contents', 'Home', 'bin', 'java');
+const CACHE_ROOT = scratchpadPath('java-oracle', 'verify');
 const MEMBERS = path.join(__dirname, '..', 'java-signature-oracle', 'Members.java');
-const CORPUS = path.join(__dirname, 'java-verify-corpus.json');
+// The corpus names a test repository, so it lives in the scratchpad (corpora/).
+const CORPUS = scratchpadPath('corpora', 'java-verify-corpus.json');
+/** `--maven <groupId>:<artifactId>:<parent artifactId>` of the workspace's library (editor mode). */
+let maven = { group: '', artifact: '', parent: '' };
+const reEscape = (/** @type {string} */ s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const ORACLE_DEADLINE_MS = 120000;
 
 const git = (repo, ...args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 1 << 28 });
@@ -256,8 +261,8 @@ const pct = (a, b) => (b ? `${((100 * a) / b).toFixed(1)}%` : 'n/a');
 // what javac cannot attribute (a classpath jar missing, errors) is listed as unattributed and
 // excluded from the comparison on both sides; `new T(…) { … }` is excluded the same way.
 // The tree is materialised from git objects (`git archive <head>`, Java files only) under
-// ~/Projects/impact-tree-scratchpad/java-oracle/trees/ and removed after: nothing is checked
-// out in the clone and nothing of gson runs (no Maven, no script, no processor).
+// <scratchpad>/java-oracle/trees/ and removed after: nothing is checked
+// out in the clone and nothing of java-a runs (no Maven, no script, no processor).
 // Classpath: the jars jdtls already downloaded (`ORACLE_JARS` under java-tools/m2), not Maven.
 // Cache: java-oracle/callers/<head>/oracle-<Callers.java hash>-<classpath hash>.jsonl.
 //
@@ -272,9 +277,9 @@ const pct = (a, b) => (b ? `${((100 * a) / b).toFixed(1)}%` : 'n/a');
 // The preview also checks the pipeline's rows: no complete answer, no "no callers".
 
 const CALLERS_JAVA = path.join(__dirname, '..', 'java-signature-oracle', 'Callers.java');
-const CALLERS_CACHE = path.join(os.homedir(), 'Projects/impact-tree-scratchpad/java-oracle/callers');
-const TREES = path.join(os.homedir(), 'Projects/impact-tree-scratchpad/java-oracle/trees');
-const M2 = path.join(os.homedir(), 'Projects/impact-tree-scratchpad/java-tools/m2');
+const CALLERS_CACHE = scratchpadPath('java-oracle', 'callers');
+const TREES = scratchpadPath('java-oracle', 'trees');
+const M2 = scratchpadPath('java-tools', 'm2');
 const ORACLE_JARS = [
   'junit/junit/4.13.2/junit-4.13.2.jar',
   'org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar',
@@ -285,7 +290,7 @@ const ORACLE_JARS = [
   'com/google/errorprone/error_prone_annotations/2.41.0/error_prone_annotations-2.41.0.jar',
   'com/google/guava/guava-testlib/33.6.0-jre/guava-testlib-33.6.0-jre.jar',
   'org/checkerframework/checker-qual/3.43.0/checker-qual-3.43.0.jar',
-  // The versions gson's poms ask for (pom.xml, proto/pom.xml's protobufVersion).
+  // The versions java-a's poms ask for (pom.xml, proto/pom.xml's protobufVersion).
   'com/google/guava/guava/33.7.0-jre/guava-33.7.0-jre.jar',
   'com/google/guava/failureaccess/1.0.3/failureaccess-1.0.3.jar',
   'com/google/truth/truth/1.4.5/truth-1.4.5.jar',
@@ -490,16 +495,15 @@ async function callersMain(repo, corpus, preview) {
 // on jdtls' documentSymbol answers, callers from the call hierarchy with Java's caller extras
 // (J4) applied by `applyCallerExtras`, as the editor's resolver applies them
 // (./harness-languages.js), at the editor's default concurrency (8). One jdtls for the whole
-// run, its `-data` under java-tools/jdtls-data/gson-verify (kept between runs); between PRs the
-// checkout moves (`git checkout --detach <head>` in the dedicated clone gson-verify, never
-// `gson` itself), one `workspace/didChangeWatchedFiles` names every file that differs, the open
+// run, its `-data` under java-tools/jdtls-data/java-verify (kept between runs); between PRs the
+// checkout moves (`git checkout --detach <head>` in the dedicated clone java-a-verify, never
+// `java-a` itself), one `workspace/didChangeWatchedFiles` names every file that differs, the open
 // documents are closed, and the run waits until jdtls has reported no progress for QUIET_MS.
 // Callers are compared with oracle (b) (the head tree's javac attribution, J8's cache), over
 // every file of the tree; a site of ours matches an oracle call in the same file whose offset
 // lies in our call range (jdtls' ranges are the call expressions).
 
-const DEFAULT_EDITOR_REPO = path.join(os.homedir(), 'Projects/impact-tree-test-repos/gson-verify');
-const JDTLS_DATA = path.join(os.homedir(), 'Projects/impact-tree-scratchpad/java-tools/jdtls-data/gson-verify');
+const JDTLS_DATA = scratchpadPath('java-tools', 'jdtls-data', 'java-verify');
 const QUIET_MS = 2000;
 const EDITOR_RUN_DEADLINE_MS = 15 * 60 * 1000;
 
@@ -597,10 +601,10 @@ function editorCallerCheck(repo, pr, result, oracle) {
   const touched = touchedLines(repo, pr);
   const errorFiles = new Set(oracle.errors.map((e) => e.file));
   // Why jdtls may not see a module's calls of the workspace's code: no pom (no project), or a
-  // pom that builds against another gson version (its calls resolve into that jar).
+  // pom that builds against another java-a version (its calls resolve into that jar).
   const showAt = (p) => { try { return git(repo, 'show', `${pr.head}:${p}`); } catch { return null; } };
   const rootPom = showAt('pom.xml') || '';
-  const workspaceVersion = (/<artifactId>gson-parent<\/artifactId>\s*<version>([^<]+)<\/version>/.exec(rootPom) || [])[1] || '?';
+  const workspaceVersion = (new RegExp(`<artifactId>${reEscape(maven.parent)}</artifactId>\\s*<version>([^<]+)</version>`).exec(rootPom) || [])[1] || '?';
   const outsideByModule = new Map();
   const outsideProject = (file) => {
     const module = file.split('/')[0];
@@ -609,9 +613,9 @@ function editorCallerCheck(repo, pr, result, oracle) {
       let why = null;
       if (pom === null) why = `outside the project: ${module} has no pom.xml at this commit`;
       else {
-        const dep = /<groupId>com\.google\.code\.gson<\/groupId>\s*<artifactId>gson<\/artifactId>\s*<version>([^<]+)<\/version>/.exec(pom);
+        const dep = new RegExp(`<groupId>${reEscape(maven.group)}</groupId>\\s*<artifactId>${reEscape(maven.artifact)}</artifactId>\\s*<version>([^<]+)</version>`).exec(pom);
         const v = dep ? dep[1].trim() : null;
-        if (v && !/^\$\{project\.(parent\.)?version\}$/.test(v) && v !== workspaceVersion) why = `outside the project: ${module} builds against gson ${v}, not the workspace's ${workspaceVersion}`;
+        if (v && !/^\$\{project\.(parent\.)?version\}$/.test(v) && v !== workspaceVersion) why = `outside the project: ${module} builds against ${maven.artifact} ${v}, not the workspace's ${workspaceVersion}`;
         else if (!new RegExp(`<module>${module}</module>`).test(rootPom)) why = `${module} is not a module of the root pom`;
       }
       outsideByModule.set(module, why);
@@ -762,10 +766,16 @@ async function editorMain(repo, corpus) {
 async function main() {
   const args = process.argv.slice(2);
   const opt = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
-  const repo = opt('--repo') || DEFAULT_REPO;
+  const repo = opt('--repo');
+  if (!repo) { console.error('usage: node test/lsp-harness/java-verify.js --repo <clone> [--syntactic [--callers [--preview]]] [PR numbers]; the clones: npm run -s local-notes'); process.exit(2); }
   const only = args.filter((a, i) => /^\d+$/.test(a) && args[i - 1] !== '--repo').map(Number);
   const corpus = JSON.parse(fs.readFileSync(CORPUS, 'utf8')).filter((p) => !only.length || only.includes(p.number));
-  if (!args.includes('--syntactic')) return editorMain(opt('--repo') || DEFAULT_EDITOR_REPO, corpus);
+  if (!args.includes('--syntactic')) {
+    const [group = '', artifact = '', parent = ''] = (opt('--maven') || '').split(':');
+    if (!group || !artifact || !parent) { console.error('editor mode needs --maven <groupId>:<artifactId>:<parent artifactId> (the values: npm run -s local-notes)'); process.exit(2); }
+    maven = { group, artifact, parent };
+    return editorMain(repo, corpus);
+  }
   if (args.includes('--callers')) return callersMain(repo, corpus, args.includes('--preview'));
   const hash = crypto.createHash('sha256').update(fs.readFileSync(MEMBERS)).digest('hex').slice(0, 12);
   const t0 = Date.now();

@@ -1,7 +1,7 @@
 'use strict';
 // Added functions are read by key, like deleted ones (src/engine/changed-symbols.js
 // `changedFromSymbols`): a renamed class's methods are added even when their bodies are
-// unchanged diff lines (httpx #3741: six `URLPattern.*` deleted, only two
+// unchanged diff lines (a real PR: six `URLPattern.*` deleted, only two
 // `WildcardURLPattern.*` reported added), and a renumbered repeat is not.
 const test = require('node:test');
 const assert = require('node:assert/strict');

@@ -8,7 +8,8 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(cd "$1" && pwd)"; entry="$2"; name="${3:-$(basename "$repo")}"
-tools="${CSHARP_TOOLS:-$HOME/Projects/impact-tree-scratchpad/csharp-tools}"
+scratch="${IMPACT_TREE_SCRATCHPAD:-$(git -C "$here" config --get impacttree.scratchpad || true)}"; scratch="${scratch/#\~/$HOME}"
+tools="${CSHARP_TOOLS:-${scratch:?set CSHARP_TOOLS, IMPACT_TREE_SCRATCHPAD or git config impacttree.scratchpad}/csharp-tools}"
 . "$tools/env.sh"
 srcs=("$here/Program.cs" "$here/SemanticOracle.csproj" "$here/../csharp-syntax-oracle/Program.cs")
 hash="$(cat "${srcs[@]}" | shasum -a 256 | cut -c1-12)"

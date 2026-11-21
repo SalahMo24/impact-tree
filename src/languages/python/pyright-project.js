@@ -3,8 +3,8 @@
 // Which of a repository's files are in Pyright's project (A7, docs/MULTI_LANGUAGE_PLAN.md).
 // Pyright, Pylance and Cursor's Python read the same configuration: `pyrightconfig.json` at
 // the workspace root wins, else the `[tool.pyright]` table of the root `pyproject.toml`.
-// Its call hierarchy never lists a caller in a file outside the project (measured on
-// pydantic: `include = ['pydantic', 'tests/test_pipeline.py']` leaves most of `tests/` out),
+// Its call hierarchy never lists a caller in a file outside the project (measured on a
+// Python test repository: `include = ['pkg', 'tests/test_pipeline.py']` leaves most of `tests/` out),
 // so ./editor-extras.js searches those files by name.
 //
 // Read here: only `include` and `exclude`, arrays of strings (paths relative to the

@@ -28,7 +28,7 @@
 
 // Budget: decorators plus header, measured as the offset just past the header's `:`, may be
 // at most this many UTF-16 units. Unit: characters of declText. Valid range: >= 1; default
-// 64 Ki, far above any hand-written header (the longest in httpx is under 1 Ki) and small
+// 64 Ki, far above any hand-written header (the longest in the Python test repositories is under 1 Ki) and small
 // enough that scanning one costs microseconds. Owner: this module. Enforced in
 // `readDeclaration` by cutting the text before any scan; a longer header is unreadable (null).
 const { scanString } = require('./lexer');
@@ -400,7 +400,7 @@ const DOTTED_NAME = /[\p{L}_][\p{L}\p{N}_]*(?:\.[\p{L}_][\p{L}\p{N}_]*)*/uy;
 /**
  * The exception names a function's own body raises: the leading dotted name of the
  * expression of each `raise X`, `raise X(...)`, `raise X from e`, as written
- * (`httpx.HTTPError`, `ValueError`), whatever its case. Excluded: a bare `raise`; comments
+ * (`net.HTTPError`, `ValueError`), whatever its case. Excluded: a bare `raise`; comments
  * and strings; and the bodies (and header lines) of nested `def`, `async def` and `class`
  * (P-D5: a nested function's raise is not the parent's contract).
  *
@@ -497,7 +497,7 @@ const BUILTIN_FOR_ALIAS = new Map([
  * deduplicated (`Union[A, B]` and `B | A` are the same type); the PEP 585 aliases read as
  * their builtins (`List[int]` is `list[int]`, `ellipsis` is `EllipsisType`); and `typing.`,
  * `typing_extensions.` and `collections.abc.` prefixes are dropped. Dropping Python 3.9
- * rewrites one spelling into the other and changes no caller (pydantic PR 13070: 12 of its
+ * rewrites one spelling into the other and changes no caller (a Python test PR: 12 of its
  * 16 headers read as a type or return change before).
  *
  * Limits: names are matched as written, so a module's own class called `List` or `Optional`

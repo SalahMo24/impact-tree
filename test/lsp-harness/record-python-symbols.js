@@ -28,7 +28,7 @@ const plainSymbol = (s) => ({
 async function main() {
   const args = process.argv.slice(2);
   const pi = args.indexOf('--pyright');
-  const pyrightPath = pi >= 0 ? args[pi + 1] : DEFAULT_PYRIGHT;
+  const pyrightPath = pi >= 0 ? args[pi + 1] : DEFAULT_PYRIGHT();
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'it-record-py-'));
   const pyright = createPyrightServices({ repo: work, pyrightPath, scratchDir: path.join(work, 'scratch'), deadlineMs: 60000 });
   try {

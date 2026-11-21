@@ -1,0 +1,159 @@
+from __future__ import annotations
+
+import hashlib
+import typing
+from base64 import b64encode
+
+from .models import Request, Response
+
+
+class Auth:
+    """
+    Base class for the schemes that sign a request.
+    """
+
+    def auth_flow(self, request: Request) -> typing.Generator[Request, Response, None]:
+        """
+        Yield the request to send; receive the response.
+        """
+        yield request
+
+    def sync_auth_flow(
+        self, request: Request
+    ) -> typing.Generator[Request, Response, None]:
+        flow = self.auth_flow(request)
+        request = next(flow)
+        while True:
+            response = yield request
+            try:
+                request = flow.send(response)
+            except StopIteration:
+                break
+
+    async def async_auth_flow(
+        self, request: Request
+    ) -> typing.AsyncGenerator[Request, Response]:
+        flow = self.auth_flow(request)
+        request = next(flow)
+        while True:
+            response = yield request
+            try:
+                request = flow.send(response)
+            except StopIteration:
+                break
+
+
+class FunctionAuth(Auth):
+    """
+    Calls a function on every request.
+    """
+
+    def __init__(self, func: typing.Callable[[Request], Request]) -> None:
+        self._func = func
+
+    def auth_flow(self, request: Request) -> typing.Generator[Request, Response, None]:
+        yield self._func(request)
+
+
+class BasicAuth(Auth):
+    """
+    A user name and a password in a header.
+    """
+
+    def __init__(self, username: str | bytes, password: str | bytes) -> None:
+        self._header = self._build_auth_header(username, password)
+
+    def auth_flow(self, request: Request) -> typing.Generator[Request, Response, None]:
+        request.headers["Authorization"] = self._header
+        yield request
+
+    def _build_auth_header(self, username: str | bytes, password: str | bytes) -> str:
+        userpass = b":".join((str(username).encode(), str(password).encode()))
+        token = b64encode(userpass).decode()
+        return f"Basic {token}"
+
+
+class FileAuth(Auth):
+    """
+    Looks the credentials up in a file.
+    """
+
+    def __init__(self, file: str | None = None) -> None:
+        self._entries: dict[str, tuple[str, str]] = {}
+        if file is not None:
+            self._entries["default"] = (file, "")
+
+    def auth_flow(self, request: Request) -> typing.Generator[Request, Response, None]:
+        entry = self._entries.get(request.host)
+        if entry is not None:
+            request.headers["Authorization"] = self._build_auth_header(*entry)
+        yield request
+
+    def _build_auth_header(self, username: str | bytes, password: str | bytes) -> str:
+        userpass = b":".join((str(username).encode(), str(password).encode()))
+        return f"Basic {b64encode(userpass).decode()}"
+
+
+class ChallengeAuth(Auth):
+    """
+    Answers a challenge sent by the server.
+    """
+
+    _ALGORITHMS = {"MD5": hashlib.md5, "SHA-256": hashlib.sha256}
+
+    def __init__(self, username: str | bytes, password: str | bytes) -> None:
+        self._username = str(username).encode()
+        self._password = str(password).encode()
+        self._count = 0
+
+    def auth_flow(self, request: Request) -> typing.Generator[Request, Response, None]:
+        response = yield request
+        if response.status != 401:
+            return
+        challenge = self._parse_challenge(request, response)
+        self._count += 1
+        request.headers["Authorization"] = self._build_auth_header(request, challenge)
+        yield request
+
+    def _parse_challenge(
+        self, request: Request, response: Response
+    ) -> dict[str, bytes]:
+        header = response.headers.get("WWW-Authenticate", "")
+        fields: dict[str, bytes] = {}
+        for item in header.split(","):
+            key, _, value = item.partition("=")
+            fields[key.strip()] = value.strip().encode()
+        return fields
+
+    def _build_auth_header(
+        self, request: Request, challenge: dict[str, bytes]
+    ) -> str:
+        hash_func = self._ALGORITHMS["MD5"]
+
+        def digest(data: bytes) -> bytes:
+            return hash_func(data).hexdigest().encode()
+
+        a1 = digest(b":".join((self._username, challenge["realm"], self._password)))
+        a2 = digest(b":".join((request.method.encode(), request.path.encode())))
+        nonce = self._get_nonce(self._count, challenge["nonce"])
+        response = digest(b":".join((a1, challenge["nonce"], nonce, a2)))
+        return self._get_value({"response": response, "nonce": nonce})
+
+    def _get_nonce(self, count: int, nonce: bytes) -> bytes:
+        return b"%08x" % count + nonce
+
+    def _get_value(self, fields: dict[str, bytes]) -> str:
+        parts = [f'{key}="{value.decode()}"' for key, value in fields.items()]
+        return "Digest " + ", ".join(parts)
+
+    def _resolve_qop(self, qop: bytes | None, request: Request) -> bytes | None:
+        if qop is None:
+            return None
+        if qop == b"auth":
+            return qop
+        raise ValueError(f"Unsupported qop {qop!r}")
+
+
+class _Challenge(typing.NamedTuple):
+    realm: bytes
+    nonce: bytes

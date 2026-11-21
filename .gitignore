@@ -9,10 +9,8 @@ ACCEPTANCE.md
 # Recorded fixtures embed real paths, symbol names and signatures from whatever repo
 # they were captured against. Regenerate locally; never commit.
 test/fixtures/*
-# Exception: the Cards view model's fixtures (test/cards-view-model.test.js) are live analyses of
-# public repositories (cli/cli, t3code, honojs/hono, encode/httpx) trimmed to the fields the
-# model reads, so the test runs without a target repository. They hold paths and symbol names
-# of those repositories only.
+# Exception: the card fixtures (test/review-tab.test.js) are small synthetic analyses with
+# invented paths and symbol names, so the tests run without a target repository.
 !test/fixtures/cards/
 
 # Internal working docs: build plan and acceptance checklist, written against a private

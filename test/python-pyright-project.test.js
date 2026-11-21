@@ -37,22 +37,22 @@ test('pyproject [tool.pyright]: arrays across lines, comments, both quote styles
     '[project]', 'include = ["not this"]', '',
     '[tool.pyright]',
     "include = [",
-    "  'pydantic',  # the package",
+    "  'validlib',  # the package",
     '  "tests/test_pipeline.py",',
     ']',
-    "exclude = ['pydantic/v1', 'pydantic/mypy.py']",
+    "exclude = ['validlib/v1', 'validlib/mypy.py']",
     "strict = ['tests/test_pipeline.py']",
     '',
     '[tool.codespell]', "exclude = ['x']",
   ].join('\n');
   const p = /** @type {any} */ (pp.readPyrightProject(R, reader({ 'pyproject.toml': toml })));
   assert.equal(p.configFile, 'pyproject.toml [tool.pyright]');
-  assert.deepEqual(p.include, ['pydantic', 'tests/test_pipeline.py']);
-  assert.deepEqual(p.exclude, ['pydantic/v1', 'pydantic/mypy.py']);
+  assert.deepEqual(p.include, ['validlib', 'tests/test_pipeline.py']);
+  assert.deepEqual(p.exclude, ['validlib/v1', 'validlib/mypy.py']);
   assert.equal(p.explicit, true);
   assert.equal(p.inProject('tests/test_main.py'), false);
-  assert.equal(p.inProject('pydantic/main.py'), true);
-  assert.equal(p.inProject('pydantic/v1/main.py'), false);
+  assert.equal(p.inProject('validlib/main.py'), true);
+  assert.equal(p.inProject('validlib/v1/main.py'), false);
 });
 
 test('both present: pyrightconfig.json wins; neither, or no [tool.pyright]: no project limit', () => {

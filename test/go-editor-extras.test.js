@@ -81,7 +81,7 @@ test('a value use makes the answer incomplete as referenced-as-value; without on
 });
 
 test('a method sharing an interface with code outside the repository may be missing callers (G7)', async () => {
-  // cli/cli PR #14104: `(telemetryDisablerTransport).RoundTrip` implements net/http's
+  // A transport wrapper's `RoundTrip` implements net/http's
   // RoundTripper; gopls listed its direct callers only, and the answer read complete.
   const methodText = 'package api\n\nfunc (t *transport) RoundTrip(r *Request) (*Response, error) { return nil, nil }\n';
   const funcText = 'package api\n\nfunc helper() {}\n';

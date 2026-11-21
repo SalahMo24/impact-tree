@@ -1,6 +1,6 @@
 'use strict';
 // With no base branch set, a review is against the remote's default branch (origin/HEAD),
-// not always `main`: encode/httpx's default is `master`, and "cannot resolve origin/main"
+// not always `main`: some repositories' default is `master`, and "cannot resolve origin/main"
 // stopped every local review there. A base set explicitly is used as given.
 const test = require('node:test');
 const assert = require('node:assert/strict');

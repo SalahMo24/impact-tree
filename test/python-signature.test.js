@@ -2,7 +2,7 @@
 'use strict';
 // Python signatures (P3, docs/MULTI_LANGUAGE_PLAN.md): a declaration's header parsed into the
 // `sig` the shared diffSignature compares, the exceptions a body raises, and the change kinds.
-// Headers marked (httpx) are copied verbatim from httpx (BSD-3-Clause); bodies are abbreviated.
+// The realistic headers and bodies are synthetic.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
@@ -67,40 +67,40 @@ test('a staticmethod keeps its first parameter', () => {
   assert.deepEqual(sig.params.map((p) => p.name), ['a', 'b']);
 });
 
-test('(httpx) a method with keyword-only parameters, defaults and a return annotation', () => {
-  const text = `    def build_request(
+test('a method with keyword-only parameters, defaults and a return annotation', () => {
+  const text = `    def build_message(
         self,
         method: str,
-        url: URL | str,
+        url: Address | str,
         *,
-        content: RequestContent | None = None,
-        data: RequestData | None = None,
-        timeout: TimeoutTypes | UseClientDefault = USE_CLIENT_DEFAULT,
-        extensions: RequestExtensions | None = None,
-    ) -> Request:
+        content: BodyContent | None = None,
+        data: BodyData | None = None,
+        timeout: TimeoutTypes | UseDefault = USE_DEFAULT,
+        extensions: Extensions | None = None,
+    ) -> Message:
         """
-        Build and return a request instance.
+        Build and return a message instance.
         """
         pass
 `;
   const { sig, headerEnd } = parse(text.trimStart(), true);
   assert.deepEqual(sig.params.map((p) => `${p.name}:${p.type}:${p.optional}`), [
     'method:str:false',
-    'url:URL | str:false',
-    'content:keyword-only RequestContent | None:true',
-    'data:keyword-only RequestData | None:true',
-    'timeout:keyword-only TimeoutTypes | UseClientDefault:true',
-    'extensions:keyword-only RequestExtensions | None:true',
+    'url:Address | str:false',
+    'content:keyword-only BodyContent | None:true',
+    'data:keyword-only BodyData | None:true',
+    'timeout:keyword-only TimeoutTypes | UseDefault:true',
+    'extensions:keyword-only Extensions | None:true',
   ]);
-  assert.equal(sig.returns, 'Request');
-  assert.ok(text.trimStart().slice(0, headerEnd).endsWith('-> Request:'));
+  assert.equal(sig.returns, 'Message');
+  assert.ok(text.trimStart().slice(0, headerEnd).endsWith('-> Message:'));
 });
 
-test('(httpx) a property, an async method and a __init__ with a return of None', () => {
+test('a property, an async method and a __init__ with a return of None', () => {
   const prop = `@property
     def raw(self) -> list[tuple[bytes, bytes]]:
         """
-        Returns a list of the raw header items, as byte pairs.
+        Returns a list of the raw items, as byte pairs.
         """
         return [(raw_key, value) for raw_key, _, value in self._list]
 `;
@@ -114,7 +114,7 @@ test('(httpx) a property, an async method and a __init__ with a return of None',
         encoding: str | None = None,
     ) -> None:
         pass`, true), ['headers:HeaderTypes | None', 'encoding:str | None']);
-  assert.equal(parse('async def _send_single_request(self, request: Request) -> Response:\n    pass', true).sig.async, true);
+  assert.equal(parse('async def _send_single(self, request: Message) -> Reply:\n    pass', true).sig.async, true);
 });
 
 test('defaults with colons, commas, brackets, lambdas and string text do not end or split the header', () => {
@@ -188,9 +188,9 @@ test('a type, return, optional, removal and addition each give their kind', () =
   assert.deepEqual(kinds('def f(a):\n pass', 'def f(a):\n return 1'), []);
 });
 
-test('typing-equivalent annotation spellings are no change (pydantic PR 13070)', () => {
+test('typing-equivalent annotation spellings are no change (a validation library PR)', () => {
   const same = (/** @type {string} */ a, /** @type {string} */ b) => assert.deepEqual(kinds(a, b, a.includes('(self')), [], `${a} vs ${b}`);
-  // (pydantic) Color.as_rgb_tuple and parse_color_value, base and head of PR 13070.
+  // A color class's as_rgb_tuple and a parse_color_value helper, base and head of a PR.
   same('def as_rgb_tuple(self, *, alpha: Optional[bool] = None) -> ColorTuple:\n pass',
     'def as_rgb_tuple(self, *, alpha: bool | None = None) -> ColorTuple:\n pass');
   same('def parse_color_value(value: Union[int, str], max_val: int = 255) -> float:\n pass',
@@ -204,7 +204,7 @@ test('typing-equivalent annotation spellings are no change (pydantic PR 13070)',
   same('def f(a: typing.Callable[[int, str], None]):\n pass', 'def f(a: collections.abc.Callable[[int, str], None]):\n pass');
   same('def f(*args: Optional[int], **kw: Union[int, str]):\n pass', 'def f(*args: int | None, **kw: str | int):\n pass');
   same('def f(a: Literal["x", "y"] | None):\n pass', 'def f(a: Optional[Literal["x", "y"]]):\n pass');
-  // (pydantic) Field and _Pipeline.validate_as: typeshed's `ellipsis` is types.EllipsisType.
+  // A Field factory: typeshed's `ellipsis` is types.EllipsisType.
   same('def Field(default: ellipsis, *, alias: str | None = _Unset) -> Any:\n pass',
     'def Field(default: EllipsisType, *, alias: str | None = _Unset) -> Any:\n pass');
   same('def f(a: ellipsis):\n pass', 'def f(a: types.EllipsisType):\n pass');
@@ -283,7 +283,7 @@ test('raises: the leading dotted name as written; from-clauses and calls; bare r
     if x is None:
         raise ValueError("no")
     if x < 0:
-        raise httpx.HTTPError("neg") from exc
+        raise net.HTTPError("neg") from exc
     if x == 0:
         raise KeyError
     try:
@@ -297,7 +297,7 @@ test('raises: the leading dotted name as written; from-clauses and calls; bare r
     raise (RuntimeError)
 `;
   const { headerEnd } = parse(text);
-  assert.deepEqual([...raisesOf(text, headerEnd)].sort(), ['KeyError', 'RuntimeError', 'ValueError', 'e', 'httpx.HTTPError']);
+  assert.deepEqual([...raisesOf(text, headerEnd)].sort(), ['KeyError', 'RuntimeError', 'ValueError', 'e', 'net.HTTPError']);
 });
 
 test('raises: comments, strings and docstrings are ignored', () => {
@@ -344,17 +344,17 @@ test('raises: a one-line function body and a continued call', () => {
   assert.deepEqual([...raisesOf(cont, parse(cont).headerEnd)], ['Late']);
 });
 
-test('(httpx) raises in real bodies', () => {
-  const text = `    def _send_single_request(self, request: Request) -> Response:
+test('raises in a realistic body', () => {
+  const text = `    def _send_single(self, request: Message) -> Reply:
         """
         Sends a single request, without handling any redirections.
         """
-        transport = self._transport_for_url(request.url)
+        transport = self._transport_for(request.url)
         start = time.perf_counter()
 
-        if not isinstance(request.stream, SyncByteStream):
+        if not isinstance(request.stream, SyncStream):
             raise RuntimeError(
-                "Attempted to send an async request with a sync Client instance."
+                "Attempted to send an async request with a sync client instance."
             )
 `.trimStart();
   assert.deepEqual([...raisesOf(text, parse(text, true).headerEnd)], ['RuntimeError']);

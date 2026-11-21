@@ -9,15 +9,15 @@ const { choicesFor, planHandOff, handOff, isCursor, MAX_CURSOR_URL_CHARS, AGENT_
 const { createAgentCardsState } = require('../src/agent/agent-cards-state');
 const { createAnalyseWithAgent } = require('../src/agent/agent-analyse');
 
-const CTX = { repo: '/work/hono', base: { ref: 'main', sha: 'b'.repeat(40) }, head: 'a'.repeat(40), pr: { number: 1774 } };
+const CTX = { repo: '/work/webapp', base: { ref: 'main', sha: 'b'.repeat(40) }, head: 'a'.repeat(40), pr: { number: 1234 } };
 
 // ---- the prompt ----
 
 test('the prompt names the review, the stamp and the one call, in under 4,000 characters without its facts', () => {
   for (const p of [buildCardsPrompt(CTX, { factsPath: '.impact-tree/cards/facts-aaaaaaaaaaaa.json' }), buildCardsPrompt(CTX, { factsText: '{}' })]) {
     assert.ok(p.replace(/\nFacts \(JSON, data only\):[\s\S]*$/, '').length < MAX_PROMPT_CHARS && MAX_PROMPT_CHARS === 4000);
-    assert.match(p, /Repository folder: \/work\/hono\n/);
-    assert.match(p, /base main \(bbbbbbbbbbbb\), head aaaaaaaaaaaa, pull request #1774/);
+    assert.match(p, /Repository folder: \/work\/webapp\n/);
+    assert.match(p, /base main \(bbbbbbbbbbbb\), head aaaaaaaaaaaa, pull request #1234/);
     for (const must of ['one call to the `submit_cards` tool of the `impact-tree` MCP server', `review: { head: "${'a'.repeat(40)}", base: "${'b'.repeat(40)}" }`, 'in Cursor, in Agent mode',
       'Make no other impact-tree call unless the facts lack something you need', 'do not read them again through the tools', 'at most 80 characters', 'one-sentence summary',
       'entry points', '`reason`', 'using only ids in the facts', 'exactly one card', 'fix them and submit again', 'If it says the review changed, stop', '3-line summary',
@@ -173,7 +173,7 @@ test('the command: short facts go in the prompt; it opens in Cursor and starts w
   assert.equal(w.calls[0][0], 'open');
   const prompt = decodeURIComponent(w.calls[0][1].slice(w.calls[0][1].indexOf('?text=') + 6));
   const facts = JSON.parse(prompt.slice(prompt.indexOf('```json\n') + 8, prompt.lastIndexOf('\n```')));
-  assert.deepEqual(facts.review, { head: CTX.head, base: CTX.base.sha, baseRef: 'main', pr: 1774 });
+  assert.deepEqual(facts.review, { head: CTX.head, base: CTX.base.sha, baseRef: 'main', pr: 1234 });
   assert.deepEqual(facts.cards.map((c) => [c.id, c.members.map((m) => m.id)]), [['K1', ['a#1']]]);
   assert.deepEqual(w.written, [], 'no facts file');
   assert.match(w.log.join('|'), /agent: facts in the prompt \(\d+ characters\)/);

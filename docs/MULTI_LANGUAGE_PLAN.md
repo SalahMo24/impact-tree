@@ -3,10 +3,15 @@
 Written 2026-10-24 from `main` at 74fe842. Follows the rules in `CODING_STYLE.md` and the
 task style of `UX_PLAN.md` (gates are owner decisions; every task has acceptance).
 
+The test repositories are named by label (`go-a`, `ts-a`, `ts-b`, `py-a`, `py-b`, `java-a`,
+`cs-a`, `cs-b`); which clone each one is, the measurement reports this plan cites, and the
+scripts written for one repository (the spikes, the `*-e2e.js` runs, the corpora) are in the
+maintainer's local notes (`npm run -s local-notes`), not in this public repository.
+
 ## Where we stand
 
 Impact Tree analyses TypeScript and JavaScript only. On a Go pull request
-([cli/cli#14752](https://github.com/cli/cli/pull/14752)) the CLI reported **0 changed
+(go-a #14752) the CLI reported **0 changed
 source files**: every `.go` file is dropped at `src/engine/analyze.js:253` by
 `isSourcePath` (`src/engine/diff.js:155`) and shown as a file with no call graph. The
 README's "the caller graph is multi-language" is true of the caller lookup only; the
@@ -154,7 +159,7 @@ the design: TypeScript results must not change.
 
 No new language yet. Every task leaves TypeScript's results identical: the
 characterization snapshot (`tree-characterization.test.js`), `run-fixtures.js` and the
-`t3-pr-snapshots` suite pass unchanged.
+pinned-PR snapshot suite (since moved outside the repository) pass unchanged.
 
 ### T1. Interfaces and the registry (done)
 
@@ -175,7 +180,7 @@ today's resolver on the existing resolver tests; base-side `DocRef`s are refused
 
 Verified 2026-10-24: the full suite (82 files) passes with no expected value changed, and
 the CLI's `--json` output is identical before and after on 14 cases (12 merged PRs or
-merges of `pingdotgg/t3code` and `honojs/hono`, up to 245 changed files and 639 changed
+merges of `ts-a` and `ts-b`, up to 245 changed files and 639 changed
 functions, plus the synthetic fixture), timings aside.
 
 Acceptance: `src/languages/typescript/` provides every method from the current modules;
@@ -190,7 +195,7 @@ provider; `cli.js` and `analyze-remote.js` use the provider with `resolver-ts.js
 
 ### G0. Spike: what the editor's Go support gives us
 
-Answer, with numbers recorded here, on `cli/cli` in VS Code with the Go extension and
+Answer, with numbers recorded here, on `go-a` in VS Code with the Go extension and
 through the harness:
 
 1. `documentSymbols` on a `.go` file: kinds, `range` (whole body?), `selectionRange`,
@@ -206,8 +211,8 @@ through the harness:
 
 Acceptance: a "Measured" section under G0 with the answers; L1 decided.
 
-**Measured (2026-10-24, done).** Full numbers in `test/lsp-harness/G0-REPORT.md`, reproduced
-by `node test/lsp-harness/g0-spike.js <cli clone>` (gopls v0.21.0, Intel i7-9750H, warm
+**Measured (2026-10-24, done).** Full numbers in the G0 report (kept outside the repository; npm run -s local-notes), reproduced
+by the G0 spike (kept outside the repository; npm run -s local-notes) (gopls v0.21.0, Intel i7-9750H, warm
 gopls disk cache; the real VS Code Go extension was not run).
 1. Symbols: hierarchical; functions and methods all present; `range` is `func` to `}` (doc
    comment excluded); `selectionRange` is the bare name; methods are named with their
@@ -242,7 +247,7 @@ its matcher (`changedFromSymbols`) takes collected symbols, TypeScript output un
 (`src/session/services-vscode.js`, at most 2 Mi characters, removed in `finally`, leftovers swept
 at startup). A Go method's key uses its receiver's base type (`(Config).Size` for
 `(*Config).Size`), so a `T` ↔ `*T` change is one `type-changed` method, not a delete and an
-add. Checked end to end against gopls on cli/cli PR #14752 (`test/lsp-harness/go-e2e.js`):
+add. Checked end to end against gopls on go-a PR #14752 (the Go end-to-end script (kept outside the repository; npm run -s local-notes)):
 every added and deleted function the diff shows, nothing more. Go rows got a conservative
 review identity (any edit to the file unticked them) until G5 replaced it.
 
@@ -258,7 +263,7 @@ deleted and outside-function changes for Go as for TS. Unit tests run on recorde
 ### G3. Go signatures (done)
 
 Done 2026-10-24: `src/languages/go/signature.js`. Agrees with `go/parser` on 6621 of 6621
-declarations in cli/cli and 61356 of 61356 in the Go standard library
+declarations in go-a and 61356 of 61356 in the Go standard library
 (`test/go-signature-oracle.js`). Known limit: type text is compared as written, so
 reformatting a multi-line struct type in a signature reads as a type change.
 
@@ -267,7 +272,7 @@ Acceptance: `signatureKinds` parses each declaration header —
 `func (r *T) Name(a, b int, opts ...Opt) (T, error)` — into a `sig` (grouped names
 expanded, unnamed params named by position, variadic as `rest`, results as `returns`,
 generics `[T any]` parsed) and calls the shared `diffSignature`; a receiver change
-(`T` ↔ `*T`) is `type-changed`; tests cover each form from real `cli/cli` headers.
+(`T` ↔ `*T`) is `type-changed`; tests cover each form from real `go-a` headers.
 
 ### G4. Go callers and their blind spots (done)
 
@@ -280,7 +285,7 @@ Callers that only use the function as a value are dropped, mixed ones keep only 
 calls, and any value use makes the answer incomplete with `referenced-as-value` (so a
 function used only as a value is unknown, never "no callers"). A "no package metadata"
 rejection reads "not in the active build (build tags); callers were not searched", not
-retryable (`EditorCallerExtras.explainIncomplete`). On cli/cli: `noArgsConstraint` goes from
+retryable (`EditorCallerExtras.explainIncomplete`). On go-a: `noArgsConstraint` goes from
 11 callers, complete, to unknown / `referenced-as-value`; `debug.Config` in
 `config_enabled.go` shows the build-tag reason.
 
@@ -327,7 +332,7 @@ Done 2026-10-24. Two optional provider hooks and one extra, no Go in the shared 
   first run waits, the Changes view and status bar read "Waiting for the Go language server
   (gopls)… 12 s"; a timed-out caller retry reads "retrying when the Go language server
   (gopls) has loaded… N s". TypeScript's wording is unchanged. `test/go-warm-up.test.js`.
-- On cli/cli PR #14752 with gopls: 22 Go rows, all content-identified, all distinct.
+- On go-a PR #14752 with gopls: 22 Go rows, all content-identified, all distinct.
 
 Acceptance: through T3's provider hooks, a Go row's identity is `rel#key` plus a hash of
 its declaration text, so a tick survives a refresh and a push that does not touch the
@@ -340,7 +345,7 @@ Acceptance: per L2, a Go file in the CLI or a no-checkout preview is listed as "
 analysed in this mode — check out the pull request in the editor", and the preview's
 limits note says so; nothing in those modes reads a Go file as having no impact.
 
-### G7. Verification against cli/cli (done)
+### G7. Verification against go-a (done)
 
 The harness adapter (`test/lsp-harness/`) runs the real pipeline and Go provider against
 `gopls`. Two independent oracles:
@@ -351,7 +356,7 @@ The harness adapter (`test/lsp-harness/`) runs the real pipeline and Go provider
   call hierarchy) and `-algo=vta` (adds interface and function-value calls, to measure
   what G4's "may be missing" covers).
 
-Corpus: 10 merged `cli/cli` PRs, chosen to include a renamed and a removed function,
+Corpus: 10 merged `go-a` PRs, chosen to include a renamed and a removed function,
 a method signature change, an interface implementation, a build-tagged file, a cobra
 `RunE` function value, generics and `_test.go` changes. PR #14752 is the first.
 
@@ -366,8 +371,8 @@ Acceptance, recorded here per PR and in total:
 Then a manual pass in VS Code on three of those PRs (one review, one checked-out PR, one
 agent run), as U8's walk, by the owner.
 
-**Measured (2026-10-25).** Full report: `test/lsp-harness/G7-REPORT.md`, reproduced by
-`node test/lsp-harness/go-verify.js <cli clone>` (corpus `test/lsp-harness/go-verify-corpus.json`;
+**Measured (2026-10-25).** Full report: the G7 report (kept outside the repository; npm run -s local-notes), reproduced by
+`node test/lsp-harness/go-verify.js <go-a clone>` (corpus `<scratchpad>/corpora/go-verify-corpus.json`;
 oracles cached by commit and tool, about 1.5 min a re-run, 2.5 min uncached). 10 PRs, 816
 function changes, 786 with callers compared; gopls v0.21.0, x/tools v0.52.0, go1.27.3.
 - Changed functions: 100% precision, 100% recall against go/parser.
@@ -404,7 +409,7 @@ mention Go only once it ships.
 ## Part P: Python (approved 2026-10-25)
 
 **Approved by the owner as proposed:** P-D1 `pyright` (MIT) in the scratchpad, P-D2
-`encode/httpx`, P-D3 Jedi + 30 hand-checked callers, P-D4 (B) duck-typing evidence search,
+`py-a`, P-D3 Jedi + 30 hand-checked callers, P-D4 (B) duck-typing evidence search,
 P-D5 nested defs in the parent's body, P-D6 raises as `new-throw`; the verification plan
 and budgets below as written.
 
@@ -427,11 +432,11 @@ run outside the editor: the MIT-licensed `pyright` npm package (decision P-D1).
 ### Decisions (approved)
 
 - **P-D1. Harness server.** Install the MIT `pyright` npm package (its `pyright-langserver`)
-  into `~/Projects/impact-tree-scratchpad/py-tools/`, not into the repo. One download,
+  into `<scratchpad>/py-tools/`, not into the repo. One download,
   ~15 MB. Alternative: `basedpyright` (a Pyright fork, also MIT). Proposal: `pyright`, the
   common base of both editors' servers.
 - **P-D2. Test repository.** A typed, mid-sized Python project with many merged PRs, so the
-  server resolves most calls. Proposal: **`encode/httpx`** (fully type-annotated, ~60 source
+  server resolves most calls. Proposal: **`py-a`** (fully type-annotated, ~60 source
   files, active). Alternatives: `pallets/flask` (lightly typed, decorator-heavy: a harder
   test of value uses), `psf/black`.
 - **P-D3. Callers oracle.** Python has no maintained static call-graph tool like Go's
@@ -465,8 +470,8 @@ run outside the editor: the MIT-licensed `pyright` npm package (decision P-D1).
   receivers, decorator registrations (`@app.route`) and callbacks as value uses,
   references, timings cold/warm. Output: a "Measured" note; confirms or changes P-D4/P-D5.
 
-  **Measured (2026-10-25).** Full numbers in `test/lsp-harness/P0-REPORT.md`, reproduced by
-  `node test/lsp-harness/p0-spike.js <httpx clone>` (pyright 1.1.414, httpx `b5addb6`, Intel
+  **Measured (2026-10-25).** Full numbers in the P0 report (kept outside the repository; npm run -s local-notes), reproduced by
+  the P0 spike (kept outside the repository) on py-a clone (pyright 1.1.414, py-a `b5addb6`, Intel
   i7-9750H; Cursor Pyright / Pylance not run).
   1. Symbols: hierarchical; methods (also class/static methods, properties) are `Method`
      children of their class; nested defs are `Function` children of their parent; parameters
@@ -521,11 +526,11 @@ run outside the editor: the MIT-licensed `pyright` npm package (decision P-D1).
 - **P6. Other modes:** nothing new expected (G6 covers it); check and test.
 - **P7. Verification** on 10 merged PRs of the P-D2 repo (plan below).
 
-  **Measured (2026-10-25).** Full report: `test/lsp-harness/P7-REPORT.md`, reproduced by
-  `node test/lsp-harness/py-verify.js <httpx clone> --worktree <httpx worktree>` (corpus
-  `test/lsp-harness/py-verify-corpus.json`; oracles cached by commit and tool, 59 s a cached
+  **Measured (2026-10-25).** Full report: the P7 report (kept outside the repository; npm run -s local-notes), reproduced by
+  `node test/lsp-harness/py-verify.js <py-a clone> --worktree <py-a worktree>` (corpus
+  `<scratchpad>/corpora/py-verify-corpus.json`; oracles cached by commit and tool, 59 s a cached
   run, 75–78 s uncached). 10 PRs, 141 function changes, 112 with callers compared; pyright
-  1.1.414, Jedi 0.20.1 (parso 0.8.7), Python 3.12.8; no httpx code imported or run (checked
+  1.1.414, Jedi 0.20.1 (parso 0.8.7), Python 3.12.8; no py-a code imported or run (checked
   in the Jedi process: no module from the export, `sys.path` unchanged).
   - Changed functions: 100% precision, 100% recall against `ast` (99.3% before F2).
   - Kinds: 77/77 header changes right, 22/22 body-only changes `body`; no `new-throw` case in
@@ -539,7 +544,7 @@ run outside the editor: the MIT-licensed `pyright` npm package (decision P-D1).
     there and lists constructions only at the class), and could read complete "no callers"
     where the editor turns `null` into `[]`: now always incomplete with a constructor reason.
     F2, a function defined in both branches of an `if`/`try` lost its second definition
-    (httpx `_compat.py`): now recovered.
+    (py-a `_compat.py`): now recovered.
   - Follow-ups: list an `__init__`'s constructions by asking at the class name (needs a
     provider hook or the extras to ask after a `null`: shared code); a `new-throw` PR if it
     should be measured; a clearer reason than "no incoming-call result" for methods reached
@@ -564,7 +569,7 @@ agent time budget; past it the agent stops and reports.
 | `npm run test:quick` + the touched test files | nothing obvious broke | iterate | ~10 s |
 | full `npm test` | no regression anywhere | end | ~1 min |
 | TypeScript `--json` baseline (`compare.sh`) | TypeScript output unchanged | end | ~45 s |
-| Go end-to-end (`go-e2e.js`, cli/cli #14752) | Go unchanged | end | ~15 s |
+| Go end-to-end (`go-e2e.js`, go-a #14752) | Go unchanged | end | ~15 s |
 | Python end-to-end (`py-e2e.js`, one test-repo PR) | the provider works on real code with Pyright | end of P2–P6 | ~20 s (estimate) |
 | Signature oracle (`py-signature-oracle.js` vs `ast`, whole test repo) | P3 parser agrees with Python | end of P3 | ~5 s |
 | P7 verification (`py-verify.js`, 10 PRs; `ast` + Jedi oracles cached by commit + tool version; 3 PRs' oracles in parallel; hard deadline) | changed functions, kinds, callers on real PRs | end of P7 | uncached ≤ 5 min, cached ≤ 2 min |
@@ -594,7 +599,7 @@ is known.
 ## Part J: Java, in the editor and in the preview and the CLI (plan, 2026-10-26)
 
 **Approved by the owner (2026-10-26) as proposed:** J-D1 (a) tools in the scratchpad,
-J-D2 (a) `google/gson`, J-D3 (a) parameter-type keys, J-D4 (a) `access-changed`, J-D5 (a)
+J-D2 (a) `java-a`, J-D3 (a) parameter-type keys, J-D4 (a) `access-changed`, J-D5 (a)
 `throws` and `throw new`, J-D6 (a) the repository in the CLI; the verification plan and
 budgets below as written.
 
@@ -643,16 +648,16 @@ What Java changes compared with Go and Python:
   and Cursor for the manual pass (it bundles its own Java runtime).
 - **J-D2. Test repository.** A Maven project whose main code has no runtime dependencies
   (so the oracle's classpath is small), with many merged PRs. (a) **proposal**:
-  **`google/gson`**: multi-module (tests units), generics, overloads, inner and anonymous
+  **`java-a`**: multi-module (tests units), generics, overloads, inner and anonymous
   classes, reflection; (b) `jhy/jsoup`: single module, very active, simpler types;
   (c) `apache/commons-lang`: overload-heavy (`StringUtils`), large, many small PRs.
   The 10-PR corpus is picked in J6 and approved separately, as P7's was.
 - **J-D3. Overload keys.** (a) **proposal**: the key carries the erased simple parameter
-  types, as jdtls names them (`Gson.toJson(Object, Appendable)`), so adding or reordering
+  types, as jdtls names them (`Codec.toJson(Object, Appendable)`), so adding or reordering
   an overload moves no other key; in a file where exactly one overload of a name
   disappears and one appears, the two are paired and read as a signature change of that
   overload (its old key kept as the row's identity, as a rename is today). (b) Name and
-  source order (`Gson.toJson#2`), as Go and Python repeat names: simpler, but inserting an
+  source order (`Codec.toJson#2`), as Go and Python repeat names: simpler, but inserting an
   overload above another shifts its key and its review tick.
 - **J-D4. Java-only kinds.** (a) **proposal**: one new kind, `access-changed` (visibility
   reduced, `static` added or removed, `final` added to a method that is overridden in the
@@ -677,8 +682,8 @@ of its members incomplete with "members generated by annotation processing are n
 ### Tasks
 
 - **J0. Spike** (Opus, 45 min): install per J-D1 and clone the J-D2 repository into
-  `~/Projects/impact-tree-test-repos/`, then measure through the LSP harness
-  (`test/lsp-harness/j0-spike.js`, report `J0-REPORT.md`):
+  `<test-repos>/`, then measure through the LSP harness
+  (the J0 spike, kept outside the repository, its report kept outside the repository):
   1. documentSymbol: hierarchy (classes, inner, anonymous, enums, records, interfaces with
      default methods), method names (with parameter types?), `detail`, `range` (Javadoc
      and annotations inside or not), `selectionRange`, constructors, lambdas.
@@ -750,19 +755,19 @@ of its members incomplete with "members generated by annotation processing are n
 (drop the ` <T>` suffix, erase type arguments with nesting, keep `[]`, one fixed form for
 `T...` shared with J3, type variables as written); L1 for Java is G2's temporary copy in
 the editor, J7's outline in the preview and the CLI; J-D1 updated to JDK 25. Measured
-numbers: `test/lsp-harness/J0-REPORT.md`. Open: call-hierarchy freshness after a branch
+numbers: the J0 report (kept outside the repository; npm run -s local-notes). Open: call-hierarchy freshness after a branch
 switch (fix the check and re-run before J5).
 
 Order: J0 → (owner: J-D3 confirmed) → J1 → J2 ∥ J3 → J4 → J5 → J6; J7 after J3 (it reuses
 the header parser), J8 after J7; J9 last. J7/J8 can run while J4–J6 do (different files).
 Each step is merged before the next one that depends on it starts.
 
-**Done (2026-10-30).** J0–J8 merged or in review; J9 is the docs. Measured on the 12-PR gson
+**Done (2026-10-30).** J0–J8 merged or in review; J9 is the docs. Measured on the 12-PR java-a
 corpus (owner-approved: 10 picked plus #2950 and #2944):
 - Without a server (J7, J8): changed methods 224/224 against the JDK Tree API, kinds 90/90;
   syntax-index callers against `javac` (`-proc:none`) 100% precision and 99.2% recall in
   both the CLI and the preview, every miss on an answer marked incomplete.
-- Editor (J6, four passes, `test/lsp-harness/J6-REPORT.md`): 224/224, kinds 90/90, 0 callers
+- Editor (J6, four passes, the J6 report (kept outside the repository; npm run -s local-notes)): 224/224, kinds 90/90, 0 callers
   `javac` resolves missed on an answer marked complete; recall 94.1%, extra callers mostly
   jdtls' override over-reports on incomplete answers. Found on the way: jdtls lists no calls
   in a project at Java 6 or older (broken build path, read from its diagnostics); VS Code
@@ -813,8 +818,8 @@ checked every 15–20 minutes.
 
 1. Branch from `main`. 2. The decisions and the verification plan are agreed.
 3. J0 first; bring its numbers and J-D3's confirmation to the owner before J2. Test
-repositories: `~/Projects/impact-tree-test-repos/` (the J-D2 clone joins them; leave
-`httpx-pr` alone). Tools per J-D1 under `~/Projects/impact-tree-scratchpad/java-tools/`.
+repositories: `<test-repos>/` (the J-D2 clone joins them; leave
+`py-a-pr` alone). Tools per J-D1 under `<scratchpad>/java-tools/`.
 
 ## Part A: the architecture after three languages (review, 2026-10-25)
 
@@ -826,8 +831,8 @@ Three small cleanups are done (A1–A3); A4–A6 are decisions for the owner.
 ### Cleanups (done 2026-10-25)
 
 Checked unchanged before and after: `npm test`, the TypeScript baseline, Go's end to end on
-cli/cli #14752, Python's end to end on httpx #1600 (output identical), `py-verify.js` on
-the 10 httpx PRs (every per-PR result identical), and the signature oracle (httpx
+go-a #14752, Python's end to end on py-a #1600 (output identical), `py-verify.js` on
+the 10 py-a PRs (every per-PR result identical), and the signature oracle (py-a
 1134/1134, standard library 61098/61098).
 
 - **A1. One caller-extras step.** The order in which a language's `EditorCallerExtras`
@@ -864,7 +869,7 @@ the 10 httpx PRs (every per-PR result identical), and the signature oracle (http
   to the extras interface, though it grew one hook at a time (`query`, `filter`,
   `moreCallers`, `explainIncomplete`, `unseenUsers`, suppression).
 - **A6. Duck-typing search per analysis.** Each changed Python method runs its own
-  repository search and up to 50 `definition` queries; httpx stays under 13 s per PR, but
+  repository search and up to 50 `definition` queries; py-a stays under 13 s per PR, but
   a PR with 100 changed methods repeats it 100 times. Options: (a) one index of
   `.<name>(` call sites per analysis, built on first use and dropped at `clear()`; (b) keep
   per target. Proposal: measure first on a large typed repository, then (a) if the time is
@@ -893,20 +898,20 @@ the 10 httpx PRs (every per-PR result identical), and the signature oracle (http
   `py-verify.js` (cached, 10 PRs): callers 1066 ours / 968 Jedi, precision 90.8% (the 98
   `with … as x` extras of P7), recall 100% (was 26.2%; 0 constructions missed, was 714);
   every other per-PR result as P7; Client/AsyncClient `__init__` incomplete as
-  `referenced-as-value` (`parametrize("client_class", [httpx.Client, …])`).
+  `referenced-as-value` (`parametrize("client_class", [py-a.Client, …])`).
 - **A6. Measure the duck-typing search.** One merged PR with many changed methods in a large
-  typed repository (proposal: `pydantic/pydantic`), through `py-verify.js`'s pipeline phase
+  typed repository (proposal: `py-b`), through `py-verify.js`'s pipeline phase
   only: time per caller query with and without the search, the number of searches, files
   read and `definition` queries. "Slow" means the search adds more than 25% or more than
   10 s to the time to full result; then build the per-analysis index (A6b), else close A6.
 
-  **Measured (2026-10-25): not slow, A6 closed.** pydantic #13070 (b36eaeb, 47 changed
+  **Measured (2026-10-25): not slow, A6 closed.** py-b #13070 (b36eaeb, 47 changed
   functions, 30 duck searches), fresh Pyright per run, search on vs off (`grep` stubbed):
   full result 30.8 s vs 29.1 s (+1.7 s, +5.9%); a second pair was within noise (ON 32.5 s,
   OFF 37.4 s; the machine was loaded). 30 `git grep`s about 3 s and 36 `definition` queries
   3–8 s in all, concurrent; no budget reached (at most 14 hits per name). Script and raw
-  runs: `~/Projects/impact-tree-scratchpad/a6/`.
-  Found on the way: pydantic's `[tool.pyright] include = ['pydantic', 'tests/test_pipeline.py']`
+  runs: `<scratchpad>/a6/`.
+  Found on the way: py-b's `[tool.pyright] include = ['py-b', 'tests/test_pipeline.py']`
   leaves most tests out of Pyright's project, so their callers are not listed. For methods
   the duck search catches them ("N calls the language server resolves to it but did not
   list": 9 in `tests/test_color.py` for `Color.as_rgb_tuple`), but a **module function**
@@ -921,12 +926,12 @@ the 10 httpx PRs (every per-PR result identical), and the signature oracle (http
   name, is searched (`git grep` for the name as a word, then calls and imports in code, not at
   a listed site, in files outside the project; a file with its own module-level definition
   counts only `mod.name(`). Methods stay with the duck search. Budgets: 200 files, 1 MiB per
-  file, 16 MiB, 10 s. An unreadable config searches every file and names the error. pydantic
+  file, 16 MiB, 10 s. An unreadable config searches every file and names the error. py-b
   #13070: full result 34.0 s; `replace_types`, `get_function_type_hints`,
   `apply_discriminator`, `ValidatedFunction.__init__` now incomplete with the new reason; in
   the editor (`[]` for Pyright's `null`) `recursively_defined_type_refs` (5 uses in
   `tests/test_generics.py`) and `models_json_schema` (16) read incomplete, before "no callers".
-  httpx (no `[tool.pyright]`): unchanged. Script: `~/Projects/impact-tree-scratchpad/a7/`.
+  py-a (no `[tool.pyright]`): unchanged. Script: `<scratchpad>/a7/`.
 - **A4. Python outside the editor.** An optional `prepareSyntactic` on a provider, used where
   there is no language server (the CLI, the no-checkout preview): Python's changed functions
   and their kinds from the text (the module-level and class-body def scan of P2's recovery,
@@ -958,27 +963,27 @@ then A4.
 | A5 | `npm run test:quick` + touched test files | iterate | ~15 s |
 | A5 | `npm test`, lint, typecheck | end | ~2.5 min |
 | A5 | TypeScript baseline (`compare.sh`) and Go e2e (shared code changes) | end | ~70 s / ~10 s |
-| A5 | `py-e2e.js` on httpx #1600 (`httpx-seams` worktree) | end | ~12 s |
+| A5 | `py-e2e.js` on py-a #1600 (`py-a-seams` worktree) | end | ~12 s |
 | A5 | `py-verify.js` cached, 10 PRs: constructions now listed, every target still met | end, at most 2 runs | ~1 min each |
 | A6 | clone the repo (shallow to the PR's base), pick the PR | once | ≤ 3 min |
 | A6 | one timed pipeline run with the search on and one with it off | once each | ≤ 5 min each |
 | A4 | `npm run test:quick` + touched test files | iterate | ~15 s |
 | A4 | `npm test`, lint, typecheck, TypeScript baseline | end | ~3.5 min |
-| A4 | syntactic oracle on the 10 httpx PRs (`ast` cached from P7): changed functions 100% precision, ≥ 98% recall; kinds right | end, at most 3 runs | ≤ 1 min each |
-| A4 | CLI and preview on httpx #1600: Python rows listed with kinds, callers "not computed", nothing reads "no impact" | end | ~20 s |
+| A4 | syntactic oracle on the 10 py-a PRs (`ast` cached from P7): changed functions 100% precision, ≥ 98% recall; kinds right | end, at most 3 runs | ≤ 1 min each |
+| A4 | CLI and preview on py-a #1600: Python rows listed with kinds, callers "not computed", nothing reads "no impact" | end | ~20 s |
 
 | A7 | `npm run test:quick` + touched test files | iterate | ~15 s |
 | A7 | `npm test`, lint, typecheck | end | ~2.5 min |
-| A7 | `py-e2e.js` on httpx #1600 (`httpx-seams`) | end | ~12 s |
+| A7 | `py-e2e.js` on py-a #1600 (`py-a-seams`) | end | ~12 s |
 | A7 | `py-verify.js` cached, 10 PRs: every target still met, no new incomplete answer without a found unseen caller | end, at most 2 runs | ~1 min each |
-| A7 | pydantic #13070 (`pydantic-a6` worktree, `a6/measure.js`-style run): a module function called only from a test outside Pyright's project reads incomplete with the new reason; the run stays within A6's time | end, once | ~40 s |
+| A7 | py-b #13070 (`py-b-a6` worktree, `a6/measure.js`-style run): a module function called only from a test outside Pyright's project reads incomplete with the new reason; the run stays within A6's time | end, once | ~40 s |
 
 Agent budgets (wall time, verification included): A5 30 min (Opus); A6 20 min (Sonnet);
 A7 30 min (Opus); A4 45 min (Opus). Past it the agent stops and reports.
 
 ### Out-of-sample check (owner request, 2026-10-25)
 
-12 open httpx PRs none of this was tuned on (`test/lsp-harness/py-verify-oos-corpus.json`;
+12 open py-a PRs none of this was tuned on (`<scratchpad>/corpora/py-verify-oos-corpus.json`;
 `py-verify.js --corpus`): #3777, #3696, #3059, #3778, #3771, #3769, #3766, #3741, #3733, #3724,
 #3700, #3587. Before the fix below: changed functions 100% precision, 95.1% recall (77/81),
 kinds all right, callers vs Jedi 99.8% precision and 99.6% recall, no complete answer
@@ -1065,9 +1070,9 @@ the index is bounded by the files it is given (the preview: the PR's files under
 | --- | --- | --- | --- |
 | A8.1 | `npm run test:quick` + touched test files | iterate | ~15 s |
 | A8.1 | `npm test`, lint, typecheck, TypeScript baseline | end | ~3.5 min |
-| A8.1 | CLI and preview (offline) on httpx #1600 and #3741: callers listed, each answer incomplete with its scope, nothing reads "no callers" | end | ~30 s |
+| A8.1 | CLI and preview (offline) on py-a #1600 and #3741: callers listed, each answer incomplete with its scope, nothing reads "no callers" | end | ~30 s |
 | A8.2 | `py-verify.js --syntactic` on the 10-PR corpus and the 12-PR out-of-sample corpus (Jedi cached; Jedi callers restricted to the indexed files) | end, at most 3 runs per corpus | ≤ 1.5 min each |
-| A8.2 | the same on pydantic #13070 (`pydantic-a6`), CLI scope only (per A8-D1) | end, once | ≤ 2 min |
+| A8.2 | the same on py-b #13070 (`py-b-a6`), CLI scope only (per A8-D1) | end, once | ≤ 2 min |
 
 Acceptance targets (A8.2): caller precision against Jedi within the indexed files ≥ 95%
 (false positives listed one by one); recall reported, with each miss sitting on an answer
@@ -1084,17 +1089,17 @@ and changed tests, CLI from the repository (3000 files / 64 MiB). A8.2 (`py-veri
 
 | Corpus / scope | Precision | Recall | Complete | none / "no callers" |
 | --- | --- | --- | --- | --- |
-| 10 merged httpx PRs, CLI | 99.9% (949/950) | 98.0% | 0 | 0 |
-| 10 merged httpx PRs, preview | 100% (188/188) | 90.0% | 0 | 0 |
-| 12 open httpx PRs, CLI | 100% (508/508) | 97.9% | 0 | 0 |
-| 12 open httpx PRs, preview | 100% (70/70) | 69.3% | 0 | 0 |
-| pydantic #13070, CLI | 78.1% raw (630/807); 100% counting Jedi's own `goto` | 96.8% | 0 | 0 |
+| 10 merged py-a PRs, CLI | 99.9% (949/950) | 98.0% | 0 | 0 |
+| 10 merged py-a PRs, preview | 100% (188/188) | 90.0% | 0 | 0 |
+| 12 open py-a PRs, CLI | 100% (508/508) | 97.9% | 0 | 0 |
+| 12 open py-a PRs, preview | 100% (70/70) | 69.3% | 0 | 0 |
+| py-b #13070, CLI | 78.1% raw (630/807); 100% counting Jedi's own `goto` | 96.8% | 0 | 0 |
 
-The one httpx false positive is a real call on a `with … as client` receiver (Jedi's P7 limit).
-pydantic's 177 are real calls Jedi's reference search never reaches (Jedi 0.20.1 stops after
+The one py-a false positive is a real call on a `with … as client` receiver (Jedi's P7 limit).
+py-b's 177 are real calls Jedi's reference search never reaches (Jedi 0.20.1 stops after
 30 parsed files, `jedi/inference/references.py` `_PARSED_FILE_LIMIT`); its `goto` confirms
 all 456 sites. Every Jedi caller we miss is on an answer marked incomplete. Fixed on the way:
-`from . import sub` in a package `__init__` read as a cycle (pydantic recall 66.2% → 96.8%).
+`from . import sub` in a package `__init__` read as a cycle (py-b recall 66.2% → 96.8%).
 Limits left: `Cls.m(`, `Cls().m(`, `self.x.m(`, `list[Cls]`, `with … as x` receivers, f-string
 fields; bases depth-first, not the MRO; every unresolved `.m(` counted, string receivers too.
 
@@ -1122,12 +1127,12 @@ once; S2 gets most of the benefit at a fraction of the risk.
 
 - **S0. Record the preview's output before any change** (Sonnet). A dev script
   `test/lsp-harness/preview-golden.js` runs `analyzeRemote` offline (a fake `gh` reading git
-  objects only, as `py-verify.js --preview` and t3-pr-snapshots.js do) on a fixed list of PRs
+  objects only, as `py-verify.js --preview` and the pinned-PR snapshot script did) on a fixed list of PRs
   and writes each result normalised (no timings, sorted) to
-  `~/Projects/impact-tree-scratchpad/preview-golden/<repo>-<pr>.json`; `--compare` diffs
+  `<scratchpad>/preview-golden/<repo>-<pr>.json`; `--compare` diffs
   against them and exits 1 on any difference. PRs: the 14 TypeScript baseline cases' PRs
-  where they have a GitHub PR shape (t3code, hono, fixture), httpx #1600, #3741, #3319
-  (Python), cli/cli #14752 and one more Go PR (Go "not analysed"), one docs-only PR.
+  where they have a GitHub PR shape (ts-a, ts-b, fixture), py-a #1600, #3741, #3319
+  (Python), go-a #14752 and one more Go PR (Go "not analysed"), one docs-only PR.
 - **S1. One contract for a syntax index.** `SyntacticIndex` typedef in
   `src/languages/types.js`: `symbolAt(file, pos)`, `callersOfWithStatus({ file, className,
   name, pos })` → `{ callers, incompleteReason }`, `unresolvedCallsTo({ name })`, plus `size`;
@@ -1151,7 +1156,7 @@ once; S2 gets most of the benefit at a fraction of the risk.
   a text outline of top-level `func Name(` / `func (r *T) Name(` declarations (gofmt'd code;
   a small Go lexer for strings, raw strings, runes and comments; a body ends at its matching
   brace), keyed exactly as G2 keys gopls' symbols (`(T).Name` by the receiver's base type,
-  `#2` repeats), G3's header parser for kinds (it agrees with go/parser on 6621/6621 cli/cli
+  `#2` repeats), G3's header parser for kinds (it agrees with go/parser on 6621/6621 go-a
   and 61356/61356 standard-library declarations). Callers "not computed" until S4.
 - **S4. Go callers from a syntax index** (Go's A8). `src/languages/go/syntactic-index.js`
   implementing S1's contract: a package is a directory; import paths map to directories
@@ -1184,10 +1189,10 @@ once; S2 gets most of the benefit at a fraction of the risk.
 | S1–S2 | `npm run test:quick` + touched test files | iterate | ~15 s |
 | S1–S2 | `npm test`, lint, typecheck, TypeScript baseline (`compare.sh`) | end | ~3.5 min |
 | S2 | `preview-golden.js --compare`: every PR's normalised preview identical (only the result-field rename allowed, listed) | end, at most 2 runs | ≤ 3 min |
-| S2 | `IMPACT_TREE_TARGET_REPO=~/Projects/impact-tree-test-repos/t3code npm run test:snapshots` (preview vs local on pinned t3code PRs) | end, once | measure on first run (estimate ≤ 3 min) |
-| S2 | `py-verify.js --syntactic` and `--preview` on both httpx corpora: every per-PR result identical to A8.2's | end, once each | ≤ 1.5 min each |
-| S3 | `go-verify.js` in a no-server mode (to add, as py-verify's `--syntactic`) on the 10 cli/cli PRs, go/parser oracle cached: changed functions 100% precision, ≥ 98% recall; kinds right | end, at most 3 runs | ≤ 1.5 min each |
-| S3 | CLI and offline preview on cli/cli #14752: Go rows with kinds, callers "not computed", nothing reads "no impact" | end | ~30 s |
+| S2 | `IMPACT_TREE_TARGET_REPO=<test-repos>/<ts-a clone> npm run test:snapshots` (preview vs local on pinned ts-a PRs; the script has since moved outside the repository) | end, once | measure on first run (estimate ≤ 3 min) |
+| S2 | `py-verify.js --syntactic` and `--preview` on both py-a corpora: every per-PR result identical to A8.2's | end, once each | ≤ 1.5 min each |
+| S3 | `go-verify.js` in a no-server mode (to add, as py-verify's `--syntactic`) on the 10 go-a PRs, go/parser oracle cached: changed functions 100% precision, ≥ 98% recall; kinds right | end, at most 3 runs | ≤ 1.5 min each |
+| S3 | CLI and offline preview on go-a #14752: Go rows with kinds, callers "not computed", nothing reads "no impact" | end | ~30 s |
 | S4 | `go-verify.js` no-server mode with callers vs `callgraph -algo=static` restricted to the indexed files, CLI and preview scopes | end, at most 3 runs per scope | ≤ 2 min each |
 | S4 | `npm test`, lint, typecheck, TypeScript baseline, Go e2e (gopls path unchanged) | end | ~4 min |
 
@@ -1204,10 +1209,10 @@ Order: S0 → S1+S2 → (owner: S-D1–D3) → S3 → S4 → S5. Each step merge
 
 1. Branch from `main`. 2. Agree this verification plan (and S-D1–D3 before S3). 3. S0 first,
 on unchanged code, so S2's "identical" has something to compare against. Test repositories:
-`~/Projects/impact-tree-test-repos/` (`cli` on `pr-14752`, `t3code`, `hono`, `fixture`,
-`httpx`, `httpx-seams` on `seams-1600`; leave `httpx-pr` alone, it is the owner's). Oracles
+`<test-repos>/` (`go-a` on `pr-14752`, `ts-a`, `ts-b`, `fixture`,
+`py-a`, `py-a-seams` on `seams-1600`; leave `py-a-pr` alone, it is the owner's). Oracles
 and caches: `go-verify.js` (go/parser, callgraph; about 1.5 min cached), `py-verify.js`
-(ast, Jedi). Scratch: `~/Projects/impact-tree-scratchpad/`.
+(ast, Jedi). Scratch: `<scratchpad>/`.
 
 ## Order
 
@@ -1215,7 +1220,7 @@ and caches: `go-verify.js` (go/parser, callgraph; about 1.5 min cached), `py-ver
 2. G0 spike, then decide L1 (and L2/L3 with it).
 3. G1 → G2 → G3: Go changes appear with correct kinds.
 4. G4 → G5 → G6: callers trustworthy, ticks persistent, other modes honest.
-5. G7 verification on cli/cli; fix what it finds; owner's manual pass.
+5. G7 verification on go-a; fix what it finds; owner's manual pass.
 6. G8 docs, then release Go support (v1.1 or later; v1 stays TS/JS per the v1 scope
    decision in `UX_PLAN.md`).
 7. Part P (Python): P0 → P1 → P2 ∥ P3 → P4 → P5/P6 → P7 → P8.

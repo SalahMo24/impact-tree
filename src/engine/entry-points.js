@@ -394,7 +394,7 @@ function declarationEntry(input) {
   return null;
 }
 
-/** The last segment of a dotted label: `Hono.route` -> `route`. @param {string} label */
+/** The last segment of a dotted label: `App.route` -> `route`. @param {string} label */
 const lastSegment = (label) => label.split('.').pop() || label;
 /** The class part of `Class.method`, or null. @param {string} label */
 const classPart = (label) => (label.includes('.') ? label.slice(0, label.lastIndexOf('.')) : null);

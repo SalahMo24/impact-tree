@@ -178,6 +178,6 @@ test('symbolAt and a file over the size limit', () => {
 });
 
 test('modulePathOf reads go.mod', () => {
-  assert.equal(modulePathOf('// c\nmodule github.com/cli/cli/v2\n\ngo 1.22\n'), 'github.com/cli/cli/v2');
+  assert.equal(modulePathOf('// c\nmodule example.com/tool/v2\n\ngo 1.22\n'), 'example.com/tool/v2');
   assert.equal(modulePathOf('go 1.22\n'), null);
 });

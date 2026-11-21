@@ -20,7 +20,7 @@ const MAX_FILES_READ = 4000;
 const MAX_FILE_BYTES = 1024 * 1024;
 
 // Cache: the facts of a repository on disk, reused while nothing they came from changed.
-// Reading them costs a second or more on a large repository (t3code: 4000 files read,
+// Reading them costs a second or more on a large repository (a TypeScript monorepo: 4000 files read,
 // 0.9–1.8 s, on the extension host's thread), and every run and caller retry asked again.
 // Owner: this module, one per process; the extension host keeps it for the window, the
 // CLI exits after one analysis. Key: the repository path and the languages asked for.
@@ -133,7 +133,7 @@ const MAX_CONTROLLER_FILES = 600;
 
 /**
  * Each class of the `*Controller*.cs` files -> its `[Route]` and base class, so a controller
- * that inherits its route (jellyfin's `BaseJellyfinApiController`) can be routed. Classes of
+ * that inherits its route (a `BaseApiController` of the project's own) can be routed. Classes of
  * one name that differ are all kept, as `candidates` with their namespaces; the rules choose
  * per derived file, or show the route as unknown (`baseFacts` in ./entry-points-csharp.js).
  * @param {string[]} listed @param {(rel: string) => string|null} read
@@ -407,7 +407,7 @@ function pythonModuleFile(pkgDir, module, listed) {
     const rest = module.slice(dots).split('.').filter(Boolean).join('/');
     base = rest ? `${dir}/${rest}` : dir;
   } else {
-    // Absolute import of the package itself: `from httpx._api import get`.
+    // Absolute import of the package itself: `from pkg._api import get`.
     const root = path.posix.dirname(pkgDir);
     base = (root === '.' ? '' : `${root}/`) + module.split('.').join('/');
   }

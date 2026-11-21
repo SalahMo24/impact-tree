@@ -1,8 +1,7 @@
 // @ts-check
 'use strict';
 // Go signatures (G3, docs/MULTI_LANGUAGE_PLAN.md): a declaration's header parsed into the
-// `sig` the shared diffSignature compares. Headers marked (cli/cli) are copied verbatim from
-// github.com/cli/cli (MIT); the bodies are abbreviated.
+// `sig` the shared diffSignature compares. The realistic headers are synthetic.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { parseGoDeclaration, renderGoSig } = require('../src/languages/go/signature');
@@ -153,35 +152,35 @@ test('text it cannot parse is null, never a throw', () => {
   assert.equal(parseGoDeclaration(/** @type {any} */ (undefined)), null);
 });
 
-test('cli/cli headers, verbatim', () => {
+test('realistic headers: receivers, blank params, generics, channels, multi-line', () => {
   const cases = [
     // [header, params, returns]
-    ['func (r Remotes) FindByName(names ...string) (*Remote, error) {', ['(receiver):Remotes', 'names:...string'], '(*Remote, error)'],
-    ['func IndexesFor(options []string, answers ...string) ([]int, error) {', ['options:[]string', 'answers:...string'], '([]int, error)'],
-    ['func (b *browser) Browse(_ string) error {', ['(receiver):*browser', '_#1:string'], 'error'],
-    ['func (e *em) Dispatch(_ []string, _ io.Reader, _, _ io.Writer) (bool, error) {',
-      ['(receiver):*em', '_#1:[]string', '_#2:io.Reader', '_#3:io.Writer', '_#4:io.Writer'], '(bool, error)'],
-    ['func (m *MockPrompter) RegisterMarkdownEditor(prompt string, stub func(string, string, bool) (string, error)) {',
-      ['(receiver):*MockPrompter', 'prompt:string', 'stub:func(string, string, bool) (string, error)'], null],
+    ['func (r Targets) FindByName(names ...string) (*Target, error) {', ['(receiver):Targets', 'names:...string'], '(*Target, error)'],
+    ['func IndexesOf(options []string, answers ...string) ([]int, error) {', ['options:[]string', 'answers:...string'], '([]int, error)'],
+    ['func (b *opener) Open(_ string) error {', ['(receiver):*opener', '_#1:string'], 'error'],
+    ['func (e *runner) Dispatch(_ []string, _ io.Reader, _, _ io.Writer) (bool, error) {',
+      ['(receiver):*runner', '_#1:[]string', '_#2:io.Reader', '_#3:io.Writer', '_#4:io.Writer'], '(bool, error)'],
+    ['func (m *FakePrompter) RegisterEditor(prompt string, stub func(string, string, bool) (string, error)) {',
+      ['(receiver):*FakePrompter', 'prompt:string', 'stub:func(string, string, bool) (string, error)'], null],
     ['func readRecords[T any](path string) ([]T, error) {', ['[T]:any', 'path:string'], '([]T, error)'],
     ['func (o Option[T]) UnwrapOr(value T) T {', ['(receiver):Option[T]', 'value:T'], 'T'],
     ['func (rs *relayServer) Err() <-chan error {', ['(receiver):*relayServer'], '<-chan error'],
     ['func handleChannels(ctx context.Context, server *relayServer, chans <-chan ssh.NewChannel) error {',
       ['ctx:context.Context', 'server:*relayServer', 'chans:<-chan ssh.NewChannel'], 'error'],
-    ['func TranslateRemotes(gitRemotes git.RemoteSet, translator Translator) (remotes Remotes) {',
-      ['gitRemotes:git.RemoteSet', 'translator:Translator'], 'Remotes'],
+    ['func Translate(gitRemotes git.RemoteSet, translator Translator) (remotes Targets) {',
+      ['gitRemotes:git.RemoteSet', 'translator:Translator'], 'Targets'],
     ['func Lock(ctx context.Context, path string) (f *os.File, unlock func(), err error) {',
       ['ctx:context.Context', 'path:string'], '(*os.File, func(), error)'],
-    ['func NewTelemetryAPIServer(svc TelemetryAPI, opts ...interface{}) TwirpServer {',
-      ['svc:TelemetryAPI', 'opts:...interface{}'], 'TwirpServer'],
-    ['func (*NotifyCodespaceOfClientActivityRequest) ProtoMessage() {}', ['(receiver):*NotifyCodespaceOfClientActivityRequest'], null],
+    ['func NewMetricsServer(svc MetricsAPI, opts ...interface{}) RPCServer {',
+      ['svc:MetricsAPI', 'opts:...interface{}'], 'RPCServer'],
+    ['func (*SyncActivityRequest) ProtoMessage() {}', ['(receiver):*SyncActivityRequest'], null],
     ['func (mock *PrompterMock) ConfirmCalls() []struct {\n\tPrompt       string\n\tDefaultValue bool\n} {\n\tvar calls []struct {\n\t\tPrompt       string\n\t\tDefaultValue bool\n\t}\n\treturn calls\n}',
       ['(receiver):*PrompterMock'], '[]struct { Prompt string DefaultValue bool }'],
-    ['func newMultiSelectSearchField(\n\ttitle, searchTitle string,\n\tdefaults, persistent []string,\n\tsearchFunc func(string) MultiSelectSearchResult,\n) *multiSelectSearchField {\n\tti := textinput.New()\n}',
-      ['title:string', 'searchTitle:string', 'defaults:[]string', 'persistent:[]string', 'searchFunc:func(string) MultiSelectSearchResult'],
-      '*multiSelectSearchField'],
-    ['func paginateAttributes[N projectAttribute](c *Client, p pager[N], variables map[string]any, queryName string, firstKey string, afterKey string, limit int, nodes []N) ([]N, error) {',
-      ['[N]:projectAttribute', 'c:*Client', 'p:pager[N]', 'variables:map[string]any', 'queryName:string', 'firstKey:string', 'afterKey:string', 'limit:int', 'nodes:[]N'], '([]N, error)'],
+    ['func newMultiSearchField(\n\ttitle, searchTitle string,\n\tdefaults, persistent []string,\n\tsearchFunc func(string) SearchResult,\n) *multiSearchField {\n\tti := textinput.New()\n}',
+      ['title:string', 'searchTitle:string', 'defaults:[]string', 'persistent:[]string', 'searchFunc:func(string) SearchResult'],
+      '*multiSearchField'],
+    ['func paginateItems[N itemAttribute](c *Client, p pager[N], variables map[string]any, queryName string, firstKey string, afterKey string, limit int, nodes []N) ([]N, error) {',
+      ['[N]:itemAttribute', 'c:*Client', 'p:pager[N]', 'variables:map[string]any', 'queryName:string', 'firstKey:string', 'afterKey:string', 'limit:int', 'nodes:[]N'], '([]N, error)'],
   ];
   for (const [header, params, returns] of cases) {
     const text = String(header);

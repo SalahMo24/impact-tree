@@ -3,7 +3,7 @@
 /**
  * The plan's LanguageServices operations, answered by Eclipse JDT LS (jdtls) over stdio:
  * the shared stdio services (./stdio-server-services.js) with jdtls' command and the `java`
- * language id, launched as J0 did (./j0-spike.js; tools per J-D1 in the scratchpad's
+ * language id, launched as J0 did (the J0 spike; tools per J-D1 in the scratchpad's
  * java-tools/: JDK 25 runs jdtls, m2e's files and the local Maven repository stay there).
  * `start` initializes with the Java settings and waits for jdtls' ServiceReady and the end
  * of its import and build progress (J0: answers before that can be empty). Test code only.
@@ -16,7 +16,7 @@ const { pathToFileURL } = require('node:url');
 const { createStdioServerServices } = require('./stdio-server-services');
 
 const { scratchpadPath } = require('./scratchpad');
-const DEFAULT_TOOLS = scratchpadPath('java-tools');
+const DEFAULT_TOOLS = () => scratchpadPath('java-tools');
 /** ServiceReady and quiet progress, cold import included (J0: 78 s with an empty m2). */
 const READY_DEADLINE_MS = 6 * 60 * 1000;
 const POLL_MS = 500;
@@ -56,7 +56,7 @@ function jdtlsCommand(tools, dataDir) {
  *   `dataDir` is jdtls' `-data` workspace: keep one per repository between runs (warm start).
  */
 function createJdtlsServices(options) {
-  const tools = options.tools || DEFAULT_TOOLS;
+  const tools = options.tools || DEFAULT_TOOLS();
   const settingsXml = path.join(tools, 'maven-settings.xml');
   const { command, args, env } = jdtlsCommand(tools, options.dataDir);
   let ready = false;
@@ -106,7 +106,7 @@ function createJdtlsServices(options) {
       // `automatic`: a pom changed by a checkout is re-imported without asking. jdtls' default,
       // `interactive`, asks the client, which the harness never answers: J6's runs kept the
       // previous commit's module versions after a switch, and extras/metrics/proto lost their
-      // link to the workspace's gson (their calls missed on complete answers).
+      // link to the workspace's java-a (their calls missed on complete answers).
       configuration: { maven: { userSettings: settingsXml, globalSettings: settingsXml }, updateBuildConfiguration: 'automatic' },
       import: { gradle: { enabled: false }, maven: { enabled: true } },
       autobuild: { enabled: true },

@@ -6,10 +6,10 @@
 // test/java-signature-oracle/Oracle.java (JDK only: javax.tools and com.sun.source.tree) is
 // run with `java`'s single-file source launch from a temp directory; it only parses the
 // repository's files, never compiles or runs them. Its output (one JSON line per method and
-// constructor) is cached under ~/Projects/impact-tree-scratchpad/java-oracle/, keyed by the
+// constructor) is cached under the scratchpad's java-oracle/ (test/lsp-harness/scratchpad.js), keyed by the
 // repository's commit, the oracle's hash and --max-files.
 //
-// Each declaration's text is cut as jdtls' range gives it (J0-REPORT §1): from the Javadoc,
+// Each declaration's text is cut as jdtls' range gives it (the J0 report, §1): from the Javadoc,
 // block or `//` comments just before the declaration to its end. Compared: header end,
 // modifiers (as a set: the Tree API does not keep their order), annotation names, type
 // parameters, return type, parameter names/types/varargs (varargs written `T...`), throws,
@@ -17,6 +17,7 @@
 // annotations stripped from the oracle's text (the parser drops them).
 const fs = require('fs');
 const os = require('os');
+const { scratchpadPath } = require('./lsp-harness/scratchpad');
 const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
@@ -24,8 +25,8 @@ const { parseJavaDeclaration, thrownOf } = require('../src/languages/java/signat
 
 const CHILD_DEADLINE_MS = 300000;
 const MAX_REPORTED = 30;
-const DEFAULT_JAVA = path.join(os.homedir(), 'Projects/impact-tree-scratchpad/java-tools/jdk/jdk-21.0.13+9/Contents/Home/bin/java');
-const CACHE_DIR = path.join(os.homedir(), 'Projects/impact-tree-scratchpad/java-oracle');
+const DEFAULT_JAVA = () => scratchpadPath('java-tools', 'jdk', 'jdk-21.0.13+9', 'Contents', 'Home', 'bin', 'java');
+const CACHE_DIR = scratchpadPath('java-oracle');
 const ORACLE = path.join(__dirname, 'java-signature-oracle', 'Oracle.java');
 
 /** The repository's HEAD commit read from .git (no git command runs in it), or 'nogit'. @param {string} repo */
@@ -102,7 +103,7 @@ function main() {
   const args = process.argv.slice(2);
   const repo = args[0];
   const opt = (/** @type {string} */ name) => { const i = args.indexOf(name); return i > 0 ? args[i + 1] : undefined; };
-  const java = opt('--java') || DEFAULT_JAVA;
+  const java = opt('--java') || DEFAULT_JAVA();
   const maxFiles = opt('--max-files') || '';
   if (!repo || !fs.existsSync(repo)) {
     console.error('usage: node test/java-signature-oracle.js <path-to-java-repo> [--java <java>] [--max-files N]');

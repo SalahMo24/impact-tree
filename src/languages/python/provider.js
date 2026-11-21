@@ -171,7 +171,7 @@ const BLOCK_OPENER = /^(?:if|elif|else|try|except|finally|with|for|while|async[ 
 
 /**
  * Whether the def on `defLine`, indented `width` characters, is in an `if`/`try`/`with`/`for`/
- * `while` block of the scope (P7: httpx `_compat.py` defines one function in both branches of
+ * `while` block of the scope (P7: a `_compat.py` that defines one function in both branches of
  * an `if`, and Pyright lists one of them): the nearest line above it, within the scope, that
  * starts code at a smaller indentation is such a block's opener. Blank, comment and deeper
  * lines (the block's other statements, decorators) are skipped. A def in a function is not

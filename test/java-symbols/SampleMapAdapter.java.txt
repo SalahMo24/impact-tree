@@ -1,0 +1,75 @@
+package demo;
+
+import java.io.IOException;
+import java.lang.reflect.Type;
+import java.util.Map;
+
+/**
+ * Converts maps, one entry at a time.
+ */
+public final class MapAdapter implements ConverterFactory {
+  private final Factory factory;
+  final boolean complexKeys;
+
+  public MapAdapter(Factory factory, boolean complexKeys) {
+    this.factory = factory;
+    this.complexKeys = complexKeys;
+  }
+
+  @Override
+  public <T> Converter<T> create(Mapper mapper, TypeKey<T> typeKey) {
+    Type type = typeKey.getType();
+    Converter<?> keyConverter = getKeyConverter(mapper, type);
+    Converter<?> valueConverter = mapper.getConverter(typeKey);
+    return null;
+  }
+
+  /** Strings and booleans are plain keys; the rest need the general converter. */
+  private Converter<?> getKeyConverter(Mapper context, Type keyType) {
+    return keyType == boolean.class || keyType == Boolean.class
+        ? null
+        : context.getConverter(TypeKey.get(keyType));
+  }
+
+  private final class Adapter<K, V> extends Converter<Map<K, V>> {
+    private final Converter<K> keyConverter;
+    private final Converter<V> valueConverter;
+    private final Maker<? extends Map<K, V>> maker;
+
+    public Adapter(Converter<K> keyConverter, Converter<V> valueConverter,
+        Maker<? extends Map<K, V>> maker) {
+      this.keyConverter = keyConverter;
+      this.valueConverter = valueConverter;
+      this.maker = maker;
+    }
+
+    @Override
+    public Map<K, V> read(InSource in) throws IOException {
+      Map<K, V> map = maker.construct();
+      while (in.hasNext()) {
+        K key = keyConverter.read(in);
+        V value = valueConverter.read(in);
+        map.put(key, value);
+      }
+      return map;
+    }
+
+    @Override
+    public void write(OutSink out, Map<K, V> map) throws IOException {
+      if (!complexKeys) {
+        for (Map.Entry<K, V> entry : map.entrySet()) {
+          out.name(String.valueOf(entry.getKey()));
+          valueConverter.write(out, entry.getValue());
+        }
+        return;
+      }
+      for (Map.Entry<K, V> entry : map.entrySet()) {
+        out.name(keyToString(keyConverter.toNode(entry.getKey())));
+      }
+    }
+
+    private String keyToString(Node keyNode) {
+      return keyNode.isPrimitive() ? keyNode.text() : "null";
+    }
+  }
+}

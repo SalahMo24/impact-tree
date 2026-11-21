@@ -14,7 +14,7 @@ this process), so generated members bind; generated files are not walked.
 
     bash run.sh <repo> <solution (.slnx/.sln) or project> [name]
 
-`run.sh` builds the oracle into `~/Projects/impact-tree-scratchpad/csharp-tools/oracle-semantic/`
+`run.sh` builds the oracle into the scratchpad's `csharp-tools/oracle-semantic/` (test/lsp-harness/scratchpad.js)
 (when the tool hash changed), then writes
 `csharp-tools/cache/semantic-<name>-<sha12>-<toolhash>.json` unless it exists, and prints its
 path. toolhash = sha256 of `Program.cs`, `SemanticOracle.csproj` (pins Roslyn) and the syntax
@@ -26,7 +26,7 @@ by commit). The caller holds the heavy-run lock (`with-repo-lock.sh`). By hand:
 
 ```
 { "oracle": "csharp-semantic", "roslyn": "<assembly version>", "commit": "<sha>", "dirty": false,
-  "entry": "Jellyfin.slnx",
+  "entry": "cs-a.slnx",
   "timings": { "openMs", "compileMs", "bindMs", "totalMs" },
   "projects": [ { "name", "path", "files", "errors" } ],   // files walked, binding errors
   "excludedProjects": [ "tests/…csproj" ],
@@ -66,5 +66,5 @@ Not edges (listed limits): implicit calls (`foreach` → `GetEnumerator`, `using
 conversions, `with`), event `+=` (the method group on its right is an edge), reflection, Razor.
 `#if`: keys are computed on the trees the project parsed (its preprocessor symbols), the syntax
 oracle parses with none; a member active only under a project symbol (or a `#2` numbering that
-shifts) would have a key here that `syntax-*.json` lacks (none in jellyfin at 821b849e6: every
+shifts) would have a key here that `syntax-*.json` lacks (none in cs-a at 821b849e6: every
 caller and target key of the 16 343 edges is in the syntax oracle's output).
