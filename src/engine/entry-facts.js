@@ -30,6 +30,8 @@ const MAX_FILE_BYTES = 1024 * 1024;
 // cached. Bound: MAX_CACHED_REPOS entries, the least recently used dropped. Disposal:
 // `_clearEntryFactsCache` (tests).
 const MAX_CACHED_REPOS = 4;
+/** The language keys entryLanguageOf (./entry-points.js) returns. */
+const ENTRY_LANGUAGES = new Set(['ts', 'go', 'python', 'csharp']);
 /** @type {Map<string, { listing: string, reads: Array<{ rel: string, size: number, mtimeMs: number }>, facts: import('./entry-points').EntryFacts, notes: string[] }>} */
 const factsCache = new Map();
 
@@ -43,6 +45,9 @@ const factsCache = new Map();
  *   shared with later calls that hit the cache: read them, do not change them.
  */
 function gatherEntryFacts({ repo, git, languages, readRel }) {
+  // A key outside this list (a probe passing 'typescript' for 'ts') would gather nothing
+  // and look like missing facts, so it is a caller error.
+  for (const l of languages) if (!ENTRY_LANGUAGES.has(l)) throw new Error(`gatherEntryFacts: unknown language '${l}' (expected one of ${[...ENTRY_LANGUAGES].join(', ')})`);
   const notes = [];
   const out = git.tryRaw(['ls-files', '--cached', '-z']);
   if (out == null) return { facts: {}, notes: ['entry-point facts not gathered: git could not list the files'] };

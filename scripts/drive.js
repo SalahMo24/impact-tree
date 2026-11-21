@@ -44,6 +44,8 @@ const DEADLINE_MS = 60_000;
 const STEP_TIMEOUT_MS = 20_000;
 const READY_TIMEOUT_MS = 30_000;
 const CLOSE_GRACE_MS = 3_000;
+// One drive run per machine (takeRunLock). Under /tmp so every worktree shares it.
+const RUN_LOCK = path.join('/tmp', 'impact-tree-drive.lock');
 
 /**
  * Settings that keep a run from reaching outside it: no telemetry, no editor or extension
@@ -450,8 +452,36 @@ const VERBS = {
 /** @param {unknown} e */
 const firstLine = (e) => String((e && /** @type {Error} */ (e).message) || e).split('\n')[0];
 
+/** @param {number} pid @returns {boolean} Whether a process with that pid runs (EPERM: it does, as another user). */
+function isRunning(pid) {
+  if (!(pid > 0)) return false;
+  try { process.kill(pid, 0); return true; } catch (k) { return /** @type {NodeJS.ErrnoException} */ (k).code === 'EPERM'; }
+}
+
+/**
+ * Takes the one-run-at-a-time lock: a file holding the owner's pid, shared by every checkout and
+ * worktree on the machine. Each run starts a full editor (about 1.5 GB), so two at once heat the
+ * machine and slow both. A lock whose pid no longer runs is stale and is taken over.
+ * @param {string} file The lock file. @returns {() => void} Releases the lock (only if still ours).
+ */
+function takeRunLock(file) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      fs.writeFileSync(file, String(process.pid), { flag: 'wx' });
+      return () => { try { if (fs.readFileSync(file, 'utf8') === String(process.pid)) fs.rmSync(file); } catch { /* gone already */ } };
+    } catch (e) {
+      if (/** @type {NodeJS.ErrnoException} */ (e).code !== 'EEXIST') throw e;
+      const owner = Number(fs.readFileSync(file, 'utf8'));
+      if (isRunning(owner)) throw new Error(`another drive run (pid ${owner}) is in progress; wait for it to finish (lock ${file})`, { cause: e });
+      fs.rmSync(file, { force: true });
+    }
+  }
+  throw new Error(`could not take the drive lock ${file}`);
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
+  const releaseLock = takeRunLock(RUN_LOCK);
   const { _electron } = require('playwright');
   const { downloadAndUnzipVSCode } = require('@vscode/test-electron');
   const executablePath = await downloadAndUnzipVSCode(VSCODE_VERSION);
@@ -489,6 +519,7 @@ async function main() {
       ok: code === 0, exitCode: code, vscode: VSCODE_VERSION, repo, ms: Date.now() - started, steps: results, files,
     }, null, 2));
     fs.rmSync(run, { recursive: true, force: true });
+    releaseLock();
     console.log(`${code === 0 ? 'passed' : 'FAILED'} in ${Date.now() - started} ms; output in ${opts.out}`);
     process.exit(code);
   };
@@ -583,4 +614,4 @@ async function main() {
 
 if (require.main === module) main().catch((e) => { console.error(`drive: ${e.message}`); process.exit(1); });
 
-module.exports = { checkExtensionsDir, runSettings, SAFETY_SETTINGS };
+module.exports = { checkExtensionsDir, runSettings, SAFETY_SETTINGS, takeRunLock };

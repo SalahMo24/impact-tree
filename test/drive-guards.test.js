@@ -58,3 +58,22 @@ test('--settings adds and overrides, except the safety settings', () => {
   assert.deepEqual(Object.keys(SAFETY_SETTINGS).sort(), ['extensions.autoCheckUpdates', 'extensions.autoUpdate', 'security.workspace.trust.enabled', 'telemetry.telemetryLevel', 'update.mode']);
   assert.equal(runSettings(null)['telemetry.telemetryLevel'], 'off');
 });
+
+test('run lock: a second run is refused while the first runs; a stale lock is taken over', () => {
+  const { takeRunLock } = require('../scripts/drive');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-drive-lock-'));
+  const file = path.join(dir, 'lock');
+  try {
+    const release = takeRunLock(file);
+    fs.writeFileSync(file, String(process.ppid));   // a live pid that is not ours
+    assert.throws(() => takeRunLock(file), /another drive run/);
+    fs.writeFileSync(file, '999999999');             // no such process: stale
+    const again = takeRunLock(file);
+    assert.equal(fs.readFileSync(file, 'utf8'), String(process.pid));
+    again();
+    assert.equal(fs.existsSync(file), false);
+    release();                                       // not ours any more: a no-op
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

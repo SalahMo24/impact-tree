@@ -1,0 +1,15 @@
+#!/bin/sh
+# Public-repo check, lint and typecheck before every commit (about 10 s). Skip once with
+# `git commit --no-verify`. Installed by `npm run setup` (core.hooksPath = .githooks).
+# core.hooksPath is shared by every worktree, so this may run on a branch that predates these
+# scripts: a step whose script or npm script is missing on the branch is skipped, not failed.
+cd "$(git rev-parse --show-toplevel)" || exit 1
+# Git sets GIT_DIR, GIT_INDEX_FILE… for a hook; a tool or test that makes its own temporary
+# repository would act on this one instead. Steps that need them (check-public) run before this.
+clear_git_env() { for v in $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done; }
+[ -e node_modules ] || { echo "pre-commit: no node_modules here; run npm run setup (a worktree) or npm install"; exit 1; }
+has_script() { node -e "process.exit(require('./package.json').scripts?.['$1'] ? 0 : 1)"; }
+if [ -f scripts/check-public.js ]; then node scripts/check-public.js || exit 1; fi
+clear_git_env
+if has_script lint; then npm run -s lint || { echo "pre-commit: lint failed"; exit 1; }; fi
+if has_script typecheck; then npm run -s typecheck || { echo "pre-commit: typecheck failed"; exit 1; }; fi

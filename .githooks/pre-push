@@ -1,0 +1,12 @@
+#!/bin/sh
+# The quick test tier before every push (about 16 s). Skip once with `git push --no-verify`.
+# The full suite runs in CI and in `npm run check`. Skipped on a branch without test:quick.
+cd "$(git rev-parse --show-toplevel)" || exit 1
+# Git sets GIT_DIR, GIT_INDEX_FILE… for a hook; a tool or test that makes its own temporary
+# repository would act on this one instead.
+clear_git_env() { for v in $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done; }
+[ -e node_modules ] || { echo "pre-push: no node_modules here; run npm run setup (a worktree) or npm install"; exit 1; }
+node -e "process.exit(require('./package.json').scripts?.['test:quick'] ? 0 : 1)" || exit 0
+clear_git_env
+npm run -s test:quick > /tmp/impact-tree-pre-push.log 2>&1 || { tail -30 /tmp/impact-tree-pre-push.log; echo "pre-push: quick tests failed (full log /tmp/impact-tree-pre-push.log)"; exit 1; }
+echo "pre-push: quick tests passed"

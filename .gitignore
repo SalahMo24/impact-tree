@@ -1,9 +1,11 @@
-node_modules/
+# No trailing slash: a worktree links node_modules to the main checkout, and a
+# pattern ending in / does not match a symlink.
+node_modules
 out/
 dist/
 *.vsix
 .DS_Store
-.vscode-test/
+.vscode-test
 spike/
 ACCEPTANCE.md
 # Recorded fixtures embed real paths, symbol names and signatures from whatever repo
