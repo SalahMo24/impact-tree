@@ -2359,7 +2359,16 @@ function createCsharpSyntacticIndex(sources, {
    * @returns {{ targets: Array<{ file: string, pos: number, via: 'interface', text: string }>, reasons: string[] }|null}
    */
   function dispatchOf(target) {
-    const def = targetDef(target.file, target.pos, target.className || null, target.name);
+    const rec = byFile.get(target.file);
+    if (!rec) return null;
+    let def = target.pos != null ? rec.byPos.get(target.pos) : undefined;
+    if (!def) {
+      // Not at that position (the text moved since the index was built): by name only when
+      // one member has it; among overloads the index cannot tell which one is meant.
+      const named = rec.defs.filter((d) => d.name === target.name && (d.type ? d.type.simple : null) === (target.className || null));
+      if (named.length > 1) return { targets: [], reasons: [`${named.length} members named \`${target.name}\` and none where the C# syntax index has this one: the interface members it may implement are not known, and calls through them are not listed`] };
+      def = named[0];
+    }
     if (!def) return null;
     const through = throughOf(def);
     const listed = through.ifaces.filter((i) => !(i.member.type && i.member.type.typeParams.size));

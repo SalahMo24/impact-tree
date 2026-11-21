@@ -10,8 +10,11 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { createCsharpSyntacticIndex } = require('../src/languages/csharp/syntactic-index');
 const { csharpOutline } = require('../src/languages/csharp/outline');
-const { createCsharpEditorExtras, EMPTY_ANSWER_REASON, VALUE_USE_REASON, NOT_COMPUTED, PRIMARY_CONSTRUCTOR_REASON, NOT_LOADED_REASON, isCsharpCallSite } = require('../src/languages/csharp/editor-extras');
-const { createCsharpProvider, NO_HIERARCHY_NOTE } = require('../src/languages/csharp/provider');
+const {
+  createCsharpEditorExtras, EMPTY_ANSWER_REASON, VALUE_USE_REASON, NOT_COMPUTED, PRIMARY_CONSTRUCTOR_REASON, NOT_LOADED_REASON, isCsharpCallSite,
+  PROPERTY_REASON, STALE_TARGET_REASON, SERVER_CHANGED_REASON, shortCallerName,
+} = require('../src/languages/csharp/editor-extras');
+const { createCsharpProvider, createServerStateTracker, NO_HIERARCHY_NOTE } = require('../src/languages/csharp/provider');
 const { createHierarchyResolver } = require('./lsp-harness/harness-languages');
 
 const ROOT = '/repo';
@@ -30,6 +33,13 @@ public static class Handlers
     static void Map(System.Action a) { }
 }
 public sealed class Ctor { public Ctor(int a) { } }
+public class Local
+{
+    static readonly int F = Helper.Twice(2);
+    public int Run() { int Inner() => Helper.Twice(1); return Inner(); }
+    public int Doubled { get { return Helper.Twice(3); } }
+}
+public static class Helper { public static int Twice(int x) => x * 2; }
 `;
 const PROGRAM = `using Lib;
 var i = new Impl();
@@ -194,6 +204,112 @@ test('no item at a listed member: the file may not be in a loaded project (not r
   assert.ok(!answer.retryable);
 });
 
+// ---- caller rows through the outline (review M1, M2) -----------------------------------------
+
+test('M1: a caller row is named and placed as the outline member, never with Roslyn\'s qualified name', async () => {
+  // Roslyn's form as VS Code labels it: the containing type's full name, then the item's name.
+  const answers = new Map([[`${LIB_FILE}#${IMPL_M}`, [row(LIB_FILE, 'Lib.Impl.Impl.Use()', USE, [site(LIB, '{ M(1); }', 'M')])]], [`${LIB_FILE}#${IFOO_M}`, [
+    row(LIB_FILE, 'Lib.Svc.Svc.Run()', RUN, [site(LIB, 'foo.M(1)', 'M')]),
+  ]]]);
+  const answer = await resolverWith(answers).resolver.incomingWithStatus(LIB_FILE, IMPL_M);
+  assert.deepEqual(answer.callers.map((c) => [c.label, c.pos]).sort(), [['Impl.Use()', USE], ['Svc.Run()', RUN]]);
+  const { collectCsharpSymbols } = require('../src/languages/csharp/provider');
+  const keys = collectCsharpSymbols(/** @type {any} */ (csharpOutline(LIB, { fileName: 'Shapes.cs' })), LIB).map((s) => s.label);
+  for (const c of answer.callers) assert.ok(keys.includes(c.label), `${c.label} is the changed-row label`);
+});
+
+test('M1/M2: a local function and an accessor are their member\'s rows; a row in no member keeps a short name', async () => {
+  const twice = posOf('Lib/Shapes.cs', 'method', 'Twice', 'Helper');
+  const run = posOf('Lib/Shapes.cs', 'method', 'Run', 'Local');
+  const doubled = posOf('Lib/Shapes.cs', 'property', 'Doubled', 'Local');
+  const answers = new Map([[`${LIB_FILE}#${twice}`, [
+    row(LIB_FILE, 'Lib.Local.Local.F', at(LIB, 'F = Helper'), [site(LIB, 'F = Helper.Twice(2)', 'Twice')]),
+    row(LIB_FILE, 'Lib.Local.Local.Inner()', at(LIB, 'Inner() =>'), [site(LIB, '=> Helper.Twice(1)', 'Twice')]),
+    row(LIB_FILE, 'Lib.Local.Local.Run()', run, []),
+    row(LIB_FILE, 'Lib.Local.Local.Doubled.get', at(LIB, 'get { return'), [site(LIB, 'return Helper.Twice(3)', 'Twice')]),
+  ]]]);
+  const answer = await resolverWith(answers).resolver.incomingWithStatus(LIB_FILE, twice);
+  const by = Object.fromEntries(answer.callers.map((c) => [c.label, c]));
+  assert.deepEqual(Object.keys(by).sort(), ['Local.Doubled', 'Local.F', 'Local.Run()']);
+  assert.equal(by['Local.Run()'].pos, run, 'the local function is its method');
+  assert.equal(by['Local.Run()'].sites, 1, 'the two rows merged, their sites joined');
+  assert.equal(by['Local.Doubled'].pos, doubled, 'the accessor is its property, at the property\'s name');
+  assert.equal(by['Local.F'].pos, at(LIB, 'F = Helper'), 'no outline member: Roslyn\'s position');
+  assert.equal(answer.complete, true, String(answer.reason));
+  // Asked at the mapped position, the property is a property: incomplete (calls through a base or interface property).
+  const prop = await resolverWith(new Map([[`${LIB_FILE}#${doubled}`, []]])).resolver.incomingWithStatus(LIB_FILE, doubled);
+  assert.equal(prop.complete, false);
+  assert.equal(prop.reason, PROPERTY_REASON);
+});
+
+test('shortCallerName: no namespaces, no parameters', () => {
+  assert.equal(shortCallerName('Acme.Tv.TvManager.TvManager.GetChannels(Acme.Model.Tv.ChannelQuery, System.Threading.CancellationToken)'), 'TvManager.GetChannels');
+  assert.equal(shortCallerName('N.BaseNfoParser<T>.BaseNfoParser<T>.F'), 'BaseNfoParser<T>.F');
+  assert.equal(shortCallerName('N.Box<System.Int32>.Box<System.Int32>.F'), 'Box<Int32>.F');
+  assert.equal(shortCallerName('M()'), 'M');
+});
+
+// ---- the session index against the current text (review M3) ----------------------------------
+
+test('M3: an interface member that moved since the index was built is not asked: incomplete with a reason', async () => {
+  const moved = LIB.replace('public interface IFoo { int M(int x); }', 'public interface IFoo { int Pad(int y); int M(int x); }');
+  const old = createCsharpSyntacticIndex([{ path: 'Lib/Shapes.cs', text: LIB }], { root: ROOT, scope: 'test' });
+  const implM = at(moved, 'public int M(int x) => x;', 'public int '.length);
+  const services = fakeServices(new Map([[`${LIB_FILE}#${implM}`, [row(LIB_FILE, 'Lib.Impl.Impl.Use()', at(moved, 'Use()'), [site(moved, '{ M(1); }', 'M')])]]]));
+  const extras = createCsharpEditorExtras({ readText: (f) => (f === LIB_FILE ? moved : textOf(f)), repoRoot: ROOT, indexOf: async () => old });
+  const answer = await createHierarchyResolver(/** @type {any} */ (services), { extras }).incomingWithStatus(LIB_FILE, implM);
+  assert.deepEqual(services.asked, [`${LIB_FILE}#${implM}`], 'the stale position (now `Pad`) is not asked');
+  assert.equal(answer.complete, false);
+  assert.ok(String(answer.reason).includes(STALE_TARGET_REASON), String(answer.reason));
+});
+
+test('M3: by name among overloads is ambiguous: no target, a reason (never complete)', async () => {
+  const before = 'namespace L;\npublic interface IBar { void M(int x); }\npublic class Two : IBar\n{\n    public void M(string s) { }\n    public void M(int x) { }\n}\n';
+  const after = before.replace('{\n    public void M(string', '{\n    public void Pad() { }\n    public void M(string');
+  const file = abs('L/Two.cs');
+  const idx = createCsharpSyntacticIndex([{ path: 'L/Two.cs', text: before }], { root: ROOT, scope: 'test' });
+  const mInt = at(after, 'M(int x) { }');
+  const direct = idx.dispatchOf({ file, pos: mInt, name: 'M', className: 'Two' });
+  assert.deepEqual(direct && direct.targets, []);
+  assert.match(String(direct && direct.reasons), /2 members named `M`/);
+  const services = fakeServices(new Map([[`${file}#${mInt}`, []]]));
+  const extras = createCsharpEditorExtras({ readText: (f) => (f === file ? after : null), repoRoot: ROOT, indexOf: async () => idx });
+  const answer = await createHierarchyResolver(/** @type {any} */ (services), { extras }).incomingWithStatus(file, mInt);
+  assert.equal(answer.complete, false);
+  assert.match(String(answer.reason), /2 members named `M`/);
+});
+
+test('M3: the session index is rebuilt after an uncommitted edit (same HEAD)', async () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const { execFileSync } = require('node:child_process');
+  const { sessionIndex, recheckSessionIndexes } = require('../src/languages/csharp/editor-extras');
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-cs-index-')));
+  try {
+    const git = (/** @type {string[]} */ args) => execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], { cwd: dir, stdio: 'ignore' });
+    fs.writeFileSync(path.join(dir, 'A.cs'), 'namespace N;\npublic class A { public void M() { } }\n');
+    git(['init', '-q']);
+    git(['add', '-A']);
+    git(['commit', '-qm', 'base']);
+    /** @type {string[]} */
+    const traces = [];
+    const trace = (/** @type {string} */ m) => traces.push(m);
+    const builds = () => traces.filter((t) => /index for dispatch built/.test(t)).length;
+    const first = await sessionIndex(dir, trace);
+    recheckSessionIndexes();
+    assert.equal(await sessionIndex(dir, trace), first, 'nothing changed: the same index');
+    const edited = 'namespace N;\npublic class A\n{\n    public void Pad() { }\n    public void M() { }\n}\n';
+    fs.writeFileSync(path.join(dir, 'A.cs'), edited);
+    recheckSessionIndexes();
+    const second = await sessionIndex(dir, trace);
+    assert.notEqual(second, first);
+    assert.equal(builds(), 2, traces.join('\n'));
+    assert.deepEqual(second.symbolAt(path.join(dir, 'A.cs'), edited.indexOf('M()')), { className: 'A', name: 'M' });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ---- the provider's probe (C-D3 as C0b changed it) ------------------------------------------
 
 const BASE = 'namespace N;\npublic class A\n{\n    public int Run(int a) { return 1; }\n}\n';
@@ -241,4 +357,44 @@ test('a positive probe is kept: the editor\'s resolver, the outline\'s members',
   const cli = await provider.prepare(ctxWith({}, []));
   assert.equal(/** @type {any} */ (cli.units[0].resolver).callersLowerBound, true);
   assert.equal(probes, 1);
+});
+
+test('M4: a server state change after a positive probe: the next analysis probes again; answers meanwhile are incomplete', async () => {
+  let probes = 0;
+  let changes = 0;
+  const provider = createCsharpProvider({ probe: async () => { probes++; return { ok: true }; }, serverChanges: () => changes });
+  const editorResolver = { kind: 'editor' };
+  const hooks = { services: {}, makeResolver: () => editorResolver };
+  await provider.prepare(ctxWith(hooks, []));
+  const extras = /** @type {NonNullable<typeof provider.editorCallers>} */ (provider.editorCallers)(/** @type {any} */ ({ trace: () => {}, repoRoot: ROOT, services: {}, ts: null }));
+  const twice = posOf('Lib/Shapes.cs', 'method', 'Twice', 'Helper');
+  const query = extras.query(LIB_FILE, twice);
+  changes++; // the server reloads its projects (state 2) during the analysis
+  const more = query.moreCallers ? await query.moreCallers() : null;
+  assert.equal(more && more.incompleteReason, SERVER_CHANGED_REASON);
+  await provider.prepare(ctxWith(hooks, []));
+  assert.equal(probes, 2, 'asked again after the change');
+  await provider.prepare(ctxWith(hooks, []));
+  assert.equal(probes, 2, 'no change since: kept');
+});
+
+test('M4: the state tracker waits for "loaded" after a reload, not the one-shot initial load', async () => {
+  const tracker = createServerStateTracker();
+  /** @type {(e: { state: number }) => void} */
+  let fire = () => {};
+  tracker.subscribe({ experimental: { languageServerEvents: { onServerStateChange: (/** @type {any} */ f) => { fire = f; } } } });
+  let initial = 0;
+  const initialLoad = async () => { initial++; };
+  await tracker.loaded(initialLoad);
+  assert.equal(initial, 1, 'no state reported yet: the extension\'s initialisation answers');
+  fire({ state: 2 });
+  let done = false;
+  const wait = tracker.loaded(initialLoad).then(() => { done = true; });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(done, false, 'loading: not trusted');
+  assert.equal(initial, 1, 'the one-shot promise is not asked while loading');
+  fire({ state: 3 });
+  await wait;
+  assert.equal(done, true);
+  assert.equal(tracker.changes, 2);
 });

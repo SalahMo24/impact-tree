@@ -14,7 +14,8 @@
  *      (./harness-languages.js), the dispatch index built as the extension host builds it
  *      (`sessionIndex`, its time traced);
  *   2. the CLI's path: no language services, so `prepareSyntactic` (the syntax index).
- * Prints, per changed member: callers (labelled) and completeness on each path, the reasons
+ * Prints, per changed member: callers (labelled) and completeness on each path, compared by
+ * position (`file#pos`, as the walk keys them) with labels that differ printed, the reasons
  * of the editor's incomplete answers, the timings, and Roslyn's query count and failures.
  */
 
@@ -82,8 +83,14 @@ async function main() {
     const E = byKey(editor);
     const S = byKey(syntax);
     /** @param {any} f */
-    const names = (f) => new Set((f ? f.callers || [] : []).map((/** @type {any} */ c) => `${path.relative(repo, c.file)}#${c.label}`));
-    const totals = { members: 0, editor: 0, syntax: 0, both: 0, labelled: 0, editorComplete: 0, syntaxComplete: 0 };
+    // Callers compared by position (file#pos, as the walk keys them), printed with their label.
+    const labelOf = new Map();
+    const names = (f) => new Set((f ? f.callers || [] : []).map((/** @type {any} */ c) => {
+      const id = `${path.relative(repo, c.file)}#${c.pos}`;
+      if (!labelOf.has(id)) labelOf.set(id, c.label);
+      return id;
+    }));
+    const totals = { members: 0, editor: 0, syntax: 0, both: 0, labelled: 0, editorComplete: 0, syntaxComplete: 0, sameLabel: 0, longestLabel: 0 };
     for (const key of new Set([...E.keys(), ...S.keys()])) {
       const e = E.get(key);
       const s = S.get(key);
@@ -97,8 +104,15 @@ async function main() {
       console.log(`\n${key}`);
       console.log(`  editor: ${e ? `${e.callerState} ${en.size} caller(s), ${e.callersComplete ? 'complete' : 'incomplete'}` : 'not listed'} | syntax: ${s ? `${s.callerState} ${sn.size} caller(s), ${s.callersComplete ? 'complete' : 'incomplete'}` : 'not listed'} | both ${both}`);
       for (const c of labelled) console.log(`  labelled: ${c.label} (${c.text})`);
-      for (const x of en) if (!sn.has(x)) console.log(`  editor only: ${x}`);
-      for (const x of sn) if (!en.has(x)) console.log(`  syntax only: ${x}`);
+      // Same position, same label on both paths (the editor's rows are the outline's names).
+      const sLabels = new Map((s ? s.callers || [] : []).map((/** @type {any} */ c) => [`${path.relative(repo, c.file)}#${c.pos}`, c.label]));
+      for (const c of e ? e.callers || [] : []) {
+        const id = `${path.relative(repo, c.file)}#${c.pos}`;
+        if (sLabels.has(id)) { if (sLabels.get(id) === c.label) totals.sameLabel++; else console.log(`  label differs: ${c.label} | syntax ${sLabels.get(id)}`); }
+        totals.longestLabel = Math.max(totals.longestLabel, c.label.length);
+      }
+      for (const x of en) if (!sn.has(x)) console.log(`  editor only: ${x} ${labelOf.get(x)}`);
+      for (const x of sn) if (!en.has(x)) console.log(`  syntax only: ${x} ${labelOf.get(x)}`);
       if (e && !e.callersComplete) console.log(`  editor reason: ${String(e.callersIncompleteReason).slice(0, 400)}`);
     }
     console.log(`\ntotals ${JSON.stringify(totals)}; wall ${((Date.now() - t0) / 1000).toFixed(1)} s`);

@@ -49,8 +49,12 @@ function languageServicesOver(server, { repoRoot }) {
       if (calls === null) return null;
       return calls.map((c) => {
         const file = fileURLToPath(c.from.uri);
+        // The label as the editor's services build it (src/session/services-vscode.js
+        // `toCallerRows`): the item's detail and name joined, so a language's extras see the
+        // editor's form.
         return {
-          label: c.from.name, file, pos: c.from.selectionRange.start, test: isTestFile(repoRoot, file),
+          label: c.from.detail ? `${c.from.detail}.${c.from.name}` : c.from.name,
+          file, pos: c.from.selectionRange.start, test: isTestFile(repoRoot, file),
           sites: c.fromRanges.length, callSites: c.fromRanges.map((r) => ({ start: r.start, end: r.end })),
         };
       });
