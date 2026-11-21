@@ -9,9 +9,11 @@
 // is paired with its old self (`pairCsharpOverloads`, J-D3), the header parser and kinds
 // (./signature.js, C2) and which project a file belongs to (`csharpProjectOf`, ./rules.js).
 //
-// Callers come from a syntax-only index (./syntactic-index.js, C8a) until the editor's callers
-// (C5): `needsServer` is false and `prepare` and `prepareSyntactic` are the same path, so the
-// editor, the CLI and the no-checkout preview list the same changed members, kinds and callers.
+// Callers: in the editor (C5), Roslyn's call hierarchy through the C# extension, with C#'s
+// extras (./editor-extras.js: calls through interfaces as caller targets, labelled), once the
+// probe (`editorCsharpProbe`) says the extension's projects are loaded; else, in the CLI and
+// the no-checkout preview, a syntax-only index (./syntactic-index.js, C8a). Both paths read
+// the changed members from the same outline, so their keys and kinds are the same.
 //
 // Engine modules are required where they are used: the registry (../index.js) loads this file,
 // and src/engine/diff.js loads the registry.
@@ -300,13 +302,89 @@ function projectFacts(projects, all, read) {
   return { usings: [...usings], usingsByProject, uiDirs: [...uiDirs] };
 }
 
-/** @type {import('../types').LanguageProvider} */
-const csharpProvider = Object.freeze({
-  ...csharpRules,
-  // The outline and the syntax index serve every environment until the editor's callers (C5).
-  needsServer: false,
-  prepare: prepareSyntactic,
-  prepareSyntactic,
-});
+// How long the editor's probe waits for the C# extension to finish loading the projects, in
+// milliseconds. Owner: `editorCsharpProbe`, one wait per analysis until a positive answer.
+// C0b: the corpus solution loaded in 19–25 s in the harness, ~4 s after a ~20 s server start in
+// VS Code. Exhaustion: that analysis uses the syntax index, with a note; the next one asks again.
+const PROBE_DEADLINE_MS = 90000;
+const NO_HIERARCHY_NOTE = 'no answer from a C# call hierarchy: callers from syntax';
 
-module.exports = { csharpProvider, csharpSpec, collectCsharpSymbols, pairCsharpOverloads, renderCsharpSymbolSig, prepareSyntactic, projectFacts, csharpProjectDir, NOT_SOURCE_DIRS };
+/**
+ * Whether the editor's C# call hierarchy can be trusted now (C-D3 (a) as C0b changed it):
+ * Microsoft's C# extension (`ms-dotnettools.csharp`) is installed and active and its
+ * `initializationFinished()` resolved within `deadlineMs` (the projects are loaded; before
+ * that, answers are partial). Never rejects. Outside VS Code: not available.
+ * @param {number} [deadlineMs]
+ * @returns {Promise<{ ok: true } | { ok: false, reason: string }>}
+ */
+async function editorCsharpProbe(deadlineMs = PROBE_DEADLINE_MS) {
+  let vscode;
+  // By name, so the typecheck (no vscode types here) and the CLI never load it.
+  const editorModule = 'vscode';
+  try { vscode = require(editorModule); } catch { return { ok: false, reason: 'not in the editor' }; }
+  const ext = vscode.extensions.getExtension('ms-dotnettools.csharp');
+  if (!ext) return { ok: false, reason: 'the C# extension (ms-dotnettools.csharp) is not installed' };
+  if (!ext.isActive || !ext.exports || typeof ext.exports.initializationFinished !== 'function') return { ok: false, reason: 'the C# extension is not active' };
+  const { withDeadline } = require('../../engine/deadline');
+  try {
+    await withDeadline(() => Promise.resolve(ext.exports.initializationFinished()), deadlineMs, 'the C# project load');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: `the C# extension's server did not finish loading the projects (${e && /** @type {any} */ (e).message})` };
+  }
+}
+
+/**
+ * C#'s provider. `probe`: whether the environment's C# call hierarchy answers (the editor's:
+ * `editorCsharpProbe`); a positive answer is kept for the provider's life, a negative one is
+ * asked again at the next analysis.
+ * @param {{ probe?: () => Promise<{ ok: true } | { ok: false, reason: string }> }} [options]
+ * @returns {import('../types').LanguageProvider}
+ */
+function createCsharpProvider({ probe = () => editorCsharpProbe() } = {}) {
+  let ready = false;
+  /**
+   * The editor's path (C5): the changed members from the outline, as `prepareSyntactic`, with
+   * the environment's resolver (Roslyn's call hierarchy plus ./editor-extras.js). When the
+   * probe says the C# call hierarchy cannot be trusted, `prepareSyntactic` with a note.
+   * @param {import('../types').PrepareContext} ctx
+   * @returns {Promise<import('../types').PreparedLanguage>}
+   */
+  async function prepare(ctx) {
+    if (!ctx.hooks.services || !ctx.hooks.makeResolver) return prepareSyntactic(ctx);
+    if (!ready) {
+      const answer = await probe();
+      if (answer.ok) ready = true;
+      else {
+        ctx.warnings.push(`${NO_HIERARCHY_NOTE} (${answer.reason})`);
+        return prepareSyntactic(ctx);
+      }
+    }
+    const { csharpOutline } = require('./outline');
+    /** @type {import('../types').LanguageServices} */
+    const services = /** @type {any} */ ({
+      available: async () => ({ ok: true }),
+      // Symbols come from the outline (C-D3/C-D4); callers are asked on the head side only.
+      documentSymbols: async (/** @type {import('../types').DocRef} */ doc) => csharpOutline(/** @type {string} */ (doc.text), { fileName: path.basename(doc.file) }),
+    });
+    return require('../server-symbols').prepareFromServerSymbols({ ...ctx, hooks: { ...ctx.hooks, services } }, csharpSpec());
+  }
+  return Object.freeze({
+    ...csharpRules,
+    needsServer: true,
+    prepare,
+    prepareSyntactic,
+    /** @type {NonNullable<import('../types').LanguageProvider['editorCallers']>} */
+    editorCallers: ({ trace, repoRoot, csharpIndex }) => require('./editor-extras').createCsharpEditorExtras({
+      trace, repoRoot, ...(csharpIndex !== undefined ? { indexOf: async () => csharpIndex } : {}),
+    }),
+    serverLabel: 'the C# language server (Roslyn)',
+  });
+}
+
+const csharpProvider = createCsharpProvider();
+
+module.exports = {
+  csharpProvider, createCsharpProvider, editorCsharpProbe, csharpSpec, collectCsharpSymbols, pairCsharpOverloads, renderCsharpSymbolSig,
+  prepareSyntactic, indexRepository, projectFacts, csharpProjectDir, NOT_SOURCE_DIRS, PROBE_DEADLINE_MS, NO_HIERARCHY_NOTE,
+};

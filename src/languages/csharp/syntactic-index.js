@@ -2347,7 +2347,32 @@ function createCsharpSyntacticIndex(sources, {
     return rec && use ? resolveUse(rec, use) : undefined;
   }
 
-  return { symbolAt, callersOfWithStatus, unresolvedCallsTo, size: byFile.size, skipped, scopeNote, byFile, undeclaredBase, targetsAt };
+  /**
+   * The editor's view of a method's dispatch (C5, C-D5): the interface members it implements
+   * whose calls a language server lists apart (Roslyn: `Impl.M` and `IFoo.M` have disjoint
+   * incoming calls, C0b), as positions to ask with the label their rows carry, and why its
+   * callers may be more than the server and those positions list. A generic interface's member
+   * is not a position (its calls on other type arguments would be listed): it is a reason.
+   * Overrides are a reason only (the server's base-method callers are not asked). Null when
+   * the index has no such member.
+   * @param {{ file: string, className?: string|null, name: string, pos?: number }} target
+   * @returns {{ targets: Array<{ file: string, pos: number, via: 'interface', text: string }>, reasons: string[] }|null}
+   */
+  function dispatchOf(target) {
+    const def = targetDef(target.file, target.pos, target.className || null, target.name);
+    if (!def) return null;
+    const through = throughOf(def);
+    const listed = through.ifaces.filter((i) => !(i.member.type && i.member.type.typeParams.size));
+    const generic = through.ifaces.filter((i) => i.member.type && i.member.type.typeParams.size);
+    const reasons = dispatchReasons(def, { ...through, ifaces: listed, bases: [], genericSkipped: 0, ambiguousSkipped: 0 });
+    for (const { member } of generic) reasons.push(`implements \`${member.type ? member.type.simple : '?'}.${member.name}\` of a generic interface: calls through it are not listed`);
+    const targets = listed.map(({ member }) => ({
+      file: member.file.file, pos: member.namePos, via: /** @type {'interface'} */ ('interface'), text: `through ${member.type ? member.type.simple : '?'}`,
+    }));
+    return { targets, reasons };
+  }
+
+  return { symbolAt, callersOfWithStatus, unresolvedCallsTo, size: byFile.size, skipped, scopeNote, byFile, undeclaredBase, targetsAt, dispatchOf };
 }
 
 /**
