@@ -78,7 +78,7 @@ async function main() {
     for (const f of stats.failures) console.log(`  failure: ${f}`);
     for (const w of editor.warnings || []) console.log(`editor warning: ${w}`);
     /** @param {any} r */
-    const byKey = (r) => new Map((r.findings || []).filter((/** @type {any} */ f) => /\.cs$/.test(f.relPath || f.file || '')).map((/** @type {any} */ f) => [`${f.relPath}#${f.key}`, f]));
+    const byKey = (r) => new Map((r.allChanged || []).filter((/** @type {any} */ f) => /\.cs$/.test(f.relPath || f.file || '')).map((/** @type {any} */ f) => [`${f.relPath}#${f.key}`, f]));
     const E = byKey(editor);
     const S = byKey(syntax);
     /** @param {any} f */
