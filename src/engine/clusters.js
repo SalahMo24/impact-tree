@@ -15,7 +15,7 @@
 //
 // Two kinds of changes are taken out of the graph. A "sweep" is the same small edit made in
 // many functions (see repeated-edits.js). A "mirror" is a cluster that duplicates another
-// under a generated folder (hono's deno_dist); its members move into the source cluster's
+// under a generated folder (such as a `deno_dist/` copy); its members move into the source cluster's
 // `mirrorMembers`. Every changed id appears exactly once across members, mirrorMembers,
 // sweep members and a card's `moved` (the deleted side of a move). The steps that read the
 // diff (sweeps, moves, commit split, generated folders) need `opts.facts` from

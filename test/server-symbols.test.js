@@ -317,7 +317,7 @@ test('a header the parser cannot read is compared as text, never assumed unchang
 });
 
 test('a type whose underlying type is a function is not a function (G7: gopls gives it the Function kind)', () => {
-  // cli/cli PR #14104 added `type RequestOption func(*requestConfig)` in api/client.go; gopls
+  // A PR added `type RequestOption func(*requestConfig)` in api/client.go; gopls
   // lists it with kind 12 and its range at the type's name, and it was shown as an added
   // function. Its constructor below is one.
   const text = 'package api\n\ntype RequestOption func(*requestConfig)\n\nfunc WithHeader(name string) RequestOption {\n\treturn nil\n}\n';
@@ -329,7 +329,7 @@ test('a type whose underlying type is a function is not a function (G7: gopls gi
   assert.deepEqual(collectGoSymbols(symbols, text).map((s) => s.key), ['WithHeader']);
 });
 
-test('interface{} and any are the same type to a caller (G7: go fix in cli/cli PR #14278)', () => {
+test('interface{} and any are the same type to a caller (G7: go fix rewrote one to the other)', () => {
   const sym = (/** @type {string} */ text) => {
     const name = text.indexOf('F');
     return collectGoSymbols([{ name: 'F', detail: '', kind: 12, range: { start: 0, end: text.length }, selectionRange: { start: name, end: name + 1 }, children: [] }], text)[0];

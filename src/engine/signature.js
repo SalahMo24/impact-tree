@@ -77,10 +77,10 @@ function throwKey(text) {
 /**
  * The head's throws that are new, as the head writes them. A throw whose text the base also
  * has is not new. A changed text is a reworded message, not a new throw, when it takes the
- * place of a base throw with the same key that the head no longer has (hono PR 1774:
- * `new Error('…')` to `new Error(MESSAGE)`). When a key has more changed texts in the head
+ * place of a base throw with the same key that the head no longer has (seen in a
+ * TypeScript test repository: `new Error('…')` to `new Error(MESSAGE)`). When a key has more changed texts in the head
  * than vanished ones in the base, which one is reworded cannot be told, so all of that key's
- * changed texts are reported (t3code PR 15 adds a `throw new Error` beside one it keeps).
+ * changed texts are reported (a TypeScript test PR adds a `throw new Error` beside one it keeps).
  * Texts are distinct (a set): two identical throws were never told apart.
  * @param {{ throws: Set<string> } | null | undefined} baseSym @param {{ throws: Set<string> }} headSym
  * @returns {string[]}

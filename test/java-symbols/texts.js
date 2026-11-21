@@ -1,19 +1,18 @@
 'use strict';
 // Java texts whose document symbols jdtls gave are recorded in ./recorded.json by
 // test/lsp-harness/record-java-symbols.js; test/java-symbols.test.js replays them, so it
-// needs no editor and no jdtls. Three are google/gson files at 57731049 (Apache-2.0,
-// © Google Inc.), kept as `.java.txt` so nothing treats them as this repository's Java:
-// `Gson.java` (overloads, generic methods, a nested class, constructors, anonymous classes
-// in methods), `FieldNamingPolicy.java` (an enum with constant bodies) and
-// `MapTypeAdapterFactory.java` (a generic inner class). The others are written for what gson
-// lacks (records, interfaces with default and static methods, local classes, lambdas, an
-// anonymous class in a field, overloads that change). Change a text only together with a
-// new recording: the test checks each text's hash against the one recorded.
+// needs no editor and no jdtls. Three are written files kept as `.java.txt` so nothing treats
+// them as this repository's Java: `Mapper.java` (overloads, generic methods, a nested class,
+// constructors, anonymous classes in methods), `NamingPolicy.java` (an enum with constant
+// bodies) and `MapAdapter.java` (a generic inner class). The others are written for records,
+// interfaces with default and static methods, local classes, lambdas, an anonymous class in
+// a field and overloads that change. Change a text only together with a new recording: the
+// test checks each text's hash against the one recorded.
 
 const fs = require('fs');
 const path = require('path');
 
-const gsonFile = (name) => fs.readFileSync(path.join(__dirname, name), 'utf8');
+const sampleFile = (name) => fs.readFileSync(path.join(__dirname, name), 'utf8');
 
 const shapes = `package demo;
 
@@ -117,9 +116,9 @@ public class Codec {
 `;
 
 module.exports = {
-  'Gson.java': gsonFile('gson_Gson.java.txt'),
-  'FieldNamingPolicy.java': gsonFile('gson_FieldNamingPolicy.java.txt'),
-  'MapTypeAdapterFactory.java': gsonFile('gson_MapTypeAdapterFactory.java.txt'),
+  'Mapper.java': sampleFile('SampleMapper.java.txt'),
+  'NamingPolicy.java': sampleFile('SampleNamingPolicy.java.txt'),
+  'MapAdapter.java': sampleFile('SampleMapAdapter.java.txt'),
   'Shapes.java': shapes,
   'Codec.java@base': overloadsBase,
   'Codec.java@head': overloadsHead,

@@ -206,9 +206,9 @@ test('a function only tests call: test-only top, and testOnly when every path en
 
 test('a package bin file\'s module code ends a path as app start, not as an entry', async () => {
   const g = fakeGraph({ leaf: { file: 'a.ts', callers: ['index.ts'] }, 'index.ts': { file: 'src/index.ts', pos: 0 } });
-  const r = await run(g, 'leaf', { facts: { binFiles: new Map([['src/index.ts', 't3']]) } });
+  const r = await run(g, 'leaf', { facts: { binFiles: new Map([['src/index.ts', 'app']]) } });
   assert.deepEqual(r.entries, []);
-  assert.deepEqual([r.topPaths[0].end, r.topPaths[0].topKind, r.topPaths[0].bin], ['top-unidentified', 'app-start', 't3']);
+  assert.deepEqual([r.topPaths[0].end, r.topPaths[0].topKind, r.topPaths[0].bin], ['top-unidentified', 'app-start', 'app']);
   assert.equal(r.complete, true);
 });
 

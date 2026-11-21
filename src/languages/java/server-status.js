@@ -50,11 +50,11 @@
 //   an import event ends it (e.g. "Java: Reload Projects"). Residual: an import that ended
 //   before the status existed is not seen, so such a window stays incomplete until the next.
 // - **Caps (CODING_STYLE §2), owner `stampBuildFiles`, checked before each admission:**
-//   BUILD_FILE_LIMITS: 200 build files, depth 24 below a folder (Java source trees are deep: gson's are 12+), 5000 folders read, 1 MiB per
+//   BUILD_FILE_LIMITS: 200 build files, depth 24 below a folder (Java source trees are deep: 12+ is common), 5000 folders read, 1 MiB per
 //   build file; `target/`, `build/`, `node_modules/`, `out/` and dot-folders (`.git/`) are
 //   skipped. A cap reached, or a read failing, means the files are not known: incomplete
 //   (BUILD_FILES_UNKNOWN_REASON) until an import event after ready. The walk is synchronous
-//   (a few ms on gson); the folder cap bounds it.
+//   (a few ms on a mid-sized library); the folder cap bounds it.
 //
 // Owner: one per resolver (Java's editor extras); its listeners go to `own` (the editor
 // passes nothing to keep them: they live as long as the window). Never throws: an API that
@@ -151,7 +151,7 @@ function stampBuildFiles(folders, { limits = BUILD_FILE_LIMITS, fsImpl = fs } = 
  * @param {(d: { dispose(): void }) => void} [deps.own] Takes each disposable.
  * @param {(folder: string) => boolean} [deps.hasBuildFile] Whether a project folder still has
  *   its build file on disk: jdtls keeps a project (and its diagnostic) whose pom a checkout
- *   removed (J6: gson's `codegen` after #1904), and such a stale project is not counted.
+ *   removed (J6: a module deleted upstream), and such a stale project is not counted.
  * @param {{ folders: () => string[], store: { get(): any, set(record: any): void },
  *   stamp?: (folders: string[]) => ({ stamp: string } | { stamp: null, reason: string }) }} [deps.buildFiles]
  *   The build-file check above; absent: off.

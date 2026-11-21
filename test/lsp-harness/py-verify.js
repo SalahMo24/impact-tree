@@ -1,18 +1,18 @@
 'use strict';
 /**
  * P7 (docs/MULTI_LANGUAGE_PLAN.md, Part P): the real pipeline and Python provider against
- * Pyright on a corpus of merged encode/httpx pull requests (./py-verify-corpus.json), checked
+ * Pyright on a corpus of merged `py-a` pull requests (<scratchpad>/corpora/py-verify-corpus.json), checked
  * against two oracles that share no code with the engine (P-D3). A development script, not
- * part of `npm test`: it needs Pyright (P-D1), a virtualenv with Jedi (JEDI_PYTHON), an httpx
- * clone and a worktree of it. Results: test/lsp-harness/P7-REPORT.md. Built like G7's
+ * part of `npm test`: it needs Pyright (P-D1), a virtualenv with Jedi (JEDI_PYTHON), an py-a
+ * clone and a worktree of it. Results: the P7 report (kept outside the repository; npm run -s local-notes). Built like G7's
  * go-verify.js.
  *
- *   node test/lsp-harness/py-verify.js <absolute path to httpx clone> --worktree <absolute path to a worktree of it>
+ *   node test/lsp-harness/py-verify.js <absolute path to py-a clone> --worktree <absolute path to a worktree of it>
  *     [--prs 3319,3394] [--pyright path] [--jedi-python path] [--out dir] [--summary file]
  *     [--cache dir] [--no-cache] [--deadline-ms n] [--syntactic] [--corpus file.json]
  *
  * `--corpus`: another list of PRs in py-verify-corpus.json's shape (number, head, base, …), such
- * as open PRs fetched for an out-of-sample check; default ./py-verify-corpus.json.
+ * as open PRs fetched for an out-of-sample check; default <scratchpad>/corpora/py-verify-corpus.json.
  *
  * `--syntactic` (A4, A8.2): the pipeline runs without a language server, as the CLI does, so
  * Python is read from its text (`prepareSyntactic`) and callers come from the syntax index
@@ -28,7 +28,7 @@
  * files and changed tests the preview fetched; Jedi's callers are restricted to those files
  * (the head-side Python paths the fake `gh` served).
  *
- * `--package <dir>` (default `httpx`): the package directory oracle (a) reads (pydantic: `pydantic`).
+ * `--package <dir>` (default `py-a`): the package directory oracle (a) reads (py-b: `py-b`).
  *
  * Two phases, run side by side:
  * - Oracles, per PR (at most ORACLE_CONCURRENCY PRs at once). The head commit is exported with
@@ -36,7 +36,7 @@
  *   so PRs share no checkout). Then
  *   (a) changed functions: AST_PROGRAM (standard library only, `python3 -I`, written to a
  *       temporary directory and run from another, with a deadline) parses both sides of every
- *       changed non-test `httpx/` file with `ast` and lists each module function or class
+ *       changed non-test `py-a/` file with `ast` and lists each module function or class
  *       method (classes nested in classes too; defs inside functions are the parent's body,
  *       P-D5) whose source text (first decorator to the body's end) changed, was added or
  *       removed, keyed as the provider keys them (`Class.method`, repeats `#2` in source
@@ -54,7 +54,7 @@
  *       compiled extension (checked before Jedi runs), and `auto_import_modules` is emptied.
  * - Pipeline, per PR, one after the other (it needs the worktree): the worktree must be clean;
  *   it is checked out at the PR's head (detached), a fresh Pyright is started, and `analyze()`
- *   runs as py-e2e.js does (`pr` mode against the base commit, the Python provider's caller
+ *   runs as the Python end-to-end run does (`pr` mode against the base commit, the Python provider's caller
  *   extras, the editor's options: skipForest, test reach deferred). At the end the worktree
  *   is put back on the branch it was on.
  * Then each PR is compared (`comparePr`) into `<out>/<n>.json`, and every PR's JSON is
@@ -75,7 +75,7 @@
  * each Jedi query JEDI_QUERY_DEADLINE_S; a query past it fails the PR's oracle (no partial
  * oracle is compared).
  *
- * The clone and worktree are data: nothing of httpx is run. Only git, Pyright and the two
+ * The clone and worktree are data: nothing of py-a is run. Only git, Pyright and the two
  * oracle programs read them. Wall-clock time is fine here: this is a measurement script.
  */
 
@@ -91,8 +91,9 @@ const { pythonProvider } = require('../../src/languages/python/provider');
 const { classifyChangeVerdict, toneOf } = require('../../src/views/changes/tree-row-models');
 const { pythonRules } = require('../../src/languages/python/rules');
 
-/** The corpus: squash-merged httpx PRs; `head` is the squash commit, `base` its parent. */
-const CORPUS = require('./py-verify-corpus.json');
+/** The corpus: squash-merged py-a PRs; `head` is the squash commit, `base` its parent. */
+// The corpora name the test repositories, so they live in the scratchpad (corpora/).
+const CORPUS_FILE = () => scratchpadPath('corpora', 'py-verify-corpus.json');
 
 /** The whole run, in milliseconds; the plan's budget is 5 min uncached, 2 min cached. */
 const RUN_DEADLINE_MS = 8 * 60 * 1000;
@@ -410,7 +411,7 @@ async function runPython(python, program, input) {
 
 // The file rules, written again from the plan's P1 rather than taken from rules.js, so a
 // disagreement shows: in the package, not a test file.
-let packageDir = 'httpx';
+let packageDir = '';
 const isPackageSource = (rel) => rel.startsWith(`${packageDir}/`) && rel.endsWith('.py') && !/(^|\/)(test_[^/]*|[^/]*_test|conftest)\.py$/.test(rel) && !/(^|\/)tests?\//.test(rel);
 
 /** The changed package files between `base` and `head` (renames followed), as pairs; sides written under `work`. */
@@ -689,7 +690,7 @@ function comparePr({ worktree, pr, result, oracle, jedi, syntactic = false, inde
   };
   const isTestRel = (r) => !isPackageSource(r) && /(^|\/)(tests?\/|test_[^/]*\.py$|conftest\.py$)/.test(r);
 
-  // (a) changed functions, in the oracle's scope (non-test httpx/ files); rows outside it are counted.
+  // (a) changed functions, in the oracle's scope (non-test py-a/ files); rows outside it are counted.
   const inScope = (x) => isPackageSource(x.relPath);
   const pipelineRows = [
     ...result.allChanged.filter(inScope).map((c) => ({ id: `${c.relPath}#${c.key}|${c.added ? 'added' : 'changed'}` })),
@@ -806,7 +807,7 @@ function summarise(out, corpus) {
   });
   const lines = [];
   const T = { tp: 0, fp: 0, fn: 0, body: 0, bodyOk: 0, header: 0, headerOk: 0, raise: 0, raiseOk: 0, ours: 0, jedi: 0, ctp: 0, cfp: 0, cfn: 0, missChanges: 0, missWhileComplete: 0, fineNotUpdated: 0 };
-  lines.push('| PR | Python files (httpx/) | functions (oracle) | precision | recall | header changes right | new raises right | body-only right | callers ours / Jedi | caller precision | caller recall | Jedi-missed on incomplete | fine with non-updated Jedi caller | oracles (s) | Pyright start / first / full |');
+  lines.push('| PR | Python files (the package) | functions (oracle) | precision | recall | header changes right | new raises right | body-only right | callers ours / Jedi | caller precision | caller recall | Jedi-missed on incomplete | fine with non-updated Jedi caller | oracles (s) | Pyright start / first / full |');
   lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
   for (const r of records) {
     const f = r.functions;
@@ -877,9 +878,9 @@ async function main() {
   const repo = args[0];
   const worktree = option(args, '--worktree', '');
   if (!repo || !path.isAbsolute(repo) || !worktree || !path.isAbsolute(worktree)) {
-    throw new Error('usage: node py-verify.js <absolute path to httpx clone> --worktree <absolute path> [--prs n,n] [--corpus file.json] [--pyright path] [--jedi-python path] [--out dir] [--summary file] [--cache dir] [--no-cache] [--deadline-ms n]');
+    throw new Error('usage: node py-verify.js <absolute path to py-a clone> --worktree <absolute path> [--prs n,n] [--corpus file.json] [--pyright path] [--jedi-python path] [--out dir] [--summary file] [--cache dir] [--no-cache] [--deadline-ms n]');
   }
-  const pyrightPath = option(args, '--pyright', DEFAULT_PYRIGHT);
+  const pyrightPath = option(args, '--pyright', null) || DEFAULT_PYRIGHT();
   const jediPython = option(args, '--jedi-python', JEDI_PYTHON);
   const out = option(args, '--out', path.join(os.tmpdir(), 'impact-tree-p7'));
   const only = option(args, '--prs', '');
@@ -887,11 +888,12 @@ async function main() {
   const syntactic = args.includes('--syntactic');
   const preview = args.includes('--preview');
   if (preview && !syntactic) throw new Error('--preview needs --syntactic');
-  packageDir = option(args, '--package', 'httpx');
+  packageDir = option(args, '--package', '');
+  if (!packageDir) throw new Error('--package <dir> is required: the package directory oracle (a) reads (the values: npm run -s local-notes)');
   const deadlineMs = Number(option(args, '--deadline-ms', String(RUN_DEADLINE_MS)));
   if (!Number.isSafeInteger(deadlineMs) || deadlineMs < 1) throw new RangeError('--deadline-ms must be a positive integer');
   const corpusFile = option(args, '--corpus', '');
-  const all = corpusFile ? JSON.parse(fs.readFileSync(corpusFile, 'utf8')) : CORPUS;
+  const all = JSON.parse(fs.readFileSync(corpusFile || CORPUS_FILE(), 'utf8'));
   if (!Array.isArray(all) || !all.every((p) => Number.isInteger(p.number) && /^[0-9a-f]{40}$/.test(p.head) && /^[0-9a-f]{40}$/.test(p.base))) {
     throw new Error(`--corpus ${corpusFile}: expected an array of { number, head, base } with full commit ids`);
   }

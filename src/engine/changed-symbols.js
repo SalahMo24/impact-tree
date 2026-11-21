@@ -120,7 +120,7 @@ function changedSymbolsIn(ts, S, file) {
  * Added and deleted are both read by key. A head symbol whose key the base does not have is
  * added even when no hunk touches its lines: renaming a class leaves its methods' bodies as
  * unchanged diff lines, and reading additions from hunks only listed every `Old.method` as
- * deleted but few `New.method` as added (httpx #3741). One exception keeps a repeat quiet:
+ * deleted but few `New.method` as added (seen in a Python test PR). One exception keeps a repeat quiet:
  * inserting a second `foo` above the first renumbers the old one `foo#2` with its text
  * unchanged, so a hunk-less new key whose declaration text equals a base symbol's of the
  * same label is not added. Without `headText` that comparison cannot be made, and the

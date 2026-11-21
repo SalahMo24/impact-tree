@@ -14,7 +14,7 @@ const path = require('node:path');
 const { pathToFileURL, fileURLToPath } = require('node:url');
 const { LspClient } = require('./lsp-client');
 
-/** Default per-request deadline; cold gopls on cli/cli needs minutes for the first call. */
+/** Default per-request deadline; cold gopls on go-a needs minutes for the first call. */
 const DEFAULT_DEADLINE_MS = 240000;
 
 /**

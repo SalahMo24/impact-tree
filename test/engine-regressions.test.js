@@ -280,18 +280,18 @@ test('throws belong to their own callable and parameter edits retain their direc
   assert.deepEqual(kinds('a:number','renamed:number'), []);
 });
 
-test('a reworded throw message is not a new throw; a further throw of the same type is (hono PR 1774)', () => {
+test('a reworded throw message is not a new throw; a further throw of the same type is (a router PR)', () => {
   const { makeSymbols } = require('../src/engine/symbols');
   const { newThrows, throwKey } = require('../src/engine/signature');
   const collect = (text) => makeSymbols(ts).collect(ts.createSourceFile('a.ts', text, ts.ScriptTarget.Latest, true))[0];
   const added = (base, head) => newThrows(collect(`function f(){ ${base} }`), collect(`function f(){ ${head} }`));
-  // (hono) RegExpRouter.add: the message moved into a constant.
+  // A router's add():the message moved into a constant.
   assert.deepEqual(added('throw new Error("Can not add a route since the matcher is already built.")',
     'throw new Error(MESSAGE_MATCHER_IS_ALREADY_BUILT)'), []);
   assert.deepEqual(added('throw new errors.HttpError(`a ${x}`)', 'throw new errors . HttpError<T>(400, { message: m })'), []);
   assert.deepEqual(added('throw createError(400, "a")', 'throw createError(404)'), []);
   assert.deepEqual(added('if (a) throw new Error("a"); throw new TypeError("b")', 'if (a) throw new Error("A"); throw new TypeError("B")'), []);
-  // (t3code PR 15) a new path that throws the same type as one the head keeps is new.
+  // (a TypeScript monorepo PR) a new path that throws the same type as one the head keeps is new.
   assert.deepEqual(added('throw new Error("missing id")', 'if (!x) throw new Error("no input"); throw new Error("missing id")'),
     ['new Error("no input")']);
   // Two changed texts for one vanished: which is reworded is unknown, so both are reported.

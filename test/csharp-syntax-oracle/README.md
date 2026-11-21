@@ -7,7 +7,7 @@ trivia) and writes the C-D4 members of each file, keyed per C-D6. Shares no code
 Files are read from git objects (`git ls-tree`, `git cat-file --batch`); nothing is checked
 out, built or run. `.cs` files under a `bin/` or `obj/` directory are skipped.
 
-Built and run by csharp-verify.js into `~/Projects/impact-tree-scratchpad/csharp-tools/oracle-syntax/`
+Built and run by csharp-verify.js into the scratchpad's `csharp-tools/oracle-syntax/` (test/lsp-harness/scratchpad.js)
 with the SDK in `csharp-tools/dotnet` (`csharp-tools/env.sh`). By hand:
 
     dotnet SyntaxOracle.dll <repo> <commit> <out.json>

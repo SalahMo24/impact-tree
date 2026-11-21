@@ -99,7 +99,7 @@ test('filter: a caller that only references the method is dropped, a caller with
 
 test('filter drops callers in jdtls\' default project and outside the repository', () => {
   const rows = [
-    { label: 'TypeAdapters.read', file: '/Users/x/jdtls-data/ws/jdt.ls-java-project/src/com/google/gson/TypeAdapters.java', pos: 0, test: false, sites: 1, callSites: [{ start: 0, end: 1 }] },
+    { label: 'TypeAdapters.read', file: '/home/x/jdtls-data/ws/jdt.ls-java-project/src/com/example/json/TypeAdapters.java', pos: 0, test: false, sites: 1, callSites: [{ start: 0, end: 1 }] },
     { label: 'Elsewhere.m', file: '/elsewhere/E.java', pos: 0, test: false, sites: 0, callSites: [] },
     { label: 'In.m', file: '/r/src/In.java', pos: 0, test: false, sites: 0, callSites: [] },
   ];

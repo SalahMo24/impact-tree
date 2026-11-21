@@ -4,7 +4,7 @@
  * The plan's LanguageServices operations, answered by Roslyn's MIT-licensed
  * `roslyn-language-server` (Microsoft.CodeAnalysis.LanguageServer, nuget.org) over stdio:
  * the shared stdio services (./stdio-server-services.js) with Roslyn's command and the
- * `csharp` language id, launched as C0b did (./c0-spike.js, ./C0-REPORT.md). Never the
+ * `csharp` language id, launched as C0b did (the C0b spike and report (kept outside the repository; npm run -s local-notes)). Never the
  * server inside the C# extension's VSIX: its licence allows VS Code / Visual Studio only.
  *
  * Tools (C-D1) live in the scratchpad's csharp-tools/: the .NET SDK in dotnet/ (the server
@@ -27,10 +27,10 @@ const { pathToFileURL } = require('node:url');
 const { createStdioServerServices } = require('./stdio-server-services');
 const { scratchpadPath } = require('./scratchpad');
 
-const DEFAULT_TOOLS = scratchpadPath('csharp-tools');
+const DEFAULT_TOOLS = () => scratchpadPath('csharp-tools');
 /** The server's DLL under the tools folder (osx-x64 package; `dotnet <dll>`: the apphost has no exec bit). */
 const SERVER_DLL = path.join('roslyn-ls', 'osx-x64', 'tools', 'net10.0', 'osx-x64', 'Microsoft.CodeAnalysis.LanguageServer.dll');
-/** Project load, restore excluded (C0b: jellyfin's 40 projects load in well under this). */
+/** Project load, restore excluded (C0b: cs-a's 40 projects load in well under this). */
 const LOAD_DEADLINE_MS = 6 * 60 * 1000;
 const POLL_MS = 200;
 
@@ -61,7 +61,7 @@ function dotnetEnv(tools) {
  *   csharp-tools/roslyn-ls/logs).
  */
 function createRoslynServices(options) {
-  const tools = options.tools || DEFAULT_TOOLS;
+  const tools = options.tools || DEFAULT_TOOLS();
   const dll = path.join(tools, SERVER_DLL);
   if (!fs.existsSync(dll)) throw new Error(`no Roslyn language server at ${dll}`);
   const logDir = options.logDir || path.join(tools, 'roslyn-ls', 'logs');

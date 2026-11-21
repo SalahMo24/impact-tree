@@ -96,7 +96,7 @@ test('interface dispatch, overridable methods and Lombok are incomplete with the
   assert.equal(idx.unresolvedCallsTo({ name: 'getName' }), 1, 'a generated getter is an unresolved call, not "outside"');
 });
 
-test('anonymous-class methods, enum constants and explicit type arguments (gson corrections)', () => {
+test('anonymous-class methods, enum constants and explicit type arguments (run 2 corrections)', () => {
   assert.deepEqual(callersOf('lib/Doer.java', 'Doer.doIt()').rows, ['App.a(Client): d.doIt();'], 'the anonymous class\'s `public void doIt() {` is a declaration, not a call');
   const inner = callersOf('lib/Client.java', 'Client.getInner()').rows;
   assert.ok(inner.includes('Anon.make(Client): void helperOf(Client k) { k.getInner(); }'), 'a parameter of an anonymous class\'s method is typed');

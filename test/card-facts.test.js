@@ -24,7 +24,7 @@ function fixture() {
     label: 'Router.add', relPath: 'src/router.ts', file: '/r/src/router.ts', namePos: 10, startLine: 3, endLine: 9,
     baseSig: '(path: string) => void', headSig: '(path: string) => void | never', kinds: [{ id: 'throws', label: 'throws' }], throwsAdded: ['UnsupportedPathError'],
     callerState: 'resolved', callersComplete: true, testState: 'covered',
-    callers: [caller('spec', 'unchanged', true), caller('updated', 'updated-at-call'), caller('Hono.addRoute', 'unchanged'), caller('elsewhere', 'changed-elsewhere'),
+    callers: [caller('spec', 'unchanged', true), caller('updated', 'updated-at-call'), caller('App.addRoute', 'unchanged'), caller('elsewhere', 'changed-elsewhere'),
       ...Array.from({ length: 10 }, (_, i) => caller(`t${i}`, 'unchanged', true))],
   };
   const body = {
@@ -33,7 +33,7 @@ function fixture() {
   };
   const result = {
     allChanged: [add, body], deleted: [{ label: 'gone', relPath: 'src/old.ts', namePos: 1, baseSig: '() => void' }],
-    impactPaths: { 'src/router.ts#10': { entries: [{ type: 'public-api', name: 'Hono' }], complete: true, summary: { ends: {} } } },
+    impactPaths: { 'src/router.ts#10': { entries: [{ type: 'public-api', name: 'App' }], complete: true, summary: { ends: {} } } },
   };
   const cards = {
     clusters: [
@@ -57,10 +57,10 @@ test('facts: the review stamp, every card with its members, and a member\'s cont
   assert.deepEqual(facts.review, { head: REVIEW.head, base: REVIEW.base, baseRef: 'origin/main', pr: 7 });
   assert.equal(facts.changed, 3);
   const [k1, k2] = facts.cards;
-  assert.deepEqual(k1.entryPoints, ['public-api Hono']);
+  assert.deepEqual(k1.entryPoints, ['public-api App']);
   const withCaveat = fixture();
   withCaveat.result.impactPaths['src/router.ts#10'].entries.push({ type: 'http', name: 'GET /a', caveat: 'prefix may come from the caller' });
-  assert.deepEqual(buildCardFacts(withCaveat, REVIEW).facts.cards[0].entryPoints, ['public-api Hono', 'http GET /a (prefix may come from the caller)']);
+  assert.deepEqual(buildCardFacts(withCaveat, REVIEW).facts.cards[0].entryPoints, ['public-api App', 'http GET /a (prefix may come from the caller)']);
   assert.deepEqual(k1.seamsWith, ['K2']);
   assert.deepEqual(k1.mergeHints, [{ cards: ['K1', 'K2'], strength: 2, evidence: ['commit 0123456789ab: fix(router): reject line terminators', 'shared name addRoute in 3 files', '2 shared tests', 'same folder src/router'] }]);
   const add = k1.members[0];
@@ -70,7 +70,7 @@ test('facts: the review stamp, every card with its members, and a member\'s cont
   assert.equal(add.callers.total, 14);
   assert.equal(add.callers.tests, 11);
   assert.equal(add.callers.list.length, MAX_CALLERS_LISTED);
-  assert.deepEqual(add.callers.list.slice(0, 3), ['Hono.addRoute src/Hono.addRoute.ts:2 unchanged', 'elsewhere src/elsewhere.ts:2 changed-elsewhere', 'updated src/updated.ts:2 updated-at-call'],
+  assert.deepEqual(add.callers.list.slice(0, 3), ['App.addRoute src/App.addRoute.ts:2 unchanged', 'elsewhere src/elsewhere.ts:2 changed-elsewhere', 'updated src/updated.ts:2 updated-at-call'],
     'callers left unchanged come first, tests last');
   assert.ok(add.callers.list[3].endsWith('(test)'));
   const body = k1.members[1];

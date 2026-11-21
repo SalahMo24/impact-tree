@@ -13,7 +13,7 @@ const { createStdioServerServices } = require('./stdio-server-services');
 
 /** The MIT `pyright` npm package installed per P-D1 (P0). */
 const { scratchpadPath } = require('./scratchpad');
-const DEFAULT_PYRIGHT = scratchpadPath('py-tools', 'node_modules', '.bin', 'pyright-langserver');
+const DEFAULT_PYRIGHT = () => scratchpadPath('py-tools', 'node_modules', '.bin', 'pyright-langserver');
 
 /**
  * @param {{ repo: string, pyrightPath?: string, deadlineMs?: number, scratchDir?: string }} options
@@ -21,7 +21,7 @@ const DEFAULT_PYRIGHT = scratchpadPath('py-tools', 'node_modules', '.bin', 'pyri
 function createPyrightServices(options) {
   return createStdioServerServices({
     repo: options.repo,
-    command: options.pyrightPath || DEFAULT_PYRIGHT,
+    command: options.pyrightPath || DEFAULT_PYRIGHT(),
     args: ['--stdio'],
     languageId: 'python',
     deadlineMs: options.deadlineMs || 60000,

@@ -53,7 +53,7 @@ test('Java is registered after Python, needs a server, and .java is no longer "n
 
 test('a parameter type is erased, simple, and keeps arrays and varargs', () => {
   const cases = [
-    ['Class<T>', 'Class'], ['Map<String, List<T>>', 'Map'], ['TypeToken<?>', 'TypeToken'],
+    ['Class<T>', 'Class'], ['Map<String, List<T>>', 'Map'], ['TypeKey<?>', 'TypeKey'],
     ['List<? extends V>', 'List'], ['Map<? super K, ? extends Map<String, V[]>>', 'Map'],
     ['List<T>[]', 'List[]'], ['Class<?>...', 'Class...'], ['int[][]', 'int[][]'], ['int [] []', 'int[][]'],
     ['String ...', 'String...'], ['T', 'T'], ['T[]', 'T[]'], ['int', 'int'],
@@ -69,61 +69,62 @@ test('a parameter type is erased, simple, and keeps arrays and varargs', () => {
 });
 
 test('jdtls names are read with nesting, and the type-parameter suffix is dropped', () => {
-  assert.deepEqual(memberNameOf('getAdapter(TypeToken<T>) <T>'), { simpleName: 'getAdapter', params: ['TypeToken<T>'] });
+  assert.deepEqual(memberNameOf('getConverter(TypeKey<T>) <T>'), { simpleName: 'getConverter', params: ['TypeKey<T>'] });
   assert.deepEqual(memberNameOf('group(List<? extends V>, Function<V, K>, T[], int[][]) <K, V>'),
     { simpleName: 'group', params: ['List<? extends V>', 'Function<V, K>', 'T[]', 'int[][]'] });
-  assert.deepEqual(memberNameOf('Gson()'), { simpleName: 'Gson', params: [] });
-  assert.deepEqual(memberNameOf('isAssignableFrom(Type, ParameterizedType, Map<String, Type>)').params, ['Type', 'ParameterizedType', 'Map<String, Type>']);
+  assert.deepEqual(memberNameOf('Mapper()'), { simpleName: 'Mapper', params: [] });
+  assert.deepEqual(memberNameOf('isAssignable(Type, ParameterizedType, Map<String, Type>)').params, ['Type', 'ParameterizedType', 'Map<String, Type>']);
   assert.equal(memberNameOf('TASK'), null, 'a field');
   assert.equal(memberNameOf('broken(int'), null, 'unbalanced');
   assert.deepEqual(splitParameters(' Map<K, V> m , int[] a '), [' Map<K, V> m ', ' int[] a ']);
   assert.deepEqual(splitParameters('  '), []);
-  assert.equal(typeSegmentOf('TypeToken<T>'), 'TypeToken');
+  assert.equal(typeSegmentOf('TypeKey<T>'), 'TypeKey');
   assert.equal(typeSegmentOf('Generic<T extends Comparable<T>>'), 'Generic');
-  assert.equal(javaKeyOf(['Gson'], 'toJson', ['Object', 'Appendable'], false), 'Gson.toJson(Object, Appendable)');
-  assert.equal(javaKeyOf(['Gson', 'FutureTypeAdapter'], 'Gson', ['GsonBuilder'], true), 'Gson.FutureTypeAdapter.<init>(GsonBuilder)');
+  assert.equal(javaKeyOf(['Mapper'], 'write', ['Object', 'Appendable'], false), 'Mapper.write(Object, Appendable)');
+  assert.equal(javaKeyOf(['Mapper', 'FutureConverter'], 'Mapper', ['MapperBuilder'], true), 'Mapper.FutureConverter.<init>(MapperBuilder)');
 });
 
 // ---- candidates -------------------------------------------------------------------------
 
-test('gson Gson.java: overloads keyed by erased parameter types, constructors, a nested class', () => {
-  const all = collect('Gson.java');
+test('Mapper.java: overloads keyed by erased parameter types, constructors, a nested class', () => {
+  const all = collect('Mapper.java');
   const keys = all.map((s) => s.key);
   assert.equal(new Set(keys).size, keys.length, 'no repeats');
   assert.ok(!keys.some((k) => k.includes('#')));
-  for (const k of ['Gson.<init>()', 'Gson.<init>(GsonBuilder)', 'Gson.getAdapter(TypeToken)', 'Gson.getAdapter(Class)',
-    'Gson.getDelegateAdapter(TypeAdapterFactory, TypeToken)', 'Gson.toJson(Object, Appendable)', 'Gson.fromJson(String, Class)',
-    'Gson.FutureTypeAdapter.write(JsonWriter, T)', 'Gson.FutureTypeAdapter.setDelegate(TypeAdapter)']) {
+  for (const k of ['Mapper.<init>()', 'Mapper.<init>(MapperBuilder)', 'Mapper.getConverter(TypeKey)', 'Mapper.getConverter(Class)',
+    'Mapper.getDelegate(ConverterFactory, TypeKey)', 'Mapper.write(Object, Appendable)', 'Mapper.read(String, Class)',
+    'Mapper.FutureConverter.write(OutSink, T)', 'Mapper.FutureConverter.setDelegate(Converter)']) {
     assert.ok(keys.includes(k), k);
   }
-  assert.equal(keys.filter((k) => k.startsWith('Gson.toJson(')).length, 8, 'J0: 8 toJson overloads');
-  assert.equal(keys.filter((k) => k.startsWith('Gson.fromJson(')).length, 11, 'gson at 57731049: 11 fromJson overloads');
-  // Anonymous classes inside methods (`new TypeAdapter<Number>() {…}` in `doubleAdapter`…)
-  // are their method's body: none of their `read`/`write` is a candidate.
-  assert.ok(!keys.some((k) => /\.(read|write)\(/.test(k) && !k.startsWith('Gson.FutureTypeAdapter.')), keys.join('\n'));
-  const ctor = all.find((s) => s.key === 'Gson.<init>(GsonBuilder)');
+  assert.equal(keys.filter((k) => k.startsWith('Mapper.write(')).length, 4, '4 write overloads');
+  assert.equal(keys.filter((k) => k.startsWith('Mapper.read(')).length, 5, '5 read overloads');
+  // An anonymous class inside a method (`new Converter<Number>() {…}` in `numberConverter`)
+  // is its method's body: none of its `read`/`write` is a candidate.
+  assert.ok(!keys.some((k) => /\.(read|write)\(/.test(k) && !k.startsWith('Mapper.FutureConverter.') && !k.startsWith('Mapper.write(') && !k.startsWith('Mapper.read(')), keys.join('\n'));
+  assert.ok(!keys.some((k) => k.startsWith('Mapper.numberConverter') && /read|write/.test(k)));
+  const ctor = all.find((s) => s.key === 'Mapper.<init>(MapperBuilder)');
   assert.equal(ctor.isConstructor, true);
-  assert.equal(ctor.label, 'new Gson(GsonBuilder)');
-  assert.equal(ctor.className, 'Gson');
+  assert.equal(ctor.label, 'new Mapper(MapperBuilder)');
+  assert.equal(ctor.className, 'Mapper');
   assert.equal(ctor.exported, false, 'package-private');
-  const text = texts['Gson.java'];
-  assert.equal(text.slice(ctor.namePos, ctor.namePos + 4), 'Gson', 'callers are asked at the constructor\'s own name');
+  const text = texts['Mapper.java'];
+  assert.equal(text.slice(ctor.namePos, ctor.namePos + 6), 'Mapper', 'callers are asked at the constructor\'s own name');
   assert.ok(text.slice(ctor.namePos - 2, ctor.namePos).endsWith('  '), 'not the class name');
-  const nested = all.find((s) => s.key === 'Gson.FutureTypeAdapter.write(JsonWriter, T)');
-  assert.equal(nested.className, 'FutureTypeAdapter');
+  const nested = all.find((s) => s.key === 'Mapper.FutureConverter.write(OutSink, T)');
+  assert.equal(nested.className, 'FutureConverter');
   assert.equal(nested.exported, true);
 });
 
 test('Javadoc and leading comments are outside the declaration; annotations are in it', () => {
-  const text = texts['Gson.java'];
-  const all = collect('Gson.java');
-  const toJson = all.find((s) => s.key === 'Gson.toJson(Object, Appendable)');
-  const raw = symbolsOf('Gson.java').flatMap((s) => s.children).find((s) => s.name === 'toJson(Object, Appendable)');
+  const text = texts['Mapper.java'];
+  const all = collect('Mapper.java');
+  const write = all.find((s) => s.key === 'Mapper.write(Object, Appendable)');
+  const raw = symbolsOf('Mapper.java').flatMap((s) => s.children).find((s) => s.name === 'write(Object, Appendable)');
   assert.ok(text.slice(raw.range.start).startsWith('/**'), 'jdtls\' range starts at the Javadoc (J0)');
-  assert.ok(text.slice(toJson.start).startsWith('public void toJson(Object src, Appendable writer)'));
-  assert.equal(toJson.header, 'public void toJson(Object src, Appendable writer) throws JsonIOException');
-  const fromJson = all.find((s) => s.key === 'Gson.fromJson(String, Type)');
-  assert.ok(text.slice(fromJson.start).startsWith('@SuppressWarnings('), 'an annotation starts the declaration');
+  assert.ok(text.slice(write.start).startsWith('public void write(Object src, Appendable writer)'));
+  assert.equal(write.header, 'public void write(Object src, Appendable writer) throws MapperException');
+  const read = all.find((s) => s.key === 'Mapper.read(String, Type)');
+  assert.ok(text.slice(read.start).startsWith('@SuppressWarnings('), 'an annotation starts the declaration');
   const shapes = texts['Shapes.java'];
   const annotated = collect('Shapes.java').find((s) => s.key === 'Generic.annotated(String)');
   assert.ok(shapes.slice(annotated.start).startsWith('@Deprecated'), 'a leading // comment is skipped');
@@ -132,27 +133,27 @@ test('Javadoc and leading comments are outside the declaration; annotations are 
   assert.equal(declarationStartOf('/* unclosed', 0, 11), 0, 'unreadable: jdtls\' start kept');
 });
 
-test('gson FieldNamingPolicy.java: enum constant bodies keyed by the constant', () => {
-  const keys = collect('FieldNamingPolicy.java').map((s) => s.key);
+test('NamingPolicy.java: enum constant bodies keyed by the constant', () => {
+  const keys = collect('NamingPolicy.java').map((s) => s.key);
   assert.deepEqual(keys, [
-    'FieldNamingPolicy.IDENTITY.translateName(Field)', 'FieldNamingPolicy.UPPER_CAMEL_CASE.translateName(Field)',
-    'FieldNamingPolicy.UPPER_CAMEL_CASE_WITH_SPACES.translateName(Field)', 'FieldNamingPolicy.UPPER_CASE_WITH_UNDERSCORES.translateName(Field)',
-    'FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES.translateName(Field)', 'FieldNamingPolicy.LOWER_CASE_WITH_DASHES.translateName(Field)',
-    'FieldNamingPolicy.LOWER_CASE_WITH_DOTS.translateName(Field)',
-    'FieldNamingPolicy.separateCamelCase(String, char)', 'FieldNamingPolicy.upperCaseFirstLetter(String)',
+    'NamingPolicy.IDENTITY.translateName(Field)', 'NamingPolicy.UPPER_CAMEL_CASE.translateName(Field)',
+    'NamingPolicy.UPPER_CAMEL_CASE_WITH_SPACES.translateName(Field)', 'NamingPolicy.UPPER_CASE_WITH_UNDERSCORES.translateName(Field)',
+    'NamingPolicy.LOWER_CASE_WITH_UNDERSCORES.translateName(Field)', 'NamingPolicy.LOWER_CASE_WITH_DASHES.translateName(Field)',
+    'NamingPolicy.LOWER_CASE_WITH_DOTS.translateName(Field)',
+    'NamingPolicy.separateWords(String, char)', 'NamingPolicy.upperCaseFirst(String)',
   ]);
-  assert.equal(collect('FieldNamingPolicy.java')[0].className, 'FieldNamingPolicy');
+  assert.equal(collect('NamingPolicy.java')[0].className, 'NamingPolicy');
 });
 
-test('gson MapTypeAdapterFactory.java: a generic inner class and its constructor', () => {
-  const all = collect('MapTypeAdapterFactory.java');
+test('MapAdapter.java: a generic inner class and its constructor', () => {
+  const all = collect('MapAdapter.java');
   assert.deepEqual(all.map((s) => s.key), [
-    'MapTypeAdapterFactory.<init>(ConstructorConstructor, boolean)', 'MapTypeAdapterFactory.create(Gson, TypeToken)',
-    'MapTypeAdapterFactory.getKeyAdapter(Gson, Type)', 'MapTypeAdapterFactory.Adapter.<init>(TypeAdapter, TypeAdapter, ObjectConstructor)',
-    'MapTypeAdapterFactory.Adapter.read(JsonReader)', 'MapTypeAdapterFactory.Adapter.write(JsonWriter, Map)',
-    'MapTypeAdapterFactory.Adapter.keyToString(JsonElement)',
+    'MapAdapter.<init>(Factory, boolean)', 'MapAdapter.create(Mapper, TypeKey)',
+    'MapAdapter.getKeyConverter(Mapper, Type)', 'MapAdapter.Adapter.<init>(Converter, Converter, Maker)',
+    'MapAdapter.Adapter.read(InSource)', 'MapAdapter.Adapter.write(OutSink, Map)',
+    'MapAdapter.Adapter.keyToString(Node)',
   ]);
-  assert.equal(all[3].label, 'new MapTypeAdapterFactory.Adapter(TypeAdapter, TypeAdapter, ObjectConstructor)');
+  assert.equal(all[3].label, 'new MapAdapter.Adapter(Converter, Converter, Maker)');
 });
 
 test('records, interfaces, local classes, lambdas and anonymous classes', () => {
@@ -187,12 +188,12 @@ test('a parsed header supplies sig, modifiers, annotations and throws', () => {
     },
     thrownOf: () => new Set(['IOException']),
   };
-  const s = collect('MapTypeAdapterFactory.java', parser).find((x) => x.key === 'MapTypeAdapterFactory.Adapter.read(JsonReader)');
+  const s = collect('MapAdapter.java', parser).find((x) => x.key === 'MapAdapter.Adapter.read(InSource)');
   assert.deepEqual(s.sig, { async: false, params: [], returns: null });
   assert.deepEqual(s.decorators, ['Override']);
   assert.deepEqual(s.modifiers, ['public']);
   assert.deepEqual([...s.throws], ['IOException']);
-  assert.equal(s.header, '@Override public Map<K, V> read(JsonReader in) throws IOException');
+  assert.equal(s.header, '@Override public Map<K, V> read(InSource in) throws IOException');
 });
 
 test('an unparsed side has no modifiers, so only its header text is compared, never access', () => {
@@ -231,9 +232,9 @@ test('with J3\'s parser: every fixture method is read, and an interface method n
   assert.equal(area.inInterface, true);
   const publicArea = { ...area, modifiers: ['public'], header: `public ${area.header}` };
   assert.ok(!javaSpec().kindsOf(publicArea, area).some((k) => k.id === 'access-changed'), 'a redundant `public` removed from an interface method');
-  const toJson = collect('Gson.java', real).find((s) => s.key === 'Gson.toJson(Object, Appendable)');
-  assert.equal(toJson.header, 'public void toJson(Object src, Appendable writer) throws JsonIOException');
-  assert.deepEqual(toJson.modifiers, ['public']);
+  const write = collect('Mapper.java', real).find((s) => s.key === 'Mapper.write(Object, Appendable)');
+  assert.equal(write.header, 'public void write(Object src, Appendable writer) throws MapperException');
+  assert.deepEqual(write.modifiers, ['public']);
 });
 
 test('a true repeat of a key is #2; a range outside the text is a RangeError', () => {
@@ -243,7 +244,7 @@ test('a true repeat of a key is #2; a range outside the text is a RangeError', (
   const symbols = [{ name: 'A', detail: '', kind: 5, range: { start: 0, end: text.length }, selectionRange: { start: 6, end: 7 },
     children: [method('void m(java.util.List<String> a) {}'), method('void m(List<Integer> b) {}')] }];
   assert.deepEqual(collectJavaSymbols(symbols, text, NO_PARSER).map((s) => s.key), ['A.m(List)', 'A.m(List)#2']);
-  assert.throws(() => collectJavaSymbols(symbolsOf('Gson.java'), 'class X {}', NO_PARSER), RangeError);
+  assert.throws(() => collectJavaSymbols(symbolsOf('Mapper.java'), 'class X {}', NO_PARSER), RangeError);
 });
 
 // ---- overload pairing ---------------------------------------------------------------------
@@ -358,22 +359,22 @@ test('overloads through the pipeline: paired ones are changed, unpaired ones add
 });
 
 test('a Javadoc-only edit is outside every method, not a changed method', async () => {
-  const file = 'src/main/java/com/google/gson/FieldNamingPolicy.java';
-  const base = texts['FieldNamingPolicy.java'];
-  // The Javadoc of `separateCamelCase`, which jdtls' range includes (J0).
-  const head = base.replace('define word separation into separate words that', 'word separation into separate words that');
+  const file = 'src/main/java/demo/NamingPolicy.java';
+  const base = texts['NamingPolicy.java'];
+  // The Javadoc of `separateWords`, which jdtls' range includes (J0).
+  const head = base.replace('so that a camel case\n   * name splits into separate words', 'so that a camel case\n   * name splits into words');
   assert.notEqual(head, base);
   // The head text was not recorded: replay the base's symbols shifted by the edit, which is
   // what jdtls answers for an edit inside a comment.
   const delta = head.length - base.length;
-  const editAt = base.indexOf('define word separation');
+  const editAt = base.indexOf('so that a camel case');
   const shift = (s) => ({ ...s,
     range: { start: s.range.start > editAt ? s.range.start + delta : s.range.start, end: s.range.end > editAt ? s.range.end + delta : s.range.end },
     selectionRange: { start: s.selectionRange.start > editAt ? s.selectionRange.start + delta : s.selectionRange.start, end: s.selectionRange.end > editAt ? s.selectionRange.end + delta : s.selectionRange.end },
     children: s.children.map(shift) });
   const services = replayServices();
   const replay = services.documentSymbols;
-  services.documentSymbols = async (doc) => (doc.text === head ? symbolsOf('FieldNamingPolicy.java').map(shift) : replay(doc));
+  services.documentSymbols = async (doc) => (doc.text === head ? symbolsOf('NamingPolicy.java').map(shift) : replay(doc));
   const repo = repoWith({ 'pom.xml': '<project/>\n', [file]: base }, { [file]: head });
   try {
     const result = await runJava(repo.dir, services);

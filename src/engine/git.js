@@ -191,7 +191,7 @@ async function fetchBranch(git, name, { timeoutMs = DEFAULT_FETCH_TIMEOUT_MS, re
 /**
  * The branch `remote` calls its default: `<remote>/HEAD` as clone (or `git remote set-head`)
  * recorded it, or, when it is not recorded, `main` or `master` if the remote has that branch.
- * Null when none is known. A repository whose default branch is `master` (encode/httpx) is
+ * Null when none is known. A repository whose default branch is `master` (as in some older projects) is
  * then reviewed against `origin/master` without a setting.
  * @param {ReturnType<typeof makeGit>} git
  * @param {string} remote A checked remote name.

@@ -84,15 +84,15 @@ const runSettings = (user) => ({ ...SETTINGS, ...(user || {}), ...SAFETY_SETTING
 
 /**
  * The folders an --extensions-dir may be in: this repository's `.vscode-test/` and the
- * scratchpad (IMPACT_TREE_SCRATCHPAD, else ~/Projects/impact-tree-scratchpad). VS Code
+ * scratchpad when one is configured (test/lsp-harness/scratchpad.js). VS Code
  * rewrites the folder's `extensions.json` (it can drop extensions it thinks obsolete), so it
  * must never be an editor's own folder.
- * @param {string} home @returns {string[]}
+ * @returns {string[]}
  */
-const extensionsDirRoots = (home) => [
+const extensionsDirRoots = () => /** @type {string[]} */ ([
   path.join(ROOT, '.vscode-test'),
-  process.env.IMPACT_TREE_SCRATCHPAD || path.join(home, 'Projects', 'impact-tree-scratchpad'),
-];
+  require(path.join(ROOT, 'test/lsp-harness/scratchpad')).scratchpadRoot(),
+].filter((r) => r !== null));
 
 /** The editors' own extension folders, refused even inside an allowed root. @param {string} home */
 const editorExtensionDirs = (home) => ['.vscode', '.vscode-insiders', '.vscode-oss', '.cursor', '.windsurf']
@@ -109,7 +109,7 @@ function checkExtensionsDir(dir, home = require('node:os').homedir()) {
   const resolved = real(dir);
   const editor = editorExtensionDirs(home).map(real).find((e) => within(resolved, e) || within(e, resolved));
   if (editor) throw new Error(`--extensions-dir ${dir} is (or holds) an editor's own extensions folder (${editor}); copy the extensions under .vscode-test/ or the scratchpad`);
-  const roots = extensionsDirRoots(home).map(real);
+  const roots = extensionsDirRoots().map(real);
   if (!roots.some((r) => within(resolved, r) && resolved !== r)) {
     throw new Error(`--extensions-dir ${dir} must be a folder inside ${roots.join(' or ')}`);
   }

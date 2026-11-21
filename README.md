@@ -151,13 +151,13 @@ until you mark it reviewed, and its tooltip and Details say why.
   of the same interface method can be listed too. These err towards showing more callers.
 - **No `panic` tracking**: a new `error` result shows as a result change; a new `panic(` in
   a body is not tracked.
-- **Measured** on 10 merged cli/cli pull requests (816 changed functions): every changed
+- **Measured** on 10 merged pull requests of a large open-source Go command-line tool (816 changed functions): every changed
   function found with no extras, every signature change classified, no caller that Go's
   static call graph finds missed, and no change shown as fine while a caller was not
-  updated. See [the verification report](test/lsp-harness/G7-REPORT.md).
+  updated.
 - **Without gopls** (the no-checkout PR preview, the CLI): changed, added and deleted
   functions and their signature kinds are read from the text, keyed as gopls keys them (on
-  the 10 cli/cli pull requests, the same 816 changed functions as `go/parser`, every kind
+  the same 10 pull requests, the same 816 changed functions as `go/parser`, every kind
   right). Callers come from a **syntax index**: the PR's own Go files and changed tests in
   the preview, every Go file of the module(s) the changed files are in in the CLI
   (`vendor/`, `testdata/` and nested modules left out; at most 3000 files / 64 MiB, then
@@ -207,13 +207,13 @@ until you mark it reviewed, and its tooltip and Details say why.
   its callers.
 - **Not detectable:** `getattr(obj, "name")()`, `operator.methodcaller`, calls built from
   strings, and calls through a base class's method that reach an override at run time.
-- **Measured** on 10 merged encode/httpx pull requests (141 changed functions): every
+- **Measured** on 10 merged pull requests of an open-source Python HTTP library (141 changed functions): every
   changed function found with no extras, every signature change classified, and every
   caller the Jedi analyser finds that Impact Tree does not list sits on an answer marked
-  incomplete. See [the verification report](test/lsp-harness/P7-REPORT.md).
+  incomplete.
 - **Without the language server** (the no-checkout PR preview, the CLI): changed, added and
   deleted functions and their signature kinds are read from the text, the same way (on the
-  10 httpx pull requests, the same 141 changed functions as Python's `ast`, every kind right).
+  same 10 pull requests, the same 141 changed functions as Python's `ast`, every kind right).
   Callers come from a **syntax index**: the PR's own Python files and changed tests in the
   preview, every Python file of the repository in the CLI (at most 3000 files / 64 MiB).
   A call is matched by name through imports and modules, `self.`/`cls.`/`super()` in a
@@ -221,9 +221,9 @@ until you mark it reviewed, and its tooltip and Details say why.
   as a class; a property read on such a receiver counts. Every answer stays incomplete and
   says why ("syntax only", calls on receivers it could not resolve), never "no callers".
   Not resolved: `Cls.m(`, `Cls().m(`, `self.x.m(`, `with … as x` receivers, f-string fields.
-  Checked against Jedi: on 22 httpx pull requests, 99.9–100% precision and 98% recall
+  Checked against Jedi: on 22 pull requests of the same library, 99.9–100% precision and 98% recall
   across the repository (69–90% in the preview, which sees only the PR's files); on
-  pydantic #13070, recall 96.8%, and every caller listed that Jedi's reference search
+  a large pull request of a big Python validation library, recall 96.8%, and every caller listed that Jedi's reference search
   missed is a real call (Jedi's own `goto` confirms all 456 sites).
 
 ### Java
@@ -233,7 +233,7 @@ until you mark it reviewed, and its tooltip and Details say why.
   The first review waits for it ("Waiting for the Java language server (jdtls)… N s"); a
   project's first import, with its Maven or Gradle dependencies, can take over a minute.
 - **Changed methods** are the methods and constructors of every class, interface, enum and
-  record, nested types included, keyed by their parameter types (`Gson.toJson(Object,
+  record, nested types included, keyed by their parameter types (`Codec.toJson(Object,
   Appendable)`; generics erased, so `getAdapter(TypeToken<T>)` is `getAdapter(TypeToken)`),
   so each overload is its own row. When one overload of a name disappears from a file and
   one appears, they read as one signature change, and a reviewed row stays reviewed. An enum
@@ -261,18 +261,18 @@ until you mark it reviewed, and its tooltip and Details say why.
   `@Override` (other than `equals`, `hashCode`, `toString`).
 - **Old versions of a file** are read through a temporary copy in the extension's storage,
   removed as soon as jdtls has answered.
-- **Measured** on 12 merged google/gson pull requests (224 changed methods): every changed
+- **Measured** on 12 merged pull requests of an open-source Java JSON library (224 changed methods): every changed
   method found with no extras, every signature change classified, no change shown as fine
   while a caller was not updated, and every caller `javac` resolves that Impact Tree does
   not list sits on an answer marked incomplete (overall recall 94.1%). Most extra callers
   are jdtls listing a supertype method's callers for an override, on answers already marked
-  incomplete. See [the verification report](test/lsp-harness/J6-REPORT.md).
+  incomplete.
 - **The first answers after the language server starts** read incomplete until it has
   settled: 30 s after it reports ready with no project import, or, when a build file
   changed since its last import, until it re-imports the project.
 - **Without the language server** (the no-checkout PR preview, the CLI): changed, added and
   deleted methods and their signature kinds are read from the text with the same keys as in
-  the editor (on 12 gson pull requests, 224 of 224 changed methods as the JDK's own parser
+  the editor (on the same 12 pull requests, 224 of 224 changed methods as the JDK's own parser
   finds them, every kind right). Callers come from a **syntax index**: the PR's own Java
   files and changed tests in the preview, every Java file of the repository in the CLI
   (`target/`, `build/`, `out/` and generated sources left out; at most 3000 files / 64 MiB,
@@ -553,7 +553,7 @@ repo they were captured against, so they are gitignored. Regenerate locally with
 5. **Deleted symbols have no current AST**, so their surviving callers are approximate.
 6. **CommonJS and config-less projects use a syntactic index for cross-file callers.**
    It follows static `import` and string-literal `require()` only; tsconfig `paths` and
-   bundler aliases are not applied there. See [correctness and performance](docs/correctness-and-perf.md).
+   bundler aliases are not applied there.
 7. **Framework edges from test files may be missing**, since a project's `tsconfig.json`
    usually excludes tests and the editor never loads them.
 

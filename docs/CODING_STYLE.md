@@ -540,7 +540,7 @@ Apply this guide through reviewable changes rather than a broad cosmetic rewrite
      `src/github/github-request.js`, and nothing it fetches is kept. A failure shows a message
      naming the cause (signed out, no longer on GitHub, timeout, too large, other) and what
      to do; a side marked absent is an empty document without a request.
-   - Exists: file-row review tokens are not cached. Measured on t3code (Apple M3 Pro,
+   - Exists: file-row review tokens are not cached. Measured on a large TypeScript monorepo (Apple M3 Pro,
      Node 22), a repaint re-reading and hashing the head of 300 changed files (3 MB) takes
      about 10 ms; 1000 files (11 MB) about 120 ms; 3000 files (33 MB) about 370 ms. That
      is below noticeable at the sizes a review usually has, and a cache would stop an edit

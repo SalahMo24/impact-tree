@@ -527,7 +527,7 @@ function createPythonSyntacticIndex(sources, { root = '', scope = 'the indexed f
       if (rec.defs.has(name)) return { kind: 'func', defs: /** @type {DefRec[]} */ (rec.defs.get(name)) };
       if (rec.classes.has(name)) return { kind: 'class', cls: /** @type {ClassRec} */ (rec.classes.get(name)) };
       const imp = rec.imports.get(name);
-      // `from . import sub` in a package's `__init__` binds its own submodule (A8.2, pydantic's
+      // `from . import sub` in a package's `__init__` binds its own submodule (A8.2, as in
       // `from . import dataclasses`): followed, it would name itself until the depth bound; the
       // submodule is found below.
       const self = imp && imp.kind === 'member' && imp.name === name && byModule.get(imp.module) === rec;

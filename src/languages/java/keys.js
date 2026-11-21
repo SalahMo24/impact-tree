@@ -16,7 +16,7 @@
 // - annotations and white space are dropped.
 
 // Budget: the longest name or type text read, in UTF-16 units. Valid range >= 1; default
-// 16 Ki, far above any real parameter list (gson's longest jdtls name is under 200) and
+// 16 Ki, far above any real parameter list (the Java test repository's longest jdtls name is under 200) and
 // small enough that a scan costs microseconds. Owner: this module; enforced by
 // `memberNameOf` and `erasedType`, which throw RangeError past it: names come from a
 // language server, and a longer one is a broken answer, not a method to key.

@@ -67,17 +67,17 @@ test('TS: TanStack Router file routes and React Router paths are UI routes', () 
 });
 
 test('TS: public API of a published package', () => {
-  const text = 'export function create() {}\nfunction internal() {}\nexport class Hono {\n  route() {}\n  private build() {}\n  _hidden() {}\n}\n';
-  const facts = { tsPublic: new Map([['src/hono.ts', '*']]) };
-  assert.equal(decl('ts', text, 'create', 'create', 'src/hono.ts', facts).type, 'public-api');
-  assert.equal(decl('ts', text, 'internal', 'internal', 'src/hono.ts', facts), null);
-  assert.equal(decl('ts', text, 'route', 'Hono.route', 'src/hono.ts', facts).name, 'Hono.route');
-  assert.equal(decl('ts', text, 'build', 'Hono.build', 'src/hono.ts', facts), null);
-  assert.equal(decl('ts', text, '_hidden', 'Hono._hidden', 'src/hono.ts', facts), null);
+  const text = 'export function create() {}\nfunction internal() {}\nexport class App {\n  route() {}\n  private build() {}\n  _hidden() {}\n}\n';
+  const facts = { tsPublic: new Map([['src/app.ts', '*']]) };
+  assert.equal(decl('ts', text, 'create', 'create', 'src/app.ts', facts).type, 'public-api');
+  assert.equal(decl('ts', text, 'internal', 'internal', 'src/app.ts', facts), null);
+  assert.equal(decl('ts', text, 'route', 'App.route', 'src/app.ts', facts).name, 'App.route');
+  assert.equal(decl('ts', text, 'build', 'App.build', 'src/app.ts', facts), null);
+  assert.equal(decl('ts', text, '_hidden', 'App._hidden', 'src/app.ts', facts), null);
   // Only the names a barrel re-exports, when the file is reached by name.
-  const named = { tsPublic: new Map([['src/hono.ts', new Set(['Hono'])]]) };
-  assert.equal(decl('ts', text, 'create', 'create', 'src/hono.ts', named), null);
-  assert.equal(decl('ts', text, 'route', 'Hono.route', 'src/hono.ts', named).type, 'public-api');
+  const named = { tsPublic: new Map([['src/app.ts', new Set(['App'])]]) };
+  assert.equal(decl('ts', text, 'create', 'create', 'src/app.ts', named), null);
+  assert.equal(decl('ts', text, 'route', 'App.route', 'src/app.ts', named).type, 'public-api');
   // A file no package exposes is not public API.
   assert.equal(decl('ts', text, 'create', 'create', 'src/other.ts', facts), null);
 });
@@ -142,8 +142,8 @@ test('Python: FastAPI, Flask, click and celery decorators', () => {
 
 test('Python: names in __all__ and public methods of exported classes', () => {
   const text = 'class Client:\n    def get(self): ...\n    def _send(self): ...\n    def __init__(self): ...\n    def __mangled(self): ...\n\ndef helper(): ...\n';
-  const facts = { pyPublic: new Map([['httpx/_client.py', new Set(['Client'])]]) };
-  const py = (name, label) => declarationEntry({ language: 'python', text, pos: at(text, name), label, relPath: 'httpx/_client.py', facts });
+  const facts = { pyPublic: new Map([['webclient/_client.py', new Set(['Client'])]]) };
+  const py = (name, label) => declarationEntry({ language: 'python', text, pos: at(text, name), label, relPath: 'webclient/_client.py', facts });
   assert.deepEqual(py('Client', 'Client'), { type: 'public-api', name: 'Client', how: 'listed in a package __all__' });
   assert.equal(py('get', 'Client.get').name, 'Client.get');
   assert.equal(py('_send', 'Client._send'), null);
@@ -167,12 +167,12 @@ test('facts: re-exports and package targets mapped to source', () => {
 
 test('Python: special methods of a public class are entries; a private class\'s are not', () => {
   const text = 'class ByteStream:\n    def __aiter__(self): ...\n    async def __anext__(self): ...\n    def __enter__(self): ...\n\nclass _Iter:\n    def __anext__(self): ...\n';
-  const facts = { pyPublic: new Map([['httpx/_content.py', new Set(['ByteStream'])]]) };
-  const py = (needle, label) => declarationEntry({ language: 'python', text, pos: at(text, needle) + needle.indexOf('__'), label, relPath: 'httpx/_content.py', facts });
+  const facts = { pyPublic: new Map([['webclient/_content.py', new Set(['ByteStream'])]]) };
+  const py = (needle, label) => declarationEntry({ language: 'python', text, pos: at(text, needle) + needle.indexOf('__'), label, relPath: 'webclient/_content.py', facts });
   for (const [needle, label] of [['def __aiter__', 'ByteStream.__aiter__'], ['def __anext__', 'ByteStream.__anext__'], ['def __enter__', 'ByteStream.__enter__']]) {
     assert.deepEqual(py(needle, label), { type: 'public-api', name: label, how: 'special method of a class in __all__ (used through its protocol)' });
   }
-  assert.equal(declarationEntry({ language: 'python', text, pos: text.lastIndexOf('__anext__'), label: '_Iter.__anext__', relPath: 'httpx/_content.py', facts }), null);
+  assert.equal(declarationEntry({ language: 'python', text, pos: text.lastIndexOf('__anext__'), label: '_Iter.__anext__', relPath: 'webclient/_content.py', facts }), null);
 });
 
 test('facts: a repository\'s facts are reused while its listing and the files read are unchanged', () => {

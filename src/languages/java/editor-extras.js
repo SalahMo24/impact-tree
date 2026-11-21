@@ -3,7 +3,7 @@
 // What a caller resolver adds for a Java target to the callers jdtls reports
 // (docs/MULTI_LANGUAGE_PLAN.md, J4; `EditorCallerExtras` in ../types.js). Applied by the
 // editor's resolver (src/session/resolver-vscode.js) and, the same way, by the jdtls harness
-// (test/lsp-harness/java-e2e.js through harness-languages.js).
+// (an end-to-end run through test/lsp-harness/harness-languages.js).
 //
 // - Value uses are not calls. jdtls lists a method reference (`parser::next`, `Foo::new`)
 //   as an incoming call (J0 §3). `filter` reads the text before each site: a site right

@@ -23,7 +23,6 @@
     "test:quick": "node test/run.js --tier quick",
     "test:serial": "node test/run.js --serial",
     "record": "node --max-old-space-size=8192 test/record-fixture.js",
-    "test:snapshots": "node --max-old-space-size=8192 test/t3-pr-snapshots.js",
     "test:fixtures": "node --max-old-space-size=8192 test/run-fixtures.js",
     "test:tree": "node --max-old-space-size=8192 test/tree-smoke.js",
     "test:textpos": "node test/textpos.test.js",

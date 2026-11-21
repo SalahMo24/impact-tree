@@ -4,7 +4,7 @@
 // (docs/MULTI_LANGUAGE_PLAN.md, P-D4 and P4; `EditorCallerExtras` in ../types.js). Applied
 // by the editor's resolver (src/session/resolver-vscode.js) and, the same way, by the test harness
 // (test/lsp-harness/harness-languages.js). Pyright's blind spots, measured in P0
-// (test/lsp-harness/P0-REPORT.md §3–§5), and what is done about each:
+// (the P0 report, kept with the maintainer's local notes, §3–§5), and what is done about each:
 //
 // - Duplicated sites. A method's caller comes back with every `fromRange` twice (22 for 11
 //   sites). `filter` keeps each site once; it never drops a caller.
@@ -24,7 +24,7 @@
 //   `with`, `x()`), which no call hierarchy lists: its answer is always incomplete,
 //   PROTOCOL_REASON, whatever explicit calls were found.
 // - Constructors. Pyright answers `null` at `__init__` and lists `Cls(...)` constructions
-//   only as the class's incoming calls (P7, measured on httpx: `Client.__init__` null, the
+//   only as the class's incoming calls (P7, measured on the first Python test repository: `Client.__init__` null, the
 //   `Proxy` class 5 callers). `callerTargets` therefore gives the class's name for a class's
 //   `__init__` (A5): the shared step asks there too and merges the constructions with the
 //   explicit `__init__` calls (`super().__init__()`, when Pyright lists them), and a `null`
@@ -60,7 +60,7 @@
 //   counted too, with its own words, not added as a caller: which function it is in is
 //   not known here, and a test caller left out of a no-tests query looks the same (that
 //   query's completeness is not shown). Module functions are not searched: a call by name
-//   is resolved through its import (P0: `httpx.get` re-exports resolve); Pyright's project
+//   is resolved through its import (P0: a package's `get` re-exports resolve); Pyright's project
 //   is what limits them (next).
 //   Budgets (CODING_STYLE §2; owner: this module; enforced in `duckTypingReason` before
 //   each unit of work is admitted): DUCK_MAX_FILES files read, DUCK_MAX_FILE_BYTES per
@@ -72,14 +72,14 @@
 //   that reason.
 // - Files outside Pyright's project (A7). A `pyrightconfig.json` or `[tool.pyright]` with
 //   `include`/`exclude` (./pyright-project.js) limits what Pyright analyses, and its call
-//   hierarchy never lists a caller in a file outside (pydantic: most of `tests/`). For a
+//   hierarchy never lists a caller in a file outside (in one test repository, most of `tests/`). For a
 //   module function (and a nested one), and for a class's `__init__` by its class's name
 //   (constructions `Cls(...)` there are not among the class's references either), the
 //   repository's Python files outside the project (the provider's `handles`) are searched
 //   for the name as a call (`name(`, `mod.name(`; not `def name(`/`class name(`) or in an
 //   import, in code, not at a listed site (in a file that defines the name at module
 //   level and does not import it, only `mod.name(` counts: its bare calls are its own
-//   function's, as in pydantic's `v1/` copy): each is counted, not resolved (which function a
+//   function's, as in a library's vendored `v1/` copy): each is counted, not resolved (which function a
 //   call by that name is cannot be asked of a server that does not analyse the file), and
 //   the answer is incomplete, "N call(s) by this name in files outside the language
 //   server's project (<config>)". Methods are not searched again: the duck-typing search
@@ -124,7 +124,7 @@ const { readPyrightProject } = require('./pyright-project');
 // its reference is counted as a value use (it cannot be placed); for a searched file, its
 // hits are not examined and the answer says so.
 const MAX_FILE_BYTES = 1024 * 1024;
-// Duck-typing search budgets (see the header). Defaults chosen on httpx (61 files, P0):
+// Duck-typing search budgets (see the header). Defaults chosen on a 61-file Python library (P0):
 // the most-hit method, `Response.read`, had 48 text hits in 20 files; 50 `definition`
 // queries took well under a second warm.
 const DUCK_MAX_FILES = 200;          // files: those holding `.<name>(` read, in git's order
@@ -134,8 +134,8 @@ const DUCK_MAX_DEFINITIONS = 50;     // code hits outside listed sites examined,
 const DUCK_DEADLINE_MS = 10000;      // whole search, git grep included
 const GREP_TIMEOUT_MS = 5000;        // the git grep alone (within the deadline)
 // Search of files outside Pyright's project (see the header). No `definition` query is
-// asked, so the bound is on files and bytes; defaults as the duck search's (pydantic's
-// tests: about 300 files, a name is in a handful).
+// asked, so the bound is on files and bytes; defaults as the duck search's (the larger Python
+// test repository's tests: about 300 files, a name is in a handful).
 const OUTSIDE_MAX_FILES = 200;          // files outside the project holding the name, read in git's order
 const OUTSIDE_MAX_FILE_BYTES = MAX_FILE_BYTES; // bytes per file
 const OUTSIDE_MAX_TOTAL_BYTES = 16 * 1024 * 1024; // bytes over all searched files
@@ -515,7 +515,7 @@ function createPythonEditorExtras({ trace = () => {}, readText = (file) => readT
     let rels;
     try {
       // The files naming it as a word (a simple pattern: git's search is about twice as
-      // fast as with the call/import alternatives, measured on pydantic); the text decides.
+      // fast as with the call/import alternatives, measured on the larger Python test repository); the text decides.
       let files = outsideFiles.get(name);
       if (!files) {
         files = search(`(^|[^[:alnum:]_])${n}([^[:alnum:]_]|$)`, GREP_TIMEOUT_MS);
@@ -540,7 +540,7 @@ function createPythonEditorExtras({ trace = () => {}, readText = (file) => readT
       bytes += text.length;
       const hits = nameUseHits(text, name);
       // A file with its own module-level `def name`/`class name` and no import of the name
-      // calls its own by the bare name (pydantic's `v1/` copy of its modules): only its
+      // calls its own by the bare name (a vendored `v1/` copy of a package's modules): only its
       // attribute calls (`mod.name(`) may be the target's.
       const own = new RegExp(`^(?:async[ \\t]+)?(?:def|class)[ \\t]+${n}(?![\\p{L}\\p{N}_])`, 'mu').test(text)
         && !hits.some((at) => isImportAt(text, at));

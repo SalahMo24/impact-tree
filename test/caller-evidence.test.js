@@ -178,7 +178,7 @@ test('TypeScript resolver: a project that does not hold the file is not a failed
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-ts-solution-')));
   try {
     const files = {
-      // As in hono: the root lists projects, one of which (scripts) holds none of the source. Its
+      // As in a monorepo: the root lists projects, one of which (scripts) holds none of the source. Its
       // service throws "Could not find source file" for a.ts, which once marked every caller
       // list of the repository incomplete.
       'tsconfig.json': '{"files":[],"references":[{"path":"./tsconfig.src.json"},{"path":"./scripts/tsconfig.json"}]}',

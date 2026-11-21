@@ -1,17 +1,16 @@
 'use strict';
 // Python texts whose document symbols Pyright gave are recorded in ./recorded.json by
 // test/lsp-harness/record-python-symbols.js; test/python-symbols.test.js replays them, so it
-// needs no editor and no Pyright. Two are encode/httpx files at b5addb6 (BSD-3-Clause,
-// © Encode OSS Ltd), kept as `.py.txt` so nothing treats them as this repository's Python:
-// `_exceptions.py` (a `@property` getter with a setter) and `_auth.py` (a nested def). The
-// others are written for the cases httpx does not have (`@overload`, nested classes,
-// repeated names). Change a text only together with a new recording: the test checks each
-// text's hash against the one recorded.
+// needs no editor and no Pyright. Two are written files kept as `.py.txt` so nothing treats
+// them as this repository's Python: `sample_errors.py` (a `@property` getter with a setter,
+// a decorated module function) and `sample_auth.py` (a nested def). The others are written
+// for `@overload`, nested classes and repeated names. Change a text only together with a new
+// recording: the test checks each text's hash against the one recorded.
 
 const fs = require('fs');
 const path = require('path');
 
-const httpxFile = (name) => fs.readFileSync(path.join(__dirname, name), 'utf8');
+const sampleFile = (name) => fs.readFileSync(path.join(__dirname, name), 'utf8');
 
 const toolBase = `import typing
 from typing import overload
@@ -101,7 +100,7 @@ const toolHead = toolBase
   .replace('        class Deeper:\n            def deepest(self):\n                return 2', '        class Deeper:\n            def deepest(self):\n                return 3')
   .replace('def _hidden():\n    return 1\n', 'def _hidden():\n    return 1\n\n\ndef added(z):\n    return z\n');
 
-// P7 (httpx #3319, `_compat.py`): one name defined in both branches of an `if` and of a
+// P7: one name defined in both branches of an `if` and of a
 // `try`, at module level and in a class; Pyright lists one definition of each name.
 const branches = `import ssl
 import sys
@@ -151,8 +150,8 @@ def example():
 
 module.exports = {
   'branches.py': branches,
-  'httpx_exceptions.py': httpxFile('httpx_exceptions.py.txt'),
-  'httpx_auth.py': httpxFile('httpx_auth.py.txt'),
+  'sample_errors.py': sampleFile('sample_errors.py.txt'),
+  'sample_auth.py': sampleFile('sample_auth.py.txt'),
   'tool.py@base': toolBase,
   'tool.py@head': toolHead,
 };
