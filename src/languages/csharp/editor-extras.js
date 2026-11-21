@@ -182,7 +182,7 @@ function createCsharpEditorExtras({
     },
     query(file, pos) {
       const m = memberAt(file, pos);
-      const notComputed = m ? /** @type {Record<string, string>} */ (NOT_COMPUTED)[m.member] || null : null;
+      const notComputed = m && Object.hasOwn(NOT_COMPUTED, m.member) ? /** @type {Record<string, string>} */ (NOT_COMPUTED)[m.member] : null;
       const primary = !!m && m.member === 'primary-constructor';
       let sawValueUse = false;
       let kept = 0;
@@ -286,9 +286,12 @@ async function sessionIndex(repoRoot, trace) {
   const git = makeGit(repoRoot);
   const had = sessionIndexes.get(repoRoot);
   if (had && had.checked) return had.index;
-  const head = await git.rawAsync(['rev-parse', 'HEAD'], { timeoutMs: 10000 }).then((out) => String(out).trim(), () => null);
-  if (had && had.head === head) { had.checked = true; return had.index; }
-  const index = (async () => {
+  // Set before the first await, so queries that start together share one check and one build.
+  const entry = { head: had ? had.head : null, index: /** @type {Promise<any>} */ (Promise.resolve(null)), checked: true };
+  entry.index = (async () => {
+    const head = await git.rawAsync(['rev-parse', 'HEAD'], { timeoutMs: 10000 }).then((out) => String(out).trim(), () => null);
+    if (had && head && had.head === head) return had.index;
+    entry.head = head;
     const started = Date.now(); // wall-clock: log-only — the build time is traced
     try {
       const idx = require('./provider').indexRepository(/** @type {any} */ ({ repo: repoRoot, files: [], git }), []);
@@ -299,8 +302,8 @@ async function sessionIndex(repoRoot, trace) {
       return null;
     }
   })();
-  sessionIndexes.set(repoRoot, { head, index, checked: true });
-  return index;
+  sessionIndexes.set(repoRoot, entry);
+  return entry.index;
 }
 
 /** A new analysis: HEAD is checked again at the next lookup. */

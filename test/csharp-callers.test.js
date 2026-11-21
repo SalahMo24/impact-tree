@@ -29,6 +29,7 @@ public static class Handlers
     public static void Reg() { Map(H); }
     static void Map(System.Action a) { }
 }
+public sealed class Ctor { public Ctor(int a) { } }
 `;
 const PROGRAM = `using Lib;
 var i = new Impl();
@@ -165,6 +166,24 @@ test('top-level statements are never asked of Roslyn: not computed', async () =>
   assert.deepEqual(services.asked, []);
   assert.equal(state.state, 'unknown');
   assert.equal(state.reason, NOT_COMPUTED['top-level']);
+});
+
+test('a constructor is asked of Roslyn (not "not computed")', async () => {
+  const ctor = posOf('Lib/Shapes.cs', 'constructor', 'Ctor');
+  const { services, resolver } = resolverWith(new Map([[`${LIB_FILE}#${ctor}`, [row(LIB_FILE, 'Impl.Use()', USE, [])]]]));
+  const answer = await resolver.incomingWithStatus(LIB_FILE, ctor);
+  assert.deepEqual(services.asked, [`${LIB_FILE}#${ctor}`]);
+  assert.equal(answer.complete, true, String(answer.reason));
+  assert.equal(answer.callers.length, 1);
+});
+
+test('queries that start together share one session index build', async () => {
+  const { sessionIndex } = require('../src/languages/csharp/editor-extras');
+  /** @type {string[]} */
+  const traces = [];
+  const root = path.join(__dirname, '..');
+  await Promise.all([sessionIndex(root, (m) => traces.push(m)), sessionIndex(root, (m) => traces.push(m))]);
+  assert.equal(traces.filter((t) => /syntax index/.test(t)).length, 1, traces.join('\n'));
 });
 
 test('no item at a listed member: the file may not be in a loaded project (not retryable)', async () => {
