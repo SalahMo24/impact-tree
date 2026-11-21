@@ -1,0 +1,42 @@
+{
+  "_source": "synthetic: invented paths and symbols, shaped like an analysis result and its engine cards",
+  "result": {
+    "mode": "branch",
+    "base": { "ref": "origin/main", "sha": "0123456789abcdef0123456789abcdef01234567" },
+    "warnings": [],
+    "allChanged": [
+      { "label": "render", "relPath": "src/view/render.ts", "namePos": 120, "startLine": 8, "endLine": 20, "kinds": [{ "id": "type-changed", "label": "param type", "short": "param type" }],
+        "callerState": "resolved", "callersComplete": true, "staleCallers": 0, "stale": [], "throwsAdded": [], "testState": "covered", "tests": [],
+        "callers": [{ "label": "page", "file": "/r/src/view/page.ts", "pos": 60, "test": false, "callState": "updated-at-call", "callSites": [{ "start": 70, "end": 76 }] }] },
+      { "label": "escape", "relPath": "src/view/escape.ts", "namePos": 40, "startLine": 3, "endLine": 9, "kinds": [{ "id": "body", "label": "body", "short": "body" }],
+        "callerState": "resolved", "callersComplete": true, "staleCallers": 0, "stale": [], "throwsAdded": [], "testState": "covered", "tests": [],
+        "callers": [{ "label": "render", "file": "/r/src/view/render.ts", "pos": 120, "test": false, "callState": "unchanged", "callSites": [] }] },
+      { "label": "load", "relPath": "src/store/load.ts", "namePos": 15, "startLine": 2, "endLine": 12, "kinds": [{ "id": "body", "label": "body", "short": "body" }],
+        "callerState": "resolved", "callersComplete": true, "staleCallers": 0, "stale": [], "throwsAdded": [], "testState": "covered", "tests": [],
+        "callers": [{ "label": "boot", "file": "/r/src/boot.ts", "pos": 10, "test": false, "callState": "unchanged", "callSites": [] }] },
+      { "label": "save", "relPath": "src/store/save.ts", "namePos": 55, "startLine": 14, "endLine": 30, "kinds": [{ "id": "type-changed", "label": "param type", "short": "param type" }],
+        "callerState": "resolved", "callersComplete": true, "staleCallers": 1, "stale": [{ "label": "boot" }], "throwsAdded": [], "testState": "covered", "tests": [],
+        "callers": [{ "label": "boot", "file": "/r/src/boot.ts", "pos": 10, "test": false, "callState": "unchanged", "callSites": [] }] },
+      { "label": "format", "relPath": "src/util/format.ts", "namePos": 5, "startLine": 1, "endLine": 6, "kinds": [{ "id": "body", "label": "body", "short": "body" }],
+        "callerState": "none", "callersComplete": true, "staleCallers": 0, "stale": [], "throwsAdded": [], "testState": "none", "tests": [], "callers": [] },
+      { "label": "pad", "relPath": "src/util/pad.ts", "namePos": 5, "startLine": 1, "endLine": 4, "kinds": [{ "id": "body", "label": "body", "short": "body" }],
+        "callerState": "none", "callersComplete": true, "staleCallers": 0, "stale": [], "throwsAdded": [], "testState": "none", "tests": [], "callers": [] }
+    ],
+    "deleted": [{ "label": "legacyRender", "relPath": "src/util/legacy.ts", "namePos": 9 }],
+    "impactPaths": {
+      "src/view/render.ts#120": { "entries": [{ "type": "public-api", "name": "render" }] },
+      "src/view/escape.ts#40": { "entries": [{ "type": "public-api", "name": "escape" }] },
+      "src/store/load.ts#15": { "entries": [{ "type": "http", "name": "GET /items" }] }
+    }
+  },
+  "cards": {
+    "version": 1,
+    "clusters": [
+      { "id": "K1", "label": "render and 1 related", "members": ["src/view/render.ts#120", "src/view/escape.ts#40"], "moved": [] },
+      { "id": "K2", "label": "load and 1 related", "members": ["src/store/load.ts#15", "src/store/save.ts#55"], "moved": [] },
+      { "id": "K3", "label": "format and 1 related", "members": ["src/util/format.ts#5", "src/util/pad.ts#5"], "moved": [] },
+      { "id": "K4", "label": "legacyRender", "members": ["src/util/legacy.ts#9"], "moved": [] }
+    ],
+    "sweeps": []
+  }
+}

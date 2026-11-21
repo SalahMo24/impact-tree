@@ -9,50 +9,27 @@
  *
  * Offline: a fake `gh` over git objects (`git diff`, `git show`); no network, no checkout. The
  * test repositories are never checked out; base/head are resolved with `git rev-parse`.
- * Goldens go to ~/Projects/impact-tree-scratchpad/preview-golden/<name>.json.
+ * Goldens go to the scratchpad's preview-golden/<name>.json; clones are under the test-repository
+ * folder (both: test/lsp-harness/scratchpad.js).
  */
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const REPOS = path.join(os.homedir(), 'Projects/impact-tree-test-repos');
-const OUT = path.join(os.homedir(), 'Projects/impact-tree-scratchpad/preview-golden');
+const { scratchpadPath, testReposPath } = require('./scratchpad');
+
+const REPOS = testReposPath();
+const OUT = scratchpadPath('preview-golden');
 const DEADLINE_MS = 120000;
 const VOLATILE = /^(.*Ms|elapsed.*|.*Elapsed|duration.*|.*Duration|timestamp|generatedAt)$/;
 
-/** @type {{ name: string, repo: string, number: number, base: string, head: string, why: string }[]} */
-const PRS = [
-  // TypeScript: the baseline cases (base-N / pr-N are local branches; the merge base is used as the base).
-  { name: 't3code-122', repo: 't3code', number: 122, base: 'base-122', head: 'pr-122', why: 'TypeScript baseline case' },
-  { name: 't3code-78', repo: 't3code', number: 78, base: 'base-78', head: 'pr-78', why: 'TypeScript baseline case' },
-  { name: 't3code-15', repo: 't3code', number: 15, base: 'base-15', head: 'pr-15', why: 'TypeScript baseline case' },
-  { name: 't3code-13', repo: 't3code', number: 13, base: 'base-13', head: 'pr-13', why: 'TypeScript baseline case' },
-  { name: 't3code-3', repo: 't3code', number: 3, base: 'base-3', head: 'pr-3', why: 'TypeScript baseline case' },
-  { name: 't3code-e8dfc42', repo: 't3code', number: 8, base: 'base-e8dfc42', head: 'pr-e8dfc42', why: 'TypeScript baseline case (a commit, not a numbered PR)' },
-  { name: 'hono-4461', repo: 'hono', number: 4461, base: 'base-4461', head: 'pr-4461', why: 'TypeScript baseline case' },
-  { name: 'hono-4574', repo: 'hono', number: 4574, base: 'base-4574', head: 'pr-4574', why: 'TypeScript baseline case' },
-  { name: 'hono-2368', repo: 'hono', number: 2368, base: 'base-2368', head: 'pr-2368', why: 'TypeScript baseline case' },
-  { name: 'hono-3144', repo: 'hono', number: 3144, base: 'base-3144', head: 'pr-3144', why: 'TypeScript baseline case' },
-  { name: 'hono-1774', repo: 'hono', number: 1774, base: 'base-1774', head: 'pr-1774', why: 'TypeScript baseline case' },
-  { name: 'hono-2769', repo: 'hono', number: 2769, base: 'base-2769', head: 'pr-2769', why: 'TypeScript baseline case' },
-  { name: 'fixture-quote-options', repo: 'fixture', number: 1, base: 'main', head: 'feature/quote-options', why: 'the small synthetic fixture repository' },
-  // Python (py-verify corpora; #1600 from the seams repo, where base-1600 is the parent of the head).
-  { name: 'httpx-3741', repo: 'httpx', number: 3741, base: 'b5addb64f0161ff6bfe94c124ef76f6a1fba5254', head: '83d203a86d955b7695613df6378b56f9003112ce', why: 'Python: a small open PR (py-verify-oos-corpus)' },
-  { name: 'httpx-3319', repo: 'httpx', number: 3319, base: '3f76571d3429497c4ee4ecf5d8bc034b6f765957', head: '8e36f2bc685dfbe43cd7503bc1c422a6ed6e05a5', why: 'Python: properties, async, decorators, removals (py-verify-corpus)' },
-  { name: 'httpx-seams-1600', repo: 'httpx-seams', number: 1600, base: 'base-1600', head: 'seams-1600', why: 'Python: immutable QueryParams, the seams PR' },
-  // Go: expected today to report Go files as "not analysed in this mode".
-  { name: 'cli-14752', repo: 'cli', number: 14752, base: '547bf81aa5d68f6b4274abb6926c75252f254750', head: 'a1d1667985a4f0129249ff5bd215c80c1644966a', why: 'Go: 3 removed and 8 added functions, build tags (go-verify-corpus)' },
-  { name: 'cli-14390', repo: 'cli', number: 14390, base: 'cba9646b8c254a5711ef9e19e1dfc1455e88feaa', head: '1ba640d1c525a2dfc5e60071ffa9c3f948e644d1', why: 'Go: 46 Go files, renamed interface method (go-verify-corpus)' },
-  // Java: expected today to report Java files as "not analysed in this mode" (google/gson, squash-merged PRs).
-  { name: 'gson-3137', repo: 'gson', number: 3137, base: '216c41b6e70dc04e6856418dd76bb00c854eb6b4', head: '845664ba1c307e6c1910d07cfed2f622e0ad8df1', why: 'Java: a one-line fix in JsonReader plus its test (small)' },
-  { name: 'gson-3096', repo: 'gson', number: 3096, base: '119818bc666d3b9f897d6c0ca7546ce28e9bbcac', head: 'dae37cf0fe12235b76fb09f01118a0a8c8823f42', why: 'Java: changes in MapTypeAdapterFactory and TypeAdapters, plus five test files' },
-  // C# (C3): changed members and kinds from the text, callers not computed (jellyfin merge commits; base = the first parent, head = the second).
-  { name: 'jellyfin-17821', repo: 'jellyfin', number: 17821, base: '882faf2b2da329ec09077f5a18cf743289ea7e1f', head: '2644163f57a6690366c3106faa392afb72b1e55a', why: 'C#: 9 C# files, added and removed methods, header changes, overloads' },
-  { name: 'jellyfin-18517', repo: 'jellyfin', number: 18517, base: 'c7ce6a1b56ee7dcc1896250df0f2f9deaa828a81', head: '8620f0dd25669c9d60619133282c74b06a061bc4', why: 'C#: three controller actions whose headers changed (small)' },
-  // Docs only: hono 099c664d changes README.md alone.
-  { name: 'hono-docs-only', repo: 'hono', number: 9999, base: '099c664d^', head: '099c664d', why: 'docs only: hono "docs(readme): update the badges" changes README.md alone' },
-];
+/**
+ * The cases: `preview-golden/cases.json` in the scratchpad, kept there because they name the test
+ * repositories. Each is { name, repo (a clone's folder under the test-repository folder), number, base, head, why }.
+ * @type {{ name: string, repo: string, number: number, base: string, head: string, why: string }[]}
+ */
+const PRS = JSON.parse(fs.readFileSync(path.join(OUT, 'cases.json'), 'utf8'));
 
 const git = (/** @type {string} */ repo, /** @type {string[]} */ args) =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 1 << 30, timeout: 60000, stdio: ['ignore', 'pipe', 'ignore'] });
@@ -153,6 +130,8 @@ function diffLines(/** @type {string} */ a, /** @type {string} */ b) {
 async function main() {
   const args = process.argv.slice(2);
   const compare = args.includes('--compare');
+  // Anything else that looks like a flag (--help too) is refused: without --compare this records.
+  if (args.some((a) => a.startsWith('--') && a !== '--compare')) { console.error('usage: preview-golden.js [--compare] [name-filter]'); process.exit(2); }
   const filter = args.find((a) => !a.startsWith('--'));
   const picked = PRS.filter((p) => !filter || p.name.includes(filter));
   if (!picked.length) { console.error(`no PR matches "${filter}"`); process.exit(2); }

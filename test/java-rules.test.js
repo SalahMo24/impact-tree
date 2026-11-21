@@ -9,7 +9,7 @@ const path = require('node:path');
 const { javaRules, javaProjectOf, GENERATED_HEAD_CHARS } = require('../src/languages/java/rules');
 
 test('a .java file is Java source; tool state and IDE output are not', () => {
-  for (const p of ['A.java', 'src/main/java/com/x/A.java', 'gson/src/test/java/B.java', 'a\\b\\C.java', 'rebuild/X.java', 'outer/X.java', 'about/X.java', 'pkg/.gradlew/X.java', 'pkg/target/X.java', 'src/main/java/com/google/devtools/build/lib/Foo.java', 'mod/src/main/java/foo/out/X.java', 'src/main/java/org/x/target/X.java', 'src/main/java/org/x/build/X.java']) {
+  for (const p of ['A.java', 'src/main/java/com/x/A.java', 'core/src/test/java/B.java', 'a\\b\\C.java', 'rebuild/X.java', 'outer/X.java', 'about/X.java', 'pkg/.gradlew/X.java', 'pkg/target/X.java', 'src/main/java/com/google/devtools/build/lib/Foo.java', 'mod/src/main/java/foo/out/X.java', 'src/main/java/org/x/target/X.java', 'src/main/java/org/x/build/X.java']) {
     assert.equal(javaRules.handles(p), true, p);
   }
   for (const p of ['A.kt', 'A.class', 'A.java.orig', 'A.JAVA', 'A.javax', 'pom.xml', '.gradle/caches/X.java', 'mod/.gradle/X.java', 'out/production/X.java', 'mod/out/X.java', 'mod/out/production/X.java', 'out\\X.java']) {
@@ -73,24 +73,24 @@ test('the generated marker is looked for only in the head of the file', () => {
 test('javaProjectOf: the nearest pom.xml, build.gradle or build.gradle.kts', () => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'it-java-rules-'));
   try {
-    fs.mkdirSync(path.join(repo, 'gson', 'src', 'main', 'java'), { recursive: true });
+    fs.mkdirSync(path.join(repo, 'core', 'src', 'main', 'java'), { recursive: true });
     fs.mkdirSync(path.join(repo, 'plain', 'src'), { recursive: true });
     fs.mkdirSync(path.join(repo, 'apps', 'kts', 'src'), { recursive: true });
     fs.mkdirSync(path.join(repo, 'apps', 'groovy'), { recursive: true });
     fs.writeFileSync(path.join(repo, 'pom.xml'), '');
-    fs.writeFileSync(path.join(repo, 'gson', 'pom.xml'), '');
+    fs.writeFileSync(path.join(repo, 'core', 'pom.xml'), '');
     fs.writeFileSync(path.join(repo, 'apps', 'kts', 'build.gradle.kts'), '');
     fs.writeFileSync(path.join(repo, 'apps', 'groovy', 'build.gradle'), '');
     assert.deepEqual(javaProjectOf('Top.java', repo), { component: '(root)', projectRoot: '' });
     assert.deepEqual(javaProjectOf('plain/src/X.java', repo), { component: '(root)', projectRoot: '' }, 'falls back to the root project');
-    assert.deepEqual(javaProjectOf('gson/src/main/java/X.java', repo), { component: 'gson', projectRoot: 'gson' }, 'multi-module, nested pom.xml');
-    assert.deepEqual(javaProjectOf('gson\\src\\main\\java\\X.java', repo), { component: 'gson', projectRoot: 'gson' }, 'Windows path');
+    assert.deepEqual(javaProjectOf('core/src/main/java/X.java', repo), { component: 'core', projectRoot: 'core' }, 'multi-module, nested pom.xml');
+    assert.deepEqual(javaProjectOf('core\\src\\main\\java\\X.java', repo), { component: 'core', projectRoot: 'core' }, 'Windows path');
     assert.deepEqual(javaProjectOf('apps/kts/src/X.java', repo), { component: 'apps/kts', projectRoot: 'apps/kts' }, 'build.gradle.kts');
     assert.deepEqual(javaProjectOf('apps/groovy/X.java', repo), { component: 'apps/groovy', projectRoot: 'apps/groovy' }, 'build.gradle');
     fs.rmSync(path.join(repo, 'pom.xml'));
     assert.deepEqual(javaProjectOf('plain/src/X.java', repo), { component: '(no pom.xml or build.gradle)', projectRoot: '' });
     assert.deepEqual(javaProjectOf('Top.java', repo), { component: '(no pom.xml or build.gradle)', projectRoot: '' });
-    assert.deepEqual(javaProjectOf('gson/src/main/java/X.java', repo), { component: 'gson', projectRoot: 'gson' });
+    assert.deepEqual(javaProjectOf('core/src/main/java/X.java', repo), { component: 'core', projectRoot: 'core' });
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
   }

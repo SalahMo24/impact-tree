@@ -281,7 +281,7 @@ test('[] and null answers: never "no callers" when a rule applies', async () => 
   assert.equal(plain.reason, 'no incoming-call result');
 });
 
-// P7 (httpx #3245): Pyright answers `null` at `__init__` and lists the `Cls(...)` constructions
+// P7:Pyright answers `null` at `__init__` and lists the `Cls(...)` constructions
 // only at the class name, so `__init__` read "no incoming-call result" in the harness and,
 // where the editor turns `null` into `[]`, the constructor path's complete "no callers" (`di`)
 // while 136 constructions of `Client` existed.

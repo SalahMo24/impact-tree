@@ -30,7 +30,7 @@ const plainSymbol = (s) => ({
 async function main() {
   const args = process.argv.slice(2);
   const ti = args.indexOf('--tools');
-  const tools = ti >= 0 ? args[ti + 1] : DEFAULT_TOOLS;
+  const tools = ti >= 0 ? args[ti + 1] : DEFAULT_TOOLS();
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'it-record-java-'));
   const jdtls = createJdtlsServices({
     repo: work, tools, dataDir: path.join(tools, 'jdtls-data', 'record'), scratchDir: path.join(work, 'scratch'),

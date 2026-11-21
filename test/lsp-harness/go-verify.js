@@ -1,13 +1,13 @@
 'use strict';
 /**
  * G7 (docs/MULTI_LANGUAGE_PLAN.md): the real pipeline and Go provider against gopls on a
- * corpus of merged cli/cli pull requests (./go-verify-corpus.json), checked against two
+ * corpus of merged go-a pull requests (<scratchpad>/corpora/go-verify-corpus.json), checked against two
  * oracles that share no code with the engine. A development script, not part of `npm test`:
  * it needs gopls, the Go toolchain (`--toolchain`, default go1.27.3: at least as new as the
  * corpus's go.mod asks, and in the module cache), golang.org/x/tools v0.52.0 in the module
- * cache, and a cli/cli clone. Results: test/lsp-harness/G7-REPORT.md.
+ * cache, and a go-a clone. Results: the G7 report (kept outside the repository; npm run -s local-notes).
  *
- *   node test/lsp-harness/go-verify.js <absolute path to cli/cli clone>
+ *   node test/lsp-harness/go-verify.js <absolute path to go-a clone>
  *     [--prs 14752,14390] [--gopls path] [--toolchain go1.27.3] [--out dir] [--summary file]
  *     [--cache dir] [--no-cache] [--timings [14752,14390]] [--deadline-ms n] [--summary-only]
  *     [--syntactic [--preview]]
@@ -41,7 +41,7 @@
  *       function (by its declaration position).
  * - Pipeline, per PR, one after the other (it needs the clone's worktree): checks that the
  *   local branches `base-<n>` and `pr-<n>` point at the recorded commits and the worktree is
- *   clean, checks out `pr-<n>`, starts a fresh gopls and runs `analyze()` as go-e2e.js does
+ *   clean, checks out `pr-<n>`, starts a fresh gopls and runs `analyze()` as the Go end-to-end run does
  *   (Go provider, the harness's gopls services, the harness resolver with Go's editor
  *   extras), with the editor's options (skipForest, test reach deferred). With `--timings`
  *   (all PRs, or the listed ones), the pipeline phase waits for the oracles so the machine
@@ -84,20 +84,21 @@ const { goProvider } = require('../../src/languages/go/provider');
 const { classifyChangeVerdict, toneOf } = require('../../src/views/changes/tree-row-models');
 
 /**
- * The corpus: merged cli/cli pull requests. `merge` is the merge commit on trunk, `head` its
+ * The corpus: merged go-a pull requests. `merge` is the merge commit on trunk, `head` its
  * second parent, `base` merge-base(merge^1, merge^2). `why` is what the PR was chosen for.
  */
-const CORPUS = require('./go-verify-corpus.json');
+// The corpus names a test repository, so it lives in the scratchpad (corpora/).
+const CORPUS = JSON.parse(fs.readFileSync(require('./scratchpad').scratchpadPath('corpora', 'go-verify-corpus.json'), 'utf8'));
 
 /**
  * The whole run, in milliseconds. Measured on the G7 machine for the 10-PR corpus: see
- * G7-REPORT.md ("Running it"); past this the run fails (exit 2) instead of hanging.
+ * the G7 report ("Running it"); past this the run fails (exit 2) instead of hanging.
  */
 const RUN_DEADLINE_MS = 9 * 60 * 1000;
 /** PRs whose oracles run at once. */
 const ORACLE_CONCURRENCY = 3;
 /**
- * Call-graph processes at once, across PRs. One over cli/cli with tests takes about 17 s
+ * Call-graph processes at once, across PRs. One over go-a with tests takes about 17 s
  * alone, several cores and 3 GB; three fit in the G7 machine's 16 GB.
  */
 const GRAPHS_CONCURRENCY = 3;
@@ -408,7 +409,7 @@ const GRAPHS_TOOLS_VERSION = 'v0.52.0';
 
 // Oracle (b): cmd/callgraph's two algorithms over one load and one SSA build, which halves
 // the work of running `callgraph -algo static` and `callgraph -algo vta` (17 s instead of
-// about 37 s on cli/cli), with the same configuration as cmd/callgraph's doCallgraph.
+// about 37 s on go-a), with the same configuration as cmd/callgraph's doCallgraph.
 const GRAPHS_PROGRAM = String.raw`// Both call graphs of cmd/callgraph (x/tools v0.52.0, doCallgraph) over one SSA build:
 // the same packages.Config (LoadAllSyntax, tests), ssa.InstantiateGenerics, static.CallGraph
 // and vta.CallGraph(ssautil.AllFunctions(prog), nil), each with DeleteSyntheticNodes.
@@ -750,7 +751,7 @@ async function pipelineFor(repo, pr, goplsPath, warm, syntactic = false, preview
       onPrepared: () => { firstMs = Date.now() - t0; },
     });
     // S-D1 (a): every Go file of the changed Go files' module(s) (each file's deepest go.mod;
-    // cli/cli has a nested module, cli-exercise). The note must say the index is that whole set
+    // go-a has a nested module, cli-exercise). The note must say the index is that whole set
     // (not bounded), or the restriction below would compare against files the index did not read.
     const all = git(repo, 'ls-files', '--cached', '--others', '--exclude-standard').split('\n').filter(Boolean);
     const moduleDirs = all.filter((p) => path.posix.basename(p) === 'go.mod').map((p) => path.posix.dirname(p)).map((d) => (d === '.' ? '' : d));
@@ -1129,7 +1130,7 @@ async function main() {
   const startedAt = Date.now();
   const args = process.argv.slice(2);
   const repo = args[0];
-  if (!repo || !path.isAbsolute(repo)) throw new Error('usage: node go-verify.js <absolute path to cli/cli clone> [--prs n,n] [--gopls path] [--toolchain goX.Y.Z] [--out dir] [--summary file] [--cache dir] [--no-cache] [--timings [n,n]] [--deadline-ms n] [--summary-only] [--syntactic [--preview]]');
+  if (!repo || !path.isAbsolute(repo)) throw new Error('usage: node go-verify.js <absolute path to go-a clone> [--prs n,n] [--gopls path] [--toolchain goX.Y.Z] [--out dir] [--summary file] [--cache dir] [--no-cache] [--timings [n,n]] [--deadline-ms n] [--summary-only] [--syntactic [--preview]]');
   const goplsPath = option(args, '--gopls', path.join(os.homedir(), 'go', 'bin', 'gopls'));
   const toolchain = option(args, '--toolchain', 'go1.27.3');
   const out = option(args, '--out', path.join(os.tmpdir(), 'impact-tree-g7'));

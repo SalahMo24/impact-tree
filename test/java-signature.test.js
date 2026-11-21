@@ -101,9 +101,9 @@ test('qualified types are kept as written; a receiver parameter is not a paramet
 });
 
 test('constructors have no return type; throws', () => {
-  const p = parse('/** doc */\nprotected Gson(GsonBuilder b) throws IOException, java.sql.SQLException { this(b, 1); }');
+  const p = parse('/** doc */\nprotected Codec(CodecBuilder b) throws IOException, java.sql.SQLException { this(b, 1); }');
   assert.equal(p.sig.returns, null);
-  assert.equal(p.sig.name, 'Gson');
+  assert.equal(p.sig.name, 'Codec');
   assert.deepEqual(p.sig.throws, ['IOException', 'java.sql.SQLException']);
   assert.deepEqual(p.modifiers, ['protected']);
   assert.equal(parse('<T> Box(T t) {}').typeParameters, '<T>');
@@ -241,6 +241,6 @@ test('javaKindsOf: a side whose header did not parse compares header text', () =
 test('renderJavaSig', () => {
   assert.equal(renderJavaSig(parse('public static <T> T fromJson(String json, Class<T> type) throws JsonSyntaxException { return null; }').sig),
     '<T> (String json, Class<T> type): T throws JsonSyntaxException');
-  assert.equal(renderJavaSig(parse('Gson(GsonBuilder b, int... flags) {}').sig), '(GsonBuilder b, int... flags)');
+  assert.equal(renderJavaSig(parse('Codec(CodecBuilder b, int... flags) {}').sig), '(CodecBuilder b, int... flags)');
   assert.equal(renderJavaSig(parse('void f() {}').sig), '(): void');
 });

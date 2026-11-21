@@ -55,11 +55,11 @@
  *    deletion between two of its lines. The same rule runs over the candidate's members and
  *    the oracle's; precision and recall of the candidate's rows.
  *
- * Cache: ~/Projects/impact-tree-scratchpad/csharp-tools/cache/
+ * Cache: <tools>/cache/
  *   syntax-<repo>-<sha12>-<toolhash>.json (whole commit) and
  *   prs-<repo>-<listhash>-<toolhash>.json (PR files), toolhash = sha256 of the oracle's
  *   Program.cs + SyntaxOracle.csproj (which pins the Roslyn version). The oracle is built
- *   into <tools>/oracle-syntax/ (default ~/Projects/impact-tree-scratchpad/csharp-tools) with
+ *   into <tools>/oracle-syntax/ (default the scratchpad's csharp-tools/, scratchpad.js) with
  *   the SDK there (<tools>/env.sh's variables), rebuilt when the toolhash changes.
  *
  * Exit code: 0 when members are 100% precise with recall >= 99%, ranges and keys all equal and
@@ -578,7 +578,7 @@ function fixtureKeys(tools, write) {
 // the provider reads them (`projectFacts`). `--preview`: the same files, built as the preview
 // builds its index (`partial`, the web SDK's implicit usings): no answer may be complete.
 // Targets: every method and constructor the index declares in a non-test file. Compared with
-// the semantic oracle (C0a-2, `--oracle <json>`, default the cached jellyfin run) by call site
+// the semantic oracle (C0a-2, `--oracle <json>`, default the cached run at the commit) by call site
 // (target key + target file + site file + site offset): precision = our non-test call sites
 // that are an oracle edge of that target (any `via`: a call bound to an interface or virtual
 // member is a direct row of that member); recall over the oracle's direct edges (`via` absent,
@@ -588,6 +588,22 @@ function fixtureKeys(tools, write) {
 // target) are scored as may-calls: the oracle binds that site to a member (`via` interface or
 // override-base) whose implementations or overrides (transitively) include the target; reported
 // by the oracle's implementation count. Misses on an answer marked complete must be 0.
+
+/**
+ * The cached semantic oracle run (test/csharp-semantic-oracle/run.sh) for this commit and the
+ * oracle's current sources: `semantic-<name>-<sha12>-<toolhash>.json`, toolhash as run.sh computes it.
+ * @param {string} tools @param {string} repo @param {string} commit @returns {string}
+ */
+function semanticCacheFor(tools, repo, commit) {
+  const dir = path.join(tools, 'cache');
+  const sha = execFileSync('git', ['-C', repo, 'rev-parse', commit], { encoding: 'utf8' }).trim().slice(0, 12);
+  const oracle = path.join(__dirname, '..', 'csharp-semantic-oracle');
+  const srcs = [path.join(oracle, 'Program.cs'), path.join(oracle, 'SemanticOracle.csproj'), path.join(__dirname, '..', 'csharp-syntax-oracle', 'Program.cs')];
+  const hash = crypto.createHash('sha256').update(Buffer.concat(srcs.map((f) => fs.readFileSync(f)))).digest('hex').slice(0, 12);
+  const found = (fs.existsSync(dir) ? fs.readdirSync(dir) : []).filter((f) => f.startsWith('semantic-') && f.endsWith(`-${sha}-${hash}.json`));
+  if (found.length !== 1) throw new Error(`${found.length ? 'several' : 'no'} cached semantic oracle runs for ${sha} (tool ${hash}) in ${dir}: run test/csharp-semantic-oracle/run.sh first, or pass --oracle <json>`);
+  return path.join(dir, found[0]);
+}
 
 /** @param {string} repo @param {string} commit @param {string} oracleFile @param {boolean} preview */
 function callersCheck(repo, commit, oracleFile, preview) {
@@ -836,7 +852,7 @@ function main() {
   }
   const t0 = Date.now();
   if (args.includes('--syntactic') && args.includes('--callers')) {
-    const oracleFile = opt('--oracle') || path.join(tools, 'cache', 'semantic-jellyfin-821b849e61f6-f522323982f5.json');
+    const oracleFile = opt('--oracle') || semanticCacheFor(tools, repo, commit);
     // `--both`: the CLI check, then the preview check, in one process (one read of the tree).
     let ok = args.includes('--both') ? callersCheck(repo, commit, oracleFile, false) : true;
     if (args.includes('--both')) console.log('');

@@ -10,7 +10,7 @@ const { reviewTabModel, hunkLines, MAX_HUNK_LINES, MAX_CHIPS } = require('../src
 const { buildReviewTabHtml, ATTENTION_WORD, REVIEW_TAB_TITLE } = require('../src/views/review-tab/review-tab-html');
 const { createReviewTab, parseMessage } = require('../src/views/review-tab/review-tab-panel');
 
-const hono = () => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'cards', 'hono-1774.json'), 'utf8'));
+const sample = () => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'cards', 'sample-cards.json'), 'utf8'));
 const byId = (f, id) => [...f.cards.clusters, ...f.cards.sweeps].find((c) => c.id === id);
 const everyCardAlone = (f) => [...f.cards.clusters, ...f.cards.sweeps].map((c) => ({ title: `T ${c.id}`, members: [...c.members, ...(c.moved || []).map((m) => m.from)] }));
 
@@ -38,8 +38,8 @@ const AGENT = {
 const HUNK = `diff --git a/src/a.ts b/src/a.ts\nindex 1..2\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1,3 +1,4 @@\n export function save(x) {\n+  if (!x) throw new Error('empty')\n   write(x)\n }\n`;
 
 test('no agent result: the engine\'s cards, two columns, red and amber changes need attention, a note says what the agent adds', () => {
-  const f = hono();
-  const m = reviewTabModel({ result: f.result, cards: f.cards, title: 'PR #1774' });
+  const f = sample();
+  const m = reviewTabModel({ result: f.result, cards: f.cards, title: 'PR #1' });
   assert.equal(m.agent, false);
   assert.deepEqual(m.columns.map((c) => c.label), ['Needs your attention', 'Other changes']);
   assert.match(m.note, /Analyse with my agent/);
@@ -58,25 +58,25 @@ test('no agent result: the engine\'s cards, two columns, red and amber changes n
 });
 
 test('with the agent\'s result: its cards in its order, three columns, its summary; changes worst first', () => {
-  const f = hono();
-  const payload = { summary: 'S', attention: [byId(f, 'K3').members[0]],
-    changes: [{ id: byId(f, 'K3').members[0], kind: 'changed', what: 'w' }, { id: byId(f, 'K3').members[1], kind: 'same', what: 's' }, { id: byId(f, 'K5').members[0], kind: 'new', what: 'n' }],
+  const f = sample();
+  const payload = { summary: 'S', attention: [byId(f, 'K1').members[0]],
+    changes: [{ id: byId(f, 'K1').members[0], kind: 'changed', what: 'w' }, { id: byId(f, 'K1').members[1], kind: 'same', what: 's' }, { id: byId(f, 'K2').members[0], kind: 'new', what: 'n' }],
     cards: everyCardAlone(f) };
   const m = reviewTabModel({ result: f.result, cards: f.cards, agentPayload: payload });
   assert.equal(m.agent, true);
   assert.equal(m.summary, 'S');
   assert.equal(m.note, null);
   assert.deepEqual(m.columns.map((c) => c.label), ['Needs your attention', 'Behaviour changes', 'No behaviour change']);
-  const k3 = m.cards.find((c) => c.title === 'T K3');
+  const k3 = m.cards.find((c) => c.title === 'T K1');
   assert.equal(k3.column, 'attention');
   assert.deepEqual(k3.chips[0], { text: '1 changed', tone: 'warning' });
   assert.ok(k3.chips.slice(1).every((c) => c.tone === 'plain' && /^public API: /.test(c.text)), 'then where it is reached from');
-  assert.deepEqual(k3.changes.slice(0, 2), [byId(f, 'K3').members[0], byId(f, 'K3').members[1]], 'changed, then same, then the rest');
+  assert.deepEqual(k3.changes.slice(0, 2), [byId(f, 'K1').members[0], byId(f, 'K1').members[1]], 'changed, then same, then the rest');
   // The attention set is the tree's, with a result too (G15): a change the engine flags is attention beside the agent's own.
   const flaggedInCard = (title) => m.cards.find((c) => c.title === title).changes.some((id) => m.changes[id].verdict.level <= 1 || m.changes[id].deleted);
-  assert.equal(m.cards.find((c) => c.title === 'T K5').column, flaggedInCard('T K5') ? 'attention' : 'changes');
-  assert.equal(flaggedInCard('T K5'), true, 'K5 holds a change the engine flags, though the agent did not name it');
-  assert.equal(m.cards.find((c) => c.title === 'T K6').column, flaggedInCard('T K6') ? 'attention' : 'none');
+  assert.equal(m.cards.find((c) => c.title === 'T K2').column, flaggedInCard('T K2') ? 'attention' : 'changes');
+  assert.equal(flaggedInCard('T K2'), true, 'K2 holds a change the engine flags, though the agent did not name it');
+  assert.equal(m.cards.find((c) => c.title === 'T K3').column, flaggedInCard('T K3') ? 'attention' : 'none');
   assert.ok(m.cards.every((c) => (c.column === 'attention') === c.changes.some((id) => m.changes[id].attention)), 'a card is in the attention column exactly when a change in it needs attention');
   // A result for other cards is not used: back to the engine's.
   assert.equal(reviewTabModel({ result: f.result, cards: f.cards, agentPayload: { cards: [] } }).agent, false);

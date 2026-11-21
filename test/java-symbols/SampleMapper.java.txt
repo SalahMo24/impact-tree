@@ -1,0 +1,133 @@
+package demo;
+
+import java.io.IOException;
+import java.io.StringReader;
+import java.io.StringWriter;
+import java.lang.reflect.Type;
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Turns values into text and back, through converters kept per type.
+ */
+public final class Mapper {
+  private final Map<Type, Converter<?>> cache = new HashMap<>();
+  private final boolean strict;
+
+  /** A mapper with the default settings. */
+  public Mapper() {
+    this(new MapperBuilder());
+  }
+
+  Mapper(MapperBuilder builder) {
+    this.strict = builder.strict;
+    cache.put(Number.class, numberConverter());
+  }
+
+  /** The converter for a type, made on first use. */
+  @SuppressWarnings("unchecked")
+  public <T> Converter<T> getConverter(TypeKey<T> key) {
+    Converter<?> found = cache.get(key.getType());
+    if (found != null) {
+      return (Converter<T>) found;
+    }
+    FutureConverter<T> future = new FutureConverter<>();
+    cache.put(key.getType(), future);
+    return future;
+  }
+
+  public <T> Converter<T> getConverter(Class<T> type) {
+    return getConverter(TypeKey.get(type));
+  }
+
+  public <T> Converter<T> getDelegate(ConverterFactory skipPast, TypeKey<T> key) {
+    if (!strict) {
+      return getConverter(key);
+    }
+    return skipPast.create(this, key);
+  }
+
+  private Converter<Number> numberConverter() {
+    return new Converter<Number>() {
+      @Override public Number read(InSource in) throws IOException {
+        return in.nextDouble();
+      }
+
+      @Override public void write(OutSink out, Number value) throws IOException {
+        out.value(value);
+      }
+    };
+  }
+
+  /**
+   * Writes a value to the appendable.
+   *
+   * @param src the value
+   * @param writer where the text goes
+   */
+  public void write(Object src, Appendable writer) throws MapperException {
+    try {
+      writer.append(String.valueOf(src));
+    } catch (IOException e) {
+      throw new MapperException(e);
+    }
+  }
+
+  public String write(Object src) {
+    StringWriter writer = new StringWriter();
+    write(src, writer);
+    return writer.toString();
+  }
+
+  public String write(Object src, Type type) {
+    return write(src);
+  }
+
+  public void write(Object src, Type type, OutSink out) {
+    getConverter(TypeKey.get(type));
+  }
+
+  public <T> T read(String json, Class<T> type) throws MapperException {
+    Object object = read(json, (Type) type);
+    return type.cast(object);
+  }
+
+  @SuppressWarnings("unchecked")
+  public <T> T read(String json, Type type) throws MapperException {
+    if (json == null) {
+      return null;
+    }
+    return (T) read(new StringReader(json), type);
+  }
+
+  public <T> T read(java.io.Reader json, Class<T> type) throws MapperException {
+    return type.cast(read(json, (Type) type));
+  }
+
+  public <T> T read(java.io.Reader json, Type type) throws MapperException {
+    return null;
+  }
+
+  public <T> T read(InSource in, Type type) throws MapperException {
+    return null;
+  }
+
+  static class FutureConverter<T> extends Converter<T> {
+    private Converter<T> delegate;
+
+    public void setDelegate(Converter<T> typeAdapter) {
+      if (delegate != null) {
+        throw new AssertionError();
+      }
+      delegate = typeAdapter;
+    }
+
+    @Override public T read(InSource in) throws IOException {
+      return delegate.read(in);
+    }
+
+    @Override public void write(OutSink out, T value) throws IOException {
+      delegate.write(out, value);
+    }
+  }
+}

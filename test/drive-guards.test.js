@@ -14,11 +14,11 @@ const ROOT = path.join(__dirname, '..');
 test('--extensions-dir: allowed under .vscode-test/ and the scratchpad, refused elsewhere and for editor folders', () => {
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-drive-home-')));
   const saved = process.env.IMPACT_TREE_SCRATCHPAD;
-  const scratch = path.join(home, 'Projects', 'impact-tree-scratchpad');
+  const scratch = path.join(home, 'scratch');
   const inRepo = path.join(ROOT, '.vscode-test', `it-drive-guard-${process.pid}`);
   try {
-    delete process.env.IMPACT_TREE_SCRATCHPAD;
-    for (const d of ['.vscode/extensions', '.cursor/extensions', '.vscode-insiders/extensions', 'elsewhere', 'Projects/impact-tree-scratchpad/csharp-tools/vscode-ext']) {
+    process.env.IMPACT_TREE_SCRATCHPAD = scratch;
+    for (const d of ['.vscode/extensions', '.cursor/extensions', '.vscode-insiders/extensions', 'elsewhere', 'scratch/csharp-tools/vscode-ext']) {
       fs.mkdirSync(path.join(home, d), { recursive: true });
     }
     fs.mkdirSync(inRepo, { recursive: true });
@@ -35,7 +35,7 @@ test('--extensions-dir: allowed under .vscode-test/ and the scratchpad, refused 
     const link = path.join(scratch, 'link-to-editor');
     fs.symlinkSync(path.join(home, '.vscode', 'extensions'), link);
     assert.throws(() => checkExtensionsDir(link, home), /editor's own extensions folder/);
-    // IMPACT_TREE_SCRATCHPAD names another scratchpad.
+    // Another IMPACT_TREE_SCRATCHPAD moves the allowed root.
     process.env.IMPACT_TREE_SCRATCHPAD = path.join(home, 'elsewhere');
     fs.mkdirSync(path.join(home, 'elsewhere', 'ext'));
     assert.equal(checkExtensionsDir(path.join(home, 'elsewhere', 'ext'), home), path.join(home, 'elsewhere', 'ext'));

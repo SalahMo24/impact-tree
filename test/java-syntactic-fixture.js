@@ -73,7 +73,7 @@ class Sub extends Client {
 }
 `;
 
-// Run 2's corrections (gson): a method declared in an anonymous class is no call, and its
+// Run 2's corrections (a real project): a method declared in an anonymous class is no call, and its
 // parameters are typed; enum constants call the constructor; explicit type arguments.
 const MORE = `package com.ex.app;
 import com.ex.lib.*;

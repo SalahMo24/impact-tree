@@ -58,29 +58,29 @@ test('functions, methods and nested classes are candidates; nested defs, variabl
     'Tool.Inner.method', 'Tool.Inner.Deeper.deepest', 'Tool._private', 'helper#2', '_hidden',
   ]);
   assert.ok(!keys.some((k) => /inner|limit|not_a_method/.test(k)), 'a nested def, a class attribute and a docstring line are not candidates');
-  // httpx/_auth.py: 19 defs, one nested inside a method (P0): 18 candidates.
-  const auth = collect('httpx_auth.py');
+  // sample_auth.py: 19 defs, one nested inside a method: 18 candidates.
+  const auth = collect('sample_auth.py');
   assert.equal(auth.length, 18);
   assert.ok(!auth.some((s) => s.simpleName === 'digest'));
-  assert.equal(auth.find((s) => s.key === 'DigestAuth._build_auth_header').className, 'DigestAuth');
+  assert.equal(auth.find((s) => s.key === 'ChallengeAuth._build_auth_header').className, 'ChallengeAuth');
 });
 
-test('a property getter with a setter is recovered from the text (httpx HTTPError.request)', () => {
-  const text = texts['httpx_exceptions.py'];
-  const all = collect('httpx_exceptions.py');
-  const getter = all.find((s) => s.key === 'HTTPError.request');
-  const setter = all.find((s) => s.key === 'HTTPError.request#2');
+test('a property getter with a setter is recovered from the text (ServiceError.payload)', () => {
+  const text = texts['sample_errors.py'];
+  const all = collect('sample_errors.py');
+  const getter = all.find((s) => s.key === 'ServiceError.payload');
+  const setter = all.find((s) => s.key === 'ServiceError.payload#2');
   assert.equal(getter.recovered, true);
   assert.equal(setter.recovered, false, 'Pyright lists the setter');
-  assert.deepEqual([getter.startLine, getter.endLine, setter.startLine, setter.endLine], [96, 100, 102, 104]);
-  assert.ok(text.slice(getter.start, getter.end).startsWith('@property\n    def request(self) -> Request:'));
-  assert.ok(text.slice(getter.start, getter.end).endsWith('return self._request'));
-  assert.ok(text.slice(setter.start, setter.end).startsWith('@request.setter'), 'decorators are in the range');
-  assert.equal(text.slice(getter.namePos, getter.namePos + 7), 'request');
+  assert.deepEqual([getter.startLine, getter.endLine, setter.startLine, setter.endLine], [32, 36, 38, 40]);
+  assert.ok(text.slice(getter.start, getter.end).startsWith('@property\n    def payload(self) -> Payload:'));
+  assert.ok(text.slice(getter.start, getter.end).endsWith('return self._payload'));
+  assert.ok(text.slice(setter.start, setter.end).startsWith('@payload.setter'), 'decorators are in the range');
+  assert.equal(text.slice(getter.namePos, getter.namePos + 7), 'payload');
   assert.deepEqual([getter.binding, setter.binding], ['property', 'property']);
   assert.deepEqual(getter.decorators, ['@property']);
-  assert.equal(getter.header, 'def request(self) -> Request');
-  // Every def of the file is a candidate: 13 (P0 does not list this file; counted by hand).
+  assert.equal(getter.header, 'def payload(self) -> Payload');
+  // Every def of the file is a candidate: 13 (counted by hand).
   assert.equal(all.length, 13);
 });
 
@@ -102,9 +102,9 @@ test('@overload stubs are recovered, in classes and at module level, keyed in so
   assert.equal(by['Tool.run'].header, 'async def run(self) -> None');
 });
 
-// P7 (httpx #3319): `_compat.py` defines `set_minimum_tls_version_1_2` in both branches of an
-// `if`; Pyright lists one, and only defs at the scope's own indentation were recovered, so
-// the base side's second definition was missing and its removal was not reported.
+// P7: a module can define one function in both branches of an `if`; Pyright lists one, and
+// only defs at the scope's own indentation were recovered, so the base side's second
+// definition was missing and its removal was not reported.
 test('a name defined in both branches of an if or try is recovered, at module level and in a class; nested defs and docstrings are not', () => {
   const text = texts['branches.py'];
   const syms = collect('branches.py');
@@ -139,19 +139,19 @@ test('exported, constructor and the injected parser\'s answers', () => {
     pythonKindsOf: () => [],
     renderPythonSig: () => 'rendered',
   };
-  const ex = collectPythonSymbols(symbolsOf('httpx_exceptions.py'), texts['httpx_exceptions.py'], parser);
-  const getter = ex.find((s) => s.key === 'HTTPError.request');
+  const ex = collectPythonSymbols(symbolsOf('sample_errors.py'), texts['sample_errors.py'], parser);
+  const getter = ex.find((s) => s.key === 'ServiceError.payload');
   assert.deepEqual([getter.decorators, getter.binding], [['@x'], 'staticmethod']);
   assert.deepEqual([...getter.throws], ['RuntimeError']);
   assert.deepEqual(getter.sig, { async: false, params: [], returns: null });
   assert.deepEqual(asked.find(([first]) => first === '@property'), ['@property', true]);
   assert.deepEqual(asked.find(([first]) => first === '@contextlib.contextmanager'), ['@contextlib.contextmanager', false], 'a module function is not a method');
   assert.equal(pythonSpec(parser).renderSig(getter), 'rendered');
-  assert.equal(pythonSpec(NO_PARSER).renderSig(collect('httpx_exceptions.py')[0]), 'def __init__(self, message: str) -> None');
+  assert.equal(pythonSpec(NO_PARSER).renderSig(collect('sample_errors.py')[0]), 'def __init__(self, message: str) -> None');
 });
 
 test('a range outside the text is a bug, not a quiet wrong declaration', () => {
-  const symbols = symbolsOf('httpx_auth.py');
+  const symbols = symbolsOf('sample_auth.py');
   assert.throws(() => collectPythonSymbols(symbols, 'x = 1\n', NO_PARSER), RangeError);
 });
 

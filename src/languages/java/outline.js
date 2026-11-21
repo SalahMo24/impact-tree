@@ -31,7 +31,7 @@ const { lex } = require('./lexer');
 
 // Budget: the longest text read, in UTF-16 units. Valid range >= 1; default 2 Mi, the
 // preview's per-file fetch limit (src/github/github-request.js `maxFileBytes`), above any real
-// source file (gson's largest is ~70 Ki). Owner: this module; enforced by `javaOutline`,
+// source file (the Java test repository's largest is ~70 Ki). Owner: this module; enforced by `javaOutline`,
 // which answers null past it (an unread file, never a partial outline).
 const MAX_TEXT_CHARS = 2 * 1024 * 1024;
 

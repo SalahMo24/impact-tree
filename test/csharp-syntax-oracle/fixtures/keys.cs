@@ -1,4 +1,4 @@
-// Key fixture for the syntax oracle (C-D6): constructs jellyfin and eShop lack. Its expected
+// Key fixture for the syntax oracle (C-D6): constructs the test repositories lack. Its expected
 // keys are keys.expected.json; `csharp-verify.js --fixture-keys` runs the oracle on this file
 // and compares. Parsed only, never compiled.
 using System;

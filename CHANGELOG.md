@@ -95,7 +95,7 @@ First release on the VS Code Marketplace and Open VSX.
   factories, while jdtls imports the project or reports a broken build path, and when VS
   Code turns a failed request into an empty answer. Without jdtls, callers come from a
   syntax index (the PR's files in the preview, the repository in the CLI). Checked on 12
-  google/gson pull requests against the JDK's parser and `javac`: 224 of 224 changed
+  pull requests of an open-source Java JSON library against the JDK's parser and `javac`: 224 of 224 changed
   methods, every kind right; syntax-only callers 100% precision and 99.2% recall.
   In the editor, on the same pull requests: 224 of 224 changed methods, and every caller
   `javac` finds that is not listed sits on an answer marked incomplete. Java files are no longer listed as "not analysed yet".
@@ -128,7 +128,7 @@ First release on the VS Code Marketplace and Open VSX.
   CLI. Calls are matched through imports, the package, a method's receiver and receivers
   whose type is written (parameters, `var`, composite literals, fields, constructor
   results); every answer stays incomplete with its reason, never "no callers". Checked on
-  the 10 cli/cli pull requests: 816 of 816 changed functions, every kind right; callers
+  the 10 Go pull requests: 816 of 816 changed functions, every kind right; callers
   98.9% precision and 97.5% recall in the CLI, 99.4% and 92.0% in the preview, against Go's
   static call graph. Go files are no longer listed as not analysed there.
 - **The preview's notice says what each language's syntax-only search leaves unresolved**
@@ -141,11 +141,11 @@ First release on the VS Code Marketplace and Open VSX.
   index: the PR's own Python files and changed tests in the preview, the whole repository in
   the CLI. Calls are matched through imports, modules, `self`/`cls`/`super()`, constructions
   and annotated or assigned receivers; every answer stays incomplete with its scope ("syntax
-  only"), never "no callers". Checked against Jedi on 22 httpx pull requests (99.9–100%
-  precision, 98% recall across the repository) and pydantic #13070.
+  only"), never "no callers". Checked against Jedi on 22 pull requests of a Python HTTP library (99.9–100%
+  precision, 98% recall across the repository) and one large pull request of a Python validation library.
 - **Python in the PR preview and the CLI**, without a language server: the changed, added
   and deleted functions and methods and their signature kinds, read from the text (the
-  same keys as in the editor, so review ticks carry over). Checked against Python's `ast` on the same 10 httpx pull requests: 141 of
+  same keys as in the editor, so review ticks carry over). Checked against Python's `ast` on the same 10 Python pull requests: 141 of
   141 changed functions, no extra, every kind right. The editor still uses Pyright. Go is
   still listed as not analysed there. `--json` output to a pipe is no longer cut at 8 KiB.
 - **The base branch defaults to the remote's own default** (`origin/HEAD`), so a repository
@@ -161,16 +161,16 @@ First release on the VS Code Marketplace and Open VSX.
   `*_test.py`, `conftest.py` and `tests/`; review ticks that survive edits to other functions.
   Calls on untyped objects that the server could not resolve, values, decorator
   registrations, protocol methods and constructors read as incomplete with the reason,
-  never as "no callers". Checked on 10 merged encode/httpx pull requests (141 changed
-  functions; see `test/lsp-harness/P7-REPORT.md`).
+  never as "no callers". Checked on 10 merged pull requests of an open-source Python HTTP library (141 changed
+  functions).
 - **Go support** in the editor, through the Go extension's language server (gopls): changed
   functions and methods, signature changes (receiver, type parameters, parameters,
   results), callers with "updated at the call" or not, test callers from `_test.go`, and
   review ticks that survive edits to other functions. Callers that only use a function as
   a value are not counted as calls; methods implementing an interface declared outside the
   repository, and files outside the active build tags, read as incomplete with the reason.
-  Checked on 10 merged cli/cli pull requests (816 changed functions; see
-  `test/lsp-harness/G7-REPORT.md`). The PR preview and the CLI list Go files as not analysed.
+  Checked on 10 merged pull requests of a large open-source Go command-line tool (816 changed
+  functions). The PR preview and the CLI list Go files as not analysed.
 - **A file that was not analysed says so on its row**: amber, counted toward "needs
   attention", with the reason in its tooltip and Details, in the editor, the preview and the
   CLI. A changed file of a language not analysed yet (Python, Java, …) names its language

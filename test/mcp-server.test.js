@@ -583,12 +583,12 @@ const sdkWithRoots = (/** @type {string[]|null} */ uris) => ({ server: {
 const tops = (/** @type {Record<string,string>} */ map) => (/** @type {string} */ dir) => map[dir] || null;
 
 test('findRepoFor: the agent\'s one workspace repository, else the one editor window; several or none is an error', async () => {
-  const toplevel = tops({ '/w/hono': '/w/hono', '/w/hono/src': '/w/hono', '/w/cli': '/w/cli', '/e/one': '/e/one', '/e/two': '/e/two' });
+  const toplevel = tops({ '/w/web': '/w/web', '/w/web/src': '/w/web', '/w/api': '/w/api', '/e/one': '/e/one', '/e/two': '/e/two' });
   const none = () => [];
-  assert.deepEqual(await findRepoFor({ cwd: '/home', sdk: sdkWithRoots(['file:///w/hono/src', 'file:///w/notes']), toplevel, editorRepos: none }),
-    { repo: '/w/hono', from: 'the agent\'s workspace folder' });
-  await assert.rejects(findRepoFor({ cwd: '/home', sdk: sdkWithRoots(['file:///w/hono', 'file:///w/cli']), toplevel, editorRepos: () => [{ repo: '/e/one', askedAt: null }] }),
-    (e) => e instanceof ToolError && /several git repositories; call select_repository with the repository to review \(one of: \/w\/cli, \/w\/hono\); do not change the MCP configuration/.test(e.message));
+  assert.deepEqual(await findRepoFor({ cwd: '/home', sdk: sdkWithRoots(['file:///w/web/src', 'file:///w/notes']), toplevel, editorRepos: none }),
+    { repo: '/w/web', from: 'the agent\'s workspace folder' });
+  await assert.rejects(findRepoFor({ cwd: '/home', sdk: sdkWithRoots(['file:///w/web', 'file:///w/api']), toplevel, editorRepos: () => [{ repo: '/e/one', askedAt: null }] }),
+    (e) => e instanceof ToolError && /several git repositories; call select_repository with the repository to review \(one of: \/w\/api, \/w\/web\); do not change the MCP configuration/.test(e.message));
   // No roots from the agent: the editor window decides; one that is no longer a repository is skipped.
   assert.deepEqual(await findRepoFor({ cwd: '/home', sdk: sdkWithRoots(null), toplevel, editorRepos: () => [{ repo: '/e/one', askedAt: null }, { repo: '/gone', askedAt: null }] }),
     { repo: '/e/one', from: 'the only editor window with Impact Tree open' });
@@ -820,14 +820,14 @@ test('outdated code: once the extension\'s files change, every tool says to rest
 });
 
 test('WORKSPACE_FOLDER_PATHS: the window\'s one repository wins over guessing among editor windows', async () => {
-  const toplevel = tops({ '/w/hono': '/w/hono', '/w/hono/src': '/w/hono', '/w/cli': '/w/cli' });
-  assert.equal(parseArgs([], { cwd: '/', toplevel, workspaceFolders: '/w/hono' }).repo, '/w/hono');
-  assert.equal(parseArgs([], { cwd: '/', toplevel, workspaceFolders: '/w/hono' }).notRepo, undefined);
-  assert.equal(parseArgs([], { cwd: '/', toplevel, workspaceFolders: '/w/hono,/w/cli' }).notRepo, true, 'several: not guessed here');
+  const toplevel = tops({ '/w/web': '/w/web', '/w/web/src': '/w/web', '/w/api': '/w/api' });
+  assert.equal(parseArgs([], { cwd: '/', toplevel, workspaceFolders: '/w/web' }).repo, '/w/web');
+  assert.equal(parseArgs([], { cwd: '/', toplevel, workspaceFolders: '/w/web' }).notRepo, undefined);
+  assert.equal(parseArgs([], { cwd: '/', toplevel, workspaceFolders: '/w/web,/w/api' }).notRepo, true, 'several: not guessed here');
   assert.equal(parseArgs([], { cwd: '/', toplevel, workspaceFolders: 'relative/dir' }).notRepo, true);
   const editors = () => [{ repo: '/e/one', askedAt: 1 }];
-  assert.deepEqual(await findRepoFor({ cwd: '/', sdk: null, toplevel, editorRepos: editors, workspaceFolders: '/w/hono/src' }),
-    { repo: '/w/hono', from: 'the editor window\'s workspace folder' });
-  await assert.rejects(findRepoFor({ cwd: '/', sdk: null, toplevel, editorRepos: editors, workspaceFolders: '/w/hono:/w/cli' }),
-    (e) => e instanceof ToolError && /editor window has several git repositories; call select_repository .*\/w\/cli, \/w\/hono/.test(e.message));
+  assert.deepEqual(await findRepoFor({ cwd: '/', sdk: null, toplevel, editorRepos: editors, workspaceFolders: '/w/web/src' }),
+    { repo: '/w/web', from: 'the editor window\'s workspace folder' });
+  await assert.rejects(findRepoFor({ cwd: '/', sdk: null, toplevel, editorRepos: editors, workspaceFolders: '/w/web:/w/api' }),
+    (e) => e instanceof ToolError && /editor window has several git repositories; call select_repository .*\/w\/api, \/w\/web/.test(e.message));
 });

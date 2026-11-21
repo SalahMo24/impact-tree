@@ -1,0 +1,145 @@
+from __future__ import annotations
+
+import contextlib
+import typing
+
+__all__ = [
+    "ServiceError",
+    "RetryError",
+    "StatusError",
+    "StreamError",
+]
+
+
+class ServiceError(Exception):
+    """
+    Base class for the errors of the sample service.
+
+    For example:
+
+    ```
+    try:
+        reply = call("example")
+    except ServiceError as exc:
+        print(f"failed: {exc.payload}")
+    ```
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self._payload: Payload | None = None
+
+    @property
+    def payload(self) -> Payload:
+        if self._payload is None:
+            raise RuntimeError("The payload has not been set.")
+        return self._payload
+
+    @payload.setter
+    def payload(self, payload: Payload) -> None:
+        self._payload = payload
+
+
+class RetryError(ServiceError):
+    """
+    Raised when a call may be tried again.
+    """
+
+    def __init__(self, message: str, *, payload: Payload | None = None) -> None:
+        super().__init__(message)
+        # The payload is usually not known where the error is raised;
+        # `attach_payload` below sets it on the way out.
+        self._payload = payload
+
+
+class StatusError(ServiceError):
+    """
+    Raised for an unwanted status.
+    """
+
+    def __init__(self, message: str, *, payload: Payload, status: int) -> None:
+        super().__init__(message)
+        self._payload = payload
+        self.status = status
+
+
+class InvalidAddress(Exception):
+    """
+    An address that cannot be parsed.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+class Conflict(Exception):
+    """
+    Two entries with the same name.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+class StreamError(RuntimeError):
+    """
+    Base class for stream misuse.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+class StreamConsumed(StreamError):
+    """
+    Raised when a stream is read twice.
+    """
+
+    def __init__(self) -> None:
+        message = "The stream was already read."
+        super().__init__(message)
+
+
+class StreamClosed(StreamError):
+    """
+    Raised when a closed stream is read.
+    """
+
+    def __init__(self) -> None:
+        message = "The stream was closed."
+        super().__init__(message)
+
+
+class NotRead(StreamError):
+    """
+    Raised when content is used before it was read.
+    """
+
+    def __init__(self) -> None:
+        message = "The content was not read yet."
+        super().__init__(message)
+
+
+class NotSent(StreamError):
+    """
+    Raised when a body is used before it was sent.
+    """
+
+    def __init__(self) -> None:
+        message = "The body was not sent yet."
+        super().__init__(message)
+
+
+@contextlib.contextmanager
+def attach_payload(
+    payload: Payload | None,
+) -> typing.Iterator[None]:
+    """
+    A context manager that sets the payload on any `ServiceError` raised inside.
+    """
+    try:
+        yield
+    except ServiceError as exc:
+        if exc._payload is None:
+            exc._payload = payload
+        raise

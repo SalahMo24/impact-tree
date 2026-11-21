@@ -1,7 +1,7 @@
 'use strict';
 // C# entry points (src/engine/entry-points-csharp.js, C-D7) and their walk rules in
-// src/engine/impact-paths.js (app-start, MediatR), from small texts shaped after eShop and
-// jellyfin. The real repositories are checked by test/lsp-harness/entry-census.js.
+// src/engine/impact-paths.js (app-start, MediatR), from small texts shaped after
+// typical ASP.NET services. Real repositories are checked by a census script kept with the maintainer's local notes.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { declarationEntry, callSiteEntry, entryLanguageOf, unreachableReason } = require('../src/engine/entry-points');
@@ -21,12 +21,12 @@ test('language of a .cs file', () => {
   assert.equal(entryLanguageOf('/r/A.csproj'), null);
 });
 
-// A jellyfin-style controller.
+// A controller with a shared base class.
 const controller = `using Microsoft.AspNetCore.Mvc;
 // [HttpGet("commented")] public IActionResult Ghost() {}
 [Route("Items")]
 [Authorize]
-public class ItemsController : BaseJellyfinApiController
+public class ItemsController : BaseApiController
 {
     private readonly int _x;
     public ItemsController(int x) { _x = x; }
@@ -94,16 +94,16 @@ test('controller: [controller] token, suffix stripped; [ApiController] and base-
 });
 
 test('controller: a [Route] inherited from the base class comes from the facts, "<inherited>" without them', () => {
-  const text = 'public class GenresController : BaseJellyfinApiController\n{\n  [HttpGet] public int Get() => 1;\n  [HttpGet("{name}")] public int One(string name) => 1;\n}\n';
+  const text = 'public class GenresController : BaseApiController\n{\n  [HttpGet] public int Get() => 1;\n  [HttpGet("{name}")] public int One(string name) => 1;\n}\n';
   assert.equal(decl(text, 'Get(').name, 'GET /<inherited>');
   assert.equal(decl(text, 'One(').name, 'GET /<inherited>/{name}');
-  const facts = { csControllerRoutes: new Map([['BaseJellyfinApiController', { route: '[controller]', base: 'ControllerBase' }]]) };
+  const facts = { csControllerRoutes: new Map([['BaseApiController', { route: '[controller]', base: 'ControllerBase' }]]) };
   assert.equal(decl(text, 'Get(', 'a/GenresController.cs', facts).name, 'GET /Genres');
   assert.equal(decl(text, 'One(', 'a/GenresController.cs', facts).name, 'GET /Genres/{name}');
 });
 
 test('controller: conventionally routed actions (no attribute route) show /{Controller}/{Action}, said so', () => {
-  // eShop Identity.API: `AccountController : Controller`, mapped by app.MapDefaultControllerRoute().
+  // An identity service:`AccountController : Controller`, mapped by app.MapDefaultControllerRoute().
   const text = `using Microsoft.AspNetCore.Mvc;
 namespace IdentityServerHost.Quickstart.UI
 {
@@ -270,7 +270,7 @@ public class Other { public static int Get() => 1; }
   assert.equal(decl(text, 'Own() => 1; }'), null);
 });
 
-// eShop's CatalogApi: groups, versioned groups, method groups and lambdas.
+// A catalog API:groups, versioned groups, method groups and lambdas.
 const minimal = `public static class CatalogApi
 {
     public static IEndpointRouteBuilder MapCatalogApi(this IEndpointRouteBuilder app)
@@ -517,6 +517,6 @@ test('walk: a caller-less MediatR handler ends unknown with the reason, never a 
 
 test('walk: a changed controller action is an entry at depth 0', async () => {
   const pos = at(controller, 'GetImages');
-  const r = await walkOf(controller, { file: 'Jellyfin.Api/Controllers/ItemsController.cs', pos, label: 'ItemsController.GetImages(Guid)', facts: {} });
+  const r = await walkOf(controller, { file: 'Media.Api/Controllers/ItemsController.cs', pos, label: 'ItemsController.GetImages(Guid)', facts: {} });
   assert.deepEqual(r.entries.map((e) => [e.type, e.name, e.depth]), [['http', 'GET /Items/{itemId}/Images', 0]]);
 });
