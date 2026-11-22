@@ -12,7 +12,7 @@ const { createCsharpSyntacticIndex } = require('../src/languages/csharp/syntacti
 const { csharpOutline } = require('../src/languages/csharp/outline');
 const {
   createCsharpEditorExtras, EMPTY_ANSWER_REASON, VALUE_USE_REASON, NOT_COMPUTED, PRIMARY_CONSTRUCTOR_REASON, NOT_LOADED_REASON, isCsharpCallSite,
-  PROPERTY_REASON, STALE_TARGET_REASON, SERVER_CHANGED_REASON, shortCallerName,
+  PROPERTY_REASON, STALE_TARGET_REASON, SERVER_CHANGED_REASON, shortCallerName, NO_INDEX_REASON,
 } = require('../src/languages/csharp/editor-extras');
 const { createCsharpProvider, createServerStateTracker, NO_HIERARCHY_NOTE } = require('../src/languages/csharp/provider');
 const { createHierarchyResolver } = require('./lsp-harness/harness-languages');
@@ -298,13 +298,14 @@ test('M3: the session index is rebuilt after an uncommitted edit (same HEAD)', a
     const first = await sessionIndex(dir, trace);
     recheckSessionIndexes();
     assert.equal(await sessionIndex(dir, trace), first, 'nothing changed: the same index');
-    const edited = 'namespace N;\npublic class A\n{\n    public void Pad() { }\n    public void M() { }\n}\n';
+    const edited = 'namespace N;\npublic class A\n{\n    public void Pad() { M(); }\n    public void M() { }\n}\n';
     fs.writeFileSync(path.join(dir, 'A.cs'), edited);
     recheckSessionIndexes();
     const second = await sessionIndex(dir, trace);
     assert.notEqual(second, first);
     assert.equal(builds(), 2, traces.join('\n'));
-    assert.deepEqual(second.symbolAt(path.join(dir, 'A.cs'), edited.indexOf('M()')), { className: 'A', name: 'M' });
+    const target = { file: path.join(dir, 'A.cs'), pos: edited.indexOf('M() { }'), name: 'M', className: 'A' };
+    assert.deepEqual((await second.callersOfWithStatus(target)).callers.map((/** @type {any} */ c) => c.label), ['A.Pad()'], 'the edit is in the index');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -397,4 +398,160 @@ test('M4: the state tracker waits for "loaded" after a reload, not the one-shot 
   await wait;
   assert.equal(done, true);
   assert.equal(tracker.changes, 2);
+});
+
+// ---- the session index in its worker (S1, S2, S5) -------------------------------------------
+
+/** A committed repository holding FILES; removed by the caller. */
+function csharpRepo() {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const { execFileSync } = require('node:child_process');
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-cs-worker-')));
+  for (const [rel, text] of Object.entries(FILES)) {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+    fs.writeFileSync(path.join(dir, rel), text);
+  }
+  const git = (/** @type {string[]} */ args) => execFileSync('git', ['-c', 'user.email=t@example.com', '-c', 'user.name=t', ...args], { cwd: dir, stdio: 'ignore' });
+  git(['init', '-q']);
+  git(['add', '-A']);
+  git(['commit', '-qm', 'base']);
+  return { dir, done: () => fs.rmSync(dir, { recursive: true, force: true }) };
+}
+
+/**
+ * A fake worker: `answer(message)` gives `{ value }`, `{ error }`, `'exit'`, `'error'` or
+ * nothing (never answers).
+ * @param {(message: any) => any} answer
+ */
+function fakeWorker(answer) {
+  const { EventEmitter } = require('node:events');
+  const w = Object.assign(new EventEmitter(), {
+    terminated: false,
+    ref() {}, unref() {},
+    async terminate() { w.terminated = true; },
+    postMessage(/** @type {any} */ message) {
+      setImmediate(() => {
+        const out = answer(message);
+        if (out === 'exit') w.emit('exit', 1);
+        else if (out === 'error') w.emit('error', new Error('worker crashed'));
+        else if (out) w.emit('message', { id: message.id, ...out });
+      });
+    },
+  });
+  return w;
+}
+
+const IMPL_ARG = (/** @type {string} */ dir) => ({ file: path.join(dir, 'Lib/Shapes.cs'), pos: IMPL_M, name: 'M', className: 'Impl' });
+const CTOR_ARG = (/** @type {string} */ dir) => ({ file: path.join(dir, 'Lib/Shapes.cs'), pos: posOf('Lib/Shapes.cs', 'primary-constructor', 'Svc'), name: 'Svc', className: 'Svc' });
+
+test('S2: the worker\'s answers equal the in-thread index\'s; build, files and heap traced', async () => {
+  const { sessionIndex } = require('../src/languages/csharp/editor-extras');
+  const { indexRepositoryWithin } = require('../src/languages/csharp/provider');
+  const { makeGit } = require('../src/engine/git');
+  const repo = csharpRepo();
+  try {
+    /** @type {string[]} */
+    const traces = [];
+    const viaWorker = await sessionIndex(repo.dir, (m) => traces.push(m));
+    const local = indexRepositoryWithin(repo.dir, makeGit(repo.dir), { maxFiles: 10, maxBytes: 1024 * 1024 }).index;
+    assert.ok(local);
+    assert.match(traces.join('\n'), /built in \d+ms in its worker \(2 of 2 file\(s\), \d+ MiB; worker heap \d+ MiB\)/);
+    const plain = (/** @type {any} */ v) => JSON.parse(JSON.stringify(v));
+    assert.deepEqual(await viaWorker.dispatchOf(IMPL_ARG(repo.dir)), plain(local.dispatchOf(IMPL_ARG(repo.dir))));
+    assert.equal((await viaWorker.dispatchOf(IMPL_ARG(repo.dir))).targets.length, 1, 'IFoo.M');
+    const ctor = await viaWorker.callersOfWithStatus(CTOR_ARG(repo.dir));
+    assert.deepEqual(ctor, plain(local.callersOfWithStatus(CTOR_ARG(repo.dir))));
+    assert.ok(ctor.callers.length >= 1, 'new Svc(i)');
+  } finally {
+    repo.done();
+  }
+});
+
+test('S1: past the editor\'s bound, no index: every method says why, with both numbers', async () => {
+  const { sessionIndex } = require('../src/languages/csharp/editor-extras');
+  const repo = csharpRepo();
+  try {
+    const indexOf = () => sessionIndex(repo.dir, () => {}, { maxFiles: 1 });
+    await assert.rejects(indexOf(), /2 C# file\(s\), [\d.]+ MiB, over the editor's bound of 1 files or 96 MiB/);
+    const file = path.join(repo.dir, 'Lib/Shapes.cs');
+    const services = fakeServices(new Map([[`${file}#${IMPL_M}`, []]]));
+    const extras = createCsharpEditorExtras({ readText: (f) => textOf(abs(path.relative(repo.dir, f))), repoRoot: repo.dir, indexOf });
+    const resolver = createHierarchyResolver(/** @type {any} */ (services), { extras });
+    const answer = await resolver.incomingWithStatus(file, IMPL_M);
+    assert.equal(answer.complete, false);
+    assert.ok(String(answer.reason).startsWith(NO_INDEX_REASON), String(answer.reason));
+    assert.match(String(answer.reason), /2 C# file\(s\).*bound of 1 files/);
+    const ctor = await resolver.incomingWithStatus(file, CTOR_ARG(repo.dir).pos);
+    assert.equal(ctor.complete, false);
+    assert.match(String(ctor.reason), /primary constructor.*not available \(the repository has 2 C# file\(s\)/);
+  } finally {
+    repo.done();
+  }
+});
+
+test('S5: a worker that fails, times out or dies mid-lookup: a reason, incomplete (never rejected, never complete)', async () => {
+  const { sessionIndex, LOOKUP_FAILED_REASON } = require('../src/languages/csharp/editor-extras');
+  const built = { value: { built: true, files: 2, bytes: 10, size: 2, ms: 1, heapMb: 1, reason: null } };
+  const cases = [
+    { name: 'crash at build', answer: () => 'error', expect: /worker failed: worker crashed/ },
+    { name: 'timeout at build', answer: () => null, expect: /did not answer within 30 ms/ },
+    { name: 'death at lookup', answer: (/** @type {any} */ m) => (m.kind === 'build' ? built : 'exit'), expect: /exited \(1\)/ },
+    { name: 'throw in lookup', answer: (/** @type {any} */ m) => (m.kind === 'build' ? built : { error: 'boom' }), expect: /boom/ },
+  ];
+  for (const c of cases) {
+    const repo = csharpRepo();
+    try {
+      /** @type {any[]} */
+      const workers = [];
+      const options = { makeWorker: () => { const w = fakeWorker(c.answer); workers.push(w); return w; }, buildMs: 30, queryMs: 30 };
+      const file = path.join(repo.dir, 'Lib/Shapes.cs');
+      const services = fakeServices(new Map([[`${file}#${IMPL_M}`, []]]));
+      const extras = createCsharpEditorExtras({ readText: (f) => textOf(abs(path.relative(repo.dir, f))), repoRoot: repo.dir, indexOf: () => sessionIndex(repo.dir, () => {}, options) });
+      const resolver = createHierarchyResolver(/** @type {any} */ (services), { extras });
+      const answer = await resolver.incomingWithStatus(file, IMPL_M);
+      assert.equal(answer.complete, false, c.name);
+      assert.match(String(answer.reason), c.expect, c.name);
+      if (c.name.endsWith('lookup')) assert.ok(String(answer.reason).startsWith(LOOKUP_FAILED_REASON), String(answer.reason));
+      else assert.ok(String(answer.reason).startsWith(NO_INDEX_REASON), String(answer.reason));
+      const ctor = await resolver.incomingWithStatus(file, CTOR_ARG(repo.dir).pos);
+      assert.equal(ctor.complete, false, c.name);
+      assert.match(String(ctor.reason), /primary constructor/, c.name);
+      if (c.name !== 'throw in lookup') assert.ok(workers[0].terminated, `${c.name}: the worker is terminated`);
+    } finally {
+      repo.done();
+    }
+  }
+});
+
+test('S2: a worker that cannot start: the index is built in this thread within the CLI\'s bound', async () => {
+  const { sessionIndex } = require('../src/languages/csharp/editor-extras');
+  const repo = csharpRepo();
+  try {
+    /** @type {string[]} */
+    const traces = [];
+    const idx = await sessionIndex(repo.dir, (m) => traces.push(m), { makeWorker: () => { throw new Error('no threads'); } });
+    assert.match(traces.join('\n'), /could not start: no threads; building the syntax index in this thread within the CLI's bound/);
+    assert.equal((await idx.dispatchOf(IMPL_ARG(repo.dir))).targets.length, 1);
+  } finally {
+    repo.done();
+  }
+});
+
+test('S2: disposing ends the workers; the next lookup starts another', async () => {
+  const { sessionIndex, disposeSessionIndexes } = require('../src/languages/csharp/editor-extras');
+  const repo = csharpRepo();
+  try {
+    /** @type {any[]} */
+    const workers = [];
+    const options = { makeWorker: () => { const w = fakeWorker(() => ({ value: { built: true, files: 2, bytes: 10, size: 2, ms: 1, heapMb: 1, reason: null } })); workers.push(w); return w; } };
+    await sessionIndex(repo.dir, () => {}, options);
+    disposeSessionIndexes();
+    assert.ok(workers[0].terminated);
+    await sessionIndex(repo.dir, () => {}, options);
+    assert.equal(workers.length, 2);
+    disposeSessionIndexes();
+  } finally {
+    repo.done();
+  }
 });

@@ -15,11 +15,13 @@
 //   interface's member is not asked (its calls on other type arguments would be listed): a
 //   reason. Overrides: Roslyn's base-method callers are not asked; an override, a virtual
 //   method or one hiding a base member is incomplete with the index's reason.
-// - The index is built once per session in the extension host (`sessionIndex`), from the
-//   repository's C# files in the working tree, and rebuilt when HEAD or the working tree's
-//   C# files change (uncommitted edits included, checked once per analysis). Its build is
-//   timed and traced. Without it (no repository, a failure) an implementing method cannot be
-//   told apart: every instance method's answer is incomplete, saying so.
+// - The index is built once per session in a worker thread (`sessionIndex`, ./index-pool.js),
+//   from the repository's C# files in the working tree within the editor's bound (8 000
+//   files / 96 MiB; past it, no index), and rebuilt when HEAD or the working tree's C# files
+//   change (uncommitted edits included, checked once per analysis). Its build is timed and
+//   traced. Without it (no repository, past the bound, a failure or a timeout) an
+//   implementing method cannot be told apart: every instance method's answer is incomplete,
+//   saying why. A lookup is awaited, from the worker or from an index given (`indexOf`).
 // - Value uses. Roslyn lists a method group (`Map("/x", Handler)`, `bus.E += OnChanged`) as an
 //   incoming call (C0b). A site of a method whose text is its name not followed by `(` or a
 //   type argument list is a value use: a caller whose every site is one is dropped, and the
@@ -61,7 +63,8 @@ const MAX_CSHARP_FILE_BYTES = 2 * 1024 * 1024;
 const VALUE_USE_REASON = 'referenced-as-value';
 const EMPTY_ANSWER_REASON = 'the language server returned no callers for a method that may be called through an interface or a base type; an empty answer can hide a failed query';
 const NO_INDEX_REASON = 'the C# syntax index is not available, so calls through an interface this method may implement are not listed';
-const NOT_INDEXED_REASON = 'the C# syntax index does not list this member, so calls through an interface it may implement are not listed';
+const LOOKUP_FAILED_REASON = 'the C# syntax index lookup failed, so calls through an interface this method may implement are not listed';
+const NOT_INDEXED_REASON ='the C# syntax index does not list this member, so calls through an interface it may implement are not listed';
 const PROPERTY_REASON = 'a property or indexer: uses through an interface or a base property are not listed';
 const PRIMARY_CONSTRUCTOR_REASON = 'a primary constructor: the C# language server lists no callers for it; callers from the syntax index';
 const SERVER_CHANGED_REASON = 'the C# language server restarted or reloaded its projects during this analysis: answers given while it loads can be partial';
@@ -218,10 +221,20 @@ function createCsharpEditorExtras({
       d = (async () => {
         const m = memberAt(file, pos);
         if (!m || m.member !== 'method') return { targets: [], reasons: [] };
-        let idx = null;
-        try { idx = await getIndex(); } catch (e) { trace(`csharp: syntax index failed: ${e && /** @type {any} */ (e).message}`); }
+        let idx;
+        try { idx = await getIndex(); } catch (e) {
+          // No index: past the editor's bound, the worker failed or timed out (S1, S5).
+          const message = e && /** @type {any} */ (e).message;
+          trace(`csharp: syntax index failed: ${message}`);
+          return { targets: [], reasons: [`${NO_INDEX_REASON} (${message})`] };
+        }
         if (!idx) return { targets: [], reasons: [NO_INDEX_REASON] };
-        const found = idx.dispatchOf({ file, pos, name: m.name, className: m.className });
+        let found;
+        try { found = await idx.dispatchOf({ file, pos, name: m.name, className: m.className }); } catch (e) {
+          const message = e && /** @type {any} */ (e).message;
+          trace(`csharp: dispatch lookup failed at ${relOf(file)}@${pos}: ${message}`);
+          return { targets: [], reasons: [`${LOOKUP_FAILED_REASON}: ${message}`] };
+        }
         if (!found) return { targets: [], reasons: [NOT_INDEXED_REASON] };
         // A target is asked only where the file's current text has that member (M3): an
         // index older than the text would send Roslyn into another member.
@@ -234,7 +247,7 @@ function createCsharpEditorExtras({
           else reasons.push(`${STALE_TARGET_REASON} (${t.text || relOf(t.file)})`);
         }
         return { targets, reasons };
-      })();
+      })().catch((e) => ({ targets: [], reasons: [`${LOOKUP_FAILED_REASON}: ${e && /** @type {any} */ (e).message}`] }));
       dispatches.set(id, d);
     }
     return d;
@@ -324,7 +337,8 @@ function createCsharpEditorExtras({
           if (sawValueUse) reasons.push(VALUE_USE_REASON);
           const d = await dispatchOf(file, pos);
           reasons.push(...d.reasons);
-          if (!kept && d.reasons.length && !d.reasons.includes(NO_INDEX_REASON) && !d.reasons.includes(NOT_INDEXED_REASON)) reasons.push(EMPTY_ANSWER_REASON);
+          const unknown = d.reasons.some((r) => r.startsWith(NO_INDEX_REASON) || r === NOT_INDEXED_REASON || r.startsWith(LOOKUP_FAILED_REASON));
+          if (!kept && d.reasons.length && !unknown) reasons.push(EMPTY_ANSWER_REASON);
           return { callers: [], incompleteReason: reasons.length ? reasons.join('; ') : null };
         },
       };
@@ -341,10 +355,21 @@ function createCsharpEditorExtras({
    * @returns {Promise<{ callers: CallerRow[], incompleteReason: string }>}
    */
   async function primaryConstructorCallers(file, pos, m) {
-    const idx = await getIndex().catch(() => null);
+    /** @type {any} */
+    let idx;
+    /** @type {any} */
+    let answer;
+    try {
+      idx = await getIndex();
+      if (idx) answer = await idx.callersOfWithStatus({ file, pos, name: m.name, className: m.className });
+    } catch (e) {
+      // S5: an index that failed (past the bound, a worker death or timeout, a lookup error) is a reason.
+      const message = e && /** @type {any} */ (e).message;
+      trace(`csharp: primary-constructor callers failed at ${relOf(file)}@${pos}: ${message}`);
+      return { callers: [], incompleteReason: `${PRIMARY_CONSTRUCTOR_REASON}, which is not available (${message})` };
+    }
     if (!idx) return { callers: [], incompleteReason: `${PRIMARY_CONSTRUCTOR_REASON}, which is not available` };
     const { isTestFile } = require('../../engine/diff');
-    const answer = idx.callersOfWithStatus({ file, pos, name: m.name, className: m.className });
     /** @type {CallerRow[]} */
     const callers = answer.callers.map((/** @type {import('../types').SyntacticCaller} */ c) => ({
       file: c.file, label: c.label, pos: c.pos, sites: c.callSites.length, callSites: c.callSites,
@@ -357,47 +382,111 @@ function createCsharpEditorExtras({
 
 // ---- the session's syntax index (the extension host) -----------------------------------------
 
-// Cache: per repository root, the index built for one HEAD commit, as a promise. Owner: this
-// module, for the extension host's life (the session); one entry per repository analysed.
-// Invalidation: the tree state changed (`treeStateOf`: HEAD, `git status`, the dirty C# files'
-// size and time), checked at most once per `clear()` (each analysis), through `checked`. An
-// edit made during an analysis is seen at the next one; meanwhile a target the current
+// Cache: per repository root, the index built for one tree state, as a promise, and the
+// worker pool that holds it (./index-pool.js). Owner: this module, for the session; one entry
+// per repository analysed; `disposeSessionIndexes` (the provider's `dispose`, at the end of
+// the session) stops every worker. Invalidation: the tree state changed (`treeStateOf`: HEAD,
+// `git status`, the dirty C# files' size and time), checked at most once per `clear()` (each
+// analysis), through `checked`; or the build failed or its worker stopped since (`usable`).
+// An edit made during an analysis is seen at the next one; meanwhile a target the current
 // outline does not confirm is not asked (STALE_TARGET_REASON), and a member not at its
-// indexed position is found by name only when it has no overload.
-/** @type {Map<string, { head: string|null, index: Promise<any>, checked: boolean }>} */
+// indexed position is found by name only when it has no overload. A cancelled analysis does
+// not stop a build in the worker: it finishes and the next analysis reuses it.
+/** @type {Map<string, { state: string|null, index: Promise<any>, checked: boolean, usable: () => boolean }>} */
 const sessionIndexes = new Map();
+/** @type {Map<string, ReturnType<typeof import('./index-pool').createCsharpIndexPool>>} */
+const sessionPools = new Map();
 
 /**
- * The repository's C# syntax index for the session, built once per tree state (the CLI's
- * `indexRepository`: every C# file the rules handle, bounded). Resolves null when it cannot
- * be built. The build is synchronous once the files are listed (C8b: ~1.4 s on the corpus);
- * its time is traced.
+ * The repository's C# syntax index for the session, built once per tree state in a worker
+ * (./index-worker.js; ./provider.js `indexRepositoryWithin`: every C# file the rules handle,
+ * within the editor's bound), as an object whose `dispatchOf` and `callersOfWithStatus`
+ * resolve the worker's answers. Rejects with the reason when there is no index: past the
+ * bound (the files and MiB found and the bound), or the worker failed or timed out. Where
+ * the worker cannot start, the index is built in this thread within the CLI's smaller bound
+ * (../repository-files.js). Build time, file count and the worker's heap are traced.
  * @param {string} repoRoot @param {(message: string) => void} trace
+ * @param {{ makeWorker?: (file: string, options: any) => any, maxFiles?: number, maxBytes?: number,
+ *   buildMs?: number, queryMs?: number }} [options] Tests: the worker, a smaller bound, deadlines.
  * @returns {Promise<any>}
  */
-async function sessionIndex(repoRoot, trace) {
-  const { makeGit } = require('../../engine/git');
-  const git = makeGit(repoRoot);
+async function sessionIndex(repoRoot, trace, options = {}) {
   const had = sessionIndexes.get(repoRoot);
   if (had && had.checked) return had.index;
+  const { makeGit } = require('../../engine/git');
+  const git = makeGit(repoRoot);
+  const pools = require('./index-pool');
+  let pool = sessionPools.get(repoRoot);
+  if (!pool) {
+    pool = pools.createCsharpIndexPool(repoRoot, options.makeWorker ? { makeWorker: options.makeWorker } : {});
+    sessionPools.set(repoRoot, pool);
+  }
+  const owned = pool;
   // Set before the first await, so queries that start together share one check and one build.
-  const entry = { head: had ? had.head : null, index: /** @type {Promise<any>} */ (Promise.resolve(null)), checked: true };
+  const entry = { state: had ? had.state : null, index: /** @type {Promise<any>} */ (Promise.resolve(null)), checked: true, usable: () => false };
   entry.index = (async () => {
-    const head = await treeStateOf(repoRoot, git);
-    if (had && head && had.head === head) return had.index;
-    entry.head = head;
-    const started = Date.now(); // wall-clock: log-only — the build time is traced
+    const state = await treeStateOf(repoRoot, git);
+    if (had && state && had.state === state && had.usable()) { entry.usable = had.usable; return had.index; }
+    entry.state = state;
+    const bound = { maxFiles: options.maxFiles ?? pools.EDITOR_MAX_FILES, maxBytes: options.maxBytes ?? pools.EDITOR_MAX_BYTES };
+    const epoch = owned.epoch();
+    /** @type {any} */
+    let built;
     try {
-      const idx = require('./provider').indexRepository(/** @type {any} */ ({ repo: repoRoot, files: [], git }), []);
-      trace(`csharp: syntax index for dispatch built in ${Date.now() - started}ms (${idx.size} file(s))`); // wall-clock: log-only — the build time is traced
-      return idx;
+      built = await owned.request({ kind: 'build', state, ...bound }, options.buildMs ?? pools.BUILD_DEADLINE_MS);
     } catch (e) {
-      trace(`csharp: syntax index could not be built: ${e && /** @type {any} */ (e).message}`);
-      return null;
+      if (/** @type {any} */ (e).code !== 'WORKER_START') {
+        trace(`csharp: syntax index could not be built: ${/** @type {any} */ (e).message}`);
+        throw e;
+      }
+      trace(`csharp: ${/** @type {any} */ (e).message}; building the syntax index in this thread within the CLI's bound`);
+      return inThreadIndex(repoRoot, git, entry, trace);
     }
+    if (built.reason) {
+      trace(`csharp: no syntax index: ${built.reason}`);
+      entry.usable = () => true;
+      throw new Error(built.reason);
+    }
+    trace(`csharp: syntax index for dispatch built in ${built.ms}ms in its worker (${built.size} of ${built.files} file(s), ${Math.round(built.bytes / 1024 / 1024)} MiB; worker heap ${built.heapMb} MiB)`);
+    const alive = () => owned.epoch() === epoch;
+    entry.usable = alive;
+    const queryMs = options.queryMs ?? pools.QUERY_DEADLINE_MS;
+    /** @param {'dispatchOf'|'callersOfWithStatus'} kind @param {any} arg */
+    const ask = async (kind, arg) => {
+      if (!alive()) throw new Error(`the C# syntax index worker stopped (${(owned.lastError() || { message: 'unknown' }).message})`);
+      return owned.request({ kind, state, arg }, queryMs);
+    };
+    return { size: built.size, dispatchOf: (/** @type {any} */ arg) => ask('dispatchOf', arg), callersOfWithStatus: (/** @type {any} */ arg) => ask('callersOfWithStatus', arg) };
   })();
   sessionIndexes.set(repoRoot, entry);
   return entry.index;
+}
+
+/**
+ * The fallback where the worker cannot start: the index built in this thread, only within
+ * the CLI's bound (REPO_MAX_FILES / REPO_MAX_BYTES); past it, no index (a rejection, the reason).
+ * @param {string} repoRoot @param {any} git
+ * @param {{ usable: () => boolean }} entry @param {(message: string) => void} trace
+ */
+function inThreadIndex(repoRoot, git, entry, trace) {
+  const { REPO_MAX_FILES, REPO_MAX_BYTES } = require('../repository-files');
+  const started = Date.now(); // wall-clock: log-only — the build time is traced
+  const out = require('./provider').indexRepositoryWithin(repoRoot, git, { maxFiles: REPO_MAX_FILES, maxBytes: REPO_MAX_BYTES });
+  entry.usable = () => true;
+  if (!out.index) {
+    trace(`csharp: no syntax index: ${out.reason}`);
+    throw new Error(/** @type {string} */ (out.reason));
+  }
+  const ms = Date.now() - started; // wall-clock: log-only — the build time is traced
+  trace(`csharp: syntax index for dispatch built in ${ms}ms in this thread (${out.index.size} file(s); heap ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)} MiB)`);
+  return out.index;
+}
+
+/** Ends the session's index workers and forgets their indexes (the session ended). */
+function disposeSessionIndexes() {
+  for (const pool of sessionPools.values()) pool.dispose();
+  sessionPools.clear();
+  sessionIndexes.clear();
 }
 
 /**
@@ -430,7 +519,7 @@ function recheckSessionIndexes() {
 
 module.exports = {
   createCsharpEditorExtras, isCsharpCallSite, memberAtIn, shortCallerName, sessionIndex, recheckSessionIndexes,
-  SERVER_CHANGED_REASON, STALE_TARGET_REASON,
+  disposeSessionIndexes, SERVER_CHANGED_REASON, STALE_TARGET_REASON, LOOKUP_FAILED_REASON,
   VALUE_USE_REASON, EMPTY_ANSWER_REASON, NO_INDEX_REASON, NOT_INDEXED_REASON, PROPERTY_REASON,
   PRIMARY_CONSTRUCTOR_REASON, NOT_LOADED_REASON, NOT_COMPUTED, MAX_CSHARP_FILE_BYTES,
 };

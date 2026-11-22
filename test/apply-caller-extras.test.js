@@ -107,6 +107,18 @@ test('targets: one not answered makes the answer incomplete with its reason; mor
   assert.equal(!noAsk.stale && noAsk.answer.complete, false, 'targets that cannot be asked: incomplete');
 });
 
+test('targets: a callerTargets that rejects or throws is incomplete with its reason, the main callers kept (never "no targets")', async () => {
+  let more = 0;
+  const query = { isSuppressed: () => false, filter: (c) => ({ kept: c, dropped: 0 }), moreCallers: async () => { more++; return { callers: [], incompleteReason: null }; } };
+  const { asked, askAt } = asker({});
+  for (const callerTargets of [async () => { throw new Error('index worker exited'); }, () => { throw new Error('index worker exited'); }]) {
+    const r = await applyCallerExtras({ ready: true, rows: [row('/r/b.py', 1)] }, { ...base, extras: /** @type {any} */ ({ callerTargets }), query, askAt });
+    assert.deepEqual(!r.stale && [r.ready, r.answer.complete, r.answer.reason, r.answer.retryable, r.answer.callers.length], [false, false, 'caller targets lookup failed: index worker exited', undefined, 1]);
+  }
+  assert.deepEqual(asked, []);
+  assert.equal(more, 0, 'not every part answered: moreCallers is not asked');
+});
+
 test('targets: at most MAX_CALLER_TARGETS asked; past it the answer is incomplete', async () => {
   const targets = (/** @type {number} */ n) => Array.from({ length: n }, (_, i) => ({ file: '/r/a.py', pos: 100 + i }));
   for (const n of [MAX_CALLER_TARGETS - 1, MAX_CALLER_TARGETS, MAX_CALLER_TARGETS + 1]) {

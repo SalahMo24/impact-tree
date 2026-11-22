@@ -253,13 +253,20 @@ function mergeLabel(row, a, b) {
  * The language's caller targets for `file`/`pos`: other positions whose incoming calls are
  * also this target's callers, de-duplicated, without `pos` itself, up to MAX_CALLER_TARGETS.
  * A target's `via`/`text` (C#: "through IFoo") is kept with it. Resolves; a language whose
- * lookup rejects gives no targets.
+ * lookup rejects or throws gives no targets and `failed`, its message (the answer is then
+ * incomplete, never "no targets").
  * @param {import('./types').EditorCallerExtras|null} extras
  * @param {string} file @param {number} pos
- * @returns {Promise<{ targets: CallerTarget[], notAsked: number }>}
+ * @returns {Promise<{ targets: CallerTarget[], notAsked: number, failed: string|null }>}
  */
 async function callerTargetsOf(extras, file, pos) {
-  const given = extras && extras.callerTargets ? (await extras.callerTargets(file, pos)) || [] : [];
+  /** @type {CallerTarget[]} */
+  let given;
+  try {
+    given = extras && extras.callerTargets ? (await extras.callerTargets(file, pos)) || [] : [];
+  } catch (e) {
+    return { targets: [], notAsked: 0, failed: String((e && /** @type {any} */ (e).message) || e) };
+  }
   const seen = new Set([`${file}#${pos}`]);
   /** @type {CallerTarget[]} */
   const all = [];
@@ -269,7 +276,7 @@ async function callerTargetsOf(extras, file, pos) {
     seen.add(id);
     all.push({ file: t.file, pos: t.pos, ...(t.via ? { via: t.via, text: t.text || '' } : {}) });
   }
-  return { targets: all.slice(0, MAX_CALLER_TARGETS), notAsked: Math.max(0, all.length - MAX_CALLER_TARGETS) };
+  return { targets: all.slice(0, MAX_CALLER_TARGETS), notAsked: Math.max(0, all.length - MAX_CALLER_TARGETS), failed: null };
 }
 
 /**
@@ -281,7 +288,8 @@ async function callerTargetsOf(extras, file, pos) {
  *    MAX_CALLER_TARGETS; past it the answer is incomplete). The answer is made of every
  *    part: the callers of all answered parts, merged (`mergeCallerRows`), and incomplete
  *    when any part was not answered, with each part's reason ("; "-joined). Retryable only
- *    when every unanswered part is retryable and none was explained.
+ *    when every unanswered part is retryable and none was explained. A `callerTargets` that
+ *    rejects is an unanswered part ("caller targets lookup failed: …", not retryable).
  * 2. The main query not answered: the language may explain the failure
  *    (`explainIncomplete`); an explained failure is a lasting condition, not retryable, and
  *    keeps the answer incomplete (the targets' callers are still listed). An unexplained
@@ -318,11 +326,16 @@ async function callerTargetsOf(extras, file, pos) {
  *   de-duplication); `targetsAsked`: caller-target queries asked.
  */
 async function applyCallerExtras(hierarchy, { extras, query, file, pos, withTests, askAt, isStale = () => false }) {
-  const { targets, notAsked } = await callerTargetsOf(extras, file, pos);
+  const { targets, notAsked, failed } = await callerTargetsOf(extras, file, pos);
   if (isStale()) return { stale: true };
   /** @type {string[]} */
   const reasons = [];
   let retryable = true;
+  // The other positions are not known: an unanswered part, not retryable (a lasting failure).
+  if (failed !== null) {
+    reasons.push(`caller targets lookup failed: ${failed}`);
+    retryable = false;
+  }
   /** @type {string|null} */
   let explainedReason = null;
   /** @type {CallerRow[][]} */

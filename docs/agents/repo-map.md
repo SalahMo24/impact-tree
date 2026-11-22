@@ -5,6 +5,7 @@
 | `src/extension.js` | activation: wires the session, views and commands |
 | `src/engine/` | the language-blind analysis: `analyze.js` (local), `analyze-remote.js` (PR preview without a checkout), diff, callers, `impact-paths.js` + `entry-points.js` + `entry-facts.js` (entry-point walk) |
 | `src/languages/<lang>/` | one provider per language (`typescript`, `go`, `python`, `java`, `csharp`): outline, signature, syntactic index, rules; `index.js` is the registry, `types.js` the contracts |
+| `src/languages/csharp/index-worker.js` | the editor's C# syntax index, built and queried in a worker thread; owned by `index-pool.js` (one worker per repository, disposed with the session) and used by `editor-extras.js` `sessionIndex` |
 | `src/session/` | editor-side state: the review session, commands, readiness, review identity |
 | `src/views/` | the side bar (`sidebar/`, `changes/`), Details panel, review tab, PR tab |
 | `src/diff-editor/` | the review editor: navigation, comments, decorations, agent threads |
