@@ -280,6 +280,10 @@ function createCsharpEditorExtras({
         return { targets, reasons, rows, transient };
       })().catch((e) => ({ targets: [], reasons: [`${LOOKUP_FAILED_REASON}: ${e && /** @type {any} */ (e).message}`], rows: [], transient: true }));
       dispatches.set(id, d);
+      // A failed or stale answer is shared while in flight only: the next query (a caller
+      // retry run does not call `clear()`) asks again.
+      const mine = d;
+      mine.then((r) => { if (r.transient && dispatches.get(id) === mine) dispatches.delete(id); });
     }
     return d;
   };
@@ -329,6 +333,8 @@ function createCsharpEditorExtras({
       const explicit = !!m && m.member === 'method' && m.explicit;
       let sawValueUse = false;
       let kept = 0;
+      let outsideCount = 0;
+      const outsideReason = () => `${outsideCount} caller(s) in files outside the repository are not listed`;
       return {
         isSuppressed: () => !!notComputed || primary || explicit,
         filter(callers) {
@@ -352,6 +358,7 @@ function createCsharpEditorExtras({
             }
             out.push(row);
           }
+          outsideCount = outside;
           if (outside) trace(`csharp: dropped ${outside} caller(s) outside the repository`);
           if (sawValueUse) trace(`csharp: method group use(s) among ${callers.length} caller(s) of ${file}@${pos}`);
           // Rows that land on one member (a method and its local functions, a property's
@@ -369,10 +376,13 @@ function createCsharpEditorExtras({
           if (primary && m) return primaryConstructorCallers(file, pos, m);
           // Asked after the query answered: a reload that began before it may have cut it short.
           if (!serverSteady()) return { callers: [], incompleteReason: SERVER_CHANGED_REASON };
-          if (m && (m.member === 'property' || m.member === 'indexer')) return { callers: [], incompleteReason: PROPERTY_REASON, lasting: true };
+          if (m && (m.member === 'property' || m.member === 'indexer')) {
+            return { callers: [], incompleteReason: [PROPERTY_REASON, ...(outsideCount ? [outsideReason()] : [])].join('; '), lasting: true };
+          }
           /** @type {string[]} */
           const reasons = [];
           if (sawValueUse) reasons.push(VALUE_USE_REASON);
+          if (outsideCount) reasons.push(outsideReason());
           const d = await dispatchOf(file, pos);
           reasons.push(...d.reasons);
           const unknown = d.reasons.some((r) => r.startsWith(NO_INDEX_REASON) || r === NOT_INDEXED_REASON || r.startsWith(LOOKUP_FAILED_REASON));

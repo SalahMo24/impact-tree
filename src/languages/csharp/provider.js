@@ -417,32 +417,58 @@ const editorServerState = createServerStateTracker();
 
 /**
  * Whether the editor's C# call hierarchy can be trusted now (C-D3 (a) as C0b changed it):
- * Microsoft's C# extension (`ms-dotnettools.csharp`) is installed and active and its
- * `initializationFinished()` resolved within `deadlineMs` (the projects are loaded; before
- * that, answers are partial) and, once its server reported a state, that state is "loaded"
- * (else the next "loaded" within the deadline: a reload after the first load). Subscribes
- * `tracker` to the extension's state events. Never rejects. Outside VS Code: not available.
+ * Microsoft's C# extension (`ms-dotnettools.csharp`) is installed and active (an installed
+ * extension that is not active is activated: S6) and its `initializationFinished()` resolved
+ * within `deadlineMs` (the projects are loaded; before that, answers are partial) and, once its
+ * server reported a state, that state is "loaded" (else the next "loaded" within the deadline:
+ * a reload after the first load). Subscribes `tracker` to the extension's state events. The
+ * wait races `signal`: an aborted one rejects with `AnalysisCancelledError` (never "no").
+ * Otherwise never rejects. Outside VS Code (no `getExtension` given and no `vscode`): not available.
  * @param {number} [deadlineMs]
  * @param {ReturnType<typeof createServerStateTracker>} [tracker]
+ * @param {{ getExtension?: (id: string) => any, signal?: AbortSignal }} [options]
  * @returns {Promise<{ ok: true } | { ok: false, reason: string }>}
  */
-async function editorCsharpProbe(deadlineMs = PROBE_DEADLINE_MS, tracker = editorServerState) {
-  let vscode;
-  // By name, so the typecheck (no vscode types here) and the CLI never load it.
-  const editorModule = 'vscode';
-  try { vscode = require(editorModule); } catch { return { ok: false, reason: 'not in the editor' }; }
-  const ext = vscode.extensions.getExtension('ms-dotnettools.csharp');
+async function editorCsharpProbe(deadlineMs = PROBE_DEADLINE_MS, tracker = editorServerState, { getExtension, signal } = {}) {
+  const { throwIfCancelled, AnalysisCancelledError, isAnalysisCancelled } = require('../../engine/cancellation');
+  throwIfCancelled(signal);
+  /** @type {(id: string) => any} */
+  let lookup = /** @type {(id: string) => any} */ (getExtension);
+  if (!getExtension) {
+    // By name, so the typecheck (no vscode types here) and the CLI never load it.
+    const editorModule = 'vscode';
+    try { lookup = require(editorModule).extensions.getExtension; } catch { return { ok: false, reason: 'not in the editor' }; }
+  }
+  const ext = lookup('ms-dotnettools.csharp');
   if (!ext) return { ok: false, reason: 'the C# extension (ms-dotnettools.csharp) is not installed' };
-  if (!ext.isActive || !ext.exports || typeof ext.exports.initializationFinished !== 'function') return { ok: false, reason: 'the C# extension is not active' };
-  tracker.subscribe(ext.exports);
   const { withDeadline } = require('../../engine/deadline');
+  /** @type {(() => void)|null} */
+  let unlisten = null;
+  const aborted = new Promise((_, reject) => {
+    if (!signal) return;
+    const onAbort = () => reject(new AnalysisCancelledError());
+    signal.addEventListener('abort', onAbort, { once: true });
+    unlisten = () => signal.removeEventListener('abort', onAbort);
+  });
+  aborted.catch(() => {});
   try {
-    await withDeadline(() => tracker.loaded(() => Promise.resolve(ext.exports.initializationFinished())), deadlineMs, 'the C# project load');
-    return { ok: true };
+    return await Promise.race([aborted, withDeadline(async () => {
+      if (!ext.isActive) await ext.activate();
+      if (!ext.exports || typeof ext.exports.initializationFinished !== 'function') return { ok: false, reason: 'the C# extension is not active' };
+      tracker.subscribe(ext.exports);
+      await tracker.loaded(() => Promise.resolve(ext.exports.initializationFinished()));
+      return { ok: true };
+    }, deadlineMs, 'the C# project load')]);
   } catch (e) {
+    if (isAnalysisCancelled(e)) throw e;
     return { ok: false, reason: `the C# extension's server did not finish loading the projects (${e && /** @type {any} */ (e).message})` };
+  } finally {
+    if (unlisten) /** @type {() => void} */ (unlisten)();
   }
 }
+
+// The reason when an earlier analysis's wait for the projects is still going (S6).
+const STILL_LOADING_REASON = 'the C# extension is still loading the projects';
 
 /**
  * C#'s provider. `probe`: whether the environment's C# call hierarchy answers (the editor's:
@@ -450,14 +476,29 @@ async function editorCsharpProbe(deadlineMs = PROBE_DEADLINE_MS, tracker = edito
  * (`serverChanges`, the tracker's count), a negative one is asked again at the next analysis.
  * A state change after it (a restart, the projects loaded again) makes the next analysis ask
  * again, and the editor's caller answers given meanwhile incomplete (SERVER_CHANGED_REASON).
- * @param {{ probe?: () => Promise<{ ok: true } | { ok: false, reason: string }>, serverChanges?: () => number }} [options]
+ * @param {{ probe?: (signal?: AbortSignal) => Promise<{ ok: true } | { ok: false, reason: string }>, serverChanges?: () => number }} [options]
  * @returns {import('../types').LanguageProvider}
  */
-function createCsharpProvider({ probe = () => editorCsharpProbe(), serverChanges = () => editorServerState.changes } = {}) {
+function createCsharpProvider({ probe = (signal) => editorCsharpProbe(PROBE_DEADLINE_MS, editorServerState, { signal }), serverChanges = () => editorServerState.changes } = {}) {
   // The tracker's count when the probe last answered yes; null: not trusted.
   /** @type {number|null} */
   let readyAt = null;
   const ready = () => readyAt !== null && readyAt === serverChanges();
+  // The wait still going (S6; owner: this provider, until it settles): a later analysis does
+  // not wait again, it falls back at once, unless the server reported a state change since.
+  /** @type {{ promise: Promise<unknown>, changes: number }|null} */
+  let pending = null;
+  /**
+   * @param {AbortSignal|undefined} signal
+   * @returns {Promise<{ ok: true } | { ok: false, reason: string }>}
+   */
+  async function askProbe(signal) {
+    if (pending && pending.changes === serverChanges()) return { ok: false, reason: STILL_LOADING_REASON };
+    const promise = Promise.resolve().then(() => probe(signal));
+    const mine = { promise, changes: serverChanges() };
+    pending = mine;
+    try { return await promise; } finally { if (pending === mine) pending = null; }
+  }
   /**
    * The editor's path (C5): the changed members from the outline, as `prepareSyntactic`, with
    * the environment's resolver (Roslyn's call hierarchy plus ./editor-extras.js). When the
@@ -469,7 +510,8 @@ function createCsharpProvider({ probe = () => editorCsharpProbe(), serverChanges
     if (!ctx.hooks.services || !ctx.hooks.makeResolver) return prepareSyntactic(ctx);
     if (!ready()) {
       readyAt = null;
-      const answer = await probe();
+      const answer = await askProbe(ctx.signal);
+      require('../../engine/cancellation').throwIfCancelled(ctx.signal);
       if (answer.ok) readyAt = serverChanges();
       else {
         ctx.warnings.push(`${NO_HIERARCHY_NOTE} (${answer.reason})`);
@@ -507,6 +549,6 @@ const csharpProvider = createCsharpProvider();
 
 module.exports = {
   csharpProvider, createCsharpProvider, editorCsharpProbe, csharpSpec, collectCsharpSymbols, pairCsharpOverloads, renderCsharpSymbolSig,
-  prepareSyntactic, indexRepository, indexRepositoryWithin, projectFacts, csharpProjectDir, NOT_SOURCE_DIRS, PROBE_DEADLINE_MS, NO_HIERARCHY_NOTE,
+  prepareSyntactic, indexRepository, indexRepositoryWithin, projectFacts, csharpProjectDir, NOT_SOURCE_DIRS, PROBE_DEADLINE_MS, NO_HIERARCHY_NOTE, STILL_LOADING_REASON,
   createServerStateTracker, SERVER_STATE_LOADED,
 };

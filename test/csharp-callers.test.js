@@ -242,6 +242,42 @@ test('S8: an incomplete answer is lasting for dispatch, value-use, property and 
   assert.deepEqual([ok.complete, ok.lasting], [true, false]);
 });
 
+test('S7a: callers in files outside the repository are counted: an incomplete answer, lasting', async () => {
+  const outside = row('/elsewhere/Other.cs', 'Other.Go()', 0, [{ start: 1, end: 2 }]);
+  const answers = new Map([[`${LIB_FILE}#${USE}`, [outside, row(PROGRAM_FILE, 'Program.<top-level-statements-entry-point>', 0, [])]]]);
+  const { resolver } = resolverWith(answers);
+  const answer = await resolver.incomingWithStatus(LIB_FILE, USE);
+  assert.equal(answer.complete, false);
+  assert.match(String(answer.reason), /1 caller\(s\) in files outside the repository are not listed/);
+  assert.deepEqual(answer.callers.map((c) => c.label), ['Program.cs']);
+  // A property: its own reason stays, with the count.
+  const { queryHierarchy, applyCallerExtras } = require('../src/languages/callers-from-hierarchy');
+  const doubled = posOf('Lib/Shapes.cs', 'property', 'Doubled', 'Local');
+  const services = /** @type {any} */ (fakeServices(new Map([[`${LIB_FILE}#${doubled}`, [outside]]])));
+  const extras = createCsharpEditorExtras({ readText: textOf, repoRoot: ROOT, indexOf: async () => index });
+  const query = extras.query(LIB_FILE, doubled);
+  const askAt = (/** @type {string} */ f, /** @type {number} */ p) => queryHierarchy(services, { file: f, side: 'head' }, p);
+  const r = await applyCallerExtras(await askAt(LIB_FILE, doubled), { extras, query, file: LIB_FILE, pos: doubled, withTests: true, askAt });
+  assert.match(String(r.answer.reason), new RegExp(`^${PROPERTY_REASON.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}; 1 caller\\(s\\) in files outside`));
+  assert.equal(r.lasting, true);
+});
+
+test('a failed dispatch lookup is not kept for the analysis: the next query (a caller retry) asks again', async () => {
+  let asks = 0;
+  const extras = createCsharpEditorExtras({
+    readText: textOf, repoRoot: ROOT,
+    indexOf: async () => { asks++; if (asks === 1) throw new Error('worker died'); return index; },
+  });
+  const first = await extras.query(LIB_FILE, IMPL_M).moreCallers?.();
+  assert.match(String(first && first.incompleteReason), new RegExp(NO_INDEX_REASON.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.equal(first && first.lasting, undefined);
+  assert.ok((await extras.callerTargets?.(LIB_FILE, IMPL_M) || []).length > 0, 'the interface member is a target now');
+  assert.equal(asks, 2, 'asked again, no clear() between');
+  const again = await extras.query(LIB_FILE, IMPL_M).moreCallers?.();
+  assert.ok(!String(again && again.incompleteReason).startsWith(NO_INDEX_REASON));
+  assert.equal(asks, 2, 'a good answer is kept');
+});
+
 test('M1: a caller row is named and placed as the outline member, never with Roslyn\'s qualified name', async () => {
   // Roslyn's form as VS Code labels it: the containing type's full name, then the item's name.
   const answers = new Map([[`${LIB_FILE}#${IMPL_M}`, [row(LIB_FILE, 'Lib.Impl.Impl.Use()', USE, [site(LIB, '{ M(1); }', 'M')])]], [`${LIB_FILE}#${IFOO_M}`, [
@@ -485,6 +521,78 @@ test('M4: a server state change after a positive probe: the next analysis probes
   assert.equal(probes, 2, 'asked again after the change');
   await provider.prepare(ctxWith(hooks, []));
   assert.equal(probes, 2, 'no change since: kept');
+});
+
+/** A fake C# extension: `exports.initializationFinished` resolves when `finish()` is called. */
+function fakeExtension({ active = true } = {}) {
+  /** @type {() => void} */
+  let finish = () => {};
+  const done = new Promise((resolve) => { finish = () => resolve(undefined); });
+  const ext = {
+    isActive: active, activated: 0,
+    async activate() { ext.activated++; ext.isActive = true; },
+    exports: { initializationFinished: () => done },
+  };
+  return { ext, finish: () => finish() };
+}
+
+test('S6: an installed but inactive C# extension is activated, then waited for', async () => {
+  const { editorCsharpProbe } = require('../src/languages/csharp/provider');
+  const { ext, finish } = fakeExtension({ active: false });
+  const tracker = createServerStateTracker();
+  const probing = editorCsharpProbe(5000, tracker, { getExtension: () => ext });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(ext.activated, 1);
+  finish();
+  assert.deepEqual(await probing, { ok: true });
+  assert.deepEqual(await editorCsharpProbe(5000, tracker, { getExtension: () => null }), { ok: false, reason: 'the C# extension (ms-dotnettools.csharp) is not installed' });
+});
+
+test('S6: an aborted analysis rejects as cancelled, never "no"; an aborted-before signal too', async () => {
+  const { editorCsharpProbe } = require('../src/languages/csharp/provider');
+  const { isAnalysisCancelled } = require('../src/engine/cancellation');
+  const { ext } = fakeExtension();
+  const controller = new AbortController();
+  const probing = editorCsharpProbe(5000, createServerStateTracker(), { getExtension: () => ext, signal: controller.signal });
+  await new Promise((r) => setImmediate(r));
+  controller.abort();
+  await assert.rejects(probing, (e) => isAnalysisCancelled(e));
+  await assert.rejects(editorCsharpProbe(5000, createServerStateTracker(), { getExtension: () => ext, signal: controller.signal }), (e) => isAnalysisCancelled(e));
+  // Through the provider: a cancelled prepare rejects, with no syntactic fallback.
+  const provider = createCsharpProvider({ probe: (signal) => editorCsharpProbe(5000, createServerStateTracker(), { getExtension: () => ext, signal }) });
+  const second = new AbortController();
+  const hooks = { services: {}, makeResolver: () => ({}) };
+  const preparing = provider.prepare({ ...ctxWith(hooks, []), signal: second.signal });
+  await new Promise((r) => setImmediate(r));
+  second.abort();
+  await assert.rejects(preparing, (e) => isAnalysisCancelled(e));
+});
+
+test('S6: a wait still going is not repeated: the next analysis falls back at once; after a state change it waits again', async () => {
+  let probes = 0;
+  let changes = 0;
+  /** @type {Array<(a: any) => void>} */
+  const resolvers = [];
+  const provider = createCsharpProvider({ probe: () => { probes++; return new Promise((resolve) => { resolvers.push(resolve); }); }, serverChanges: () => changes });
+  const hooks = { services: {}, makeResolver: () => ({ kind: 'editor' }) };
+  const first = provider.prepare(ctxWith(hooks, []));
+  await new Promise((r) => setImmediate(r));
+  /** @type {string[]} */
+  const warnings = [];
+  const second = await provider.prepare(ctxWith(hooks, warnings));
+  assert.equal(probes, 1, 'no second wait');
+  assert.ok(warnings.some((w) => w.startsWith(NO_HIERARCHY_NOTE) && w.includes('still loading the projects')), warnings.join('\n'));
+  assert.equal(/** @type {any} */ (second.units[0].resolver).callersLowerBound, true);
+  changes++;
+  const third = provider.prepare(ctxWith(hooks, []));
+  await new Promise((r) => setImmediate(r));
+  assert.equal(probes, 2, 'a state change since: waits again');
+  resolvers[1]({ ok: true });
+  resolvers[0]({ ok: true });
+  await Promise.all([first, third]);
+  // The settled yes is used, no more waits.
+  await provider.prepare(ctxWith(hooks, []));
+  assert.equal(probes, 2);
 });
 
 test('M4: the state tracker waits for "loaded" after a reload, not the one-shot initial load', async () => {
