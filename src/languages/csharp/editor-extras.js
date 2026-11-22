@@ -12,9 +12,13 @@
 //   shared step asks Roslyn there too and labels those rows "through IFoo"; a caller reached
 //   both ways is one unlabelled row. Such an answer is always incomplete (owner, 2026-11-21:
 //   other implementations may be what those calls run), with the index's reasons. A generic
-//   interface's member is not asked (its calls on other type arguments would be listed): a
-//   reason. Overrides: Roslyn's base-method callers are not asked; an override, a virtual
-//   method or one hiding a base member is incomplete with the index's reason.
+//   interface's member is not asked (its calls on other type arguments would be listed): the
+//   index's calls through it, whose receiver's type arguments may be this implementation's,
+//   are labelled rows from `moreCallers` (S3, owner 2026-11-22), the CLI's rows. An explicit
+//   implementation (`void IFoo.M()`) is not asked itself (S4: as primary constructors); its
+//   interface member is, as a target, or, generic, gives the index's rows. Overrides:
+//   Roslyn's base-method callers are not asked; an override, a virtual method or one hiding
+//   a base member is incomplete with the index's reason.
 // - The index is built once per session in a worker thread (`sessionIndex`, ./index-pool.js),
 //   from the repository's C# files in the working tree within the editor's bound (8 000
 //   files / 96 MiB; past it, no index), and rebuilt when HEAD or the working tree's C# files
@@ -82,13 +86,14 @@ const TOP_LEVEL_CALLER = /<top-level-statements-entry-point>/;
  * The outline member whose name is at `pos` (its `selectionRange.start`), with its type's
  * simple name; null when none. Pure.
  * @param {import('./outline').CsharpSymbol[]} symbols @param {number} pos
- * @returns {{ member: string, name: string, className: string|null }|null}
+ * `explicit`: an explicit interface implementation (`void IFoo.M()`; `name` is `M`).
+ * @returns {{ member: string, name: string, className: string|null, explicit: boolean }|null}
  */
 function memberAtIn(symbols, pos) {
   for (const s of symbols) {
     if (s.csharp && s.selectionRange.start === pos) {
       const info = s.csharp;
-      return { member: info.member, name: info.decl ? info.decl.name : info.typeName || s.name, className: info.typeName };
+      return { member: info.member, name: info.decl ? info.decl.name : info.typeName || s.name, className: info.typeName, explicit: !!(info.decl && info.decl.explicitInterface) };
     }
     if (s.children && s.children.length) {
       const inner = memberAtIn(/** @type {any} */ (s.children), pos);
@@ -211,7 +216,10 @@ function createCsharpEditorExtras({
     return top ? top.selectionRange.start : 0;
   };
   // Cache: per target (file#pos), its dispatch lookup (owner: these extras; cleared by `clear()`).
-  /** @type {Map<string, Promise<{ targets: import('../types').CallerTarget[], reasons: string[] }>>} */
+  // `transient`: a reason comes from a missing or failed index, or from an index older than
+  // the text (S8: such an answer is not kept by the resolver, so it is asked again); the
+  // index's own dispatch reasons (an interface, a base, a generic interface) are lasting.
+  /** @type {Map<string, Promise<{ targets: import('../types').CallerTarget[], reasons: string[], rows: CallerRow[], transient?: boolean }>>} */
   const dispatches = new Map();
   /** @param {string} file @param {number} pos */
   const dispatchOf = (file, pos) => {
@@ -220,37 +228,79 @@ function createCsharpEditorExtras({
     if (!d) {
       d = (async () => {
         const m = memberAt(file, pos);
-        if (!m || m.member !== 'method') return { targets: [], reasons: [] };
+        /** @type {CallerRow[]} */
+        const none = [];
+        if (!m || m.member !== 'method') return { targets: [], reasons: [], rows: none };
         let idx;
         try { idx = await getIndex(); } catch (e) {
           // No index: past the editor's bound, the worker failed or timed out (S1, S5).
           const message = e && /** @type {any} */ (e).message;
           trace(`csharp: syntax index failed: ${message}`);
-          return { targets: [], reasons: [`${NO_INDEX_REASON} (${message})`] };
+          return { targets: [], reasons: [`${NO_INDEX_REASON} (${message})`], rows: none, transient: true };
         }
-        if (!idx) return { targets: [], reasons: [NO_INDEX_REASON] };
+        if (!idx) return { targets: [], reasons: [NO_INDEX_REASON], rows: none, transient: true };
         let found;
         try { found = await idx.dispatchOf({ file, pos, name: m.name, className: m.className }); } catch (e) {
           const message = e && /** @type {any} */ (e).message;
           trace(`csharp: dispatch lookup failed at ${relOf(file)}@${pos}: ${message}`);
-          return { targets: [], reasons: [`${LOOKUP_FAILED_REASON}: ${message}`] };
+          return { targets: [], reasons: [`${LOOKUP_FAILED_REASON}: ${message}`], rows: none, transient: true };
         }
-        if (!found) return { targets: [], reasons: [NOT_INDEXED_REASON] };
+        if (!found) return { targets: [], reasons: [NOT_INDEXED_REASON], rows: none, transient: true };
         // A target is asked only where the file's current text has that member (M3): an
         // index older than the text would send Roslyn into another member.
         /** @type {import('../types').CallerTarget[]} */
         const targets = [];
         const reasons = [...found.reasons];
+        let transient = false;
         for (const t of found.targets) {
           const there = memberAt(t.file, t.pos);
           if (there && there.member === 'method' && there.name === m.name) targets.push(t);
-          else reasons.push(`${STALE_TARGET_REASON} (${t.text || relOf(t.file)})`);
+          else { reasons.push(`${STALE_TARGET_REASON} (${t.text || relOf(t.file)})`); transient = true; }
         }
-        return { targets, reasons };
-      })().catch((e) => ({ targets: [], reasons: [`${LOOKUP_FAILED_REASON}: ${e && /** @type {any} */ (e).message}`] }));
+        // S3: the index's calls through a generic interface member, as the CLI lists them; a
+        // row kept only where the current text still has that member (its label at its name)
+        // or the module row there.
+        const { isTestFile } = require('../../engine/diff');
+        /** @type {CallerRow[]} */
+        const rows = [];
+        let stale = 0;
+        let unread = 0;
+        for (const c of /** @type {import('../types').SyntacticCaller[]} */ (found.rows || [])) {
+          const members = membersOf(c.file);
+          if (!members) { unread++; continue; }
+          const same = members.some((x) => x.namePos === c.pos && x.label === c.label);
+          if (!same && c.pos !== modulePosOf(c.file)) { stale++; continue; }
+          rows.push({
+            file: c.file, label: c.label, pos: c.pos, sites: c.callSites.length, callSites: c.callSites,
+            test: repoRoot ? isTestFile(repoRoot, c.file) : false,
+            ...(c.via ? { via: c.via, text: c.text } : {}),
+          });
+        }
+        if (stale) {
+          reasons.push(`${stale} caller(s) through a generic interface are not where the C# syntax index has them (the file changed since the index was built) and are not listed`);
+          transient = true;
+        }
+        if (unread) {
+          reasons.push(`${unread} caller(s) through a generic interface are in files that cannot be read now and are not listed`);
+          transient = true;
+        }
+        return { targets, reasons, rows, transient };
+      })().catch((e) => ({ targets: [], reasons: [`${LOOKUP_FAILED_REASON}: ${e && /** @type {any} */ (e).message}`], rows: [], transient: true }));
       dispatches.set(id, d);
+      // A failed or stale answer is one query's (M1): its `callerTargets` and `moreCallers`
+      // see the same result; the next query for the position (a caller retry run does not
+      // call `clear()`) drops it and asks again (`forgetTransient`).
+      const mine = d;
+      mine.then((r) => { if (r.transient && dispatches.get(id) === mine) transientIds.add(id); });
     }
     return d;
+  };
+  /** @type {Set<string>} ids in `dispatches` whose settled lookup is transient */
+  const transientIds = new Set();
+  /** @param {string} file @param {number} pos */
+  const forgetTransient = (file, pos) => {
+    const id = `${file}#${pos}`;
+    if (transientIds.delete(id)) dispatches.delete(id);
   };
   /** @param {string} file */
   const outsideRepo = (file) => {
@@ -283,19 +333,30 @@ function createCsharpEditorExtras({
   return {
     suppressedReason: 'not computed: the C# language server is not asked about this member',
     droppedStat: 'valueUsesDropped',
+    // Source-generated callers do not come and go within an analysis (S7b).
+    unreadableLasting: true,
     callerTargets: async (file, pos) => (await dispatchOf(file, pos)).targets,
     explainIncomplete(reason, file, pos) {
       if (reason !== 'no call hierarchy item') return null;
       return memberAt(file, pos) ? NOT_LOADED_REASON : null;
     },
     query(file, pos) {
+      // A query starts before its `callerTargets` (the resolver, the harness): a failed
+      // lookup of an earlier query is asked again; within this query it is shared (M1).
+      forgetTransient(file, pos);
       const m = memberAt(file, pos);
       const notComputed = m && Object.hasOwn(NOT_COMPUTED, m.member) ? /** @type {Record<string, string>} */ (NOT_COMPUTED)[m.member] : null;
       const primary = !!m && m.member === 'primary-constructor';
+      // S4: an explicit implementation is called only through its interface (Roslyn's item
+      // there is not known): its interface member is asked (`callerTargets`), or, generic,
+      // the index's rows are its callers; the member itself is not asked.
+      const explicit = !!m && m.member === 'method' && m.explicit;
       let sawValueUse = false;
       let kept = 0;
+      let outsideCount = 0;
+      const outsideReason = () => `${outsideCount} caller(s) in files outside the repository are not listed`;
       return {
-        isSuppressed: () => !!notComputed || primary,
+        isSuppressed: () => !!notComputed || primary || explicit,
         filter(callers) {
           /** @type {Map<string, string|null>} */
           const texts = new Map();
@@ -317,6 +378,7 @@ function createCsharpEditorExtras({
             }
             out.push(row);
           }
+          outsideCount = outside;
           if (outside) trace(`csharp: dropped ${outside} caller(s) outside the repository`);
           if (sawValueUse) trace(`csharp: method group use(s) among ${callers.length} caller(s) of ${file}@${pos}`);
           // Rows that land on one member (a method and its local functions, a property's
@@ -326,33 +388,45 @@ function createCsharpEditorExtras({
           kept = merged.length;
           return { kept: merged, dropped };
         },
+        // `lasting` (S8): the reason holds for the analysis (the member's kind, its dispatch,
+        // a value use), so the resolver keeps the answer; a server reload or a missing,
+        // failed or stale index is not lasting, and the query is asked again.
         async moreCallers() {
-          if (notComputed) return { callers: [], incompleteReason: notComputed };
+          if (notComputed) return { callers: [], incompleteReason: notComputed, lasting: true };
           if (primary && m) return primaryConstructorCallers(file, pos, m);
           // Asked after the query answered: a reload that began before it may have cut it short.
           if (!serverSteady()) return { callers: [], incompleteReason: SERVER_CHANGED_REASON };
-          if (m && (m.member === 'property' || m.member === 'indexer')) return { callers: [], incompleteReason: PROPERTY_REASON };
+          if (m && (m.member === 'property' || m.member === 'indexer')) {
+            return { callers: [], incompleteReason: [PROPERTY_REASON, ...(outsideCount ? [outsideReason()] : [])].join('; '), lasting: true };
+          }
           /** @type {string[]} */
           const reasons = [];
           if (sawValueUse) reasons.push(VALUE_USE_REASON);
+          if (outsideCount) reasons.push(outsideReason());
           const d = await dispatchOf(file, pos);
           reasons.push(...d.reasons);
           const unknown = d.reasons.some((r) => r.startsWith(NO_INDEX_REASON) || r === NOT_INDEXED_REASON || r.startsWith(LOOKUP_FAILED_REASON));
-          if (!kept && d.reasons.length && !unknown) reasons.push(EMPTY_ANSWER_REASON);
-          return { callers: [], incompleteReason: reasons.length ? reasons.join('; ') : null };
+          // An explicit implementation's own query was not asked: an empty answer is its targets'.
+          // An empty answer may hide a failed query (S1): not lasting, a caller retry asks again.
+          const emptyGuard = !kept && (!explicit || d.targets.length > 0) && d.reasons.length > 0 && !unknown;
+          if (emptyGuard) reasons.push(EMPTY_ANSWER_REASON);
+          // An explicit implementation is never complete: its calls are its interface's.
+          if (explicit && !reasons.length) reasons.push(NOT_INDEXED_REASON);
+          if (!reasons.length) return { callers: d.rows, incompleteReason: null };
+          return { callers: d.rows, incompleteReason: reasons.join('; '), ...(d.transient || emptyGuard ? {} : { lasting: true }) };
         },
       };
     },
     // Roslyn answers for the loaded solution, tests included; calls through interfaces are
     // the dispatch reasons'.
     unseenUsers: async () => null,
-    clear() { outlines.clear(); membersByFile.clear(); dispatches.clear(); recheckSessionIndexes(); },
+    clear() { outlines.clear(); membersByFile.clear(); dispatches.clear(); transientIds.clear(); recheckSessionIndexes(); },
   };
 
   /**
    * A primary constructor's callers from the syntax index, always incomplete.
    * @param {string} file @param {number} pos @param {{ name: string, className: string|null }} m
-   * @returns {Promise<{ callers: CallerRow[], incompleteReason: string }>}
+   * @returns {Promise<{ callers: CallerRow[], incompleteReason: string, lasting?: boolean }>}
    */
   async function primaryConstructorCallers(file, pos, m) {
     /** @type {any} */
@@ -376,7 +450,8 @@ function createCsharpEditorExtras({
       test: repoRoot ? isTestFile(repoRoot, c.file) : false,
       ...(c.via ? { via: c.via, text: c.text } : {}),
     }));
-    return { callers, incompleteReason: [PRIMARY_CONSTRUCTOR_REASON, answer.incompleteReason].filter(Boolean).join('; ') };
+    // The index answered: its reasons hold for this tree state (S8); a failed index above does not.
+    return { callers, incompleteReason: [PRIMARY_CONSTRUCTOR_REASON, answer.incompleteReason].filter(Boolean).join('; '), lasting: true };
   }
 }
 

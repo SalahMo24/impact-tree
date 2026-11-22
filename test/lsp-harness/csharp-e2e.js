@@ -41,7 +41,7 @@ async function main() {
   const { analyze } = require('../../src/engine/analyze');
   const registry = require('../../src/languages');
   const { createCsharpProvider } = require('../../src/languages/csharp/provider');
-  const csharp = createCsharpProvider({ probe: async () => ({ ok: true }) });
+  const csharp = createCsharpProvider({ load: async () => ({ ok: true }) });
   const restore = registry.useLanguagesForTest(registry.registeredLanguages().map((l) => (l.id === 'csharp' ? csharp : l)));
   const t0 = Date.now();
   const server = createRoslynServices({ repo, solution: opt.solution, ...(opt.tools ? { tools: opt.tools } : {}) });
@@ -90,7 +90,7 @@ async function main() {
       if (!labelOf.has(id)) labelOf.set(id, c.label);
       return id;
     }));
-    const totals = { members: 0, editor: 0, syntax: 0, both: 0, labelled: 0, editorComplete: 0, syntaxComplete: 0, sameLabel: 0, longestLabel: 0 };
+    const totals = { members: 0, editor: 0, syntax: 0, both: 0, labelled: 0, editorComplete: 0, syntaxComplete: 0, sameLabel: 0, longestLabel: 0, unreadable: 0, outsideRepo: 0 };
     for (const key of new Set([...E.keys(), ...S.keys()])) {
       const e = E.get(key);
       const s = S.get(key);
@@ -114,6 +114,10 @@ async function main() {
       for (const x of en) if (!sn.has(x)) console.log(`  editor only: ${x} ${labelOf.get(x)}`);
       for (const x of sn) if (!en.has(x)) console.log(`  syntax only: ${x} ${labelOf.get(x)}`);
       if (e && !e.callersComplete) console.log(`  editor reason: ${String(e.callersIncompleteReason).slice(0, 400)}`);
+      // The unreadable (S7b) and outside-the-repository (S7a) counts, from the reasons.
+      const reason = String((e && e.callersIncompleteReason) || '');
+      totals.unreadable += Number((/callers in (\d+) document\(s\) that are not files on disk/.exec(reason) || [])[1] || 0);
+      totals.outsideRepo += Number((/(\d+) caller\(s\) in files outside the repository/.exec(reason) || [])[1] || 0);
     }
     console.log(`\ntotals ${JSON.stringify(totals)}; wall ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   } finally {

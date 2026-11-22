@@ -362,6 +362,54 @@ test('callers are rows with offsets, deduplicated, and test callers marked', asy
   assert.equal(services.isWarm(), true);
 });
 
+test('S7b: callers in files that cannot be read (not on disk, not a file: URI) are left out and counted', async (t) => {
+  const { create, doc, dir } = setup(t, (name) => {
+    if (name === 'vscode.prepareCallHierarchy') return [{}];
+    if (name === 'vscode.provideIncomingCalls') {
+      const from = { uri: { scheme: 'file', fsPath: doc.file }, name: 'other', selectionRange: { start: { line: 1, character: 16 } } };
+      const generated = { uri: { scheme: 'roslyn-source-generated', fsPath: '/Gen.g.cs' }, name: 'Gen', selectionRange: range(0, 0, 0, 1) };
+      const missing = { uri: { fsPath: path.join(dir, 'gone.ts') }, name: 'gone', selectionRange: range(0, 0, 0, 1) };
+      return [{ from, fromRanges: [] }, { from: generated, fromRanges: [] }, { from: missing, fromRanges: [] }];
+    }
+    return [];
+  });
+  const services = create();
+  const query = await queryHierarchy(services, doc, 16);
+  assert.ok(query.ready);
+  assert.deepEqual([query.rows.map((r) => r.label), query.unreadable && query.unreadable.length], [['other'], 2]);
+  const state = await callersFromHierarchy(services, { doc, pos: 16 });
+  assert.deepEqual([state.state, state.complete, state.callers.length], ['resolved', false, 1]);
+  assert.match(state.reason, /^callers in 2 document\(s\) that are not files on disk/);
+});
+
+test('PR 2 fixes review M1: a caller in Impact Tree\'s own base-side copy is left out uncounted; jdtls\' copy of it is left out by Java\'s extras; a generated caller counts', async (t) => {
+  const { applyCallerExtras, unreadableReason } = require('../src/languages/callers-from-hierarchy');
+  const { createJavaEditorExtras } = require('../src/languages/java/editor-extras');
+  const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-scratch-'));
+  t.after(() => fs.rmSync(scratchDir, { recursive: true, force: true }));
+  /** @type {Array<{ uri: object, name: string }>} */
+  let listed = [];
+  const { create, doc } = setup(t, (name) => {
+    if (name === 'vscode.prepareCallHierarchy') return [{}];
+    if (name === 'vscode.provideIncomingCalls') return listed.map((from) => ({ from: { ...from, selectionRange: range(0, 0, 0, 1) }, fromRanges: [] }));
+    return [];
+  });
+  const services = create({ scratchDir });
+  const own = { uri: { scheme: 'file', fsPath: path.join(scratchDir, 'base-abc', 'T.java') }, name: 'user' };
+  const ghost = { uri: { scheme: 'file', fsPath: '/ws/.jdtls/jdt.ls-java-project/src/p/T.java' }, name: 'user' };
+  const generated = { uri: { scheme: 'roslyn-source-generated', toString: () => 'roslyn-source-generated://g/Gen.g.cs' }, name: 'Gen' };
+  const real = { uri: { scheme: 'file', fsPath: doc.file }, name: 'm' };
+  const base = { query: null, file: doc.file, pos: 16, withTests: true };
+  listed = [real, own, ghost];
+  const java = await applyCallerExtras(await queryHierarchy(services, doc, 16), { ...base, extras: createJavaEditorExtras() });
+  assert.ok(!java.stale);
+  assert.deepEqual([java.answer.complete, java.answer.callers.map((c) => c.label)], [true, ['m']], 'Java: both copies left out, complete');
+  listed = [real, own, generated];
+  const gen = await applyCallerExtras(await queryHierarchy(services, doc, 16), { ...base, extras: createJavaEditorExtras() });
+  assert.ok(!gen.stale);
+  assert.deepEqual([gen.answer.complete, gen.answer.reason], [false, unreadableReason(1)], 'a generated document counts');
+});
+
 // VS Code's executeDocumentSymbolProvider answers objects with both forms: a `location`
 // holding the whole declaration, and the hierarchical `range` / `selectionRange`. The name
 // callers are asked at is `selectionRange`; reading `location` put it at `func`.

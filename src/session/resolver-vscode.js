@@ -33,6 +33,8 @@ function createVscodeResolver({
     incomingCalls: 0, incomingMs: 0, cacheHits: 0, warmupRetries: 0,
     skipped: 0, resolvedEmpty: 0, cqrsEdges: 0, cqrsSuppressed: 0, durations: [], emptyAt: [],
     inheritedDropped: 0, unseenUsers: 0, valueUsesDropped: 0, callerTargetQueries: 0, pathEdgeQueries: 0,
+    // Caller-target asks served by the target memo (`askTarget`) instead of the server.
+    targetAnswersShared: 0,
   });
   const stats = initialStats();
   // Validates the deadlines and budgets (see createVscodeServices for each one's range and
@@ -44,16 +46,28 @@ function createVscodeResolver({
   });
   /** Every file this resolver is asked about is the one on disk. */
   const headDoc = (file) => ({ file, side: 'head' });
-  // Cache: complete caller answers (`cache`) and how each query ended (`queryStates`).
-  // Owner: this resolver, which the session keeps for the window (`session.resolver`,
-  // created in src/session/readiness.js). Key: target file#position and whether tests were
-  // searched. The repository, TypeScript module and the inherited-member setting are
-  // fixed when the resolver is created, and files are assumed not to change during an
-  // analysis. Invalidation: the session calls `clear()` at the start of every local
-  // analysis; `invalidate(file)` drops the entries naming a file. An incomplete answer
-  // is never cached. Disposal: `session.dispose()` drops the resolver and with it both maps.
+  // Cache: caller answers that hold for the analysis (`cache`) and how each query ended
+  // (`queryStates`). Owner: this resolver, which the session keeps for the window
+  // (`session.resolver`, created in src/session/readiness.js). Key: target file#position and
+  // whether tests were searched. The repository, TypeScript module and the inherited-member
+  // setting are fixed when the resolver is created, and files are assumed not to change
+  // during an analysis. Invalidation: the session calls `clear()` at the start of every
+  // local analysis (not before a caller retry run); `invalidate(file)` drops the entries
+  // naming a file. A cached answer is complete, or answered but incomplete with a lasting
+  // reason (`applyCallerExtras`' `lasting`: the language's `moreCallers` said so, S8); any
+  // other incomplete answer is never cached, so a retry run asks it again. Disposal:
+  // `session.dispose()` drops the resolver and with it these maps.
+  /** @type {Map<string, import('../engine/caller-contract').CallerAnswer>} */
   const cache = new Map();
   const queryStates = new Map();
+  // Memo: the call-hierarchy answers at caller targets (`askAt`), by file#pos, shared while
+  // in flight (many implementations of one interface member ask the same position). Only
+  // answered queries are kept; a failed one is dropped once settled, so it is asked again.
+  // Owner: this resolver. Invalidation: `clear()`, `beginRetry()` (a caller retry run asks
+  // its targets again: an answer given while the server reloaded may be partial) and
+  // `invalidate(file)`. Disposal: with the resolver.
+  /** @type {Map<string, Promise<import('../languages/callers-from-hierarchy').HierarchyQuery>>} */
+  const targetAnswers = new Map();
   // Clearing starts a new analysis. The editor cannot cancel an older query, so its
   // late answer must not repopulate these maps after the replacement has cleared them.
   let generation = 0;
@@ -89,8 +103,30 @@ function createVscodeResolver({
     return warm;
   }
 
-  // `complete: false` means the query did not finish, so `callers` may be missing some or
-  // all of them. Only complete answers are cached, so asking again can still succeed.
+  /**
+   * A caller target's call-hierarchy answer, memoised for the analysis (`targetAnswers`).
+   * @param {string} file @param {number} pos
+   * @param {{ retryRejected: ((reason: string) => boolean)|null, gate: any }} options
+   * @returns {Promise<import('../languages/callers-from-hierarchy').HierarchyQuery>}
+   */
+  function askTarget(file, pos, options) {
+    const id = `${file}#${pos}`;
+    const had = targetAnswers.get(id);
+    if (had) { stats.targetAnswersShared++; return had; }
+    // Server queries only: a memo hit is `targetAnswersShared`.
+    stats.callerTargetQueries++;
+    const asked = queryHierarchy(services, headDoc(file), pos, options);
+    targetAnswers.set(id, asked);
+    // A failed answer is not kept (this entry only: `clear()` may have replaced it).
+    const drop = () => { if (targetAnswers.get(id) === asked) targetAnswers.delete(id); };
+    asked.then((a) => { if (!a.ready) drop(); }, drop);
+    return asked;
+  }
+
+  // `complete: false` means the query did not finish or cannot list every caller, so
+  // `callers` may be missing some or all of them. Complete answers are cached, and
+  // incomplete ones only when their reason is lasting (S8), so asking again can still
+  // succeed for any other.
   /** @returns {Promise<import('../engine/caller-contract').CallerAnswer>} */
   async function incomingWithStatus(file, pos, withTests = true) {
     const startedGeneration = generation;
@@ -98,15 +134,20 @@ function createVscodeResolver({
     const languageExtras = extrasFor(file);
     const extras = languageExtras?.query(file, pos) ?? null;
     const key = `${withTests ? 'A' : 'P'}${file}#${pos}`;
-    if (cache.has(key)) { stats.cacheHits++; return { callers: cache.get(key), complete: true }; }
+    const cached = cache.get(key);
+    if (cached) { stats.cacheHits++; return { ...cached, callers: cached.callers.slice() }; }
     // A production-only answer is the all-callers answer without its test callers, so a
     // query the resolve phase already made (the impact walk asks every changed function
-    // again, without tests) is served from it: a finished one by filtering, an unfinished
-    // one by repeating how it ended. Asking the server again would cost the same round
-    // trip, and for a query that timed out, the same timeout a second time.
+    // again, without tests) is served from it: a cached one (complete, or incomplete for a
+    // lasting reason, which it keeps) by filtering, an unfinished one by repeating how it
+    // ended. Asking the server again would cost the same round trip, and for a query that
+    // timed out, the same timeout a second time. An incomplete A keeps its reasons, also one
+    // only a test caller caused (a value use, an outside-repo caller): P may read more
+    // incomplete than asked alone would; never less.
     if (!withTests) {
+      const all = cache.get(`A${file}#${pos}`);
+      if (all) { stats.cacheHits++; return { ...all, callers: all.callers.filter((c) => !c.test) }; }
       const allKey = `A${file}#${pos}`;
-      if (cache.has(allKey)) { stats.cacheHits++; return { callers: cache.get(allKey).filter((c) => !c.test), complete: true }; }
       const ended = queryStates.get(allKey);
       if (ended && !ended.ready) {
         stats.cacheHits++;
@@ -136,11 +177,10 @@ function createVscodeResolver({
     // `filter` drops what the server over-reports; `moreCallers` adds what it cannot see.
     const applied = await applyCallerExtras(answer, {
       extras: languageExtras, query: extras, file, pos, withTests,
-      askAt: (f, p) => queryHierarchy(services, headDoc(f), p, { retryRejected, gate }),
+      askAt: (f, p) => askTarget(f, p, { retryRejected, gate }),
       isStale: () => startedGeneration !== generation,
     });
     if (applied.stale) return staleAnswer();
-    stats.callerTargetQueries += applied.targetsAsked;
     const result = applied.answer;
     // `applied.ready`: every query answered (the main one, and each caller target's).
     if (!applied.ready) {
@@ -155,7 +195,8 @@ function createVscodeResolver({
     // Python's callers that only use the function as a value.
     if (extras) stats[languageExtras ? languageExtras.droppedStat : 'inheritedDropped'] += applied.dropped;
     stats.cqrsEdges += applied.added;
-    if (result.complete) cache.set(key, result.callers);
+    // Kept: a complete answer, or an incomplete one whose reason lasts the analysis (S8).
+    if (result.complete || applied.lasting) cache.set(key, { ...result, callers: result.callers.slice() });
     return result;
   }
 
@@ -226,12 +267,21 @@ function createVscodeResolver({
     invalidate(file) {
       for (const k of [...cache.keys()]) if (k.includes(file)) cache.delete(k);
       for (const k of [...queryStates.keys()]) if (k.slice(1).startsWith(`${file}#`)) queryStates.delete(k);
+      for (const k of [...targetAnswers.keys()]) if (k.startsWith(`${file}#`)) targetAnswers.delete(k);
+    },
+    /**
+     * A caller retry run starts (src/session/session.js): the answers stay, but caller
+     * targets are asked again with the queries that did not finish.
+     */
+    beginRetry() {
+      targetAnswers.clear();
     },
     clear() {
       generation++;
       services.beginAnalysis();
       cache.clear();
       queryStates.clear();
+      targetAnswers.clear();
       for (const extras of extrasByLanguage.values()) extras.clear();
       for (const key of Object.keys(stats)) delete stats[key];
       Object.assign(stats, initialStats());

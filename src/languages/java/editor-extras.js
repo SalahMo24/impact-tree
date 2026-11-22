@@ -424,6 +424,8 @@ function createJavaEditorExtras({
     // value uses.
     droppedStat: 'valueUsesDropped',
     retryRejected: isTransientRejection,
+    // jdtls' copy of a deleted base-side copy (ENOENT): not a caller, and not incomplete.
+    ownCopy: (location) => location.split(/[\\/]/).includes(DEFAULT_PROJECT),
     query(file, pos) {
       let sawValueUse = false;
       let kept = 0;

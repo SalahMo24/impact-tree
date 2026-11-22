@@ -47,17 +47,28 @@ function languageServicesOver(server, { repoRoot }) {
     async incomingCalls(item) {
       const calls = await server.incomingCalls(/** @type {any} */ (item));
       if (calls === null) return null;
-      return calls.map((c) => {
+      // A caller in a document that cannot be read (not a `file:` URI, such as a source-generated
+      // document, or not on disk) is left out and listed by its location, as the editor's
+      // `toCallerRows` does (S7b); the server's services already left out their own base-side copies.
+      /** @type {string[]} */
+      const unreadable = [];
+      const rows = [];
+      for (const c of calls) {
+        if ('unreadable' in c) {
+          unreadable.push(c.unreadable.startsWith('file:') ? fileURLToPath(c.unreadable) : c.unreadable);
+          continue;
+        }
         const file = fileURLToPath(c.from.uri);
         // The label as the editor's services build it (src/session/services-vscode.js
         // `toCallerRows`): the item's detail and name joined, so a language's extras see the
         // editor's form.
-        return {
+        rows.push({
           label: c.from.detail ? `${c.from.detail}.${c.from.name}` : c.from.name,
           file, pos: c.from.selectionRange.start, test: isTestFile(repoRoot, file),
           sites: c.fromRanges.length, callSites: c.fromRanges.map((r) => ({ start: r.start, end: r.end })),
-        };
-      });
+        });
+      }
+      return unreadable.length ? { rows, unreadable } : rows;
     },
     async references(doc, pos) {
       const d = headOnly(doc);

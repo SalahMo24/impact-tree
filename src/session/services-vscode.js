@@ -444,25 +444,35 @@ function createVscodeServices({
 
   /**
    * The callers in an incoming-calls answer, as CallerRows. A call whose caller's file
-   * cannot be read is left out, as its position cannot be converted; a malformed answer is
-   * no answer (null).
+   * cannot be read (not on disk, or not a `file:` document, such as a source-generated
+   * one) is left out, as its position cannot be converted, and listed by its location: the
+   * answer is then `{ rows, unreadable }` (S7b, `LanguageServices.incomingCalls`). A caller
+   * in Impact Tree's own base-side copy (under `scratchDir`; a server that opened it, such
+   * as Pylance, can list it after it is removed) is left out without being listed. A
+   * malformed answer is no answer (null).
    * @param {unknown} calls
-   * @returns {import('../engine/caller-contract').CallerRow[]|null}
+   * @returns {import('../engine/caller-contract').CallerRow[]|{ rows: import('../engine/caller-contract').CallerRow[], unreadable: string[] }|null}
    */
   function toCallerRows(calls) {
     if (!Array.isArray(calls)) return null;
     /** @type {import('../engine/caller-contract').CallerRow[]} */
     const rows = [];
+    /** @type {string[]} */
+    const unreadable = [];
     for (const c of calls) {
       const from = isObject(c) ? c.from : null;
-      const f = isObject(from) ? fsPathOf(from.uri) : null;
+      const uri = isObject(from) ? from.uri : null;
+      const notFile = isObject(uri) && typeof uri.scheme === 'string' && uri.scheme !== 'file';
+      const f = notFile ? null : fsPathOf(uri);
       // Only the start of the caller's name is used, so only it is required.
       const start = isObject(from) && isObject(from.selectionRange) ? from.selectionRange.start : null;
-      if (!isObject(from) || !f || !isPosition(start) || typeof from.name !== 'string') return null;
+      if (!isObject(from) || (!f && !notFile) || !isPosition(start) || typeof from.name !== 'string') return null;
       const fromRanges = c.fromRanges === undefined || c.fromRanges === null ? [] : c.fromRanges;
       if (!Array.isArray(fromRanges) || !fromRanges.every(isRange)) return null;
+      if (!f) { unreadable.push(String(uri)); continue; }
+      if (isOwnCopy(f)) continue;
       const offset = positionToOffset(f, start.line, start.character);
-      if (offset == null) continue;
+      if (offset == null) { unreadable.push(f); continue; }
       const callSites = fromRanges.map((r) => ({
         start: positionToOffset(f, r.start.line, r.start.character),
         end: positionToOffset(f, r.end.line, r.end.character),
@@ -473,7 +483,14 @@ function createVscodeServices({
         callSites: /** @type {Array<{ start: number, end: number }>} */ (callSites),
       });
     }
-    return rows;
+    return unreadable.length ? { rows, unreadable } : rows;
+  }
+
+  /** Whether `file` (absolute) is under `scratchDir`: one of Impact Tree's base-side copies. @param {string} file */
+  function isOwnCopy(file) {
+    if (!scratchDir) return false;
+    const rel = path.relative(scratchDir, file);
+    return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
   }
 
   /**
