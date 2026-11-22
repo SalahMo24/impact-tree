@@ -279,6 +279,78 @@ test('M3: by name among overloads is ambiguous: no target, a reason (never compl
   assert.match(String(answer.reason), /2 members named `M`/);
 });
 
+const GEN = `namespace G;
+public sealed class User { } public sealed class Order { }
+public interface IRepo<T> { void Save(T item); }
+public interface IFoo { void Run(int a); }
+public sealed class Multi : IRepo<User>, IRepo<Order> { public void Save(User u) { } public void Save(Order o) { } }
+public sealed class Ex : IFoo { void IFoo.Run(int a) { } }
+public sealed class Wrap<T> : IRepo<T> { void IRepo<T>.Save(T item) { } }
+sealed class U
+{
+    void A(IRepo<User> u) { u.Save(null); }
+    void B(IRepo<Order> o, Multi m) { o.Save(null); m.Save(new Order()); }
+    void C(IFoo f) { f.Run(1); }
+}
+`;
+const GEN_FILE = abs('G/Gen.cs');
+const genIndex = createCsharpSyntacticIndex([{ path: 'G/Gen.cs', text: GEN }], { root: ROOT, scope: 'test' });
+/** @param {Map<string, any[]|null>} answers @param {string} [text] the file's current text */
+function genResolver(answers, text = GEN) {
+  const services = fakeServices(answers);
+  const extras = createCsharpEditorExtras({ readText: (f) => (f === GEN_FILE ? text : null), repoRoot: ROOT, indexOf: async () => genIndex });
+  return { services, resolver: createHierarchyResolver(/** @type {any} */ (services), { extras }) };
+}
+
+test('S3: a generic interface member is not asked; the index\'s calls through it are labelled rows (the CLI\'s), always incomplete', async () => {
+  const saveOrder = at(GEN, 'Save(Order o)');
+  const bPos = at(GEN, 'B(IRepo<Order>');
+  // Roslyn at `Multi.Save(Order)`: the direct call `m.Save(…)` only.
+  const { services, resolver } = genResolver(new Map([[`${GEN_FILE}#${saveOrder}`, [row(GEN_FILE, 'G.U.B(G.IRepo<G.Order>, G.Multi)', bPos, [site(GEN, 'm.Save(', 'Save')])]]]));
+  const answer = await resolver.incomingWithStatus(GEN_FILE, saveOrder);
+  assert.deepEqual(services.asked, [`${GEN_FILE}#${saveOrder}`], 'no position asked at `IRepo<T>.Save`');
+  assert.deepEqual(answer.callers.map((c) => [c.label, c.via, c.text]), [['U.B(IRepo, Multi)', undefined, undefined]], 'reached directly too: the direct row');
+  assert.equal(answer.complete, false);
+  assert.match(String(answer.reason), /implements `IRepo.Save` of a generic interface: calls through it are listed as "through `IRepo`"/);
+  // The other instantiation's overload: its row comes from the index alone, as the CLI's.
+  const saveUser = at(GEN, 'Save(User u)');
+  const user = await genResolver(new Map([[`${GEN_FILE}#${saveUser}`, []]])).resolver.incomingWithStatus(GEN_FILE, saveUser);
+  const cli = genIndex.callersOfWithStatus({ file: GEN_FILE, pos: saveUser, name: 'Save' }).callers;
+  assert.deepEqual(user.callers.map((c) => [c.label, c.pos, c.via, c.text]), cli.map((c) => [c.label, c.pos, c.via, c.text]));
+  assert.deepEqual(user.callers.map((c) => [c.label, c.text]), [['U.A(IRepo)', 'through IRepo']]);
+  assert.equal(user.complete, false);
+  // A row where the current text has no member any more is not listed: a reason.
+  const moved = GEN.replace('    void A(IRepo<User> u)', '    void Pad() { }\n    void A(IRepo<User> u)');
+  const stale = await genResolver(new Map([[`${GEN_FILE}#${saveUser}`, []]]), moved).resolver.incomingWithStatus(GEN_FILE, saveUser);
+  assert.deepEqual(stale.callers, []);
+  assert.match(String(stale.reason), /1 caller\(s\) through a generic interface are not where the C# syntax index has them/);
+});
+
+test('S4: an explicit implementation is not asked itself; its interface member is (the stale check passes), labelled', async () => {
+  const exRun = at(GEN, 'Run(int a) { }');
+  const ifooRun = at(GEN, 'Run(int a); }');
+  const cPos = at(GEN, 'C(IFoo f)');
+  const { services, resolver } = genResolver(new Map([[`${GEN_FILE}#${ifooRun}`, [row(GEN_FILE, 'G.U.C(G.IFoo)', cPos, [site(GEN, 'f.Run(1)', 'Run')])]]]));
+  const answer = await resolver.incomingWithStatus(GEN_FILE, exRun);
+  assert.deepEqual(services.asked, [`${GEN_FILE}#${ifooRun}`], 'the explicit member itself is suppressed');
+  assert.deepEqual(answer.callers.map((c) => [c.label, c.via, c.text]), [['U.C(IFoo)', 'interface', 'through IFoo']]);
+  assert.equal(answer.complete, false);
+  assert.match(String(answer.reason), /an explicit implementation of `IFoo.Run`/);
+  assert.doesNotMatch(String(answer.reason), /no call-hierarchy item|STALE|not where the C# syntax index has it/);
+  // Its interface member answers nothing: incomplete (an empty answer can hide a failure).
+  const empty = await genResolver(new Map([[`${GEN_FILE}#${ifooRun}`, []]])).resolver.callerState(GEN_FILE, exRun);
+  assert.equal(empty.state, 'unknown');
+  assert.ok(String(empty.reason).includes(EMPTY_ANSWER_REASON));
+  // Explicit and generic (`void IRepo<T>.Save(T)`): no Roslyn query at all, the index's rows.
+  const wrapSave = at(GEN, 'Save(T item) { }');
+  const g = genResolver(new Map());
+  const wrap = await g.resolver.incomingWithStatus(GEN_FILE, wrapSave);
+  assert.deepEqual(g.services.asked, []);
+  assert.deepEqual(wrap.callers.map((c) => [c.label, c.text]), [['U.A(IRepo)', 'through IRepo'], ['U.B(IRepo, Multi)', 'through IRepo']]);
+  assert.equal(wrap.complete, false);
+  assert.doesNotMatch(String(wrap.reason), /returned no callers/);
+});
+
 test('M3: the session index is rebuilt after an uncommitted edit (same HEAD)', async () => {
   const fs = require('node:fs');
   const os = require('node:os');

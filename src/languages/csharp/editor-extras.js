@@ -12,9 +12,13 @@
 //   shared step asks Roslyn there too and labels those rows "through IFoo"; a caller reached
 //   both ways is one unlabelled row. Such an answer is always incomplete (owner, 2026-11-21:
 //   other implementations may be what those calls run), with the index's reasons. A generic
-//   interface's member is not asked (its calls on other type arguments would be listed): a
-//   reason. Overrides: Roslyn's base-method callers are not asked; an override, a virtual
-//   method or one hiding a base member is incomplete with the index's reason.
+//   interface's member is not asked (its calls on other type arguments would be listed): the
+//   index's calls through it, whose receiver's type arguments may be this implementation's,
+//   are labelled rows from `moreCallers` (S3, owner 2026-11-22), the CLI's rows. An explicit
+//   implementation (`void IFoo.M()`) is not asked itself (S4: as primary constructors); its
+//   interface member is, as a target, or, generic, gives the index's rows. Overrides:
+//   Roslyn's base-method callers are not asked; an override, a virtual method or one hiding
+//   a base member is incomplete with the index's reason.
 // - The index is built once per session in a worker thread (`sessionIndex`, ./index-pool.js),
 //   from the repository's C# files in the working tree within the editor's bound (8 000
 //   files / 96 MiB; past it, no index), and rebuilt when HEAD or the working tree's C# files
@@ -82,13 +86,14 @@ const TOP_LEVEL_CALLER = /<top-level-statements-entry-point>/;
  * The outline member whose name is at `pos` (its `selectionRange.start`), with its type's
  * simple name; null when none. Pure.
  * @param {import('./outline').CsharpSymbol[]} symbols @param {number} pos
- * @returns {{ member: string, name: string, className: string|null }|null}
+ * `explicit`: an explicit interface implementation (`void IFoo.M()`; `name` is `M`).
+ * @returns {{ member: string, name: string, className: string|null, explicit: boolean }|null}
  */
 function memberAtIn(symbols, pos) {
   for (const s of symbols) {
     if (s.csharp && s.selectionRange.start === pos) {
       const info = s.csharp;
-      return { member: info.member, name: info.decl ? info.decl.name : info.typeName || s.name, className: info.typeName };
+      return { member: info.member, name: info.decl ? info.decl.name : info.typeName || s.name, className: info.typeName, explicit: !!(info.decl && info.decl.explicitInterface) };
     }
     if (s.children && s.children.length) {
       const inner = memberAtIn(/** @type {any} */ (s.children), pos);
@@ -211,7 +216,7 @@ function createCsharpEditorExtras({
     return top ? top.selectionRange.start : 0;
   };
   // Cache: per target (file#pos), its dispatch lookup (owner: these extras; cleared by `clear()`).
-  /** @type {Map<string, Promise<{ targets: import('../types').CallerTarget[], reasons: string[] }>>} */
+  /** @type {Map<string, Promise<{ targets: import('../types').CallerTarget[], reasons: string[], rows: CallerRow[] }>>} */
   const dispatches = new Map();
   /** @param {string} file @param {number} pos */
   const dispatchOf = (file, pos) => {
@@ -220,22 +225,24 @@ function createCsharpEditorExtras({
     if (!d) {
       d = (async () => {
         const m = memberAt(file, pos);
-        if (!m || m.member !== 'method') return { targets: [], reasons: [] };
+        /** @type {CallerRow[]} */
+        const none = [];
+        if (!m || m.member !== 'method') return { targets: [], reasons: [], rows: none };
         let idx;
         try { idx = await getIndex(); } catch (e) {
           // No index: past the editor's bound, the worker failed or timed out (S1, S5).
           const message = e && /** @type {any} */ (e).message;
           trace(`csharp: syntax index failed: ${message}`);
-          return { targets: [], reasons: [`${NO_INDEX_REASON} (${message})`] };
+          return { targets: [], reasons: [`${NO_INDEX_REASON} (${message})`], rows: none };
         }
-        if (!idx) return { targets: [], reasons: [NO_INDEX_REASON] };
+        if (!idx) return { targets: [], reasons: [NO_INDEX_REASON], rows: none };
         let found;
         try { found = await idx.dispatchOf({ file, pos, name: m.name, className: m.className }); } catch (e) {
           const message = e && /** @type {any} */ (e).message;
           trace(`csharp: dispatch lookup failed at ${relOf(file)}@${pos}: ${message}`);
-          return { targets: [], reasons: [`${LOOKUP_FAILED_REASON}: ${message}`] };
+          return { targets: [], reasons: [`${LOOKUP_FAILED_REASON}: ${message}`], rows: none };
         }
-        if (!found) return { targets: [], reasons: [NOT_INDEXED_REASON] };
+        if (!found) return { targets: [], reasons: [NOT_INDEXED_REASON], rows: none };
         // A target is asked only where the file's current text has that member (M3): an
         // index older than the text would send Roslyn into another member.
         /** @type {import('../types').CallerTarget[]} */
@@ -246,8 +253,25 @@ function createCsharpEditorExtras({
           if (there && there.member === 'method' && there.name === m.name) targets.push(t);
           else reasons.push(`${STALE_TARGET_REASON} (${t.text || relOf(t.file)})`);
         }
-        return { targets, reasons };
-      })().catch((e) => ({ targets: [], reasons: [`${LOOKUP_FAILED_REASON}: ${e && /** @type {any} */ (e).message}`] }));
+        // S3: the index's calls through a generic interface member, as the CLI lists them; a
+        // row kept only where the current text still has that member (its label at its name)
+        // or the module row there.
+        const { isTestFile } = require('../../engine/diff');
+        /** @type {CallerRow[]} */
+        const rows = [];
+        let stale = 0;
+        for (const c of /** @type {import('../types').SyntacticCaller[]} */ (found.rows || [])) {
+          const same = (membersOf(c.file) || []).some((x) => x.namePos === c.pos && x.label === c.label);
+          if (!same && c.pos !== modulePosOf(c.file)) { stale++; continue; }
+          rows.push({
+            file: c.file, label: c.label, pos: c.pos, sites: c.callSites.length, callSites: c.callSites,
+            test: repoRoot ? isTestFile(repoRoot, c.file) : false,
+            ...(c.via ? { via: c.via, text: c.text } : {}),
+          });
+        }
+        if (stale) reasons.push(`${stale} caller(s) through a generic interface are not where the C# syntax index has them (the file changed since the index was built) and are not listed`);
+        return { targets, reasons, rows };
+      })().catch((e) => ({ targets: [], reasons: [`${LOOKUP_FAILED_REASON}: ${e && /** @type {any} */ (e).message}`], rows: [] }));
       dispatches.set(id, d);
     }
     return d;
@@ -292,10 +316,14 @@ function createCsharpEditorExtras({
       const m = memberAt(file, pos);
       const notComputed = m && Object.hasOwn(NOT_COMPUTED, m.member) ? /** @type {Record<string, string>} */ (NOT_COMPUTED)[m.member] : null;
       const primary = !!m && m.member === 'primary-constructor';
+      // S4: an explicit implementation is called only through its interface (Roslyn's item
+      // there is not known): its interface member is asked (`callerTargets`), or, generic,
+      // the index's rows are its callers; the member itself is not asked.
+      const explicit = !!m && m.member === 'method' && m.explicit;
       let sawValueUse = false;
       let kept = 0;
       return {
-        isSuppressed: () => !!notComputed || primary,
+        isSuppressed: () => !!notComputed || primary || explicit,
         filter(callers) {
           /** @type {Map<string, string|null>} */
           const texts = new Map();
@@ -338,8 +366,11 @@ function createCsharpEditorExtras({
           const d = await dispatchOf(file, pos);
           reasons.push(...d.reasons);
           const unknown = d.reasons.some((r) => r.startsWith(NO_INDEX_REASON) || r === NOT_INDEXED_REASON || r.startsWith(LOOKUP_FAILED_REASON));
-          if (!kept && d.reasons.length && !unknown) reasons.push(EMPTY_ANSWER_REASON);
-          return { callers: [], incompleteReason: reasons.length ? reasons.join('; ') : null };
+          // An explicit implementation's own query was not asked: an empty answer is its targets'.
+          if (!kept && (!explicit || d.targets.length) && d.reasons.length && !unknown) reasons.push(EMPTY_ANSWER_REASON);
+          // An explicit implementation is never complete: its calls are its interface's.
+          if (explicit && !reasons.length) reasons.push(NOT_INDEXED_REASON);
+          return { callers: d.rows, incompleteReason: reasons.length ? reasons.join('; ') : null };
         },
       };
     },

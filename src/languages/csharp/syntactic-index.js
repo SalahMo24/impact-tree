@@ -1955,8 +1955,20 @@ function createCsharpSyntacticIndex(sources, {
     const t = def.type;
     if (!t) return out;
     if (def.inInterface) { out.push(`a member of the interface \`${t.simple}\`: calls through it reach its implementations, and calls written on an implementation are not listed here`); return out; }
-    if (def.explicit) { out.push(`an explicit implementation of \`${def.explicit.replace(/<\d+>/g, '')}\`: it is called through that interface, which is not followed yet`); return out; }
+    if (def.explicit && def.mods.has('static')) { out.push(`an explicit implementation of a static member of \`${def.explicit.replace(/<\d+>/g, '')}\`: it is called through a type parameter, which is not followed`); return out; }
     if (def.mods.has('static')) return out;
+    if (def.explicit) {
+      // S4: called only through its interface; those calls are `throughOf`'s.
+      const iface = def.explicit.replace(/<\d+>/g, '');
+      if (!through.ifaces.length) out.push(`an explicit implementation of \`${iface}\`: ${through.unmatched.length ? 'which member of it is not known' : 'the interface is not in the indexed files'}, so calls through it are not listed`);
+      for (const { member, impls } of through.ifaces) {
+        const others = impls - 1;
+        out.push(`an explicit implementation of \`${iface}.${member.name}\`: calls through it are listed as "through \`${iface}\`" and may also reach ${others > 0 ? `${others} other implementation(s) in the indexed files` : 'implementations outside the indexed files'}`);
+      }
+      if (through.genericSkipped) out.push(`${through.genericSkipped} call(s) through a generic interface whose type arguments are not known or differ are not listed`);
+      if (through.ambiguousSkipped) out.push(`${through.ambiguousSkipped} call(s) through an interface that match several overloads are not listed`);
+      return out;
+    }
     const h = hierarchy(t);
     // Interface members it implements: their calls are listed, labelled; other implementations
     // (or other assemblies, for a public interface) may be what those calls run.
@@ -2024,15 +2036,78 @@ function createCsharpSyntacticIndex(sources, {
   /** @param {TypeRec} x */
   const viewsOf = (x) => x.views || (x.views = viewsFrom(x, new Map([...x.typeParams].map((tp) => [tp, '*']))));
 
+  // Cache: per type and interface, each instantiation of the interface in the type's hierarchy
+  // (owner, lifetime: the index's).
+  /** @type {Map<TypeRec, Map<TypeRec, Array<Map<string, string>>>>} */
+  const instances = new Map();
+  /**
+   * Each instantiation of interface `iface` in `x`'s hierarchy, as its view of the type
+   * parameters: `class M : IRepo<User>, IRepo<Order>` has two, where `viewsOf` keeps the
+   * first. Like `viewsFrom`, but a type is visited once per distinct argument list. Bound:
+   * `MAX_HIERARCHY` visits. @param {TypeRec} x @param {TypeRec} iface @returns {Array<Map<string, string>>}
+   */
+  function instancesOf(x, iface) {
+    let byIface = instances.get(x);
+    if (!byIface) { byIface = new Map(); instances.set(x, byIface); }
+    const had = byIface.get(iface);
+    if (had) return had;
+    /** @type {Array<Map<string, string>>} */
+    const out = [];
+    /** @type {Set<string>} */
+    const seen = new Set();
+    /** @type {Array<[TypeRec, Map<string, string>]>} */
+    const queue = [[x, new Map([...x.typeParams].map((tp) => [tp, '*']))]];
+    let visits = 0;
+    while (queue.length && visits < MAX_HIERARCHY) {
+      const [y, sub] = /** @type {[TypeRec, Map<string, string>]} */ (queue.shift());
+      const key = `${y.path.join('.')}<${[...sub.values()].join(',')}>@${y.namePos}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      visits++;
+      if (y === iface) { out.push(sub); continue; }
+      for (const b of y.bases) {
+        const r = resolveTypeName(b.text, b.file, b.at, y.outer, y.typeParams);
+        if (!r || typeof r === 'string') continue;
+        const args = writtenArgs(b.written || '').map((a) => substType(normType(a), sub));
+        queue.push([r, new Map([...r.typeParams].map((tp, n) => [tp, args[n] ?? '*']))]);
+      }
+    }
+    // None found (past the bound): the one view `viewsOf` has, as before.
+    if (!out.length) { const v = viewsOf(x).get(iface); if (v) out.push(v); }
+    byIface.set(iface, out);
+    return out;
+  }
+
+  /**
+   * The type arguments written on an explicit implementation's interface (`IRepo<User>.Get`
+   * → `['User']`), read from the text before its name; none when not written.
+   * @param {DefRec} e @returns {string[]}
+   */
+  function explicitArgs(e) {
+    const s = e.file.text;
+    let i = e.namePos - 1;
+    while (i >= 0 && /\s/.test(s[i])) i--;
+    if (s[i] !== '.') return [];
+    i--;
+    while (i >= 0 && /\s/.test(s[i])) i--;
+    if (s[i] !== '>') return [];
+    const end = i + 1;
+    let depth = 0;
+    for (; i >= 0; i--) { if (s[i] === '>') depth++; else if (s[i] === '<' && --depth === 0) break; }
+    return i < 0 ? [] : writtenArgs(`I${s.slice(i, end)}`);
+  }
+
   /**
    * Whether `d`'s parameters are `m`'s as seen from type `x` (both in `x`'s hierarchy): the same
    * count of parameters and of method type parameters, each parameter's type the same after
-   * substitution (`sameType`). @param {DefRec} d @param {DefRec} m @param {TypeRec} x
+   * substitution (`sameType`). `mView`: the instantiation of `m`'s interface to compare with
+   * (`instancesOf`; default: `viewsOf`'s). @param {DefRec} d @param {DefRec} m @param {TypeRec} x
+   * @param {Map<string, string>} [mView]
    */
-  function sameParams(d, m, x) {
+  function sameParams(d, m, x, mView) {
     if (m.params.length !== d.params.length || m.typeParams.size !== d.typeParams.size || !m.type || !d.type) return false;
     const views = viewsOf(x);
-    const ms = views.get(m.type);
+    const ms = mView || views.get(m.type);
     const ds = views.get(d.type);
     if (!ms || !ds) return false;
     const mm = new Map(ms);
@@ -2042,35 +2117,57 @@ function createCsharpSyntacticIndex(sources, {
     return m.params.every((p, n) => sameType(substType(normType(p.type), mm), substType(normType(d.params[n].type), dm)));
   }
 
-  // Cache: the method implementing an interface member for a type (owner, lifetime: the index's).
-  /** @type {Map<DefRec, Map<TypeRec, DefRec|null>>} */
+  // Cache: the method implementing an interface member for a type, per instantiation of the
+  // interface (owner, lifetime: the index's).
+  /** @type {Map<DefRec, Map<TypeRec, Map<string, DefRec|null>>>} */
   const implementers = new Map();
   /**
-   * The method of `x`'s class chain that implements interface member `m` for `x`: the nearest
-   * class with an explicit implementation of it (then none listed: null) or one public instance
-   * method of its parameters. Null when not decided.
-   * @param {DefRec} m @param {TypeRec} x @returns {DefRec|null}
+   * The method of `x`'s class chain that implements interface member `m` for `x`, at the
+   * instantiation `view` of `m`'s interface (`instancesOf`; default: `viewsOf`'s): the nearest
+   * class with an explicit implementation of it (that implementation, when one of them has
+   * its parameters) or one public instance method of its parameters. Null when not decided.
+   * `class M : IRepo<User>, IRepo<Order>` implements `IRepo<T>.Save(T)` with `Save(User)` at
+   * one and `Save(Order)` at the other.
+   * @param {DefRec} m @param {TypeRec} x @param {Map<string, string>} [view] @returns {DefRec|null}
    */
-  function implementerFor(m, x) {
+  function implementerFor(m, x, view) {
     let byType = implementers.get(m);
     if (!byType) { byType = new Map(); implementers.set(m, byType); }
-    if (byType.has(x)) return /** @type {DefRec|null} */ (byType.get(x));
+    let byView = byType.get(x);
+    if (!byView) { byView = new Map(); byType.set(x, byView); }
+    const v = view || (m.type ? viewsOf(x).get(m.type) : undefined) || new Map();
+    const vk = [...v.values()].join(',');
+    if (byView.has(vk)) return /** @type {DefRec|null} */ (byView.get(vk));
     /** @type {DefRec|null} */
     let found = null;
-    for (const y of viewsOf(x).keys()) {
+    const views = viewsOf(x);
+    for (const y of views.keys()) {
       if (y.kind === 'interface') continue;
-      if (y.explicits.some((e) => e.name === m.name && e.params.length === m.params.length && String(e.explicit).replace(/<\d+>/g, '').replace(/^.*\./, '') === (m.type && m.type.simple))) break;
-      const hit = (y.methods.get(m.name) || []).filter((d) => !d.mods.has('static') && d.mods.has('public') && sameParams(d, m, x));
+      const ys = views.get(y) || new Map();
+      // An explicit implementation of the interface, at this instantiation where its type
+      // arguments are written (`void IRepo<User>.Save(User u)`).
+      const explicit = y.explicits.filter((e) => e.name === m.name && e.params.length === m.params.length
+        && String(e.explicit).replace(/<\d+>/g, '').replace(/^.*\./, '') === (m.type && m.type.simple)
+        && explicitArgs(e).every((a, n) => sameType(substType(normType(a), ys), v.get([...(/** @type {TypeRec} */ (m.type)).typeParams][n]) || '*')));
+      if (explicit.length) {
+        // Of its parameters: that one. Else (another overload's, or types spelled apart) not
+        // decided: null, as before S4, so no other method takes its calls.
+        const same = explicit.filter((e) => sameParams(e, m, x, v));
+        found = same.length === 1 ? same[0] : null;
+        break;
+      }
+      const hit = (y.methods.get(m.name) || []).filter((d) => !d.mods.has('static') && d.mods.has('public') && sameParams(d, m, x, v));
       if (hit.length === 1) found = hit[0];
       if (hit.length) break;
     }
-    byType.set(x, found);
+    byView.set(vk, found);
     return found;
   }
 
   /**
    * @typedef {{ ifaces: Array<{ member: DefRec, impls: number }>, unmatched: Array<{ iface: TypeRec, member: DefRec, through: TypeRec }>,
-   *   bases: DefRec[], genericSkipped: number, ambiguousSkipped: number, sites: Array<{ rec: FileRec, use: Use, via: 'interface'|'override', name: string }> }} Through
+   *   bases: DefRec[], genericSkipped: number, ambiguousSkipped: number,
+   *   sites: Array<{ rec: FileRec, use: Use, via: 'interface'|'override', name: string, member: DefRec }> }} Through
    */
 
   /**
@@ -2078,30 +2175,34 @@ function createCsharpSyntacticIndex(sources, {
    * member it implements (transitively: derived interfaces, through a base class; a generic
    * interface's call only where the receiver's written type arguments may be the
    * implementation's), and calls resolved to a base method it overrides whose receiver's type
-   * may be `def`'s (not `base.M(…)`). Each is a may-call, labelled "through" the type.
+   * may be `def`'s (not `base.M(…)`). Each is a may-call, labelled "through" the type. An
+   * explicit implementation's interface member is the one its declaration names (S4). A
+   * generic interface implemented at several type arguments is matched per instantiation:
+   * each overload gets the calls whose receiver's arguments may be its own.
    * @param {DefRec} def @returns {Through}
    */
   function throughOf(def) {
     /** @type {Through} */
     const out = { ifaces: [], unmatched: [], bases: [], genericSkipped: 0, ambiguousSkipped: 0, sites: [] };
     const t = def.type;
-    if (!t || def.member !== 'method' || def.inInterface || def.explicit || def.mods.has('static')) return out;
+    if (!t || def.member !== 'method' || def.inInterface || def.mods.has('static')) return out;
     /** @type {Set<DefRec>} */
     const listed = new Set();
-    for (const m of interfaceMembersFor(def)) {
+    for (const m of def.explicit ? explicitMembersFor(def) : interfaceMembersFor(def)) {
       if (listed.has(m.member)) continue;
-      const impl = implementerFor(m.member, m.through);
-      // Implemented by another method (an overload of other parameter types): not this one's.
-      if (impl && impl !== def) continue;
-      if (!impl) { out.unmatched.push(m); continue; }
-      listed.add(m.member);
       const iface = /** @type {TypeRec} */ (m.member.type);
+      const views = instancesOf(m.through, iface);
+      const impls0 = views.map((v) => implementerFor(m.member, m.through, v));
+      // The instantiations this method implements; at the others another method (an overload
+      // of other parameter types) or none found.
+      const mine = views.filter((v, n) => impls0[n] === def);
+      if (impls0.some((d) => !d)) out.unmatched.push(m);
+      if (!mine.length) continue;
+      listed.add(m.member);
       /** @type {Set<DefRec>} */
       const impls = new Set();
-      for (const x of derivedOf(iface)) if (x.kind !== 'interface') { const d = implementerFor(m.member, x); if (d) impls.add(d); }
+      for (const x of derivedOf(iface)) if (x.kind !== 'interface') for (const v of instancesOf(x, iface)) { const d = implementerFor(m.member, x, v); if (d) impls.add(d); }
       out.ifaces.push({ member: m.member, impls: Math.max(1, impls.size) });
-      // The implementation's view of the interface's type parameters, for generic receivers.
-      const implView = viewsOf(m.through).get(iface) || new Map();
       for (const { rec, use } of usesByName.get(m.member.name) || []) {
         if (use.kind !== 'call') continue;
         const hit = resolveUse(rec, use);
@@ -2113,10 +2214,10 @@ function createCsharpSyntacticIndex(sources, {
           const view = recv && recv.t === 'type' ? (recv.args ? viewsFrom(recv.type, new Map([...recv.type.typeParams].map((tp, n) => [tp, /** @type {string[]} */ (recv.args)[n]]))) : viewsOf(recv.type)).get(iface) : null;
           // A receiver without written arguments (`this`, a bare call inside the interface) keeps them open.
           const ok = view && recv && recv.t === 'type' && (recv.args || recv.type === iface || !recv.type.typeParams.size)
-            && [...iface.typeParams].every((tp) => sameType(view.get(tp) || '*', implView.get(tp) || '*'));
+            && mine.some((implView) => [...iface.typeParams].every((tp) => sameType(view.get(tp) || '*', implView.get(tp) || '*')));
           if (!ok) { out.genericSkipped++; continue; }
         }
-        out.sites.push({ rec, use, via: 'interface', name: iface.simple });
+        out.sites.push({ rec, use, via: 'interface', name: iface.simple, member: m.member });
       }
     }
     if (def.mods.has('override')) {
@@ -2138,7 +2239,7 @@ function createCsharpSyntacticIndex(sources, {
           if (r && r.text === 'base' && isP(rec.toks[use.at - 1], '.')) continue; // non-virtual
           const recv = receiverOf(rec, use);
           if (!recv || recv.t !== 'type' || recv.static || !chain.has(recv.type)) continue;
-          out.sites.push({ rec, use, via: 'override', name: /** @type {TypeRec} */ (b.type).simple });
+          out.sites.push({ rec, use, via: 'override', name: /** @type {TypeRec} */ (b.type).simple, member: b });
         }
       }
     }
@@ -2211,6 +2312,28 @@ function createCsharpSyntacticIndex(sources, {
   }
 
   /**
+   * The indexed interface members an explicit implementation (`void IFoo.M()`) may implement
+   * (S4): a member of its name and parameter count in the interface its declaration names
+   * (by simple name and arity), in its type's hierarchy. Which instantiation is the
+   * implementer's: `implementerFor`. @param {DefRec} def
+   * @returns {Array<{ iface: TypeRec, member: DefRec, through: TypeRec }>}
+   */
+  function explicitMembersFor(def) {
+    const t = def.type;
+    /** @type {Array<{ iface: TypeRec, member: DefRec, through: TypeRec }>} */
+    const out = [];
+    if (!t || !def.explicit || def.inInterface) return out;
+    const named = String(def.explicit).replace(/^.*\./, '');
+    const simple = named.replace(/<\d+>$/, '');
+    const arity = Number((/<(\d+)>$/.exec(named) || [])[1] || 0);
+    for (const i of hierarchy(t).types) {
+      if (i.kind !== 'interface' || i.simple !== simple || i.typeParams.size !== arity) continue;
+      for (const m of i.methods.get(def.name) || []) if (m.params.length === def.params.length) out.push({ iface: i, member: m, through: t });
+    }
+    return out;
+  }
+
+  /**
    * @param {{ file: string, className?: string|null, name: string, pos?: number }} target
    * @returns {{ callers: import('../types').SyntacticCaller[], incompleteReason: string|null }}
    */
@@ -2224,15 +2347,8 @@ function createCsharpSyntacticIndex(sources, {
       return { callers: [], incompleteReason: [...reasons, `not computed: callers of a C# ${def.member === 'top-level' ? 'file\'s top-level statements' : def.member} are not searched yet`].join('; ') };
     }
     if (def.member === 'property' || def.member === 'indexer') return propertyCallers(def, reasons);
-    /** @type {Map<string, import('../types').SyntacticCaller>} */
-    const out = new Map();
     let valueUses = 0;
     let ambiguous = 0;
-    // Each row's sites' labels (null: a direct call): a row is labelled only when all are (C-D5).
-    /** @type {Map<import('../types').SyntacticCaller, Array<{ via: 'interface'|'override', name: string }|null>>} */
-    const labels = new Map();
-    /** @type {Set<string>} */
-    const seenSites = new Set();
     const through = throughOf(def);
     /** @type {Array<{ rec: FileRec, use: Use, label: { via: 'interface'|'override', name: string }|null }>} */
     const sites = [];
@@ -2244,6 +2360,43 @@ function createCsharpSyntacticIndex(sources, {
       sites.push({ rec, use, label: null });
     }
     for (const x of through.sites) sites.push({ rec: x.rec, use: x.use, label: { via: x.via, name: x.name } });
+    const callers = rowsOf(sites);
+    reasons.push(...dispatchReasons(def, through));
+    if (def.extension && def.type && def.type.typeParams.size) reasons.push('an extension method of a generic type: calls written as `x.' + def.name + '(…)` are not resolved');
+    if (def.mods.has('partial') || (def.type && def.type.generated) || def.attributes.some((a) => GENERATED_ATTRIBUTES.has(a.replace(/Attribute$/, '')))) reasons.push('generated or partial members are not read');
+    const isCtor = def.member === 'constructor' || def.member === 'primary-constructor';
+    if (isCtor && def.type) {
+      if (def.min === 0 && !def.type.sealed && def.type.kind !== 'struct') reasons.push('a constructor without arguments: a derived constructor\'s implicit base call is not listed');
+      if (def.member === 'primary-constructor' && def.type.kind === 'record') reasons.push('a record\'s primary constructor: deconstruction, `with` and patterns are not followed');
+      if (/Attribute$/.test(def.type.simple)) reasons.push('attribute usages are not read');
+      const target = (usesByName.get('new <new()>') || []).filter(({ rec, use }) => arityMatches(def, use.argc) && resolveUse(rec, use) === 'unresolved').length;
+      if (target) reasons.push(`${target} target-typed \`new(…)\` call(s) whose type is not written`);
+    }
+    if (def.file.ui && !def.mods.has('private')) reasons.push('Razor/XAML calls are not read');
+    const inIf = hiddenInIf.get(def.name) || 0;
+    if (inIf) reasons.push(`${inIf} use(s) of the name \`${def.name}\` in code under an inactive \`#if\` branch (read with no symbols defined): calls there are not resolved`);
+    const inSkipped = hiddenInSkipped.get(def.name) || 0;
+    if (inSkipped) reasons.push(`${inSkipped} use(s) of the name \`${def.name}\` in C# file(s) that were not indexed (over ${MAX_FILE_BYTES / 1024 / 1024} MiB, or not readable as C#)`);
+    if (!partial && unreadSkipped + notIndexed) reasons.push(`${unreadSkipped + notIndexed} C# file(s) could not be read: calls there are not seen`);
+    if (valueUses) reasons.push(`used as a method group ${valueUses} time(s): calls through that delegate cannot be followed`);
+    if (ambiguous) reasons.push(`${ambiguous} call(s) match several overloads with the same number of arguments: each such call is listed for every one of them`);
+    return { callers, incompleteReason: reasons.length ? reasons.join('; ') : null };
+  }
+
+  /**
+   * Caller rows of call sites: one row per member (or type, or file) that holds a site, at its
+   * name, with the CLI's label; a site once. A row is labelled ("through IFoo") only when all
+   * its sites are (C-D5); a null label is a direct call.
+   * @param {Array<{ rec: FileRec, use: Use, label: { via: 'interface'|'override', name: string }|null }>} sites
+   * @returns {import('../types').SyntacticCaller[]}
+   */
+  function rowsOf(sites) {
+    /** @type {Map<string, import('../types').SyntacticCaller>} */
+    const out = new Map();
+    /** @type {Map<import('../types').SyntacticCaller, Array<{ via: 'interface'|'override', name: string }|null>>} */
+    const labels = new Map();
+    /** @type {Set<string>} */
+    const seenSites = new Set();
     for (const { rec, use, label } of sites) {
       const siteKey = `${rec.file}#${use.pos}`;
       if (seenSites.has(siteKey)) continue;
@@ -2267,26 +2420,7 @@ function createCsharpSyntacticIndex(sources, {
       row.via = all.every((l) => l.via === 'override') ? 'override' : 'interface';
       row.text = `through ${[...new Set(all.map((l) => l.name))].join(', ')}`;
     }
-    reasons.push(...dispatchReasons(def, through));
-    if (def.extension && def.type && def.type.typeParams.size) reasons.push('an extension method of a generic type: calls written as `x.' + def.name + '(…)` are not resolved');
-    if (def.mods.has('partial') || (def.type && def.type.generated) || def.attributes.some((a) => GENERATED_ATTRIBUTES.has(a.replace(/Attribute$/, '')))) reasons.push('generated or partial members are not read');
-    const isCtor = def.member === 'constructor' || def.member === 'primary-constructor';
-    if (isCtor && def.type) {
-      if (def.min === 0 && !def.type.sealed && def.type.kind !== 'struct') reasons.push('a constructor without arguments: a derived constructor\'s implicit base call is not listed');
-      if (def.member === 'primary-constructor' && def.type.kind === 'record') reasons.push('a record\'s primary constructor: deconstruction, `with` and patterns are not followed');
-      if (/Attribute$/.test(def.type.simple)) reasons.push('attribute usages are not read');
-      const target = (usesByName.get('new <new()>') || []).filter(({ rec, use }) => arityMatches(def, use.argc) && resolveUse(rec, use) === 'unresolved').length;
-      if (target) reasons.push(`${target} target-typed \`new(…)\` call(s) whose type is not written`);
-    }
-    if (def.file.ui && !def.mods.has('private')) reasons.push('Razor/XAML calls are not read');
-    const inIf = hiddenInIf.get(def.name) || 0;
-    if (inIf) reasons.push(`${inIf} use(s) of the name \`${def.name}\` in code under an inactive \`#if\` branch (read with no symbols defined): calls there are not resolved`);
-    const inSkipped = hiddenInSkipped.get(def.name) || 0;
-    if (inSkipped) reasons.push(`${inSkipped} use(s) of the name \`${def.name}\` in C# file(s) that were not indexed (over ${MAX_FILE_BYTES / 1024 / 1024} MiB, or not readable as C#)`);
-    if (!partial && unreadSkipped + notIndexed) reasons.push(`${unreadSkipped + notIndexed} C# file(s) could not be read: calls there are not seen`);
-    if (valueUses) reasons.push(`used as a method group ${valueUses} time(s): calls through that delegate cannot be followed`);
-    if (ambiguous) reasons.push(`${ambiguous} call(s) match several overloads with the same number of arguments: each such call is listed for every one of them`);
-    return { callers: [...out.values()], incompleteReason: reasons.length ? reasons.join('; ') : null };
+    return [...out.values()];
   }
 
   /**
@@ -2352,11 +2486,14 @@ function createCsharpSyntacticIndex(sources, {
    * whose calls a language server lists apart (Roslyn: `Impl.M` and `IFoo.M` have disjoint
    * incoming calls, C0b), as positions to ask with the label their rows carry, and why its
    * callers may be more than the server and those positions list. A generic interface's member
-   * is not a position (its calls on other type arguments would be listed): it is a reason.
+   * is not a position (its calls on other type arguments would be listed): the index's calls
+   * through it are `rows` (S3; the CLI's rows, labelled), with reasons. An explicit
+   * implementation's interface member is a position, or rows when generic (S4).
    * Overrides are a reason only (the server's base-method callers are not asked). Null when
    * the index has no such member.
    * @param {{ file: string, className?: string|null, name: string, pos?: number }} target
-   * @returns {{ targets: Array<{ file: string, pos: number, via: 'interface', text: string }>, reasons: string[] }|null}
+   * @returns {{ targets: Array<{ file: string, pos: number, via: 'interface', text: string }>, reasons: string[],
+   *   rows: import('../types').SyntacticCaller[] }|null}
    */
   function dispatchOf(target) {
     const rec = byFile.get(target.file);
@@ -2366,19 +2503,32 @@ function createCsharpSyntacticIndex(sources, {
       // Not at that position (the text moved since the index was built): by name only when
       // one member has it; among overloads the index cannot tell which one is meant.
       const named = rec.defs.filter((d) => d.name === target.name && (d.type ? d.type.simple : null) === (target.className || null));
-      if (named.length > 1) return { targets: [], reasons: [`${named.length} members named \`${target.name}\` and none where the C# syntax index has this one: the interface members it may implement are not known, and calls through them are not listed`] };
+      if (named.length > 1) return { targets: [], reasons: [`${named.length} members named \`${target.name}\` and none where the C# syntax index has this one: the interface members it may implement are not known, and calls through them are not listed`], rows: [] };
       def = named[0];
     }
     if (!def) return null;
     const through = throughOf(def);
     const listed = through.ifaces.filter((i) => !(i.member.type && i.member.type.typeParams.size));
     const generic = through.ifaces.filter((i) => i.member.type && i.member.type.typeParams.size);
-    const reasons = dispatchReasons(def, { ...through, ifaces: listed, bases: [], genericSkipped: 0, ambiguousSkipped: 0 });
-    for (const { member } of generic) reasons.push(`implements \`${member.type ? member.type.simple : '?'}.${member.name}\` of a generic interface: calls through it are not listed`);
+    // An explicit implementation's reason names each member, generic or not (both are listed).
+    const reasons = dispatchReasons(def, { ...through, ifaces: def.explicit ? through.ifaces : listed, bases: [], genericSkipped: 0, ambiguousSkipped: 0 });
+    // S3 (owner, 2026-11-22): a generic interface's member is not asked; the index's calls
+    // through it whose receiver's type arguments may be this implementation's are the rows.
+    const genericMembers = new Set(generic.map((g) => g.member));
+    const rows = rowsOf(through.sites.filter((s) => s.via === 'interface' && genericMembers.has(s.member)).map((s) => ({ rec: s.rec, use: s.use, label: { via: s.via, name: s.name } })));
+    for (const { member } of def.explicit ? [] : generic) {
+      const name = member.type ? member.type.simple : '?';
+      reasons.push(`implements \`${name}.${member.name}\` of a generic interface: calls through it are listed as "through \`${name}\`" from the C# syntax index, only where the receiver's type arguments are written and may be this implementation's`);
+    }
+    if (generic.length) {
+      if (through.genericSkipped) reasons.push(`${through.genericSkipped} call(s) through a generic interface whose type arguments are not known or differ are not listed`);
+      const untyped = unresolvedCallsTo({ name: def.name });
+      if (untyped) reasons.push(`${untyped} call(s) of the name \`${def.name}\` on a receiver whose type the C# syntax index could not tell are not listed`);
+    }
     const targets = listed.map(({ member }) => ({
       file: member.file.file, pos: member.namePos, via: /** @type {'interface'} */ ('interface'), text: `through ${member.type ? member.type.simple : '?'}`,
     }));
-    return { targets, reasons };
+    return { targets, reasons, rows };
   }
 
   return { symbolAt, callersOfWithStatus, unresolvedCallsTo, size: byFile.size, skipped, scopeNote, byFile, undeclaredBase, targetsAt, dispatchOf };

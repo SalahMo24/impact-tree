@@ -622,6 +622,77 @@ sealed class U { void R(IFoo f, Base b, Sibling s, Leaf l) { f.M(1); b.Run(); s.
   assert.match(leaf.reason, /an override of `Base.Run`: calls written on that type are listed/);
 });
 
+const MULTI = { 'a.cs': `namespace N;
+public sealed class User { } public sealed class Order { }
+public interface IRepo<T> { void Save(T item); T Get(int id); }
+public interface IFoo { void Run(int a); void Prop(); int Size { get; } }
+public interface IBar : IFoo { void IFoo.Prop() { } }
+public sealed class Multi : IRepo<User>, IRepo<Order> { public void Save(User u) { } public void Save(Order o) { } User IRepo<User>.Get(int id) => null; public Order Get(int id) => null; }
+public sealed class Ex : IFoo { void IFoo.Run(int a) { } void IFoo.Prop() { } int IFoo.Size => 1; }
+public sealed class Open<T> : IRepo<T> { void IRepo<T>.Save(T item) { } public T Get(int id) => default; }
+sealed class U
+{
+    void A(IRepo<User> u) { u.Save(null); u.Get(1); }
+    void B(IRepo<Order> o) { o.Save(null); o.Get(2); }
+    void C(IFoo f) { f.Run(1); var n = f.Size; }
+    void D<T>(IRepo<T> any) { any.Save(default); }
+}` };
+
+test('S3: a generic interface implemented at two type arguments: each overload gets the calls on its own arguments', () => {
+  const user = labelled(MULTI, 'Multi.Save(User)');
+  assert.deepEqual(user.rows, ['U.A(IRepo) [interface: through IRepo] x1', 'U.D<1>(IRepo) [interface: through IRepo] x1']);
+  assert.match(user.reason, /implements `IRepo.Save`/);
+  const order = labelled(MULTI, 'Multi.Save(Order)');
+  assert.deepEqual(order.rows, ['U.B(IRepo) [interface: through IRepo] x1', 'U.D<1>(IRepo) [interface: through IRepo] x1']);
+  assert.match(order.reason, /implements `IRepo.Save`/);
+  assert.notEqual(order.reason, '', 'never complete');
+  // One instantiation explicit (`User IRepo<User>.Get`), the other implicit.
+  assert.deepEqual(labelled(MULTI, 'Multi.IRepo<1>.Get(int)').rows, ['U.A(IRepo) [interface: through IRepo] x1']);
+  assert.deepEqual(labelled(MULTI, 'Multi.Get(int)').rows, ['U.B(IRepo) [interface: through IRepo] x1']);
+});
+
+test('S4: an explicit implementation lists the calls through the interface it names; explicit properties and explicit members in an interface keep their reasons', () => {
+  const run = labelled(MULTI, 'Ex.IFoo.Run(int)');
+  assert.deepEqual(run.rows, ['U.C(IFoo) [interface: through IFoo] x1']);
+  assert.match(run.reason, /an explicit implementation of `IFoo.Run`: calls through it are listed as "through `IFoo`"/);
+  assert.doesNotMatch(run.reason, /not followed yet/);
+  // Open generic: every receiver's arguments may be its own.
+  assert.deepEqual(labelled(MULTI, 'Open<1>.IRepo<1>.Save(T)').rows,
+    ['U.A(IRepo) [interface: through IRepo] x1', 'U.B(IRepo) [interface: through IRepo] x1', 'U.D<1>(IRepo) [interface: through IRepo] x1']);
+  const size = labelled(MULTI, 'Ex.IFoo.Size');
+  assert.deepEqual(size.rows, []);
+  assert.match(size.reason, /not computed: callers of a C# property are not searched yet/);
+  const inIface = labelled(MULTI, 'IBar.IFoo.Prop()');
+  assert.deepEqual(inIface.rows, []);
+  assert.match(inIface.reason, /a member of the interface `IBar`/);
+  // An explicit implementation of one overload does not take another overload's calls: the
+  // public method of the other overload's parameters stays incomplete.
+  const two = { 'b.cs': `namespace N;
+public interface ITwo { void M(int a); void M(string s); }
+public sealed class P : ITwo { void ITwo.M(int a) { } public void M(string s) { } }` };
+  assert.notEqual(labelled(two, 'P.M(string)').reason, '');
+});
+
+test('S3/S4: dispatchOf: a generic member gives the CLI\'s rows (no target); a non-generic explicit one its interface member as the target', () => {
+  const ix = createCsharpSyntacticIndex(Object.entries(MULTI).map(([p, text]) => ({ path: p, text })), { root: '/r' });
+  const rec = ix.byFile.get('/r/a.cs');
+  const defOf = (key) => { const d = rec.defs.find((x) => x.key === key); assert.ok(d, key); return d; };
+  const ask = (key) => { const d = defOf(key); return ix.dispatchOf({ file: '/r/a.cs', pos: d.namePos, name: d.name, className: d.type.simple }); };
+  const order = ask('Multi.Save(Order)');
+  assert.deepEqual(order.targets, []);
+  const cli = ix.callersOfWithStatus({ file: '/r/a.cs', pos: defOf('Multi.Save(Order)').namePos, name: 'Save' }).callers;
+  assert.deepEqual(order.rows, cli, 'the same rows, labels and positions as the CLI');
+  assert.match(order.reasons.join('; '), /implements `IRepo.Save` of a generic interface: calls through it are listed as "through `IRepo`" from the C# syntax index/);
+  assert.match(order.reasons.join('; '), /1 call\(s\) through a generic interface whose type arguments are not known or differ are not listed/);
+  const run = ask('Ex.IFoo.Run(int)');
+  assert.deepEqual(run.targets, [{ file: '/r/a.cs', pos: defOf('IFoo.Run(int)').namePos, via: 'interface', text: 'through IFoo' }]);
+  assert.deepEqual(run.rows, []);
+  assert.match(run.reasons.join('; '), /an explicit implementation of `IFoo.Run`/);
+  const get = ask('Multi.IRepo<1>.Get(int)');
+  assert.deepEqual([get.targets, get.rows.map((r) => [r.label, r.text])], [[], [['U.A(IRepo)', 'through IRepo']]]);
+  assert.match(get.reasons.join('; '), /an explicit implementation of `IRepo.Get`/);
+});
+
 test('C8b extension methods: `x.M()` by the `this` type and the namespaces in scope; undecided ones stay unresolved', () => {
   const files = {
     'ext.cs': `namespace Lib.Ext;

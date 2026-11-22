@@ -55,19 +55,24 @@ function handle(message) {
   if (!index || message.state !== state) throw new Error('the C# syntax index was rebuilt for another tree state');
   if (message.kind === 'dispatchOf') {
     const found = index.dispatchOf(message.arg);
-    return found && { targets: found.targets.map((/** @type {any} */ t) => ({ file: t.file, pos: t.pos, via: t.via, text: t.text })), reasons: [...found.reasons] };
+    return found && {
+      targets: found.targets.map((/** @type {any} */ t) => ({ file: t.file, pos: t.pos, via: t.via, text: t.text })),
+      reasons: [...found.reasons], rows: (found.rows || []).map(plainRow),
+    };
   }
   if (message.kind === 'callersOfWithStatus') {
     const answer = index.callersOfWithStatus(message.arg);
-    return {
-      callers: answer.callers.map((/** @type {any} */ c) => ({
-        file: c.file, label: c.label, pos: c.pos, callSites: c.callSites.map((/** @type {any} */ s) => ({ start: s.start, end: s.end })),
-        ...(c.via ? { via: c.via, text: c.text } : {}),
-      })),
-      incompleteReason: answer.incompleteReason,
-    };
+    return { callers: answer.callers.map(plainRow), incompleteReason: answer.incompleteReason };
   }
   throw new Error(`unknown request ${message.kind}`);
+}
+
+/** A caller row of the index as plain data. @param {any} c */
+function plainRow(c) {
+  return {
+    file: c.file, label: c.label, pos: c.pos, callSites: c.callSites.map((/** @type {any} */ s) => ({ start: s.start, end: s.end })),
+    ...(c.via ? { via: c.via, text: c.text } : {}),
+  };
 }
 
 port.on('message', (message) => {
