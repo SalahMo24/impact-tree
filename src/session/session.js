@@ -901,6 +901,10 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     abortHints();
     modulePool?.dispose();
     modulePool = null;
+    // The languages' session state (C#: the syntax-index workers).
+    for (const language of require('../languages/index').registeredLanguages()) {
+      try { language.dispose?.(); } catch (e) { logToChannel(`language dispose failed: ${e.message}`); }
+    }
     session.resolver = null;
     session.localResolver = null;
     session.resolverOverride = null;

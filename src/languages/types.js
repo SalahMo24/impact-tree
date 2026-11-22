@@ -310,10 +310,10 @@
  *   Other positions whose incoming calls are also the callers of the target at `pos` in
  *   `file` (Python: a class's name for its `__init__`, whose constructions Pyright lists
  *   only at the class; C#: the interface members a method implements, C-D5, whose rows are
- *   labelled "through IFoo"). Synchronous or a promise that never rejects; empty or absent:
- *   none. A target's `via`/`text` label its rows (a caller also listed unlabelled loses
- *   the label, `mergeCallerRows`). The shared step
- *   (`applyCallerExtras`) asks the call hierarchy at each, up to MAX_CALLER_TARGETS (past
+ *   labelled "through IFoo"). Synchronous or a promise; empty or absent: none. A throw or
+ *   a rejection makes the answer incomplete ("caller targets lookup failed: …"). A
+ *   target's `via`/`text` label its rows (a caller also listed unlabelled loses the label,
+ *   `mergeCallerRows`). The shared step (`applyCallerExtras`) asks the call hierarchy at each, up to MAX_CALLER_TARGETS (past
  *   it the answer is incomplete), merges their callers with the target's own (each caller
  *   once, call sites merged) and keeps the answer incomplete when any of them was not
  *   answered. With targets, the target's own `null` incoming-call result means no calls at
@@ -376,6 +376,8 @@
  *   `ctx.unit` when given, and no `ctx.hooks`.
  * - `serverLabel` (optional): the language server as named while the first run waits for
  *   it ("Waiting for the Go language server (gopls)…"). Absent: TypeScript's wording.
+ * - `dispose` (optional): ends what the provider keeps for the editor session (C#: its
+ *   syntax-index workers); called when the session ends (the extension deactivates).
  * @typedef {LanguageFileRules & {
  *   needsServer: boolean,
  *   prepare: (ctx: PrepareContext) => Promise<PreparedLanguage>,
@@ -383,6 +385,7 @@
  *   editorCallers?: (options: { ts: any, services: any, repoRoot: string|null, trace: (message: string) => void, filterInherited: boolean, onWarmupRetry: () => void, clock?: import('../engine/clock').Clock, javaServerStatus?: import('./java/server-status').JavaServerStatus|null, csharpIndex?: any }) => EditorCallerExtras,
  *   warmUpTarget?: (ctx: WarmUpContext) => Promise<{ file: string, pos: number }|null>,
  *   serverLabel?: string,
+ *   dispose?: () => void,
  * }} LanguageProvider
  */
 

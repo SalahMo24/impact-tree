@@ -233,22 +233,16 @@ const UI_FILE = /\.(razor|cshtml|xaml|axaml)$/i;
  * @param {any[]} changed The changed and deleted symbols.
  */
 function indexRepository(ctx, changed) {
-  const fs = require('fs');
   const { createCsharpSyntacticIndex, MAX_FILE_BYTES } = require('./syntactic-index');
   const { pickRepositoryFiles, REPO_MAX_FILES, REPO_MAX_BYTES } = require('../repository-files');
-  const read = (/** @type {string} */ rel) => { try { return fs.readFileSync(path.join(ctx.repo, rel), 'utf8'); } catch { return null; } };
+  const read = readerOf(ctx.repo);
   const changedPaths = new Set(ctx.files.map((f) => f.path).filter((p) => csharpRules.handles(p)));
-  const out = ctx.git && ctx.git.tryRaw(['ls-files', '--cached', '--others', '--exclude-standard', '-z']);
-  if (out == null) {
+  const repoFiles = listRepositoryCsharp(ctx.repo, ctx.git);
+  if (!repoFiles) {
     const sources = /** @type {Array<{ path: string, text: string }>} */ ([...changedPaths].map((rel) => ({ path: rel, text: read(rel) })).filter((s) => s.text != null));
     return createCsharpSyntacticIndex(sources, { root: ctx.repo, scope: `the changed files only (the repository's files could not be listed; ${sources.length} C# file(s) indexed)`, partial: true });
   }
-  const all = [...new Set(String(out).split('\0').filter(Boolean))];
-  const projects = all.filter((rel) => /\.csproj$/i.test(rel));
-  const { usingsByProject, uiDirs } = projectFacts(projects, all, read);
-  const listed = all
-    .filter((rel) => csharpRules.handles(rel) && !path.posix.dirname(rel).split('/').some((d) => NOT_SOURCE_DIRS.has(d)))
-    .flatMap((rel) => { try { return [{ path: rel, size: fs.statSync(path.join(ctx.repo, rel)).size }]; } catch { return []; } });
+  const { projects, listed, usingsByProject, uiDirs } = repoFiles;
   const names = new Set(changed.map((c) => c.simpleName));
   const changedDirs = [...changedPaths].map((rel) => csharpProjectDir(rel, projects));
   const picked = pickRepositoryFiles(listed, read, {
@@ -260,6 +254,63 @@ function indexRepository(ctx, changed) {
   return createCsharpSyntacticIndex(picked.sources, {
     root: ctx.repo, scope, notIndexed: picked.notIndexed, partial: picked.bounded, projects, projectUsings: usingsByProject, uiDirs,
   });
+}
+
+/** @param {string} repo @returns {(rel: string) => string|null} Reads a file of `repo`. */
+function readerOf(repo) {
+  const fs = require('fs');
+  return (rel) => { try { return fs.readFileSync(path.join(repo, rel), 'utf8'); } catch { return null; } };
+}
+
+/**
+ * The repository's C# source files with their sizes on disk (tracked and untracked, build
+ * output left out), its projects and their facts; null when git cannot list the files.
+ * Reads the file system and the repository.
+ * @param {string} repo @param {ReturnType<typeof import('../../engine/git').makeGit>|null|undefined} git
+ */
+function listRepositoryCsharp(repo, git) {
+  const fs = require('fs');
+  const out = git && git.tryRaw(['ls-files', '--cached', '--others', '--exclude-standard', '-z']);
+  if (out == null) return null;
+  const all = [...new Set(String(out).split('\0').filter(Boolean))];
+  const projects = all.filter((rel) => /\.csproj$/i.test(rel));
+  const { usingsByProject, uiDirs } = projectFacts(projects, all, readerOf(repo));
+  const listed = all
+    .filter((rel) => csharpRules.handles(rel) && !path.posix.dirname(rel).split('/').some((d) => NOT_SOURCE_DIRS.has(d)))
+    .flatMap((rel) => { try { return [{ path: rel, size: fs.statSync(path.join(repo, rel)).size }]; } catch { return []; } });
+  return { projects, listed, usingsByProject, uiDirs };
+}
+
+/**
+ * The editor's whole-repository C# index (C5 S1), or none: every C# source file while the
+ * repository is within `maxFiles` files and `maxBytes` bytes (sizes on disk, checked before
+ * any file is read); past either, no index (never a partial one: a truncated index can
+ * resolve a call to the wrong member) and a reason naming the counts and the bound. The
+ * CLI's `indexRepository` is unchanged. Reads the file system and the repository.
+ * @param {string} repo @param {ReturnType<typeof import('../../engine/git').makeGit>} git
+ * @param {{ maxFiles: number, maxBytes: number, label?: string }} bound `label` names the bound
+ *   in the reason ("the editor's bound" by default).
+ * @returns {{ index: any, files: number, bytes: number, reason: string|null }}
+ */
+function indexRepositoryWithin(repo, git, { maxFiles, maxBytes, label = 'the editor\'s bound' }) {
+  const { createCsharpSyntacticIndex, MAX_FILE_BYTES } = require('./syntactic-index');
+  const { pickRepositoryFiles } = require('../repository-files');
+  const repoFiles = listRepositoryCsharp(repo, git);
+  if (!repoFiles) return { index: null, files: 0, bytes: 0, reason: 'git could not list the repository\'s files' };
+  const { projects, listed, usingsByProject, uiDirs } = repoFiles;
+  const bytes = listed.reduce((n, f) => n + f.size, 0);
+  const mib = (/** @type {number} */ n) => `${Math.round((n / 1024 / 1024) * 10) / 10} MiB`;
+  if (listed.length > maxFiles || bytes > maxBytes) {
+    return {
+      index: null, files: listed.length, bytes,
+      reason: `the repository has ${listed.length} C# file(s), ${mib(bytes)}, over ${label} of ${maxFiles} files or ${mib(maxBytes)}`,
+    };
+  }
+  const picked = pickRepositoryFiles(listed, readerOf(repo), { changedPaths: new Set(), names: new Set(), maxFiles, maxBytes, maxFileBytes: MAX_FILE_BYTES });
+  const index = createCsharpSyntacticIndex(picked.sources, {
+    root: repo, scope: `the repository (${picked.sources.length} C# file(s) indexed)`, notIndexed: picked.notIndexed, projects, projectUsings: usingsByProject, uiDirs,
+  });
+  return { index, files: listed.length, bytes, reason: null };
 }
 
 /**
@@ -446,6 +497,8 @@ function createCsharpProvider({ probe = () => editorCsharpProbe(), serverChanges
       trace, repoRoot, serverSteady: () => readyAt === null || readyAt === serverChanges(),
       ...(csharpIndex !== undefined ? { indexOf: async () => csharpIndex } : {}),
     }),
+    // The session's syntax-index workers (./editor-extras.js `sessionIndex`), ended with the session.
+    dispose: () => require('./editor-extras').disposeSessionIndexes(),
     serverLabel: 'the C# language server (Roslyn)',
   });
 }
@@ -454,6 +507,6 @@ const csharpProvider = createCsharpProvider();
 
 module.exports = {
   csharpProvider, createCsharpProvider, editorCsharpProbe, csharpSpec, collectCsharpSymbols, pairCsharpOverloads, renderCsharpSymbolSig,
-  prepareSyntactic, indexRepository, projectFacts, csharpProjectDir, NOT_SOURCE_DIRS, PROBE_DEADLINE_MS, NO_HIERARCHY_NOTE,
+  prepareSyntactic, indexRepository, indexRepositoryWithin, projectFacts, csharpProjectDir, NOT_SOURCE_DIRS, PROBE_DEADLINE_MS, NO_HIERARCHY_NOTE,
   createServerStateTracker, SERVER_STATE_LOADED,
 };
