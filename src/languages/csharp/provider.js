@@ -288,10 +288,11 @@ function listRepositoryCsharp(repo, git) {
  * resolve a call to the wrong member) and a reason naming the counts and the bound. The
  * CLI's `indexRepository` is unchanged. Reads the file system and the repository.
  * @param {string} repo @param {ReturnType<typeof import('../../engine/git').makeGit>} git
- * @param {{ maxFiles: number, maxBytes: number }} bound
+ * @param {{ maxFiles: number, maxBytes: number, label?: string }} bound `label` names the bound
+ *   in the reason ("the editor's bound" by default).
  * @returns {{ index: any, files: number, bytes: number, reason: string|null }}
  */
-function indexRepositoryWithin(repo, git, { maxFiles, maxBytes }) {
+function indexRepositoryWithin(repo, git, { maxFiles, maxBytes, label = 'the editor\'s bound' }) {
   const { createCsharpSyntacticIndex, MAX_FILE_BYTES } = require('./syntactic-index');
   const { pickRepositoryFiles } = require('../repository-files');
   const repoFiles = listRepositoryCsharp(repo, git);
@@ -302,7 +303,7 @@ function indexRepositoryWithin(repo, git, { maxFiles, maxBytes }) {
   if (listed.length > maxFiles || bytes > maxBytes) {
     return {
       index: null, files: listed.length, bytes,
-      reason: `the repository has ${listed.length} C# file(s), ${mib(bytes)}, over the editor's bound of ${maxFiles} files or ${mib(maxBytes)}`,
+      reason: `the repository has ${listed.length} C# file(s), ${mib(bytes)}, over ${label} of ${maxFiles} files or ${mib(maxBytes)}`,
     };
   }
   const picked = pickRepositoryFiles(listed, readerOf(repo), { changedPaths: new Set(), names: new Set(), maxFiles, maxBytes, maxFileBytes: MAX_FILE_BYTES });

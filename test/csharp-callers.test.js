@@ -421,26 +421,40 @@ function csharpRepo() {
 
 /**
  * A fake worker: `answer(message)` gives `{ value }`, `{ error }`, `'exit'`, `'error'` or
- * nothing (never answers).
+ * nothing (never answers); `{ value, delay }` answers after `delay` ms. `messages`: what it got.
  * @param {(message: any) => any} answer
  */
 function fakeWorker(answer) {
   const { EventEmitter } = require('node:events');
   const w = Object.assign(new EventEmitter(), {
     terminated: false,
+    /** @type {any[]} */
+    messages: [],
     ref() {}, unref() {},
     async terminate() { w.terminated = true; },
     postMessage(/** @type {any} */ message) {
-      setImmediate(() => {
-        const out = answer(message);
+      w.messages.push(message);
+      const out = answer(message);
+      setTimeout(() => {
+        if (w.terminated) return;
         if (out === 'exit') w.emit('exit', 1);
         else if (out === 'error') w.emit('error', new Error('worker crashed'));
-        else if (out) w.emit('message', { id: message.id, ...out });
-      });
+        else if (out) w.emit('message', { id: message.id, value: out.value, error: out.error });
+      }, (out && out.delay) || 0);
     },
   });
   return w;
 }
+
+const BUILT = { built: true, files: 2, bytes: 10, size: 2, ms: 1, heapMb: 1, heapPeakMb: 2, reason: null };
+/** A counting fake worker factory: `workers` made, each answering with `answer`. @param {(message: any) => any} answer */
+function fakeWorkers(answer) {
+  /** @type {any[]} */
+  const workers = [];
+  return { workers, builds: () => workers.flatMap((w) => w.messages).filter((m) => m.kind === 'build').length, makeWorker: () => { const w = fakeWorker(answer); workers.push(w); return w; } };
+}
+/** Edits Lib/Shapes.cs in `dir` (a new tree state). @param {string} dir @param {string} text */
+const editLib = (dir, text) => require('node:fs').writeFileSync(path.join(dir, 'Lib/Shapes.cs'), text);
 
 const IMPL_ARG = (/** @type {string} */ dir) => ({ file: path.join(dir, 'Lib/Shapes.cs'), pos: IMPL_M, name: 'M', className: 'Impl' });
 const CTOR_ARG = (/** @type {string} */ dir) => ({ file: path.join(dir, 'Lib/Shapes.cs'), pos: posOf('Lib/Shapes.cs', 'primary-constructor', 'Svc'), name: 'Svc', className: 'Svc' });
@@ -456,7 +470,7 @@ test('S2: the worker\'s answers equal the in-thread index\'s; build, files and h
     const viaWorker = await sessionIndex(repo.dir, (m) => traces.push(m));
     const local = indexRepositoryWithin(repo.dir, makeGit(repo.dir), { maxFiles: 10, maxBytes: 1024 * 1024 }).index;
     assert.ok(local);
-    assert.match(traces.join('\n'), /built in \d+ms in its worker \(2 of 2 file\(s\), \d+ MiB; worker heap \d+ MiB\)/);
+    assert.match(traces.join('\n'), /built in \d+ms in its worker \(2 of 2 file\(s\), \d+ MiB; worker heap peak \d+ MiB, \d+ MiB after\)/);
     const plain = (/** @type {any} */ v) => JSON.parse(JSON.stringify(v));
     assert.deepEqual(await viaWorker.dispatchOf(IMPL_ARG(repo.dir)), plain(local.dispatchOf(IMPL_ARG(repo.dir))));
     assert.equal((await viaWorker.dispatchOf(IMPL_ARG(repo.dir))).targets.length, 1, 'IFoo.M');
@@ -542,14 +556,125 @@ test('S2: disposing ends the workers; the next lookup starts another', async () 
   const { sessionIndex, disposeSessionIndexes } = require('../src/languages/csharp/editor-extras');
   const repo = csharpRepo();
   try {
-    /** @type {any[]} */
-    const workers = [];
-    const options = { makeWorker: () => { const w = fakeWorker(() => ({ value: { built: true, files: 2, bytes: 10, size: 2, ms: 1, heapMb: 1, reason: null } })); workers.push(w); return w; } };
-    await sessionIndex(repo.dir, () => {}, options);
+    const { workers, makeWorker } = fakeWorkers(() => ({ value: BUILT }));
+    await sessionIndex(repo.dir, () => {}, { makeWorker });
     disposeSessionIndexes();
     assert.ok(workers[0].terminated);
-    await sessionIndex(repo.dir, () => {}, options);
+    await sessionIndex(repo.dir, () => {}, { makeWorker });
     assert.equal(workers.length, 2);
+    disposeSessionIndexes();
+  } finally {
+    repo.done();
+  }
+});
+
+test('S2: a dispose during the tree-state check starts no worker; the build rejects', async () => {
+  const { sessionIndex, disposeSessionIndexes } = require('../src/languages/csharp/editor-extras');
+  const repo = csharpRepo();
+  try {
+    const { workers, makeWorker } = fakeWorkers(() => ({ value: BUILT }));
+    const pending = sessionIndex(repo.dir, () => {}, { makeWorker });
+    disposeSessionIndexes();
+    await assert.rejects(pending, /disposed/);
+    assert.equal(workers.length, 0);
+  } finally {
+    repo.done();
+  }
+});
+
+test('S2: one repository at a time: indexing another terminates the previous worker', async () => {
+  const { sessionIndex, disposeSessionIndexes } = require('../src/languages/csharp/editor-extras');
+  const a = csharpRepo();
+  const b = csharpRepo();
+  try {
+    const { workers, makeWorker } = fakeWorkers(() => ({ value: BUILT }));
+    await sessionIndex(a.dir, () => {}, { makeWorker });
+    await sessionIndex(b.dir, () => {}, { makeWorker });
+    assert.deepEqual(workers.map((w) => w.terminated), [true, false]);
+    disposeSessionIndexes();
+  } finally {
+    a.done();
+    b.done();
+  }
+});
+
+test('S1: a failed build is remembered for its tree state and retried at the next one; a dead worker is rebuilt', async () => {
+  const { sessionIndex, recheckSessionIndexes, disposeSessionIndexes } = require('../src/languages/csharp/editor-extras');
+  const repo = csharpRepo();
+  try {
+    let crash = true;
+    const fakes = fakeWorkers((m) => (m.kind !== 'build' ? 'exit' : crash ? 'error' : { value: BUILT }));
+    const options = { makeWorker: fakes.makeWorker };
+    await assert.rejects(sessionIndex(repo.dir, () => {}, options), /worker crashed/);
+    recheckSessionIndexes();
+    await assert.rejects(sessionIndex(repo.dir, () => {}, options), /worker crashed/, 'the same state: the failure, remembered');
+    assert.equal(fakes.builds(), 1, 'not rebuilt');
+    crash = false;
+    editLib(repo.dir, `${LIB}\n// edited\n`);
+    recheckSessionIndexes();
+    const idx = await sessionIndex(repo.dir, () => {}, options);
+    assert.equal(fakes.builds(), 2, 'a new tree state: built again');
+    await assert.rejects(idx.dispatchOf(IMPL_ARG(repo.dir)), /exited \(1\)/);
+    recheckSessionIndexes();
+    await sessionIndex(repo.dir, () => {}, options);
+    assert.equal(fakes.builds(), 3, 'the worker died: rebuilt at the next analysis');
+    assert.equal(fakes.workers.length, 3);
+    disposeSessionIndexes();
+  } finally {
+    repo.done();
+  }
+});
+
+test('S1: past the bound is remembered for the tree state (no second build)', async () => {
+  const { sessionIndex, recheckSessionIndexes, disposeSessionIndexes } = require('../src/languages/csharp/editor-extras');
+  const repo = csharpRepo();
+  try {
+    const fakes = fakeWorkers(() => ({ value: { ...BUILT, size: 0, reason: 'over the bound' } }));
+    await assert.rejects(sessionIndex(repo.dir, () => {}, { makeWorker: fakes.makeWorker }), /over the bound/);
+    recheckSessionIndexes();
+    await assert.rejects(sessionIndex(repo.dir, () => {}, { makeWorker: fakes.makeWorker }), /over the bound/);
+    assert.equal(fakes.builds(), 1);
+    disposeSessionIndexes();
+  } finally {
+    repo.done();
+  }
+});
+
+test('S2: a query of an earlier build is not posted behind a newer build (its deadline cannot kill it)', async () => {
+  const { sessionIndex, recheckSessionIndexes, disposeSessionIndexes } = require('../src/languages/csharp/editor-extras');
+  const repo = csharpRepo();
+  try {
+    let slow = false;
+    const fakes = fakeWorkers((m) => (m.kind === 'build' ? { value: BUILT, delay: slow ? 120 : 0 } : { value: { targets: [], reasons: [] } }));
+    const options = { makeWorker: fakes.makeWorker, queryMs: 30 };
+    const first = await sessionIndex(repo.dir, () => {}, options);
+    slow = true;
+    editLib(repo.dir, `${LIB}\n// edited\n`);
+    recheckSessionIndexes();
+    const second = sessionIndex(repo.dir, () => {}, options);
+    while (fakes.builds() < 2) await new Promise((r) => setTimeout(r, 2));
+    await assert.rejects(first.dispatchOf(IMPL_ARG(repo.dir)), /rebuilt for another tree state/);
+    const idx = await second;
+    assert.deepEqual(await idx.dispatchOf(IMPL_ARG(repo.dir)), { targets: [], reasons: [] });
+    assert.equal(fakes.workers.length, 1, 'the worker was not killed');
+    assert.ok(!fakes.workers[0].messages.some((/** @type {any} */ m) => m.kind === 'dispatchOf' && m.state !== fakes.workers[0].messages[1].state));
+    disposeSessionIndexes();
+  } finally {
+    repo.done();
+  }
+});
+
+test('S2: the in-thread fallback is refused above its bound; options are range-checked', async () => {
+  const { sessionIndex, disposeSessionIndexes } = require('../src/languages/csharp/editor-extras');
+  const { createCsharpIndexPool } = require('../src/languages/csharp/index-pool');
+  const repo = csharpRepo();
+  try {
+    const options = { makeWorker: () => { throw new Error('no threads'); }, fallbackBound: { maxFiles: 1, maxBytes: 1024 * 1024 } };
+    await assert.rejects(sessionIndex(repo.dir, () => {}, options), /2 C# file\(s\), [\d.]+ MiB, over the bound of an index built without its worker of 1 files/);
+    disposeSessionIndexes();
+    await assert.rejects(sessionIndex(repo.dir, () => {}, { maxFiles: 0 }), RangeError);
+    assert.throws(() => createCsharpIndexPool(repo.dir, { queryMs: 0 }), RangeError);
+    assert.throws(() => createCsharpIndexPool(repo.dir, { heapMb: 100000 }), RangeError);
     disposeSessionIndexes();
   } finally {
     repo.done();

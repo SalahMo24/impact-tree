@@ -311,9 +311,9 @@
  *   `file` (Python: a class's name for its `__init__`, whose constructions Pyright lists
  *   only at the class; C#: the interface members a method implements, C-D5, whose rows are
  *   labelled "through IFoo"). Synchronous or a promise; empty or absent: none. A throw or
- *   a rejection makes the answer incomplete ("caller targets lookup failed: …"). A target's `via`/`text` label its rows (a caller also listed unlabelled loses
- *   the label, `mergeCallerRows`). The shared step
- *   (`applyCallerExtras`) asks the call hierarchy at each, up to MAX_CALLER_TARGETS (past
+ *   a rejection makes the answer incomplete ("caller targets lookup failed: …"). A
+ *   target's `via`/`text` label its rows (a caller also listed unlabelled loses the label,
+ *   `mergeCallerRows`). The shared step (`applyCallerExtras`) asks the call hierarchy at each, up to MAX_CALLER_TARGETS (past
  *   it the answer is incomplete), merges their callers with the target's own (each caller
  *   once, call sites merged) and keeps the answer incomplete when any of them was not
  *   answered. With targets, the target's own `null` incoming-call result means no calls at
