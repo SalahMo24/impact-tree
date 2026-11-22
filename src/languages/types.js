@@ -111,7 +111,10 @@
  *   server is up and has no item at `pos`. Items listed must be followed by the
  *   `incomingCalls` of one of them: the editor holds a slot of its prepared-hierarchy
  *   budget until then (MAX_PREPARED_HIERARCHIES, src/session/services-vscode.js).
- * @property {(item: unknown) => Promise<import('../engine/caller-contract').CallerRow[]|null>} incomingCalls
+ * @property {(item: unknown) => Promise<import('../engine/caller-contract').CallerRow[]|{ rows: import('../engine/caller-contract').CallerRow[], unreadable: number }|null>} incomingCalls
+ *   The callers of a prepared item: a list, or `{ rows, unreadable }` when `unreadable`
+ *   callers are in files that cannot be read (not on disk, or not a file: generated code)
+ *   and are left out of `rows`; `queryHierarchy` counts them into the answer's reason (S7b).
  * @property {(doc: DocRef, pos: number) => Promise<ServerLocation[]|null>} references
  * @property {(doc: DocRef, pos: number) => Promise<ServerLocation[]|null>} implementations
  * @property {(doc: DocRef, pos: number) => Promise<ServerLocation[]|null>} definitions
@@ -333,9 +336,13 @@
  *   Removes callers the server reports wrongly. `kept` replaces the callers, so a kept
  *   caller may be a copy with fewer `callSites` (Go keeps only a caller's calls);
  *   `dropped` counts the callers removed.
- * @property {(() => Promise<{ callers: import('../engine/caller-contract').CallerRow[], incompleteReason: string|null }>)|null} moreCallers
- *   Callers the server cannot see; `incompleteReason` when that search failed. Never rejects.
- *   Null when there is nothing to search, so the answer needs no wait.
+ * @property {(() => Promise<{ callers: import('../engine/caller-contract').CallerRow[], incompleteReason: string|null, lasting?: boolean }>)|null} moreCallers
+ *   Callers the server cannot see; `incompleteReason` when that search failed or the answer
+ *   cannot be complete. Never rejects. Null when there is nothing to search, so the answer
+ *   needs no wait. `lasting: true`: the reason holds for the whole analysis (C#: calls
+ *   through an interface, a property), so the editor's resolver may keep the incomplete
+ *   answer until `clear()`; absent or false (a failed or cut-short search), it is asked
+ *   again, in a caller retry run too.
  */
 
 /**

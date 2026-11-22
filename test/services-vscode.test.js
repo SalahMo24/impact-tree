@@ -362,6 +362,26 @@ test('callers are rows with offsets, deduplicated, and test callers marked', asy
   assert.equal(services.isWarm(), true);
 });
 
+test('S7b: callers in files that cannot be read (not on disk, not a file: URI) are left out and counted', async (t) => {
+  const { create, doc, dir } = setup(t, (name) => {
+    if (name === 'vscode.prepareCallHierarchy') return [{}];
+    if (name === 'vscode.provideIncomingCalls') {
+      const from = { uri: { scheme: 'file', fsPath: doc.file }, name: 'other', selectionRange: { start: { line: 1, character: 16 } } };
+      const generated = { uri: { scheme: 'roslyn-source-generated', fsPath: '/Gen.g.cs' }, name: 'Gen', selectionRange: range(0, 0, 0, 1) };
+      const missing = { uri: { fsPath: path.join(dir, 'gone.ts') }, name: 'gone', selectionRange: range(0, 0, 0, 1) };
+      return [{ from, fromRanges: [] }, { from: generated, fromRanges: [] }, { from: missing, fromRanges: [] }];
+    }
+    return [];
+  });
+  const services = create();
+  const query = await queryHierarchy(services, doc, 16);
+  assert.ok(query.ready);
+  assert.deepEqual([query.rows.map((r) => r.label), query.unreadable], [['other'], 2]);
+  const state = await callersFromHierarchy(services, { doc, pos: 16 });
+  assert.deepEqual([state.state, state.complete, state.callers.length], ['resolved', false, 1]);
+  assert.match(state.reason, /^2 caller\(s\) in files that cannot be read/);
+});
+
 // VS Code's executeDocumentSymbolProvider answers objects with both forms: a `location`
 // holding the whole declaration, and the hierarchical `range` / `selectionRange`. The name
 // callers are asked at is `selectionRange`; reading `location` put it at `func`.

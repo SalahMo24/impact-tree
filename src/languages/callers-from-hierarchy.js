@@ -19,9 +19,17 @@
  * How one call-hierarchy query ended. `ready`: the server listed the incoming calls
  * (`rows`, possibly none). Otherwise `reason` says why not; `retryable` when the server
  * did not answer in time or was not ready. `reason` can be empty when a provider failed
- * without a message.
- * @typedef {{ ready: true, rows: CallerRow[] } | { ready: false, reason: string, retryable: boolean }} HierarchyQuery
+ * without a message. `unreadable` (absent: 0): callers the server listed in files that cannot
+ * be read (not on disk, or not a file: generated code), left out of `rows` (S7b).
+ * @typedef {{ ready: true, rows: CallerRow[], unreadable?: number } | { ready: false, reason: string, retryable: boolean }} HierarchyQuery
  */
+
+/**
+ * The reason for callers in files that cannot be read. A lasting condition of the
+ * workspace: not retryable.
+ * @param {number} n
+ */
+const unreadableReason = (n) => `${n} caller(s) in files that cannot be read (generated code or outside the workspace) are not listed`;
 
 // The reason of a query whose `incomingCalls` answered `null` (nothing listed at that
 // position; VS Code's command turns the same answer into `[]`).
@@ -82,9 +90,12 @@ async function queryHierarchy(services, doc, pos, { retryRejected = null, gate =
     const items = await scope.prepareCallHierarchy(doc, pos);
     // No item (or no answer): whether the server supports this symbol is unproven.
     if (!items || !items.length) return { ready: false, reason: 'no call hierarchy item', retryable: false };
-    const rows = await scope.incomingCalls(items[0]);
-    if (!Array.isArray(rows)) return { ready: false, reason: NO_INCOMING_RESULT, retryable: false };
-    return { ready: true, rows };
+    // A list, or `{ rows, unreadable }` when some callers' files cannot be read (S7b).
+    const listed = await scope.incomingCalls(items[0]);
+    const rows = Array.isArray(listed) ? listed : (listed && Array.isArray(listed.rows) ? listed.rows : null);
+    if (!rows) return { ready: false, reason: NO_INCOMING_RESULT, retryable: false };
+    const unreadable = !Array.isArray(listed) && listed && Number.isSafeInteger(listed.unreadable) ? listed.unreadable : 0;
+    return unreadable > 0 ? { ready: true, rows, unreadable } : { ready: true, rows };
   };
   const send = () => (services.callerQuery ? services.callerQuery(run) : run(services));
   const ask = () => (gate ? gate(send) : send());
@@ -130,7 +141,9 @@ function answerOf(query, withTests) {
   if (!query.ready) {
     return { callers: [], complete: false, reason: query.reason || 'caller query did not complete', ...(query.retryable ? { retryable: true } : {}) };
   }
-  return { callers: callerRows(query.rows, withTests), complete: true };
+  const callers = callerRows(query.rows, withTests);
+  // Callers left out because their files cannot be read (S7b): answered, but incomplete.
+  return query.unreadable ? { callers, complete: false, reason: unreadableReason(query.unreadable) } : { callers, complete: true };
 }
 
 /**
@@ -305,7 +318,12 @@ async function callerTargetsOf(extras, file, pos) {
  * 4. `moreCallers`, when the language has one and every part was answered: its callers are
  *    added once each (tests left out without `withTests`), and its `incompleteReason` makes
  *    the answer incomplete.
- * Nothing here turns a failure into an empty complete answer.
+ * 5. Callers the server listed in files that cannot be read (`HierarchyQuery.unreadable`,
+ *    the main query's and the caller targets') make the answered answer incomplete with
+ *    their count (S7b): not retryable, and lasting.
+ * An answered but incomplete answer is `lasting` when every reason is: step 5's, and
+ * `moreCallers`' only when it says `lasting: true` (the resolver may then keep it for the
+ * analysis). Nothing here turns a failure into an empty complete answer.
  * @param {HierarchyQuery} hierarchy The main query, at `pos`.
  * @param {object} options
  * @param {import('./types').EditorCallerExtras|null} options.extras The language's extras.
@@ -319,8 +337,9 @@ async function callerTargetsOf(extras, file, pos) {
  *   Absent: targets are not asked and, when there are any, the answer is incomplete.
  * @param {() => boolean} [options.isStale] Asked after the targets and after `moreCallers`
  *   settle: true when the query belongs to an earlier analysis, so its answer is not built.
- * @returns {Promise<{ stale: true } | { stale: false, answer: CallerAnswer, ready: boolean, explainedReason: string|null, dropped: number, added: number, targetsAsked: number }>}
+ * @returns {Promise<{ stale: true } | { stale: false, answer: CallerAnswer, ready: boolean, lasting: boolean, explainedReason: string|null, dropped: number, added: number, targetsAsked: number }>}
  *   `ready`: every part answered (the main `null` read through targets counts as answered);
+ *   `lasting`: the answer is answered, incomplete, and every reason lasts for the analysis;
  *   `explainedReason`: the language's explanation of an unanswered main query, or null;
  *   `dropped`: callers `filter` removed; `added`: callers `moreCallers` gave (before
  *   de-duplication); `targetsAsked`: caller-target queries asked.
@@ -340,8 +359,10 @@ async function applyCallerExtras(hierarchy, { extras, query, file, pos, withTest
   let explainedReason = null;
   /** @type {CallerRow[][]} */
   const lists = [];
+  let unreadable = 0;
   if (hierarchy.ready) {
     lists.push(hierarchy.rows);
+    unreadable += hierarchy.unreadable || 0;
   } else {
     explainedReason = extras && extras.explainIncomplete ? extras.explainIncomplete(hierarchy.reason, file, pos) : null;
     const readAsNone = !explainedReason && hierarchy.reason === NO_INCOMING_RESULT && targets.length > 0 && !!askAt;
@@ -363,7 +384,11 @@ async function applyCallerExtras(hierarchy, { extras, query, file, pos, withTest
       const { via, text } = targets[n];
       // A labelled target's rows carry its label (C-D5); `mergeCallerRows` drops it from a
       // caller the main query lists too.
-      if (a.ready) { lists.push(via ? a.rows.map((r) => ({ ...r, via, text })) : a.rows); continue; }
+      if (a.ready) {
+        lists.push(via ? a.rows.map((r) => ({ ...r, via, text })) : a.rows);
+        unreadable += a.unreadable || 0;
+        continue;
+      }
       // A target's `null`: no calls there, as the editor's `[]` for it (step 2).
       if (a.reason === NO_INCOMING_RESULT) continue;
       reasons.push(`at another position of its callers: ${a.reason || 'caller query did not complete'}`);
@@ -385,15 +410,17 @@ async function applyCallerExtras(hierarchy, { extras, query, file, pos, withTest
   }
   if (!ready) {
     const answer = { callers: out, complete: false, reason: reasons.join('; '), ...(retryable ? { retryable: true } : {}) };
-    return { stale: false, answer, ready, explainedReason, dropped, added: 0, targetsAsked };
+    return { stale: false, answer, ready, lasting: false, explainedReason, dropped, added: 0, targetsAsked };
   }
   let added = 0;
   /** @type {string|null} */
   let incompleteReason = null;
+  let lasting = true;
   if (query && query.moreCallers) {
     const more = await query.moreCallers();
     if (isStale()) return { stale: true };
     incompleteReason = more.incompleteReason;
+    if (incompleteReason && more.lasting !== true) lasting = false;
     added = more.callers.length;
     const have = new Set(out.map((c) => `${c.file}#${c.pos}`));
     for (const e of more.callers) {
@@ -402,11 +429,12 @@ async function applyCallerExtras(hierarchy, { extras, query, file, pos, withTest
       out.push(e);
     }
   }
-  const answer = incompleteReason ? { callers: out, complete: false, reason: incompleteReason } : { callers: out, complete: true };
-  return { stale: false, answer, ready, explainedReason: null, dropped, added, targetsAsked };
+  const reason = [incompleteReason, unreadable ? unreadableReason(unreadable) : null].filter(Boolean).join('; ');
+  const answer = reason ? { callers: out, complete: false, reason } : { callers: out, complete: true };
+  return { stale: false, answer, ready, lasting: !!reason && lasting, explainedReason: null, dropped, added, targetsAsked };
 }
 
 module.exports = {
   callersFromHierarchy, queryHierarchy, createQueryGate, callerRows, answerOf, referenceVerdict, applyCallerExtras, mergeCallerRows,
-  MAX_CALLER_TARGETS, NO_INCOMING_RESULT,
+  MAX_CALLER_TARGETS, NO_INCOMING_RESULT, unreadableReason,
 };

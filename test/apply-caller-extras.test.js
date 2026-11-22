@@ -10,7 +10,7 @@ const base = { file: '/r/a.py', pos: 4, withTests: true };
 
 test('an unanswered query keeps the server reason, retryable as the server said', async () => {
   const r = await applyCallerExtras({ ready: false, reason: 'timed out', retryable: true }, { ...base, extras: null, query: null });
-  assert.deepEqual(r, { stale: false, answer: { callers: [], complete: false, reason: 'timed out', retryable: true }, ready: false, explainedReason: null, dropped: 0, added: 0, targetsAsked: 0 });
+  assert.deepEqual(r, { stale: false, answer: { callers: [], complete: false, reason: 'timed out', retryable: true }, ready: false, lasting: false, explainedReason: null, dropped: 0, added: 0, targetsAsked: 0 });
   const empty = await applyCallerExtras({ ready: false, reason: '', retryable: false }, { ...base, extras: null, query: null });
   assert.equal(empty.answer.reason, 'caller query did not complete', 'never an empty reason');
 });
@@ -45,6 +45,44 @@ test('filter is not asked for an empty list; an incomplete moreCallers makes the
   const r = await applyCallerExtras({ ready: true, rows: [] }, { ...base, extras: /** @type {any} */ ({}), query });
   assert.equal(filtered, 0);
   assert.deepEqual(!r.stale && r.answer, { callers: [], complete: false, reason: 'protocol method' });
+  assert.equal(!r.stale && r.lasting, false, 'not lasting unless moreCallers says so (S8)');
+});
+
+test('S8: moreCallers\' lasting is passed on; a complete answer is not lasting', async () => {
+  const more = (/** @type {any} */ answer) => ({ isSuppressed: () => false, filter: (c) => ({ kept: c, dropped: 0 }), moreCallers: async () => answer });
+  const lasting = await applyCallerExtras({ ready: true, rows: [] }, { ...base, extras: /** @type {any} */ ({}), query: more({ callers: [], incompleteReason: 'a property', lasting: true }) });
+  assert.equal(!lasting.stale && lasting.lasting, true);
+  const complete = await applyCallerExtras({ ready: true, rows: [] }, { ...base, extras: /** @type {any} */ ({}), query: more({ callers: [], incompleteReason: null, lasting: true }) });
+  assert.equal(!complete.stale && complete.lasting, false);
+});
+
+test('S7b: callers in unreadable files make the answered answer incomplete, ready, lasting and not retryable', async () => {
+  const { unreadableReason } = require('../src/languages/callers-from-hierarchy');
+  // Main query and a caller target each left callers out.
+  const extras = /** @type {any} */ ({ callerTargets: () => [{ file: '/r/i.py', pos: 7 }] });
+  const r = await applyCallerExtras({ ready: true, rows: [row('/r/b.py', 1)], unreadable: 2 }, {
+    ...base, extras, query: null, askAt: async () => ({ ready: true, rows: [], unreadable: 1 }),
+  });
+  assert.ok(!r.stale);
+  assert.equal(r.ready, true, 'not an unanswered part: the answer is not unknown');
+  assert.deepEqual(r.answer, { callers: [row('/r/b.py', 1)], complete: false, reason: unreadableReason(3) });
+  assert.equal(r.lasting, true);
+  // Joined after moreCallers' reason; a non-lasting one keeps the whole answer non-lasting.
+  const query = { isSuppressed: () => false, filter: (c) => ({ kept: c, dropped: 0 }), moreCallers: async () => ({ callers: [], incompleteReason: 'search failed' }) };
+  const joined = await applyCallerExtras({ ready: true, rows: [], unreadable: 1 }, { ...base, extras: /** @type {any} */ ({}), query });
+  assert.ok(!joined.stale);
+  assert.equal(joined.answer.reason, `search failed; ${unreadableReason(1)}`);
+  assert.equal(joined.answer.retryable, undefined);
+  assert.equal(joined.lasting, false);
+});
+
+test('S7b: queryHierarchy reads { rows, unreadable } from incomingCalls', async () => {
+  const { queryHierarchy } = require('../src/languages/callers-from-hierarchy');
+  const services = (/** @type {any} */ listed) => /** @type {any} */ ({ prepareCallHierarchy: async () => [{}], incomingCalls: async () => listed });
+  const doc = { file: '/r/a.py', side: /** @type {const} */ ('head') };
+  assert.deepEqual(await queryHierarchy(services({ rows: [row('/r/b.py', 1)], unreadable: 2 }), doc, 4), { ready: true, rows: [row('/r/b.py', 1)], unreadable: 2 });
+  assert.deepEqual(await queryHierarchy(services([row('/r/b.py', 1)]), doc, 4), { ready: true, rows: [row('/r/b.py', 1)] });
+  assert.equal((await queryHierarchy(services({ unreadable: 1 }), doc, 4)).ready, false, 'no rows: no answer');
 });
 
 test('a query that became stale while moreCallers ran builds no answer', async () => {

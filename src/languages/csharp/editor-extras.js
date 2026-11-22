@@ -216,7 +216,10 @@ function createCsharpEditorExtras({
     return top ? top.selectionRange.start : 0;
   };
   // Cache: per target (file#pos), its dispatch lookup (owner: these extras; cleared by `clear()`).
-  /** @type {Map<string, Promise<{ targets: import('../types').CallerTarget[], reasons: string[], rows: CallerRow[] }>>} */
+  // `transient`: a reason comes from a missing or failed index, or from an index older than
+  // the text (S8: such an answer is not kept by the resolver, so it is asked again); the
+  // index's own dispatch reasons (an interface, a base, a generic interface) are lasting.
+  /** @type {Map<string, Promise<{ targets: import('../types').CallerTarget[], reasons: string[], rows: CallerRow[], transient?: boolean }>>} */
   const dispatches = new Map();
   /** @param {string} file @param {number} pos */
   const dispatchOf = (file, pos) => {
@@ -233,25 +236,26 @@ function createCsharpEditorExtras({
           // No index: past the editor's bound, the worker failed or timed out (S1, S5).
           const message = e && /** @type {any} */ (e).message;
           trace(`csharp: syntax index failed: ${message}`);
-          return { targets: [], reasons: [`${NO_INDEX_REASON} (${message})`], rows: none };
+          return { targets: [], reasons: [`${NO_INDEX_REASON} (${message})`], rows: none, transient: true };
         }
-        if (!idx) return { targets: [], reasons: [NO_INDEX_REASON], rows: none };
+        if (!idx) return { targets: [], reasons: [NO_INDEX_REASON], rows: none, transient: true };
         let found;
         try { found = await idx.dispatchOf({ file, pos, name: m.name, className: m.className }); } catch (e) {
           const message = e && /** @type {any} */ (e).message;
           trace(`csharp: dispatch lookup failed at ${relOf(file)}@${pos}: ${message}`);
-          return { targets: [], reasons: [`${LOOKUP_FAILED_REASON}: ${message}`], rows: none };
+          return { targets: [], reasons: [`${LOOKUP_FAILED_REASON}: ${message}`], rows: none, transient: true };
         }
-        if (!found) return { targets: [], reasons: [NOT_INDEXED_REASON], rows: none };
+        if (!found) return { targets: [], reasons: [NOT_INDEXED_REASON], rows: none, transient: true };
         // A target is asked only where the file's current text has that member (M3): an
         // index older than the text would send Roslyn into another member.
         /** @type {import('../types').CallerTarget[]} */
         const targets = [];
         const reasons = [...found.reasons];
+        let transient = false;
         for (const t of found.targets) {
           const there = memberAt(t.file, t.pos);
           if (there && there.member === 'method' && there.name === m.name) targets.push(t);
-          else reasons.push(`${STALE_TARGET_REASON} (${t.text || relOf(t.file)})`);
+          else { reasons.push(`${STALE_TARGET_REASON} (${t.text || relOf(t.file)})`); transient = true; }
         }
         // S3: the index's calls through a generic interface member, as the CLI lists them; a
         // row kept only where the current text still has that member (its label at its name)
@@ -269,9 +273,12 @@ function createCsharpEditorExtras({
             ...(c.via ? { via: c.via, text: c.text } : {}),
           });
         }
-        if (stale) reasons.push(`${stale} caller(s) through a generic interface are not where the C# syntax index has them (the file changed since the index was built) and are not listed`);
-        return { targets, reasons, rows };
-      })().catch((e) => ({ targets: [], reasons: [`${LOOKUP_FAILED_REASON}: ${e && /** @type {any} */ (e).message}`], rows: [] }));
+        if (stale) {
+          reasons.push(`${stale} caller(s) through a generic interface are not where the C# syntax index has them (the file changed since the index was built) and are not listed`);
+          transient = true;
+        }
+        return { targets, reasons, rows, transient };
+      })().catch((e) => ({ targets: [], reasons: [`${LOOKUP_FAILED_REASON}: ${e && /** @type {any} */ (e).message}`], rows: [], transient: true }));
       dispatches.set(id, d);
     }
     return d;
@@ -354,12 +361,15 @@ function createCsharpEditorExtras({
           kept = merged.length;
           return { kept: merged, dropped };
         },
+        // `lasting` (S8): the reason holds for the analysis (the member's kind, its dispatch,
+        // a value use), so the resolver keeps the answer; a server reload or a missing,
+        // failed or stale index is not lasting, and the query is asked again.
         async moreCallers() {
-          if (notComputed) return { callers: [], incompleteReason: notComputed };
+          if (notComputed) return { callers: [], incompleteReason: notComputed, lasting: true };
           if (primary && m) return primaryConstructorCallers(file, pos, m);
           // Asked after the query answered: a reload that began before it may have cut it short.
           if (!serverSteady()) return { callers: [], incompleteReason: SERVER_CHANGED_REASON };
-          if (m && (m.member === 'property' || m.member === 'indexer')) return { callers: [], incompleteReason: PROPERTY_REASON };
+          if (m && (m.member === 'property' || m.member === 'indexer')) return { callers: [], incompleteReason: PROPERTY_REASON, lasting: true };
           /** @type {string[]} */
           const reasons = [];
           if (sawValueUse) reasons.push(VALUE_USE_REASON);
@@ -370,7 +380,8 @@ function createCsharpEditorExtras({
           if (!kept && (!explicit || d.targets.length) && d.reasons.length && !unknown) reasons.push(EMPTY_ANSWER_REASON);
           // An explicit implementation is never complete: its calls are its interface's.
           if (explicit && !reasons.length) reasons.push(NOT_INDEXED_REASON);
-          return { callers: d.rows, incompleteReason: reasons.length ? reasons.join('; ') : null };
+          if (!reasons.length) return { callers: d.rows, incompleteReason: null };
+          return { callers: d.rows, incompleteReason: reasons.join('; '), ...(d.transient ? {} : { lasting: true }) };
         },
       };
     },
@@ -383,7 +394,7 @@ function createCsharpEditorExtras({
   /**
    * A primary constructor's callers from the syntax index, always incomplete.
    * @param {string} file @param {number} pos @param {{ name: string, className: string|null }} m
-   * @returns {Promise<{ callers: CallerRow[], incompleteReason: string }>}
+   * @returns {Promise<{ callers: CallerRow[], incompleteReason: string, lasting?: boolean }>}
    */
   async function primaryConstructorCallers(file, pos, m) {
     /** @type {any} */
@@ -407,7 +418,8 @@ function createCsharpEditorExtras({
       test: repoRoot ? isTestFile(repoRoot, c.file) : false,
       ...(c.via ? { via: c.via, text: c.text } : {}),
     }));
-    return { callers, incompleteReason: [PRIMARY_CONSTRUCTOR_REASON, answer.incompleteReason].filter(Boolean).join('; ') };
+    // The index answered: its reasons hold for this tree state (S8); a failed index above does not.
+    return { callers, incompleteReason: [PRIMARY_CONSTRUCTOR_REASON, answer.incompleteReason].filter(Boolean).join('; '), lasting: true };
   }
 }
 

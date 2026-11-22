@@ -341,3 +341,89 @@ test('ensureReady retries after a failed prepare, shares a running one, and keep
     if (realResolver) require.cache[resolverPath] = realResolver; else delete require.cache[resolverPath];
   }
 });
+
+// S8: the editor resolver over a fake language whose extras say whether a reason is lasting.
+function fakeLanguageResolver({ more, targets = () => [], failAt = new Set() }) {
+  const Module = require('module'), originalLoad = Module._load;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-lasting-'));
+  const file = path.join(dir, 'a.fake'); fs.writeFileSync(file, 'one\ntwo\nthree\nfour');
+  const asked = []; // `line` of every prepareCallHierarchy
+  const caller = { from: { uri: { fsPath: file }, name: 'caller', selectionRange: { start: { line: 3, character: 0 } } }, fromRanges: [] };
+  const stub = { ...require('./vscode-stub'), Position: class { constructor(line, character) { Object.assign(this, { line, character }); } },
+    commands: { executeCommand: async (name, arg, position) => {
+      if (name === 'vscode.prepareCallHierarchy') {
+        asked.push(position.line);
+        if (failAt.has(position.line)) throw new Error('server down');
+        return [{ line: position.line }];
+      }
+      if (name === 'vscode.provideIncomingCalls') return arg.line === 0 ? [caller] : [];
+      return [];
+    } } };
+  const extras = { droppedStat: 'valueUsesDropped', suppressedReason: '', unseenUsers: async () => null, clear() {},
+    callerTargets: (f, pos) => targets(pos).map((p) => ({ file, pos: p })),
+    query: () => ({ isSuppressed: () => false, filter: (c) => ({ kept: c, dropped: 0 }), moreCallers: more }) };
+  const language = { id: 'fake', editorCallers: () => extras };
+  Module._load = function (name, ...args) {
+    if (name === 'vscode') return stub;
+    if (name === '../languages/index') return { languageFor: () => language };
+    return originalLoad.call(this, name, ...args);
+  };
+  delete require.cache[require.resolve('../src/session/resolver-vscode')];
+  const resolver = require('../src/session/resolver-vscode').createVscodeResolver({ repoRoot: dir, retries: 0 });
+  Module._load = originalLoad;
+  delete require.cache[require.resolve('../src/session/resolver-vscode')];
+  return { resolver, file, asked, done: () => fs.rmSync(dir, { recursive: true, force: true }) };
+}
+
+test('S8: an incomplete answer is kept for the analysis only when its reason is lasting', async () => {
+  const lasting = fakeLanguageResolver({ more: async () => ({ callers: [], incompleteReason: 'through an interface', lasting: true }) });
+  try {
+    const { resolver, file, asked } = lasting;
+    const first = await resolver.incomingWithStatus(file, 0);
+    assert.deepEqual([first.complete, first.reason, first.callers.length], [false, 'through an interface', 1]);
+    assert.deepEqual(await resolver.incomingWithStatus(file, 0), first, 'served from the cache');
+    // The production-only query is the all-callers answer, incomplete as it is.
+    const production = await resolver.incomingWithStatus(file, 0, false);
+    assert.deepEqual([production.complete, production.reason], [false, 'through an interface']);
+    assert.equal(asked.length, 1, 'asked once for all three');
+    assert.equal(resolver.stats().cacheHits, 2);
+    resolver.clear();
+    await resolver.incomingWithStatus(file, 0);
+    assert.equal(asked.length, 2, 'clear() starts over');
+  } finally { lasting.done(); }
+  // Not lasting (a failed search): asked again, as before S8; a caller retry run asks it again too.
+  const failing = fakeLanguageResolver({ more: async () => ({ callers: [], incompleteReason: 'search failed' }) });
+  try {
+    const { resolver, file, asked } = failing;
+    await resolver.incomingWithStatus(file, 0);
+    await resolver.incomingWithStatus(file, 0);
+    resolver.beginRetry();
+    const production = await resolver.incomingWithStatus(file, 0, false);
+    assert.equal(production.reason, 'search failed');
+    assert.equal(asked.length, 3);
+  } finally { failing.done(); }
+});
+
+test('S8: caller-target answers are memoised per analysis, shared in flight, failures not kept', async () => {
+  // Positions 0 and 4 (lines 0 and 1) both have the caller target at line 2 (offset 8); line 3 (offset 14) fails.
+  const t = fakeLanguageResolver({ more: null, targets: (pos) => (pos === 14 ? [] : [8, 14]), failAt: new Set([3]) });
+  try {
+    const { resolver, file, asked } = t;
+    const [a, b] = await Promise.all([resolver.incomingWithStatus(file, 0), resolver.incomingWithStatus(file, 4)]);
+    assert.equal(a.complete, false, 'a failed target keeps the answer incomplete');
+    assert.equal(b.complete, false);
+    const at = (line) => asked.filter((l) => l === line).length;
+    assert.equal(at(2), 1, 'the shared target was asked once');
+    assert.ok(resolver.stats().targetAnswersShared >= 1);
+    const failedBefore = at(3);
+    await resolver.incomingWithStatus(file, 0);
+    assert.equal(at(3), failedBefore + 1, 'a failed target is asked again');
+    assert.equal(at(2), 1, 'an answered one is not');
+    resolver.beginRetry();
+    await resolver.incomingWithStatus(file, 0);
+    assert.equal(at(2), 2, 'a caller retry run asks its targets again');
+    resolver.clear();
+    await resolver.incomingWithStatus(file, 4);
+    assert.equal(at(2), 3, 'clear() drops the memo');
+  } finally { t.done(); }
+});

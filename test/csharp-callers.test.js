@@ -206,6 +206,42 @@ test('no item at a listed member: the file may not be in a loaded project (not r
 
 // ---- caller rows through the outline (review M1, M2) -----------------------------------------
 
+test('S8: an incomplete answer is lasting for dispatch, value-use, property and primary-constructor reasons; not for a reload or a missing index', async () => {
+  const { queryHierarchy, applyCallerExtras } = require('../src/languages/callers-from-hierarchy');
+  /** @param {Map<string, any[]|null>} answers @param {number} pos @param {any} [extrasOptions] */
+  const applied = async (answers, pos, extrasOptions = {}) => {
+    const services = /** @type {any} */ (fakeServices(answers));
+    const extras = createCsharpEditorExtras({ readText: textOf, repoRoot: ROOT, indexOf: async () => index, ...extrasOptions });
+    const query = extras.query(LIB_FILE, pos);
+    const askAt = (/** @type {string} */ f, /** @type {number} */ p) => queryHierarchy(services, { file: f, side: 'head' }, p);
+    const hierarchy = query.isSuppressed() ? /** @type {const} */ ({ ready: true, rows: [] }) : await askAt(LIB_FILE, pos);
+    const r = await applyCallerExtras(hierarchy, { extras, query, file: LIB_FILE, pos, withTests: true, askAt });
+    assert.ok(!r.stale);
+    return { complete: r.answer.complete, reason: r.answer.reason, lasting: r.lasting };
+  };
+  const empty = await applied(new Map([[`${LIB_FILE}#${IMPL_M}`, []], [`${LIB_FILE}#${IFOO_M}`, []]]), IMPL_M);
+  assert.deepEqual([empty.complete, empty.lasting], [false, true], String(empty.reason));
+  const h = posOf('Lib/Shapes.cs', 'method', 'H', 'Handlers');
+  const reg = posOf('Lib/Shapes.cs', 'method', 'Reg', 'Handlers');
+  const valueUse = await applied(new Map([[`${LIB_FILE}#${h}`, [row(LIB_FILE, 'Handlers.Reg()', reg, [site(LIB, 'Map(H)', 'H')])]]]), h);
+  assert.deepEqual([valueUse.complete, valueUse.lasting], [false, true], String(valueUse.reason));
+  const doubled = posOf('Lib/Shapes.cs', 'property', 'Doubled', 'Local');
+  assert.deepEqual(await applied(new Map([[`${LIB_FILE}#${doubled}`, []]]), doubled), { complete: false, reason: PROPERTY_REASON, lasting: true });
+  const ctor = posOf('Lib/Shapes.cs', 'primary-constructor', 'Svc');
+  assert.equal((await applied(new Map(), ctor)).lasting, true);
+  // Not lasting: the index is missing (S1/S5), or the server reloaded (M4).
+  assert.equal((await applied(new Map(), ctor, { indexOf: async () => null })).lasting, false);
+  const noIndex = await applied(new Map([[`${LIB_FILE}#${USE}`, []]]), USE, { indexOf: async () => null });
+  assert.deepEqual([noIndex.complete, noIndex.lasting], [false, false]);
+  const failed = await applied(new Map([[`${LIB_FILE}#${USE}`, []]]), USE, { indexOf: async () => { throw new Error('worker died'); } });
+  assert.deepEqual([failed.complete, failed.lasting], [false, false]);
+  const reload = await applied(new Map([[`${LIB_FILE}#${IMPL_M}`, []], [`${LIB_FILE}#${IFOO_M}`, []]]), IMPL_M, { serverSteady: () => false });
+  assert.deepEqual(reload, { complete: false, reason: SERVER_CHANGED_REASON, lasting: false });
+  // A complete answer is not "lasting" (it is cached as complete).
+  const ok = await applied(new Map([[`${LIB_FILE}#${USE}`, [row(PROGRAM_FILE, 'Program.<top-level-statements-entry-point>', 0, [])]]]), USE);
+  assert.deepEqual([ok.complete, ok.lasting], [true, false]);
+});
+
 test('M1: a caller row is named and placed as the outline member, never with Roslyn\'s qualified name', async () => {
   // Roslyn's form as VS Code labels it: the containing type's full name, then the item's name.
   const answers = new Map([[`${LIB_FILE}#${IMPL_M}`, [row(LIB_FILE, 'Lib.Impl.Impl.Use()', USE, [site(LIB, '{ M(1); }', 'M')])]], [`${LIB_FILE}#${IFOO_M}`, [

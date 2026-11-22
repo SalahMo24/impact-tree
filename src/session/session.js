@@ -653,6 +653,9 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     if (!retry) {
       session.resolver.clear();
       session.localResolver = null;
+    } else if (session.resolver.beginRetry) {
+      // The resolver keeps only complete and lasting answers (S8); its caller-target memo goes.
+      session.resolver.beginRetry();
     }
     const tStart = clock.now();
     const report = (m) => { if (!run.signal.aborted && progress) progress.report({ message: m }); };
