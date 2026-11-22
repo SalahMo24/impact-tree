@@ -113,6 +113,8 @@ function createVscodeResolver({
     const id = `${file}#${pos}`;
     const had = targetAnswers.get(id);
     if (had) { stats.targetAnswersShared++; return had; }
+    // Server queries only: a memo hit is `targetAnswersShared`.
+    stats.callerTargetQueries++;
     const asked = queryHierarchy(services, headDoc(file), pos, options);
     targetAnswers.set(id, asked);
     // A failed answer is not kept (this entry only: `clear()` may have replaced it).
@@ -139,7 +141,9 @@ function createVscodeResolver({
     // again, without tests) is served from it: a cached one (complete, or incomplete for a
     // lasting reason, which it keeps) by filtering, an unfinished one by repeating how it
     // ended. Asking the server again would cost the same round trip, and for a query that
-    // timed out, the same timeout a second time.
+    // timed out, the same timeout a second time. An incomplete A keeps its reasons, also one
+    // only a test caller caused (a value use, an outside-repo caller): P may read more
+    // incomplete than asked alone would; never less.
     if (!withTests) {
       const all = cache.get(`A${file}#${pos}`);
       if (all) { stats.cacheHits++; return { ...all, callers: all.callers.filter((c) => !c.test) }; }
@@ -177,7 +181,6 @@ function createVscodeResolver({
       isStale: () => startedGeneration !== generation,
     });
     if (applied.stale) return staleAnswer();
-    stats.callerTargetQueries += applied.targetsAsked;
     const result = applied.answer;
     // `applied.ready`: every query answered (the main one, and each caller target's).
     if (!applied.ready) {

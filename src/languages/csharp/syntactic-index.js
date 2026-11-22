@@ -1952,6 +1952,13 @@ function createCsharpSyntacticIndex(sources, {
   function dispatchReasons(def, through) {
     /** @type {string[]} */
     const out = [];
+    // Who else a listed call may run: implementations at instantiations that may be this one's;
+    // those at other type arguments (S2) only through a call whose type arguments are not written.
+    const alsoReach = (/** @type {number} */ impls, /** @type {number|undefined} */ otherArgs) => {
+      const others = impls - 1;
+      const at = otherArgs ? ` (and ${otherArgs} implementation(s) at other type arguments, when a call's type arguments are not written)` : '';
+      return `may also reach ${others > 0 ? `${others} other implementation(s) in the indexed files` : 'implementations outside the indexed files'}${at}`;
+    };
     const t = def.type;
     if (!t) return out;
     if (def.inInterface) { out.push(`a member of the interface \`${t.simple}\`: calls through it reach its implementations, and calls written on an implementation are not listed here`); return out; }
@@ -1961,9 +1968,8 @@ function createCsharpSyntacticIndex(sources, {
       // S4: called only through its interface; those calls are `throughOf`'s.
       const iface = def.explicit.replace(/<\d+>/g, '');
       if (!through.ifaces.length) out.push(`an explicit implementation of \`${iface}\`: ${through.unmatched.length ? 'which member of it is not known' : 'the interface is not in the indexed files'}, so calls through it are not listed`);
-      for (const { member, impls } of through.ifaces) {
-        const others = impls - 1;
-        out.push(`an explicit implementation of \`${iface}.${member.name}\`: calls through it are listed as "through \`${iface}\`" and may also reach ${others > 0 ? `${others} other implementation(s) in the indexed files` : 'implementations outside the indexed files'}`);
+      for (const { member, impls, otherArgs } of through.ifaces) {
+        out.push(`an explicit implementation of \`${iface}.${member.name}\`: calls through it are listed as "through \`${iface}\`" and ${alsoReach(impls, otherArgs)}`);
       }
       if (through.genericSkipped) out.push(`${through.genericSkipped} call(s) through a generic interface whose type arguments are not known or differ are not listed`);
       if (through.ambiguousSkipped) out.push(`${through.ambiguousSkipped} call(s) through an interface that match several overloads are not listed`);
@@ -1972,9 +1978,8 @@ function createCsharpSyntacticIndex(sources, {
     const h = hierarchy(t);
     // Interface members it implements: their calls are listed, labelled; other implementations
     // (or other assemblies, for a public interface) may be what those calls run.
-    for (const { member, impls } of through.ifaces) {
-      const others = impls - 1;
-      out.push(`implements \`${member.type ? member.type.simple : '?'}.${member.name}\`: calls through it are listed as "through \`${member.type ? member.type.simple : '?'}\`" and may also reach ${others > 0 ? `${others} other implementation(s) in the indexed files` : 'implementations outside the indexed files'}`);
+    for (const { member, impls, otherArgs } of through.ifaces) {
+      out.push(`implements \`${member.type ? member.type.simple : '?'}.${member.name}\`: calls through it are listed as "through \`${member.type ? member.type.simple : '?'}\`" and ${alsoReach(impls, otherArgs)}`);
     }
     if (through.ambiguousSkipped) out.push(`${through.ambiguousSkipped} call(s) through an interface or a base type that match several overloads are not listed`);
     if (through.genericSkipped) out.push(`${through.genericSkipped} call(s) through a generic interface whose type arguments are not known or differ are not listed`);
@@ -2072,11 +2077,16 @@ function createCsharpSyntacticIndex(sources, {
         queue.push([r, new Map([...r.typeParams].map((tp, n) => [tp, args[n] ?? '*']))]);
       }
     }
+    // Stopped at the bound (S3): some instantiations may be missing; `throughOf` says so.
+    if (queue.length) cutInstances.add(out);
     // None found (past the bound): the one view `viewsOf` has, as before.
     if (!out.length) { const v = viewsOf(x).get(iface); if (v) out.push(v); }
     byIface.set(iface, out);
     return out;
   }
+  // `instancesOf` answers whose walk stopped at `MAX_HIERARCHY` (owner, lifetime: the index's).
+  /** @type {WeakSet<Array<Map<string, string>>>} */
+  const cutInstances = new WeakSet();
 
   /**
    * The type arguments written on an explicit implementation's interface (`IRepo<User>.Get`
@@ -2165,7 +2175,7 @@ function createCsharpSyntacticIndex(sources, {
   }
 
   /**
-   * @typedef {{ ifaces: Array<{ member: DefRec, impls: number }>, unmatched: Array<{ iface: TypeRec, member: DefRec, through: TypeRec }>,
+   * @typedef {{ ifaces: Array<{ member: DefRec, impls: number, otherArgs?: number }>, unmatched: Array<{ iface: TypeRec, member: DefRec, through: TypeRec }>,
    *   bases: DefRec[], genericSkipped: number, ambiguousSkipped: number,
    *   sites: Array<{ rec: FileRec, use: Use, via: 'interface'|'override', name: string, member: DefRec }> }} Through
    */
@@ -2192,17 +2202,35 @@ function createCsharpSyntacticIndex(sources, {
       if (listed.has(m.member)) continue;
       const iface = /** @type {TypeRec} */ (m.member.type);
       const views = instancesOf(m.through, iface);
+      // None found, or the walk stopped at its bound (S3 of the PR 2 review): not decided, a reason.
+      if (!views.length) { out.unmatched.push(m); continue; }
       const impls0 = views.map((v) => implementerFor(m.member, m.through, v));
       // The instantiations this method implements; at the others another method (an overload
       // of other parameter types) or none found.
       const mine = views.filter((v, n) => impls0[n] === def);
-      if (impls0.some((d) => !d)) out.unmatched.push(m);
+      // Not decided where none was found: when this method implements none of them, or its
+      // parameters could be that instantiation's (an overload of other types is not, S2).
+      const undecided = views.some((v, n) => !impls0[n] && (!mine.length || sameParams(def, m.member, m.through, v)));
+      if (undecided || cutInstances.has(views)) out.unmatched.push(m);
       if (!mine.length) continue;
       listed.add(m.member);
+      // Other implementations a listed call may reach: those at an instantiation that may be
+      // this method's (S2: an overload at other type arguments is counted apart, `otherArgs`;
+      // only a call whose type arguments are not written reaches it).
+      const mayBeMine = (/** @type {Map<string, string>} */ v) => mine.some((w) => [...iface.typeParams].every((tp) => sameType(v.get(tp) || '*', w.get(tp) || '*')));
       /** @type {Set<DefRec>} */
-      const impls = new Set();
-      for (const x of derivedOf(iface)) if (x.kind !== 'interface') for (const v of instancesOf(x, iface)) { const d = implementerFor(m.member, x, v); if (d) impls.add(d); }
-      out.ifaces.push({ member: m.member, impls: Math.max(1, impls.size) });
+      const impls = new Set([def]);
+      /** @type {Set<DefRec>} */
+      const atOthers = new Set();
+      for (const x of derivedOf(iface)) {
+        if (x.kind === 'interface') continue;
+        for (const v of instancesOf(x, iface)) {
+          const d = implementerFor(m.member, x, v);
+          if (d) (mayBeMine(v) ? impls : atOthers).add(d);
+        }
+      }
+      for (const d of impls) atOthers.delete(d);
+      out.ifaces.push({ member: m.member, impls: impls.size, otherArgs: atOthers.size });
       for (const { rec, use } of usesByName.get(m.member.name) || []) {
         if (use.kind !== 'call') continue;
         const hit = resolveUse(rec, use);
@@ -2516,9 +2544,11 @@ function createCsharpSyntacticIndex(sources, {
     // through it whose receiver's type arguments may be this implementation's are the rows.
     const genericMembers = new Set(generic.map((g) => g.member));
     const rows = rowsOf(through.sites.filter((s) => s.via === 'interface' && genericMembers.has(s.member)).map((s) => ({ rec: s.rec, use: s.use, label: { via: s.via, name: s.name } })));
-    for (const { member } of def.explicit ? [] : generic) {
+    for (const { member } of generic) {
       const name = member.type ? member.type.simple : '?';
-      reasons.push(`implements \`${name}.${member.name}\` of a generic interface: calls through it are listed as "through \`${name}\`" from the C# syntax index, only where the receiver's type arguments are written and may be this implementation's`);
+      reasons.push(def.explicit
+        ? `calls through the generic interface \`${name}\` are listed from the C# syntax index only where the receiver's type arguments may be this implementation's`
+        : `implements \`${name}.${member.name}\` of a generic interface: calls through it are listed as "through \`${name}\`" from the C# syntax index, only where the receiver's type arguments are written and may be this implementation's`);
     }
     if (generic.length) {
       if (through.genericSkipped) reasons.push(`${through.genericSkipped} call(s) through a generic interface whose type arguments are not known or differ are not listed`);

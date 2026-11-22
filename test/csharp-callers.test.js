@@ -14,7 +14,7 @@ const {
   createCsharpEditorExtras, EMPTY_ANSWER_REASON, VALUE_USE_REASON, NOT_COMPUTED, PRIMARY_CONSTRUCTOR_REASON, NOT_LOADED_REASON, isCsharpCallSite,
   PROPERTY_REASON, STALE_TARGET_REASON, SERVER_CHANGED_REASON, shortCallerName, NO_INDEX_REASON,
 } = require('../src/languages/csharp/editor-extras');
-const { createCsharpProvider, createServerStateTracker, NO_HIERARCHY_NOTE } = require('../src/languages/csharp/provider');
+const { createCsharpProvider, createServerStateTracker, NO_HIERARCHY_NOTE, STILL_LOADING_REASON } = require('../src/languages/csharp/provider');
 const { createHierarchyResolver } = require('./lsp-harness/harness-languages');
 
 const ROOT = '/repo';
@@ -220,7 +220,9 @@ test('S8: an incomplete answer is lasting for dispatch, value-use, property and 
     return { complete: r.answer.complete, reason: r.answer.reason, lasting: r.lasting };
   };
   const empty = await applied(new Map([[`${LIB_FILE}#${IMPL_M}`, []], [`${LIB_FILE}#${IFOO_M}`, []]]), IMPL_M);
-  assert.deepEqual([empty.complete, empty.lasting], [false, true], String(empty.reason));
+  // S1: an empty answer may hide a failed query: not lasting (a caller retry asks again).
+  assert.ok(String(empty.reason).includes(EMPTY_ANSWER_REASON));
+  assert.deepEqual([empty.complete, empty.lasting], [false, false], String(empty.reason));
   const h = posOf('Lib/Shapes.cs', 'method', 'H', 'Handlers');
   const reg = posOf('Lib/Shapes.cs', 'method', 'Reg', 'Handlers');
   const valueUse = await applied(new Map([[`${LIB_FILE}#${h}`, [row(LIB_FILE, 'Handlers.Reg()', reg, [site(LIB, 'Map(H)', 'H')])]]]), h);
@@ -271,11 +273,40 @@ test('a failed dispatch lookup is not kept for the analysis: the next query (a c
   const first = await extras.query(LIB_FILE, IMPL_M).moreCallers?.();
   assert.match(String(first && first.incompleteReason), new RegExp(NO_INDEX_REASON.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.equal(first && first.lasting, undefined);
-  assert.ok((await extras.callerTargets?.(LIB_FILE, IMPL_M) || []).length > 0, 'the interface member is a target now');
+  // M1: within the same query the failed lookup is shared (no target), never redone.
+  assert.deepEqual(await extras.callerTargets?.(LIB_FILE, IMPL_M), []);
+  assert.equal(asks, 1);
+  const next = extras.query(LIB_FILE, IMPL_M);
+  assert.ok((await extras.callerTargets?.(LIB_FILE, IMPL_M) || []).length > 0, 'the next query: the interface member is a target now');
   assert.equal(asks, 2, 'asked again, no clear() between');
+  assert.ok(!String((await next.moreCallers?.())?.incompleteReason).startsWith(NO_INDEX_REASON));
   const again = await extras.query(LIB_FILE, IMPL_M).moreCallers?.();
   assert.ok(!String(again && again.incompleteReason).startsWith(NO_INDEX_REASON));
   assert.equal(asks, 2, 'a good answer is kept');
+});
+
+test('M1: a lookup that fails once, then succeeds, through applyCallerExtras: the first answer never claims the interface rows and is not lasting; the retry asks the target', async () => {
+  const { queryHierarchy, applyCallerExtras } = require('../src/languages/callers-from-hierarchy');
+  let lookups = 0;
+  const flaky = { ...index, dispatchOf: async (/** @type {any} */ q) => { lookups++; if (lookups === 1) throw new Error('rebuilt for another tree state'); return index.dispatchOf(q); } };
+  const answers = new Map([[`${LIB_FILE}#${IMPL_M}`, []], [`${LIB_FILE}#${IFOO_M}`, [row(LIB_FILE, 'Svc.Run()', RUN, [site(LIB, 'foo.M(1)', 'M')])]]]);
+  const services = /** @type {any} */ (fakeServices(answers));
+  const extras = createCsharpEditorExtras({ readText: textOf, repoRoot: ROOT, indexOf: async () => flaky });
+  const askAt = (/** @type {string} */ f, /** @type {number} */ p) => queryHierarchy(services, { file: f, side: 'head' }, p);
+  const run = async () => {
+    const query = extras.query(LIB_FILE, IMPL_M);
+    return applyCallerExtras(await askAt(LIB_FILE, IMPL_M), { extras, query, file: LIB_FILE, pos: IMPL_M, withTests: true, askAt });
+  };
+  const first = await run();
+  assert.deepEqual(services.asked, [`${LIB_FILE}#${IMPL_M}`], 'the interface member was not asked');
+  assert.equal(first.answer.complete, false);
+  assert.ok(first.lasting !== true, 'a failed lookup is never lasting');
+  assert.doesNotMatch(String(first.answer.reason), /implements `IFoo\.M`/);
+  assert.match(String(first.answer.reason), /dispatch lookup failed|rebuilt for another tree state/);
+  const retry = await run();
+  assert.ok(services.asked.includes(`${LIB_FILE}#${IFOO_M}`), 'the retry asks the interface member');
+  assert.deepEqual(retry.answer.callers.map((c) => c.label), ['Svc.Run()']);
+  assert.match(String(retry.answer.reason), /implements `IFoo\.M`/);
 });
 
 test('M1: a caller row is named and placed as the outline member, never with Roslyn\'s qualified name', async () => {
@@ -398,6 +429,46 @@ test('S3: a generic interface member is not asked; the index\'s calls through it
   assert.match(String(stale.reason), /1 caller\(s\) through a generic interface are not where the C# syntax index has them/);
 });
 
+test('S3 (PR 2 review S5): a generic-method caller and a caller in a nested type match the outline\'s labels: listed, never "stale"', async () => {
+  const text = `namespace G;
+public sealed class User { }
+public interface IRepo<T> { void Save(T item); }
+public sealed class Repo : IRepo<User> { public void Save(User u) { } }
+sealed class U
+{
+    void D<X>(IRepo<User> u, X x) { u.Save(null); }
+    public sealed class In { void E(IRepo<User> u) { u.Save(null); } }
+}
+`;
+  const file = abs('G/Nested.cs');
+  const ix = createCsharpSyntacticIndex([{ path: 'G/Nested.cs', text }], { root: ROOT, scope: 'test' });
+  const save = at(text, 'Save(User u)');
+  const services = fakeServices(new Map([[`${file}#${save}`, []]]));
+  const extras = createCsharpEditorExtras({ readText: (f) => (f === file ? text : null), repoRoot: ROOT, indexOf: async () => ix });
+  const answer = await createHierarchyResolver(/** @type {any} */ (services), { extras }).incomingWithStatus(file, save);
+  const cli = ix.callersOfWithStatus({ file, pos: save, name: 'Save' }).callers;
+  assert.equal(cli.length, 2);
+  assert.deepEqual(answer.callers.map((c) => [c.label, c.pos]).sort(), cli.map((c) => [c.label, c.pos]).sort());
+  assert.doesNotMatch(String(answer.reason), /not where the C# syntax index has them/);
+});
+
+test('S7b (PR 2 review S5): the harness leaves out and counts callers in files it cannot read, as the editor does', async () => {
+  const { languageServicesOver } = require('./lsp-harness/harness-languages');
+  const { pathToFileURL } = require('node:url');
+  const here = __filename;
+  const from = (/** @type {string} */ uri) => ({ from: { uri, name: 'Go', detail: 'N.C', selectionRange: { start: 3, end: 5 } }, fromRanges: [{ start: 7, end: 9 }] });
+  const server = /** @type {any} */ ({
+    incomingCalls: async () => [from(pathToFileURL(here).href), from('csharp-generated:///Gen.g.cs'), from(pathToFileURL(path.join(path.dirname(here), 'no-such-file.cs')).href)],
+  });
+  const services = languageServicesOver(server, { repoRoot: path.dirname(here) });
+  const answer = /** @type {any} */ (await /** @type {any} */ (services).incomingCalls({}));
+  assert.equal(answer.unreadable, 2);
+  assert.deepEqual(answer.rows.map((/** @type {any} */ r) => [r.file, r.label, r.pos, r.sites]), [[here, 'N.C.Go', 3, 1]]);
+  // All readable: plain rows, as before.
+  const plain = await /** @type {any} */ (languageServicesOver(/** @type {any} */ ({ incomingCalls: async () => [from(pathToFileURL(here).href)] }), { repoRoot: path.dirname(here) })).incomingCalls({});
+  assert.ok(Array.isArray(plain));
+});
+
 test('S4: an explicit implementation is not asked itself; its interface member is (the stale check passes), labelled', async () => {
   const exRun = at(GEN, 'Run(int a) { }');
   const ifooRun = at(GEN, 'Run(int a); }');
@@ -469,7 +540,7 @@ const ctxWith = (/** @type {any} */ hooks, /** @type {string[]} */ warnings) => 
 
 test('no provider → the syntax path with a note, asked again at the next analysis', async () => {
   let probes = 0;
-  const provider = createCsharpProvider({ probe: async () => { probes++; return { ok: false, reason: 'the C# extension (ms-dotnettools.csharp) is not installed' }; } });
+  const provider = createCsharpProvider({ load: async () => { probes++; return { ok: false, reason: 'the C# extension (ms-dotnettools.csharp) is not installed' }; } });
   const editorResolver = { kind: 'editor' };
   const hooks = { services: {}, makeResolver: () => editorResolver };
   for (let n = 0; n < 2; n++) {
@@ -486,7 +557,7 @@ test('no provider → the syntax path with a note, asked again at the next analy
 
 test('a positive probe is kept: the editor\'s resolver, the outline\'s members', async () => {
   let probes = 0;
-  const provider = createCsharpProvider({ probe: async () => { probes++; return { ok: true }; } });
+  const provider = createCsharpProvider({ load: async () => { probes++; return { ok: true }; } });
   const editorResolver = { kind: 'editor' };
   const hooks = { services: {}, makeResolver: () => editorResolver };
   for (let n = 0; n < 2; n++) {
@@ -507,7 +578,7 @@ test('a positive probe is kept: the editor\'s resolver, the outline\'s members',
 test('M4: a server state change after a positive probe: the next analysis probes again; answers meanwhile are incomplete', async () => {
   let probes = 0;
   let changes = 0;
-  const provider = createCsharpProvider({ probe: async () => { probes++; return { ok: true }; }, serverChanges: () => changes });
+  const provider = createCsharpProvider({ load: async () => { probes++; return { ok: true }; }, serverChanges: () => changes });
   const editorResolver = { kind: 'editor' };
   const hooks = { services: {}, makeResolver: () => editorResolver };
   await provider.prepare(ctxWith(hooks, []));
@@ -559,7 +630,8 @@ test('S6: an aborted analysis rejects as cancelled, never "no"; an aborted-befor
   await assert.rejects(probing, (e) => isAnalysisCancelled(e));
   await assert.rejects(editorCsharpProbe(5000, createServerStateTracker(), { getExtension: () => ext, signal: controller.signal }), (e) => isAnalysisCancelled(e));
   // Through the provider: a cancelled prepare rejects, with no syntactic fallback.
-  const provider = createCsharpProvider({ probe: (signal) => editorCsharpProbe(5000, createServerStateTracker(), { getExtension: () => ext, signal }) });
+  const { editorCsharpLoad } = require('../src/languages/csharp/provider');
+  const provider = createCsharpProvider({ load: () => editorCsharpLoad(createServerStateTracker(), { getExtension: () => ext }), deadlineMs: 5000 });
   const second = new AbortController();
   const hooks = { services: {}, makeResolver: () => ({}) };
   const preparing = provider.prepare({ ...ctxWith(hooks, []), signal: second.signal });
@@ -568,31 +640,91 @@ test('S6: an aborted analysis rejects as cancelled, never "no"; an aborted-befor
   await assert.rejects(preparing, (e) => isAnalysisCancelled(e));
 });
 
-test('S6: a wait still going is not repeated: the next analysis falls back at once; after a state change it waits again', async () => {
-  let probes = 0;
+test('S6/M2: one load across sequential analyses: an aborted one leaves it running; past its deadline the next fall back at once; a later yes is used; a state change starts another', async () => {
+  const { createFakeClock } = require('./fake-clock');
+  const { isAnalysisCancelled } = require('../src/engine/cancellation');
+  const clock = createFakeClock();
+  let loads = 0;
   let changes = 0;
   /** @type {Array<(a: any) => void>} */
   const resolvers = [];
-  const provider = createCsharpProvider({ probe: () => { probes++; return new Promise((resolve) => { resolvers.push(resolve); }); }, serverChanges: () => changes });
-  const hooks = { services: {}, makeResolver: () => ({ kind: 'editor' }) };
-  const first = provider.prepare(ctxWith(hooks, []));
-  await new Promise((r) => setImmediate(r));
+  const provider = createCsharpProvider({ load: () => { loads++; return new Promise((resolve) => { resolvers.push(resolve); }); }, serverChanges: () => changes, deadlineMs: 1000, clock });
+  const editorResolver = { kind: 'editor' };
+  const hooks = { services: {}, makeResolver: () => editorResolver };
+  const flush = () => new Promise((r) => setImmediate(r));
+  /** @param {string[]} warnings @param {AbortSignal} [signal] */
+  const prepareWith = (warnings, signal) => provider.prepare({ ...ctxWith(hooks, warnings), ...(signal ? { signal } : {}) });
+  const stillLoading = (/** @type {string[]} */ w) => w.some((x) => x.startsWith(NO_HIERARCHY_NOTE) && x.includes(STILL_LOADING_REASON));
+  // 1: aborted after 400 ms (the session aborts it for a new run); the load keeps running.
+  const c1 = new AbortController();
+  const first = prepareWith([], c1.signal);
+  await flush();
+  await clock.advance(400);
+  c1.abort();
+  await assert.rejects(first, (e) => isAnalysisCancelled(e));
+  // 2: the same load, for the rest of its deadline only (600 ms), then the syntax path.
   /** @type {string[]} */
-  const warnings = [];
-  const second = await provider.prepare(ctxWith(hooks, warnings));
-  assert.equal(probes, 1, 'no second wait');
-  assert.ok(warnings.some((w) => w.startsWith(NO_HIERARCHY_NOTE) && w.includes('still loading the projects')), warnings.join('\n'));
-  assert.equal(/** @type {any} */ (second.units[0].resolver).callersLowerBound, true);
-  changes++;
-  const third = provider.prepare(ctxWith(hooks, []));
-  await new Promise((r) => setImmediate(r));
-  assert.equal(probes, 2, 'a state change since: waits again');
-  resolvers[1]({ ok: true });
+  const w2 = [];
+  let secondDone = false;
+  const second = prepareWith(w2).then((a) => { secondDone = true; return a; });
+  await flush();
+  await clock.advance(599);
+  await flush();
+  assert.equal(secondDone, false);
+  await clock.advance(1);
+  const a2 = await second;
+  assert.equal(loads, 1, 'one load');
+  assert.equal(/** @type {any} */ (a2.units[0].resolver).callersLowerBound, true);
+  assert.ok(w2.some((x) => x.includes('timed out after 1000 ms')), w2.join('\n'));
+  // 3, 4: past the deadline, at once, with the note; no new load.
+  for (let n = 0; n < 2; n++) {
+    /** @type {string[]} */
+    const w = [];
+    const a = await prepareWith(w);
+    assert.equal(/** @type {any} */ (a.units[0].resolver).callersLowerBound, true);
+    assert.ok(stillLoading(w), w.join('\n'));
+  }
+  assert.equal(loads, 1);
+  // The load answers yes later: the next analysis uses it.
   resolvers[0]({ ok: true });
-  await Promise.all([first, third]);
-  // The settled yes is used, no more waits.
-  await provider.prepare(ctxWith(hooks, []));
-  assert.equal(probes, 2);
+  await flush();
+  const a5 = await prepareWith([]);
+  assert.equal(a5.units[0].resolver, editorResolver);
+  assert.equal(loads, 1);
+  // A state change after the yes: a new load, with its own deadline.
+  changes++;
+  const sixth = prepareWith([]);
+  await flush();
+  assert.equal(loads, 2);
+  resolvers[1]({ ok: true });
+  assert.equal((await sixth).units[0].resolver, editorResolver);
+});
+
+test('S6/M2: a load still going past its deadline is replaced after a state change; a "no" is asked again', async () => {
+  const { createFakeClock } = require('./fake-clock');
+  const clock = createFakeClock();
+  let loads = 0;
+  let changes = 0;
+  /** @type {Array<(a: any) => void>} */
+  const resolvers = [];
+  const provider = createCsharpProvider({ load: () => { loads++; return new Promise((resolve) => { resolvers.push(resolve); }); }, serverChanges: () => changes, deadlineMs: 1000, clock });
+  const hooks = { services: {}, makeResolver: () => ({ kind: 'editor' }) };
+  const flush = () => new Promise((r) => setImmediate(r));
+  const first = provider.prepare(ctxWith(hooks, []));
+  await flush();
+  await clock.advance(1000);
+  await first;
+  changes++;
+  const second = provider.prepare(ctxWith(hooks, []));
+  await flush();
+  assert.equal(loads, 2, 'a state change since: a new load');
+  resolvers[1]({ ok: false, reason: 'the C# extension is not active' });
+  await second;
+  const third = provider.prepare(ctxWith(hooks, []));
+  await flush();
+  assert.equal(loads, 3, 'a "no" is asked again');
+  resolvers[2]({ ok: true });
+  await third;
 });
 
 test('M4: the state tracker waits for "loaded" after a reload, not the one-shot initial load', async () => {

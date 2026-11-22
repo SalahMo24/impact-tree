@@ -41,7 +41,7 @@ async function main() {
   const { analyze } = require('../../src/engine/analyze');
   const registry = require('../../src/languages');
   const { createCsharpProvider } = require('../../src/languages/csharp/provider');
-  const csharp = createCsharpProvider({ probe: async () => ({ ok: true }) });
+  const csharp = createCsharpProvider({ load: async () => ({ ok: true }) });
   const restore = registry.useLanguagesForTest(registry.registeredLanguages().map((l) => (l.id === 'csharp' ? csharp : l)));
   const t0 = Date.now();
   const server = createRoslynServices({ repo, solution: opt.solution, ...(opt.tools ? { tools: opt.tools } : {}) });

@@ -264,8 +264,11 @@ function createCsharpEditorExtras({
         /** @type {CallerRow[]} */
         const rows = [];
         let stale = 0;
+        let unread = 0;
         for (const c of /** @type {import('../types').SyntacticCaller[]} */ (found.rows || [])) {
-          const same = (membersOf(c.file) || []).some((x) => x.namePos === c.pos && x.label === c.label);
+          const members = membersOf(c.file);
+          if (!members) { unread++; continue; }
+          const same = members.some((x) => x.namePos === c.pos && x.label === c.label);
           if (!same && c.pos !== modulePosOf(c.file)) { stale++; continue; }
           rows.push({
             file: c.file, label: c.label, pos: c.pos, sites: c.callSites.length, callSites: c.callSites,
@@ -277,15 +280,27 @@ function createCsharpEditorExtras({
           reasons.push(`${stale} caller(s) through a generic interface are not where the C# syntax index has them (the file changed since the index was built) and are not listed`);
           transient = true;
         }
+        if (unread) {
+          reasons.push(`${unread} caller(s) through a generic interface are in files that cannot be read now and are not listed`);
+          transient = true;
+        }
         return { targets, reasons, rows, transient };
       })().catch((e) => ({ targets: [], reasons: [`${LOOKUP_FAILED_REASON}: ${e && /** @type {any} */ (e).message}`], rows: [], transient: true }));
       dispatches.set(id, d);
-      // A failed or stale answer is shared while in flight only: the next query (a caller
-      // retry run does not call `clear()`) asks again.
+      // A failed or stale answer is one query's (M1): its `callerTargets` and `moreCallers`
+      // see the same result; the next query for the position (a caller retry run does not
+      // call `clear()`) drops it and asks again (`forgetTransient`).
       const mine = d;
-      mine.then((r) => { if (r.transient && dispatches.get(id) === mine) dispatches.delete(id); });
+      mine.then((r) => { if (r.transient && dispatches.get(id) === mine) transientIds.add(id); });
     }
     return d;
+  };
+  /** @type {Set<string>} ids in `dispatches` whose settled lookup is transient */
+  const transientIds = new Set();
+  /** @param {string} file @param {number} pos */
+  const forgetTransient = (file, pos) => {
+    const id = `${file}#${pos}`;
+    if (transientIds.delete(id)) dispatches.delete(id);
   };
   /** @param {string} file */
   const outsideRepo = (file) => {
@@ -324,6 +339,9 @@ function createCsharpEditorExtras({
       return memberAt(file, pos) ? NOT_LOADED_REASON : null;
     },
     query(file, pos) {
+      // A query starts before its `callerTargets` (the resolver, the harness): a failed
+      // lookup of an earlier query is asked again; within this query it is shared (M1).
+      forgetTransient(file, pos);
       const m = memberAt(file, pos);
       const notComputed = m && Object.hasOwn(NOT_COMPUTED, m.member) ? /** @type {Record<string, string>} */ (NOT_COMPUTED)[m.member] : null;
       const primary = !!m && m.member === 'primary-constructor';
@@ -387,18 +405,20 @@ function createCsharpEditorExtras({
           reasons.push(...d.reasons);
           const unknown = d.reasons.some((r) => r.startsWith(NO_INDEX_REASON) || r === NOT_INDEXED_REASON || r.startsWith(LOOKUP_FAILED_REASON));
           // An explicit implementation's own query was not asked: an empty answer is its targets'.
-          if (!kept && (!explicit || d.targets.length) && d.reasons.length && !unknown) reasons.push(EMPTY_ANSWER_REASON);
+          // An empty answer may hide a failed query (S1): not lasting, a caller retry asks again.
+          const emptyGuard = !kept && (!explicit || d.targets.length > 0) && d.reasons.length > 0 && !unknown;
+          if (emptyGuard) reasons.push(EMPTY_ANSWER_REASON);
           // An explicit implementation is never complete: its calls are its interface's.
           if (explicit && !reasons.length) reasons.push(NOT_INDEXED_REASON);
           if (!reasons.length) return { callers: d.rows, incompleteReason: null };
-          return { callers: d.rows, incompleteReason: reasons.join('; '), ...(d.transient ? {} : { lasting: true }) };
+          return { callers: d.rows, incompleteReason: reasons.join('; '), ...(d.transient || emptyGuard ? {} : { lasting: true }) };
         },
       };
     },
     // Roslyn answers for the loaded solution, tests included; calls through interfaces are
     // the dispatch reasons'.
     unseenUsers: async () => null,
-    clear() { outlines.clear(); membersByFile.clear(); dispatches.clear(); recheckSessionIndexes(); },
+    clear() { outlines.clear(); membersByFile.clear(); dispatches.clear(); transientIds.clear(); recheckSessionIndexes(); },
   };
 
   /**

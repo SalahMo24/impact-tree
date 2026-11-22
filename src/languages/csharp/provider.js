@@ -354,9 +354,10 @@ function projectFacts(projects, all, read) {
 }
 
 // How long the editor's probe waits for the C# extension to finish loading the projects, in
-// milliseconds. Owner: `editorCsharpProbe`, one wait per analysis until a positive answer.
+// milliseconds, from the start of the load (`createCsharpProvider`: one load across analyses).
 // C0b: the corpus solution loaded in 19–25 s in the harness, ~4 s after a ~20 s server start in
-// VS Code. Exhaustion: that analysis uses the syntax index, with a note; the next one asks again.
+// VS Code. Exhaustion: that analysis uses the syntax index, with a note; later ones fall back at
+// once until the load settles or the server reports a state change.
 const PROBE_DEADLINE_MS = 90000;
 const NO_HIERARCHY_NOTE = 'no answer from a C# call hierarchy: callers from syntax';
 
@@ -430,8 +431,19 @@ const editorServerState = createServerStateTracker();
  * @returns {Promise<{ ok: true } | { ok: false, reason: string }>}
  */
 async function editorCsharpProbe(deadlineMs = PROBE_DEADLINE_MS, tracker = editorServerState, { getExtension, signal } = {}) {
-  const { throwIfCancelled, AnalysisCancelledError, isAnalysisCancelled } = require('../../engine/cancellation');
-  throwIfCancelled(signal);
+  const r = await raceLoad(editorCsharpLoad(tracker, { getExtension }), deadlineMs, signal);
+  return r === LOAD_TIMED_OUT ? { ok: false, reason: timedOutReason(deadlineMs) } : r;
+}
+
+/**
+ * The editor's C# project load, with no deadline and no signal (S6/M2: the provider keeps one
+ * for as long as it runs, across analyses): the C# extension activated if it is not, its
+ * `initializationFinished()`, then the tracker's "loaded" (`tracker.loaded`). Never rejects.
+ * @param {ReturnType<typeof createServerStateTracker>} [tracker]
+ * @param {{ getExtension?: (id: string) => any }} [options]
+ * @returns {Promise<{ ok: true } | { ok: false, reason: string }>}
+ */
+async function editorCsharpLoad(tracker = editorServerState, { getExtension } = {}) {
   /** @type {(id: string) => any} */
   let lookup = /** @type {(id: string) => any} */ (getExtension);
   if (!getExtension) {
@@ -441,30 +453,46 @@ async function editorCsharpProbe(deadlineMs = PROBE_DEADLINE_MS, tracker = edito
   }
   const ext = lookup('ms-dotnettools.csharp');
   if (!ext) return { ok: false, reason: 'the C# extension (ms-dotnettools.csharp) is not installed' };
-  const { withDeadline } = require('../../engine/deadline');
-  /** @type {(() => void)|null} */
-  let unlisten = null;
-  const aborted = new Promise((_, reject) => {
-    if (!signal) return;
-    const onAbort = () => reject(new AnalysisCancelledError());
-    signal.addEventListener('abort', onAbort, { once: true });
-    unlisten = () => signal.removeEventListener('abort', onAbort);
-  });
-  aborted.catch(() => {});
   try {
-    return await Promise.race([aborted, withDeadline(async () => {
-      if (!ext.isActive) await ext.activate();
-      if (!ext.exports || typeof ext.exports.initializationFinished !== 'function') return { ok: false, reason: 'the C# extension is not active' };
-      tracker.subscribe(ext.exports);
-      await tracker.loaded(() => Promise.resolve(ext.exports.initializationFinished()));
-      return { ok: true };
-    }, deadlineMs, 'the C# project load')]);
+    if (!ext.isActive) await ext.activate();
+    if (!ext.exports || typeof ext.exports.initializationFinished !== 'function') return { ok: false, reason: 'the C# extension is not active' };
+    tracker.subscribe(ext.exports);
+    await tracker.loaded(() => Promise.resolve(ext.exports.initializationFinished()));
+    return { ok: true };
   } catch (e) {
-    if (isAnalysisCancelled(e)) throw e;
     return { ok: false, reason: `the C# extension's server did not finish loading the projects (${e && /** @type {any} */ (e).message})` };
-  } finally {
-    if (unlisten) /** @type {() => void} */ (unlisten)();
   }
+}
+
+// `raceLoad`'s answer when its deadline came first.
+const LOAD_TIMED_OUT = Symbol('timed out');
+/** @param {number} ms */
+const timedOutReason = (ms) => `the C# extension's server did not finish loading the projects (the C# project load timed out after ${ms} ms)`;
+
+/**
+ * One analysis' wait on a load (`editorCsharpLoad`) that outlives it: the load's answer, or
+ * LOAD_TIMED_OUT after `ms`; an aborted `signal` rejects with `AnalysisCancelledError` (the
+ * load keeps running). The timer and the listener are removed either way.
+ * @template T
+ * @param {Promise<T>} load never rejects
+ * @param {number} ms
+ * @param {AbortSignal|undefined} signal
+ * @param {import('../../engine/clock').Clock} [clock]
+ * @returns {Promise<T|typeof LOAD_TIMED_OUT>}
+ */
+function raceLoad(load, ms, signal, clock = require('../../engine/clock').realClock) {
+  const { throwIfCancelled, AnalysisCancelledError } = require('../../engine/cancellation');
+  try { throwIfCancelled(signal); } catch (e) { return Promise.reject(e); }
+  return new Promise((resolve, reject) => {
+    const onAbort = () => { done(); reject(new AnalysisCancelledError()); };
+    const timer = clock.setTimeout(() => { done(); resolve(LOAD_TIMED_OUT); }, Math.max(0, ms));
+    function done() {
+      clock.clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onAbort);
+    }
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+    load.then((r) => { done(); resolve(r); });
+  });
 }
 
 // The reason when an earlier analysis's wait for the projects is still going (S6).
@@ -476,28 +504,59 @@ const STILL_LOADING_REASON = 'the C# extension is still loading the projects';
  * (`serverChanges`, the tracker's count), a negative one is asked again at the next analysis.
  * A state change after it (a restart, the projects loaded again) makes the next analysis ask
  * again, and the editor's caller answers given meanwhile incomplete (SERVER_CHANGED_REASON).
- * @param {{ probe?: (signal?: AbortSignal) => Promise<{ ok: true } | { ok: false, reason: string }>, serverChanges?: () => number }} [options]
+ *
+ * The wait (S6, M2 of the PR 2 review): `load` (the editor's: `editorCsharpLoad`, no deadline)
+ * is started once and kept by this provider across analyses; each analysis races it with its
+ * own signal and what is left of the load's deadline (`deadlineMs` from its start). An aborted
+ * analysis leaves it running; the next one waits only for the rest of the deadline, and once
+ * the deadline has passed falls back at once (STILL_LOADING_REASON) until the load settles (a
+ * yes is used; a no is asked again) or the server reports a state change (a new load).
+ * @param {{ load?: () => Promise<{ ok: true } | { ok: false, reason: string }>, serverChanges?: () => number, deadlineMs?: number, clock?: import('../../engine/clock').Clock }} [options]
  * @returns {import('../types').LanguageProvider}
  */
-function createCsharpProvider({ probe = (signal) => editorCsharpProbe(PROBE_DEADLINE_MS, editorServerState, { signal }), serverChanges = () => editorServerState.changes } = {}) {
+function createCsharpProvider({ load = () => editorCsharpLoad(), serverChanges = () => editorServerState.changes, deadlineMs = PROBE_DEADLINE_MS, clock = require('../../engine/clock').realClock } = {}) {
   // The tracker's count when the probe last answered yes; null: not trusted.
   /** @type {number|null} */
   let readyAt = null;
   const ready = () => readyAt !== null && readyAt === serverChanges();
-  // The wait still going (S6; owner: this provider, until it settles): a later analysis does
-  // not wait again, it falls back at once, unless the server reported a state change since.
-  /** @type {{ promise: Promise<unknown>, changes: number }|null} */
-  let pending = null;
+  /**
+   * The load (owner: this provider, until an analysis uses its answer or a state change
+   * replaces it). `changes`: the tracker's count when it began; `settled`: its answer, with
+   * the count then (`settledAt`).
+   * @typedef {{ ok: true } | { ok: false, reason: string }} ProbeAnswer
+   * @type {{ promise: Promise<ProbeAnswer>, changes: number, deadlineAt: number, settled: ProbeAnswer|null, settledAt: number }|null}
+   */
+  let wait = null;
+  const startWait = () => {
+    const changes = serverChanges();
+    const deadlineAt = clock.now() + deadlineMs;
+    const promise = Promise.resolve().then(load)
+      .catch((e) => /** @type {ProbeAnswer} */ ({ ok: false, reason: `the C# extension's server did not finish loading the projects (${e && /** @type {any} */ (e).message})` }))
+      .then((r) => { w.settled = r; w.settledAt = serverChanges(); return r; });
+    /** @type {NonNullable<typeof wait>} */
+    const w = { promise, changes, deadlineAt, settled: null, settledAt: 0 };
+    wait = w;
+    return w;
+  };
   /**
    * @param {AbortSignal|undefined} signal
-   * @returns {Promise<{ ok: true } | { ok: false, reason: string }>}
+   * @returns {Promise<ProbeAnswer>}
    */
   async function askProbe(signal) {
-    if (pending && pending.changes === serverChanges()) return { ok: false, reason: STILL_LOADING_REASON };
-    const promise = Promise.resolve().then(() => probe(signal));
-    const mine = { promise, changes: serverChanges() };
-    pending = mine;
-    try { return await promise; } finally { if (pending === mine) pending = null; }
+    let w = wait;
+    if (w && w.settled) {
+      // Settled while no analysis waited: a yes is used while no state change came after it.
+      wait = null;
+      if (w.settled.ok && w.settledAt === serverChanges()) return w.settled;
+      w = null;
+    } else if (w && w.changes !== serverChanges()) w = null; // a state change since: a new load
+    if (!w) w = startWait();
+    const left = w.deadlineAt - clock.now();
+    if (left <= 0) return { ok: false, reason: STILL_LOADING_REASON };
+    const r = await raceLoad(w.promise, left, signal, clock);
+    if (r === LOAD_TIMED_OUT) return { ok: false, reason: timedOutReason(deadlineMs) };
+    if (wait === w) wait = null;
+    return r;
   }
   /**
    * The editor's path (C5): the changed members from the outline, as `prepareSyntactic`, with
@@ -548,7 +607,7 @@ function createCsharpProvider({ probe = (signal) => editorCsharpProbe(PROBE_DEAD
 const csharpProvider = createCsharpProvider();
 
 module.exports = {
-  csharpProvider, createCsharpProvider, editorCsharpProbe, csharpSpec, collectCsharpSymbols, pairCsharpOverloads, renderCsharpSymbolSig,
+  csharpProvider, createCsharpProvider, editorCsharpProbe, editorCsharpLoad, csharpSpec, collectCsharpSymbols, pairCsharpOverloads, renderCsharpSymbolSig,
   prepareSyntactic, indexRepository, indexRepositoryWithin, projectFacts, csharpProjectDir, NOT_SOURCE_DIRS, PROBE_DEADLINE_MS, NO_HIERARCHY_NOTE, STILL_LOADING_REASON,
   createServerStateTracker, SERVER_STATE_LOADED,
 };

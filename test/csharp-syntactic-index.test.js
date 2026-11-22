@@ -603,7 +603,8 @@ sealed class Svc
 }` };
   const r = labelled(files, 'UserHandler.Handle(User)');
   assert.deepEqual(r.rows, ['Svc.A(IHandler, IUserHandler, UserHandler) [interface: through IHandler] x2', 'Svc.B(UserHandler, IUserHandler) x2', 'Svc.C<1>(IHandler) [interface: through IHandler] x1']);
-  assert.match(r.reason, /may also reach 1 other implementation\(s\) in the indexed files/);
+  // OtherHandler implements IHandler<Other>: only a call whose type arguments are not written reaches it (PR 2 review S2).
+  assert.match(r.reason, /may also reach implementations outside the indexed files \(and 1 implementation\(s\) at other type arguments, when a call's type arguments are not written\)/);
   assert.match(r.reason, /1 call\(s\) through a generic interface whose type arguments are not known or differ/);
   assert.deepEqual(labelled(files, 'OtherHandler.Handle(Other)').rows, ['Svc.A(IHandler, IUserHandler, UserHandler) [interface: through IHandler] x1', 'Svc.C<1>(IHandler) [interface: through IHandler] x1']);
 });
@@ -649,6 +650,42 @@ test('S3: a generic interface implemented at two type arguments: each overload g
   // One instantiation explicit (`User IRepo<User>.Get`), the other implicit.
   assert.deepEqual(labelled(MULTI, 'Multi.IRepo<1>.Get(int)').rows, ['U.A(IRepo) [interface: through IRepo] x1']);
   assert.deepEqual(labelled(MULTI, 'Multi.Get(int)').rows, ['U.B(IRepo) [interface: through IRepo] x1']);
+});
+
+test('PR 2 review S2: an overload at other type arguments is not "another implementation"; a member of another instantiation is no "may implement … not listed"', () => {
+  const files = { 'a.cs': `namespace N;
+public sealed class User { } public sealed class Order { }
+public interface IRepo<T> { void Save(T item); }
+public interface IUserRepo : IRepo<User> { }
+public class Base { public void Save(User u) { } }
+public sealed class Multi : Base, IRepo<User>, IRepo<Order> { public void Save(Order o) { } }
+sealed class U { void A(IRepo<User> u) { u.Save(null); } }` };
+  const base = labelled(files, 'Base.Save(User)');
+  assert.deepEqual(base.rows, ['U.A(IRepo) [interface: through IRepo] x1']);
+  assert.doesNotMatch(base.reason, /may also reach \d+ other implementation/, base.reason);
+  assert.match(base.reason, /1 implementation\(s\) at other type arguments, when a call's type arguments are not written/);
+  const halfFiles = { 'a.cs': `namespace N;
+public sealed class User { } public sealed class Order { }
+public interface IRepo<T> { void Save(T item); }
+public interface IUserRepo : IRepo<User> { }
+public sealed class Half : IUserRepo, IRepo<Order> { public void Save(User u) { } }
+sealed class U { void A(IRepo<User> u) { u.Save(null); } }` };
+  const half = labelled(halfFiles, 'Half.Save(User)');
+  assert.match(half.reason, /implements `IRepo.Save`: calls through it are listed/);
+  assert.doesNotMatch(half.reason, /may implement a member of `IRepo`/, half.reason);
+});
+
+test('PR 2 review S3: an interface past the hierarchy walk\'s bound is a reason, never dropped', () => {
+  // Each level doubles the instantiations: the per-instantiation walk stops at its bound
+  // (64 visits) before `IR`, which the one-view-per-type walk reaches.
+  const chain = Array.from({ length: 8 }, (_, n) => `public interface D${n}<T> : ${n === 7 ? 'IR<T>' : `D${n + 1}<W<T>>, D${n + 1}<V<T>>`} { }`).join('\n');
+  const files = { 'a.cs': `namespace N;
+public sealed class User { } public sealed class W<T> { } public sealed class V<T> { }
+public interface IR<T> { void S(T x); }
+${chain}
+public sealed class C : D0<User> { public void S(User u) { } }` };
+  const r = labelled(files, 'C.S(User)');
+  assert.match(r.reason, /may implement a member of `IR`/, r.reason);
 });
 
 test('S4: an explicit implementation lists the calls through the interface it names; explicit properties and explicit members in an interface keep their reasons', () => {
