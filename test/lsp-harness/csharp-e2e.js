@@ -116,7 +116,7 @@ async function main() {
       if (e && !e.callersComplete) console.log(`  editor reason: ${String(e.callersIncompleteReason).slice(0, 400)}`);
       // The unreadable (S7b) and outside-the-repository (S7a) counts, from the reasons.
       const reason = String((e && e.callersIncompleteReason) || '');
-      totals.unreadable += Number((/(\d+) caller\(s\) in files that cannot be read/.exec(reason) || [])[1] || 0);
+      totals.unreadable += Number((/callers in (\d+) document\(s\) that are not files on disk/.exec(reason) || [])[1] || 0);
       totals.outsideRepo += Number((/(\d+) caller\(s\) in files outside the repository/.exec(reason) || [])[1] || 0);
     }
     console.log(`\ntotals ${JSON.stringify(totals)}; wall ${((Date.now() - t0) / 1000).toFixed(1)} s`);

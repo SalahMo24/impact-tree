@@ -81,9 +81,9 @@ function createJdtlsServices(options) {
     deadlineMs: options.deadlineMs || 120000,
     ...(options.scratchDir ? { scratchDir: options.scratchDir } : {}),
     // jdtls keeps a base-side copy in its default project and lists it as a caller after
-    // the copy is deleted (J2's runs: ENOENT). Not a workspace caller: left out, as the
-    // editor's Java extras drop it (src/languages/java/editor-extras.js).
-    skipCallerUri: (uri) => uri.includes('/jdt.ls-java-project/'),
+    // the copy is deleted (J2's runs: ENOENT). The services list it as unreadable and the
+    // Java extras leave it out uncounted (`ownCopy`, src/languages/java/editor-extras.js),
+    // as in the editor.
     onNotification: (method, params) => {
       // J6_TRACE=1: every notification but Java diagnostics, timed, on stderr (debugging a switch).
       if (process.env.J6_TRACE && !(method === 'textDocument/publishDiagnostics' && /\.java$/.test(params.uri))) {

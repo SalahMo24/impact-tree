@@ -452,22 +452,45 @@ sealed class U
   assert.doesNotMatch(String(answer.reason), /not where the C# syntax index has them/);
 });
 
-test('S7b (PR 2 review S5): the harness leaves out and counts callers in files it cannot read, as the editor does', async () => {
+test('S7b (PR 2 fixes review M2): the harness\'s stdio services skip and list unreadable callers, and skip their own copies uncounted, as the editor does', async (t) => {
   const { languageServicesOver } = require('./lsp-harness/harness-languages');
+  const { createStdioServerServices } = require('./lsp-harness/stdio-server-services');
+  const { applyCallerExtras, queryHierarchy, unreadableReason } = require('../src/languages/callers-from-hierarchy');
+  const { createJavaEditorExtras } = require('../src/languages/java/editor-extras');
   const { pathToFileURL } = require('node:url');
+  const os = require('node:os');
+  const fs = require('node:fs');
   const here = __filename;
-  const from = (/** @type {string} */ uri) => ({ from: { uri, name: 'Go', detail: 'N.C', selectionRange: { start: 3, end: 5 } }, fromRanges: [{ start: 7, end: 9 }] });
-  const server = /** @type {any} */ ({
-    incomingCalls: async () => [from(pathToFileURL(here).href), from('csharp-generated:///Gen.g.cs'), from(pathToFileURL(path.join(path.dirname(here), 'no-such-file.cs')).href)],
-  });
+  const scratchDir = fs.mkdtempSync(path.join(os.tmpdir(), 'it-stdio-'));
+  t.after(() => fs.rmSync(scratchDir, { recursive: true, force: true }));
+  const copy = path.join(scratchDir, 'base-x', 'Copy.cs');
+  fs.mkdirSync(path.dirname(copy));
+  fs.writeFileSync(copy, 'class Copy {}\n');
+  const r = { start: { line: 0, character: 1 }, end: { line: 0, character: 3 } };
+  const from = (/** @type {string} */ uri) => ({ from: { uri, name: 'Go', detail: 'N.C', kind: 6, range: r, selectionRange: r }, fromRanges: [r] });
+  const missing = pathToFileURL(path.join(path.dirname(here), 'no-such-file.cs')).href;
+  const ghost = pathToFileURL(path.join(path.dirname(here), 'jdt.ls-java-project', 'src', 'T.java')).href;
+  const server = createStdioServerServices({ repo: path.dirname(here), command: process.execPath, args: ['-e', ''], languageId: 'csharp', scratchDir });
+  t.after(() => server.client.proc.kill());
+  const listed = [from(pathToFileURL(here).href), from('roslyn-source-generated://x/Gen.g.cs'), from(missing), from(missing), from(pathToFileURL(copy).href), from(ghost)];
+  /** @type {any} */ (server.client).request = async () => listed;
   const services = languageServicesOver(server, { repoRoot: path.dirname(here) });
-  const answer = /** @type {any} */ (await /** @type {any} */ (services).incomingCalls({}));
-  assert.equal(answer.unreadable, 2);
-  assert.deepEqual(answer.rows.map((/** @type {any} */ r) => [r.file, r.label, r.pos, r.sites]), [[here, 'N.C.Go', 3, 1]]);
-  // All readable: plain rows, as before.
-  const plain = await /** @type {any} */ (languageServicesOver(/** @type {any} */ ({ incomingCalls: async () => [from(pathToFileURL(here).href)] }), { repoRoot: path.dirname(here) })).incomingCalls({});
-  assert.ok(Array.isArray(plain));
+  const answer = /** @type {any} */ (await services.incomingCalls({ raw: {} }));
+  assert.deepEqual(answer.rows.map((/** @type {any} */ x) => [x.file, x.label, x.pos, x.sites]), [[here, 'N.C.Go', 1, 1]]);
+  assert.deepEqual(answer.unreadable, ['roslyn-source-generated://x/Gen.g.cs', fileURLToPathOf(missing), fileURLToPathOf(missing), fileURLToPathOf(ghost)]);
+  assert.equal(server.skippedCallers(), 1, 'the base-side copy under scratchDir: skipped, not listed');
+  // Composed: distinct documents are counted; Java's extras leave jdtls' default-project copy out.
+  const hierarchy = await queryHierarchy(/** @type {any} */ ({ prepareCallHierarchy: async () => [{ raw: {} }], incomingCalls: services.incomingCalls }), { file: here, side: 'head' }, 0);
+  const base = { query: null, file: here, pos: 0, withTests: true };
+  const plain = await applyCallerExtras(hierarchy, { ...base, extras: null });
+  assert.equal(plain.stale ? null : plain.answer.reason, unreadableReason(3));
+  const java = await applyCallerExtras(hierarchy, { ...base, extras: createJavaEditorExtras() });
+  assert.equal(java.stale ? null : java.answer.reason, unreadableReason(2));
+  assert.equal(java.stale ? null : java.lasting, false, 'Java does not opt in: not lasting (S3)');
 });
+
+/** @param {string} uri */
+function fileURLToPathOf(uri) { return require('node:url').fileURLToPath(uri); }
 
 test('S4: an explicit implementation is not asked itself; its interface member is (the stale check passes), labelled', async () => {
   const exRun = at(GEN, 'Run(int a) { }');
@@ -725,6 +748,44 @@ test('S6/M2: a load still going past its deadline is replaced after a state chan
   assert.equal(loads, 3, 'a "no" is asked again');
   resolvers[2]({ ok: true });
   await third;
+});
+
+test('S1 (PR 2 fixes review): state changes during the wait (the activated server starting) keep the one load and its deadline; after its timeout the next analyses fall back at once', async () => {
+  const { createFakeClock } = require('./fake-clock');
+  const { isAnalysisCancelled } = require('../src/engine/cancellation');
+  const clock = createFakeClock();
+  let loads = 0;
+  let changes = 0;
+  const provider = createCsharpProvider({ load: () => { loads++; return new Promise(() => {}); }, serverChanges: () => changes, deadlineMs: 1000, clock });
+  const hooks = { services: {}, makeResolver: () => ({ kind: 'editor' }) };
+  const flush = () => new Promise((r) => setImmediate(r));
+  // 1: "started" and "loading" arrive while it waits; aborted at 400 ms.
+  const c1 = new AbortController();
+  const first = provider.prepare({ ...ctxWith(hooks, []), signal: c1.signal });
+  await flush();
+  changes += 2;
+  await clock.advance(400);
+  c1.abort();
+  await assert.rejects(first, (e) => isAnalysisCancelled(e));
+  // 2: the same load, for the rest of its deadline only; another event meanwhile.
+  let secondDone = false;
+  const second = provider.prepare(ctxWith(hooks, [])).then(() => { secondDone = true; });
+  await flush();
+  changes++;
+  await clock.advance(599);
+  await flush();
+  assert.equal(secondDone, false);
+  await clock.advance(1);
+  await second;
+  assert.equal(loads, 1, 'one load, its deadline not reset');
+  // 3 sequential analyses after the timeout, no state change since: at once, no new load.
+  for (let n = 0; n < 3; n++) {
+    /** @type {string[]} */
+    const w = [];
+    await provider.prepare(ctxWith(hooks, w));
+    assert.ok(w.some((x) => x.includes(STILL_LOADING_REASON)), w.join('\n'));
+  }
+  assert.equal(loads, 1);
 });
 
 test('M4: the state tracker waits for "loaded" after a reload, not the one-shot initial load', async () => {

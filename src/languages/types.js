@@ -111,10 +111,13 @@
  *   server is up and has no item at `pos`. Items listed must be followed by the
  *   `incomingCalls` of one of them: the editor holds a slot of its prepared-hierarchy
  *   budget until then (MAX_PREPARED_HIERARCHIES, src/session/services-vscode.js).
- * @property {(item: unknown) => Promise<import('../engine/caller-contract').CallerRow[]|{ rows: import('../engine/caller-contract').CallerRow[], unreadable: number }|null>} incomingCalls
- *   The callers of a prepared item: a list, or `{ rows, unreadable }` when `unreadable`
- *   callers are in files that cannot be read (not on disk, or not a file: generated code)
- *   and are left out of `rows`; `queryHierarchy` counts them into the answer's reason (S7b).
+ * @property {(item: unknown) => Promise<import('../engine/caller-contract').CallerRow[]|{ rows: import('../engine/caller-contract').CallerRow[], unreadable: string[] }|null>} incomingCalls
+ *   The callers of a prepared item: a list, or `{ rows, unreadable }` when some callers are
+ *   in documents that cannot be read (not on disk, or not a file: generated code), left out
+ *   of `rows`; `unreadable` holds their locations (an absolute path, or the URI of a
+ *   document that is not a file), which `applyCallerExtras` counts into the answer's reason
+ *   (S7b). A caller in Impact Tree's own base-side copy (under the services' scratch
+ *   folder) is left out without being listed there.
  * @property {(doc: DocRef, pos: number) => Promise<ServerLocation[]|null>} references
  * @property {(doc: DocRef, pos: number) => Promise<ServerLocation[]|null>} implementations
  * @property {(doc: DocRef, pos: number) => Promise<ServerLocation[]|null>} definitions
@@ -302,6 +305,12 @@
  *   of this language runs through it (`queryHierarchy`'s `gate`), retries included, so the
  *   language can cap its own parallel caller queries below the analysis' concurrency (Java:
  *   JAVA_CALLER_QUERY_LIMIT). Absent: only the analysis' concurrency applies.
+ * @property {(location: string) => boolean} [ownCopy] For a caller in a document that cannot
+ *   be read (`HierarchyQuery.unreadable`): true when it is the server's own copy of Impact
+ *   Tree's base-side copy (Java: jdtls' default project), which is left out without making
+ *   the answer incomplete. Absent: every such caller counts.
+ * @property {boolean} [unreadableLasting] True: an answer made incomplete only by callers in
+ *   unreadable documents is lasting (kept for the analysis; C#). Absent: not lasting.
  * @property {(reason: string, file: string, pos: number) => string|null} [explainIncomplete]
  *   For a query the server did not answer (a rejection, no item, no incoming-call result)
  *   at `pos` in `file`: the reason to show instead of the server's, when the language knows

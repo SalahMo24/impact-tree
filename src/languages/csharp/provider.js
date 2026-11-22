@@ -510,7 +510,9 @@ const STILL_LOADING_REASON = 'the C# extension is still loading the projects';
  * own signal and what is left of the load's deadline (`deadlineMs` from its start). An aborted
  * analysis leaves it running; the next one waits only for the rest of the deadline, and once
  * the deadline has passed falls back at once (STILL_LOADING_REASON) until the load settles (a
- * yes is used; a no is asked again) or the server reports a state change (a new load).
+ * yes is used while no state change came after it; a no is asked again) or the server reports
+ * a state change after the deadline passed (a new load). A state change while the load is
+ * pending within its deadline never starts another (S1 of the PR 2 fixes review).
  * @param {{ load?: () => Promise<{ ok: true } | { ok: false, reason: string }>, serverChanges?: () => number, deadlineMs?: number, clock?: import('../../engine/clock').Clock }} [options]
  * @returns {import('../types').LanguageProvider}
  */
@@ -521,20 +523,19 @@ function createCsharpProvider({ load = () => editorCsharpLoad(), serverChanges =
   const ready = () => readyAt !== null && readyAt === serverChanges();
   /**
    * The load (owner: this provider, until an analysis uses its answer or a state change
-   * replaces it). `changes`: the tracker's count when it began; `settled`: its answer, with
-   * the count then (`settledAt`).
+   * replaces it). `settled`: its answer, with the tracker's count then (`settledAt`);
+   * `timedOutAt`: the count when an analysis first found it past its deadline, else null.
    * @typedef {{ ok: true } | { ok: false, reason: string }} ProbeAnswer
-   * @type {{ promise: Promise<ProbeAnswer>, changes: number, deadlineAt: number, settled: ProbeAnswer|null, settledAt: number }|null}
+   * @type {{ promise: Promise<ProbeAnswer>, deadlineAt: number, settled: ProbeAnswer|null, settledAt: number, timedOutAt: number|null }|null}
    */
   let wait = null;
   const startWait = () => {
-    const changes = serverChanges();
     const deadlineAt = clock.now() + deadlineMs;
     const promise = Promise.resolve().then(load)
       .catch((e) => /** @type {ProbeAnswer} */ ({ ok: false, reason: `the C# extension's server did not finish loading the projects (${e && /** @type {any} */ (e).message})` }))
       .then((r) => { w.settled = r; w.settledAt = serverChanges(); return r; });
     /** @type {NonNullable<typeof wait>} */
-    const w = { promise, changes, deadlineAt, settled: null, settledAt: 0 };
+    const w = { promise, deadlineAt, settled: null, settledAt: 0, timedOutAt: null };
     wait = w;
     return w;
   };
@@ -549,12 +550,19 @@ function createCsharpProvider({ load = () => editorCsharpLoad(), serverChanges =
       wait = null;
       if (w.settled.ok && w.settledAt === serverChanges()) return w.settled;
       w = null;
-    } else if (w && w.changes !== serverChanges()) w = null; // a state change since: a new load
+    } else if (w && w.timedOutAt !== null && w.timedOutAt !== serverChanges()) {
+      // Past its deadline, and a state change since it was seen past it: a new load. A state
+      // change while it is pending (the server starting and loading, S6) does not replace
+      // it: its own `tracker.loaded` follows the events to the next "loaded" (S1).
+      w = null;
+    }
     if (!w) w = startWait();
+    const pending = w;
+    const timedOut = () => { if (pending.timedOutAt === null) pending.timedOutAt = serverChanges(); };
     const left = w.deadlineAt - clock.now();
-    if (left <= 0) return { ok: false, reason: STILL_LOADING_REASON };
+    if (left <= 0) { timedOut(); return { ok: false, reason: STILL_LOADING_REASON }; }
     const r = await raceLoad(w.promise, left, signal, clock);
-    if (r === LOAD_TIMED_OUT) return { ok: false, reason: timedOutReason(deadlineMs) };
+    if (r === LOAD_TIMED_OUT) { timedOut(); return { ok: false, reason: timedOutReason(deadlineMs) }; }
     if (wait === w) wait = null;
     return r;
   }

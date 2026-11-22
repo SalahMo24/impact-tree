@@ -744,7 +744,7 @@ async function editorMain(repo, corpus) {
   }
   console.log(`functions: ${T.ours} ours / ${T.oracle} oracle, precision ${pct(T.tp, T.ours)}, recall ${pct(T.tp, T.oracle)}; kinds ${T.kindsOk}/${T.kinds} (header changes ${T.headersOk}/${T.headers})`);
   console.log(`callers: targets ${T.targets} ${JSON.stringify(T.states)}, TP ${T.ctp}, FP ${T.cfp.length} (${T.cfp.filter((f) => f.overReport).length} over-reports on an override), FN ${T.cfn.length}; precision ${pct(T.ctp, T.ctp + T.cfp.length)}, recall ${pct(T.ctp, T.ctp + T.cfn.length)}`);
-  console.log(`incomingCalls: ${stats.queries} queries, ${stats.failures.length} failed (${pct(stats.failures.length, stats.queries)}); default-project callers skipped ${server.skippedCallers()}`);
+  console.log(`incomingCalls: ${stats.queries} queries, ${stats.failures.length} failed (${pct(stats.failures.length, stats.queries)}); own base-side copies skipped ${server.skippedCallers()}`);
   const tally = new Map();
   for (const f of stats.failures) tally.set(`${f.message} [${f.label}]`, (tally.get(`${f.message} [${f.label}]`) || 0) + 1);
   const list = (title, xs) => { console.log(`${title}: ${xs.length}`); for (const x of xs) console.log(`  ${x}`); };

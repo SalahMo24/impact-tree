@@ -333,6 +333,8 @@ function createCsharpEditorExtras({
   return {
     suppressedReason: 'not computed: the C# language server is not asked about this member',
     droppedStat: 'valueUsesDropped',
+    // Source-generated callers do not come and go within an analysis (S7b).
+    unreadableLasting: true,
     callerTargets: async (file, pos) => (await dispatchOf(file, pos)).targets,
     explainIncomplete(reason, file, pos) {
       if (reason !== 'no call hierarchy item') return null;
