@@ -162,6 +162,18 @@ test('callers_of on a C# file answers from the C# unit, never from another langu
   assert.ok(withUnit.reasons.some((/** @type {string} */ r) => /lower bound/.test(r)));
 });
 
+test('callers_of on a TypeScript declaration file (.d.ts) answers from the TypeScript unit; a file no language claims from none (C6 review)', async () => {
+  const f = fakeContext();
+  const dts = '/repo/src/types.d.ts';
+  const ctx = { ...f.ctx, readText: (/** @type {string} */ p) => (p === dts ? 'export declare function save(x: number): void;\n' : p === '/repo/notes.txt' ? 'save\n' : f.ctx.readText(p)) };
+  const answer = await createImpactTools(ctx).call('callers_of', { file: 'src/types.d.ts', line: 1, name: 'save' });
+  assert.ok(!answer.reasons.some((/** @type {string} */ r) => /no .* analysis is loaded/.test(r)), answer.reasons.join('; '));
+  const unclaimed = await createImpactTools({ ...ctx, units: [...ctx.units, { component: 'other', resolver: { callerState: async () => { throw new Error('asked'); } }, files: ['/repo/README'] }] })
+    .call('callers_of', { file: 'notes.txt', line: 1, name: 'save' });
+  assert.deepEqual(unclaimed.callers, []);
+  assert.ok(unclaimed.reasons.some((/** @type {string} */ r) => /no supported analysis is loaded/.test(r)), unclaimed.reasons.join('; '));
+});
+
 test('validate_cards: every id once, mirrors count as their card, unknown ids and empty titles', async () => {
   const { impl, ids } = fakeAnalysis();
   assert.deepEqual(await impl.call('validate_cards', { answer: { cards: [{ title: 'All', members: [ids[0], 'deno_dist/a.ts#9', ids[1]] }] } }), { ok: true, errors: [], cards: 1 });

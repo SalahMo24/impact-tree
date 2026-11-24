@@ -586,7 +586,7 @@ function createCsharpProvider({ load = () => editorCsharpLoad(), serverChanges =
     const left = w.deadlineAt - clock.now();
     if (left <= 0) { timedOut(); return { ok: false, reason: STILL_LOADING_REASON }; }
     // The reviewer sees no rows while this waits: the session shows a ticking notice.
-    report({ phase: 'server-wait', label: SERVER_LABEL, note: `(callers from the syntax index after ${Math.round(deadlineMs / 1000)} s)` });
+    report({ phase: 'server-wait', label: SERVER_LABEL, note: `(callers from the syntax index after ${Math.ceil(left / 1000)} s)` });
     const r = await raceLoad(w.promise, left, signal, clock).finally(() => report({ phase: 'server-wait', done: true }));
     if (r === LOAD_TIMED_OUT) { timedOut(); return { ok: false, reason: timedOutReason(deadlineMs) }; }
     if (wait === w) wait = null;
@@ -633,7 +633,10 @@ function createCsharpProvider({ load = () => editorCsharpLoad(), serverChanges =
     if (lastProbeNo !== null) { log(`warm-up: C# skipped — ${lastProbeNo}`); return null; }
     const file = path.join(repo, files[0]);
     let text;
-    try { text = require('fs').readFileSync(file, 'utf8'); } catch { return null; }
+    try { text = require('fs').readFileSync(file, 'utf8'); } catch (e) {
+      log(`warm-up: C# skipped — ${files[0]} could not be read (${e && /** @type {any} */ (e).code})`);
+      return null;
+    }
     const { csharpOutline } = require('./outline');
     const first = firstCallable(csharpOutline(text, { fileName: path.basename(file) }) || []);
     return first ? { file, pos: first.selectionRange.start } : null;

@@ -48,6 +48,8 @@ const NO_EDITOR_REASON = 'no editor connected: checked, not saved';
  * @returns {string|null}
  */
 const langOf = (f) => {
+  // Declaration files are TypeScript's (its rules leave them out of the changed files only).
+  if (/\.d\.[cm]?ts$/.test(f)) return 'ts';
   const id = languageFor(path.basename(f))?.id ?? null;
   return id === 'typescript' ? 'ts' : id;
 };
@@ -255,7 +257,8 @@ function locate(env, args) {
  * @returns {{ unit: Unit|null, reasons: string[] }}
  */
 function unitFor(env, file, lang) {
-  const candidates = env.units.filter((u) => u.files.some((f) => langOf(f) === lang));
+  // A file no language claims has no unit (never one of another unknown file's).
+  const candidates = lang === null ? [] : env.units.filter((u) => u.files.some((f) => langOf(f) === lang));
   /** @type {string[]} */
   const reasons = [];
   /** @type {Unit|null} */

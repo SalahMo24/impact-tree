@@ -163,6 +163,25 @@ test('the probe\'s wait is reported: start before it, end after it, whether yes,
   assert.deepEqual(events, [], 'a yes settled between analyses is reused silently');
 });
 
+test('after an aborted wait, the next analysis\'s notice names the time left of the deadline, not the whole of it (C6 review)', async () => {
+  const clock = createFakeClock();
+  const provider = createCsharpProvider({ load: () => new Promise(() => {}), serverChanges: () => 0, deadlineMs: 10000, clock });
+  let events = [];
+  const c = new AbortController();
+  const first = provider.prepare(makeCtx(events, c.signal));
+  await flush();
+  assert.equal(events[0].note, '(callers from the syntax index after 10 s)');
+  await clock.advance(6000);
+  c.abort();
+  await assert.rejects(first);
+  events = [];
+  const second = provider.prepare(makeCtx(events));
+  await flush();
+  assert.equal(events[0].note, '(callers from the syntax index after 4 s)');
+  await clock.advance(4000);
+  await second;
+});
+
 // ---- the session's notice ------------------------------------------------------------------
 
 test('the session shows the wait as a ticking message in the status bar and the Changes view, and clears it when the wait ends', async () => {
@@ -189,6 +208,37 @@ test('the session shows the wait as a ticking message in the status bar and the 
     assert.ok(windowProgress(env)[0].settled, 'the status-bar progress ended');
     await clock.advance(5000);
     assert.equal(windowProgress(env)[0].messages.at(-1), text(12), 'the timer stopped');
+  }, { changedSource: 'csharp', clock });
+});
+
+test('a run replaced mid-wait leaves the newer run\'s notice in place, which goes when that run ends (C6 review)', async () => {
+  const clock = createFakeClock();
+  await withEnv(async (env) => {
+    /** @type {Array<() => void>} */
+    const gates = [];
+    let n = 0;
+    env.hooks.localProgress = async (onProgress) => {
+      const which = ++n;
+      onProgress({ phase: 'server-wait', label: LABEL, note: `(run ${which})` });
+      await new Promise((resolve) => { gates.push(() => resolve(undefined)); });
+      onProgress({ phase: 'server-wait', done: true });
+    };
+    env.hooks.localPrepared = csharpChange(env);
+    const shows = (s) => (env.view().message ?? '').includes(s);
+    const first = env.refresh();
+    for (let i = 0; i < 200 && !shows('(run 1)'); i++) await flush();
+    assert.ok(shows('(run 1)'), env.view().message);
+    const second = env.refresh();
+    for (let i = 0; i < 200 && !shows('(run 2)'); i++) await flush();
+    assert.ok(shows('(run 2)'), env.view().message);
+    gates[0]();
+    await first.catch(() => {});
+    await flush();
+    assert.ok(shows('(run 2)'), `the older run's end leaves the newer run's text: ${env.view().message}`);
+    assert.ok(!shows('(run 1)'));
+    gates[1]();
+    await second;
+    assert.ok(!/Waiting for/.test(env.view().message ?? ''), env.view().message);
   }, { changedSource: 'csharp', clock });
 });
 
