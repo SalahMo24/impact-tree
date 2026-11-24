@@ -68,6 +68,10 @@ const JAVA_SYMBOLS = [
   ] },
 ];
 
+// The C# change `changedSource: 'csharp'` commits (T.cs). Its warm-up target comes from the
+// provider's own outline of this text, not from `hooks.serverSymbols`.
+const CSHARP_SOURCE = 'namespace N;\npublic class T\n{\n    int x = 1;\n\n    public int Warm()\n    {\n        return 1;\n    }\n}\n';
+
 const shaFor = (n) => String(n).repeat(40).slice(0, 40);
 const pull = (n) => ({ number: n, headRef: `head${n}`, baseRef: `base${n}`, title: `PR ${n}`, url: `https://example.test/${n}` });
 
@@ -201,6 +205,10 @@ function buildRepo(dir, sh, changedSource, remotes) {
     sh('checkout', '-qb', 'feature');
     fs.writeFileSync(path.join(dir, 'pom.xml'), '<project/>\n');
     fs.writeFileSync(path.join(dir, 'T.java'), JAVA_SOURCE);
+    sh('add', '.'); sh('commit', '-qm', 'feature');
+  } else if (changedSource === 'csharp') {
+    sh('checkout', '-qb', 'feature');
+    fs.writeFileSync(path.join(dir, 'T.cs'), CSHARP_SOURCE);
     sh('add', '.'); sh('commit', '-qm', 'feature');
   } else if (changedSource) {
     sh('checkout', '-qb', 'feature');
@@ -414,6 +422,8 @@ function createEnv({ prewarm = false, changedSource = false, memento = new Map()
         seen.analyzeRemotes.push(o.remote);
         seen.analyzeOptions.push({ fetch: o.fetch, early: typeof o.onPrepared === 'function', resolved: typeof o.onResolved === 'function', impactPaths: o.impactPaths });
         seen.signals.push(o.signal);
+        // A provider's progress during `prepare` (before the changed files are published).
+        if (hooks.localProgress) await hooks.localProgress(o.onProgress);
         if (hooks.localPrepared) await o.onPrepared(hooks.localPrepared(o));
         // The callers resolved, before the entry-point walk (analyze's onResolved).
         if (hooks.localResolved && o.onResolved) await o.onResolved(hooks.localResolved(o));
@@ -602,4 +612,4 @@ const overviewAnswer = (headOid) => ({ repository: {
   object: { statusCheckRollup: null },
 } });
 
-module.exports = { GO_SOURCE, PY_SOURCE, PY_SYMBOLS, JAVA_SOURCE, JAVA_SYMBOLS, overviewAnswer, fakeWebviewPanel, deferred, gates, shaFor, pull, localResult, finding, previewResult, createEnv, withEnv, refusals, createCommentsApi };
+module.exports = { GO_SOURCE, PY_SOURCE, PY_SYMBOLS, JAVA_SOURCE, JAVA_SYMBOLS, CSHARP_SOURCE, overviewAnswer, fakeWebviewPanel, deferred, gates, shaFor, pull, localResult, finding, previewResult, createEnv, withEnv, refusals, createCommentsApi };

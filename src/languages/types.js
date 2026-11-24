@@ -161,7 +161,10 @@
  *   file this language could not analyse. The result carries it on the file's `otherFiles`
  *   entry (`notAnalysed`), so a file that was not analysed never reads as one with no impact.
  *   A file listed here is also counted in `unanalysable`.
- * @property {(event: { phase: string, component?: string, done?: number, total?: number }) => void} report Progress.
+ * @property {(event: { phase: string, component?: string, done?: number|boolean, total?: number, label?: string, note?: string }) => void} report Progress.
+ *   `phase: 'server-wait'` (a provider whose `prepare` waits on its language server): `label`
+ *   names the server (as `serverLabel`) and the optional `note` is appended to the shown text;
+ *   a later event with `done: true` ends the wait (sent whatever way it ended).
  * @property {AbortSignal|undefined} signal Checked between steps; an aborted run rejects
  *   with `AnalysisCancelledError`, which the pipeline never reads as a provider failure.
  * @property {Map<string, string|null>} [headTexts] Head-side text by path, where the head is

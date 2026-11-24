@@ -9,6 +9,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
+const { analyzeRemote } = require('../src/engine/analyze-remote');
+const { clearVirtualText } = require('../src/engine/textpos');
+const models = require('../src/views/changes/tree-row-models');
+const { ts, root } = require('./bug-regressions-helpers');
 const { csharpOutline, csharpOutlineParts, activeText } = require('../src/languages/csharp/outline');
 const { lex } = require('../src/languages/csharp/lexer');
 const { collectCsharpSymbols, pairCsharpOverloads, csharpProvider } = require('../src/languages/csharp/provider');
@@ -187,4 +191,23 @@ test('without language services, prepare is the outline path with callers from t
   assert.equal(state.complete, false, 'the preview: never complete');
   assert.equal(/** @type {any} */ (u.resolver).callersLowerBound, true);
   assert.ok(warnings.some((w) => /src\/B\.cs: NOT analysed/.test(w)), 'unbalanced #if braces: the file is not analysed');
+});
+
+test('a preview reads C# from the fetched text: a [CHANGED]-able member, callers from the PR files (incomplete), C# named in callersScope and the limits note, never "not analysed" (C6)', async () => {
+  clearVirtualText();
+  const base = 'namespace N;\npublic class Codec\n{\n    public int Run(int a)\n    {\n        return 1;\n    }\n}\n';
+  const head = 'namespace N;\npublic class Codec\n{\n    public int Run(int a)\n    {\n        return 2;\n    }\n}\n';
+  const patch = '@@ -3,6 +3,6 @@\n {\n     public int Run(int a)\n     {\n-        return 1;\n+        return 2;\n     }\n }\n';
+  const files = { 'src/Codec.cs@base': base, 'src/Codec.cs@head': head };
+  const gh = {
+    listPullRequestFiles: async () => ({ total: 1, files: [{ path: 'src/Codec.cs', oldPath: 'src/Codec.cs', status: 'modified', patch }] }),
+    fileAtRef: async (/** @type {any} */ _, /** @type {string} */ p, /** @type {string} */ ref) => /** @type {Record<string, string>} */ (files)[`${p}@${ref}`] ?? null,
+  };
+  const r = await analyzeRemote(/** @type {any} */ ({ ts, gh, slug: {}, pr: { number: 9, headSha: 'head', mergeBaseSha: 'base', baseRef: 'main' }, repoRoot: root }));
+  assert.deepEqual(r.allChanged.map((/** @type {any} */ c) => c.key), ['Codec.Run(int)']);
+  assert.equal(r.allChanged[0].callersComplete, false);
+  assert.equal(r.otherFiles.some((/** @type {any} */ f) => f.notAnalysed), false, 'no C# file is "not analysed"');
+  assert.deepEqual(r.callersScope.map((/** @type {any} */ s) => [s.language, s.scope]), [['C#', 'pr-files']]);
+  assert.match(models.previewLimitsNote(r), /C# callers are from syntax only, in the PR's own files: calls through an interface or an override beyond the indexed files/);
+  clearVirtualText();
 });

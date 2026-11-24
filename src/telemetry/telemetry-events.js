@@ -5,7 +5,7 @@
 const LANGUAGE_OF_EXT = {
   '.ts': 'ts', '.tsx': 'ts', '.mts': 'ts', '.cts': 'ts',
   '.js': 'js', '.jsx': 'js', '.mjs': 'js', '.cjs': 'js',
-  '.go': 'go', '.py': 'py', '.pyi': 'py', '.java': 'java',
+  '.go': 'go', '.py': 'py', '.pyi': 'py', '.java': 'java', '.cs': 'csharp',
 };
 
 /**

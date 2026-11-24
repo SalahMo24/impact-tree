@@ -14,7 +14,9 @@
 // Pure apart from reading files at the head (`readText`), running `git diff` for hunks
 // (`diffOf`) and the caller searches of the live resolvers; all three are injectable.
 
+const path = require('path');
 const { z } = require('zod');
+const { languageFor } = require('../languages');
 const { ToolError, intArg, paged, fitObject, MAX_PAGE_SIZE, MAX_PAGE, DEFAULT_PAGE_SIZE } = require('./paging');
 const {
   validateSubmission, checkEvidence, isRelativePath, lineStarts, escapeRe, MAX_LINE, IDENTIFIER,
@@ -38,8 +40,17 @@ const MAX_FILES_SHOWN = 30;
 
 const NO_EDITOR_REASON = 'no editor connected: checked, not saved';
 
-/** @param {string} f the language of a source path, as far as callers are searched per language */
-const langOf = (f) => (/\.(?:[cm]?[jt]sx?)$/.test(f) ? 'ts' : /\.go$/.test(f) ? 'go' : /\.pyi?$/.test(f) ? 'python' : /\.java$/.test(f) ? 'java' : null);
+/**
+ * The language of a source path, as far as callers are searched per language: the registry's
+ * (by file name, so a directory above the repository never decides), 'ts' for TypeScript and
+ * JavaScript.
+ * @param {string} f
+ * @returns {string|null}
+ */
+const langOf = (f) => {
+  const id = languageFor(path.basename(f))?.id ?? null;
+  return id === 'typescript' ? 'ts' : id;
+};
 
 /**
  * @typedef {object} Unit One analysed project and its live caller resolver.
@@ -275,7 +286,7 @@ const viaOf = (x) => (x.via === 'interface' || x.via === 'override' ? { via: x.v
 function addLocationTools(tools, env) {
   tools.push({
     name: 'callers_of', title: 'Callers of any function', annotations: READ_ONLY,
-    description: 'Functions that call the function declared at file:line (any function, not only changed ones). TypeScript/JavaScript: the TypeScript language service (call hierarchy). Go and Python: a syntax-only index of the repository, so the list is a lower bound (calls through interfaces, function values and untyped receivers are missed). C#: a caller with via (interface or override) and text ("through IFoo") calls an interface member or a base method this function implements or overrides, so it may run this function or another one. Carries complete and reasons. Paged.',
+    description: 'Functions that call the function declared at file:line (any function, not only changed ones). TypeScript/JavaScript: the TypeScript language service (call hierarchy). Go, Python, Java and C#: a syntax-only index of the repository, so the list is a lower bound (calls through interfaces, function values and untyped receivers are missed). C#: a caller with via (interface or override) and text ("through IFoo") calls an interface member or a base method this function implements or overrides, so it may run this function or another one. Carries complete and reasons. Paged.',
     inputSchema: z.object({ ...locShape, ...pageShape }).strict(),
     run: async (args) => {
       const loc = locate(env, args);
@@ -291,7 +302,7 @@ function addLocationTools(tools, env) {
 
   tools.push({
     name: 'find_references', title: 'References to any function', annotations: READ_ONLY,
-    description: 'Every reference (calls and other uses: passed as a value, imported, assigned) to the function declared at file:line. TypeScript/JavaScript: the language service\'s findReferences over the analysed programs. Go and Python: NOT distinguishable from callers_of: the syntax index records call sites only, so this returns the same call sites and says so (referencesAreCallSitesOnly). Carries complete and reasons. Paged.',
+    description: 'Every reference (calls and other uses: passed as a value, imported, assigned) to the function declared at file:line. TypeScript/JavaScript: the language service\'s findReferences over the analysed programs. Go, Python, Java and C#: NOT distinguishable from callers_of: the syntax index records call sites only, so this returns the same call sites and says so (referencesAreCallSitesOnly). Carries complete and reasons. Paged.',
     inputSchema: z.object({ ...locShape, ...pageShape }).strict(),
     run: async (args) => findReferences(env, locate(env, args), args),
   });

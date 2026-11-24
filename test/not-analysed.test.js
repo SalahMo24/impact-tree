@@ -261,3 +261,32 @@ test('the command line analyses a Java file from its text: no not-analysed secti
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// C# (C8a, C6): read from its text on the command line (no Roslyn there), so no C# file is
+// listed as not analysed either.
+test('the command line analyses a C# file from its text: no not-analysed section, and callers come from the syntax index, incomplete', () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'it-not-analysed-csharp-')));
+  try {
+    const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' });
+    git('init', '-q', '--initial-branch=main'); git('config', 'user.name', 'T'); git('config', 'user.email', 't@example.com');
+    const file = path.join(dir, 'src/Demo/A.cs');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'src/Demo/Demo.csproj'), '<Project Sdk="Microsoft.NET.Sdk"></Project>\n');
+    fs.writeFileSync(file, 'namespace Demo;\n\npublic class A\n{\n    public int Value()\n    {\n        return 1;\n    }\n}\n');
+    git('add', '-A'); git('commit', '-qm', 'base'); git('checkout', '-q', '-b', 'feature');
+    fs.writeFileSync(file, 'namespace Demo;\n\npublic class A\n{\n    public int Value()\n    {\n        return 2;\n    }\n}\n');
+    git('commit', '-qam', 'head');
+    const cli = path.join(__dirname, '..', 'src', 'cli.js');
+    const args = ['--repo', dir, '--allow-local-base'];
+    const text = execFileSync(process.execPath, [cli, ...args], { encoding: 'utf8' });
+    assert.doesNotMatch(text, /⑤ NOT ANALYSED/);
+    assert.match(text, /● A\.Value\(\) {3}\[CHANGED\] {2}src\/Demo\/A\.cs:5/);
+    assert.doesNotMatch(text, /no callers/);
+    const json = JSON.parse(execFileSync(process.execPath, [cli, ...args, '--json'], { encoding: 'utf8' }));
+    assert.equal(json.otherFiles.find((f) => f.path.endsWith('A.cs')), undefined);
+    assert.deepEqual(json.allChanged.map((c) => [c.key, c.callersComplete]), [['A.Value()', false]]);
+    assert.equal(json.allChanged[0].callerState, 'unknown', 'never "no callers" from a syntax-only search');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
