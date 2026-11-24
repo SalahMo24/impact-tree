@@ -141,6 +141,39 @@ test('callers_of, find_references and impact_paths for any function, with comple
   assert.equal(noUnit.complete, true);
 });
 
+test('callers_of on a C# file answers from the C# unit, never from another language\'s (C6)', async () => {
+  const f = fakeContext();
+  const cs = '/repo/src/Codec.cs';
+  const text = 'namespace N;\npublic class Codec\n{\n    public int Run() { return 1; }\n}\n';
+  const asked = /** @type {string[]} */ ([]);
+  const csResolver = {
+    callersLowerBound: true,
+    callerState: async (/** @type {string} */ file) => { asked.push(file); return { state: 'resolved', complete: false, reason: 'C# callers from syntax only: test scope', callers: [{ label: 'Svc.Go()', file: '/repo/src/b.ts', pos: 0, test: false, callSites: [] }] }; },
+  };
+  const ctx = { ...f.ctx, readText: (/** @type {string} */ p) => (p === cs ? text : f.ctx.readText(p)) };
+  const query = { file: 'src/Codec.cs', line: 4, name: 'Run' };
+  const without = await createImpactTools(ctx).call('callers_of', query);
+  assert.deepEqual(without.callers, [], 'the Go and TypeScript units do not answer for it');
+  assert.ok(without.reasons.some((/** @type {string} */ r) => /no csharp analysis is loaded/.test(r)), without.reasons.join('; '));
+  const withUnit = await createImpactTools({ ...ctx, units: [...ctx.units, { component: 'cs', resolver: csResolver, files: [cs] }] }).call('callers_of', query);
+  assert.deepEqual(asked, [cs]);
+  assert.deepEqual(withUnit.callers.map((/** @type {any} */ c) => c.label), ['Svc.Go()']);
+  assert.equal(withUnit.complete, false);
+  assert.ok(withUnit.reasons.some((/** @type {string} */ r) => /lower bound/.test(r)));
+});
+
+test('callers_of on a TypeScript declaration file (.d.ts) answers from the TypeScript unit; a file no language claims from none (C6 review)', async () => {
+  const f = fakeContext();
+  const dts = '/repo/src/types.d.ts';
+  const ctx = { ...f.ctx, readText: (/** @type {string} */ p) => (p === dts ? 'export declare function save(x: number): void;\n' : p === '/repo/notes.txt' ? 'save\n' : f.ctx.readText(p)) };
+  const answer = await createImpactTools(ctx).call('callers_of', { file: 'src/types.d.ts', line: 1, name: 'save' });
+  assert.ok(!answer.reasons.some((/** @type {string} */ r) => /no .* analysis is loaded/.test(r)), answer.reasons.join('; '));
+  const unclaimed = await createImpactTools({ ...ctx, units: [...ctx.units, { component: 'other', resolver: { callerState: async () => { throw new Error('asked'); } }, files: ['/repo/README'] }] })
+    .call('callers_of', { file: 'notes.txt', line: 1, name: 'save' });
+  assert.deepEqual(unclaimed.callers, []);
+  assert.ok(unclaimed.reasons.some((/** @type {string} */ r) => /no supported analysis is loaded/.test(r)), unclaimed.reasons.join('; '));
+});
+
 test('validate_cards: every id once, mirrors count as their card, unknown ids and empty titles', async () => {
   const { impl, ids } = fakeAnalysis();
   assert.deepEqual(await impl.call('validate_cards', { answer: { cards: [{ title: 'All', members: [ids[0], 'deno_dist/a.ts#9', ids[1]] }] } }), { ok: true, errors: [], cards: 1 });

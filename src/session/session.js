@@ -632,6 +632,49 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     }
   }
 
+  /**
+   * The ticking "Waiting for <server> to load the projects… N s" notice for a provider's wait
+   * inside `prepare` (a `server-wait` progress event): the status bar and the Changes view
+   * message, as `untilReady`'s. `note` (the provider's) follows the seconds. The returned
+   * function ends it: the timer stops and the text goes unless a newer run owns it.
+   * @param {{ id: number, signal: AbortSignal }} run
+   * @param {string} label @param {string} [note]
+   * @returns {() => void}
+   */
+  function showServerWait(run, label, note) {
+    const since = clock.now();
+    let stopped = false;
+    let timer = null;
+    /** @type {{ report: (v: { message: string }) => void }|null} */
+    let windowProgress = null;
+    let finish = () => {};
+    const closed = new Promise((resolve) => { finish = () => resolve(undefined); });
+    const tick = () => {
+      if (stopped || !owns(run)) return;
+      const seconds = Math.floor((clock.now() - since) / 1000);
+      const text = `Waiting for ${label} to load the projects… ${seconds} s${note ? ` ${note}` : ''}`;
+      if (windowProgress) windowProgress.report({ message: text });
+      setIndexing(run, text);
+    };
+    void Promise.resolve(vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: 'Impact Tree' },
+      async (progress) => {
+        if (stopped) return;
+        windowProgress = progress;
+        tick();
+        timer = clock.setInterval(tick, indexingTickMs);
+        await closed;
+      })).catch(() => {});
+    tick();
+    return () => {
+      if (stopped) return;
+      stopped = true;
+      if (timer !== null) clock.clearInterval(timer);
+      finish();
+      if (indexing.run === run) setIndexing(run, null);
+    };
+  }
+
   // Analyses the working repository for `run` and publishes the result if the run is
   // still current. Throws on failure, including the cancellation error.
   // `retry`: a caller retry (see scheduleCallerRetry). It keeps the resolver's answers, so
@@ -659,6 +702,9 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
     }
     const tStart = clock.now();
     const report = (m) => { if (!run.signal.aborted && progress) progress.report({ message: m }); };
+    // The notice of a provider's wait on its server inside `prepare` (`server-wait` events);
+    // ended by the done event, and here whatever way the analysis ends.
+    let stopServerWait = () => {};
     // vscode.commands.executeCommand takes no cancellation token, so the language
     // server cannot be told to stop. The signal stops new queries; one already sent
     // finishes in the server and its answer is dropped with the cancelled run.
@@ -680,7 +726,10 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
         log(`callers resolved in ${clock.now() - tStart}ms; the entry-point search for the cards continues`);
       },
       onProgress: (p2) => {
-        if (p2.phase === 'component') report(`analysing ${p2.component}…`);
+        if (p2.phase === 'server-wait') {
+          stopServerWait();
+          if (!p2.done && p2.label) stopServerWait = showServerWait(run, p2.label, p2.note);
+        } else if (p2.phase === 'component') report(`analysing ${p2.component}…`);
         else if (p2.phase === 'impact') report('finding the entry points the cards show…');
         else if (p2.total) report(`${p2.component}: resolving callers ${p2.done}/${p2.total}`);
       },
@@ -707,7 +756,7 @@ function createSession(vscode, { log: logToChannel, review, checkpoint, indexing
         return modulePool.forAnalysis(ts, git, run.signal);
       },
       signal: run.signal,
-    });
+    }).finally(() => stopServerWait());
     throwIfCancelled(run.signal);
     result.moduleCallers?.complete?.();
     const expansionResolver = withModuleCallers(session.resolver, result.moduleCallers);

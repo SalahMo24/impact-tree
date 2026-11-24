@@ -497,6 +497,26 @@ function raceLoad(load, ms, signal, clock = require('../../engine/clock').realCl
 
 // The reason when an earlier analysis's wait for the projects is still going (S6).
 const STILL_LOADING_REASON = 'the C# extension is still loading the projects';
+const SERVER_LABEL = 'the C# language server (Roslyn)';
+
+/**
+ * The first method or constructor in `symbols`, in source order, searching into types (the
+ * outline lists a member as its type's child; namespaces are not listed) but not into a
+ * member's own children.
+ * @param {import('../types').ServerSymbol[]} symbols
+ * @returns {import('../types').ServerSymbol|null}
+ */
+function firstCallable(symbols) {
+  const { KIND } = require('./outline');
+  for (const symbol of symbols) {
+    if (symbol.kind === KIND.METHOD || symbol.kind === KIND.CONSTRUCTOR) return symbol;
+    if (symbol.kind === KIND.CLASS || symbol.kind === KIND.STRUCT || symbol.kind === KIND.INTERFACE || symbol.kind === KIND.ENUM) {
+      const inner = firstCallable(symbol.children || []);
+      if (inner) return inner;
+    }
+  }
+  return null;
+}
 
 /**
  * C#'s provider. `probe`: whether the environment's C# call hierarchy answers (the editor's:
@@ -521,6 +541,9 @@ function createCsharpProvider({ load = () => editorCsharpLoad(), serverChanges =
   /** @type {number|null} */
   let readyAt = null;
   const ready = () => readyAt !== null && readyAt === serverChanges();
+  // The reason of the probe's last answer when it was no, else null (also before any probe).
+  /** @type {string|null} */
+  let lastProbeNo = null;
   /**
    * The load (owner: this provider, until an analysis uses its answer or a state change
    * replaces it). `settled`: its answer, with the tracker's count then (`settledAt`);
@@ -541,9 +564,10 @@ function createCsharpProvider({ load = () => editorCsharpLoad(), serverChanges =
   };
   /**
    * @param {AbortSignal|undefined} signal
+   * @param {import('../types').PrepareContext['report']} report told when this call waits on the load
    * @returns {Promise<ProbeAnswer>}
    */
-  async function askProbe(signal) {
+  async function askProbe(signal, report) {
     let w = wait;
     if (w && w.settled) {
       // Settled while no analysis waited: a yes is used while no state change came after it.
@@ -561,7 +585,9 @@ function createCsharpProvider({ load = () => editorCsharpLoad(), serverChanges =
     const timedOut = () => { if (pending.timedOutAt === null) pending.timedOutAt = serverChanges(); };
     const left = w.deadlineAt - clock.now();
     if (left <= 0) { timedOut(); return { ok: false, reason: STILL_LOADING_REASON }; }
-    const r = await raceLoad(w.promise, left, signal, clock);
+    // The reviewer sees no rows while this waits: the session shows a ticking notice.
+    report({ phase: 'server-wait', label: SERVER_LABEL, note: `(callers from the syntax index after ${Math.ceil(left / 1000)} s)` });
+    const r = await raceLoad(w.promise, left, signal, clock).finally(() => report({ phase: 'server-wait', done: true }));
     if (r === LOAD_TIMED_OUT) { timedOut(); return { ok: false, reason: timedOutReason(deadlineMs) }; }
     if (wait === w) wait = null;
     return r;
@@ -577,8 +603,9 @@ function createCsharpProvider({ load = () => editorCsharpLoad(), serverChanges =
     if (!ctx.hooks.services || !ctx.hooks.makeResolver) return prepareSyntactic(ctx);
     if (!ready()) {
       readyAt = null;
-      const answer = await askProbe(ctx.signal);
+      const answer = await askProbe(ctx.signal, ctx.report);
       require('../../engine/cancellation').throwIfCancelled(ctx.signal);
+      lastProbeNo = answer.ok ? null : answer.reason;
       if (answer.ok) readyAt = serverChanges();
       else {
         ctx.warnings.push(`${NO_HIERARCHY_NOTE} (${answer.reason})`);
@@ -594,6 +621,26 @@ function createCsharpProvider({ load = () => editorCsharpLoad(), serverChanges =
     });
     return require('../server-symbols').prepareFromServerSymbols({ ...ctx, hooks: { ...ctx.hooks, services } }, csharpSpec());
   }
+  /**
+   * Where the editor's Roslyn is warmed (src/session/readiness.js): the first method or
+   * constructor of the first changed C# file, from the outline of its text on disk (C-D3:
+   * symbols never come from Roslyn). Null, with one log line, when there are no services or
+   * the last probe answered no.
+   * @type {NonNullable<import('../types').LanguageProvider['warmUpTarget']>}
+   */
+  async function warmUpTarget({ repo, files, services, log }) {
+    if (!services) { log('warm-up: C# skipped — the editor offers no language services'); return null; }
+    if (lastProbeNo !== null) { log(`warm-up: C# skipped — ${lastProbeNo}`); return null; }
+    const file = path.join(repo, files[0]);
+    let text;
+    try { text = require('fs').readFileSync(file, 'utf8'); } catch (e) {
+      log(`warm-up: C# skipped — ${files[0]} could not be read (${e && /** @type {any} */ (e).code})`);
+      return null;
+    }
+    const { csharpOutline } = require('./outline');
+    const first = firstCallable(csharpOutline(text, { fileName: path.basename(file) }) || []);
+    return first ? { file, pos: first.selectionRange.start } : null;
+  }
   return Object.freeze({
     ...csharpRules,
     needsServer: true,
@@ -608,7 +655,8 @@ function createCsharpProvider({ load = () => editorCsharpLoad(), serverChanges =
     }),
     // The session's syntax-index workers (./editor-extras.js `sessionIndex`), ended with the session.
     dispose: () => require('./editor-extras').disposeSessionIndexes(),
-    serverLabel: 'the C# language server (Roslyn)',
+    serverLabel: SERVER_LABEL,
+    warmUpTarget,
   });
 }
 

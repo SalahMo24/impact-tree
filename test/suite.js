@@ -42,6 +42,7 @@ const SUITE = [
   { file: 'test/csharp-outline.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/csharp-syntactic-index.test.js', tier: 'quick' },  // 0.2s
   { file: 'test/csharp-callers.test.js', tier: 'quick' },
+  { file: 'test/csharp-warm-up.test.js', tier: 'quick' },
   { file: 'test/java-outline.test.js', tier: 'quick' },
   { file: 'test/java-syntactic.test.js', tier: 'quick' },
   { file: 'test/python-lexer.test.js', tier: 'quick' },  // 0.1s  // 0.2s
@@ -68,6 +69,7 @@ const SUITE = [
   { file: 'test/python-warm-up.test.js', tier: 'quick' },
   { file: 'test/java-warm-up.test.js', tier: 'quick' },
   { file: 'test/java-review-identity.test.js', tier: 'quick' },  // 3.8s
+  { file: 'test/csharp-review-identity.test.js', tier: 'quick' },
   { file: 'test/caller-retry.test.js', tier: 'quick' },  // 3.7s
   { file: 'test/services-vscode.test.js', tier: 'quick' },  // 1.9s
   { file: 'test/prepared-hierarchies.test.js', tier: 'quick' },  // 0.2s

@@ -153,12 +153,12 @@ test('an editor without the telemetry logger gets a telemetry that does nothing'
 test('analysisFinishedProps counts changed symbols per language and names no file', () => {
   const props = analysisFinishedProps({
     mode: 'pr', changedFileCount: 3, warnings: ['w'],
-    allChanged: [{ relPath: 'a/b.ts' }, { relPath: 'c.tsx' }, { relPath: 'd.go' }, { relPath: 'Makefile' }],
+    allChanged: [{ relPath: 'a/b.ts' }, { relPath: 'c.tsx' }, { relPath: 'd.go' }, { relPath: 'e/F.cs' }, { relPath: 'Makefile' }],
     findings: [{ staleCallers: 2 }, { staleCallers: 1 }],
   }, { source: 'local', durationMs: 1234.6 });
   assert.deepEqual(props, {
-    source: 'local', mode: 'pr', files: 3, symbols: 4, findings: 2, staleCallers: 3, warnings: 1, durationMs: 1235,
-    'lang.ts': 2, 'lang.go': 1, 'lang.other': 1,
+    source: 'local', mode: 'pr', files: 3, symbols: 5, findings: 2, staleCallers: 3, warnings: 1, durationMs: 1235,
+    'lang.ts': 2, 'lang.go': 1, 'lang.csharp': 1, 'lang.other': 1,
   });
   assert.deepEqual(cleanProps(props), props, 'every property survives the privacy filter');
 });
